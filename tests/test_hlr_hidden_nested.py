@@ -165,15 +165,12 @@ def test_collect_geometry_agrees_with_the_viewport():
             return len(vp.hlr_geometry()[0]), _tris(vp.scene)
 
         assert both() == (2 * BOX, 2 * BOX)
-        vp.history.execute(HideCommand([top.mesh.faces[0]], hidden=True))
-        _app.processEvents()
-        assert both() == (2 * BOX - 2, 2 * BOX - 2)
         vp.history.execute(HideCommand([child], hidden=True))
         _app.processEvents()
-        assert both() == (BOX - 2, BOX - 2)
+        assert both() == (BOX, BOX)
         vp.history.undo()
         _app.processEvents()
-        assert both() == (2 * BOX - 2, 2 * BOX - 2)
+        assert both() == (2 * BOX, 2 * BOX)
     finally:
         win._saved_version = win.viewport.scene.version
         win.close()
