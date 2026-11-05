@@ -1015,6 +1015,18 @@ def _read_document(path: Path, pump=None):
     return data, archive
 
 
+def _read_members(archive, names: list) -> dict:
+    """``{name: bytes}``, inflated side by side (zlib lets go of the
+    interpreter; a big document has hundreds of blocks). A damaged member
+    raises what it raises read alone, the first in ``names`` first."""
+    if len(names) < 2:
+        return {n: archive.read(n) for n in names}
+    import os
+    from concurrent.futures import ThreadPoolExecutor
+    with ThreadPoolExecutor(max_workers=min(8, os.cpu_count() or 2)) as ex:
+        return dict(zip(names, ex.map(archive.read, names)))
+
+
 def _unpack_photo_mesh(payload: dict, archive):
     """Rebuild the stored survey, or ``None`` when the document has none."""
     meta = payload.get("photo_mesh")
@@ -1165,8 +1177,8 @@ def _load_into_inner(scene, path: Path, progress=None) -> None:
         if archive is not None:
             # Format 3's binary geometry blocks, read while the archive is
             # open (it closes below).
-            geom = {n: archive.read(n) for n in archive.namelist()
-                    if n.startswith(_GEOM_PREFIX)}
+            geom = _read_members(archive, [n for n in archive.namelist()
+                                           if n.startswith(_GEOM_PREFIX)])
             tick(0.2, "Unpacking textures…")
             _unpack_textures(data.get("scene", {}), archive)
             # Rebuilt here, while the archive is still open — it closes below
