@@ -275,6 +275,82 @@ SHADER_DIR = app_root() / "resources" / "shaders"
 _LOOSE_SNAP_CAP = 3000
 
 
+def _inst_proto_of(mod, base):
+    """core._native's InstanceProto of a prototype's local bake."""
+    import numpy as np
+    z = np.zeros((0, 3))
+    v0 = base.get("v0")
+    edges = (np.frombuffer(base["edges"], dtype=np.float32)
+             .reshape(-1, 6).astype(np.float64)
+             if base.get("edges") else np.zeros((0, 6)))
+    return mod.InstanceProto(
+        np.ascontiguousarray(v0) if v0 is not None else z,
+        np.ascontiguousarray(base["e1"]) if v0 is not None else z,
+        np.ascontiguousarray(base["e2"]) if v0 is not None else z, edges)
+
+
+class _PickWarm:
+    """The pick index's heavy pure parts, worked out behind the document just
+    opened (Viewport.start_pick_warmup): threads that touch nothing but their
+    own copies of the arrays' references. What they made reaches the viewport
+    in _pick_warm_take, on the GUI thread, and only if it still applies."""
+
+    def __init__(self, mod, protos, grids):
+        import queue
+        import threading
+        self.protos: dict = {}
+        self.grids: list = []
+        jobs: queue.SimpleQueue = queue.SimpleQueue()
+        for ckey, base in protos:
+            jobs.put(("proto", ckey, base))
+        for chunk in grids:
+            jobs.put(("grid", chunk, {
+                "v0": chunk["v0"], "e1": chunk["e1"], "e2": chunk["e2"],
+                "tri_ent": chunk["tri_ent"], "rev": chunk.get("rev")}))
+
+        def work():
+            while True:
+                try:
+                    kind, a, b = jobs.get_nowait()
+                except queue.Empty:
+                    return
+                try:
+                    if kind == "proto":
+                        self.protos[a] = _inst_proto_of(mod, b)
+                    else:
+                        _split_chunk_spans(b)
+                        self.grids.append((a, b))
+                except Exception:      # noqa: BLE001 — the hover will retry
+                    pass
+        # Daemons: closing the window does not wait for them.
+        self.threads = [threading.Thread(target=work, daemon=True)
+                        for _ in range(min(8, os.cpu_count() or 2))]
+        for t in self.threads:
+            t.start()
+
+    def join(self):
+        for t in self.threads:
+            t.join()
+
+
+def _pick_warm_take(vp) -> None:
+    """Wait for what the warm-up has left and take it: its prototypes for the
+    next InstanceSet, its grids for the chunks that have not moved since."""
+    warm = getattr(vp, "_pick_warm", None)
+    if warm is None:
+        return
+    vp._pick_warm = None
+    warm.join()
+    cache = getattr(vp, "_inst_proto_cache", None)
+    if cache is None:
+        cache = vp._inst_proto_cache = {}
+    cache.update(warm.protos)
+    for chunk, snap in warm.grids:
+        if ("_span_grid" not in chunk and chunk.get("rev") == snap["rev"]
+                and chunk["v0"] is snap["v0"]):
+            chunk["_span_grid"] = snap["_span_grid"]
+
+
 def _entity_owner(entities, i):
     """The owner half of pick-index entity ``i``: a lazy piece of the index
     answers it without building its faces (see views.array_bake)."""
@@ -520,6 +596,9 @@ _INSTANCE_FILTER = True
 #: The engine answers the corner and occlusion queries for the lazy
 #: placements without baking them (tests compare both ways).
 _LAZY_NATIVE = True
+#: A big document's pick index starts behind it as soon as it opens (see
+#: Viewport.start_pick_warmup; the switch is for measuring and for tests).
+_PICK_WARM = os.environ.get("INGETRAZO_NO_PICK_WARM", "") != "1"
 #: A pointer move over a still view reuses the model as the last frame
 #: drew it (Viewport._frame_cache_key); INGETRAZO_FRAME_CACHE=0 turns it
 #: off, and every frame draws everything as before.
@@ -5787,6 +5866,7 @@ class Viewport(QOpenGLWidget):
         document also slowed down reopen after reopen (the garbage collector
         walking the dead ones). And a CPython id() reused by a new group
         could meet an old entry — the composer's lesson with frames."""
+        self._pick_warm = None               # its threads end on their own
         draws = getattr(self, "_proto_draw", None)
         if draws and self.context() is not None:
             self.makeCurrent()                # GPU objects need the context
@@ -13065,6 +13145,7 @@ class Viewport(QOpenGLWidget):
         if memo is not None and memo[0] is table:
             return memo[1]
         import numpy as np
+        _pick_warm_take(self)
         groups = table[0]
         cache = getattr(self, "_inst_proto_cache", None) or {}
         keep: dict = {}
@@ -13091,17 +13172,7 @@ class Viewport(QOpenGLWidget):
 
         def build(job):
             pos, ckey, base = job
-            z = np.zeros((0, 3))
-            v0 = base.get("v0")
-            edges = (np.frombuffer(base["edges"], dtype=np.float32)
-                     .reshape(-1, 6).astype(np.float64)
-                     if base.get("edges") else np.zeros((0, 6)))
-            ip = mod.InstanceProto(
-                np.ascontiguousarray(v0) if v0 is not None else z,
-                np.ascontiguousarray(base["e1"]) if v0 is not None
-                else z,
-                np.ascontiguousarray(base["e2"]) if v0 is not None
-                else z, edges)
+            ip = _inst_proto_of(mod, base)
             protos[pos] = ip
             keep[ckey] = ip
         # The engine lets go of the GIL for each tree: side by side, not the
@@ -13121,6 +13192,40 @@ class Viewport(QOpenGLWidget):
                                np.ascontiguousarray(table[2], np.float64))
         self._inst_set_memo = (table, iset)
         return iset
+
+    def start_pick_warmup(self) -> None:
+        """A big document is on screen: work out the heavy parts of the pick
+        index behind it, so the first move of the pointer does not wait for
+        them (4 s on a model of 5 M faces, #1092). Whoever moves the mouse
+        needs them, whatever the tool, and the answers cannot change: the
+        same calls with the same arrays, only sooner. Only with the engine
+        and on a model big enough for lazy placements."""
+        if not _PICK_WARM or not _INSTANCE_FILTER:
+            return
+        from core import _native
+        mod = _native.native
+        if mod is None or not hasattr(mod, "InstanceSet"):
+            return
+        table = self._pick_lazy_table()
+        if table is None:
+            return
+        seen: set = set()
+        protos: list = []
+        for g in table[0]:
+            if id(g.mesh) not in seen:
+                seen.add(id(g.mesh))
+                base = self._proto_base_chunk(g.mesh, _paint_of(self, g))
+                protos.append(((base.get("uid"), base.get("rev")), base))
+        grids: list = []
+        if not _NO_SPAN_GRID:
+            fixed = Viewport._pick_candidates(self, False, table)[1]
+            for g in fixed:
+                if not getattr(g, "billboard", False):
+                    c = self._group_chunk(g)
+                    if (c["v0"] is not None and len(c["v0"]) > _SPAN_GRID_MIN
+                            and "_span_grid" not in c):
+                        grids.append(c)
+        self._pick_warm = _PickWarm(mod, protos, grids)
 
     def _static_occluders(self, idx):
         """core._native's InstanceSet over the pick index's own triangles
@@ -13647,6 +13752,7 @@ class Viewport(QOpenGLWidget):
             # answering "the plaza" for the arch inside (Marco,
             # 2026-09-14).
             chunks.append((g, chunk, gvis, gsel, gsnap))
+        _pick_warm_take(self)
         # Each big chunk's grid is its own work, mostly NumPy: side by side
         # (0.9 s of a big model's first hover one after another, #1092). Each
         # keeps it on its chunk, where the loop below finds it.

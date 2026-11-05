@@ -7540,6 +7540,10 @@ class MainWindow(QMainWindow):
         self.viewport.notify_scene_changed()
         self._update_title()
         self.settle_heap()
+        try:
+            self.viewport.start_pick_warmup()
+        except Exception:  # noqa: BLE001 - the first hover builds it anyway
+            pass
         return True
 
     #: Young-generation threshold: how many net allocations between
