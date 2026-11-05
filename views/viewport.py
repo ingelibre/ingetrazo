@@ -13072,6 +13072,7 @@ class Viewport(QOpenGLWidget):
         protos: list = []
         proto_of = np.empty(len(groups), dtype=np.int64)
         mats = np.empty((len(groups), 16), dtype=np.float64)
+        todo: list = []                       # (position in protos, key, bake)
         for i, g in enumerate(groups):
             k = by_mesh.get(id(g.mesh))
             if k is None:
@@ -13081,22 +13082,39 @@ class Viewport(QOpenGLWidget):
                 ckey = (base.get("uid"), base.get("rev"))
                 ip = cache.get(ckey)
                 if ip is None:
-                    z = np.zeros((0, 3))
-                    v0 = base.get("v0")
-                    edges = (np.frombuffer(base["edges"], dtype=np.float32)
-                             .reshape(-1, 6).astype(np.float64)
-                             if base.get("edges") else np.zeros((0, 6)))
-                    ip = mod.InstanceProto(
-                        np.ascontiguousarray(v0) if v0 is not None else z,
-                        np.ascontiguousarray(base["e1"]) if v0 is not None
-                        else z,
-                        np.ascontiguousarray(base["e2"]) if v0 is not None
-                        else z, edges)
+                    todo.append((len(protos), ckey, base))
                 keep[ckey] = ip
                 k = by_mesh[id(g.mesh)] = len(protos)
                 protos.append(ip)
             proto_of[i] = k
             mats[i] = g.xform.data()
+
+        def build(job):
+            pos, ckey, base = job
+            z = np.zeros((0, 3))
+            v0 = base.get("v0")
+            edges = (np.frombuffer(base["edges"], dtype=np.float32)
+                     .reshape(-1, 6).astype(np.float64)
+                     if base.get("edges") else np.zeros((0, 6)))
+            ip = mod.InstanceProto(
+                np.ascontiguousarray(v0) if v0 is not None else z,
+                np.ascontiguousarray(base["e1"]) if v0 is not None
+                else z,
+                np.ascontiguousarray(base["e2"]) if v0 is not None
+                else z, edges)
+            protos[pos] = ip
+            keep[ckey] = ip
+        # The engine lets go of the GIL for each tree: side by side, not the
+        # 2.4 s of a big model's first hover one after another (#1092).
+        if len(todo) > 1:
+            import os
+            from concurrent.futures import ThreadPoolExecutor
+            with ThreadPoolExecutor(
+                    max_workers=min(8, os.cpu_count() or 2)) as ex:
+                list(ex.map(build, todo))
+        else:
+            for job in todo:
+                build(job)
         self._inst_proto_cache = keep
         iset = mod.InstanceSet(protos, proto_of, mats,
                                np.ascontiguousarray(table[1], np.float64),
@@ -13629,6 +13647,18 @@ class Viewport(QOpenGLWidget):
             # answering "the plaza" for the arch inside (Marco,
             # 2026-09-14).
             chunks.append((g, chunk, gvis, gsel, gsnap))
+        # Each big chunk's grid is its own work, mostly NumPy: side by side
+        # (0.9 s of a big model's first hover one after another, #1092). Each
+        # keeps it on its chunk, where the loop below finds it.
+        big = [c for g, c, _v, _s, _n in chunks
+               if c["v0"] is not None and id(g) not in lazy_set
+               and len(c["v0"]) > _SPAN_GRID_MIN and "_span_grid" not in c]
+        if len(big) > 1 and not _NO_SPAN_GRID:
+            import os
+            from concurrent.futures import ThreadPoolExecutor
+            with ThreadPoolExecutor(
+                    max_workers=min(8, os.cpu_count() or 2)) as ex:
+                list(ex.map(_split_chunk_spans, big))
         n_ent = base["n_ent"] if base else 0
         n_plist = base["n_plist"] if base else 0
         b_tri_off = base["n_tri"] if base else 0
