@@ -191,6 +191,30 @@ def prefetch(meshes) -> None:
         list(ex.map(work, todo))
 
 
+def prebake(vp, jobs) -> None:
+    """The bakes ``jobs`` (``(mesh, paint, msig)``) ask for, side by side: most
+    of a bake is NumPy over the mesh's arrays and reads nothing else that can
+    change. They wait in ``vp._prebaked`` for the bake that asks for them,
+    which numbers them and takes them away."""
+    todo = {(id(m), msig): (m, paint, msig) for m, paint, msig in jobs
+            if can_bake(m)}
+    done: dict = {}
+    if len(todo) >= 2:
+        import os
+        from concurrent.futures import ThreadPoolExecutor
+
+        def work(item):
+            key, (m, paint, msig) = item
+            try:
+                done[key] = _bake(vp, m, paint, msig)
+            except Exception:      # noqa: BLE001 — the bake will retry
+                pass
+        with ThreadPoolExecutor(
+                max_workers=min(8, os.cpu_count() or 2)) as ex:
+            list(ex.map(work, todo.items()))
+    vp._prebaked = done
+
+
 def _attrs_table(src):
     """Each face's own attrs dict (a fresh one per face, as Face keeps)
     is one of a few: the document's table, parsed once."""
@@ -340,6 +364,16 @@ class LazyFingerprint:
 def bake(vp, mesh, paint, msig, vkey, uid):
     """The chunk entry of deferred ``mesh`` inside a container of paint
     ``paint`` — ``Viewport._group_chunk``'s rebuild, from arrays."""
+    ready = getattr(vp, "_prebaked", None)
+    entry = ready.pop((id(mesh), msig), None) if ready else None
+    if entry is None:
+        entry = _bake(vp, mesh, paint, msig)
+    entry["vkey"], entry["uid"] = vkey, uid
+    return entry
+
+
+def _bake(vp, mesh, paint, msig):
+    """:func:`bake`, all but the entry's number and the scene's version."""
     from core.materials import back_is_default, effective_attrs
     from core.texture import face_uv_axes
 
@@ -649,7 +683,7 @@ def bake(vp, mesh, paint, msig, vkey, uid):
     nv = len(plan.pos)
     idxs = sorted({k * max(nv - 1, 0) // 31 for k in range(32)}) if nv else []
     samples = [(i, tuple(plan.pos[i].tolist())) for i in idxs]
-    return {"fp": fp, "vkey": vkey, "rev": 0, "uid": uid,
+    return {"fp": fp, "vkey": None, "rev": 0, "uid": None,
             "msig": msig, "serial": None,
             "flags_gen": getattr(mesh, "_flags_gen", 0),
             "nv": nv, "ne": len(plan.edges), "nf": nf,

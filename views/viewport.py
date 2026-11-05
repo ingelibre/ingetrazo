@@ -4293,6 +4293,11 @@ class Viewport(QOpenGLWidget):
         n = max(1, len(groups))
         from views import array_bake
         array_bake.prefetch(g.mesh for g in groups)
+        from core.materials import material_sig
+        painted = [(g, _paint_of(self, g)) for g in groups
+                   if not getattr(g, "billboard", False)]
+        array_bake.prebake(self, ((g.mesh, p, material_sig(p))
+                                  for g, p in painted))
         last = time.monotonic()
         done: set = set()
         for i, g in enumerate(groups):
@@ -4314,6 +4319,7 @@ class Viewport(QOpenGLWidget):
             if progress is not None and now - last > 0.25:
                 progress(i / n, "Preparing the drawing…")
                 last = now
+        self._prebaked = None                # those no placement asked for
 
     def _placement_bbox(self, g):
         """World AABB of an instanced placement from its PROTOTYPE's local
