@@ -127,10 +127,10 @@ def test_panel_edits_the_active_style_live(settings_file):
     win = _Win()
     panel = StylesPanel(win)
     panel._edges.setChecked(False)
-    panel._mode.setCurrentIndex(panel._mode.findData("xray"))
+    panel._xray.setChecked(True)
     style = win.viewport.scene.display_style
     assert style.edges is False
-    assert style.face_mode == "xray"
+    assert style.face_mode == "textures" and style.xray
 
 
 def test_every_swatch_stays_editable_and_hints_when_invisible(settings_file):
@@ -296,7 +296,10 @@ def test_a_swatch_tooltip_keeps_the_tooltip_colours(settings_file):
     win = _Win()
     panel = StylesPanel(win)
     swatch = panel._front_c                          # white (255,255,255)
-    swatch.show()
+    panel._tabs.setCurrentIndex(1)
+    panel._edit_buttons[1].click()
+    panel.show()
+    QApplication.processEvents()
     QToolTip.showText(QPoint(10, 10), "tip", swatch)
     QApplication.processEvents()
     labels = [w for w in QApplication.topLevelWidgets()
@@ -306,7 +309,7 @@ def test_a_swatch_tooltip_keeps_the_tooltip_colours(settings_file):
         assert labels[0].palette().color(QPalette.Window).name() != "#ffffff"
     finally:
         QToolTip.hideText()
-        swatch.close()
+        panel.close()
 
 
 def test_back_color_hint_only_where_back_faces_cannot_show(settings_file):

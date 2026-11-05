@@ -2120,7 +2120,76 @@ def _first_person(p, ink):
         p.drawPath(cap)
 
 
+def _face_mode(p, ink, mode):
+    top = [QPointF(24, 5), QPointF(43, 15), QPointF(24, 25), QPointF(5, 15)]
+    left = [QPointF(5, 15), QPointF(24, 25), QPointF(24, 43), QPointF(5, 33)]
+    right = [QPointF(24, 25), QPointF(43, 15), QPointF(43, 33), QPointF(24, 43)]
+    p.setPen(_rpen(ink, 2))
+    for index, points in enumerate((top, left, right)):
+        fill = QColor(_accent() if mode in ("textures", "shaded") else ink)
+        fill.setAlpha(35 if mode == "xray" else (55 + index * 35))
+        p.setBrush(Qt.NoBrush if mode == "wireframe" else fill)
+        p.drawPolygon(QPolygonF(points))
+        if mode == "monochrome":
+            # A neutral triangle and an accent triangle on each whole face.
+            p.setPen(Qt.NoPen)
+            p.setBrush(_accent())
+            p.drawPolygon(QPolygonF([points[0], points[2], points[3]]))
+            p.setPen(_rpen(ink, 2))
+            p.setBrush(Qt.NoBrush)
+            p.drawPolygon(QPolygonF(points))
+    if mode in ("wireframe", "xray"):
+        pen = _rpen(ink, 1.4)
+        pen.setStyle(Qt.DashLine)
+        p.setPen(pen)
+        for point in (top[0], left[3], right[2]):
+            p.drawLine(QPointF(24, 23), point)
+    if mode == "textures":
+        p.setPen(_rpen(ink, 1.4))
+        for y in (23, 29, 35):
+            p.drawLine(QPointF(27, y + 5), QPointF(40, y - 2))
+    if mode == "monochrome":
+        p.setPen(_rpen(ink, 1.5))
+        for face in (top, left, right):
+            p.drawLine(face[0], face[2])
+
+
+def _edge_cap(p, ink, mode):
+    p.setPen(_rpen(ink, 1.5))
+    for x in (12, 36):
+        p.drawLine(QPointF(x, 8), QPointF(x, 40))
+    p.setPen(Qt.NoPen)
+    p.setBrush(ink)
+    overhang = (4 if mode == 2 else 6) if mode >= 2 else 0
+    rect = QRectF(12 - overhang, 18, 24 + 2 * overhang, 12)
+    if mode % 2:
+        p.drawRoundedRect(rect, 6, 6)
+    else:
+        p.drawRect(rect)
+
+
+def _edge_endpoint(p, ink, mode):
+    p.setPen(_rpen(ink, 3))
+    p.drawLine(QPointF(10, 24), QPointF(40, 24))
+    p.setPen(Qt.NoPen)
+    p.setBrush(ink)
+    if mode == 0:
+        p.drawRect(QRectF(10, 19, 14, 10))
+    elif mode == 1:
+        p.drawEllipse(QPointF(16, 24), 8, 8)
+    elif mode == 2:
+        p.drawRect(QRectF(8, 16, 16, 16))
+    else:
+        p.drawPolygon(QPolygonF([QPointF(16, 15), QPointF(7, 32), QPointF(25, 32)]))
+
+
 _DRAW = {
+    **{"face_" + mode: (lambda p, ink, mode=mode: _face_mode(p, ink, mode))
+       for mode in ("wireframe", "hidden_line", "shaded", "textures", "monochrome", "xray")},
+    **{key: (lambda p, ink, mode=mode: _edge_cap(p, ink, mode))
+       for mode, key in enumerate(("cap_butt", "cap_round", "cap_square", "cap_round_extended"))},
+    **{key: (lambda p, ink, mode=mode: _edge_endpoint(p, ink, mode))
+       for mode, key in enumerate(("endpoint_default", "endpoint_round", "endpoint_square", "endpoint_triangle"))},
     **_SOLID_ICONS,
     "select": _select, "line": _line, "freehand": _freehand,
     "side_collapse": _side_collapse,

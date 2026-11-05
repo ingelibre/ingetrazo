@@ -277,6 +277,10 @@ class Scene:
         # render, pick, snap, bounds, export — whatever its layer says.
         # The hidden-things view does NOT change that: it draws them as a
         # ghost in its own pass and only makes them selectable.
+        if not getattr(self.display_style, "show_guides", True):
+            from core.guide import Guide
+            if isinstance(entity, Guide):
+                return False
         if self.entity_hidden(entity) or self.similar_hidden(entity):
             return False
         return self._layer_state(entity)[0]
@@ -331,6 +335,10 @@ class Scene:
         return False
 
     def entity_selectable(self, entity) -> bool:
+        if not getattr(self.display_style, "show_guides", True):
+            from core.guide import Guide
+            if isinstance(entity, Guide):
+                return False
         if self.similar_hidden(entity):
             return False
         if self._object_hidden(entity) and not self.show_hidden_objects:

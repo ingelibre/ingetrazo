@@ -519,7 +519,9 @@ def bake(vp, mesh, paint, msig, vkey, uid):
                       f0)
         soft_pts = pos32[plan.edges[softs]].reshape(-1, 6)
         soft_n0, soft_c0 = fn[f0], fc[f0]
-        soft_n1, soft_c1 = fn[f1], fc[f1]
+        from core.profile_edges import plan_normal_signs
+        soft_n1 = fn[f1] * plan_normal_signs(plan)[softs, None]
+        soft_c1 = fc[f1]
         soft_single = ~two
     else:
         soft_pts = None

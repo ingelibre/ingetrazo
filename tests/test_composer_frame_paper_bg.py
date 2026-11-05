@@ -45,13 +45,16 @@ def test_paper_bg_renders_white_without_sky_and_keeps_the_face_mode():
     frame.style = "style:X-ray"
     composer.render_frame(frame)
     grey = host.viewport.seen[-1]
-    assert grey.face_mode == "xray" and grey.sky and grey.background != (1.0, 1.0, 1.0)
+    assert grey.face_mode == "textures" and grey.xray
+    assert grey.sky and grey.background != (1.0, 1.0, 1.0)
     frame.paper_bg = True
     composer._forget_frame(frame)
     composer.render_frame(frame)
     white = host.viewport.seen[-1]
-    assert white.face_mode == "xray" and not white.sky
+    assert white.face_mode == grey.face_mode and white.xray == grey.xray
+    assert white.xray_opacity == grey.xray_opacity and not white.sky
     assert white.background == (1.0, 1.0, 1.0)
+    assert grey.sky and grey.background != white.background
     # the live viewport comes back untouched
     assert host.viewport.style_override is None
     # the panel shows and edits it

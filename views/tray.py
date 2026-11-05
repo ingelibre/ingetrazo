@@ -25,6 +25,7 @@ from pathlib import Path
 from PySide6.QtCore import QObject, QPoint, QRect, QSettings, QSize, Qt
 from PySide6.QtGui import QColor, QIcon, QImage, QPixmap
 from PySide6.QtWidgets import (
+    QButtonGroup,
     QCheckBox,
     QComboBox,
     QDateEdit,
@@ -47,7 +48,9 @@ from PySide6.QtWidgets import (
     QSizePolicy,
     QSlider,
     QSpinBox,
+    QStackedWidget,
     QStyle,
+    QTabWidget,
     QToolButton,
     QVBoxLayout,
     QWidget,
@@ -2438,15 +2441,21 @@ class MaterialsPanel(QWidget):
             # The first wear of each paint is all the tally keeps, so each
             # mesh is read once, not once per copy (21 406 copies of 2 722
             # meshes in #158), and a lazy one stays unbuilt.
-            from core.mesh import face_attrs
+            from core.mesh import edge_materials, face_attrs
+            def paint_attrs(mesh):
+                yield from face_attrs(mesh)
+                yield from edge_materials(mesh)
             for f in scene.loose_mesh.faces:
                 if scene.entity_visible(f):
                     yield f.attrs
+            for edge in scene.loose_mesh.edges:
+                if edge.material and scene.entity_visible(edge):
+                    yield edge.material
             seen: set = set()
             for g, _m in scene.placements():
                 if id(g.mesh) not in seen:
                     seen.add(id(g.mesh))
-                    yield from mesh_wears(g.mesh, face_attrs)
+                    yield from mesh_wears(g.mesh, paint_attrs)
             # A group's paint lives on the group, not on its faces (#133,
             # @fafecm: it only showed up here once the group was exploded).
             from core.group import iter_placements
@@ -3190,10 +3199,11 @@ class DimensionStylePanel(QWidget):
 class StylesPanel(QWidget):
     """Live editor for ``scene.display_style`` — the Styles panel.
 
-    The top combo picks a style (built-ins + the user's saved library); the
-    controls below edit the ACTIVE style in place, live — the viewport reads
-    it every frame, so there is nothing to "apply". «Save style…» snapshots
-    the current look under a name into the user library (QSettings), where
+    Select browses the built-in and saved collections; Edit groups the
+    existing controls by category. Mix reserves a place for future work.
+    Edits change the ACTIVE style live — there is nothing to "apply".
+    «Save style…» snapshots the current look under a name into the user
+    library (QSettings), where
     ``style_by_name`` — and with it the composer's per-frame style combo —
     resolves it like any preset. Edits are not undoable, same as the
     dimension-style panel: they change how the model draws, not what it is.
@@ -3203,76 +3213,362 @@ class StylesPanel(QWidget):
     #: "Shaded" the style is a preset bundle, "Shaded" the mode is one field.
     _MODES = (("textures", "Textures"), ("shaded", "Shaded"),
               ("hidden_line", "Hidden line"), ("monochrome", "Monochrome"),
-              ("wireframe", "Wireframe"), ("xray", "X-ray"))
+              ("wireframe", "Wireframe"))
+
+    _CATEGORIES = (("Edge settings", "line"),
+                   ("Face settings", "view_iso"),
+                   ("Background settings", "comp_terreno"),
+                   ("Watermark settings", "image"),
+                   ("Modeling settings", "section"))
 
     def __init__(self, window) -> None:
         super().__init__()
         self._window = window
         self._updating = False
-        grid = QGridLayout(self)
-        grid.setContentsMargins(8, 6, 8, 8)
+        self._library_key = None
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(10, 10, 10, 10)
+        layout.setSpacing(10)
 
+        header = QHBoxLayout()
+        self._preview = QLabel()
+        self._preview.setFixedSize(76, 66)
+        self._preview.setToolTip(tr("Current style"))
+        header.addWidget(self._preview)
+        identity = QVBoxLayout()
+        identity.setSpacing(4)
         self._combo = QComboBox()
+        self._combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self._combo.setToolTip(tr("Current style"))
         self._combo.activated.connect(self._on_pick)
-        grid.addWidget(self._combo, 0, 0, 1, 2)
+        identity.addWidget(self._combo)
+        self._style_hint = QLabel()
+        self._style_hint.setWordWrap(True)
+        theme_style(self._style_hint, "color:{muted}; font-size:11px;")
+        identity.addWidget(self._style_hint)
+        header.addLayout(identity, 1)
+        layout.addLayout(header)
 
-        grid.addWidget(QLabel(tr("Face mode:")), 1, 0)
+        self._tabs = QTabWidget()
+        self._tabs.addTab(self._build_library(), tr("Select"))
+        self._tabs.addTab(self._build_editor(), tr("Edit"))
+        self._tabs.addTab(self._build_mix(), tr("Mix"))
+        layout.addWidget(self._tabs, 1)
+
+        row = QHBoxLayout()
+        save_btn = QPushButton(tr("Save style…"))
+        save_btn.setAutoDefault(False)
+        save_btn.clicked.connect(self._on_save)
+        row.addWidget(save_btn, 1)
+        self._del_btn = QPushButton(tr("Delete"))
+        self._del_btn.setAutoDefault(False)
+        self._del_btn.setToolTip(tr("Delete the current style from My styles"))
+        self._del_btn.clicked.connect(self._on_delete)
+        row.addWidget(self._del_btn)
+        layout.addLayout(row)
+
+        self.refresh()
+
+    def _build_library(self) -> QWidget:
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(8, 10, 8, 8)
+        nav = QHBoxLayout()
+        self._home = QToolButton()
+        self._home.setIcon(self.style().standardIcon(QStyle.SP_DirHomeIcon))
+        self._home.setToolTip(tr("Style collections"))
+        self._home.setAccessibleName(tr("Style collections"))
+        self._home.clicked.connect(self._go_home)
+        nav.addWidget(self._home)
+        self._collection = QComboBox()
+        self._collection.addItem(tr("Style collections"), "")
+        self._collection.addItem(tr("Built-in styles"), "builtin")
+        self._collection.addItem(tr("My styles"), "user")
+        self._collection.currentIndexChanged.connect(self._refresh_library)
+        nav.addWidget(self._collection, 1)
+        layout.addLayout(nav)
+
+        self._library = QListWidget()
+        self._library.setViewMode(QListWidget.IconMode)
+        self._library.setResizeMode(QListWidget.Adjust)
+        self._library.setMovement(QListWidget.Static)
+        self._library.setIconSize(QSize(80, 64))
+        self._library.setGridSize(QSize(108, 100))
+        self._library.setWordWrap(True)
+        self._library.setSpacing(4)
+        self._library.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self._library.setAccessibleName(tr("Styles"))
+        self._library.itemClicked.connect(self._open_library_item)
+        self._library.itemActivated.connect(self._open_library_item)
+        layout.addWidget(self._library, 1)
+        self._library_hint = QLabel()
+        self._library_hint.setWordWrap(True)
+        theme_style(self._library_hint, "color:{muted}; font-size:11px;")
+        layout.addWidget(self._library_hint)
+        return page
+
+    def _build_editor(self) -> QWidget:
+        from views.icons import tool_icon
+
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(8, 10, 8, 8)
+        tools = QHBoxLayout()
+        tools.setSpacing(4)
+        self._edit_buttons = []
+        self._edit_group = QButtonGroup(self)
+        self._edit_group.setExclusive(True)
+        for index, (title, key) in enumerate(self._CATEGORIES):
+            button = QToolButton()
+            button.setIcon(tool_icon(key))
+            button.setProperty("icon_key", key)
+            button.setIconSize(QSize(24, 24))
+            button.setFixedSize(36, 34)
+            button.setCheckable(True)
+            button.setToolTip(tr(title))
+            button.setAccessibleName(tr(title))
+            self._edit_group.addButton(button, index)
+            self._edit_buttons.append(button)
+            tools.addWidget(button)
+        tools.addStretch(1)
+        layout.addLayout(tools)
+        self._category_title = QLabel()
+        theme_style(self._category_title, "font-weight:bold;")
+        layout.addWidget(self._category_title)
+
+        self._edit_stack = QStackedWidget()
+        grids = []
+        for _title, _key in self._CATEGORIES:
+            content = QWidget()
+            grid = QGridLayout(content)
+            grid.setContentsMargins(0, 4, 0, 8)
+            grid.setHorizontalSpacing(12)
+            grid.setVerticalSpacing(10)
+            grid.setColumnStretch(1, 1)
+            grids.append(grid)
+            scroll = QScrollArea()
+            scroll.setFrameShape(QFrame.NoFrame)
+            scroll.setWidgetResizable(True)
+            scroll.setWidget(content)
+            self._edit_stack.addWidget(scroll)
+        layout.addWidget(self._edit_stack, 1)
+        edges, faces, background, watermark, modeling = grids
+
+        faces.addWidget(QLabel(tr("Face mode:")), 0, 0)
         self._mode = QComboBox()
         for key, label in self._MODES:
             self._mode.addItem(tr(label), key)
         self._mode.currentIndexChanged.connect(self._apply_edits)
-        grid.addWidget(self._mode, 1, 1)
+        # Keep one mode model for menus/tests; the visible controls are icons.
+        self._mode.setParent(faces.parentWidget())
+        self._mode.hide()
+        face_modes = QHBoxLayout()
+        face_modes.setSpacing(3)
+        self._face_modes = QButtonGroup(self)
+        from views.icons import tool_icon
+        for index, (key, label) in enumerate(self._MODES):
+            button = QToolButton()
+            button.setCheckable(True)
+            button.setIcon(tool_icon("face_" + key))
+            button.setProperty("icon_key", "face_" + key)
+            button.setToolTip(tr(label))
+            button.setAccessibleName(tr(label))
+            button.setFixedSize(28, 28)
+            button.setIconSize(QSize(22, 22))
+            self._face_modes.addButton(button, index)
+            face_modes.addWidget(button)
+        face_modes.addSpacing(8)
+        self._xray = QToolButton()
+        self._xray.setCheckable(True)
+        self._xray.setIcon(tool_icon("face_xray"))
+        self._xray.setProperty("icon_key", "face_xray")
+        self._xray.setToolTip(tr("Keep the current face style transparent and snap through faces."))
+        self._xray.setAccessibleName(tr("X-ray"))
+        self._xray.setFixedSize(28, 28)
+        self._xray.setIconSize(QSize(22, 22))
+        self._xray.toggled.connect(self._apply_edits)
+        face_modes.addWidget(self._xray)
+        face_modes.addStretch(1)
+        self._face_modes.idClicked.connect(self._mode.setCurrentIndex)
+        faces.addLayout(face_modes, 0, 1)
 
         self._edges = QCheckBox(tr("Edges"))
         self._edges.toggled.connect(self._apply_edits)
-        grid.addWidget(self._edges, 2, 0)
-        self._edge_c = self._swatch(tr("Edge color"), "edge_color")
-        grid.addWidget(self._edge_c, 2, 1)
-
+        edges.addWidget(self._edges, 0, 0, 1, 2)
         self._profiles = QCheckBox(tr("Profiles"))
         self._profiles.toggled.connect(self._apply_edits)
-        grid.addWidget(self._profiles, 3, 0)
+        edges.addWidget(self._profiles, 2, 0)
+        self._profile_width = self._edge_pixels(self._profiles, "profile_width", (1, 20))
+        profile_row = QHBoxLayout()
+        profile_row.setSpacing(3)
+        profile_row.addWidget(self._profile_width)
+        self._profile_caps = self._edge_shapes(profile_row, (
+            ("butt", "cap_butt", "Square, flush"),
+            ("round", "cap_round", "Round, flush"),
+            ("square", "cap_square", "Square, overhang: half the width minus 2 px (minimum 0)"),
+            ("round_extended", "cap_round_extended", "Round, extended by half the width")))
+        edges.addLayout(profile_row, 2, 1)
         self._back_edges = QCheckBox(tr("Back edges"))
         self._back_edges.setToolTip(tr(
             "Draw the edges hidden behind faces as dashed lines."))
         self._back_edges.toggled.connect(self._apply_edits)
-        grid.addWidget(self._back_edges, 3, 1)
+        edges.addWidget(self._back_edges, 1, 0, 1, 2)
 
-        grid.addWidget(QLabel(tr("Front color:")), 4, 0)
+        self._depth_cue = QCheckBox(tr("Depth cue"))
+        self._depth_cue.setToolTip(tr(
+            "Set the foreground width in pixels. Distant edges become thinner."))
+        self._depth_cue.toggled.connect(self._apply_edits)
+        edges.addWidget(self._depth_cue, 3, 0)
+        self._depth_cue_width = self._edge_pixels(
+            self._depth_cue, "depth_cue_width", (1, 20))
+        edges.addWidget(self._depth_cue_width, 3, 1, alignment=Qt.AlignLeft)
+
+        self._extensions = QCheckBox(tr("Edge extensions"))
+        self._extensions.setToolTip(tr(
+            "Positive values extend edges; negative values shorten them. Geometry stays unchanged."))
+        self._extensions.toggled.connect(self._apply_edits)
+        edges.addWidget(self._extensions, 4, 0)
+        self._extension_length = self._edge_pixels(
+            self._extensions, "extension_length", (-50, 50))
+        edges.addWidget(self._extension_length, 4, 1, alignment=Qt.AlignLeft)
+
+        self._endpoints = QCheckBox(tr("Endpoints"))
+        self._endpoints.setToolTip(tr("Emphasize edge ends with a stroke or a marker."))
+        self._endpoints.toggled.connect(self._apply_edits)
+        edges.addWidget(self._endpoints, 5, 0)
+        self._endpoint_length = self._edge_pixels(
+            self._endpoints, "endpoint_length", (1, 50))
+        endpoint_row = QHBoxLayout()
+        endpoint_row.setSpacing(3)
+        self._endpoint_size = self._edge_pixels(self._endpoints, "endpoint_size", (1, 50))
+        self._endpoint_size.setToolTip(tr("Marker size in screen pixels, independent of zoom."))
+        self._endpoint_values = QStackedWidget()
+        self._endpoint_values.addWidget(self._endpoint_length)
+        self._endpoint_values.addWidget(self._endpoint_size)
+        endpoint_row.addWidget(self._endpoint_values)
+        self._endpoint_types = self._edge_shapes(endpoint_row, (
+            ("default", "endpoint_default", "Default stroke"),
+            ("round", "endpoint_round", "Round dot"),
+            ("square", "endpoint_square", "Square dot"),
+            ("triangle", "endpoint_triangle", "Triangle")))
+        edges.addLayout(endpoint_row, 5, 1)
+
+        self._dashes = QCheckBox(tr("Layer line"))
+        self._dashes.setToolTip(tr(
+            "Show the line patterns assigned in Layers. Continuous layers stay solid. "
+            "Turn off to draw all layer lines solid; back edges keep their own dashes."))
+        self._dashes.toggled.connect(self._apply_edits)
+        edges.addWidget(self._dashes, 6, 0, 1, 2)
+
+        edges.addWidget(QLabel(tr("Color:")), 7, 0)
+        color_row = QHBoxLayout()
+        self._edge_color_mode = QComboBox()
+        self._edge_color_mode.setToolTip(tr(
+            "Unpainted edges use adjacent face materials (their average color when different). "
+            "Paint an edge to override; open a group to paint its edges."))
+        for key, title in (("same", "All same"), ("material", "By material"),
+                           ("axis", "By axis")):
+            self._edge_color_mode.addItem(tr(title), key)
+        self._edge_color_mode.currentIndexChanged.connect(self._apply_edits)
+        color_row.addWidget(self._edge_color_mode, 1)
+        self._edge_c = self._swatch(tr("Edge color"), "edge_color")
+        self._edge_c.setFixedWidth(28)
+        color_row.addWidget(self._edge_c)
+        edges.addLayout(color_row, 7, 1)
+        self._edge_material_help = self._notice(self._edge_color_mode.toolTip())
+        edges.addWidget(self._edge_material_help, 8, 0, 1, 2)
+
+        faces.addWidget(QLabel(tr("Front color:")), 1, 0)
         self._front_c = self._swatch(
             tr("Front color — paints the faces with no material (every "
                "face in Hidden line and Monochrome)"),
             "front_color")
-        grid.addWidget(self._front_c, 4, 1)
+        faces.addWidget(self._front_c, 1, 1)
 
         # Back color: the tint of faces seen from behind (the
         # inside of a solid, or a reversed face).
-        grid.addWidget(QLabel(tr("Back color:")), 5, 0)
+        faces.addWidget(QLabel(tr("Back color:")), 2, 0)
         self._back_c = self._swatch(
             tr("Back color — paints faces seen from behind"), "back_color")
-        grid.addWidget(self._back_c, 5, 1)
+        faces.addWidget(self._back_c, 2, 1)
 
-        self._sky = QCheckBox(tr("Sky"))
-        self._sky.toggled.connect(self._apply_edits)
-        grid.addWidget(self._sky, 6, 0)
-        self._sky_c = self._swatch(tr("Sky color"), "sky_color")
-        grid.addWidget(self._sky_c, 6, 1)
+        self._material_transparency = QCheckBox(tr("Material transparency"))
+        self._material_transparency.setToolTip(tr(
+            "Display material opacity and transparent textures without changing their paint."))
+        self._material_transparency.toggled.connect(self._apply_edits)
+        faces.addWidget(self._material_transparency, 3, 0, 1, 2)
+        faces.addWidget(QLabel(tr("Transparency quality:")), 4, 0)
+        self._transparency_quality = QComboBox()
+        self._transparency_quality.addItem(tr("Faster"), "faster")
+        self._transparency_quality.addItem(tr("Nicer"), "nicer")
+        self._transparency_quality.setToolTip(tr(
+            "Nicer sorts transparent triangles from back to front. Faster keeps material batches."))
+        self._transparency_quality.currentIndexChanged.connect(self._apply_edits)
+        faces.addWidget(self._transparency_quality, 4, 1)
+        self._xray_label = QLabel(tr("X-ray opacity:"))
+        faces.addWidget(self._xray_label, 5, 0)
+        xray_row = QHBoxLayout()
+        self._xray_slider = QSlider(Qt.Horizontal)
+        self._xray_slider.setRange(20, 80)
+        self._xray_opacity = QSpinBox()
+        self._xray_opacity.setRange(20, 80)
+        self._xray_opacity.setSuffix(" %")
+        self._xray_opacity.setAccessibleName(tr("X-ray opacity:"))
+        self._xray_slider.setAccessibleName(tr("X-ray opacity:"))
+        self._xray_slider.setToolTip(tr("Lower opacity makes X-ray faces more transparent."))
+        self._xray_opacity.setToolTip(self._xray_slider.toolTip())
+        self._xray_slider.valueChanged.connect(self._xray_opacity.setValue)
+        self._xray_opacity.valueChanged.connect(self._xray_slider.setValue)
+        self._xray_opacity.valueChanged.connect(self._apply_edits)
+        xray_row.addWidget(self._xray_slider, 1)
+        xray_row.addWidget(self._xray_opacity)
+        faces.addLayout(xray_row, 5, 1)
 
-        grid.addWidget(QLabel(tr("Ground:")), 7, 0)
-        self._ground_c = self._swatch(tr("Ground color"), "ground_color")
-        grid.addWidget(self._ground_c, 7, 1)
-
-        grid.addWidget(QLabel(tr("Background:")), 8, 0)
+        background.addWidget(QLabel(tr("Background:")), 0, 0)
         self._bg_c = self._swatch(
             tr("Background — visible with the sky off"), "background")
-        grid.addWidget(self._bg_c, 8, 1)
+        background.addWidget(self._bg_c, 0, 1)
+        self._sky = QCheckBox(tr("Sky"))
+        self._sky.toggled.connect(self._apply_edits)
+        background.addWidget(self._sky, 1, 0)
+        self._sky_c = self._swatch(tr("Sky color"), "sky_color")
+        background.addWidget(self._sky_c, 1, 1)
+
+        self._ground = QCheckBox(tr("Ground"))
+        self._ground.toggled.connect(self._apply_edits)
+        background.addWidget(self._ground, 2, 0)
+        self._ground_c = self._swatch(tr("Ground color"), "ground_color")
+        background.addWidget(self._ground_c, 2, 1)
+        self._ground_transparency_label = QLabel(tr("Ground transparency:"))
+        background.addWidget(self._ground_transparency_label, 3, 0)
+        ground_row = QHBoxLayout()
+        self._ground_slider = QSlider(Qt.Horizontal)
+        self._ground_slider.setRange(0, 100)
+        self._ground_transparency = QSpinBox()
+        self._ground_transparency.setRange(0, 100)
+        self._ground_transparency.setSuffix(" %")
+        self._ground_slider.setAccessibleName(tr("Ground transparency:"))
+        self._ground_transparency.setAccessibleName(tr("Ground transparency:"))
+        self._ground_slider.valueChanged.connect(self._ground_transparency.setValue)
+        self._ground_transparency.valueChanged.connect(self._ground_slider.setValue)
+        self._ground_transparency.valueChanged.connect(self._apply_edits)
+        ground_row.addWidget(self._ground_slider, 1)
+        ground_row.addWidget(self._ground_transparency)
+        background.addLayout(ground_row, 3, 1)
+        self._ground_from_below = QCheckBox(tr("Show ground from below"))
+        self._ground_from_below.toggled.connect(self._apply_edits)
+        background.addWidget(self._ground_from_below, 4, 0, 1, 2)
 
         self._fill = QCheckBox(tr("Section Fill"))
         self._fill.toggled.connect(self._apply_edits)
-        grid.addWidget(self._fill, 9, 0)
+        from views.modeling_panel import ModelingPanel
+        self._modeling = ModelingPanel(lambda: self._window.viewport.scene,
+                                       self._modeling_changed, self)
+        modeling.addWidget(self._modeling, 0, 0, 1, 2)
+        modeling.addWidget(self._fill, 1, 0)
         self._fill_c = self._swatch(tr("Section fill color"),
                                     "section_fill_color")
-        grid.addWidget(self._fill_c, 9, 1)
+        modeling.addWidget(self._fill_c, 1, 1)
 
         # Ambient occlusion (#954): off in every preset. The
         # two values only take edits while the switch is on.
@@ -3281,9 +3577,9 @@ class StylesPanel(QWidget):
             "Softly darkens where surfaces meet — corners, the foot of a "
             "wall, under a bench."))
         self._ao.toggled.connect(self._apply_edits)
-        grid.addWidget(self._ao, 10, 0, 1, 2)
+        faces.addWidget(self._ao, 6, 0, 1, 2)
         self._ao_dist_lbl = QLabel()             # its unit: _sync_ao_controls
-        grid.addWidget(self._ao_dist_lbl, 11, 0)
+        faces.addWidget(self._ao_dist_lbl, 7, 0)
         # A slider and its value, like the intensity below, on a log scale:
         # a centimetre matters at the foot of a skirting board, ten metres
         # between two buildings.
@@ -3297,9 +3593,9 @@ class StylesPanel(QWidget):
         self._ao_dist_val = QLabel()
         self._ao_dist_val.setMinimumWidth(28)
         dist_row.addWidget(self._ao_dist_val)
-        grid.addLayout(dist_row, 11, 1)
+        faces.addLayout(dist_row, 7, 1)
         self._ao_int_lbl = QLabel(tr("Intensity:"))
-        grid.addWidget(self._ao_int_lbl, 12, 0)
+        faces.addWidget(self._ao_int_lbl, 8, 0)
         int_row = QHBoxLayout()
         self._ao_int = QSlider(Qt.Horizontal)
         self._ao_int.setRange(0, 20)             # tenths: 0.0 – 2.0
@@ -3308,22 +3604,145 @@ class StylesPanel(QWidget):
         self._ao_int_val = QLabel()
         self._ao_int_val.setMinimumWidth(28)
         int_row.addWidget(self._ao_int_val)
-        grid.addLayout(int_row, 12, 1)
+        faces.addLayout(int_row, 8, 1)
 
-        row = QHBoxLayout()
-        save_btn = QPushButton(tr("Save style…"))
-        save_btn.clicked.connect(self._on_save)
-        row.addWidget(save_btn)
-        self._del_btn = QPushButton(tr("Delete"))
-        self._del_btn.clicked.connect(self._on_delete)
-        row.addWidget(self._del_btn)
-        grid.addLayout(row, 13, 0, 1, 2)
+        from views.watermarks_panel import WatermarksPanel
+        self._watermarks = WatermarksPanel(self._style, self._watermark_changed, self)
+        watermark.addWidget(self._watermarks, 0, 0, 1, 2)
+        for grid in grids:
+            grid.setRowStretch(grid.rowCount(), 1)
+        self._edit_group.idClicked.connect(self._select_category)
+        self._select_category(0)
+        return page
 
-        self.refresh()
+    def _build_mix(self) -> QWidget:
+        from views.style_mix_panel import StyleMixPanel
+
+        self._mix = StyleMixPanel(self._CATEGORIES, self._mix_category, self)
+        return self._mix
+
+    @staticmethod
+    def _notice(text: str) -> QLabel:
+        label = QLabel(text)
+        label.setWordWrap(True)
+        theme_style(label, "color:{muted};")
+        return label
+
+    def _select_category(self, index: int) -> None:
+        self._edit_buttons[index].setChecked(True)
+        self._edit_stack.setCurrentIndex(index)
+        self._category_title.setText(tr(self._CATEGORIES[index][0]))
+
+    def _go_home(self) -> None:
+        self._collection.setCurrentIndex(0)
+
+    def _refresh_library(self, *_args) -> None:
+        from core.style import BUILTIN_STYLES, user_styles
+        from views.style_preview import style_preview
+
+        users = user_styles()
+        collection = self._collection.currentData()
+        # Edits refresh the header frequently. Keep the browser's scroll
+        # position and keyboard focus unless its collection actually changed.
+        key = (collection, tuple(s.to_dict() for s in users))
+        if key != self._library_key:
+            self._library_key = key
+            self._library.clear()
+            if not collection:
+                folder_icon = self.style().standardIcon(QStyle.SP_DirIcon)
+                for folder, title in (("builtin", "Built-in styles"),
+                                      ("user", "My styles")):
+                    item = QListWidgetItem(folder_icon, tr(title))
+                    item.setData(Qt.UserRole, ("folder", folder))
+                    self._library.addItem(item)
+            else:
+                presets = BUILTIN_STYLES if collection == "builtin" else users
+                for preset in presets:
+                    label = tr(preset.name) if collection == "builtin" else preset.name
+                    item = QListWidgetItem(
+                        QIcon(style_preview(preset, QSize(80, 64))), label)
+                    item.setData(Qt.UserRole, ("style", preset.name))
+                    item.setToolTip(label)
+                    self._library.addItem(item)
+
+        self._home.setEnabled(bool(collection))
+        if not collection:
+            hint = tr("Open a collection to browse its styles.")
+        elif collection == "user" and not users:
+            hint = tr("No saved styles yet. Use Save style… to add the current style here.")
+        else:
+            hint = tr("Choose a style to apply it to the model.")
+        self._library_hint.setText(hint)
+        active = self._style()
+        for index in range(self._library.count()):
+            item = self._library.item(index)
+            selected = active is not None and item.data(Qt.UserRole) == ("style", active.name)
+            item.setSelected(selected)
+
+    def _open_library_item(self, item: QListWidgetItem) -> None:
+        kind, value = item.data(Qt.UserRole)
+        if kind == "folder":
+            self._collection.setCurrentIndex(self._collection.findData(value))
+        else:
+            self._on_pick(self._combo.findData(value))
 
     # ---- Plumbing -----------------------------------------------------------
     def _style(self):
         return getattr(self._window.viewport.scene, "display_style", None)
+
+    def _edge_pixels(self, toggle: QCheckBox, attr: str, bounds: tuple) -> QSpinBox:
+        field = QSpinBox()
+        field.setRange(*bounds)
+        field.setSuffix(tr(" px"))
+        field.setAccessibleName(toggle.text())
+        field.setToolTip(tr("Size in screen pixels, independent of zoom."))
+        field.valueChanged.connect(self._apply_edits)
+        return field
+
+    def _edge_shapes(self, layout, choices) -> QButtonGroup:
+        from views.icons import tool_icon
+
+        group = QButtonGroup(self)
+        for index, (value, icon, title) in enumerate(choices):
+            button = QToolButton()
+            button.setCheckable(True)
+            button.setIcon(tool_icon(icon))
+            button.setProperty("icon_key", icon)
+            button.setProperty("shape", value)
+            button.setToolTip(tr(title))
+            button.setAccessibleName(tr(title))
+            button.setFixedSize(26, 26)
+            button.setIconSize(QSize(20, 20))
+            group.addButton(button, index)
+            layout.addWidget(button)
+        group.button(0).setChecked(True)
+        group.buttonClicked.connect(self._apply_edits)
+        layout.addStretch(1)
+        return group
+
+    def _sync_edge_controls(self) -> None:
+        for toggle, field in ((self._profiles, self._profile_width),
+                              (self._depth_cue, self._depth_cue_width),
+                              (self._extensions, self._extension_length),
+                              (self._endpoints, self._endpoint_length)):
+            field.setEnabled(toggle.isChecked())
+        for button in self._profile_caps.buttons():
+            button.setEnabled(self._profiles.isChecked())
+        for button in self._endpoint_types.buttons():
+            button.setEnabled(self._endpoints.isChecked())
+        self._endpoint_size.setEnabled(self._endpoints.isChecked())
+        self._endpoint_values.setCurrentIndex(
+            0 if self._endpoint_types.checkedButton().property("shape") == "default" else 1)
+        self._edge_material_help.setVisible(self._edge_color_mode.currentData() == "material")
+
+    def _sync_face_controls(self) -> None:
+        button = self._face_modes.button(self._mode.currentIndex())
+        if button is not None:
+            button.setChecked(True)
+        self._transparency_quality.setEnabled(self._material_transparency.isChecked())
+        xray = self._xray.isChecked()
+        for widget in (self._xray_label, self._xray_slider, self._xray_opacity):
+            widget.setEnabled(xray)
 
     def _shown_color(self, attr: str):
         """The colour a swatch shows for ``attr``. Back color may be unset
@@ -3336,6 +3755,8 @@ class StylesPanel(QWidget):
 
     def _swatch(self, title: str, attr: str) -> QPushButton:
         btn = QPushButton()
+        btn.setAutoDefault(False)
+        btn.setAccessibleName(title)
         btn.setToolTip(title)
         btn.clicked.connect(lambda: self._pick_color(title, attr))
         return btn
@@ -3349,7 +3770,8 @@ class StylesPanel(QWidget):
     def refresh(self) -> None:
         """Mirror the active style and the user library (called on loads,
         preset applies and saves via ``_sync_style_menu``)."""
-        from core.style import BUILTIN_STYLES, user_styles
+        from core.style import BUILTIN_STYLES, user_styles, base_face_mode, xray_enabled, ground_enabled
+        from views.style_preview import style_preview
         style = self._style()
         users = user_styles()
         self._updating = True
@@ -3363,15 +3785,59 @@ class StylesPanel(QWidget):
                     self._combo.addItem(s.name, s.name)
             if style is None:
                 return
-            # -1 (nothing shown) when the active style matches no entry —
-            # e.g. a document carrying a look that is in no library.
+            # An imported or deleted style still has a name in the model,
+            # even when it is absent from both library collections.
+            if self._combo.findData(style.name) < 0:
+                self._combo.addItem(style.name, style.name)
             self._combo.setCurrentIndex(self._combo.findData(style.name))
+            self._preview.setPixmap(style_preview(style, self._preview.size()))
+            saved = next((s for s in [*BUILTIN_STYLES, *users]
+                          if s.name == style.name), None)
+            mode_label = next(label for key, label in self._MODES
+                              if key == base_face_mode(style))
+            mode_label = tr(mode_label)
+            if xray_enabled(style):
+                mode_label += " · " + tr("X-ray")
+            if saved is None:
+                self._style_hint.setText(tr("Custom style") + " · " + mode_label)
+            elif saved.to_dict() != style.to_dict():
+                self._style_hint.setText(tr("Modified") + " · " + mode_label)
+            else:
+                self._style_hint.setText(mode_label)
             self._mode.setCurrentIndex(
-                self._mode.findData(style.face_mode))
+                self._mode.findData(base_face_mode(style)))
+            self._xray.setChecked(xray_enabled(style))
+            self._material_transparency.setChecked(style.material_transparency)
+            self._transparency_quality.setCurrentIndex(
+                self._transparency_quality.findData(style.transparency_quality))
+            self._xray_opacity.setValue(style.xray_opacity)
+            self._sync_face_controls()
             self._edges.setChecked(style.edges)
             self._profiles.setChecked(style.profiles)
+            self._profile_width.setValue(style.profile_width)
+            for button in self._profile_caps.buttons():
+                button.setChecked(button.property("shape") == style.profile_cap)
+            self._depth_cue.setChecked(style.depth_cue)
+            self._depth_cue_width.setValue(style.depth_cue_width)
+            self._extensions.setChecked(style.extensions)
+            self._extension_length.setValue(style.extension_length)
+            self._endpoints.setChecked(style.endpoints)
+            self._endpoint_length.setValue(style.endpoint_length)
+            self._endpoint_size.setValue(style.endpoint_size)
+            for button in self._endpoint_types.buttons():
+                button.setChecked(button.property("shape") == style.endpoint_type)
+            self._dashes.setChecked(style.dashes)
+            self._edge_color_mode.setCurrentIndex(
+                self._edge_color_mode.findData(style.edge_color_mode))
+            self._sync_edge_controls()
             self._back_edges.setChecked(getattr(style, "back_edges", False))
             self._sky.setChecked(style.sky)
+            self._ground.setChecked(ground_enabled(style))
+            self._ground_transparency.setValue(style.ground_transparency)
+            self._ground_from_below.setChecked(style.ground_from_below)
+            self._sync_background_controls()
+            self._watermarks.refresh()
+            self._modeling.refresh()
             self._fill.setChecked(style.section_fill)
             self._edge_c.setStyleSheet(self._css(style.edge_color))
             self._front_c.setStyleSheet(self._css(style.front_color))
@@ -3389,6 +3855,8 @@ class StylesPanel(QWidget):
             self._sync_ao_controls()
             self._del_btn.setEnabled(
                 any(s.name == self._combo.currentData() for s in users))
+            self._refresh_library()
+            self._mix.refresh()
         finally:
             self._updating = False
 
@@ -3399,6 +3867,8 @@ class StylesPanel(QWidget):
         if picked is None:
             return
         self._window.viewport.scene.display_style = picked
+        from core.modeling_style import apply_modeling_visibility
+        apply_modeling_visibility(self._window.viewport.scene)
         self._window._sync_style_menu()          # menu + this panel
         self._window.viewport.update()
 
@@ -3407,16 +3877,80 @@ class StylesPanel(QWidget):
         if style is None or self._updating:
             return
         style.face_mode = self._mode.currentData()
+        style.xray = self._xray.isChecked()
+        style.material_transparency = self._material_transparency.isChecked()
+        style.transparency_quality = self._transparency_quality.currentData()
+        style.xray_opacity = self._xray_opacity.value()
+        self._sync_face_controls()
         style.edges = self._edges.isChecked()
         style.profiles = self._profiles.isChecked()
+        style.profile_width = self._profile_width.value()
+        style.profile_cap = self._profile_caps.checkedButton().property("shape")
+        style.depth_cue = self._depth_cue.isChecked()
+        style.depth_cue_width = self._depth_cue_width.value()
+        style.extensions = self._extensions.isChecked()
+        style.extension_length = self._extension_length.value()
+        style.endpoints = self._endpoints.isChecked()
+        style.endpoint_length = self._endpoint_length.value()
+        style.endpoint_type = self._endpoint_types.checkedButton().property("shape")
+        style.endpoint_size = self._endpoint_size.value()
+        style.dashes = self._dashes.isChecked()
+        style.edge_color_mode = self._edge_color_mode.currentData()
+        self._sync_edge_controls()
         style.back_edges = self._back_edges.isChecked()
+        from core.style import ground_enabled
+        # Preserve the legacy backdrop until its ground/sky controls change.
+        if (style.ground is not None
+                or self._ground.isChecked() != ground_enabled(style)
+                or self._sky.isChecked() != style.sky
+                or self._ground_transparency.value() != style.ground_transparency
+                or self._ground_from_below.isChecked() != style.ground_from_below):
+            style.ground = self._ground.isChecked()
         style.sky = self._sky.isChecked()
+        style.ground_transparency = self._ground_transparency.value()
+        style.ground_from_below = self._ground_from_below.isChecked()
+        self._sync_background_controls()
         style.section_fill = self._fill.isChecked()
         style.ambient_occlusion = self._ao.isChecked()
         style.ao_intensity = self._ao_int.value() / 10.0
         self._sync_ao_controls()
         self._window._sync_style_menu()
         self._window.viewport.update()
+
+    def _mix_category(self, category, source) -> None:
+        from core.style import builtin_names
+        from core.style_mix import STYLE_CATEGORIES, mix_style_category
+        from core.modeling_style import apply_modeling_visibility
+
+        style = self._style()
+        if style is None:
+            return
+        scene = self._window.viewport.scene
+        scene.display_style = mix_style_category(style, source, category)
+        if category == "modeling":
+            apply_modeling_visibility(scene)
+        self._window._sync_style_menu()
+        self._window.viewport.update()
+        status_bar = getattr(self._window, "statusBar", None)
+        if callable(status_bar):
+            title = self._CATEGORIES[list(STYLE_CATEGORIES).index(category)][0]
+            name = tr(source.name) if source.name in builtin_names() else source.name
+            status_bar().showMessage(tr("Applied {category} from {name}.",
+                                       category=tr(title), name=name), 4000)
+
+    def _modeling_changed(self) -> None:
+        self._window._sync_style_menu()
+        self._window.viewport.update()
+
+    def _watermark_changed(self) -> None:
+        self._window._sync_style_menu()
+        self._window.viewport.update()
+
+    def _sync_background_controls(self) -> None:
+        on = self._ground.isChecked()
+        for widget in (self._ground_transparency_label, self._ground_slider,
+                       self._ground_transparency, self._ground_from_below):
+            widget.setEnabled(on)
 
     _AO_DIST_STEPS = 200
 
@@ -3514,10 +4048,15 @@ class StylesPanel(QWidget):
         if attr == "back_color" and mode in ("hidden_line", "wireframe"):
             return tr("Back color saved — it paints back faces in Textures, "
                       "Shaded, Monochrome and X-ray modes.")
-        if attr == "background" and style.sky:
+        from core.style import ground_enabled
+        if (attr == "background" and style.sky and ground_enabled(style)
+                and style.ground_transparency == 0):
             return tr("Background saved — it shows with the sky off.")
-        if attr in ("sky_color", "ground_color") and not style.sky:
-            return tr("Sky and ground colors show with the sky on.")
+        if attr == "sky_color" and not style.sky:
+            return tr("Sky color is saved; turn on Sky to display it.")
+        if attr == "ground_color":
+            if not ground_enabled(style):
+                return tr("Ground color is saved; turn on Ground to display it.")
         if attr == "edge_color" and not style.edges and mode != "wireframe":
             return tr("Edge color saved — this style has edges off.")
         if attr == "section_fill_color" and not style.section_fill:
@@ -3546,6 +4085,7 @@ class StylesPanel(QWidget):
         style.name = name        # the active style takes the saved identity
         save_user_style(style)
         self._window._sync_style_menu()
+        self._collection.setCurrentIndex(self._collection.findData("user"))
         self._window.statusBar().showMessage(
             tr("Style '{name}' saved.", name=name), 3000)
 

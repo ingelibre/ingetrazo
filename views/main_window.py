@@ -873,14 +873,12 @@ class MainWindow(QMainWindow):
         self.toolbars["layers"] = layers_tb
         self.layers_toolbar = LayersToolbar(self, layers_tb)
 
-        # Styles, Shadows and Dimension style hang OFF THE TOOLBAR as
-        # dropdown panels (user: the lateral bar was drowning, and floating
-        # windows felt loose — "¿no hay forma de integrarlo en el
-        # toolbar?"). Click the button, the panel drops under it; click
-        # outside, it folds away.
+        # Styles stays open in its own window while the user models.
+        # Shadows and Dimension style remain toolbar dropdowns.
         from PySide6.QtWidgets import QToolButton, QWidgetAction
         from views.tray import DimensionStylePanel, ShadowsPanel, StylesPanel
         self.styles_panel = StylesPanel(self)
+        self._styles_window = None
         self.shadows_panel = ShadowsPanel(self)
         self.dimstyle_panel = DimensionStylePanel(self)
         panels_tb = self._new_toolbar(tr("Panels"), "panels_toolbar")
@@ -897,14 +895,18 @@ class MainWindow(QMainWindow):
             btn = QToolButton(panels_tb)
             btn.setIcon(tool_icon(key))
             btn.setToolTip(f"{title}\n{tip}")
-            btn.setPopupMode(QToolButton.InstantPopup)
-            btn.setStyleSheet(
-                "QToolButton::menu-indicator { image: none; }")
-            menu = QMenu(btn)
-            wa = QWidgetAction(menu)
-            wa.setDefaultWidget(panel)
-            menu.addAction(wa)
-            btn.setMenu(menu)
+            if key == "styles":
+                btn.setObjectName("styles_button")
+                btn.clicked.connect(self._on_styles)
+            else:
+                btn.setPopupMode(QToolButton.InstantPopup)
+                btn.setStyleSheet(
+                    "QToolButton::menu-indicator { image: none; }")
+                menu = QMenu(btn)
+                wa = QWidgetAction(menu)
+                wa.setDefaultWidget(panel)
+                menu.addAction(wa)
+                btn.setMenu(menu)
             panels_tb.addWidget(btn)
             self._icon_actions.append((btn, key))
 
@@ -913,6 +915,16 @@ class MainWindow(QMainWindow):
         self.profile_dock = ProfileDock(self)
         self.addDockWidget(Qt.BottomDockWidgetArea, self.profile_dock)
         self.profile_dock.hide()
+
+    def _on_styles(self) -> None:
+        """Open or bring back the same modeless Styles window."""
+        if self._styles_window is None:
+            from views.styles_window import StylesWindow
+            self._styles_window = StylesWindow(self, self.styles_panel)
+        self.styles_panel.refresh()
+        self._styles_window.show()
+        self._styles_window.raise_()
+        self._styles_window.activateWindow()
 
     def _new_toolbar(self, title: str, object_name: str) -> QToolBar:
         """A separate, independently draggable/floatable icons-only toolbar
@@ -1561,8 +1573,8 @@ class MainWindow(QMainWindow):
             self._style_actions[preset.name] = act
         # X-ray on and off with one key: a glance at what hides behind a
         # face, then back to the style you were in.
-        self._style_before_xray = (None, None)
         self._act_xray_toggle = QAction(tr("Toggle X-ray"), self)
+        self._act_xray_toggle.setCheckable(True)
         self._act_xray_toggle.setShortcut(QKeySequence("Alt+X"))
         self._act_xray_toggle.setStatusTip(tr(
             "Switch to X-ray, or back to the style you were in."))
@@ -4214,8 +4226,12 @@ class MainWindow(QMainWindow):
 
     # ---- Sections (section planes) -----------------------------------------
     def _set_section_visibility(self, attr: str, on: bool) -> None:
-        setattr(self.viewport.scene, attr, bool(on))
+        from core.modeling_style import set_modeling_visibility
+        set_modeling_visibility(self.viewport.scene, attr, on)
         self.viewport.update()
+        panel = getattr(self, "styles_panel", None)
+        if panel is not None:
+            panel.refresh()
         browser = getattr(self, "project_browser", None)
         if browser is not None:
             browser.outliner.on_scene_changed()
@@ -4289,6 +4305,8 @@ class MainWindow(QMainWindow):
         if bool(getattr(scene, attr, False)) == bool(on):
             return
         setattr(scene, attr, bool(on))
+        if attr == "show_hidden_geometry":
+            scene.display_style.modeling_visibility[attr] = bool(on)
         if not on:
             # What the view no longer shows cannot stay selected: the ghost
             # group's orange outline outlived the switch (Marco,
@@ -4299,11 +4317,19 @@ class MainWindow(QMainWindow):
         scene.version += 1
         self.viewport.update()
 
+        panel = getattr(self, "styles_panel", None)
+        if panel is not None:
+            panel.refresh()
+
     def _set_show_axes(self, on: bool) -> None:
         """Camera ▸ Axes: a scene flag (it travels in the document) and a
         repaint; nothing else depends on the axes being drawn."""
-        self.viewport.scene.show_axes = bool(on)
+        from core.modeling_style import set_modeling_visibility
+        set_modeling_visibility(self.viewport.scene, "show_axes", on)
         self.viewport.update()
+        panel = getattr(self, "styles_panel", None)
+        if panel is not None:
+            panel.refresh()
 
     def prompt_section_name(self, plane) -> None:
         """The post-placement prompt: name + symbol (cancel keeps
@@ -4379,34 +4405,29 @@ class MainWindow(QMainWindow):
     def _apply_display_style(self, preset) -> None:
         """Activate a built-in style (a COPY — presets stay pristine)."""
         self.viewport.scene.display_style = preset.copy()
+        from core.modeling_style import apply_modeling_visibility
+        apply_modeling_visibility(self.viewport.scene)
         self._sync_style_menu()
         self.viewport.update()
         self.statusBar().showMessage(
             tr("Style: {name}", name=tr(preset.name)), 2000)
 
     def _toggle_xray(self) -> None:
-        """Alt+X: into X-ray, remembering the style you leave; out of it,
-        back to that style — or to Default when there is none to go back to
-        (X-ray picked from the menu, or another document since)."""
-        from core.style import style_by_name
+        """Toggle X-ray while preserving edits to the active display style."""
+        from core.style import Style, base_face_mode, xray_enabled
         scene = self.viewport.scene
-        style = getattr(scene, "display_style", None)
-        if style is not None and style.face_mode == "xray":
-            prev_scene, prev = self._style_before_xray
-            self._style_before_xray = (None, None)
-            if prev_scene is not scene or prev is None:
-                prev = style_by_name("Default")
-            self._apply_display_style(prev)
-        else:
-            self._style_before_xray = (
-                scene, style.copy() if style is not None else None)
-            self._apply_display_style(style_by_name("X-ray"))
+        style = getattr(scene, "display_style", None) or Style()
+        updated = style.copy()
+        updated.face_mode = base_face_mode(style)
+        updated.xray = not xray_enabled(style)
+        self._apply_display_style(updated)
 
     def _set_style_field(self, name: str, value: bool) -> None:
         style = getattr(self.viewport.scene, "display_style", None)
         if style is None or getattr(style, name) == bool(value):
             return
         setattr(style, name, bool(value))
+        self._sync_style_menu()
         self.viewport.update()
         browser = getattr(self, "project_browser", None)
         if browser is not None and name == "section_fill":
@@ -4414,7 +4435,12 @@ class MainWindow(QMainWindow):
 
     def _sync_style_menu(self) -> None:
         """Reflect the scene's active style in the menu (loads, scene recall)."""
+        if getattr(self, "_act_show_splanes", None) is not None:
+            self._sync_section_menu()
+        from core.style import xray_enabled
         style = getattr(self.viewport.scene, "display_style", None)
+        if getattr(self, "_act_xray_toggle", None) is not None:
+            self._act_xray_toggle.setChecked(xray_enabled(style))
         if style is None:
             return
         for name, act in self._style_actions.items():
