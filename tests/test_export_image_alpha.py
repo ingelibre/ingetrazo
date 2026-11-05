@@ -271,3 +271,82 @@ def test_the_new_texts_are_translated():
     data = json.loads((i18n._I18N_DIR / "es.json").read_text(encoding="utf-8"))
     assert data["Transparent background"] == "Fondo transparente"
     assert "PNG" in data["Only PNG images keep transparency."]
+
+
+# ---- Glass in Monochrome: it used to vanish (a colour) or wall off what is
+# behind it in white (a texture); it now shows, translucent and grey.
+
+
+def _grey(c):
+    return c.red() == c.green() == c.blue()
+
+
+def test_monochrome_glass_is_translucent_and_neutral(view):
+    _win, vp, folder = view
+    img = _saved(vp, folder, "Monochrome")
+    solid = _at(vp, img, "solid")
+    glass = _at(vp, img, "glass")
+    double = _at(vp, img, "double")
+    assert solid.getRgb()[:3] == (255, 255, 255)
+    assert _at(vp, img, "background").getRgb()[:3] == (255, 255, 255)
+    assert _grey(glass) and glass.red() == pytest.approx(217, abs=2)
+    assert _grey(double) and double.red() < glass.red()
+    for zone in ("glass_on_solid", "tex_on_solid"):
+        over = _at(vp, img, zone)
+        assert _grey(over) and over.red() == pytest.approx(217, abs=2), zone
+
+
+def test_a_textured_pane_lets_the_model_through_in_monochrome(view):
+    """Its edges behind it read through: the solid's lower edge, a dark line
+    across the pane, is what a white wall hid."""
+    _win, vp, folder = view
+    img = _saved(vp, folder, "Monochrome")
+    x, y0 = vp._world_to_pixel(V(4, 0, 0))
+    scale = WIDTH / vp.width()
+    tones = [img.pixelColor(int(x * scale), int(y0 * scale) + d).red()
+             for d in range(-3, 4)]
+    assert min(tones) < 190, tones
+
+
+def test_monochrome_glass_on_a_transparent_background(view):
+    _win, vp, folder = view
+    img = _saved(vp, folder, "Monochrome", transparent=True)
+    glass = _at(vp, img, "glass")
+    assert glass.alpha() == pytest.approx(76, abs=2)
+    assert _grey(glass) and glass.red() == pytest.approx(127, abs=2)
+
+
+def test_the_glass_of_another_mode_keeps_its_colour(view):
+    _win, vp, folder = view
+    glass = _at(vp, _saved(vp, folder, "Shaded"), "glass")
+    assert glass.blue() > glass.red() + 15
+
+
+def test_hidden_line_leaves_the_glass_as_it_was(view):
+    """Not asked for: the plan style still ignores the colour runs."""
+    _win, vp, folder = view
+    assert _at(vp, _saved(vp, folder, "Hidden line"),
+               "glass").getRgb()[:3] == (255, 255, 255)
+
+
+def test_one_constant_gives_the_real_colour_back(view, monkeypatch):
+    """The open decision (grey or the real colour) is this one value."""
+    import views.viewport as viewport
+    monkeypatch.setattr(viewport, "MONOCHROME_GLASS_RGB", None)
+    _win, vp, folder = view
+    img = _saved(vp, folder, "Monochrome")
+    glass = _at(vp, img, "glass")
+    assert glass.blue() > glass.red() + 15
+    tex = _at(vp, img, "tex_on_solid")
+    assert tex.blue() > tex.red() + 15
+
+
+def test_a_pane_seen_from_behind_is_the_same_grey(view):
+    """Glass reads the same from both sides, not in the back tint."""
+    _win, vp, folder = view
+    vp.camera.yaw = 1.5707963
+    img = _saved(vp, folder, "Monochrome")
+    x, y = vp._world_to_pixel(ZONES["glass"])
+    scale = WIDTH / vp.width()
+    c = img.pixelColor(int(x * scale), int(y * scale))
+    assert _grey(c) and c.red() == pytest.approx(217, abs=2)

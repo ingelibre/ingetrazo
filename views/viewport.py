@@ -126,6 +126,7 @@ from core.mesh import Edge, Face
 from core.history import EraseSelectionCommand, History
 from core.scene import Scene
 from core.style import (DEFAULT_BACK_COLOR, DEFAULT_FACE_COLOR,
+                        MONOCHROME_GLASS_RGB,
                         effective_back_color)
 from core.materials import material_sig as _material_sig
 from core.snap import SnapResult, _AXIS_VECTORS
@@ -2858,7 +2859,14 @@ class Viewport(QOpenGLWidget):
             fr = style.front_color
             self._set_color(fr[0], fr[1], fr[2], 1.0)
             self._tex_faces_vao.bind()
-            self._gl.glDrawArrays(GL_TRIANGLES, 0, self._tex_faces_count)
+            if mode == "monochrome":
+                # Not its translucent runs: they draw with the glass below,
+                # or a textured pane came out as a white wall.
+                self._gl.glDrawArrays(GL_TRIANGLES, 0, self._tex_opaque_count)
+                for _key, start, count in self._back_tex_runs:
+                    self._gl.glDrawArrays(GL_TRIANGLES, start, count)
+            else:
+                self._gl.glDrawArrays(GL_TRIANGLES, 0, self._tex_faces_count)
             self._tex_faces_vao.release()
             self._gl.glDisable(GL_POLYGON_OFFSET_FILL)
         elif self._tex_faces_count > 0 and mode == "shaded":
@@ -3036,15 +3044,25 @@ class Viewport(QOpenGLWidget):
         # written, so glass/mesh screens show what's behind them.
         if (self._tcol_runs or self._ttex_runs
                 or self._back_tcol_runs or self._back_ttex_runs) \
-                and mode in ("textures", "shaded", "xray"):
+                and mode in ("textures", "shaded", "xray", "monochrome"):
             self._gl.glDepthMask(GL_FALSE)
             self._gl.glEnable(GL_POLYGON_OFFSET_FILL)
             self._gl.glPolygonOffset(1.0, 1.0)
+            # Monochrome: one flat tone on both sides at each run's opacity,
+            # instead of the run's own colour or texture.
+            flat = MONOCHROME_GLASS_RGB if mode == "monochrome" else None
+
+            def run_opacity(a):
+                self._program.setUniformValue1f(self._loc_opacity, float(a))
+                if flat is not None:
+                    self._set_color(*flat, float(a))
+
             if self._tcol_runs or self._back_tcol_runs:
-                self._program.setUniformValue(self._loc_use_vcolor, 1)
+                self._program.setUniformValue(self._loc_use_vcolor,
+                                              0 if flat is not None else 1)
                 self._faces_vao.bind()
                 for a, fc, start, count in self._tcol_runs:
-                    self._program.setUniformValue1f(self._loc_opacity, float(a))
+                    run_opacity(a)
                     if fc:
                         # glass-backed front copy: front side only
                         self._gl.glEnable(GL_CULL_FACE)
@@ -3057,40 +3075,49 @@ class Viewport(QOpenGLWidget):
                     self._gl.glEnable(GL_CULL_FACE)
                     self._gl.glCullFace(GL_FRONT)
                     for a, start, count in self._back_tcol_runs:
-                        self._program.setUniformValue1f(self._loc_opacity, float(a))
+                        run_opacity(a)
                         self._gl.glDrawArrays(GL_TRIANGLES, start, count)
                     self._gl.glDisable(GL_CULL_FACE)
                 self._faces_vao.release()
                 self._program.setUniformValue(self._loc_use_vcolor, 0)
             if self._ttex_runs or self._back_ttex_runs:
-                self._program.setUniformValue(self._loc_use_tex, 1)
+                self._program.setUniformValue(self._loc_use_tex,
+                                              0 if flat is not None else 1)
                 self._tex_faces_vao.bind()
                 for (path, shade), a, fc, start, count in self._ttex_runs:
-                    tex = self._get_texture(path)
-                    if tex is None:
+                    tex = None if flat is not None else self._get_texture(path)
+                    if tex is None and flat is None:
                         continue
-                    self._program.setUniformValue1f(self._loc_opacity, float(a))
-                    self._program.setUniformValue1f(self._loc_shade, float(shade))
+                    run_opacity(a)
+                    self._program.setUniformValue1f(
+                        self._loc_shade, 1.0 if flat is not None else float(shade))
                     if fc:
                         self._gl.glEnable(GL_CULL_FACE)
                         self._gl.glCullFace(GL_BACK)
-                    tex.bind(0)
+                    if tex is not None:
+                        tex.bind(0)
                     self._gl.glDrawArrays(GL_TRIANGLES, start, count)
-                    tex.release(0)
+                    if tex is not None:
+                        tex.release(0)
                     if fc:
                         self._gl.glDisable(GL_CULL_FACE)
                 if self._back_ttex_runs:
                     self._gl.glEnable(GL_CULL_FACE)
                     self._gl.glCullFace(GL_FRONT)
                     for (path, shade), a, start, count in self._back_ttex_runs:
-                        tex = self._get_texture(path)
-                        if tex is None:
+                        tex = (None if flat is not None
+                               else self._get_texture(path))
+                        if tex is None and flat is None:
                             continue
-                        self._program.setUniformValue1f(self._loc_opacity, float(a))
-                        self._program.setUniformValue1f(self._loc_shade, float(shade))
-                        tex.bind(0)
+                        run_opacity(a)
+                        self._program.setUniformValue1f(
+                            self._loc_shade,
+                            1.0 if flat is not None else float(shade))
+                        if tex is not None:
+                            tex.bind(0)
                         self._gl.glDrawArrays(GL_TRIANGLES, start, count)
-                        tex.release(0)
+                        if tex is not None:
+                            tex.release(0)
                     self._gl.glDisable(GL_CULL_FACE)
                 self._tex_faces_vao.release()
                 self._program.setUniformValue1f(self._loc_shade, 1.0)
