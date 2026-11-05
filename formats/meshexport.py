@@ -439,13 +439,29 @@ def corner_normals(face, smoother: SmoothNormals | None = None) -> dict:
     return (smoother or SmoothNormals()).corners(face)
 
 
+def _worn_outright(attrs: dict) -> dict:
+    """The attrs a one-material copy of the face goes out with: what its front
+    shows, or its back's own material when the front shows nothing. A face
+    turned inside out and painted on the side you see has only a back; left
+    to the front it renders in the default colour, the paint gone. The front
+    wins whenever it shows anything, own or a container's paint (``attrs`` is
+    already :func:`_shown`): the viewport draws that on the front too, and
+    a room painted from inside must not change the walls' outside."""
+    from core.materials import has_own_material
+    back = attrs.get("back")
+    if (isinstance(back, dict) and has_own_material(back)
+            and not has_own_material(attrs)):
+        return back
+    return attrs
+
+
 def _add_face(face, materials, prims, attrs=None, smoother=None) -> None:
     """One face's triangles into ``prims`` under its material's key, each
     corner with its normal: the face's own, or the surface's at a corner on
     a soft edge (:class:`SmoothNormals`). ``attrs`` is what the face shows
     (:func:`world_faces_painted`), its own by default."""
     from core.texture import affine_uv, planar_uv
-    attrs = face.attrs if attrs is None else attrs
+    attrs = _worn_outright(face.attrs if attrs is None else attrs)
     smoother = smoother or SmoothNormals()
     n = smoother.flat(face)
     smooth = smoother.corners(face)

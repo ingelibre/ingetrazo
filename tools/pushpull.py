@@ -1237,6 +1237,19 @@ class PushPullTool(Tool):
             # On a level: valid at exactly this distance, nothing to slide.
             self._stage_lo = self._stage_hi = d
         else:
+            # No movers is right for a through punch (no cap, the same result
+            # at any depth). But a base out of true by more than the tolerance
+            # has a cap whose corners all miss the plane: nothing would slide,
+            # and every distance would commit this frame's, the value typed
+            # silently ignored. New vertices within the base's own spread of
+            # the plane tell that cap from a punch.
+            if not movers:
+                spread = max((abs(QVector3D.dotProduct(p - anchor, n))
+                              for p in self._cap_positions), default=0.0)
+                if any(abs(QVector3D.dotProduct(v.position - anchor, n) - d)
+                       <= spread + _STITCH_TOL
+                       for v in mesh.vertices if v not in snap["vpos"]):
+                    return False
             rates = [self._slide_rate(anchored[v], n) for v in movers]
             if any(r is None for r in rates):
                 return False              # a face it drags would bend
