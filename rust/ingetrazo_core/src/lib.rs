@@ -429,6 +429,14 @@ fn segment_distances<'py>(py: Python<'py>, ax: PyReadonlyArray1<'py, f64>,
     Ok(PyArray1::from_vec(py, out))
 }
 
+/// ``flat`` (3 values a row) as an (N,3) array, without a Vec per row: making
+/// those was most of what a big mesh held the interpreter for (#1092).
+fn flat3<'py, T: numpy::Element>(py: Python<'py>, flat: Vec<T>) -> PyResult<Bound<'py, PyArray2<T>>> {
+    let n = flat.len() / 3;
+    use numpy::PyArrayMethods;
+    PyArray1::from_vec(py, flat).reshape([n, 3])
+}
+
 /// QVector3D's own arithmetic on each row of ``v`` (N,3) float32, for the
 /// start-up check that ``hypot`` is this Qt's: ``(length (N,), normalized
 /// (N,3), plane u (N,3), plane v (N,3))`` — core.triangulate.plane_axes.
@@ -442,18 +450,23 @@ fn qt_vector_probe<'py>(
     let h = hypot_of(hypot)?;
     let v = v.as_array();
     let n = v.shape()[0];
-    let (mut ln, mut nz, mut pu, mut pv) = (Vec::with_capacity(n), Vec::new(), Vec::new(), Vec::new());
-    for i in 0..n {
-        let x = facegeom::V3(v[[i, 0]], v[[i, 1]], v[[i, 2]]);
-        ln.push(facegeom::length(x, h));
-        let m = facegeom::normalized(x, h);
-        nz.push(vec![m.0, m.1, m.2]);
-        let (a, b) = facegeom::plane_axes(x, h);
-        pu.push(vec![a.0, a.1, a.2]);
-        pv.push(vec![b.0, b.1, b.2]);
-    }
-    Ok((PyArray1::from_vec(py, ln), PyArray2::from_vec2(py, &nz)?,
-        PyArray2::from_vec2(py, &pu)?, PyArray2::from_vec2(py, &pv)?))
+    // With the interpreter let go: the bakes of a big model run side by side,
+    // one of these for each (#1092).
+    let (ln, nz, pu, pv) = py.detach(|| {
+        let mut ln = Vec::with_capacity(n);
+        let (mut nz, mut pu, mut pv) = (Vec::with_capacity(3 * n), Vec::with_capacity(3 * n), Vec::with_capacity(3 * n));
+        for i in 0..n {
+            let x = facegeom::V3(v[[i, 0]], v[[i, 1]], v[[i, 2]]);
+            ln.push(facegeom::length(x, h));
+            let m = facegeom::normalized(x, h);
+            nz.extend_from_slice(&[m.0, m.1, m.2]);
+            let (a, b) = facegeom::plane_axes(x, h);
+            pu.extend_from_slice(&[a.0, a.1, a.2]);
+            pv.extend_from_slice(&[b.0, b.1, b.2]);
+        }
+        (ln, nz, pu, pv)
+    });
+    Ok((PyArray1::from_vec(py, ln), flat3(py, nz)?, flat3(py, pu)?, flat3(py, pv)?))
 }
 
 /// views.viewport._face_geometry for every face of a mesh given as arrays:
@@ -482,86 +495,78 @@ fn face_geometry<'py>(
     use rayon::prelude::*;
     let h = hypot_of(hypot)?;
     let p = pos.as_array();
-    let pts: Vec<facegeom::V3> = (0..p.shape()[0])
-        .map(|i| facegeom::V3(p[[i, 0]], p[[i, 1]], p[[i, 2]])).collect();
-    let nv = pts.len() as i64;
-    let corners: Vec<u32> = corners.as_array().iter().map(|&c| {
-        if c < 0 || c >= nv { u32::MAX } else { c as u32 }
-    }).collect();
-    if corners.iter().any(|&c| c == u32::MAX) {
-        return Err(pyo3::exceptions::PyValueError::new_err("corner out of range"));
-    }
-    let sizes = ring_sizes.as_array().to_vec();
-    let counts = ring_counts.as_array().to_vec();
-    // Each face's first ring, and each ring's first corner.
-    let mut ring_start = Vec::with_capacity(sizes.len() + 1);
-    let mut acc = 0usize;
-    for &s in &sizes {
+    let corners = corners.as_array();
+    let sizes = ring_sizes.as_array();
+    let counts = ring_counts.as_array();
+    let done = py.detach(|| -> Result<_, &'static str> {
+        let pts: Vec<facegeom::V3> = (0..p.shape()[0])
+            .map(|i| facegeom::V3(p[[i, 0]], p[[i, 1]], p[[i, 2]])).collect();
+        let nv = pts.len() as i64;
+        let corners: Vec<u32> = corners.iter().map(|&c| {
+            if c < 0 || c >= nv { u32::MAX } else { c as u32 }
+        }).collect();
+        if corners.iter().any(|&c| c == u32::MAX) {
+            return Err("corner out of range");
+        }
+        // Each face's first ring, and each ring's first corner.
+        let mut ring_start = Vec::with_capacity(sizes.len() + 1);
+        let mut acc = 0usize;
+        for &s in sizes.iter() {
+            ring_start.push(acc);
+            acc += s as usize;
+        }
         ring_start.push(acc);
-        acc += s as usize;
-    }
-    ring_start.push(acc);
-    if acc != corners.len() {
-        return Err(pyo3::exceptions::PyValueError::new_err("ring sizes"));
-    }
-    let mut face_ring = Vec::with_capacity(counts.len() + 1);
-    let mut r = 0usize;
-    for &c in &counts {
+        if acc != corners.len() {
+            return Err("ring sizes");
+        }
+        let mut face_ring = Vec::with_capacity(counts.len() + 1);
+        let mut r = 0usize;
+        for &c in counts.iter() {
+            face_ring.push(r);
+            r += c as usize;
+        }
         face_ring.push(r);
-        r += c as usize;
-    }
-    face_ring.push(r);
-    if r != sizes.len() {
-        return Err(pyo3::exceptions::PyValueError::new_err("ring counts"));
-    }
-    let geoms: Vec<facegeom::FaceGeom> = py.detach(|| {
-        (0..counts.len()).into_par_iter().map(|f| {
+        if r != sizes.len() {
+            return Err("ring counts");
+        }
+        let geoms: Vec<facegeom::FaceGeom> = (0..counts.len()).into_par_iter().map(|f| {
             let rings: Vec<&[u32]> = (face_ring[f]..face_ring[f + 1])
                 .map(|k| &corners[ring_start[k]..ring_start[k + 1]]).collect();
             facegeom::face_geometry(&pts, &rings, h, compensated_sum)
-        }).collect()
+        }).collect();
+        let nf = geoms.len();
+        let mut normal = Vec::with_capacity(3 * nf);
+        let mut ln = Vec::with_capacity(nf);
+        let mut cen = Vec::with_capacity(3 * nf);
+        let mut tris = Vec::new();
+        let mut tri_face = Vec::new();
+        let mut unit = Vec::with_capacity(3 * nf);
+        let mut tris_u = Vec::new();
+        let mut tri_face_u = Vec::new();
+        for (f, g) in geoms.into_iter().enumerate() {
+            unit.extend_from_slice(&[g.unit.0, g.unit.1, g.unit.2]);
+            for t in g.tris_unit.as_ref().unwrap_or(&g.tris) {
+                tris_u.extend_from_slice(&t[..]);
+                tri_face_u.push(f as u32);
+            }
+            normal.extend_from_slice(&[g.normal.0, g.normal.1, g.normal.2]);
+            ln.push(g.ln);
+            match g.centroid {
+                Some(c) => cen.extend_from_slice(&[c.0, c.1, c.2]),
+                None => cen.extend_from_slice(&[f32::NAN; 3]),
+            }
+            for t in g.tris {
+                tris.extend_from_slice(&t[..]);
+                tri_face.push(f as u32);
+            }
+        }
+        Ok((normal, ln, cen, tris, tri_face, unit, tris_u, tri_face_u))
     });
-    let nf = geoms.len();
-    let mut normal = Vec::with_capacity(nf);
-    let mut ln = Vec::with_capacity(nf);
-    let mut cen = Vec::with_capacity(nf);
-    let mut tris = Vec::new();
-    let mut tri_face = Vec::new();
-    let mut unit = Vec::with_capacity(nf);
-    let mut tris_u = Vec::new();
-    let mut tri_face_u = Vec::new();
-    for (f, g) in geoms.into_iter().enumerate() {
-        unit.push(vec![g.unit.0, g.unit.1, g.unit.2]);
-        for t in g.tris_unit.as_ref().unwrap_or(&g.tris) {
-            tris_u.push(t.to_vec());
-            tri_face_u.push(f as u32);
-        }
-        normal.push(vec![g.normal.0, g.normal.1, g.normal.2]);
-        ln.push(g.ln);
-        cen.push(match g.centroid {
-            Some(c) => vec![c.0, c.1, c.2],
-            None => vec![f32::NAN; 3],
-        });
-        for t in g.tris {
-            tris.push(t.to_vec());
-            tri_face.push(f as u32);
-        }
-    }
-    let tris_arr = if tris.is_empty() {
-        PyArray2::zeros(py, [0, 3], false)
-    } else {
-        PyArray2::from_vec2(py, &tris)?
-    };
-    let normal_arr = if nf == 0 { PyArray2::zeros(py, [0, 3], false) } else { PyArray2::from_vec2(py, &normal)? };
-    let cen_arr = if nf == 0 { PyArray2::zeros(py, [0, 3], false) } else { PyArray2::from_vec2(py, &cen)? };
-    let unit_arr = if nf == 0 { PyArray2::zeros(py, [0, 3], false) } else { PyArray2::from_vec2(py, &unit)? };
-    let tris_u_arr = if tris_u.is_empty() {
-        PyArray2::zeros(py, [0, 3], false)
-    } else {
-        PyArray2::from_vec2(py, &tris_u)?
-    };
-    Ok((normal_arr, PyArray1::from_vec(py, ln), cen_arr, tris_arr, PyArray1::from_vec(py, tri_face),
-        unit_arr, tris_u_arr, PyArray1::from_vec(py, tri_face_u)))
+    let (normal, ln, cen, tris, tri_face, unit, tris_u, tri_face_u) =
+        done.map_err(pyo3::exceptions::PyValueError::new_err)?;
+    Ok((flat3(py, normal)?, PyArray1::from_vec(py, ln), flat3(py, cen)?, flat3(py, tris)?,
+        PyArray1::from_vec(py, tri_face), flat3(py, unit)?, flat3(py, tris_u)?,
+        PyArray1::from_vec(py, tri_face_u)))
 }
 
 /// core.lazy_mesh.weld (Mesh.bulk_weld on an empty mesh): ``pos`` (N,3)
@@ -577,11 +582,13 @@ fn weld_points<'py>(
 ) -> PyResult<(Bound<'py, PyArray2<f32>>, Bound<'py, PyArray1<i64>>,
                Bound<'py, PyArray1<i64>>)> {
     let p = pos.as_array();
-    let pts: Vec<[f32; 3]> = (0..p.shape()[0]).map(|i| [p[[i, 0]], p[[i, 1]], p[[i, 2]]]).collect();
-    let (vpos, ids, origin) = py.detach(|| weld::weld(&pts, scale, tol2));
-    let rows: Vec<Vec<f32>> = vpos.iter().map(|v| v.to_vec()).collect();
-    let arr = if rows.is_empty() { PyArray2::zeros(py, [0, 3], false) } else { PyArray2::from_vec2(py, &rows)? };
-    Ok((arr, PyArray1::from_vec(py, ids), PyArray1::from_vec(py, origin)))
+    let (flat, ids, origin) = py.detach(|| {
+        let pts: Vec<[f32; 3]> = (0..p.shape()[0]).map(|i| [p[[i, 0]], p[[i, 1]], p[[i, 2]]]).collect();
+        let (vpos, ids, origin) = weld::weld(&pts, scale, tol2);
+        let flat: Vec<f32> = vpos.iter().flatten().copied().collect();
+        (flat, ids, origin)
+    });
+    Ok((flat3(py, flat)?, PyArray1::from_vec(py, ids), PyArray1::from_vec(py, origin)))
 }
 
 /// A recorded run of OpenGL calls, replayed through the current context's
