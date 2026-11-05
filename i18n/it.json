@@ -3369,5 +3369,10 @@
  "Inactive section": "Sezione inattiva",
  "Model axes": "Assi del modello",
  "Section cut width:": "Spessore del taglio:",
- "Section cuts": "Linee di taglio"
+ "Section cuts": "Linee di taglio",
+ "Applied {category} from {name}.": "{category} applicate da {name}.",
+ "Choose a source style below, then click a category or drag the style onto it.": "Scegli uno stile di origine qui sotto, poi fai clic su una categoria o trascina lo stile su di essa.",
+ "Select a source style.": "Seleziona uno stile di origine.",
+ "Source style: {name}": "Stile di origine: {name}",
+ "Source styles": "Stili di origine"
 }

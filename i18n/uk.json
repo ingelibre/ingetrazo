@@ -3383,5 +3383,10 @@
  "Inactive section": "Неактивний переріз",
  "Model axes": "Осі моделі",
  "Section cut width:": "Товщина ліній перерізу:",
- "Section cuts": "Лінії перерізу"
+ "Section cuts": "Лінії перерізу",
+ "Applied {category} from {name}.": "{category} застосовано зі стилю {name}.",
+ "Choose a source style below, then click a category or drag the style onto it.": "Виберіть вихідний стиль нижче, потім натисніть категорію або перетягніть на неї стиль.",
+ "Select a source style.": "Виберіть вихідний стиль.",
+ "Source style: {name}": "Вихідний стиль: {name}",
+ "Source styles": "Вихідні стилі"
 }

@@ -3368,5 +3368,10 @@
  "Inactive section": "비활성 단면",
  "Model axes": "모델 축",
  "Section cut width:": "단면선 두께:",
- "Section cuts": "단면선"
+ "Section cuts": "단면선",
+ "Applied {category} from {name}.": "{name}에서 {category} 설정을 적용했습니다.",
+ "Choose a source style below, then click a category or drag the style onto it.": "아래에서 원본 스타일을 선택한 다음 범주를 클릭하거나 스타일을 범주로 드래그하세요.",
+ "Select a source style.": "원본 스타일을 선택하세요.",
+ "Source style: {name}": "원본 스타일: {name}",
+ "Source styles": "원본 스타일"
 }

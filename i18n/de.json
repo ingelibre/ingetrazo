@@ -3368,5 +3368,10 @@
  "Inactive section": "Inaktiver Schnitt",
  "Model axes": "Modellachsen",
  "Section cut width:": "Schnittlinienbreite:",
- "Section cuts": "Schnittlinien"
+ "Section cuts": "Schnittlinien",
+ "Applied {category} from {name}.": "{category} aus {name} übernommen.",
+ "Choose a source style below, then click a category or drag the style onto it.": "Wählen Sie unten einen Quellstil und klicken Sie auf eine Kategorie oder ziehen Sie den Stil darauf.",
+ "Select a source style.": "Wählen Sie einen Quellstil.",
+ "Source style: {name}": "Quellstil: {name}",
+ "Source styles": "Quellstile"
 }

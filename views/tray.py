@@ -3616,24 +3616,10 @@ class StylesPanel(QWidget):
         return page
 
     def _build_mix(self) -> QWidget:
-        from views.icons import tool_icon
+        from views.style_mix_panel import StyleMixPanel
 
-        page = QWidget()
-        layout = QVBoxLayout(page)
-        layout.setContentsMargins(8, 10, 8, 8)
-        layout.addWidget(self._notice(tr(
-            "Combine settings from different styles. Mixing styles is not available yet.")))
-        for title, key in self._CATEGORIES:
-            row = QToolButton()
-            row.setText(tr(title))
-            row.setIcon(tool_icon(key))
-            row.setProperty("icon_key", key)
-            row.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
-            row.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-            row.setEnabled(False)
-            layout.addWidget(row)
-        layout.addStretch(1)
-        return page
+        self._mix = StyleMixPanel(self._CATEGORIES, self._mix_category, self)
+        return self._mix
 
     @staticmethod
     def _notice(text: str) -> QLabel:
@@ -3870,6 +3856,7 @@ class StylesPanel(QWidget):
             self._del_btn.setEnabled(
                 any(s.name == self._combo.currentData() for s in users))
             self._refresh_library()
+            self._mix.refresh()
         finally:
             self._updating = False
 
@@ -3929,6 +3916,27 @@ class StylesPanel(QWidget):
         self._sync_ao_controls()
         self._window._sync_style_menu()
         self._window.viewport.update()
+
+    def _mix_category(self, category, source) -> None:
+        from core.style import builtin_names
+        from core.style_mix import STYLE_CATEGORIES, mix_style_category
+        from core.modeling_style import apply_modeling_visibility
+
+        style = self._style()
+        if style is None:
+            return
+        scene = self._window.viewport.scene
+        scene.display_style = mix_style_category(style, source, category)
+        if category == "modeling":
+            apply_modeling_visibility(scene)
+        self._window._sync_style_menu()
+        self._window.viewport.update()
+        status_bar = getattr(self._window, "statusBar", None)
+        if callable(status_bar):
+            title = self._CATEGORIES[list(STYLE_CATEGORIES).index(category)][0]
+            name = tr(source.name) if source.name in builtin_names() else source.name
+            status_bar().showMessage(tr("Applied {category} from {name}.",
+                                       category=tr(title), name=name), 4000)
 
     def _modeling_changed(self) -> None:
         self._window._sync_style_menu()

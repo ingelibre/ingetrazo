@@ -3376,5 +3376,10 @@
  "Inactive section": "Nieaktywny przekrój",
  "Model axes": "Osie modelu",
  "Section cut width:": "Grubość linii przekroju:",
- "Section cuts": "Linie przekroju"
+ "Section cuts": "Linie przekroju",
+ "Applied {category} from {name}.": "Zastosowano {category} ze stylu {name}.",
+ "Choose a source style below, then click a category or drag the style onto it.": "Wybierz poniżej styl źródłowy, a następnie kliknij kategorię lub przeciągnij na nią styl.",
+ "Select a source style.": "Wybierz styl źródłowy.",
+ "Source style: {name}": "Styl źródłowy: {name}",
+ "Source styles": "Style źródłowe"
 }

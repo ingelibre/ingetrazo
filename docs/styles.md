@@ -4,6 +4,25 @@ Open **Styles** from the Panels toolbar. The window stays open while you work in
 Use **Select** to browse Built-in styles or My styles, and **Edit** to adjust the current look.
 Changes appear immediately; **Save style…** stores a reusable copy in My styles.
 
+## Mixing styles
+
+On **Mix**, browse **Built-in styles** or **My styles** and select a source.
+Selecting a source only samples it. Click a category to copy that category's
+settings into the current style, or drag the source thumbnail onto its category.
+You can take edges from one style, faces from another and a background from a third.
+
+The five categories match the Edit tab. Faces include X-ray, transparency and
+ambient occlusion; Modeling includes cue colors, visibility and section fill.
+Watermarks replaces the image collection and its display switch with the source's
+embedded images, masks and layer order. Modeling applies only the scene visibility
+overrides explicitly stored in the source; older styles without them keep current
+document visibility.
+
+Mixing preserves the current style's name and settings from other categories.
+Source styles remain unchanged. The result appears immediately and **Save style…**
+stores it as a reusable style. Further edits and saved views/documents retain the
+combined settings without needing the original source styles.
+
 ## Modeling
 
 On **Edit**, choose **Modeling settings**. The color swatches control selected

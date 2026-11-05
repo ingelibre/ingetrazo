@@ -3369,5 +3369,10 @@
  "Inactive section": "非活动剖面",
  "Model axes": "模型轴",
  "Section cut width:": "剖切线宽：",
- "Section cuts": "剖切线"
+ "Section cuts": "剖切线",
+ "Applied {category} from {name}.": "已从 {name} 应用{category}。",
+ "Choose a source style below, then click a category or drag the style onto it.": "在下方选择源样式，然后单击类别或将样式拖到类别上。",
+ "Select a source style.": "请选择源样式。",
+ "Source style: {name}": "源样式：{name}",
+ "Source styles": "源样式"
 }

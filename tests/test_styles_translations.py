@@ -38,7 +38,7 @@ def _style_strings():
     strings.update(("Styles", "Built-in styles", "My styles", "All same", "By material", "By axis"))
     from core.style import BUILTIN_STYLES
     strings.update(style.name for style in BUILTIN_STYLES)
-    for filename in ("watermarks_panel.py", "modeling_panel.py"):
+    for filename in ("watermarks_panel.py", "modeling_panel.py", "style_mix_panel.py"):
         tree = ast.parse((ROOT / "views" / filename).read_text(encoding="utf-8"))
         strings.update(node.args[0].value for node in ast.walk(tree)
                        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)

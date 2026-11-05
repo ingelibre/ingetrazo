@@ -3395,5 +3395,10 @@
  "Inactive section": "Mặt cắt không hoạt động",
  "Model axes": "Trục mô hình",
  "Section cut width:": "Độ dày nét cắt:",
- "Section cuts": "Nét cắt"
+ "Section cuts": "Nét cắt",
+ "Applied {category} from {name}.": "Đã áp dụng {category} từ {name}.",
+ "Choose a source style below, then click a category or drag the style onto it.": "Chọn một kiểu nguồn bên dưới, rồi nhấp vào danh mục hoặc kéo kiểu vào danh mục đó.",
+ "Select a source style.": "Chọn một kiểu nguồn.",
+ "Source style: {name}": "Kiểu nguồn: {name}",
+ "Source styles": "Các kiểu nguồn"
 }

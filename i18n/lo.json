@@ -3371,5 +3371,10 @@
  "Inactive section": "ລະນາບຕັດທີ່ບໍ່ໃຊ້ງານ",
  "Model axes": "ແກນໂມເດວ",
  "Section cut width:": "ຄວາມໜາເສັ້ນຕັດ:",
- "Section cuts": "ເສັ້ນຕັດ"
+ "Section cuts": "ເສັ້ນຕັດ",
+ "Applied {category} from {name}.": "ນຳໃຊ້ {category} ຈາກ {name} ແລ້ວ.",
+ "Choose a source style below, then click a category or drag the style onto it.": "ເລືອກຮູບແບບຕົ້ນສະບັບດ້ານລຸ່ມ ແລ້ວຄລິກໝວດໝູ່ ຫຼືລາກຮູບແບບໄປໃສ່ໝວດໝູ່.",
+ "Select a source style.": "ເລືອກຮູບແບບຕົ້ນສະບັບ.",
+ "Source style: {name}": "ຮູບແບບຕົ້ນສະບັບ: {name}",
+ "Source styles": "ຮູບແບບຕົ້ນສະບັບ"
 }

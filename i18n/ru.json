@@ -3368,5 +3368,10 @@
  "Inactive section": "Неактивное сечение",
  "Model axes": "Оси модели",
  "Section cut width:": "Толщина линий сечения:",
- "Section cuts": "Линии сечения"
+ "Section cuts": "Линии сечения",
+ "Applied {category} from {name}.": "{category} применены из стиля {name}.",
+ "Choose a source style below, then click a category or drag the style onto it.": "Выберите исходный стиль ниже, затем нажмите категорию или перетащите на неё стиль.",
+ "Select a source style.": "Выберите исходный стиль.",
+ "Source style: {name}": "Исходный стиль: {name}",
+ "Source styles": "Исходные стили"
 }

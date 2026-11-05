@@ -3371,5 +3371,10 @@
  "Inactive section": "ระนาบตัดที่ไม่ได้ใช้งาน",
  "Model axes": "แกนโมเดล",
  "Section cut width:": "ความหนาเส้นตัด:",
- "Section cuts": "เส้นตัด"
+ "Section cuts": "เส้นตัด",
+ "Applied {category} from {name}.": "ใช้ {category} จาก {name} แล้ว",
+ "Choose a source style below, then click a category or drag the style onto it.": "เลือกสไตล์ต้นฉบับด้านล่าง แล้วคลิกหมวดหมู่หรือลากสไตล์ไปวางบนหมวดหมู่",
+ "Select a source style.": "เลือกสไตล์ต้นฉบับ",
+ "Source style: {name}": "สไตล์ต้นฉบับ: {name}",
+ "Source styles": "สไตล์ต้นฉบับ"
 }

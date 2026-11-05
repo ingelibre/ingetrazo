@@ -3368,5 +3368,10 @@
  "Inactive section": "非アクティブな断面",
  "Model axes": "モデル軸",
  "Section cut width:": "断面線の太さ:",
- "Section cuts": "断面線"
+ "Section cuts": "断面線",
+ "Applied {category} from {name}.": "{name} から {category} を適用しました。",
+ "Choose a source style below, then click a category or drag the style onto it.": "下で元のスタイルを選択し、カテゴリをクリックするか、スタイルをカテゴリにドラッグしてください。",
+ "Select a source style.": "元のスタイルを選択してください。",
+ "Source style: {name}": "元のスタイル: {name}",
+ "Source styles": "元のスタイル"
 }

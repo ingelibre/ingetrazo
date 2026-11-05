@@ -3403,5 +3403,10 @@
  "Inactive section": "مقطع غير نشط",
  "Model axes": "محاور النموذج",
  "Section cut width:": "سُمك خطوط القطع:",
- "Section cuts": "خطوط القطع"
+ "Section cuts": "خطوط القطع",
+ "Applied {category} from {name}.": "تم تطبيق {category} من {name}.",
+ "Choose a source style below, then click a category or drag the style onto it.": "اختر نمطًا مصدرًا أدناه، ثم انقر فئة أو اسحب النمط إليها.",
+ "Select a source style.": "اختر نمطًا مصدرًا.",
+ "Source style: {name}": "النمط المصدر: {name}",
+ "Source styles": "الأنماط المصدر"
 }
