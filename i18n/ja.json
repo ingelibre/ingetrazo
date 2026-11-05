@@ -3319,5 +3319,7 @@
  "Could not check for updates. Check your internet connection and try again.": "更新を確認できませんでした。インターネット接続を確認して、もう一度お試しください。",
  "You have the latest version ({version}).": "最新バージョン（{version}）をお使いです。",
  "Maximize this view or change it": "このビューを最大化または変更",
- "Drag: move these views' lines together": "ドラッグ: これらのビューの線をまとめて移動"
+ "Drag: move these views' lines together": "ドラッグ: これらのビューの線をまとめて移動",
+ "Transparent background": "背景を透明にする",
+ "Only PNG images keep transparency.": "透明度を保持できるのは PNG 画像のみです。"
 }

@@ -3354,5 +3354,7 @@
   "Could not check for updates. Check your internet connection and try again.": "تعذر البحث عن تحديثات. تحقق من اتصالك بالإنترنت وحاول مرة أخرى.",
   "You have the latest version ({version}).": "لديك أحدث إصدار ({version}).",
   "Maximize this view or change it": "تكبير هذا العرض أو تغييره",
-  "Drag: move these views' lines together": "اسحب: حرّك خطوط هذه العروض معًا"
+  "Drag: move these views' lines together": "اسحب: حرّك خطوط هذه العروض معًا",
+ "Transparent background": "خلفية شفافة",
+ "Only PNG images keep transparency.": "صور PNG وحدها تحتفظ بالشفافية."
 }

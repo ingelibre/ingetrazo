@@ -3319,5 +3319,7 @@
  "Could not check for updates. Check your internet connection and try again.": "Impossible de rechercher les mises à jour. Vérifiez votre connexion Internet et réessayez.",
  "You have the latest version ({version}).": "Vous avez la dernière version ({version}).",
  "Maximize this view or change it": "Agrandir cette vue ou la changer",
- "Drag: move these views' lines together": "Glisser : déplacer ensemble les lignes de ces vues"
+ "Drag: move these views' lines together": "Glisser : déplacer ensemble les lignes de ces vues",
+ "Transparent background": "Arrière-plan transparent",
+ "Only PNG images keep transparency.": "Seules les images PNG conservent la transparence."
 }

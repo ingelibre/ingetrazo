@@ -3322,5 +3322,7 @@
  "Could not check for updates. Check your internet connection and try again.": "ບໍ່ສາມາດກວດສອບການອັບເດດໄດ້. ກະລຸນາກວດສອບການເຊື່ອມຕໍ່ອິນເຕີເນັດແລ້ວລອງໃໝ່.",
  "You have the latest version ({version}).": "ທ່ານໃຊ້ລຸ້ນລ່າສຸດແລ້ວ ({version}).",
  "Maximize this view or change it": "ຂະຫຍາຍມຸມມອງນີ້ເຕັມ ຫຼື ປ່ຽນມັນ",
- "Drag: move these views' lines together": "ລາກ: ຍ້າຍເສັ້ນຂອງມຸມມອງເຫຼົ່ານີ້ພ້ອມກັນ"
+ "Drag: move these views' lines together": "ລາກ: ຍ້າຍເສັ້ນຂອງມຸມມອງເຫຼົ່ານີ້ພ້ອມກັນ",
+ "Transparent background": "ພື້ນຫຼັງໂປ່ງໃສ",
+ "Only PNG images keep transparency.": "ມີພຽງຮູບ PNG ເທົ່ານັ້ນທີ່ຮັກສາຄວາມໂປ່ງໃສໄວ້."
 }

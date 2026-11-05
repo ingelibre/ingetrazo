@@ -3322,5 +3322,7 @@
  "Could not check for updates. Check your internet connection and try again.": "Tidak dapat memeriksa pembaruan. Periksa koneksi internet Anda lalu coba lagi.",
  "You have the latest version ({version}).": "Anda memakai versi terbaru ({version}).",
  "Maximize this view or change it": "Maksimalkan tampilan ini atau ubah",
- "Drag: move these views' lines together": "Seret: pindahkan garis tampilan ini bersama-sama"
+ "Drag: move these views' lines together": "Seret: pindahkan garis tampilan ini bersama-sama",
+ "Transparent background": "Latar belakang transparan",
+ "Only PNG images keep transparency.": "Hanya gambar PNG yang mempertahankan transparansi."
 }
