@@ -264,3 +264,50 @@ def test_a_view_moving_into_the_grid_keeps_its_bakes(floor):
     finally:
         other.setParent(None)
         other.deleteLater()
+
+
+def _boxed_scene(tmp_path, closed, placed):
+    from core.group import Group
+    from core.scene import Scene
+    from formats import igz
+    from PySide6.QtGui import QMatrix4x4, QVector3D as V
+    scene = Scene()
+    m = M.Mesh()
+    a, b, c, d = V(0, 0, 0), V(2, 0, 0), V(2, 3, 0), V(0, 3, 0)
+    h = V(0, 0, 4)
+    sides = [[d, c, b, a], [a, b, b + h, a + h], [b, c, c + h, b + h],
+             [c, d, d + h, c + h], [d, a, a + h, d + h]]
+    if closed:
+        sides.append([a + h, b + h, c + h, d + h])
+    for ring in sides:
+        m.add_face(ring)
+    g = Group(m, name="box")
+    if placed:
+        g.xform = QMatrix4x4()
+        g.xform.translate(5, 0, 0)
+    scene.groups.append(g)
+    path = tmp_path / f"box{closed}{placed}.igz"
+    igz.save_scene(scene, path)
+    opened = Scene()
+    igz.load_into(opened, path)
+    return opened.groups[0]
+
+
+@pytest.mark.parametrize("placed", [False, True])
+def test_an_open_group_says_no_volume_unbuilt(big_enough, tmp_path, placed):
+    from core.solids import solid_volume
+    group = _boxed_scene(tmp_path, False, placed)
+    mesh = group.mesh
+    assert type(mesh) is M.DeferredMesh
+    assert solid_volume(group) is None
+    assert type(mesh) is M.DeferredMesh, "the panel's question built the group"
+    mesh.faces
+    assert solid_volume(group) is None, "and the built mesh agrees"
+
+
+@pytest.mark.parametrize("placed", [False, True])
+def test_a_closed_group_still_gets_its_volume(big_enough, tmp_path, placed):
+    from core.solids import solid_volume
+    group = _boxed_scene(tmp_path, True, placed)
+    assert type(group.mesh) is M.DeferredMesh
+    assert solid_volume(group) == pytest.approx(24.0)
