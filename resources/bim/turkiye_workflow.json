@@ -1172,6 +1172,15 @@
     },
     "Current-model PDF/A sheets required": {
       "tr": "Güncel modelden PDF/A paftalar bekleniyor"
+    },
+    "Whole-number value required": {
+      "tr": "Tam sayı gerekli"
+    },
+    "The IFC model document kind must be MD": {
+      "tr": "IFC modelinin dosya türü MD olmalı"
+    },
+    "Enter the authority's positive file-size limit in MB": {
+      "tr": "İdarenin dosya boyutu sınırını MB olarak pozitif bir sayı girin"
     }
   }
 }

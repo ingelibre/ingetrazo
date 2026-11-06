@@ -105,6 +105,8 @@ def project_issues(scene, objects):
     for key in ("area", "province_population", "municipality_population", "storeys_above_ground"):
         if not finite(scope.get(key)) or scope[key] < 0:
             add("applicability." + key, "Non-negative project-specific numeric value required")
+        elif key != "area" and type(scope[key]) is not int:
+            add("applicability." + key, "Whole-number value required")
     for key in ("detached", "agricultural_exempt", "preexisting_application"):
         if type(scope.get(key)) is not bool:
             add("applicability." + key, "Explicit project-specific yes/no required")
@@ -146,6 +148,11 @@ def project_issues(scene, objects):
         filename(p)
     except ValueError as exc:
         add("filename", str(exc))
+    naming = p.get("filename", {})
+    if naming.get("kind") != "MD":
+        add("filename", "The IFC model document kind must be MD")
+    if not finite(naming.get("max_size_mb")) or naming["max_size_mb"] <= 0:
+        add("filename.max_size_mb", "Enter the authority's positive file-size limit in MB")
     spatial = p.get("spatial", {})
     site = spatial.get("site", {})
     buildings, storeys = spatial.get("buildings", []), spatial.get("storeys", [])

@@ -116,6 +116,11 @@ def test_project_errors_are_specific():
     errors = project_issues(scene, collect_objects(scene))
     assert any(e["field"] == "crs.name" for e in errors)
     assert any(e["field"] == "storey.building_id" for e in errors)
+    scene.ifc_project["filename"]["kind"] = "PL"
+    scene.ifc_project["filename"]["max_size_mb"] = None
+    errors = project_issues(scene, collect_objects(scene))
+    assert any(e["field"] == "filename" for e in errors)
+    assert any(e["field"] == "filename.max_size_mb" for e in errors)
 
 
 def test_quality_rows_are_not_all_pass_without_export_evidence():
