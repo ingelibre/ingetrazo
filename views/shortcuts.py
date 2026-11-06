@@ -384,10 +384,19 @@ class ShortcutsPanel(QWidget):
         reset_all.clicked.connect(self._on_reset_all)
         foot.addWidget(reset_all)
         lay.addLayout(foot)
-        self._actions = collect_actions(window)
-        self._fill()
+        self.reload()
 
     # ---- list -----------------------------------------------------------------
+    def reload(self) -> None:
+        """Re-collect the window's actions: extensions add and remove
+        some after this page was built."""
+        self._actions = collect_actions(self._window)
+        self._fill()
+
+    def showEvent(self, event) -> None:
+        self.reload()
+        super().showEvent(event)
+
     def _fill(self) -> None:
         self._tree.clear()
         for act in self._actions:
@@ -439,6 +448,7 @@ class ShortcutsPanel(QWidget):
     def assign(self, act: QAction, seqs: list, ask: bool = True) -> bool:
         """Give ``act`` these keys, taking them from any other action that
         holds them (after asking) — two actions on one key both go dead."""
+        self._actions = collect_actions(self._window)
         wanted = {s.toString(QKeySequence.PortableText) for s in seqs}
         clash = [a for a in self._actions if a is not act and wanted &
                  {s.toString(QKeySequence.PortableText) for s in a.shortcuts()}]

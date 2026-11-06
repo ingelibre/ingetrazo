@@ -202,3 +202,65 @@ def test_a_shortcut_saved_nested_by_an_earlier_version_is_read_back():
     finally:
         _close(win)
         QSettings().remove("shortcuts")
+
+
+def _rows(panel):
+    return [panel._tree.topLevelItem(i).text(0)
+            for i in range(panel._tree.topLevelItemCount())]
+
+
+def test_an_action_added_later_shows_up_when_the_page_is_shown():
+    from views.shortcuts import ShortcutsPanel
+    win = _window()
+    try:
+        panel = ShortcutsPanel(win)
+        QAction("Late Extension Action", win)
+        assert "Late Extension Action" not in _rows(panel)
+        panel.show()
+        assert "Late Extension Action" in _rows(panel)
+        panel.close()
+    finally:
+        _close(win)
+
+
+def test_a_clash_with_an_action_added_later_is_detected(monkeypatch):
+    from views.shortcuts import ShortcutsPanel
+    QSettings().remove("shortcuts")
+    asked = []
+
+    def question(*a, **k):
+        asked.append(a)
+        return QMessageBox.Yes
+    monkeypatch.setattr(QMessageBox, "question", staticmethod(question))
+    win = _window()
+    try:
+        panel = ShortcutsPanel(win)
+        late = QAction("Late Extension Action", win)
+        late.setShortcut(QKeySequence("Ctrl+Alt+Shift+L"))
+        explode = _action(win, "Explode Group")
+        assert panel.assign(explode, [QKeySequence("Ctrl+Alt+Shift+L")])
+        assert asked
+        assert _keys(late) == []
+        assert _keys(explode) == ["Ctrl+Alt+Shift+L"]
+    finally:
+        _close(win)
+        QSettings().remove("shortcuts")
+
+
+def test_a_removed_action_leaves_the_page():
+    from PySide6.QtWidgets import QApplication as App
+    from PySide6.QtCore import QEvent
+    from views.shortcuts import ShortcutsPanel
+    win = _window()
+    try:
+        gone = QAction("Soon Gone Action", win)
+        panel = ShortcutsPanel(win)
+        assert "Soon Gone Action" in _rows(panel)
+        gone.setParent(None)
+        gone.deleteLater()
+        App.sendPostedEvents(None, QEvent.DeferredDelete)
+        panel.show()
+        assert "Soon Gone Action" not in _rows(panel)
+        panel.close()
+    finally:
+        _close(win)
