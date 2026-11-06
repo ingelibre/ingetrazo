@@ -6728,8 +6728,11 @@ class MainWindow(QMainWindow):
         buffers are made again there, but it still remembers having
         uploaded the geometry and would skip it — the view came out blank.
         Forget the uploads (while the old context is still valid); the
-        geometry and the undo history are not touched."""
-        vp.reset_document_caches()
+        geometry and the undo history are not touched — nor the bakes and the
+        pick index: redoing them cost seconds, and the extra views that come
+        next share a lazy mesh's bake only while this one still holds it
+        (#1092)."""
+        vp.forget_uploads()
         vp._vbo_parts.clear()
         vp._edges_version = -1
         if vp.isValid():
