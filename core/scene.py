@@ -32,6 +32,23 @@ def _make_shadows():
     return ShadowSettings()
 
 
+def _inside(local, d, lo, hi) -> bool:
+    """Whether a placement with matrix ``d`` (column-major) of a mesh whose
+    box is ``local`` (centre, half size) stays inside ``lo``–``hi`` whatever
+    its points: most of a big model's copies do, and reading a copy's points
+    is the cost of walking it (~1 s over 21 406 placements, #158). Strictly
+    inside, by more than the rounding of that reading: it cannot change a
+    minimum or a maximum. A NaN anywhere says no."""
+    cx, cy, cz, hx, hy, hz = local
+    for k in range(3):
+        c = d[k] * cx + d[k + 4] * cy + d[k + 8] * cz + d[k + 12]
+        r = abs(d[k]) * hx + abs(d[k + 4]) * hy + abs(d[k + 8]) * hz
+        slack = 1e-9 * (abs(c) + r)
+        if not (c - r - slack > lo[k] and c + r + slack < hi[k]):
+            return False
+    return True
+
+
 @dataclass
 class Scene:
     mesh: Mesh = field(default_factory=Mesh)
@@ -917,15 +934,21 @@ class Scene:
                 plan = plan_of(g.mesh)      # a lazy mesh: no build
                 if plan is not None:
                     arr = plan.pos
-                    per_mesh[key] = (arr, True)
+                    lazy = True
                 else:
                     arr = np.array(
                         [[v.position.x(), v.position.y(), v.position.z()]
                          for v in g.mesh.vertices])
-                    per_mesh[key] = (arr, False)
-                lazy = per_mesh[key][1]
+                    lazy = False
+                # Its own box, centre and half size, for _inside below.
+                local = None
+                if len(arr):
+                    a, b = arr.min(axis=0), arr.max(axis=0)
+                    local = (*((a + b) / 2.0).tolist(),
+                             *((b - a) / 2.0).tolist())
+                per_mesh[key] = (arr, lazy, local)
             else:
-                arr, lazy = arr
+                arr, lazy, local = arr
             if not len(arr):
                 continue
             d = tuple(m.data()) if m is not None else None  # column-major
@@ -935,6 +958,9 @@ class Scene:
                 part = kept.get(pkey) or parts.get(pkey)
             if part is not None:
                 glo, ghi = part[1], part[2]
+            elif seen and d is not None and _inside(
+                    local, d, (minx, miny, minz), (maxx, maxy, maxz)):
+                continue                    # it cannot widen the box
             else:
                 if d is not None:
                     rot = np.array([[d[0], d[4], d[8]],
