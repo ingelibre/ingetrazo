@@ -3649,7 +3649,7 @@ class OutlinerPanel(QWidget):
         its base (made the active cut), a scene looking straight down on it
         in parallel projection, and — with ``sheet`` — a new sheet with
         that scene at 1:``scale``. One undo step. Returns the scene, or
-        ``None`` when the group holds no geometry."""
+        ``None`` when the group holds no geometry or the step was refused."""
         import math
         from PySide6.QtGui import QVector3D
         from core.camera import OrbitCamera
@@ -3679,7 +3679,7 @@ class OutlinerPanel(QWidget):
             cam.fov_deg) / 2))
         view = self._place_view(title, cam, plane, True, sheet, scale,
                                 open_sheet)
-        if z > z1 or z < z0:
+        if view is not None and (z > z1 or z < z0):
             self._window.viewport.flash_status(tr(
                 "The cut is outside «{name}»: the plan shows it whole",
                 name=group.name), 4000)
@@ -3690,7 +3690,8 @@ class OutlinerPanel(QWidget):
         """The part a plan of a group and a view of a cut share: the scene
         from ``cam`` cut by ``plane``, a sheet with it if asked — one undo
         step — and then the way to it: the sheet opened, or Sheets 2D with
-        the scene marked, and the status bar saying what was made."""
+        the scene marked, and the status bar saying what was made.
+        ``None`` when the step was refused or failed."""
         from core.composition import Composicion
         from core.history import CreatePlanCommand
         from core.saved_views import SavedView
@@ -3708,8 +3709,13 @@ class OutlinerPanel(QWidget):
             frame.show_title = True
             page.frames.append(frame)
         self._window.viewport.end_group_edit()
-        self._window.viewport.history.execute(
-            CreatePlanCommand(plane, view, page, add_plane=add_plane))
+        history = self._window.viewport.history
+        if not history.execute(
+                CreatePlanCommand(plane, view, page, add_plane=add_plane)):
+            reason = history.last_rejected or history.last_error
+            if reason:
+                self._window.viewport.flash_status(reason, 4000)
+            return None
         self._window.tray.scenes.refresh()
         self._window._refresh_sheet_tabs()
         self._window.viewport.update()
@@ -3733,7 +3739,8 @@ class OutlinerPanel(QWidget):
         (from the side the plane takes away, towards what stays), in
         parallel projection, the plane made the active cut — a section for
         a vertical plane, a plan for a horizontal one. With ``sheet``, on a
-        new sheet at 1:``scale``. One undo step; returns the scene."""
+        new sheet at 1:``scale``. One undo step; returns the scene, or
+        ``None`` when the step was refused."""
         import math
         from PySide6.QtGui import QVector3D
         from core.camera import OrbitCamera

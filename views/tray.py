@@ -2645,8 +2645,12 @@ class MaterialsPanel(QWidget):
                 "There is already a material called '{name}'",
                 name=new_mat.name), 4000)
             return False
-        self._window.viewport.history.execute(
-            RestampMaterialCommand(old_name, new_mat))
+        history = self._window.viewport.history
+        if not history.execute(RestampMaterialCommand(old_name, new_mat)):
+            reason = history.last_rejected or history.last_error
+            if reason:
+                self._window.statusBar().showMessage(reason, 4000)
+            return False
         self._window.viewport.notify_scene_changed()
         active = PaintTool.current_material
         if active is not None and active.name == old_name:
