@@ -108,3 +108,40 @@ filenames, spatial-container names/properties and a full storey hierarchy,
 other EK-7 actor/organization/CRS information, multi-layer and geometry/material
 alignment checks, EK-8 development level, EK-9 forms, amendments and legal
 applicability. This editor is not an MVD certification or a delivery approval.
+
+## Validation (2026-11-06)
+
+Windows, Python 3.13.5, PySide6/Qt 6.11.3, IfcOpenShell 0.9.0.post1.
+Implementation base: `84352ab` (stable identity and IFC4.3 export).
+
+- **192 passed, 1 skipped** in IFC/BIM/insertion/file-dialog tests, including
+  **53 delivery scenarios**. The skipped IngePresupuestos bridge test needs
+  that application's separate checkout.
+- **94 passed** in IGZ/document/group/clipboard/history regression tests.
+  Together, these two groups contain **286 passing cases and one skip**.
+- All 15 mapped classes exported entered properties with their real IFC
+  value types and **zero schema/EXPRESS findings**. The profile checks 23
+  class/property occurrences plus attributes and the covering-layer inputs.
+- False versus missing values, invalid enums/numbers, injection-shaped
+  enum values, material relations/layer usage, source separator choices,
+  `.igz` formats 1/3, undo/redo, copying, identity continuity and metadata
+  reset on new/open documents were tested.
+- Independent geometry tests now check a translated, non-uniformly scaled
+  group inside a translated parent: IFC x bounds **11–15 m**, geometry and
+  quantity volume **0.208 m³**, wall width **0.02 m**, in both schemas.
+- A two-object wall/covering fixture exported in both schemas and after
+  `.igz` reload retained all **22 IfcRoot GlobalIds**. Independent geometry
+  volumes were **2.6 m³** and **0.208 m³**; schema/EXPRESS findings: **0**.
+  These are fictitious software fixtures, not engineering certifications.
+- **36 passed** in a conflict-free temporary merge with the Turkish
+  contribution (`5eea8af`). The existing 3,312-key catalog validator passed;
+  profile/preview/undo/cancel tests also ran with Turkish active. These
+  integration cases overlap the preceding groups.
+- **4 dialog checks passed again** after the final localized labels and
+  screen-height adjustment. Native Qt widget captures at scale factors 1
+  and 2 were visually checked; long content scrolls and the footer remains
+  within available screen height.
+
+The complete application suite, Linux/macOS, an executable build and external
+desktop BIM viewers were not verified in this step. The PyInstaller data
+manifest was updated, but a release installer was not produced.
