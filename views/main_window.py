@@ -8684,14 +8684,18 @@ class MainWindow(QMainWindow):
         ifc43_filter = "IFC4.3 ADD2 (*.ifc)"
         filters = tr("IFC4 (*.ifc);;All files (*)").split(";;")
         filters.insert(1, ifc43_filter)
+        from core.turkiye_delivery import PROFILE, ui as delivery_ui
+        delivery_filter = delivery_ui("Türkiye IFC4.3 profile") + " (*.ifc)"
+        filters.insert(2, delivery_filter)
         path_str, selected_filter = file_dialogs.getSaveFileName(
             self, tr("Export IFC"), "model.ifc", ";;".join(filters))
         if not path_str:
             return
         try:
-            schema = "IFC4X3_ADD2" if selected_filter == ifc43_filter else "IFC4"
+            profile = PROFILE if selected_filter == delivery_filter else None
+            schema = "IFC4X3_ADD2" if selected_filter == ifc43_filter or profile else "IFC4"
             count = ifc_format.save_ifc(self.viewport.scene, path_str,
-                                       schema=schema)
+                                       schema=schema, delivery_profile=profile)
         except Exception as exc:  # noqa: BLE001
             QMessageBox.critical(self, tr("Export IFC failed"), str(exc))
             return

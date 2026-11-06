@@ -43,7 +43,8 @@ IFC import or map IDs from IFC exports made by older builds.
 
 This is an IFC identity fix, not a claim of Türkiye regulatory compliance.
 IFC4 remains the default; [IFC4.3 ADD2 export](ifc-export.md) is also
-available. Delivery properties, naming validation and a multi-storey
+available. The optional [Türkiye field profile](turkiye-delivery.md) adds
+delivery information. Complete delivery validation and a multi-storey
 spatial hierarchy are separate work.
 
 ## Validation (2026-11-06)

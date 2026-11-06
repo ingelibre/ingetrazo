@@ -39,8 +39,9 @@ keeps its element GlobalId. A spaces-only export also works.
 
 This adds an export schema choice for the existing supported object
 types. It does not add IFC import, infrastructure modelling, new tagging
-classes, an MVD/certification claim, multiple editable storeys, delivery
-property sets or Türkiye naming-rule enforcement. Unknown tag classes
+classes, an MVD/certification claim or multiple editable storeys.
+The optional [Türkiye field profile](turkiye-delivery.md) adds entered
+properties and bounded naming checks. Unknown tag classes
 continue to export as `IfcBuildingElementProxy`, as before.
 
 IFC4.3 output alone does not establish regulatory compliance. Export

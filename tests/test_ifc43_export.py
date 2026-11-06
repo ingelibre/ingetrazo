@@ -145,7 +145,7 @@ def test_opening_dimensions_keep_correct_attribute_positions(schema, cls, tmp_pa
 
 
 @pytest.mark.parametrize("choice, schema", [
-    (0, "IFC4"), (1, "IFC4X3_ADD2"), (2, "IFC4"), (None, None)])
+    (0, "IFC4"), (1, "IFC4X3_ADD2"), (3, "IFC4"), (None, None)])
 def test_export_dialog_uses_selected_schema(choice, schema, tmp_path, monkeypatch):
     from views import main_window as mw
     win = mw.MainWindow()
@@ -158,7 +158,7 @@ def test_export_dialog_uses_selected_schema(choice, schema, tmp_path, monkeypatc
 
         def choose(_parent, _caption, _path, filters):
             options = filters.split(";;")
-            assert len(options) == 3
+            assert len(options) == 4
             assert options[0].startswith("IFC4 ")
             assert options[1] == "IFC4.3 ADD2 (*.ifc)"
             return ("", "") if choice is None else (str(path), options[choice])

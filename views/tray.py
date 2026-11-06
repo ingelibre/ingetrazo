@@ -4498,6 +4498,10 @@ class BimPanel(QWidget):
         self.tree.itemCollapsed.connect(self._fit_tree)
         lay.addWidget(self.tree)
 
+        from core.turkiye_delivery import ui as delivery_ui
+        delivery = QPushButton(delivery_ui("Türkiye delivery information"))
+        delivery.clicked.connect(self._on_delivery_information)
+        lay.addWidget(delivery)
         exp = QPushButton(tr("Export quantities CSV…"))
         exp.setToolTip(tr(
             "The takeoff table — the bridge to IngePresupuestos"))
@@ -4509,6 +4513,11 @@ class BimPanel(QWidget):
 
     def _scene(self):
         return self._window.viewport.scene
+
+    def _on_delivery_information(self):
+        self._window.viewport.end_group_edit()
+        from views.turkiye_delivery import DeliveryDialog
+        DeliveryDialog(self._window).exec()
 
     def _fit_tree(self, *_a) -> None:
         """``fit_rows`` for the rows an open branch shows, not only the top."""

@@ -41,7 +41,7 @@ def ifc_guid() -> str:
 
 
 def _s(text: str) -> str:
-    """IFC string literal: apostrophes doubled, non-ASCII as \\X2\\…\\X0\\."""
+    """IFC string literal: apostrophes doubled, non-ASCII as STEP X2/X4 escapes."""
     out = []
     run: list[str] = []
 
@@ -55,6 +55,9 @@ def _s(text: str) -> str:
         if ord(ch) < 128:
             flush()
             out.append("''" if ch == "'" else ch)
+        elif ord(ch) > 0xFFFF:
+            flush()
+            out.append("\\X4\\" + f"{ord(ch):08X}" + "\\X0\\")
         else:
             run.append(ch)
     flush()
@@ -118,8 +121,24 @@ def _brep(w: _Writer, faces, context_id: int) -> int:
                  rep_type, f"(#{item})")
 
 
+
+def _properties(w, owner, guid, owner_guid, values):
+    sets = {}
+    for pset, name, kind, value in values:
+        encoded = (".T." if value else ".F.") if kind == "IfcBoolean" else (
+            _s(value) if kind == "IfcLabel" else format(value, ".15E"))
+        prop = w.add("IFCPROPERTYSINGLEVALUE", _s(name), "$",
+                     f"{kind.upper()}({encoded})", "$")
+        sets.setdefault(pset, []).append(prop)
+    for name, props in sets.items():
+        pid = w.add("IFCPROPERTYSET", _s(guid("pset", owner_guid, name)), "$",
+                    _s(name), "$", "(" + ",".join(f"#{p}" for p in props) + ")")
+        w.add("IFCRELDEFINESBYPROPERTIES", _s(guid("pset-relation", owner_guid, name)),
+              "$", "$", "$", f"(#{owner})", f"#{pid}")
+
+
 def save_ifc(scene, path, project_name: str = "IngeTrazo project", *,
-             schema: str = "IFC4") -> int:
+             schema: str = "IFC4", delivery_profile: str | None = None) -> int:
     """Write tagged objects as IFC4 (default) or IFC4X3_ADD2.
 
     Returns the exported element count. Unsupported schemas and an empty
@@ -131,6 +150,25 @@ def save_ifc(scene, path, project_name: str = "IngeTrazo project", *,
     objects = collect_objects(scene)
     if not objects:
         raise ValueError("No tagged BIM objects to export")
+
+    from core.turkiye_delivery import PROFILE, check_scene, metadata, object_issues
+    if delivery_profile not in (None, PROFILE):
+        raise ValueError(f"Unsupported delivery profile: {delivery_profile!r}")
+    if delivery_profile is not None:
+        if schema != "IFC4X3_ADD2":
+            raise ValueError("Türkiye delivery profile requires IFC4X3_ADD2")
+        report = check_scene(scene, objects)
+        if report["issues"]:
+            raise ValueError("\n".join(
+                f"{i['object']}: {i['field']} — {i['message']}" for i in report["issues"][:12])
+                + f"\n({len(report['issues'])} issues; see Türkiye delivery information)")
+    project_data = scene.ifc_project
+    if any(not isinstance(v, str) for v in project_data.values()):
+        raise ValueError("Project information must contain text values")
+    for obj in objects:
+        issues = object_issues(obj, schema, required=False)
+        if issues:
+            raise ValueError(str(issues))
 
     def guid(*parts):
         return stable_guid(scene.ifc_namespace, *parts)
@@ -153,8 +191,14 @@ def save_ifc(scene, path, project_name: str = "IngeTrazo project", *,
     ]
     unit_assign = w.add("IFCUNITASSIGNMENT",
                         "(" + ",".join(f"#{u}" for u in units) + ")")
+    if project_name == "IngeTrazo project":
+        project_name = project_data.get("name") or project_name
     project = w.add("IFCPROJECT", _s(guid("project")), "$", _s(project_name),
-                    "$", "$", "$", "$", f"(#{context})", f"#{unit_assign}")
+                    _s(project_data["description"]) if project_data.get("description") else "$",
+                    "$", "$", "$", f"(#{context})", f"#{unit_assign}")
+    if project_data.get("project_type"):
+        _properties(w, project, guid, guid("project"), [
+            ("Pset_ProjectCommon", "ProjectType", "IfcLabel", project_data["project_type"])])
     placement = w.add("IFCLOCALPLACEMENT", "$", f"#{axis}")
     site = w.add("IFCSITE", _s(guid("site")), "$", "'Site'", "$", "$",
                  f"#{placement}", "$", "$", ".ELEMENT.",
@@ -205,7 +249,29 @@ def save_ifc(scene, path, project_name: str = "IngeTrazo project", *,
                       _f(dims["Length"]) if "Length" in dims else "$",
                       ".NOTDEFINED."]
         attrs += ["$"] * (total - len(attrs))
+        data = metadata(obj)
+        if data.get("object_type"):
+            attrs[4] = _s(data["object_type"])
+        if data.get("tag") and cls != "IfcSpace":
+            attrs[7] = _s(data["tag"])
+        if data.get("predefined_type"):
+            index = 10 if cls in ("IfcDoor", "IfcWindow") else 9 if cls == "IfcSpace" else 8
+            attrs[index] = f".{data['predefined_type']}."
         elem = w.add(cls.upper(), *attrs)
+        from core.turkiye_delivery import property_values
+        _properties(w, elem, guid, element_guid, property_values(cls, data))
+        if data.get("material"):
+            material = w.add("IFCMATERIAL", _s(data["material"]), "$", "$")
+            if data.get("layer"):
+                layer = data["layer"]
+                mid = w.add("IFCMATERIALLAYER", f"#{material}",
+                            format(layer["thickness"], ".15E"), "$", "$", "$", "$", "$")
+                mid = w.add("IFCMATERIALLAYERSET", f"(#{mid})", "$", "$")
+                material = w.add("IFCMATERIALLAYERSETUSAGE", f"#{mid}",
+                                 f".{layer['axis']}.", f".{layer['sense']}.",
+                                 format(layer["offset"], ".15E"), "$")
+            w.add("IFCRELASSOCIATESMATERIAL", _s(guid("material", element_guid)),
+                  "$", "$", "$", f"(#{elem})", f"#{material}")
         (space_ids if cls == "IfcSpace" else element_ids).append(elem)
 
         # Per-class BaseQuantities (Qto_* naming): the takeoff numbers in
@@ -238,12 +304,12 @@ def save_ifc(scene, path, project_name: str = "IngeTrazo project", *,
               f"#{storey}", "(" + ",".join(f"#{e}" for e in space_ids) + ")")
 
     stamp = datetime.datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
-    name = Path(path).name.replace("'", "''")
+    name = _s(Path(path).name)
     header = (
         "ISO-10303-21;\n"
         "HEADER;\n"
         "FILE_DESCRIPTION((''),'2;1');\n"
-        f"FILE_NAME('{name}','{stamp}',('IngeTrazo'),('IngeTrazo'),"
+        f"FILE_NAME({name},'{stamp}',('IngeTrazo'),('IngeTrazo'),"
         "'IngeTrazo','IngeTrazo','');\n"
         f"FILE_SCHEMA(('{schema}'));\n"
         "ENDSEC;\n"

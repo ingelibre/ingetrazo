@@ -111,8 +111,11 @@ def tag_faces(faces, ifc_class: str, name: str, obj_id: int) -> None:
     # removed; adding a UUID during a rename would change its GlobalId.
     token = previous.get("uid") if previous is not None else new_identity()
     for f in faces:
+        import copy
+        extra = {"delivery": copy.deepcopy(previous["delivery"])} if (
+            previous and "delivery" in previous) else {}
         f.attrs["ifc"] = {"id": obj_id, "class": ifc_class, "name": name,
-                          **({"uid": token} if token else {})}
+                          **({"uid": token} if token else {}), **extra}
 
 
 def untag_faces(faces) -> None:
@@ -123,7 +126,10 @@ def untag_faces(faces) -> None:
 
 
 def tag_group(group, ifc_class: str, name: str) -> None:
-    group.ifc = {"class": ifc_class, "name": name}
+    import copy
+    previous = group.ifc or {}
+    extra = {"delivery": copy.deepcopy(previous["delivery"])} if "delivery" in previous else {}
+    group.ifc = {"class": ifc_class, "name": name, **extra}
 
 
 def untag_group(group) -> None:

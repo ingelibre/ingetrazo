@@ -619,6 +619,8 @@ def save_scene(scene, path: Path) -> dict:
     namespace = getattr(scene, "ifc_namespace", None)
     if namespace:
         payload["ifc_namespace"] = namespace
+    if getattr(scene, "ifc_project", None):
+        payload["ifc_project"] = dict(scene.ifc_project)
     groups = getattr(scene, "groups", None)
     kept = getattr(scene, "kept_components", None)
     if groups or kept:
@@ -1179,6 +1181,8 @@ def _load_into_inner(scene, path: Path, progress=None) -> None:
     payload = data.get("scene", {})
     from core.ifc_identity import document_identity
     scene.ifc_namespace = document_identity(payload.get("ifc_namespace"), path)
+    project = payload.get("ifc_project", {})
+    scene.ifc_project = dict(project) if isinstance(project, dict) else {}
     _normalize_text_curve_ids(payload, geom)
 
     scene.mesh.clear()

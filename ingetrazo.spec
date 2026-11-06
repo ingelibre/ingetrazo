@@ -36,6 +36,7 @@ datas = [
     ('resources/icons/mimetypes/*.ico', 'resources/icons/mimetypes'),
     ('resources/mime/*.xml',       'resources/mime'),
     ('resources/colors/*.json',    'resources/colors'),
+    ('resources/bim/*.json',       'resources/bim'),
     ('resources/textures/*.png',   'resources/textures'),
     ('resources/textures/library.json', 'resources/textures'),
     # Factory window layout (Marco's toolbar arrangement, harvested

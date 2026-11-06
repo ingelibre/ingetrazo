@@ -1,0 +1,798 @@
+{
+  "version": 1,
+  "source": {
+    "publication": "https://www.resmigazete.gov.tr/eskiler/2026/08/20260805-2.htm",
+    "annex": "https://www.resmigazete.gov.tr/eskiler/2026/08/20260805-2-1.pdf",
+    "basis": "User-supplied annex PDF; official annex download timed out; bytes not independently matched",
+    "discipline_pdf_page": 3,
+    "naming_pdf_pages": [
+      29,
+      34
+    ],
+    "project_pdf_page": 222,
+    "provided_pdf_sha256": "7dc88971d3a7a8ae837ef148169fa5bf6c9ce7a01cc8fcd560ae3d342bb0ecb3"
+  },
+  "disciplines": [
+    "MM",
+    "IM",
+    "ST",
+    "EE",
+    "MK",
+    "HR",
+    "AL",
+    "PY",
+    "ZE",
+    "YN",
+    "GS",
+    "AK"
+  ],
+  "classes": {
+    "IfcBeam": {
+      "category": "KRS",
+      "pdf_pages": [
+        38
+      ],
+      "material_required": true,
+      "tag_required": true,
+      "psets": {
+        "Pset_BeamCommon": {
+          "FireRating": "IfcLabel"
+        }
+      },
+      "predefined_types": {
+        "IFC4": [
+          "BEAM",
+          "JOIST",
+          "HOLLOWCORE",
+          "LINTEL",
+          "SPANDREL",
+          "T_BEAM",
+          "USERDEFINED",
+          "NOTDEFINED"
+        ],
+        "IFC4X3_ADD2": [
+          "BEAM",
+          "CORNICE",
+          "DIAPHRAGM",
+          "EDGEBEAM",
+          "GIRDER_SEGMENT",
+          "HATSTONE",
+          "HOLLOWCORE",
+          "JOIST",
+          "LINTEL",
+          "PIERCAP",
+          "SPANDREL",
+          "T_BEAM",
+          "USERDEFINED",
+          "NOTDEFINED"
+        ]
+      }
+    },
+    "IfcColumn": {
+      "category": "KLN",
+      "pdf_pages": [
+        53,
+        54
+      ],
+      "material_required": true,
+      "tag_required": true,
+      "psets": {
+        "Pset_ColumnCommon": {
+          "FireRating": "IfcLabel",
+          "LoadBearing": "IfcBoolean"
+        }
+      },
+      "predefined_types": {
+        "IFC4": [
+          "COLUMN",
+          "PILASTER",
+          "USERDEFINED",
+          "NOTDEFINED"
+        ],
+        "IFC4X3_ADD2": [
+          "COLUMN",
+          "PIERSTEM",
+          "PIERSTEM_SEGMENT",
+          "PILASTER",
+          "STANDCOLUMN",
+          "USERDEFINED",
+          "NOTDEFINED"
+        ]
+      }
+    },
+    "IfcCovering": {
+      "category": "KPL",
+      "pdf_pages": [
+        58,
+        59
+      ],
+      "material_required": true,
+      "tag_required": true,
+      "psets": {
+        "Pset_CoveringCommon": {
+          "FireRating": "IfcLabel"
+        }
+      },
+      "predefined_types": {
+        "IFC4": [
+          "CEILING",
+          "FLOORING",
+          "CLADDING",
+          "ROOFING",
+          "MOLDING",
+          "SKIRTINGBOARD",
+          "INSULATION",
+          "MEMBRANE",
+          "SLEEVING",
+          "WRAPPING",
+          "USERDEFINED",
+          "NOTDEFINED"
+        ],
+        "IFC4X3_ADD2": [
+          "CEILING",
+          "CLADDING",
+          "COPING",
+          "FLOORING",
+          "INSULATION",
+          "MEMBRANE",
+          "MOLDING",
+          "ROOFING",
+          "SKIRTINGBOARD",
+          "SLEEVING",
+          "TOPPING",
+          "WRAPPING",
+          "USERDEFINED",
+          "NOTDEFINED"
+        ]
+      },
+      "layer_required": true
+    },
+    "IfcDoor": {
+      "category": "KAP",
+      "pdf_pages": [
+        64
+      ],
+      "material_required": false,
+      "tag_required": true,
+      "psets": {
+        "Pset_DoorCommon": {
+          "IsExternal": "IfcBoolean",
+          "FireRating": "IfcLabel",
+          "FireExit": "IfcBoolean"
+        }
+      },
+      "predefined_types": {
+        "IFC4": [
+          "DOOR",
+          "GATE",
+          "TRAPDOOR",
+          "USERDEFINED",
+          "NOTDEFINED"
+        ],
+        "IFC4X3_ADD2": [
+          "BOOM_BARRIER",
+          "DOOR",
+          "GATE",
+          "TRAPDOOR",
+          "TURNSTILE",
+          "USERDEFINED",
+          "NOTDEFINED"
+        ]
+      }
+    },
+    "IfcFooting": {
+      "category": "TML",
+      "pdf_pages": [
+        73
+      ],
+      "material_required": true,
+      "tag_required": true,
+      "psets": {},
+      "predefined_types": {
+        "IFC4": [
+          "CAISSON_FOUNDATION",
+          "FOOTING_BEAM",
+          "PAD_FOOTING",
+          "PILE_CAP",
+          "STRIP_FOOTING",
+          "USERDEFINED",
+          "NOTDEFINED"
+        ],
+        "IFC4X3_ADD2": [
+          "CAISSON_FOUNDATION",
+          "FOOTING_BEAM",
+          "PAD_FOOTING",
+          "PILE_CAP",
+          "STRIP_FOOTING",
+          "USERDEFINED",
+          "NOTDEFINED"
+        ]
+      }
+    },
+    "IfcMember": {
+      "category": "ELM",
+      "pdf_pages": [
+        79
+      ],
+      "material_required": true,
+      "tag_required": true,
+      "psets": {
+        "Pset_MemberCommon": {
+          "IsExternal": "IfcBoolean"
+        }
+      },
+      "predefined_types": {
+        "IFC4": [
+          "BRACE",
+          "CHORD",
+          "COLLAR",
+          "MEMBER",
+          "MULLION",
+          "PLATE",
+          "POST",
+          "PURLIN",
+          "RAFTER",
+          "STRINGER",
+          "STRUT",
+          "STUD",
+          "USERDEFINED",
+          "NOTDEFINED"
+        ],
+        "IFC4X3_ADD2": [
+          "ARCH_SEGMENT",
+          "BRACE",
+          "CHORD",
+          "COLLAR",
+          "MEMBER",
+          "MULLION",
+          "PLATE",
+          "POST",
+          "PURLIN",
+          "RAFTER",
+          "STAY_CABLE",
+          "STIFFENING_RIB",
+          "STRINGER",
+          "STRUCTURALCABLE",
+          "STRUT",
+          "STUD",
+          "SUSPENDER",
+          "SUSPENSION_CABLE",
+          "TIEBAR",
+          "USERDEFINED",
+          "NOTDEFINED"
+        ]
+      }
+    },
+    "IfcPile": {
+      "category": "KZK",
+      "pdf_pages": [
+        83
+      ],
+      "material_required": true,
+      "tag_required": true,
+      "psets": {},
+      "predefined_types": {
+        "IFC4": [
+          "BORED",
+          "DRIVEN",
+          "JETGROUTING",
+          "COHESION",
+          "FRICTION",
+          "SUPPORT",
+          "USERDEFINED",
+          "NOTDEFINED"
+        ],
+        "IFC4X3_ADD2": [
+          "BORED",
+          "COHESION",
+          "DRIVEN",
+          "FRICTION",
+          "JETGROUTING",
+          "SUPPORT",
+          "USERDEFINED",
+          "NOTDEFINED"
+        ]
+      }
+    },
+    "IfcRailing": {
+      "category": "KRK",
+      "pdf_pages": [
+        87
+      ],
+      "material_required": false,
+      "tag_required": true,
+      "psets": {},
+      "predefined_types": {
+        "IFC4": [
+          "HANDRAIL",
+          "GUARDRAIL",
+          "BALUSTRADE",
+          "USERDEFINED",
+          "NOTDEFINED"
+        ],
+        "IFC4X3_ADD2": [
+          "BALUSTRADE",
+          "FENCE",
+          "GUARDRAIL",
+          "HANDRAIL",
+          "USERDEFINED",
+          "NOTDEFINED"
+        ]
+      }
+    },
+    "IfcRamp": {
+      "category": "RMP",
+      "pdf_pages": [
+        88
+      ],
+      "material_required": true,
+      "tag_required": true,
+      "psets": {},
+      "predefined_types": {
+        "IFC4": [
+          "STRAIGHT_RUN_RAMP",
+          "TWO_STRAIGHT_RUN_RAMP",
+          "QUARTER_TURN_RAMP",
+          "TWO_QUARTER_TURN_RAMP",
+          "HALF_TURN_RAMP",
+          "SPIRAL_RAMP",
+          "USERDEFINED",
+          "NOTDEFINED"
+        ],
+        "IFC4X3_ADD2": [
+          "HALF_TURN_RAMP",
+          "QUARTER_TURN_RAMP",
+          "SPIRAL_RAMP",
+          "STRAIGHT_RUN_RAMP",
+          "TWO_QUARTER_TURN_RAMP",
+          "TWO_STRAIGHT_RUN_RAMP",
+          "USERDEFINED",
+          "NOTDEFINED"
+        ]
+      }
+    },
+    "IfcRoof": {
+      "category": "CAT",
+      "pdf_pages": [
+        91
+      ],
+      "material_required": false,
+      "tag_required": true,
+      "psets": {
+        "Pset_RoofCommon": {
+          "IsExternal": "IfcBoolean",
+          "FireRating": "IfcLabel"
+        }
+      },
+      "predefined_types": {
+        "IFC4": [
+          "FLAT_ROOF",
+          "SHED_ROOF",
+          "GABLE_ROOF",
+          "HIP_ROOF",
+          "HIPPED_GABLE_ROOF",
+          "GAMBREL_ROOF",
+          "MANSARD_ROOF",
+          "BARREL_ROOF",
+          "RAINBOW_ROOF",
+          "BUTTERFLY_ROOF",
+          "PAVILION_ROOF",
+          "DOME_ROOF",
+          "FREEFORM",
+          "USERDEFINED",
+          "NOTDEFINED"
+        ],
+        "IFC4X3_ADD2": [
+          "BARREL_ROOF",
+          "BUTTERFLY_ROOF",
+          "DOME_ROOF",
+          "FLAT_ROOF",
+          "FREEFORM",
+          "GABLE_ROOF",
+          "GAMBREL_ROOF",
+          "HIPPED_GABLE_ROOF",
+          "HIP_ROOF",
+          "MANSARD_ROOF",
+          "PAVILION_ROOF",
+          "RAINBOW_ROOF",
+          "SHED_ROOF",
+          "USERDEFINED",
+          "NOTDEFINED"
+        ]
+      }
+    },
+    "IfcSlab": {
+      "category": "DSM",
+      "pdf_pages": [
+        96
+      ],
+      "material_required": true,
+      "tag_required": true,
+      "psets": {
+        "Pset_SlabCommon": {
+          "IsExternal": "IfcBoolean",
+          "FireRating": "IfcLabel"
+        }
+      },
+      "predefined_types": {
+        "IFC4": [
+          "FLOOR",
+          "ROOF",
+          "LANDING",
+          "BASESLAB",
+          "USERDEFINED",
+          "NOTDEFINED"
+        ],
+        "IFC4X3_ADD2": [
+          "APPROACH_SLAB",
+          "BASESLAB",
+          "FLOOR",
+          "LANDING",
+          "PAVING",
+          "ROOF",
+          "SIDEWALK",
+          "TRACKSLAB",
+          "WEARING",
+          "USERDEFINED",
+          "NOTDEFINED"
+        ]
+      }
+    },
+    "IfcSpace": {
+      "category": "MHL",
+      "pdf_pages": [
+        98,
+        99
+      ],
+      "material_required": false,
+      "tag_required": false,
+      "psets": {
+        "Pset_SpaceCoveringRequirements": {
+          "FloorCovering": "IfcLabel",
+          "FloorCoveringThickness": "IfcPositiveLengthMeasure",
+          "WallCovering": "IfcLabel",
+          "WallCoveringThickness": "IfcPositiveLengthMeasure",
+          "CeilingCovering": "IfcLabel",
+          "CeilingCoveringThickness": "IfcPositiveLengthMeasure"
+        }
+      },
+      "predefined_types": {
+        "IFC4": [
+          "SPACE",
+          "PARKING",
+          "GFA",
+          "INTERNAL",
+          "EXTERNAL",
+          "USERDEFINED",
+          "NOTDEFINED"
+        ],
+        "IFC4X3_ADD2": [
+          "EXTERNAL",
+          "GFA",
+          "INTERNAL",
+          "PARKING",
+          "SPACE",
+          "USERDEFINED",
+          "NOTDEFINED"
+        ]
+      }
+    },
+    "IfcStair": {
+      "category": "MRD",
+      "pdf_pages": [
+        102
+      ],
+      "material_required": true,
+      "tag_required": true,
+      "psets": {
+        "Pset_StairCommon": {
+          "FireRating": "IfcLabel",
+          "FireExit": "IfcBoolean"
+        }
+      },
+      "predefined_types": {
+        "IFC4": [
+          "STRAIGHT_RUN_STAIR",
+          "TWO_STRAIGHT_RUN_STAIR",
+          "QUARTER_WINDING_STAIR",
+          "QUARTER_TURN_STAIR",
+          "HALF_WINDING_STAIR",
+          "HALF_TURN_STAIR",
+          "TWO_QUARTER_WINDING_STAIR",
+          "TWO_QUARTER_TURN_STAIR",
+          "THREE_QUARTER_WINDING_STAIR",
+          "THREE_QUARTER_TURN_STAIR",
+          "SPIRAL_STAIR",
+          "DOUBLE_RETURN_STAIR",
+          "CURVED_RUN_STAIR",
+          "TWO_CURVED_RUN_STAIR",
+          "USERDEFINED",
+          "NOTDEFINED"
+        ],
+        "IFC4X3_ADD2": [
+          "CURVED_RUN_STAIR",
+          "DOUBLE_RETURN_STAIR",
+          "HALF_TURN_STAIR",
+          "HALF_WINDING_STAIR",
+          "LADDER",
+          "QUARTER_TURN_STAIR",
+          "QUARTER_WINDING_STAIR",
+          "SPIRAL_STAIR",
+          "STRAIGHT_RUN_STAIR",
+          "THREE_QUARTER_TURN_STAIR",
+          "THREE_QUARTER_WINDING_STAIR",
+          "TWO_CURVED_RUN_STAIR",
+          "TWO_QUARTER_TURN_STAIR",
+          "TWO_QUARTER_WINDING_STAIR",
+          "TWO_STRAIGHT_RUN_STAIR",
+          "USERDEFINED",
+          "NOTDEFINED"
+        ]
+      }
+    },
+    "IfcWall": {
+      "category": "DVR",
+      "pdf_pages": [
+        107
+      ],
+      "material_required": true,
+      "tag_required": true,
+      "psets": {
+        "Pset_WallCommon": {
+          "IsExternal": "IfcBoolean",
+          "FireRating": "IfcLabel"
+        }
+      },
+      "predefined_types": {
+        "IFC4": [
+          "MOVABLE",
+          "PARAPET",
+          "PARTITIONING",
+          "PLUMBINGWALL",
+          "SHEAR",
+          "SOLIDWALL",
+          "STANDARD",
+          "POLYGONAL",
+          "ELEMENTEDWALL",
+          "USERDEFINED",
+          "NOTDEFINED"
+        ],
+        "IFC4X3_ADD2": [
+          "ELEMENTEDWALL",
+          "MOVABLE",
+          "PARAPET",
+          "PARTITIONING",
+          "PLUMBINGWALL",
+          "POLYGONAL",
+          "RETAININGWALL",
+          "SHEAR",
+          "SOLIDWALL",
+          "STANDARD",
+          "WAVEWALL",
+          "USERDEFINED",
+          "NOTDEFINED"
+        ]
+      }
+    },
+    "IfcWindow": {
+      "category": "PNC",
+      "pdf_pages": [
+        108
+      ],
+      "material_required": false,
+      "tag_required": true,
+      "psets": {
+        "Pset_WindowCommon": {
+          "IsExternal": "IfcBoolean"
+        }
+      },
+      "predefined_types": {
+        "IFC4": [
+          "WINDOW",
+          "SKYLIGHT",
+          "LIGHTDOME",
+          "USERDEFINED",
+          "NOTDEFINED"
+        ],
+        "IFC4X3_ADD2": [
+          "LIGHTDOME",
+          "SKYLIGHT",
+          "WINDOW",
+          "USERDEFINED",
+          "NOTDEFINED"
+        ]
+      }
+    }
+  },
+  "ui": {
+    "Türkiye delivery information": {
+      "tr": "Türkiye teslim bilgileri",
+      "es": "Información de entrega de Türkiye"
+    },
+    "Project identifier supplied by the authority": {
+      "tr": "İdarenin verdiği proje kodu",
+      "es": "Identificador de proyecto asignado por la autoridad"
+    },
+    "Project type": {
+      "tr": "Proje tipi",
+      "es": "Tipo de proyecto"
+    },
+    "BIM object": {
+      "tr": "BIM nesnesi",
+      "es": "Objeto BIM"
+    },
+    "Discipline": {
+      "tr": "Disiplin",
+      "es": "Disciplina"
+    },
+    "Description tokens": {
+      "tr": "Açıklama bileşenleri",
+      "es": "Componentes de descripción"
+    },
+    "Generated name": {
+      "tr": "Oluşturulan ad",
+      "es": "Nombre generado"
+    },
+    "Description separators": {
+      "tr": "Açıklama ayırıcıları",
+      "es": "Separadores de descripción"
+    },
+    "EK-5: underscore (_)": {
+      "tr": "EK-5: alt çizgi (_)",
+      "es": "EK-5: underscore (_)"
+    },
+    "Article 11: hyphen (-)": {
+      "tr": "Madde 11: tire (-)",
+      "es": "Article 11: hyphen (-)"
+    },
+    "The annex and Article 11 differ on description separators. Choose the interpretation to review.": {
+      "tr": "EK-5 ile Madde 11 açıklama ayırıcısında farklılaşıyor. İncelenecek yorumu seçin.",
+      "es": "The annex and Article 11 differ on description separators. Choose the interpretation to review."
+    },
+    "Material name and strength": {
+      "tr": "Malzeme adı ve dayanımı",
+      "es": "Nombre y resistencia del material"
+    },
+    "Missing / not entered": {
+      "tr": "Eksik / girilmedi",
+      "es": "Falta / sin introducir"
+    },
+    "Apply entered data": {
+      "tr": "Girilen bilgileri uygula",
+      "es": "Aplicar datos introducidos"
+    },
+    "Check entered data": {
+      "tr": "Girilen bilgileri denetle",
+      "es": "Comprobar datos introducidos"
+    },
+    "Türkiye IFC4.3 profile": {
+      "tr": "Türkiye IFC4.3 profili",
+      "es": "Perfil IFC4.3 de Türkiye"
+    },
+    "No missing values in the checked fields. Remaining scope still requires review.": {
+      "tr": "Denetlenen alanlarda eksik değer yok. Kalan kapsam ayrıca incelenmelidir.",
+      "es": "No missing values in the checked fields. Remaining scope still requires review."
+    },
+    "No verified category for this IFC class.": {
+      "tr": "Bu IFC sınıfı için doğrulanmış kategori yok.",
+      "es": "No verified category for this IFC class."
+    },
+    "Dimensions and thicknesses use metres. Empty fields are not inferred.": {
+      "tr": "Ölçü ve kalınlıklar metre cinsindedir. Boş alanlar tahmin edilmez.",
+      "es": "Dimensions and thicknesses use metres. Empty fields are not inferred."
+    },
+    "Material-layer or space-covering relationship not verified.": {
+      "tr": "Malzeme katmanı veya mahal kaplaması ilişkisi doğrulanmadı.",
+      "es": "Material-layer or space-covering relationship not verified."
+    },
+    "PredefinedType": {
+      "tr": "Ön tanımlı tip",
+      "es": "Tipo predefinido"
+    },
+    "ObjectType": {
+      "tr": "Kullanıcı tanımlı tip",
+      "es": "Tipo definido por el usuario"
+    },
+    "Tag": {
+      "tr": "Etiket",
+      "es": "Etiqueta"
+    },
+    "FireRating": {
+      "tr": "Yangın dayanımı sınıfı",
+      "es": "Resistencia al fuego"
+    },
+    "IsExternal": {
+      "tr": "Dışarıda",
+      "es": "Exterior"
+    },
+    "LoadBearing": {
+      "tr": "Taşıyıcı",
+      "es": "Portante"
+    },
+    "FireExit": {
+      "tr": "Acil çıkış",
+      "es": "Salida de emergencia"
+    },
+    "FloorCovering": {
+      "tr": "Zemin kaplaması",
+      "es": "Revestimiento del suelo"
+    },
+    "FloorCoveringThickness": {
+      "tr": "Zemin kaplama kalınlığı",
+      "es": "Espesor del revestimiento del suelo"
+    },
+    "WallCovering": {
+      "tr": "Duvar kaplaması",
+      "es": "Revestimiento de pared"
+    },
+    "WallCoveringThickness": {
+      "tr": "Duvar kaplama kalınlığı",
+      "es": "Espesor del revestimiento de pared"
+    },
+    "CeilingCovering": {
+      "tr": "Tavan kaplaması",
+      "es": "Revestimiento del techo"
+    },
+    "CeilingCoveringThickness": {
+      "tr": "Tavan kaplama kalınlığı",
+      "es": "Espesor del revestimiento del techo"
+    },
+    "Check saved data": {
+      "tr": "Kaydedilen bilgileri denetle",
+      "es": "Comprobar datos guardados"
+    },
+    "Missing or inconsistent generated name": {
+      "tr": "Oluşturulan ad eksik veya tutarsız"
+    },
+    "Unsupported predefined type for this schema": {
+      "tr": "Bu şema için ön tanımlı tip desteklenmiyor"
+    },
+    "USERDEFINED requires ObjectType": {
+      "tr": "USERDEFINED için kullanıcı tanımlı tip gerekir"
+    },
+    "Expected material_name_strength, e.g. Beton_C25": {
+      "tr": "Malzeme_adı_dayanımı bekleniyor; ör. Beton_C25"
+    },
+    "Expected text": {
+      "tr": "Metin bekleniyor"
+    },
+    "Layer thickness (m)": {
+      "tr": "Katman kalınlığı (m)",
+      "es": "Espesor de capa (m)"
+    },
+    "Layer direction": {
+      "tr": "Katman yönü",
+      "es": "Dirección de capa"
+    },
+    "Direction sense": {
+      "tr": "Yön işareti",
+      "es": "Sentido"
+    },
+    "Layer offset (m)": {
+      "tr": "Katman ofseti (m)",
+      "es": "Desplazamiento de capa (m)"
+    },
+    "Checks cover the listed fields only. Actor, CRS, geometry/material alignment and legal applicability require separate review.": {
+      "tr": "Denetim yalnız listelenen alanları kapsar. Kişi/kurum, koordinat sistemi, geometri/malzeme uyumu ve hukuki uygulanabilirlik ayrıca incelenmelidir.",
+      "es": "Las comprobaciones solo cubren los campos indicados. Los actores, el CRS, la correspondencia entre geometría y material y la aplicabilidad legal requieren revisión aparte."
+    },
+    "layer.thickness: finite length required": {
+      "tr": "Katman kalınlığı: sonlu bir uzunluk girilmeli"
+    },
+    "layer.offset: finite length required": {
+      "tr": "Katman ofseti: sonlu bir uzunluk girilmeli"
+    },
+    "layer.thickness: non-negative length required": {
+      "tr": "Katman kalınlığı negatif olamaz"
+    },
+    "layer.axis: AXIS1 / AXIS2 / AXIS3 required": {
+      "tr": "Katman yönü: AXIS1 / AXIS2 / AXIS3 seçilmeli"
+    },
+    "layer.sense: POSITIVE / NEGATIVE required": {
+      "tr": "Katman işareti: POSITIVE / NEGATIVE seçilmeli"
+    },
+    "Material is required for a material layer": {
+      "tr": "Malzeme katmanı için malzeme adı girilmeli"
+    }
+  }
+}
