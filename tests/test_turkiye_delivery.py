@@ -301,6 +301,41 @@ def test_material_layer_usage_is_readable_in_both_schemas(tmp_path):
         assert not log.statements
 
 
+@pytest.mark.parametrize("schema", ["IFC4", "IFC4X3_ADD2"])
+def test_nested_group_geometry_and_quantities_use_world_placement(schema, tmp_path):
+    ifcopenshell = pytest.importorskip("ifcopenshell")
+    import ifcopenshell.geom
+    import ifcopenshell.util.shape
+    import ifcopenshell.util.element
+    from tests.test_ifc43_export import _box_scene
+    from core.mesh import Mesh
+    scene = _box_scene()
+    group = Group(scene.mesh)
+    scene.mesh = Mesh()
+    group.xform = QMatrix4x4()
+    group.xform.translate(6, 0, 0)
+    group.xform.scale(1, 0.08, 1)
+    tag_group(group, "IfcWall", "Original")
+    parent = Group()
+    parent.xform = QMatrix4x4()
+    parent.xform.translate(5, 0, 0)
+    parent.adopt([group])
+    scene.groups.append(parent)
+    apply(scene, complete_data("IfcWall"))
+    path = tmp_path / "placed.ifc"
+    save_ifc(scene, path, schema=schema)
+    model = ifcopenshell.open(str(path))
+    wall = model.by_type("IfcWall")[0]
+    geometry = ifcopenshell.geom.create_shape(ifcopenshell.geom.settings(), wall).geometry
+    assert min(geometry.verts[0::3]) == pytest.approx(11)
+    assert max(geometry.verts[0::3]) == pytest.approx(15)
+    volume = ifcopenshell.util.shape.get_volume(geometry)
+    assert volume == pytest.approx(0.208)
+    qto = ifcopenshell.util.element.get_psets(wall, qtos_only=True)["Qto_WallBaseQuantities"]
+    assert qto["GrossVolume"] == pytest.approx(volume)
+    assert qto["Width"] == pytest.approx(0.02)
+
+
 @pytest.mark.parametrize("language", ["en", "tr"])
 def test_dialog_preview_apply_undo_and_cancel(language):
     from core import i18n
@@ -328,6 +363,13 @@ def test_dialog_preview_apply_undo_and_cancel(language):
         dialog.fields["material"].setText("Beton_C25")
         dialog.property_fields[("Pset_WallCommon", "IsExternal")][0].setCurrentIndex(2)
         dialog.property_fields[("Pset_WallCommon", "FireRating")][0].setText("REI60")
+        if language == "tr":
+            from PySide6.QtWidgets import QDialogButtonBox
+            assert dialog.object_box.itemText(0) == "Proje"
+            assert dialog.form.labelForField(dialog.project_description).text() == "Açıklama"
+            boolean = dialog.property_fields[("Pset_WallCommon", "IsExternal")][0]
+            assert boolean.itemText(2) == "Yanlış"
+            assert dialog.findChild(QDialogButtonBox).button(QDialogButtonBox.Close).text() == "Kapat"
         dialog.apply_data()
         assert not check_scene(scene)["issues"]
         assert f.attrs["ifc"]["delivery"]["psets"]["Pset_WallCommon"]["IsExternal"] is False

@@ -72,7 +72,10 @@ supports that class.
 
 Property sets and their relationships have stable GUIDs derived from the
 owner and set name. Editing values preserves element and relationship
-identity. Quantity sets and geometry remain separate. Data travel in
+identity. Quantity sets and geometry remain separate. Tagged groups now
+provide their placed faces to consumers, correcting an existing export
+error that lost group scaling, translation and nested placements; exported
+geometry and class-specific quantities use the same world-space faces. Data travel in
 `Scene.ifc_project` and each BIM tag's `delivery` dictionary through `.igz`
 (including binary geometry), copying and undo/redo. No format-version bump
 or runtime IfcOpenShell dependency is introduced. Older builds may discard

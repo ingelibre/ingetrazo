@@ -273,7 +273,8 @@ def _face_tags_in(mesh, memo, seen) -> dict:
 
 def collect_objects(scene, memo: dict | None = None) -> list[dict]:
     """Every tagged BIM object in the document, with live quantities:
-    ``{"key", "class", "name", "area", "volume" (or None), "faces" | "group"}``.
+    ``{"key", "class", "name", "area", "volume" (or None), "faces"}``.
+    ``faces`` are in world space; whole-group objects also carry ``group``.
     Loose-face objects group by tag id; each tagged group is one object, at
     any depth of the tree. Tagged faces inside a group's mesh are one
     object per group and tag id: ``"faces"`` (world space) plus ``"owner"``
@@ -340,6 +341,9 @@ def collect_objects(scene, memo: dict | None = None) -> list[dict]:
             "name": tag.get("name", ""),
             "area": face_set_area(faces),
             "volume": face_set_volume(faces),
+            # Consumers must use the same placed geometry as the quantities;
+            # g.mesh alone loses instance transforms and nested placements.
+            "faces": faces,
             "group": g,
         }
         if memo is not None:

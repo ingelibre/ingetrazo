@@ -793,6 +793,26 @@
     },
     "Material is required for a material layer": {
       "tr": "Malzeme katmanı için malzeme adı girilmeli"
+    },
+    "Project": {
+      "tr": "Proje",
+      "es": "Proyecto"
+    },
+    "Description": {
+      "tr": "Açıklama",
+      "es": "Descripción"
+    },
+    "True": {
+      "tr": "Doğru",
+      "es": "Verdadero"
+    },
+    "False": {
+      "tr": "Yanlış",
+      "es": "Falso"
+    },
+    "Close": {
+      "tr": "Kapat",
+      "es": "Cerrar"
     }
   }
 }

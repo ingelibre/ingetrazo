@@ -6,7 +6,6 @@ from PySide6.QtWidgets import (QComboBox, QDialog, QDialogButtonBox, QFormLayout
                                QPushButton, QScrollArea, QVBoxLayout, QWidget)
 
 from core.bim import collect_objects
-from core.i18n import tr
 from core.turkiye_delivery import (SetDeliveryInformationCommand, check_scene,
                                    generated_name, metadata, rules, ui)
 
@@ -33,11 +32,11 @@ class DeliveryDialog(QDialog):
         self.project_description = QLineEdit(self.scene.ifc_project.get("description", ""))
         self.form.addRow(ui("Project identifier supplied by the authority"), self.project_name)
         self.form.addRow(ui("Project type"), self.project_type)
-        self.form.addRow(tr("Description"), self.project_description)
+        self.form.addRow(ui("Description"), self.project_description)
         self.object_box = QComboBox()
         self.object_box.setMinimumContentsLength(20)
         self.object_box.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
-        self.object_box.addItem(tr("Project"), None)
+        self.object_box.addItem(ui("Project"), None)
         for i, obj in enumerate(self.objects):
             self.object_box.addItem(f"{i + 1}. {obj['class']} — {obj['name']}", i)
         self.form.addRow(ui("BIM object"), self.object_box)
@@ -52,6 +51,7 @@ class DeliveryDialog(QDialog):
         self.report.setAccessibleName(ui("Check saved data"))
         layout.addWidget(self.report, 1)
         buttons = QDialogButtonBox(QDialogButtonBox.Close)
+        buttons.button(QDialogButtonBox.Close).setText(ui("Close"))
         self.apply_button = QPushButton(ui("Apply entered data"))
         check = QPushButton(ui("Check saved data"))
         buttons.addButton(self.apply_button, QDialogButtonBox.ApplyRole)
@@ -147,8 +147,8 @@ class DeliveryDialog(QDialog):
                 if kind == "IfcBoolean":
                     edit = QComboBox()
                     edit.addItem(ui("Missing / not entered"), None)
-                    edit.addItem(tr("True"), True)
-                    edit.addItem(tr("False"), False)
+                    edit.addItem(ui("True"), True)
+                    edit.addItem(ui("False"), False)
                     edit.setCurrentIndex(0 if value is None else 1 if value is True else 2)
                 else:
                     edit = QLineEdit("" if value is None else str(value))
