@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2026 Marco Sumari Tellez and IngeTrazo contributors.
-"""IFC4 export — tagged BIM objects to a STEP Physical File, by hand.
+"""IFC4 / IFC4.3 ADD2 export — tagged BIM objects to a STEP Physical File.
 
 Only what the thesis needs, written without dependencies: IFC4 is a text
 format (ISO 10303-21) and our export scope is narrow — the spatial skeleton
@@ -24,8 +24,10 @@ from pathlib import Path
 from core.bim import class_quantities, collect_objects, face_set_volume
 from core.ifc_identity import compressed_guid, object_identity, stable_guid
 
-#: IFC4 total attribute counts per element class (the first 8 are the common
-#: GlobalId..Tag layout; the rest are padded with ``$``). Classes with quirky
+SUPPORTED_SCHEMAS = ("IFC4", "IFC4X3_ADD2")
+
+#: Attribute counts shared by IFC4 and IFC4X3_ADD2. The first 8 are the
+#: common GlobalId..Tag layout; the rest are padded with ``$``. Classes with quirky
 #: layouts (doors/windows carry OverallHeight/Width…, IfcSpace has LongName
 #: where others have Tag) just get the right pad width.
 _ATTR_COUNT = {"IfcPile": 10, "IfcDoor": 13, "IfcWindow": 13, "IfcSpace": 11,
@@ -116,9 +118,16 @@ def _brep(w: _Writer, faces, context_id: int) -> int:
                  rep_type, f"(#{item})")
 
 
-def save_ifc(scene, path, project_name: str = "IngeTrazo project") -> int:
-    """Write every tagged BIM object to ``path`` as IFC4. Returns how many
-    elements were exported; raises ``ValueError`` when nothing is tagged."""
+def save_ifc(scene, path, project_name: str = "IngeTrazo project", *,
+             schema: str = "IFC4") -> int:
+    """Write tagged objects as IFC4 (default) or IFC4X3_ADD2.
+
+    Returns the exported element count. Unsupported schemas and an empty
+    tagged model raise ValueError before the output file is written.
+    The supported classes use the same attribute layout in both schemas.
+    """
+    if schema not in SUPPORTED_SCHEMAS:
+        raise ValueError(f"Unsupported IFC schema: {schema!r}")
     objects = collect_objects(scene)
     if not objects:
         raise ValueError("No tagged BIM objects to export")
@@ -163,6 +172,7 @@ def save_ifc(scene, path, project_name: str = "IngeTrazo project") -> int:
           f"#{building}", f"(#{storey})")
 
     element_ids = []
+    space_ids = []
     for obj, element_guid in zip(objects, element_guids):
         faces = obj.get("faces") or list(obj["group"].mesh.faces)
         if not faces:
@@ -196,7 +206,7 @@ def save_ifc(scene, path, project_name: str = "IngeTrazo project") -> int:
                       ".NOTDEFINED."]
         attrs += ["$"] * (total - len(attrs))
         elem = w.add(cls.upper(), *attrs)
-        element_ids.append(elem)
+        (space_ids if cls == "IfcSpace" else element_ids).append(elem)
 
         # Per-class BaseQuantities (Qto_* naming): the takeoff numbers in
         # the budget's own measures, straight in the file.
@@ -215,10 +225,17 @@ def save_ifc(scene, path, project_name: str = "IngeTrazo project") -> int:
                   _s(guid("quantity-relation", element_guid)), "$", "$", "$",
                   f"(#{elem})", f"#{eq}")
 
-    if not element_ids:
+    if not element_ids and not space_ids:
         raise ValueError("No tagged BIM objects to export")
-    w.add("IFCRELCONTAINEDINSPATIALSTRUCTURE", _s(guid("storey-containment")), "$", "$", "$",
-          "(" + ",".join(f"#{e}" for e in element_ids) + ")", f"#{storey}")
+    if element_ids:
+        w.add("IFCRELCONTAINEDINSPATIALSTRUCTURE",
+              _s(guid("storey-containment")), "$", "$", "$",
+              "(" + ",".join(f"#{e}" for e in element_ids) + ")", f"#{storey}")
+    if space_ids:
+        # Spaces are spatial structure: decompose the storey, never put
+        # them in RelatedElements (IfcRelContainedInSpatialStructure.WR31).
+        w.add("IFCRELAGGREGATES", _s(guid("storey-spaces")), "$", "$", "$",
+              f"#{storey}", "(" + ",".join(f"#{e}" for e in space_ids) + ")")
 
     stamp = datetime.datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
     name = Path(path).name.replace("'", "''")
@@ -228,11 +245,11 @@ def save_ifc(scene, path, project_name: str = "IngeTrazo project") -> int:
         "FILE_DESCRIPTION((''),'2;1');\n"
         f"FILE_NAME('{name}','{stamp}',('IngeTrazo'),('IngeTrazo'),"
         "'IngeTrazo','IngeTrazo','');\n"
-        "FILE_SCHEMA(('IFC4'));\n"
+        f"FILE_SCHEMA(('{schema}'));\n"
         "ENDSEC;\n"
         "DATA;\n"
     )
     footer = "ENDSEC;\nEND-ISO-10303-21;\n"
     Path(path).write_text(header + "\n".join(w.lines) + "\n" + footer,
                           encoding="ascii")
-    return len(element_ids)
+    return len(element_ids) + len(space_ids)
