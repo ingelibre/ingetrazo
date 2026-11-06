@@ -18,6 +18,7 @@ from typing import Iterable
 
 from PySide6.QtGui import QVector3D
 
+from core import layers as _layers
 from core.mesh import Edge, Face, Mesh
 
 
@@ -221,9 +222,8 @@ class Scene:
     def _layer_state(self, entity) -> tuple[bool, bool]:
         """(visible, locked) of the layer ``entity`` carries; unknown layer
         names read as the default (visible, unlocked)."""
-        from core.layers import DEFAULT_LAYER, layer_of
-        name = layer_of(entity)
-        if name == DEFAULT_LAYER and self._edit_stack:
+        name = _layers.layer_of(entity)
+        if name == _layers.DEFAULT_LAYER and self._edit_stack:
             name = self._open_group_layer(entity) or name
         ly = self.layer(name)
         if ly is None:

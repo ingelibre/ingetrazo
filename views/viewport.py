@@ -36,12 +36,15 @@ Tool input (when a tool is active):
 from __future__ import annotations
 
 import copy
+import importlib
 import itertools
 import math
 import os
 import inspect
 import re
+import sys
 import time as _time_mod
+import types
 from array import array
 from pathlib import Path
 from typing import Optional
@@ -121,14 +124,15 @@ from PySide6.QtOpenGLWidgets import QOpenGLWidget
 
 from core.camera import OrbitCamera
 from core.i18n import tr
-from core.group import Group, copy_group, world_mesh
+from core.group import Group, copy_group, effective_material, world_mesh
+from core import layers as _layers
 from core.mesh import Edge, Face
 from core.history import EraseSelectionCommand, History
 from core.scene import Scene
 from core.style import (DEFAULT_BACK_COLOR, DEFAULT_FACE_COLOR,
                         MONOCHROME_GLASS_RGB,
                         effective_back_color)
-from core.materials import material_sig as _material_sig
+from core.materials import effective_attrs, material_sig as _material_sig
 from core.snap import SnapResult, _AXIS_VECTORS
 from core.texture import face_uv_axes
 from core.triangulate import plane_axes
@@ -734,22 +738,27 @@ class _InstanceBatch(list):
     __slots__ = ("idx", "mats")
 
 
+def _array_bake():
+    """views.array_bake, which imports back here (its import statement ran
+    per placement, per frame pass)."""
+    return sys.modules.get("views.array_bake") or importlib.import_module(
+        "views.array_bake")
+
+
 def _proto_wrapper(vp, mesh, paint=None):
     """The stable stand-in a prototype mesh is baked through, one per
     (mesh, container paint): ``_group_chunk`` caches by the wrapper's id,
     so the same object must come back for the same mesh — and a painted
     instance (issue #47) gets a wrapper of its own. Module-level so the
     stub viewports in tests reach it too."""
-    from types import SimpleNamespace
-    from core.materials import material_sig
     wrappers = getattr(vp, "_proto_wrappers", None)
     if wrappers is None:
         wrappers = vp._proto_wrappers = {}
-    wkey = (id(mesh), material_sig(paint))
+    wkey = (id(mesh), _material_sig(paint))
     w = wrappers.get(wkey)
     if w is None:
-        w = wrappers[wkey] = SimpleNamespace(mesh=mesh, xform=None,
-                                             material=paint)
+        w = wrappers[wkey] = types.SimpleNamespace(mesh=mesh, xform=None,
+                                                   material=paint)
     else:
         w.material = paint
     return w
@@ -832,8 +841,9 @@ def _paint_of(vp, group):
     (issue #47), or — with Colour by layer on — the layer colours
     (core.layers.layer_paint). ``group`` None is the loose model; a
     prototype stand-in (``_proto_wrapper``) already carries its paint.
-    Module-level, like ``_proto_wrapper``, so stub viewports reach it."""
-    from core.group import Group, effective_material
+    Module-level, like ``_proto_wrapper``, so stub viewports reach it.
+    (Its names are the module's: asked 240 000 times to open the plant of
+    #158, an import statement each time was a second of it.)"""
     if group is not None and not isinstance(group, Group):
         return effective_material(group)
     scene = getattr(vp, "scene", None)
@@ -848,20 +858,18 @@ def _paint_of(vp, group):
              or getattr(scene, "display_style", None))
     by_layer = bool(getattr(style, "color_by_layer", False)
                     and style.face_mode in _BY_LAYER_MODES)
-    from core.layers import layer_fx, layer_look, layer_paint, object_layer
-    from core.materials import material_sig
     memo = getattr(vp, "_layer_paints", None)
     if memo is None or memo[0] != scene.version:
-        memo = vp._layer_paints = (scene.version, {}, layer_fx(scene))
+        memo = vp._layer_paints = (scene.version, {}, _layers.layer_fx(scene))
     fx = memo[2]
     if not by_layer and not fx:
         return _with_front_tint(worn, style)
     own = None if by_layer else _with_front_tint(worn, style)
-    key = (by_layer, object_layer(group), material_sig(own))
+    key = (by_layer, _layers.object_layer(group), _material_sig(own))
     paint = memo[1].get(key)
     if paint is None:
-        base = layer_paint(scene, group) if by_layer else own
-        paint = memo[1][key] = layer_look(scene, group, base, fx)
+        base = _layers.layer_paint(scene, group) if by_layer else own
+        paint = memo[1][key] = _layers.layer_look(scene, group, base, fx)
     return paint
 
 
@@ -12419,9 +12427,8 @@ class Viewport(QOpenGLWidget):
         # The container's paint (issue #47) changes what default faces
         # bake to without touching the mesh, so no serial or sample can
         # notice it: it is part of the entry's identity instead.
-        from core.materials import effective_attrs, material_sig
         paint = _paint_of(self, group)
-        msig = material_sig(paint)
+        msig = _material_sig(paint)
         if entry is not None and entry.get("msig") != msig:
             entry = None
         # The entry answers for ONE mesh object. Explode hands every lifted
@@ -12439,7 +12446,7 @@ class Viewport(QOpenGLWidget):
         # been baked in a paint of its own).
         behind = (entry is not None
                   and entry.get("flags_gen", 0) != getattr(mesh, "_flags_gen", 0))
-        from views import array_bake
+        array_bake = _array_bake()
         if array_bake.can_bake(mesh):
             # A lazy mesh (experimental engine) is baked from its arrays,
             # and stays unbuilt; while it is, it cannot have changed.

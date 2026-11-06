@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import copy
 import itertools
+import uuid
 
 from core.mesh import Mesh
 
@@ -23,7 +24,6 @@ _counter = itertools.count(1)
 def new_uid() -> str:
     """A fresh group identity: random, so two documents merged (a ``.igz``
     imported as a component) never collide."""
-    import uuid
     return uuid.uuid4().hex[:16]
 
 
