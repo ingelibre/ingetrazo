@@ -675,6 +675,11 @@ def _previews(grid):
 
 
 def test_a_tools_preview_shows_in_one_view_only(win):
+    # A test before this one may have left the pointer where a view opens,
+    # and that view would rightly take the preview.
+    from PySide6.QtCore import QPoint
+    from PySide6.QtGui import QCursor
+    QCursor.setPos(QPoint(-5000, -5000))
     grid = _four(win)
     assert _previews(grid) == [1], "the window's own, before the pointer comes"
     grid.set_tool_view(grid.cells[0].viewport)
