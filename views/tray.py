@@ -1702,12 +1702,13 @@ class PartsPanel(QWidget):
             return groups[0]            # a plain group: offer Split
         return None
 
-    def _row(self, part) -> dict:
+    def _row(self, part, shared=None) -> dict:
         """``part``'s row, measured once per version of its geometry — a
         tray refresh follows every edit, and a part is only re-measured
-        when it itself changed."""
+        when it itself changed. ``shared`` is one refresh's cache: the
+        parts that are copies of one definition read it once."""
         from core.group import iter_placements
-        from core.parts import part_rows
+        from core.parts import part_row
         sig = tuple(
             (id(g.mesh), getattr(g.mesh, "_mut_serial", 0),
              tuple(m.data()) if m is not None else None,
@@ -1717,9 +1718,7 @@ class PartsPanel(QWidget):
         if hit is not None and hit[0] == sig:
             row = hit[1]
         else:
-            holder = type("_Holder", (), {})()
-            holder.children = [part]
-            row = part_rows(holder)[0]
+            row = part_row(part, shared)
             self._cache[id(part)] = (sig, row)
         row = dict(row)
         row["name"] = part.name
@@ -1744,7 +1743,8 @@ class PartsPanel(QWidget):
         alive = {id(k) for k in kids}
         for key in [k for k in self._cache if k not in alive]:
             del self._cache[key]
-        self._rows = [self._row(k) for k in kids]
+        shared: dict = {}
+        self._rows = [self._row(k, shared) for k in kids]
         listed = [it.data(0, Qt.UserRole) for it in self._items]
         if len(listed) != len(kids) or any(a is not b
                                            for a, b in zip(listed, kids)):
