@@ -48,7 +48,35 @@ requirements, naming, property sets and delivery validation need their
 own checks. Compatibility with specific external BIM applications must
 also be tested separately.
 
+## Validation (2026-11-06)
+
+Windows, Python 3.13.5, PySide6/Qt 6.11.3, IfcOpenShell 0.9.0.post1.
+Implementation base: `b15899a` (the persistent identity contribution).
+
+- **139 passed, 1 skipped** in focused IFC/BIM/insertion/file-dialog tests,
+  including **52 new scenarios** in `tests/test_ifc43_export.py`. The skip
+  requires the separate IngePresupuestos checkout.
+- All 16 supported classes in both schemas: independent type/schema and
+  **EXPRESS rule validation with zero findings**, plus real-kernel geometry
+  tessellation. Each synthetic box retained its 2.6 m³ geometric volume.
+- Door/window field positions and the existing realistic reinforcing-bar
+  fixture were checked in both schemas. Quantity sets, SI units, open
+  surfaces, Turkish names, unsupported schemas, spatial aggregation and
+  save-dialog selection/cancellation were also checked.
+- A 4 × 0.25 × 2.6 m wall retained all **11 IfcRoot GlobalIds** when switching
+  between IFC4 and IFC4.3 ADD2, including after `.igz` save/reopen. Independent
+  volume remained **2.6 m³**.
+- **38 passed** in a temporary merge with the Turkish contribution
+  (`5eea8af`): identity/workspace tests, export-dialog tests and two additional
+  tests with the Turkish catalog active. Merge was conflict-free; the
+  3,312-key Turkish catalog validator reported no errors. These checks
+  overlap the focused suite and are not 38 additional unique cases.
+
+The full application suite, Linux CI and external desktop BIM viewers were
+not verified in this step. Schema/rule validation is not an MVD or delivery
+requirements certification.
+
 ## Reference
 
-- [buildingSMART IFC 4.3.2.0 documentation](https://standards.buildingsmart.org/IFC/RELEASE/IFC4_3/HTML/index.htm)
+- [buildingSMART IFC 4.3.2.0 documentation](https://standards.buildingsmart.org/IFC/RELEASE/IFC4_3/index.html)
 - [IfcRelContainedInSpatialStructure, including WR31](https://standards.buildingsmart.org/IFC/RELEASE/IFC4_3/HTML/lexical/IfcRelContainedInSpatialStructure.htm)
