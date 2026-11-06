@@ -107,8 +107,8 @@ class Group:
         # escena en donde esto esté oculto»). A hidden TAG hides by layer;
         # this hides the one object.
         self.hidden = False
-        # Lock: the object stays drawn but cannot be picked, selected or
-        # opened — so no tool can move or edit it — until it is unlocked
+        # Lock: the object stays drawn and can be inspected, but cannot enter
+        # the editable selection or be opened until it is unlocked
         # from the Browser. Saved in the .igz (the Project
         # Structure plugin of #87 kept it outside the document: «the
         # padlock function is not saved in the .igz file»).

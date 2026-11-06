@@ -1731,7 +1731,7 @@ class OutlinerPanel(QWidget):
                     self._reveal(item)
                     item.setExpanded(True)
             self._shown_path = path
-        chosen = tuple(id(g) for g in scene.selection
+        chosen = tuple(id(g) for g in scene.selection | scene.locked_selection
                        if id(g) in self._items)
         if set(chosen) != set(self._shown_selection):
             self._tree_only = set()         # selected elsewhere since
@@ -2113,13 +2113,12 @@ class OutlinerPanel(QWidget):
         groups = [g for g in scene.groups if outliner.layer_name(g) in names]
         if not groups or not self._open_to([]):
             return
-        picks = [g for g in groups if scene.entity_selectable(g)]
+        picks = [g for g in groups if scene.entity_inspectable(g)]
         self._tree_only = {id(g) for g in groups if g not in picks}
-        scene.selection.clear()
-        scene.selection.update(picks)
+        scene.select(picks)
         # Picked here, in sight: the refresh keeps the rows the view could
         # not take and does not scroll; the heading opens on them.
-        self._shown_selection = tuple(id(g) for g in picks)
+        self._shown_selection = tuple(id(g) for g in scene.selection | scene.locked_selection)
         item = self._heads.get(head)
         if item is not None:
             item.setExpanded(True)
@@ -2523,6 +2522,11 @@ class OutlinerPanel(QWidget):
         if group is None:
             picked = self._selected_groups()
             if not picked:
+                scene = self._scene()
+                scene.clear_selection()
+                self._tree_only.clear()
+                self._shown_selection = ()
+                self._window.viewport.update()
                 return
             group = picked[0]
         scene = self._scene()
@@ -2537,14 +2541,13 @@ class OutlinerPanel(QWidget):
                 "it to select inside"),
                 3500)
             return
-        picks = [g for g in siblings if scene.entity_selectable(g)]
-        # What the view cannot take (hidden, locked) stays picked here.
+        picks = [g for g in siblings if scene.entity_inspectable(g)]
+        # Hidden or layer-locked objects stay picked only in the tree.
         self._tree_only = {id(g) for g in siblings if g not in picks}
-        scene.selection.clear()
-        scene.selection.update(picks)
+        scene.select(picks)
         # Clicked here, so already in sight: the refresh this triggers must
         # not scroll the tree under the pointer.
-        self._shown_selection = tuple(id(g) for g in picks)
+        self._shown_selection = tuple(id(g) for g in scene.selection | scene.locked_selection)
         self._shown_path = tuple(id(g) for g in outliner.open_path(scene))
         scene.bump_view()
         self._window.viewport.update()
@@ -2710,8 +2713,10 @@ class OutlinerPanel(QWidget):
         for g in groups:
             if id(g) in picked and not scene.entity_selectable(g):
                 self._tree_only.add(id(g))
+        visible = [g for g in self._selected_groups() if scene.entity_inspectable(g)]
+        scene.select(scene.selection | set(visible))
         self._shown_selection = tuple(
-            id(g) for g in scene.selection if id(g) in self._items)
+            id(g) for g in scene.selection | scene.locked_selection if id(g) in self._items)
 
     def _adopt_tree_only(self) -> None:
         """Rows picked here while hidden or locked that the view can select
@@ -2723,11 +2728,11 @@ class OutlinerPanel(QWidget):
         ready = [g for g in self._selected_groups()
                  if id(g) in self._tree_only and scene.entity_selectable(g)]
         if ready:
-            scene.selection.update(ready)
+            scene.select(scene.selection | scene.locked_selection | set(ready))
             for g in ready:
                 self._tree_only.discard(id(g))
             self._shown_selection = tuple(
-                id(g) for g in scene.selection if id(g) in self._items)
+                id(g) for g in scene.selection | scene.locked_selection if id(g) in self._items)
             scene.bump_view()
 
     def toggle_locked(self, groups=None) -> None:

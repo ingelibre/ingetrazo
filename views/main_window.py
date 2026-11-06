@@ -5899,8 +5899,7 @@ class MainWindow(QMainWindow):
         dimensions and, in the model, the construction guides. The safe way to rotate/move/scale a WHOLE model: a
         window box-select that misses one protruding piece leaves it behind
         and the transform warps the boundary (the sigue.igz report)."""
-        sel = self.viewport.scene.selection
-        sel.clear()
+        sel = set()
         sel.update(self.viewport.scene.edges)
         sel.update(self.viewport.scene.faces)
         ctx = self.viewport.scene.edit_group
@@ -5915,13 +5914,8 @@ class MainWindow(QMainWindow):
             scene = self.viewport.scene
             sel.update(g for g in getattr(scene, "guides", [])
                        if scene.entity_selectable(g))
-        # Bump the version and say so: the GL colour caches are keyed on it
-        # and Entity Info listens for it, so a selection made behind
-        # Scene.select()'s back left the status bar counting entities the
-        # viewport drew unselected and the tray called "nothing selected"
-        # (issue #38). Everything else goes through Scene.select(); this
-        # one builds the set by hand because "all" is four sources.
-        self.viewport.scene.version += 1
+        # Keep locked objects in the inspection set, just as a click does.
+        self.viewport.scene.select(sel)
         self.viewport.notify_scene_changed()
         self.statusBar().showMessage(
             tr("Selected everything ({n} entities)", n=len(sel)), 2500)
