@@ -3,11 +3,13 @@
 """Explicit, reversible editing of the implemented Türkiye delivery fields."""
 from PySide6.QtWidgets import (QComboBox, QDialog, QDialogButtonBox, QFormLayout,
                                QLabel, QLineEdit, QMessageBox, QPlainTextEdit,
-                               QPushButton, QScrollArea, QVBoxLayout, QWidget)
+                               QPushButton, QScrollArea, QVBoxLayout, QWidget,
+                               QTableWidget, QTableWidgetItem)
 
 from core.bim import collect_objects
 from core.turkiye_delivery import (SetDeliveryInformationCommand, check_scene,
                                    generated_name, metadata, rules, ui)
+from views.delivery_workflow import label as workflow_label
 
 
 class DeliveryDialog(QDialog):
@@ -21,10 +23,13 @@ class DeliveryDialog(QDialog):
         self.resize(min(760, available.width() - 40),
                     min(700, available.height() - 80))
         layout = QVBoxLayout(self)
-        hint = QLabel(ui("Checks cover the listed fields only. Actor, CRS, geometry/material alignment "
-                        "and legal applicability require separate review."))
+        from views.delivery_workflow import label as workflow_label
+        hint = QLabel(workflow_label("Enter object properties here; manage project structure and delivery checks in Project and delivery workflow."))
         hint.setWordWrap(True)
         layout.addWidget(hint)
+        workflow = QPushButton(workflow_label("Project and delivery workflow"))
+        workflow.clicked.connect(self.open_workflow)
+        layout.addWidget(workflow)
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         content = QWidget()
@@ -86,6 +91,22 @@ class DeliveryDialog(QDialog):
             self.object_form.addRow(label)
             return
         data = metadata(obj)
+        from core.delivery_workflow import object_key
+        spatial = self.scene.ifc_project.get("spatial", {})
+        for key, title in (("storey_id", "Assigned storey"), ("space_id", "Assigned space")):
+            if key == "space_id" and obj["class"] == "IfcSpace":
+                continue
+            box = QComboBox(); box.addItem(ui("Missing / not entered"), "")
+            if key == "storey_id":
+                for floor in spatial.get("storeys", []): box.addItem(floor.get("name", floor["id"]), floor["id"])
+            else:
+                for space in self.objects:
+                    if space["class"] == "IfcSpace": box.addItem(space["name"], object_key(self.scene, space))
+            box.setCurrentIndex(max(0, box.findData(data.get(key, ""))))
+            self.fields[key] = box; self.object_form.addRow(workflow_label(title), box)
+        if obj["class"] == "IfcSpace":
+            self.fields["room_number"] = QLineEdit(data.get("room_number", ""))
+            self.object_form.addRow(workflow_label("Room number (K00_KNT_001)"), self.fields["room_number"])
         discipline = QComboBox()
         discipline.addItem(ui("Missing / not entered"), "")
         for code in rules()["disciplines"]:
@@ -140,6 +161,18 @@ class DeliveryDialog(QDialog):
                     edit = QLineEdit(str(layer[key]) if key in layer else "")
                 self.layer_fields[key] = edit
                 self.object_form.addRow(ui(title), edit)
+            self.layers = QTableWidget(0, 2)
+            self.layers.setHorizontalHeaderLabels([workflow_label("Material"), workflow_label("Thickness (m)")])
+            self.layers.horizontalHeader().setStretchLastSection(True)
+            rows = data.get("layers", [])
+            self.layers.setRowCount(len(rows))
+            for i, row in enumerate(rows):
+                for j, key in enumerate(("material", "thickness")):
+                    self.layers.setItem(i, j, QTableWidgetItem(str(row.get(key, ""))))
+            self.object_form.addRow(workflow_label("Material layers in order"), self.layers)
+            add = QPushButton(workflow_label("Add layer")); add.clicked.connect(lambda: self.layers.insertRow(self.layers.rowCount()))
+            remove = QPushButton(workflow_label("Remove layer")); remove.clicked.connect(lambda: self.layers.removeRow(self.layers.currentRow()))
+            self.object_form.addRow(add, remove)
         for pset, fields in spec["psets"].items():
             title = QLabel(pset)
             title.setWordWrap(True)
@@ -184,6 +217,11 @@ class DeliveryDialog(QDialog):
                 if value not in (None, ""):
                     layer[key] = float(value.replace(",", ".")) if key in ("thickness", "offset") else value
             data["layer"] = layer
+            if self.layers.rowCount():
+                data["layers"] = []
+                for i in range(self.layers.rowCount()):
+                    material, thickness = (self.layers.item(i, j).text().strip() if self.layers.item(i, j) else "" for j in range(2))
+                    data["layers"].append({"material": material, "thickness": float(thickness.replace(",", "."))})
         data["psets"] = {}
         for (pset, name), (edit, kind) in self.property_fields.items():
             value = edit.currentData() if isinstance(edit, QComboBox) else edit.text().strip()
@@ -206,7 +244,8 @@ class DeliveryDialog(QDialog):
         except ValueError as exc:
             QMessageBox.warning(self, self.windowTitle(), str(exc))
             return
-        project = {"name": self.project_name.text().strip(),
+        import copy
+        project = {**copy.deepcopy(self.scene.ifc_project), "name": self.project_name.text().strip(),
                    "project_type": self.project_type.text().strip(),
                    "description": self.project_description.text().strip()}
         command = SetDeliveryInformationCommand(self.scene, project, obj, data)
@@ -222,8 +261,21 @@ class DeliveryDialog(QDialog):
         report = check_scene(self.scene)
         rows = [f"{i['object'] or i['class']}: {i['field']} — {ui(i['message'])}"
                 for i in report["issues"]]
+        if "checks" in report:
+            rows += [f"{r['number']}. {r['label']}: {r['status']}" for r in report["checks"]]
+            self.report.setPlainText("\n".join(rows))
+            return
         if not rows:
             rows.append(ui("No missing values in the checked fields. Remaining scope still requires review."))
         rows += ["", ui("Checks cover the listed fields only. Actor, CRS, geometry/material alignment "
                         "and legal applicability require separate review.")]
         self.report.setPlainText("\n".join(rows))
+
+    def open_workflow(self):
+        from views.delivery_workflow import WorkflowDialog
+        dialog = WorkflowDialog(self.window)
+        dialog.exec()
+        for edit, key in ((self.project_name, "name"), (self.project_type, "project_type"), (self.project_description, "description")):
+            edit.setText(self.scene.ifc_project.get(key, ""))
+        self.objects = collect_objects(self.scene)
+        self.load_object(); self.show_report()

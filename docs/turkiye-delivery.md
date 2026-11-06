@@ -1,5 +1,9 @@
 # Türkiye delivery fields: naming and properties
 
+For the project, actor/CRS, multi-storey, multi-layer and independently checked
+ZIP delivery workflow, see [Project and verified delivery](turkiye-delivery-workflow.md).
+This page documents the original field-only profile and its historical checks.
+
 This opt-in editor implements a **bounded field matrix**, not approval of a
 complete regulatory delivery. Existing IFC4 and IFC4.3 exports remain
 available; selecting the Türkiye profile additionally checks the entered
@@ -102,7 +106,7 @@ not accepted from OCR alone. PDF page numbers are one-based:
   additional IFC4.3 `BERTH` space type is not included in this field profile
   because it is not in the supplied annex's space table.
 
-Every check report sets **`regulatory_compliance: "not_assessed"`** and lists
+Legacy field-only check reports set **`regulatory_compliance: "not_assessed"`** and list
 unchecked scope. This includes authority-code validity, EK-2 delivery
 filenames, spatial-container names/properties and a full storey hierarchy,
 other EK-7 actor/organization/CRS information, multi-layer and geometry/material

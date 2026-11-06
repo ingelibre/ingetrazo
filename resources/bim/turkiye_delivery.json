@@ -813,6 +813,75 @@
     "Close": {
       "tr": "Kapat",
       "es": "Cerrar"
+    },
+    "Project and delivery package": {
+      "tr": "Proje ve teslim paketi"
+    },
+    "Participants": {
+      "tr": "Müellif ve kurum"
+    },
+    "Coordinate reference system": {
+      "tr": "Koordinat sistemi"
+    },
+    "Spatial hierarchy": {
+      "tr": "Bina ve kat yapısı"
+    },
+    "Delivery filename": {
+      "tr": "Teslim dosya adı"
+    },
+    "Quality review": {
+      "tr": "Kalite kontrolü"
+    },
+    "Build delivery package": {
+      "tr": "Teslim paketi oluştur"
+    },
+    "Add building": {
+      "tr": "Bina ekle"
+    },
+    "Add storey": {
+      "tr": "Kat ekle"
+    },
+    "Remove": {
+      "tr": "Kaldır"
+    },
+    "Storey assignment": {
+      "tr": "Kat ataması"
+    },
+    "Space assignment": {
+      "tr": "Mahal ataması"
+    },
+    "No assignment": {
+      "tr": "Atanmadı"
+    },
+    "Project owner review required": {
+      "tr": "Proje sahibi kontrolü gerekiyor"
+    },
+    "Reviewer": {
+      "tr": "Kontrol eden"
+    },
+    "Evidence / reference": {
+      "tr": "Kanıt / referans"
+    },
+    "Not reviewed": {
+      "tr": "İncelenmedi"
+    },
+    "Pass": {
+      "tr": "Geçti"
+    },
+    "Fail": {
+      "tr": "Kaldı"
+    },
+    "Not applicable": {
+      "tr": "Uygulanmaz"
+    },
+    "PDF/A validator": {
+      "tr": "PDF/A doğrulayıcı"
+    },
+    "Layers": {
+      "tr": "Katmanlar"
+    },
+    "Add layer": {
+      "tr": "Katman ekle"
     }
   }
 }

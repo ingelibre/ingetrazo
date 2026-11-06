@@ -21,7 +21,7 @@ import math
 import uuid
 from pathlib import Path
 
-from core.bim import class_quantities, collect_objects, face_set_volume
+from core.bim import IFC_CLASSES, class_quantities, collect_objects, face_set_volume
 from core.ifc_identity import compressed_guid, object_identity, stable_guid
 
 SUPPORTED_SCHEMAS = ("IFC4", "IFC4X3_ADD2")
@@ -69,11 +69,19 @@ def _f(v: float) -> str:
 
 
 class _Writer:
+    ROOT_ENTITIES = {"IFCPROJECT", "IFCSITE", "IFCBUILDING", "IFCBUILDINGSTOREY", "IFCSPACE",
+                     "IFCACTOR", "IFCPROPERTYSET", "IFCELEMENTQUANTITY", "IFCANNOTATION",
+                     "IFCBUILDINGELEMENTPROXY", *(c.upper() for c in IFC_CLASSES)}
     def __init__(self) -> None:
         self.lines: list[str] = []
         self._next = 1
+        self.owner = "$"
 
     def add(self, entity: str, *attrs) -> int:
+        if self.owner != "$" and (entity.startswith("IFCREL") or entity in self.ROOT_ENTITIES):
+            attrs = list(attrs)
+            if len(attrs) > 1 and attrs[1] == "$":
+                attrs[1] = self.owner
         eid = self._next
         self._next += 1
         self.lines.append(f"#{eid}={entity}({','.join(attrs)});")
@@ -125,10 +133,14 @@ def _brep(w: _Writer, faces, context_id: int) -> int:
 def _properties(w, owner, guid, owner_guid, values):
     sets = {}
     for pset, name, kind, value in values:
-        encoded = (".T." if value else ".F.") if kind == "IfcBoolean" else (
-            _s(value) if kind == "IfcLabel" else format(value, ".15E"))
-        prop = w.add("IFCPROPERTYSINGLEVALUE", _s(name), "$",
-                     f"{kind.upper()}({encoded})", "$")
+        if kind == "IfcLabelList":
+            vals = "(" + ",".join(f"IFCLABEL({_s(v)})" for v in value) + ")"
+            prop = w.add("IFCPROPERTYLISTVALUE", _s(name), "$", vals, "$")
+        else:
+            encoded = (".T." if value else ".F.") if kind == "IfcBoolean" else (
+                _s(value) if kind in ("IfcLabel", "IfcIdentifier", "IfcText") else format(value, ".15E"))
+            prop = w.add("IFCPROPERTYSINGLEVALUE", _s(name), "$",
+                         f"{kind.upper()}({encoded})", "$")
         sets.setdefault(pset, []).append(prop)
     for name, props in sets.items():
         pid = w.add("IFCPROPERTYSET", _s(guid("pset", owner_guid, name)), "$",
@@ -163,7 +175,13 @@ def save_ifc(scene, path, project_name: str = "IngeTrazo project", *,
                 f"{i['object']}: {i['field']} — {i['message']}" for i in report["issues"][:12])
                 + f"\n({len(report['issues'])} issues; see Türkiye delivery information)")
     project_data = scene.ifc_project
-    if any(not isinstance(v, str) for v in project_data.values()):
+    full_delivery = project_data.get("delivery_version") == 2
+    if full_delivery:
+        from core.delivery_workflow import project_issues
+        errors = project_issues(scene, objects)
+        if errors:
+            raise ValueError(str(errors))
+    if any(not isinstance(project_data.get(k, ""), str) for k in ("name", "description", "project_type")):
         raise ValueError("Project information must contain text values")
     for obj in objects:
         issues = object_issues(obj, schema, required=False)
@@ -180,10 +198,15 @@ def save_ifc(scene, path, project_name: str = "IngeTrazo project", *,
         raise ValueError("Duplicate BIM object identity; copy or retag the objects")
 
     w = _Writer()
+    participant = None
+    if full_delivery:
+        from formats.ifc_delivery import participants
+        participant = participants(w, project_data, guid)
     origin = w.add("IFCCARTESIANPOINT", "(0.,0.,0.)")
     axis = w.add("IFCAXIS2PLACEMENT3D", f"#{origin}", "$", "$")
+    precision = format(project_data["crs"]["precision"], ".15E") if full_delivery else "1.E-5"
     context = w.add("IFCGEOMETRICREPRESENTATIONCONTEXT",
-                    "$", "'Model'", "3", "1.E-5", f"#{axis}", "$")
+                    "$", "'Model'", "3", precision, f"#{axis}", "$")
     units = [
         w.add("IFCSIUNIT", "*", ".LENGTHUNIT.", "$", ".METRE."),
         w.add("IFCSIUNIT", "*", ".AREAUNIT.", "$", ".SQUARE_METRE."),
@@ -195,26 +218,35 @@ def save_ifc(scene, path, project_name: str = "IngeTrazo project", *,
         project_name = project_data.get("name") or project_name
     project = w.add("IFCPROJECT", _s(guid("project")), "$", _s(project_name),
                     _s(project_data["description"]) if project_data.get("description") else "$",
-                    "$", "$", "$", f"(#{context})", f"#{unit_assign}")
+                    "$", _s(project_data["long_name"]) if project_data.get("long_name") else "$",
+                    _s(project_data["phase"]) if project_data.get("phase") else "$", f"(#{context})", f"#{unit_assign}")
     if project_data.get("project_type"):
         _properties(w, project, guid, guid("project"), [
             ("Pset_ProjectCommon", "ProjectType", "IfcLabel", project_data["project_type"])])
     placement = w.add("IFCLOCALPLACEMENT", "$", f"#{axis}")
-    site = w.add("IFCSITE", _s(guid("site")), "$", "'Site'", "$", "$",
-                 f"#{placement}", "$", "$", ".ELEMENT.",
-                 "$", "$", "$", "$", "$")
-    building = w.add("IFCBUILDING", _s(guid("building")), "$", "'Building'", "$",
-                     "$", f"#{placement}", "$", "$", ".ELEMENT.",
-                     "$", "$", "$")
-    storey = w.add("IFCBUILDINGSTOREY", _s(guid("storey")), "$", "'Storey'", "$",
-                   "$", f"#{placement}", "$", "$", ".ELEMENT.", "0.")
-    w.add("IFCRELAGGREGATES", _s(guid("project-site")), "$", "$", "$",
-          f"#{project}", f"(#{site})")
-    w.add("IFCRELAGGREGATES", _s(guid("site-building")), "$", "$", "$",
-          f"#{site}", f"(#{building})")
-    w.add("IFCRELAGGREGATES", _s(guid("building-storey")), "$", "$", "$",
-          f"#{building}", f"(#{storey})")
-
+    spatial_export = None
+    if full_delivery:
+        from formats.ifc_delivery import actor_assignment, georeference, SpatialExport
+        actor_assignment(w, project, participant, guid)
+        georeference(w, context, units[0], project_data)
+        spatial_export = SpatialExport(w, project, placement, project_data, guid)
+        from formats.ifc_delivery import survey_annotation
+        survey_annotation(w, context, placement, spatial_export.site, project_data, guid, schema)
+    if not full_delivery:
+        site = w.add("IFCSITE", _s(guid("site")), "$", "'Site'", "$", "$",
+                     f"#{placement}", "$", "$", ".ELEMENT.",
+                     "$", "$", "$", "$", "$")
+        building = w.add("IFCBUILDING", _s(guid("building")), "$", "'Building'", "$",
+                         "$", f"#{placement}", "$", "$", ".ELEMENT.",
+                         "$", "$", "$")
+        storey = w.add("IFCBUILDINGSTOREY", _s(guid("storey")), "$", "'Storey'", "$",
+                       "$", f"#{placement}", "$", "$", ".ELEMENT.", "0.")
+        w.add("IFCRELAGGREGATES", _s(guid("project-site")), "$", "$", "$",
+              f"#{project}", f"(#{site})")
+        w.add("IFCRELAGGREGATES", _s(guid("site-building")), "$", "$", "$",
+              f"#{site}", f"(#{building})")
+        w.add("IFCRELAGGREGATES", _s(guid("building-storey")), "$", "$", "$",
+              f"#{building}", f"(#{storey})")
     element_ids = []
     space_ids = []
     for obj, element_guid in zip(objects, element_guids):
@@ -228,8 +260,9 @@ def save_ifc(scene, path, project_name: str = "IngeTrazo project", *,
             else "IfcBuildingElementProxy"
         qset_name, qentries, _metrado = class_quantities(obj["class"], faces)
         total = _ATTR_COUNT.get(cls, _DEFAULT_ATTRS)
+        element_placement = spatial_export.placement(obj) if spatial_export else placement
         attrs = [_s(element_guid), "$", _s(obj["name"] or cls), "$", "$",
-                 f"#{placement}", f"#{pds}", "'IngeTrazo'"]
+                 f"#{element_placement}", f"#{pds}", "'IngeTrazo'"]
         if cls in ("IfcDoor", "IfcWindow"):
             # Attributes 9/10 are OverallHeight/OverallWidth — viewers and
             # schedules read the leaf dimensions from here.
@@ -254,6 +287,8 @@ def save_ifc(scene, path, project_name: str = "IngeTrazo project", *,
             attrs[4] = _s(data["object_type"])
         if data.get("tag") and cls != "IfcSpace":
             attrs[7] = _s(data["tag"])
+        if cls == "IfcSpace" and data.get("room_number"):
+            attrs[7] = _s(data["room_number"])
         if data.get("predefined_type"):
             index = 10 if cls in ("IfcDoor", "IfcWindow") else 9 if cls == "IfcSpace" else 8
             attrs[index] = f".{data['predefined_type']}."
@@ -264,14 +299,20 @@ def save_ifc(scene, path, project_name: str = "IngeTrazo project", *,
             material = w.add("IFCMATERIAL", _s(data["material"]), "$", "$")
             if data.get("layer"):
                 layer = data["layer"]
-                mid = w.add("IFCMATERIALLAYER", f"#{material}",
-                            format(layer["thickness"], ".15E"), "$", "$", "$", "$", "$")
-                mid = w.add("IFCMATERIALLAYERSET", f"(#{mid})", "$", "$")
+                layer_ids = []
+                for item in data.get("layers") or [{"material": data["material"],
+                                                    "thickness": layer["thickness"]}]:
+                    mat = w.add("IFCMATERIAL", _s(item["material"]), "$", "$")
+                    layer_ids.append(w.add("IFCMATERIALLAYER", f"#{mat}",
+                        format(item["thickness"], ".15E"), "$", "$", "$", "$", "$"))
+                mid = w.add("IFCMATERIALLAYERSET", "(" + ",".join(f"#{i}" for i in layer_ids) + ")", "$", "$")
                 material = w.add("IFCMATERIALLAYERSETUSAGE", f"#{mid}",
                                  f".{layer['axis']}.", f".{layer['sense']}.",
                                  format(layer["offset"], ".15E"), "$")
             w.add("IFCRELASSOCIATESMATERIAL", _s(guid("material", element_guid)),
                   "$", "$", "$", f"(#{elem})", f"#{material}")
+        if spatial_export:
+            spatial_export.register(obj, elem, element_guid)
         (space_ids if cls == "IfcSpace" else element_ids).append(elem)
 
         # Per-class BaseQuantities (Qto_* naming): the takeoff numbers in
@@ -293,11 +334,13 @@ def save_ifc(scene, path, project_name: str = "IngeTrazo project", *,
 
     if not element_ids and not space_ids:
         raise ValueError("No tagged BIM objects to export")
-    if element_ids:
+    if spatial_export:
+        spatial_export.finish()
+    if element_ids and not spatial_export:
         w.add("IFCRELCONTAINEDINSPATIALSTRUCTURE",
               _s(guid("storey-containment")), "$", "$", "$",
               "(" + ",".join(f"#{e}" for e in element_ids) + ")", f"#{storey}")
-    if space_ids:
+    if space_ids and not spatial_export:
         # Spaces are spatial structure: decompose the storey, never put
         # them in RelatedElements (IfcRelContainedInSpatialStructure.WR31).
         w.add("IFCRELAGGREGATES", _s(guid("storey-spaces")), "$", "$", "$",

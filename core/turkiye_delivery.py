@@ -78,7 +78,18 @@ def layer_issues(data, required=False):
     if not isinstance(layer, dict):
         return ["Expected material layer fields"]
     errors = []
-    for key in ("thickness", "offset"):
+    layers = data.get("layers")
+    if layers is not None:
+        if not isinstance(layers, list) or not layers:
+            errors.append("At least one material layer is required")
+        else:
+            for item in layers:
+                if (not isinstance(item, dict) or not isinstance(item.get("material"), str)
+                        or not item["material"].strip() or not isinstance(item.get("thickness"), (int, float))
+                        or type(item.get("thickness")) is bool or not math.isfinite(item["thickness"])
+                        or item["thickness"] < 0):
+                    errors.append("Each layer needs a material and non-negative finite thickness")
+    for key in (("offset",) if layers is not None else ("thickness", "offset")):
         value = layer.get(key)
         if type(value) not in (int, float) or not math.isfinite(value):
             errors.append(f"layer.{key}: finite length required")
@@ -170,7 +181,7 @@ def check_scene(scene, objects=None):
                        "message": "No tagged BIM objects to export", "severity": "error"})
     for obj in objects:
         issues.extend(object_issues(obj))
-    return {"profile": PROFILE, "checked_fields_complete": not issues,
+    report = {"profile": PROFILE, "checked_fields_complete": not issues,
             "regulatory_compliance": "not_assessed", "issues": issues,
             "unchecked": ["Authority-issued project code validity", "EK-2 delivery filename",
                           "EK-7 actors, organisations and coordinate reference system",
@@ -178,6 +189,10 @@ def check_scene(scene, objects=None):
                           "Spatial container names/properties and full storey hierarchy",
                           "EK-8 geometry development level", "EK-9 delivery forms",
                           "Legal applicability and source separator discrepancy"]}
+    if project.get("delivery_version") == 2:
+        from core.delivery_workflow import evaluate
+        return evaluate(scene, report)
+    return report
 
 
 class SetDeliveryInformationCommand(Command):

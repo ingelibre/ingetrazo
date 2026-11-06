@@ -40,7 +40,10 @@ keeps its element GlobalId. A spaces-only export also works.
 This adds an export schema choice for the existing supported object
 types. It does not add IFC import, infrastructure modelling, new tagging
 classes, an MVD/certification claim or multiple editable storeys.
-The optional [Türkiye field profile](turkiye-delivery.md) adds entered
+The optional [verified Türkiye delivery workflow](turkiye-delivery-workflow.md)
+adds project participants, map conversion, multiple buildings/storeys, material
+layers, revision-bound review and independently validated IFC/PDF/A packages.
+The [Türkiye field profile](turkiye-delivery.md) adds entered
 properties and bounded naming checks. Unknown tag classes
 continue to export as `IfcBuildingElementProxy`, as before.
 
