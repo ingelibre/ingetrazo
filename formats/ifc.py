@@ -22,9 +22,7 @@ import uuid
 from pathlib import Path
 
 from core.bim import class_quantities, collect_objects, face_set_volume
-
-_GUID_CHARS = ("0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-               "abcdefghijklmnopqrstuvwxyz_$")
+from core.ifc_identity import compressed_guid, object_identity, stable_guid
 
 #: IFC4 total attribute counts per element class (the first 8 are the common
 #: GlobalId..Tag layout; the rest are padded with ``$``). Classes with quirky
@@ -37,8 +35,7 @@ _DEFAULT_ATTRS = 9
 
 def ifc_guid() -> str:
     """A 22-character IFC compressed GUID (base-64 over the IFC alphabet)."""
-    n = uuid.uuid4().int
-    return "".join(_GUID_CHARS[(n >> (6 * i)) & 63] for i in range(21, -1, -1))
+    return compressed_guid(uuid.uuid4())
 
 
 def _s(text: str) -> str:
@@ -126,6 +123,15 @@ def save_ifc(scene, path, project_name: str = "IngeTrazo project") -> int:
     if not objects:
         raise ValueError("No tagged BIM objects to export")
 
+    def guid(*parts):
+        return stable_guid(scene.ifc_namespace, *parts)
+
+    # Reject identity collisions rather than publish an ambiguous IFC file.
+    identities = [object_identity(obj) for obj in objects]
+    element_guids = [guid("element", *key) for key in identities]
+    if len(set(element_guids)) != len(element_guids):
+        raise ValueError("Duplicate BIM object identity; copy or retag the objects")
+
     w = _Writer()
     origin = w.add("IFCCARTESIANPOINT", "(0.,0.,0.)")
     axis = w.add("IFCAXIS2PLACEMENT3D", f"#{origin}", "$", "$")
@@ -138,26 +144,26 @@ def save_ifc(scene, path, project_name: str = "IngeTrazo project") -> int:
     ]
     unit_assign = w.add("IFCUNITASSIGNMENT",
                         "(" + ",".join(f"#{u}" for u in units) + ")")
-    project = w.add("IFCPROJECT", _s(ifc_guid()), "$", _s(project_name),
+    project = w.add("IFCPROJECT", _s(guid("project")), "$", _s(project_name),
                     "$", "$", "$", "$", f"(#{context})", f"#{unit_assign}")
     placement = w.add("IFCLOCALPLACEMENT", "$", f"#{axis}")
-    site = w.add("IFCSITE", _s(ifc_guid()), "$", "'Site'", "$", "$",
+    site = w.add("IFCSITE", _s(guid("site")), "$", "'Site'", "$", "$",
                  f"#{placement}", "$", "$", ".ELEMENT.",
                  "$", "$", "$", "$", "$")
-    building = w.add("IFCBUILDING", _s(ifc_guid()), "$", "'Building'", "$",
+    building = w.add("IFCBUILDING", _s(guid("building")), "$", "'Building'", "$",
                      "$", f"#{placement}", "$", "$", ".ELEMENT.",
                      "$", "$", "$")
-    storey = w.add("IFCBUILDINGSTOREY", _s(ifc_guid()), "$", "'Storey'", "$",
+    storey = w.add("IFCBUILDINGSTOREY", _s(guid("storey")), "$", "'Storey'", "$",
                    "$", f"#{placement}", "$", "$", ".ELEMENT.", "0.")
-    w.add("IFCRELAGGREGATES", _s(ifc_guid()), "$", "$", "$",
+    w.add("IFCRELAGGREGATES", _s(guid("project-site")), "$", "$", "$",
           f"#{project}", f"(#{site})")
-    w.add("IFCRELAGGREGATES", _s(ifc_guid()), "$", "$", "$",
+    w.add("IFCRELAGGREGATES", _s(guid("site-building")), "$", "$", "$",
           f"#{site}", f"(#{building})")
-    w.add("IFCRELAGGREGATES", _s(ifc_guid()), "$", "$", "$",
+    w.add("IFCRELAGGREGATES", _s(guid("building-storey")), "$", "$", "$",
           f"#{building}", f"(#{storey})")
 
     element_ids = []
-    for obj in objects:
+    for obj, element_guid in zip(objects, element_guids):
         faces = obj.get("faces") or list(obj["group"].mesh.faces)
         if not faces:
             continue
@@ -168,7 +174,7 @@ def save_ifc(scene, path, project_name: str = "IngeTrazo project") -> int:
             else "IfcBuildingElementProxy"
         qset_name, qentries, _metrado = class_quantities(obj["class"], faces)
         total = _ATTR_COUNT.get(cls, _DEFAULT_ATTRS)
-        attrs = [_s(ifc_guid()), "$", _s(obj["name"] or cls), "$", "$",
+        attrs = [_s(element_guid), "$", _s(obj["name"] or cls), "$", "$",
                  f"#{placement}", f"#{pds}", "'IngeTrazo'"]
         if cls in ("IfcDoor", "IfcWindow"):
             # Attributes 9/10 are OverallHeight/OverallWidth — viewers and
@@ -202,15 +208,16 @@ def save_ifc(scene, path, project_name: str = "IngeTrazo project") -> int:
             for kind, name, val in qentries
         ]
         if quantities:
-            eq = w.add("IFCELEMENTQUANTITY", _s(ifc_guid()), "$",
+            eq = w.add("IFCELEMENTQUANTITY", _s(guid("quantities", element_guid)), "$",
                        _s(qset_name), "$", "$",
                        "(" + ",".join(quantities) + ")")
-            w.add("IFCRELDEFINESBYPROPERTIES", _s(ifc_guid()), "$", "$", "$",
+            w.add("IFCRELDEFINESBYPROPERTIES",
+                  _s(guid("quantity-relation", element_guid)), "$", "$", "$",
                   f"(#{elem})", f"#{eq}")
 
     if not element_ids:
         raise ValueError("No tagged BIM objects to export")
-    w.add("IFCRELCONTAINEDINSPATIALSTRUCTURE", _s(ifc_guid()), "$", "$", "$",
+    w.add("IFCRELCONTAINEDINSPATIALSTRUCTURE", _s(guid("storey-containment")), "$", "$", "$",
           "(" + ",".join(f"#{e}" for e in element_ids) + ")", f"#{storey}")
 
     stamp = datetime.datetime.now().strftime("%Y-%m-%dT%H:%M:%S")

@@ -4538,7 +4538,16 @@ class BimPanel(QWidget):
             tag_group(g, cls, name or g.name)
             tagged += 1
         if faces:
-            tag_faces(faces, cls, name, next_object_id(scene))
+            selected = set(faces)
+            ids = {f.attrs.get("ifc", {}).get("id") for f in faces}
+            # Editing the complete object's metadata keeps its identity.
+            # A partial selection is a new object split from the old one.
+            existing = next(iter(ids)) if len(ids) == 1 else None
+            complete = existing is not None and all(
+                f in selected for f in scene.mesh.faces
+                if f.attrs.get("ifc", {}).get("id") == existing)
+            obj_id = existing if complete else next_object_id(scene)
+            tag_faces(faces, cls, name, obj_id)
             tagged += 1
         if not tagged:
             self._window.statusBar().showMessage(

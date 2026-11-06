@@ -10,7 +10,7 @@ quantity takeoff — and later the IFC export to IngePresupuestos. Untagged
 geometry stays plain drawing.
 
 Storage:
-- loose faces: ``face.attrs["ifc"] = {"id": n, "class": ..., "name": ...}``
+- loose faces: ``face.attrs["ifc"] = {"id": n, "uid": ..., "class": ..., "name": ...}``
   — the ``attrs`` dict already survives the engine's face churn (push/pull,
   rebuilds, heals) and serialises with the document, so tags are durable.
 - groups: ``group.ifc = {"class": ..., "name": ...}`` (the group IS the
@@ -31,6 +31,8 @@ from __future__ import annotations
 import math
 
 from PySide6.QtGui import QVector3D
+
+from core.ifc_identity import new_identity
 
 #: Curated civil/architecture classes (IFC4 names).
 IFC_CLASSES = [
@@ -100,8 +102,17 @@ def next_object_id(scene) -> int:
 def tag_faces(faces, ifc_class: str, name: str, obj_id: int) -> None:
     global _TAG_EPOCH
     _TAG_EPOCH += 1
+    faces = list(faces)
+    # Updating an existing local object preserves its token. Applying a new
+    # local id creates a new object (including a deleted id reused later).
+    previous = next((f.attrs["ifc"] for f in faces
+                     if f.attrs.get("ifc", {}).get("id") == obj_id), None)
+    # A legacy tag keeps the deterministic integer-id fallback until it is
+    # removed; adding a UUID during a rename would change its GlobalId.
+    token = previous.get("uid") if previous is not None else new_identity()
     for f in faces:
-        f.attrs["ifc"] = {"id": obj_id, "class": ifc_class, "name": name}
+        f.attrs["ifc"] = {"id": obj_id, "class": ifc_class, "name": name,
+                          **({"uid": token} if token else {})}
 
 
 def untag_faces(faces) -> None:

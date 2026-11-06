@@ -2341,6 +2341,8 @@ class AutoTagDrawnFacesCommand(Command):
         from core.bim import next_object_id
         tag = dict(self._tag)
         tag["id"] = next_object_id(scene)
+        from core.ifc_identity import new_identity
+        tag["uid"] = new_identity()
         live = scene.mesh.faces
         for fc in self._face_cmds:
             f = getattr(fc, "face", None)

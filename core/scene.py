@@ -19,6 +19,7 @@ from typing import Iterable
 from PySide6.QtGui import QVector3D
 
 from core.mesh import Edge, Face, Mesh
+from core.ifc_identity import new_identity
 
 
 def _make_style():
@@ -34,6 +35,8 @@ def _make_shadows():
 @dataclass
 class Scene:
     mesh: Mesh = field(default_factory=Mesh)
+    # Document namespace for stable IFC GlobalIds; saved with the model.
+    ifc_namespace: str = field(default_factory=new_identity, kw_only=True)
     selection: set = field(default_factory=set)
     version: int = 0
     #: How many of ``version``'s bumps changed only what is SHOWN -- the
@@ -745,6 +748,7 @@ class Scene:
             self.version += 1
         # Outside the guard: an empty document has a camera to forget too.
         self.camera_home = None
+        self.ifc_namespace = new_identity()
         self.units = {"length": "m", "precision": 2}
         self.plugin_data = {}
 

@@ -96,11 +96,13 @@ def test_undo_redo_keep_tags_exact():
     vp = _Vp(scene)
     scene.active_ifc = dict(WALL)
     _draw_rect(scene, vp, [V(0, 0), V(2, 0), V(2, 0.15), V(0, 0.15)])
+    before = dict(scene.mesh.faces[0].attrs["ifc"])
+    assert before["uid"]
     vp.history.undo()
     assert not scene.mesh.faces                     # draw fully reverted
     vp.history.redo()
     tag = scene.mesh.faces[0].attrs.get("ifc")
-    assert tag and tag["class"] == "IfcWall" and tag["name"] == "Muros N1"
+    assert tag == before
 
 
 def test_no_active_class_means_untagged():
@@ -130,8 +132,8 @@ def test_push_extends_base_tag_without_active_mode():
     vp = _Vp(scene)
     _draw_rect(scene, vp, [V(0, 0), V(3, 0), V(3, 2), V(0, 2)])
     _push(scene, vp, scene.mesh.faces[0], 0.2)      # untagged solid
-    tag = {"id": 1, "class": "IfcSlab", "name": "Losa"}
     tag_faces(scene.mesh.faces, "IfcSlab", "Losa", 1)
+    tag = dict(scene.mesh.faces[0].attrs["ifc"])
     top = next(f for f in scene.mesh.faces
                if abs(f.centroid().z() - 0.2) < 1e-6)
     _push(scene, vp, top, 0.1)                      # thicken to 0.3
