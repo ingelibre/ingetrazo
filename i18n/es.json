@@ -3274,5 +3274,9 @@
  "Front color — paints faces in Hidden line and Monochrome": "Color frontal — pinta las caras en Línea oculta y Monocromo",
  "Distance ({unit}):": "Distancia ({unit}):",
  "Restore defaults": "Restablecer valores predeterminados",
- "Puts the settings of this window back to how IngeTrazo comes. Nothing is saved until you press OK. The language, the AI Assistant, the keyboard shortcuts and the units of the open document stay as they are.": "Devuelve los ajustes de esta ventana a como viene IngeTrazo. No se guarda nada hasta pulsar Aceptar. El idioma, el Asistente de IA, los atajos de teclado y las unidades del documento abierto se quedan como están."
+ "Puts the settings of this window back to how IngeTrazo comes. Nothing is saved until you press OK. The language, the AI Assistant, the keyboard shortcuts and the units of the open document stay as they are.": "Devuelve los ajustes de esta ventana a como viene IngeTrazo. No se guarda nada hasta pulsar Aceptar. El idioma, el Asistente de IA, los atajos de teclado y las unidades del documento abierto se quedan como están.",
+ "Text gap": "Separación del texto",
+ "Gap between the dimension line and its text, on paper. (Separation moves the line away from the measured points.)": "Distancia entre la línea de cota y su texto, en el papel. (Separación aleja la línea de los puntos medidos.)",
+ "Flip text direction": "Invertir el sentido del texto",
+ "Turns the text half a turn so it reads the other way along the line — a vertical dimension read from the right instead of from the left. The text stays on the same side.": "Gira el texto media vuelta para que se lea en el otro sentido a lo largo de la línea — una cota vertical leída desde la derecha en lugar de desde la izquierda. El texto queda del mismo lado."
 }

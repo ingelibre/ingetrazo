@@ -3277,5 +3277,9 @@
  "Front color — paints faces in Hidden line and Monochrome": "Warna depan — mewarnai bidang pada mode Garis tersembunyi dan Monokrom",
  "Distance ({unit}):": "Jarak ({unit}):",
  "Restore defaults": "Pulihkan bawaan",
- "Puts the settings of this window back to how IngeTrazo comes. Nothing is saved until you press OK. The language, the AI Assistant, the keyboard shortcuts and the units of the open document stay as they are.": "Mengembalikan pengaturan jendela ini seperti bawaan IngeTrazo. Tidak ada yang disimpan sampai Anda menekan OK. Bahasa, Asisten AI, pintasan keyboard, dan satuan dokumen yang terbuka tetap seperti semula."
+ "Puts the settings of this window back to how IngeTrazo comes. Nothing is saved until you press OK. The language, the AI Assistant, the keyboard shortcuts and the units of the open document stay as they are.": "Mengembalikan pengaturan jendela ini seperti bawaan IngeTrazo. Tidak ada yang disimpan sampai Anda menekan OK. Bahasa, Asisten AI, pintasan keyboard, dan satuan dokumen yang terbuka tetap seperti semula.",
+ "Text gap": "Jarak teks",
+ "Gap between the dimension line and its text, on paper. (Separation moves the line away from the measured points.)": "Jarak antara garis dimensi dan teksnya, di kertas. (Jarak pisah menjauhkan garis dari titik yang diukur.)",
+ "Flip text direction": "Balik arah teks",
+ "Turns the text half a turn so it reads the other way along the line — a vertical dimension read from the right instead of from the left. The text stays on the same side.": "Memutar teks setengah putaran agar terbaca ke arah sebaliknya di sepanjang garis — dimensi vertikal dibaca dari kanan, bukan dari kiri. Teks tetap di sisi yang sama."
 }

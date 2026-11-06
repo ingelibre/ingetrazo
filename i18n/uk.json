@@ -3289,5 +3289,9 @@
  "Ukrainian translation of the interface.": "Переклад інтерфейсу українською.",
  "Distance ({unit}):": "Відстань ({unit}):",
  "Restore defaults": "Відновити типові",
- "Puts the settings of this window back to how IngeTrazo comes. Nothing is saved until you press OK. The language, the AI Assistant, the keyboard shortcuts and the units of the open document stay as they are.": "Повертає налаштування цього вікна до стандартних налаштувань IngeTrazo. Нічого не зберігається, доки ви не натиснете «Гаразд». Мова, Асистент ШІ, сполучення клавіш і одиниці відкритого документа залишаються без змін."
+ "Puts the settings of this window back to how IngeTrazo comes. Nothing is saved until you press OK. The language, the AI Assistant, the keyboard shortcuts and the units of the open document stay as they are.": "Повертає налаштування цього вікна до стандартних налаштувань IngeTrazo. Нічого не зберігається, доки ви не натиснете «Гаразд». Мова, Асистент ШІ, сполучення клавіш і одиниці відкритого документа залишаються без змін.",
+ "Text gap": "Відступ тексту",
+ "Gap between the dimension line and its text, on paper. (Separation moves the line away from the measured points.)": "Відстань між розмірною лінією та її текстом на папері. («Відступ» вище відсуває лінію від виміряних точок.)",
+ "Flip text direction": "Перевернути напрямок тексту",
+ "Turns the text half a turn so it reads the other way along the line — a vertical dimension read from the right instead of from the left. The text stays on the same side.": "Повертає текст на пів оберту, щоб він читався в інший бік уздовж лінії — вертикальний розмір читається справа, а не зліва. Текст залишається з того ж боку."
 }
