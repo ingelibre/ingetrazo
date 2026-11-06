@@ -1622,6 +1622,46 @@ class PushPullTool(Tool):
         occluded = getattr(vp, "_is_occluded", None)   # stub viewports in tests
         return occluded is not None and occluded(world)
 
+    def _clear_candidates(self, vp, arr, cand, exclude, verts):
+        """The rows of ``cand``, in order, that may be a reference: neither
+        the base's own corners, which would pin the drag to 0, nor hidden."""
+        import numpy as np
+        first_clear = getattr(vp, "_first_clear", None)
+        start = 0
+        if first_clear is not None and len(cand):
+            # What a QVector3D of each holds, as _reference_hidden asks.
+            pts = (arr[cand].astype(np.float32).astype(np.float64)
+                   if arr.dtype != np.float32 else arr[cand].astype(np.float64))
+            while start < len(cand):
+                at = first_clear(pts[start:])
+                if at is None:
+                    break                # the engine cannot say: one by one
+                if at < 0:
+                    return
+                start += at
+                i = int(cand[start])
+                start += 1
+                if _key(verts[i].position) not in exclude:
+                    yield i
+        for i in cand[start:]:
+            i = int(i)
+            p = verts[i].position
+            if _key(p) not in exclude and not self._reference_hidden(vp, p):
+                yield i
+
+    def _screen_boxes(self, vp):
+        """Per entry of ``_infer_cache``, its vertices' box in pixels (as far
+        as they are known) for this camera and size; None for a viewport that
+        cannot say which camera it has (stubs in tests)."""
+        mvp = getattr(vp, "_np_mvp", None)
+        if mvp is None:
+            return None
+        key = (mvp().tobytes(), vp.width(), vp.height())
+        held = getattr(self, "_infer_boxes", None)
+        if held is None or held[0] != key:
+            held = self._infer_boxes = (key, {})
+        return held[1]
+
     def _infer_reference_distance(self, ctx: ToolContext):
         """Distance making the moved face level with the model geometry under the
         cursor — the classic mid-push inference ("push until even with that
@@ -1676,32 +1716,50 @@ class PushPullTool(Tool):
                      for v in verts])
                 cache.append((verts, arr))
             self._infer_cache = cache
+            self._infer_boxes = None
         proj = getattr(vp, "_project_px", None)
-        for verts, arr in cache:
+        boxes = self._screen_boxes(vp) if proj is not None else None
+        for n, (verts, arr) in enumerate(cache):
             if proj is not None:
+                # A prototype whose box on screen is far from the cursor is
+                # not projected: 1 300 of them, 230 ms a move on 5 M faces.
+                box = None if boxes is None else boxes.get(n)
+                if box is not None and (sx + thr + 1 < box[0]
+                                        or sx - thr - 1 > box[1]
+                                        or sy + thr + 1 < box[2]
+                                        or sy - thr - 1 > box[3]):
+                    continue
                 px, py, ok = proj(arr)
+                if boxes is not None and box is None:
+                    boxes[n] = ((px[ok].min(), px[ok].max(),
+                                 py[ok].min(), py[ok].max()) if ok.any()
+                                else (np.inf, -np.inf, np.inf, -np.inf))
                 d2 = (px - sx) ** 2 + (py - sy) ** 2
-                cand = [(int(i), float(d2[i]))
-                        for i in np.flatnonzero(ok & (d2 <= thr * thr))]
+                near = ok & (d2 <= thr * thr)
+                if best is not None:
+                    near &= d2 < best[0]
+                near = np.flatnonzero(near)
+                # Nearest first, ties in vertex order: the first that counts
+                # is the one the whole scan would keep, and the rest are never
+                # read. Over a million vertices fall within the radius when
+                # the prototypes pile up at their local origin (#1092).
+                cand = near[np.argsort(d2[near], kind="stable")]
             else:
                 # Stub viewports (tests) expose only the scalar projector.
-                cand = []
+                d2 = {}
                 for i, vtx in enumerate(verts):
                     pix = vp._world_to_pixel(vtx.position)
                     if pix is None:
                         continue
                     dd = (pix[0] - sx) ** 2 + (pix[1] - sy) ** 2
-                    if dd <= thr * thr:
-                        cand.append((i, dd))
-            for i, dd in cand:
+                    if dd <= thr * thr and (best is None or dd < best[0]):
+                        d2[i] = dd
+                cand = sorted(d2, key=d2.get)
+            for i in self._clear_candidates(vp, arr, cand, exclude, verts):
                 p = verts[i].position
-                if _key(p) in exclude:
-                    continue  # the base's own corners would pin the drag to 0
-                if (best is None or dd < best[0]) \
-                        and not self._reference_hidden(vp, p):
-                    best = (dd, QVector3D.dotProduct(
-                        p - self._anchor, self._normal),
-                        QVector3D(p), "vertex")
+                best = (float(d2[i]), QVector3D.dotProduct(
+                    p - self._anchor, self._normal), QVector3D(p), "vertex")
+                break
         # Tape Measure guides (issue #165): a guide POINT is a corner like
         # any vertex -- the nearest one on screen wins -- and a guide LINE
         # is tried right after, like an edge. They live in ``scene.guides``,
@@ -2951,6 +3009,7 @@ class PushPullTool(Tool):
         self._inference_point = None
         self._inference_kind = None
         self._infer_cache = None       # per-drag projected-vertex candidates
+        self._infer_boxes = None       # ... and where they fall on screen
         self._refused = False
         self._tiny_hint_shown = False
         self._press_screen = None
