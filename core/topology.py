@@ -1286,6 +1286,7 @@ def _maximal_holes(holes: list) -> list:
 
     areas = [area(h) for h in holes]
     keep = []
+    apart = None
     for i, h in enumerate(holes):
         # The plane normal from the hole itself (any 3 non-collinear points).
         nrm = QVector3D.crossProduct(h[1] - h[0], h[2] - h[0])
@@ -1293,14 +1294,56 @@ def _maximal_holes(holes: list) -> list:
             keep.append(h)
             continue
         nrm = nrm.normalized()
-        nested = any(
-            j != i and areas[j] > areas[i] + 1e-6
-            and _loop_inside_loop(h, holes[j], nrm)
-            for j in range(len(holes))
-        )
+        nested = False
+        bigger = [j for j in range(len(holes))
+                  if j != i and areas[j] > areas[i] + 1e-6]
+        if bigger:
+            apart = apart or _HolesApart(holes)
+            nested = any(_loop_inside_loop(h, holes[j], nrm)
+                         for j in apart.maybe_around(i, nrm, bigger))
         if not nested:
             keep.append(h)
     return keep
+
+
+class _HolesApart:
+    """Which of a face's holes cannot hold a given one, without asking
+    :func:`_loop_inside_loop` — which triangulates the inner loop in Python
+    to say no, 15 000 times on the plant of #158 (half of saving it), most
+    of them for holes side by side in a plate.
+
+    That test looks at a point of the inner loop's hull, seen along ``nrm``,
+    in the outer loop's outline. Everything seen along ``nrm`` moves by at
+    most its distance to the inner loop's plane, so the answer is no when the
+    two loops' boxes are further apart than twice the largest such distance
+    — plus a margin well over the float32 rounding of that test."""
+
+    def __init__(self, holes) -> None:
+        import numpy as np
+        sizes = [len(h) for h in holes]
+        self.pts = None
+        if not all(sizes):
+            return                       # nothing to say about an empty loop
+        self.pts = np.array([(p.x(), p.y(), p.z()) for h in holes for p in h],
+                            dtype=np.float64).reshape(-1, 3)
+        starts = np.cumsum([0] + sizes[:-1])
+        self.first = starts
+        self.lo = np.minimum.reduceat(self.pts, starts, axis=0)
+        self.hi = np.maximum.reduceat(self.pts, starts, axis=0)
+        self.margin = 1e-3 + 1e-5 * float(np.abs(self.pts).max())
+
+    def maybe_around(self, i: int, nrm: QVector3D, others: list) -> list:
+        """Those of ``others`` that may hold hole ``i``, in order."""
+        import numpy as np
+        if self.pts is None:
+            return others
+        n = np.array((nrm.x(), nrm.y(), nrm.z()), dtype=np.float64)
+        off = float(np.abs((self.pts - self.pts[self.first[i]]) @ n).max())
+        gap = 2.0 * off + self.margin
+        at = np.asarray(others)
+        away = ((self.lo[at] > self.hi[i] + gap)
+                | (self.hi[at] < self.lo[i] - gap)).any(axis=1)
+        return at[~away].tolist()
 
 
 def _g_inside_a_hole(face: Face, loop: list[QVector3D]) -> bool:
