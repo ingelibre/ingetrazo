@@ -45,8 +45,8 @@ CONTRIBUTORS = [
     ("Gabriel Rodríguez Arregin",
      "Architect. The units system, the Browser, Layers 2.0, the Solid "
      "Inspector, Fillet 3D bevels, Bridge, Join Segments, Camera ▸ Axes, "
-     "soft ambient occlusion, round curved surfaces, cleaner exports and "
-     "many everyday editing tools.",
+     "soft ambient occlusion, round curved surfaces, view layouts, scenes "
+     "as tabs, cleaner exports and many everyday editing tools.",
      "https://github.com/canalsecuario-blip"),
     ("Félix Riestra",
      "The macOS package: IngeTrazo for Mac. Components that come apart "
@@ -168,7 +168,8 @@ CONTRIBUTORS = [
      "A failed scripted import that gives back what it had removed.",
      "https://github.com/clinta"),
     ("nicolasmarc",
-     "DXF polyface and mesh entities imported as faces.",
+     "DXF polyface and mesh entities imported as faces, merged part by "
+     "part.",
      "https://github.com/nicolasmarc"),
     ("BastelBaus",
      "DAE and .skp imports that keep the file's groups, nested and named, "
@@ -256,12 +257,25 @@ CONTRIBUTORS = [
      "The OpenCode Go provider and a readable chat for the AI Assistant.",
      "https://github.com/changastyle"),
     ("Alexey Tkachenko",
-     ".skp components scaled by −1 that keep their front.",
+     ".skp components scaled by −1 that keep their front, and nested "
+     "groups that wear their nearest painted container.",
      "https://github.com/alteralto"),
     ("Aashish — IngeTrazo Tutorials",
      "The IngeTrazo Tutorials channel on YouTube, and nine extensions: "
      "MultiView, Phasing Animator, Kitchen Maker, Taper and more.",
      "https://github.com/aashishzharbade-arch"),
+    ("Dugan Caswell",
+     "Levels: heights in the document's units.",
+     "https://github.com/consumr"),
+    ("David Mavrov",
+     "The Bulgarian translation.",
+     "https://github.com/davidsmavrov-debug"),
+    ("KuoYaMu",
+     "The Traditional Chinese translation.",
+     "https://github.com/KuoYaMu"),
+    ("DarkBiscuits",
+     "A .skp component 10 000 times too big, traced.",
+     "https://github.com/DarkBiscuits"),
 ]
 
 #: Roll speed: pixels per tick, and the tick.

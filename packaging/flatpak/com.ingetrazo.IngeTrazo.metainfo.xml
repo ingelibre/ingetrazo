@@ -75,6 +75,20 @@
   <url type="vcs-browser">https://github.com/ingelibre/ingetrazo</url>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="0.6.1" date="2026-11-10">
+      <description>
+        <p>Up to four views in one tab, scenes as tabs, a notice when a newer
+        version is out, PNG with a transparent background, translucent glass
+        in Monochrome, Bulgarian and Traditional Chinese, more reliable
+        Push/Pull and angle tools, and dozens of fixes to imports, paint and
+        groups.</p>
+        <p xml:lang="es">Hasta cuatro vistas en una pestaña, escenas como
+        pestañas, aviso de versión nueva, PNG con fondo transparente, vidrio
+        translúcido en Monocromo, búlgaro y chino tradicional, Empujar/Tirar y
+        herramientas de ángulo más fiables, y decenas de arreglos de
+        importación, pintura y grupos.</p>
+      </description>
+    </release>
     <release version="0.6.0" date="2026-11-01">
       <description>
         <p>Several projects in tabs in the same window; 17 languages, the

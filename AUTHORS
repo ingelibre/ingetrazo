@@ -47,6 +47,10 @@ reports and the work they carried); they also come first in Help ▸ About.
     And for 0.6.0: Iso snapping to the nearest isometric view (#995), 3D
     text that no longer sinks into faces (#1057) and the Circle snapping to
     the axes again (#962, #992).
+    For 0.6.1: Offset's snaps (#1084), the reference point in 3D (#1097), the
+    snap where an edge pierces a face (#1169), shapes anchored on the face
+    under the cursor (#1171), and the Protractor and Rotate disc and plane
+    lock (#1208, #1220).
 
 ★ Rafael García Rodríguez — "Rafael 3D" (youtube.com/@Rafa3D)
     Draftsman and 3D modelling reviewer.
@@ -127,6 +131,10 @@ dafrobozao <dafrobozao.93@gmail.com>  (github.com/dafrobozao)
     window of its own (#1068, #1069); the Browser that sorts, folds and
     filters (#734, #1002); locking groups from the right-click (#782,
     #1047); and Restore defaults in Preferences (#1052).
+    For 0.6.1: view layouts, scenes as tabs and the empty area (#1127), Make
+    Component on a group that stays on screen (#1150), the wheel's double
+    click (#1154), the shortcuts by menu (#1157), GLB pictures the right way
+    up (#1159) and Bridge arches that no longer cross (#1164).
 
 José Castro Basso — FADU–UDELAR, Montevideo  (github.com/castrobasso)
     Architect and teacher of architectural representation. Two-point
@@ -369,12 +377,16 @@ Clint Armstrong  (github.com/clinta)
 nicolasmarc  (github.com/nicolasmarc)
     DXF POLYFACE meshes, polygon meshes and MESH entities imported as
     faces (#878, #879).
+    For 0.6.1: each DXF mesh part merged on its own and one named component
+    per part for assembly blocks (#1160).
 
 BastelBaus  (github.com/BastelBaus)
     DAE imports that keep the file's groups, nested as in the file (#919).
     For 0.6.0: .skp imports nested and named as in the file (#922, closes
     #866), annotations with their anchor (#960), the BIM takeoff finding
     tags inside groups (#1035) and Help ▸ Documentation (#1036).
+    For 0.6.1: {sheet_name} and title-block fields that read the edited rows
+    (#1168).
 
 David  (github.com/Booshdag-io)
     The choice of tool cursor in Preferences: the tool's icon, the classic
@@ -404,12 +416,26 @@ Nicolas Grossi  (github.com/changastyle)
 
 Alexey Tkachenko  (github.com/alteralto)
     Pieces of a .skp component scaled by −1 keep their front (#1045, #1065).
+    For 0.6.1: nested groups that wear their nearest painted container
+    (#1156) and layer marks repainted on a theme switch (#1128).
 
 Aashish — IngeTrazo Tutorials  (github.com/aashishzharbade-arch)
     The IngeTrazo Tutorials channel on YouTube, which shows the program,
     its extensions and its workflows, and nine extensions in the catalogue:
     MultiView, Phasing Animator, Kitchen Maker, Display Scale, Taper,
     Bevel, Curve Tools, Texture Library and Make Stair.
+
+Dugan Caswell  (github.com/consumr)
+    Levels: heights in the document's units (#1075).
+
+David Mavrov  (github.com/davidsmavrov-debug)
+    The Bulgarian translation (#1185).
+
+KuoYaMu  (github.com/KuoYaMu)
+    The Traditional Chinese translation (#1099).
+
+DarkBiscuits  (github.com/DarkBiscuits)
+    The .skp component that came in 10 000 times too big, traced (#1196).
 
 ---
 
