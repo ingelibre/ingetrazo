@@ -319,6 +319,14 @@ class _PickWarm:
                 try:
                     kind, a, b = jobs.get_nowait()
                 except queue.Empty:
+                    with lock:
+                        left[0] -= 1
+                        last = left[0] == 0
+                    if last:
+                        # The sorting and copying leave ~1.6 GB of freed heap
+                        # on a 5 M face model, which glibc keeps (#1092).
+                        from core import malloc_arenas
+                        malloc_arenas.trim()
                     return
                 try:
                     if kind == "proto":
@@ -334,6 +342,8 @@ class _PickWarm:
         # Daemons: closing the window does not wait for them.
         self.threads = [threading.Thread(target=work, daemon=True)
                         for _ in range(min(8, os.cpu_count() or 2))]
+        lock = threading.Lock()
+        left = [len(self.threads)]
         for t in self.threads:
             t.start()
 
