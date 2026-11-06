@@ -55,6 +55,9 @@ Windows, Python 3.13.5, PySide6/Qt 6.11.3, IfcOpenShell 0.9.0.post1.
   sharing. The skip requires a separate IngePresupuestos checkout.
 - **94 passed**: IGZ formats 1/3, curves/textures/large documents,
   group copying/naming, new/open document state, clipboard and history.
+- **32 passed** in a temporary merge with the Turkish contribution
+  (`5eea8af`): identity scenarios plus Turkish workspace/localization tests.
+  The two contributions merge without conflicts.
 - Nineteen new identity scenarios cover repeated exports, `.igz` round
   trips, binary geometry, independent copies, metadata edits, partial
   retagging, legacy migration, insertions, collisions and GUID encoding.
