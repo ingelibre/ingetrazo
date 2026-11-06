@@ -3274,5 +3274,9 @@
  "Front color — paints faces in Hidden line and Monochrome": "Цвет передней стороны — применяется для граней в режимах «Скрытые линии» и «Монохромный»",
  "Distance ({unit}):": "Расстояние ({unit}):",
  "Restore defaults": "Восстановить значения по умолчанию",
- "Puts the settings of this window back to how IngeTrazo comes. Nothing is saved until you press OK. The language, the AI Assistant, the keyboard shortcuts and the units of the open document stay as they are.": "Возвращает настройки этого окна к исходным настройкам IngeTrazo. Ничего не сохраняется, пока вы не нажмёте OK. Язык, ИИ-ассистент, сочетания клавиш и единицы открытого документа остаются без изменений."
+ "Puts the settings of this window back to how IngeTrazo comes. Nothing is saved until you press OK. The language, the AI Assistant, the keyboard shortcuts and the units of the open document stay as they are.": "Возвращает настройки этого окна к исходным настройкам IngeTrazo. Ничего не сохраняется, пока вы не нажмёте OK. Язык, ИИ-ассистент, сочетания клавиш и единицы открытого документа остаются без изменений.",
+ "Text gap": "Отступ текста",
+ "Gap between the dimension line and its text, on paper. (Separation moves the line away from the measured points.)": "Расстояние между размерной линией и её текстом на бумаге. («Разделение / Отступ» отодвигает линию от измеряемых точек.)",
+ "Flip text direction": "Перевернуть направление текста",
+ "Turns the text half a turn so it reads the other way along the line — a vertical dimension read from the right instead of from the left. The text stays on the same side.": "Поворачивает текст на пол-оборота, чтобы он читался в другую сторону вдоль линии — вертикальный размер читается справа, а не слева. Текст остаётся с той же стороны."
 }

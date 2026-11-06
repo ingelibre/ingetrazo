@@ -3275,5 +3275,9 @@
  "Front color — paints faces in Hidden line and Monochrome": "正面颜色 — 在隐藏线和单色模式下绘制面",
  "Distance ({unit}):": "距离（{unit}）：",
  "Restore defaults": "恢复默认值",
- "Puts the settings of this window back to how IngeTrazo comes. Nothing is saved until you press OK. The language, the AI Assistant, the keyboard shortcuts and the units of the open document stay as they are.": "将此窗口的设置恢复为 IngeTrazo 的初始状态。在您按下“确定”之前不会保存任何内容。语言、AI 助手、键盘快捷键和当前文档的单位保持不变。"
+ "Puts the settings of this window back to how IngeTrazo comes. Nothing is saved until you press OK. The language, the AI Assistant, the keyboard shortcuts and the units of the open document stay as they are.": "将此窗口的设置恢复为 IngeTrazo 的初始状态。在您按下“确定”之前不会保存任何内容。语言、AI 助手、键盘快捷键和当前文档的单位保持不变。",
+ "Text gap": "文字间距",
+ "Gap between the dimension line and its text, on paper. (Separation moves the line away from the measured points.)": "尺寸线与其文字之间在图纸上的距离。（“分离”是让尺寸线远离测量点。）",
+ "Flip text direction": "翻转文字方向",
+ "Turns the text half a turn so it reads the other way along the line — a vertical dimension read from the right instead of from the left. The text stays on the same side.": "将文字旋转半圈，使其沿尺寸线反向阅读——竖向尺寸从右侧而不是左侧阅读。文字仍在同一侧。"
 }

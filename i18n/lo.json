@@ -3277,5 +3277,9 @@
  "Front color — paints faces in Hidden line and Monochrome": "ສີດ້ານໜ້າ — ທາສີໜ້າພຽງໃນໂໝດເຊື່ອງເສັ້ນ ແລະ ຂາວດຳ",
  "Restore defaults": "ຄືນຄ່າເລີ່ມຕົ້ນ",
  "Puts the settings of this window back to how IngeTrazo comes. Nothing is saved until you press OK. The language, the AI Assistant, the keyboard shortcuts and the units of the open document stay as they are.": "ຄືນການຕັ້ງຄ່າໃນໜ້າຕ່າງນີ້ເປັນຄ່າທີ່ມາກັບ IngeTrazo. ຈະບໍ່ມີການບັນທຶກຈົນກວ່າທ່ານຈະກົດ ຕົກລົງ. ພາສາ, ຜູ້ຊ່ວຍ AI, ປຸ່ມລັດ ແລະ ຫົວໜ່ວຍຂອງເອກະສານທີ່ເປີດຢູ່ຈະຄືເກົ່າ.",
- "Distance ({unit}):": "ໄລຍະຫ່າງ ({unit}):"
+ "Distance ({unit}):": "ໄລຍະຫ່າງ ({unit}):",
+ "Text gap": "ໄລຍະຫ່າງຂໍ້ຄວາມ",
+ "Gap between the dimension line and its text, on paper. (Separation moves the line away from the measured points.)": "ໄລຍະຫ່າງລະຫວ່າງເສັ້ນບອກຂະໜາດ ແລະ ຂໍ້ຄວາມຂອງມັນ ເທິງເຈ້ຍ. (ໄລຍະຫ່າງດ້ານເທິງຍ້າຍເສັ້ນອອກຈາກຈຸດທີ່ວັດ.)",
+ "Flip text direction": "ປີ້ນທິດທາງຂໍ້ຄວາມ",
+ "Turns the text half a turn so it reads the other way along the line — a vertical dimension read from the right instead of from the left. The text stays on the same side.": "ໝຸນຂໍ້ຄວາມເຄິ່ງຮອບ ເພື່ອໃຫ້ອ່ານໄປອີກທາງໜຶ່ງຕາມເສັ້ນ — ຂະໜາດແນວຕັ້ງອ່ານຈາກດ້ານຂວາແທນດ້ານຊ້າຍ. ຂໍ້ຄວາມຍັງຢູ່ດ້ານເດີມ."
 }

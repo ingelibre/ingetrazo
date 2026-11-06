@@ -118,8 +118,7 @@ def test_the_cache_only_serves_the_geometry_it_was_computed_at():
         item = _frame_item(comp)
         frame = item.model
         seeded = (np.zeros((0, 2)), np.zeros((0, 3)))
-        comp.snap_cache[id(frame)] = (
-            (frame.x_mm, frame.y_mm, frame.w_mm, frame.h_mm), seeded)
+        comp.snap_cache[id(frame)] = (comp._frame_page_stamp(frame), seeded)
 
         assert comp.frame_snap_points(frame) is seeded       # same spot: served
 
@@ -152,14 +151,14 @@ def test_undoing_a_move_takes_the_endpoints_back():
         _drag_and_release(item, 20.0, 0.0)
         comp.frame_snap_points(frame)                  # ... and cached there
         moved = comp.snap_cache[id(frame)]
-        assert moved[0] != before
+        assert moved[0][:4] != before
 
         assert comp.history.undo()                     # Ctrl+Z
         comp._rebuild_after_change()                   # the queued rebuild
 
         assert (frame.x_mm, frame.y_mm, frame.w_mm, frame.h_mm) == before
         assert comp.frame_snap_points(frame) is not moved[1]     # not those
-        assert comp.snap_cache[id(frame)][0] == before           # and not stale
+        assert comp.snap_cache[id(frame)][0][:4] == before       # and not stale
     finally:
         comp._auto_render = was_auto
         comp.close()
