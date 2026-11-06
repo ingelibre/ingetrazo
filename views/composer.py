@@ -11849,14 +11849,23 @@ class ComposerWindow(QMainWindow):
         tree.blockSignals(False)
 
     def _item_rows(self):
-        """Every item row of the list, folders or not."""
-        from PySide6.QtWidgets import QTreeWidgetItemIterator
-        it = QTreeWidgetItemIterator(self.items_list)
-        while it.value() is not None:
-            row = it.value()
+        """Every item row of the list, folders or not, top to bottom.
+
+        By hand, not with a QTreeWidgetItemIterator: PySide makes the tree
+        the Python parent of one, so it outlives the walk and stays
+        registered in the tree's model. clear() deletes a row that Python
+        still holds (the right-click menu's actions hold theirs) without
+        telling the iterators, and the next clear() walks up from the one
+        left dangling — the native crash Marco hit, 05-11."""
+        tree = self.items_list
+        stack = [tree.topLevelItem(i)
+                 for i in range(tree.topLevelItemCount() - 1, -1, -1)]
+        while stack:
+            row = stack.pop()
             if row.data(0, Qt.UserRole) is not None:
                 yield row
-            it += 1
+            stack.extend(row.child(i)
+                         for i in range(row.childCount() - 1, -1, -1))
 
     def _sync_items_list(self, item) -> None:
         self.items_list.blockSignals(True)
