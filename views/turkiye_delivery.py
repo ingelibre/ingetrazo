@@ -17,7 +17,9 @@ class DeliveryDialog(QDialog):
         self.scene = window.viewport.scene
         self.objects = collect_objects(self.scene)
         self.setWindowTitle(ui("Türkiye delivery information"))
-        self.resize(760, 700)
+        available = self.screen().availableGeometry()
+        self.resize(min(760, available.width() - 40),
+                    min(700, available.height() - 80))
         layout = QVBoxLayout(self)
         hint = QLabel(ui("Checks cover the listed fields only. Actor, CRS, geometry/material alignment "
                         "and legal applicability require separate review."))
