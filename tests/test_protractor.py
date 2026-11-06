@@ -210,3 +210,21 @@ def test_reload_and_escape_release_the_arrow_lock():
     t.on_deactivate(vp)
     t.on_activate(vp)                               # picked up again
     assert t._axis_pick is None
+
+
+def test_changing_the_plane_after_the_centre_reanchors_it():
+    """Locking the plane AFTER the first click used to tilt the disc
+    (``_axis_pick``) while leaving ``work_plane`` on the old plane, so the
+    cursor and the axis magnet never followed — Z would not snap on XZ/YZ."""
+    scene = Scene()
+    vp = _Vp(scene)
+    t = ProtractorTool()
+    t.on_activate(vp)
+    _click(vp, t, 0, 0)                              # centre on the ground (XY)
+    assert t.on_key(vp, Qt.Key_Left, Qt.NoModifier) is True   # lock to XZ
+    point, normal = t.work_plane
+    assert (point - QVector3D(0, 0, 0)).length() < 1e-9   # anchored at centre
+    assert abs(normal.y()) == 1.0                          # XZ plane
+    assert t.on_key(vp, Qt.Key_Left, Qt.NoModifier) is True   # release it
+    assert abs(t.work_plane[1].z()) == 1.0                 # back to XY
+
