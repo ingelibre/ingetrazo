@@ -3582,10 +3582,17 @@ class MainWindow(QMainWindow):
             self._vcb_value.setStyleSheet(self._VCB_IDLE_STYLE)
 
     # ---- Tool routing -------------------------------------------------------
+    def _tool_allowed(self, key: str, name: str) -> bool:
+        """False (with a status message) when the workspace's tool filter
+        refuses ``key``."""
+        if self._tool_filter is None or key in self._tool_filter:
+            return True
+        self.statusBar().showMessage(
+            tr("{name} is not available here.", name=tr(name)), 3000)
+        return False
+
     def _activate_tool(self, key: str) -> None:
-        if self._tool_filter is not None and key not in self._tool_filter:
-            self.statusBar().showMessage(
-                tr("{name} is not available here.", name=tr(self._tools[key].name)), 3000)
+        if not self._tool_allowed(key, self._tools[key].name):
             return
         tool = self._tools[key]
         self.viewport.set_active_tool(tool)
@@ -7393,6 +7400,8 @@ class MainWindow(QMainWindow):
         (3D text) re-orients the group onto the face under the cursor;
         ``anchor`` is the point the cursor holds (default: base centre)."""
         from tools.place_group import PlaceGroupTool
+        if not self._tool_allowed("place_group", PlaceGroupTool.name):
+            return
         self.viewport.set_active_tool(PlaceGroupTool(
             group, align_to_face=align_to_face, anchor=anchor))
         for action in self._tool_actions.values():

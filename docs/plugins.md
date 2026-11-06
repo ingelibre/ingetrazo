@@ -348,7 +348,8 @@ camera, file and saved state wait untouched — and shows the workspace's
 `scene` with its `history`. Meanwhile New / Open / Save / Save As, the
 title, the unsaved-changes prompts and quitting go to the workspace, the
 model's autosave pauses, and only the tools in `workspace.allowed_tools`
-(`None` = all) can be picked. `leave_workspace()` brings the model back
+(`None` = all) can be picked; placing a component uses the key
+`place_group`. `leave_workspace()` brings the model back
 exactly as it was; opening an `.igz` does so first. The workspace object
 provides `scene`, `history`, `title()`, `is_dirty()`, `save()`,
 `save_as()` and `confirm_leave()` (True when it may go: saved, discarded,
