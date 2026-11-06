@@ -723,7 +723,31 @@ def _exit_now(code) -> None:
             stream.flush()
         except Exception:
             pass
-    os._exit(code if isinstance(code, int) else 0)
+    status = code if isinstance(code, int) else 0
+    if sys.platform == "win32":
+        _terminate_windows_process(status)
+    os._exit(status)
+
+
+def _terminate_windows_process(status: int) -> None:
+    """End the process without running the DLLs' exit code. On Windows
+    os._exit still unloads them, and the destructor of shiboken's binding
+    manager can then crash (0xC0000005) walking wrappers Qt has already
+    deleted. It happens after everything is saved, but the system logs a
+    crash. Returns only if the call fails, and the caller then exits the
+    usual way."""
+    import ctypes
+    try:
+        kernel32 = ctypes.WinDLL("kernel32")
+        kernel32.GetCurrentProcess.argtypes = []
+        kernel32.GetCurrentProcess.restype = ctypes.c_void_p
+        kernel32.TerminateProcess.argtypes = [ctypes.c_void_p, ctypes.c_uint]
+        kernel32.TerminateProcess.restype = ctypes.c_int
+        # A negative status keeps its 32 bits, as with os._exit.
+        kernel32.TerminateProcess(
+            kernel32.GetCurrentProcess(), status & 0xFFFFFFFF)
+    except (OSError, AttributeError, ValueError):
+        pass
 
 
 if __name__ == "__main__":
