@@ -3203,11 +3203,15 @@ class Viewport(QOpenGLWidget):
         _fmark("edges")
 
         # Selected edges (drawn on top, highlighted) — never in an export
+        if self._export_size is None:
+            self._draw_selected_group_edges()
         if self._selected_count > 0 and self._export_size is None:
-            self._set_color(0.95, 0.45, 0.16, 1.0)
+            self._set_color(*self._modeling_color("selected"), 1.0)
             self._selected_vao.bind()
             self._gl.glDrawArrays(GL_LINES, 0, self._selected_count)
             self._selected_vao.release()
+        if self._export_size is None:
+            self._draw_locked_selection()
 
         # Hovered edge — light blue, on top of everything else so it reads as
         # the pick candidate even when it overlaps a selected (orange) edge.
@@ -4706,10 +4710,10 @@ class Viewport(QOpenGLWidget):
         if epoch_of is not None:
             sig = (epoch_of(), tuple(map(id, groups)))
         else:
-            sig = tuple((id(g), tuple(g.xform.data())) for g in groups)
+            sig = tuple((id(g), tuple((g.xform or QMatrix4x4()).data())) for g in groups)
         if entry["mat_sig"] != sig:
             import numpy as np
-            raw = np.asarray([list(g.xform.data()) for g in groups],
+            raw = np.asarray([list((g.xform or QMatrix4x4()).data()) for g in groups],
                              dtype=np.float32).tobytes()
             entry["mat_vbo"].bind()
             entry["mat_vbo"].allocate(raw, len(raw))
@@ -5348,11 +5352,16 @@ class Viewport(QOpenGLWidget):
         return best
 
     def pick_locked_group(self, screen_x: float, screen_y: float):
-        """The right-click's door back to a LOCKED group or component: the
-        one whose face is the front-most thing under the cursor (drawn,
-        its layer visible and unlocked), or ``None``. A locked group
-        refuses every click by design, so the context menu is the only
-        place left to offer Unlock (#782)."""
+        """Inspect or unlock a LOCKED group or component: the
+        front-most face or a visible edge under the cursor, or ``None``.
+        Its layer must be visible and unlocked. Editing tools still
+        use ``pick_group``, which excludes locked objects."""
+        context = self.scene.edit_group
+        groups = self.scene.groups if context is None else context.children
+        allowed = {g for g in groups if self.scene.entity_locked(g)
+                   and self.scene.entity_inspectable(g)}
+        if not allowed:
+            return None
         origin, direction = self._pixel_to_ray(screen_x, screen_y)
         if origin is None or direction is None:
             return None
@@ -5362,21 +5371,125 @@ class Viewport(QOpenGLWidget):
             return None
         hits = Viewport._face_hits(self, idx, origin, direction, "vis")
         Viewport._drop_past_cut(self, hits, origin, direction)
-        if hits is None or not len(hits.t):
-            return None
-        i = int(np.argmin(hits.t))
-        if not np.isfinite(hits.t[i]):
-            return None
-        owner = hits.ent(i)[1]
-        for g in (owner, getattr(owner, "owner", None)):
-            if (g is not None and getattr(g, "locked", False)
-                    and hasattr(g, "children")):
-                visible, layer_locked = self.scene._layer_state(g)
-                if (visible and not layer_locked
-                        and self.scene.entity_visible(g)):
-                    return g
-                return None
-        return None
+        if hits is not None and len(hits.t):
+            i = int(np.argmin(hits.t))
+            if np.isfinite(hits.t[i]):
+                owner = hits.ent(i)[1]
+                if owner in allowed:
+                    return owner
+        return self._pick_locked_group_edge(screen_x, screen_y, allowed)
+
+    def _pick_locked_group_edge(self, x, y, allowed):
+        """Locked wire groups and face boundaries use the usual edge tolerance."""
+        import numpy as np
+
+        best_d, best = self.pick_threshold_px, None
+        nat = self._lazy_native()
+        table = self._pick_lazy_table()
+        lazy_ids = set() if table is None else {id(g) for g in table[0]}
+        if nat is not None:
+            best_d, best = self._pick_group_edge_unbaked(
+                x, y, nat, allowed_groups=allowed)
+            near_ids = set()  # The engine already checked the lazy placements.
+        elif table is not None:
+            rows = self._footprint_need(table, float(x), float(y), best_d)
+            near_ids = {id(table[0][int(i)]) for i in rows}
+        else:
+            near_ids = set()
+        for placement in self._context_placements():
+            owner = self._owner_of(placement)
+            if owner not in allowed:
+                continue
+            if id(placement) in lazy_ids and id(placement) not in near_ids:
+                continue
+            # Locked edges are deliberately absent from the snapping index.
+            # Read their cached drawing chunk without making them snap targets.
+            raw = self._group_chunk(placement)["edges"]
+            if not raw:
+                continue
+            edges = np.frombuffer(raw, dtype=np.float32).reshape(-1, 2, 3)
+            xs, ys, valid = self._project_px(edges.reshape(-1, 3))
+            ax, ay, bx, by = xs[::2], ys[::2], xs[1::2], ys[1::2]
+            dx, dy = bx - ax, by - ay
+            length2 = dx * dx + dy * dy
+            t = np.clip(((x - ax) * dx + (y - ay) * dy)
+                        / np.where(length2 > 1e-12, length2, 1.0), 0.0, 1.0)
+            ok = valid[::2] & valid[1::2]
+            distance = np.where(ok, np.hypot(ax + t * dx - x, ay + t * dy - y), np.inf)
+            near = np.flatnonzero(distance < best_d)
+            for i in near[np.argsort(distance[near])]:
+                a, b = QVector3D(*edges[i, 0]), QVector3D(*edges[i, 1])
+                if not self._is_occluded(a + (b - a) * float(t[i])):
+                    best_d, best = float(distance[i]), owner
+                    break
+        return best
+
+    def _modeling_color(self, key, default=None):
+        style = getattr(self, "_frame_style", None) or self.scene.display_style
+        colors = getattr(style, "modeling_colors", {})
+        fallback = {"selected": (0.95, 0.45, 0.16), "locked": (0.9, 0.12, 0.12)}
+        return tuple(colors.get(key, fallback[key] if default is None else default))
+
+    def _selected_groups(self):
+        """Live selected groups, including read-only inspection, outside previews."""
+        from core.outliner import path_to
+
+        preview = getattr(self, "_preview_groups", None) or ()
+        return [g for g in self.scene.selection | self.scene.locked_selection
+                if isinstance(g, Group) and id(g) not in preview
+                and self.scene.entity_visible(g)
+                and (g in self.scene.selection or self.scene.entity_locked(g))
+                and path_to(self.scene.groups, g) is not None]
+
+    def _draw_selected_group_edges(self) -> None:
+        """Color visible hard edges using cached prototype geometry and real depth."""
+        batches = {}
+        for group in self._selected_groups():
+            cue = "locked" if self.scene.entity_locked(group) else "selected"
+            for placement in self._expand_placements(group):
+                if not self.scene.entity_visible(placement) or getattr(placement, "billboard", False):
+                    continue
+                paint = _paint_of(self, placement)
+                key = (id(placement.mesh), _material_sig(paint), cue)
+                if key not in batches:
+                    batches[key] = (placement.mesh, paint, cue, [])
+                batches[key][3].append(placement)
+        for mesh, paint, cue, placements in batches.values():
+            entry = self._ensure_proto_draw(mesh, paint)
+            if not entry["edge_count"]:
+                continue
+            count = self._update_inst_matrices(entry, placements)
+            self._set_color(*self._modeling_color(cue), 1.0)
+            entry["edges_vao"].bind()
+            self.context().extraFunctions().glDrawArraysInstanced(
+                GL_LINES, 0, entry["edge_count"], count)
+            entry["edges_vao"].release()
+
+    def _draw_locked_selection(self) -> None:
+        parts = []
+        for group in self._selected_groups():
+            if self.scene.entity_locked(group):
+                if getattr(group, "billboard", False):
+                    quad = self._billboard_quad(group)
+                    if quad is not None:
+                        corners = quad[0]
+                        data = array("f")
+                        for i in range(4):
+                            for point in (corners[i], corners[(i + 1) % 4]):
+                                data.extend(point.toTuple())
+                        parts.append(data.tobytes())
+                else:
+                    parts.append(_box_edges(*self._group_obb(group)))
+        if not parts:
+            return
+        raw = b"".join(parts)
+        self._bb_sel_vbo.bind()
+        self._bb_sel_vbo.allocate(raw, len(raw))
+        self._bb_sel_vbo.release()
+        self._set_color(*self._modeling_color("locked"), 1.0)
+        self._bb_sel_vao.bind()
+        self._gl.glDrawArrays(GL_LINES, 0, len(raw) // 12)
+        self._bb_sel_vao.release()
 
     def _draw_image_outlines(self, painter: QPainter) -> None:
         """Border of each reference image: faint normally, selection orange
@@ -14788,7 +14901,7 @@ class Viewport(QOpenGLWidget):
         out.sort(key=lambda de: de[0])        # stable: the fixed ones first
         return out[:cap]
 
-    def _pick_group_edge_unbaked(self, px, py, nat):
+    def _pick_group_edge_unbaked(self, px, py, nat, *, allowed_groups=None):
         """pick_group's edge fallback with the lazy placements' edges from
         the engine, none baked (#158): ``(d, owner)`` of the nearest group
         edge within the pick threshold that a pick may land on and the
@@ -14807,9 +14920,13 @@ class Viewport(QOpenGLWidget):
             safe = np.where(l2 > 1e-12, l2, 1.0)
             t = np.clip(((px - ax) * dx + (py - ay) * dy) / safe, 0.0, 1.0)
             d = np.hypot(ax + t * dx - px, ay + t * dy - py)
-            sel = getattr(idx, "gedge_sel", None)
-            if sel is not None:
-                ok = ok & sel[:m]
+            if allowed_groups is not None:
+                eligible = np.array([g in allowed_groups for g in idx.gedge_groups], dtype=bool)
+                ok = ok & eligible[idx.gedge_gi[:m]]
+            else:
+                sel = getattr(idx, "gedge_sel", None)
+                if sel is not None:
+                    ok = ok & sel[:m]
             d = np.where(ok, d, np.inf)
             near = np.where(d < best)[0]
             for i in near[np.argsort(d[near], kind="stable")]:
@@ -14819,7 +14936,11 @@ class Viewport(QOpenGLWidget):
         table = self._pick_lazy_table()
         rows = self._footprint_need(table, float(px), float(py), best)
         if len(rows):
-            rows = rows[np.isin(rows, Viewport._lazy_sel_rows(self, nat))]
+            if allowed_groups is None:
+                rows = rows[np.isin(rows, Viewport._lazy_sel_rows(self, nat))]
+            else:
+                rows = rows[np.array([self._owner_of(table[0][int(i)]) in allowed_groups
+                                      for i in rows], dtype=bool)]
         if len(rows):
             M = self._np_mvp()
             pl, _e, a, b, d = nat[0].edges_near(
@@ -18374,7 +18495,7 @@ class Viewport(QOpenGLWidget):
             tool.on_cancel(self)
             self._release_linear_mode()
             return
-        if self.scene.selection or self.extension_pick is not None:
+        if self.scene.selection or self.scene.locked_selection or self.extension_pick is not None:
             self.scene.clear_selection()
             self.clear_extension_pick()
             self.update()
