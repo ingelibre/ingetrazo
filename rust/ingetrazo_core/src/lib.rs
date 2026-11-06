@@ -9,12 +9,14 @@
 
 use numpy::{PyArray1, PyArray2, PyReadonlyArray2, PyReadonlyArray3, PyReadonlyArray1};
 use pyo3::prelude::*;
+use pyo3::types::PyBytes;
 
 mod boxes;
 mod facegeom;
 mod gltape;
 mod hlr;
 mod instances;
+mod jsondoc;
 mod occlusion;
 mod parity;
 mod weld;
@@ -30,6 +32,7 @@ fn ingetrazo_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(face_geometry, m)?)?;
     m.add_function(wrap_pyfunction!(qt_vector_probe, m)?)?;
     m.add_function(wrap_pyfunction!(weld_points, m)?)?;
+    m.add_function(wrap_pyfunction!(json_mesh_blocks, m)?)?;
     m.add_function(wrap_pyfunction!(boxes_near_px, m)?)?;
     m.add_function(wrap_pyfunction!(points_near_px, m)?)?;
     m.add_function(wrap_pyfunction!(segment_distances, m)?)?;
@@ -589,6 +592,46 @@ fn weld_points<'py>(
         (flat, ids, origin)
     });
     Ok((flat3(py, flat)?, PyArray1::from_vec(py, ids), PyArray1::from_vec(py, origin)))
+}
+
+/// `formats.igz._parse_native`'s kernel: ``(the document without its mesh
+/// arrays, [(pos (N,3) float64, flags, curves, layers, layer names, ring
+/// sizes, rings per face, face → attrs, attrs, faces with several holes), …])``,
+/// or ``None`` when the document is one for the old parser (jsondoc.rs).
+#[pyfunction]
+#[allow(clippy::type_complexity)]
+fn json_mesh_blocks<'py>(py: Python<'py>, doc: &Bound<'py, PyAny>) -> PyResult<Option<(Bound<'py, PyBytes>, Vec<Bound<'py, pyo3::types::PyTuple>>)>> {
+    use numpy::PyArrayMethods;
+    use pyo3::types::{PyByteArray, PyByteArrayMethods, PyBytesMethods};
+    let d: &[u8] = if let Ok(b) = doc.cast::<PyBytes>() {
+        b.as_bytes()
+    } else {
+        // SAFETY: the caller's own buffer, which nobody touches meanwhile.
+        unsafe { doc.cast::<PyByteArray>()?.as_bytes() }
+    };
+    let Ok((text, blocks)) = py.detach(|| jsondoc::mesh_blocks(d)) else {
+        return Ok(None);
+    };
+    let mut out = Vec::with_capacity(blocks.len());
+    for b in blocks {
+        let n = b.pos.len() / 3;
+        let pos = PyArray1::from_vec(py, b.pos).reshape([n, 3])?;
+        let names: Vec<Bound<'py, PyBytes>> = b.layer_names.iter().map(|x| PyBytes::new(py, x)).collect();
+        let attrs: Vec<Bound<'py, PyBytes>> = b.attrs.iter().map(|x| PyBytes::new(py, x)).collect();
+        out.push(pyo3::types::PyTuple::new(py, [
+            pos.into_any(),
+            PyArray1::from_vec(py, b.flags).into_any(),
+            PyArray1::from_vec(py, b.curves).into_any(),
+            PyArray1::from_vec(py, b.layers).into_any(),
+            pyo3::types::PyList::new(py, names)?.into_any(),
+            PyArray1::from_vec(py, b.sizes).into_any(),
+            PyArray1::from_vec(py, b.counts).into_any(),
+            PyArray1::from_vec(py, b.face_attr).into_any(),
+            pyo3::types::PyList::new(py, attrs)?.into_any(),
+            PyArray1::from_vec(py, b.multi).into_any(),
+        ])?);
+    }
+    Ok(Some((PyBytes::new(py, &text), out)))
 }
 
 /// A recorded run of OpenGL calls, replayed through the current context's
