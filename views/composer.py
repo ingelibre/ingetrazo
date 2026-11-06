@@ -12977,11 +12977,27 @@ class ComposerWindow(QMainWindow):
         dlg.resize(1100, 800)
         dlg.exec()
 
-    def export_pdf(self, path: str) -> None:
+    def export_pdf(self, path: str, *, archival: bool = False) -> None:
         """Write the current sheet to ``path`` with exact physical page
         metrics. Every item paints through the same mm-space painters the
         canvas uses; the painter is scaled device-px-per-mm once."""
+        if archival:
+            for frame in self.comp.frames:
+                if not frame.view_key.startswith(("std:", "scene:")):
+                    raise ValueError("Delivery frames must reference a standard or saved model view")
+                if frame.style != "vectorial" or self.frame_is_perspective(frame):
+                    raise ValueError("Delivery PDF/A requires parallel vector frames")
+                if self.missing_scene(frame) is not None or frame.hidden:
+                    raise ValueError("Delivery sheet requires visible frames with existing model views")
+                self.render_frame(frame)
+                if id(frame) not in self.hlr_cache:
+                    raise ValueError("Delivery view could not be rendered")
         writer = QPdfWriter(path)
+        if archival:
+            from PySide6.QtGui import QPagedPaintDevice
+            writer.setPdfVersion(QPagedPaintDevice.PdfVersion_A1b)
+            writer.setTitle(self.comp.name)
+            writer.setCreator("IngeTrazo")
         writer.setPageSize(QPageSize(getattr(QPageSize, self.comp.paper)))
         if self.comp.landscape:
             writer.setPageOrientation(QPageLayout.Landscape)
@@ -12992,6 +13008,12 @@ class ComposerWindow(QMainWindow):
             self._paint_sheet(painter, self.comp)
         finally:
             painter.end()
+
+        if archival:
+            del painter
+            del writer
+            from formats.pdfa import normalize_qt_metadata
+            normalize_qt_metadata(path)
 
     def export_all_pdf(self, path: str, sheets=None) -> list:
         """The atlas: every sheet of the document into ONE PDF, each on

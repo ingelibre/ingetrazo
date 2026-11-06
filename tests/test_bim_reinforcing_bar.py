@@ -16,7 +16,7 @@ from core.bim import (IFC_CLASSES, STEEL_DENSITY, class_quantities, tag_group)
 from core.group import Group
 from core.mesh import Mesh
 from core.scene import Scene
-from formats.ifc import save_ifc
+from formats.ifc import SUPPORTED_SCHEMAS, save_ifc
 
 D, L = 0.016, 6.0          # a Ø16 bar, 6 m long
 
@@ -51,13 +51,14 @@ def test_a_bar_reads_its_length_diameter_and_weight():
     assert unit == "kg" and metrado == pytest.approx(got["Weight"])
 
 
-def test_the_bar_exports_to_ifc(tmp_path):
+@pytest.mark.parametrize("schema", SUPPORTED_SCHEMAS)
+def test_the_bar_exports_to_ifc(tmp_path, schema):
     scene = Scene()
     g = Group(_bar(), name="N1 Ø16")
     scene.groups.append(g)
     tag_group(g, "IfcReinforcingBar", "N1 Ø16")
     path = tmp_path / "barra.ifc"
-    assert save_ifc(scene, path) == 1
+    assert save_ifc(scene, path, schema=schema) == 1
     text = path.read_text()
     assert "IFCREINFORCINGBAR(" in text
     assert "Qto_ReinforcingElementBaseQuantities" in text

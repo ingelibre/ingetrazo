@@ -1,0 +1,1186 @@
+{
+  "version": 2,
+  "source_pdf_pages": {
+    "filename": [
+      2,
+      3,
+      11,
+      12,
+      13
+    ],
+    "space_number": [
+      14
+    ],
+    "site": [
+      94,
+      95
+    ],
+    "building": [
+      42,
+      43,
+      44
+    ],
+    "storey": [
+      45
+    ],
+    "actors": [
+      223,
+      224,
+      225,
+      226
+    ],
+    "crs": [
+      227,
+      228,
+      229,
+      230,
+      231,
+      232
+    ],
+    "lod": [
+      237
+    ],
+    "quality": [
+      238,
+      239,
+      240,
+      241
+    ]
+  },
+  "spatial": {
+    "site": {
+      "class": "IfcSite",
+      "category": "SAH",
+      "attributes": [
+        "name",
+        "long_name",
+        "object_type",
+        "ref_elevation"
+      ],
+      "psets": {
+        "Pset_SiteCommon": {
+          "FloorAreaRatio": "IfcPositiveRatioMeasure",
+          "SiteCoverageRatio": "IfcPositiveRatioMeasure",
+          "TotalArea": "IfcAreaMeasure"
+        },
+        "Pset_Address": {
+          "AddressLines": "IfcLabelList",
+          "Town": "IfcLabel",
+          "Region": "IfcLabel"
+        },
+        "Pset_LandRegistration": {
+          "LandID": "IfcIdentifier",
+          "LandTitleID": "IfcIdentifier"
+        },
+        "TREpys_ParselOzellikSeti": {
+          "TAKS": "IfcRatioMeasure",
+          "KAKS": "IfcRatioMeasure",
+          "CekmeOn": "IfcLengthMeasure",
+          "CekmeYan": "IfcLengthMeasure",
+          "CekmeArka": "IfcLengthMeasure"
+        }
+      }
+    },
+    "building": {
+      "class": "IfcBuilding",
+      "category": "BNA",
+      "attributes": [
+        "name",
+        "long_name"
+      ],
+      "psets": {
+        "Pset_BuildingCommon": {
+          "BuildingID": "IfcIdentifier",
+          "IsPermanentID": "IfcBoolean",
+          "ConstructionMethod": "IfcLabel",
+          "FireProtectionClass": "IfcLabel",
+          "OccupancyType": "IfcLabel",
+          "GrossPlannedArea": "IfcAreaMeasure",
+          "NetPlannedArea": "IfcAreaMeasure"
+        },
+        "Pset_Address": {
+          "AddressLines": "IfcLabelList",
+          "Town": "IfcLabel",
+          "Region": "IfcLabel"
+        },
+        "Qto_BuildingBaseQuantities": {
+          "Height": "IfcLengthMeasure",
+          "EavesHeight": "IfcLengthMeasure",
+          "FootPrintArea": "IfcAreaMeasure",
+          "GrossFloorArea": "IfcAreaMeasure",
+          "NetFloorArea": "IfcAreaMeasure"
+        }
+      }
+    },
+    "storey": {
+      "class": "IfcBuildingStorey",
+      "category": "BNK",
+      "attributes": [
+        "name",
+        "elevation",
+        "code"
+      ],
+      "psets": {
+        "Pset_BuildingStoreyCommon": {
+          "ElevationOfSSLRelative": "IfcLengthMeasure"
+        },
+        "Qto_BuildingStoreyBaseQuantities": {
+          "NetFloorArea": "IfcAreaMeasure"
+        }
+      }
+    }
+  },
+  "conditional_fields": [
+    "Qto_BuildingBaseQuantities.Height",
+    "Qto_BuildingBaseQuantities.EavesHeight",
+    "Pset_BuildingStoreyCommon.ElevationOfSSLRelative"
+  ],
+  "file_kinds": [
+    "PL",
+    "KS",
+    "GR",
+    "DT",
+    "SM",
+    "MD",
+    "FR",
+    "LS",
+    "DK",
+    "RP",
+    "HS",
+    "GN"
+  ],
+  "file_types": [
+    "MMC",
+    "MAP",
+    "ERP",
+    "YKG",
+    "CAT",
+    "VAZ",
+    "MIR",
+    "STC",
+    "SHR",
+    "ISC",
+    "IHR",
+    "MKC",
+    "ITH",
+    "IYP",
+    "IKR",
+    "EKB",
+    "ASN",
+    "MTS",
+    "ELC",
+    "AGH",
+    "TGH",
+    "AHR",
+    "ETS",
+    "YAP",
+    "DIC",
+    "DGR",
+    "MLZ",
+    "MHL",
+    "XXX",
+    "MKF"
+  ],
+  "roles": [
+    "ARCHITECT",
+    "BUILDINGOPERATOR",
+    "BUILDINGOWNER",
+    "CIVILENGINEER",
+    "CLIENT",
+    "COMMISSIONINGENGINEER",
+    "CONSTRUCTIONMANAGER",
+    "CONSULTANT",
+    "CONTRACTOR",
+    "COSTENGINEER",
+    "ELECTRICALENGINEER",
+    "ENGINEER",
+    "FACILITIESMANAGER",
+    "FIELDCONSTRUCTIONMANAGER",
+    "MANUFACTURER",
+    "MECHANICALENGINEER",
+    "OWNER",
+    "PROJECTMANAGER",
+    "RESELLER",
+    "STRUCTURALENGINEER",
+    "SUBCONTRACTOR",
+    "SUPPLIER",
+    "USERDEFINED"
+  ],
+  "quality": {
+    "MM": [
+      {
+        "number": 1,
+        "key": "file_size",
+        "label": "Dosya boyutu"
+      },
+      {
+        "number": 2,
+        "key": "project",
+        "label": "Proje bilgileri"
+      },
+      {
+        "number": 3,
+        "key": "filename",
+        "label": "Proje ve dosya isimlendirmesi"
+      },
+      {
+        "number": 4,
+        "key": "space_names",
+        "label": "Mahal no ve mahal ismi"
+      },
+      {
+        "number": 5,
+        "key": "object_names",
+        "label": "Varlık isimlendirmesi"
+      },
+      {
+        "number": 6,
+        "key": "crs",
+        "label": "Koordinat sistemi"
+      },
+      {
+        "number": 7,
+        "key": "lod",
+        "label": "Gelişim seviyesi"
+      },
+      {
+        "number": 8,
+        "key": "classes",
+        "label": "IFC sınıfları"
+      },
+      {
+        "number": 9,
+        "key": "properties",
+        "label": "Zorunlu öznitelik ve özellikler"
+      },
+      {
+        "number": 10,
+        "key": "areas",
+        "label": "Emsal/alan hesabı"
+      },
+      {
+        "number": 11,
+        "key": "hierarchy",
+        "label": "Proje/arsa/bina/kat hiyerarşisi"
+      },
+      {
+        "number": 12,
+        "key": "spaces_present",
+        "label": "Mahal sınıfı"
+      },
+      {
+        "number": 13,
+        "key": "space_overlap",
+        "label": "Mahallerin kat ataması ve örtüşmesi"
+      },
+      {
+        "number": 14,
+        "key": "space_closed",
+        "label": "Mahallerin kapalı olması"
+      },
+      {
+        "number": 15,
+        "key": "storeys",
+        "label": "Varlıkların kat ataması"
+      },
+      {
+        "number": 16,
+        "key": "duplicates",
+        "label": "Yinelenen varlıklar"
+      },
+      {
+        "number": 17,
+        "key": "schema",
+        "label": "IFC şeması"
+      },
+      {
+        "number": 18,
+        "key": "version",
+        "label": "IFC sürümü ve uzantısı"
+      },
+      {
+        "number": 19,
+        "key": "predefined",
+        "label": "Ön tanımlı tip"
+      },
+      {
+        "number": 20,
+        "key": "psets",
+        "label": "Özellik setleri"
+      },
+      {
+        "number": 21,
+        "key": "pdf_model",
+        "label": "PDF ve IFC uyumu"
+      }
+    ],
+    "OTHER": [
+      {
+        "number": 1,
+        "key": "file_size",
+        "label": "Dosya boyutu"
+      },
+      {
+        "number": 2,
+        "key": "project",
+        "label": "Proje bilgileri"
+      },
+      {
+        "number": 3,
+        "key": "filename",
+        "label": "Proje ve dosya isimlendirmesi"
+      },
+      {
+        "number": 4,
+        "key": "object_names",
+        "label": "Varlık isimlendirmesi"
+      },
+      {
+        "number": 5,
+        "key": "crs",
+        "label": "Koordinat sistemi"
+      },
+      {
+        "number": 6,
+        "key": "lod",
+        "label": "Gelişim seviyesi"
+      },
+      {
+        "number": 7,
+        "key": "classes",
+        "label": "IFC sınıfları"
+      },
+      {
+        "number": 8,
+        "key": "properties",
+        "label": "Zorunlu öznitelik ve özellikler"
+      },
+      {
+        "number": 9,
+        "key": "areas",
+        "label": "Emsal/alan hesabı"
+      },
+      {
+        "number": 10,
+        "key": "storeys",
+        "label": "Varlıkların kat ataması"
+      },
+      {
+        "number": 11,
+        "key": "duplicates",
+        "label": "Yinelenen varlıklar"
+      },
+      {
+        "number": 12,
+        "key": "schema",
+        "label": "IFC şeması"
+      },
+      {
+        "number": 13,
+        "key": "version",
+        "label": "IFC sürümü ve uzantısı"
+      },
+      {
+        "number": 14,
+        "key": "predefined",
+        "label": "Ön tanımlı tip"
+      },
+      {
+        "number": 15,
+        "key": "psets",
+        "label": "Özellik setleri"
+      },
+      {
+        "number": 16,
+        "key": "pdf_model",
+        "label": "PDF ve IFC uyumu"
+      }
+    ]
+  },
+  "forms": {
+    "project": [
+      [
+        "name",
+        "Authority project code",
+        "İdarenin verdiği proje kodu",
+        "text"
+      ],
+      [
+        "project_type",
+        "Project type",
+        "Proje tipi",
+        "text"
+      ],
+      [
+        "description",
+        "Description",
+        "Açıklama",
+        "text"
+      ],
+      [
+        "long_name",
+        "Long project name",
+        "Uzun proje adı",
+        "text"
+      ],
+      [
+        "phase",
+        "Project phase",
+        "Proje aşaması",
+        "text"
+      ],
+      [
+        "authority_reference",
+        "Authority reference",
+        "İdare yazısı / başvuru referansı",
+        "text"
+      ]
+    ],
+    "author": [
+      [
+        "person_id",
+        "Professional registration",
+        "Oda sicil numarası",
+        "text"
+      ],
+      [
+        "given_name",
+        "Given name",
+        "Ad",
+        "text"
+      ],
+      [
+        "family_name",
+        "Family name",
+        "Soyad",
+        "text"
+      ],
+      [
+        "organization_id",
+        "Organisation tax ID",
+        "Kurum vergi numarası",
+        "text"
+      ],
+      [
+        "organization",
+        "Organisation",
+        "Kurum unvanı",
+        "text"
+      ],
+      [
+        "role",
+        "Person role",
+        "Müellif rolü",
+        "role"
+      ],
+      [
+        "organization_role",
+        "Organisation role",
+        "Kurum rolü",
+        "role"
+      ],
+      [
+        "user_role",
+        "User-defined role",
+        "Kullanıcı tanımlı rol",
+        "text"
+      ],
+      [
+        "address",
+        "Address lines",
+        "Adres satırları ( | ile)",
+        "text"
+      ],
+      [
+        "town",
+        "Town / city",
+        "İl",
+        "text"
+      ],
+      [
+        "region",
+        "District",
+        "İlçe",
+        "text"
+      ],
+      [
+        "postal_code",
+        "Postal code",
+        "Posta kodu",
+        "text"
+      ],
+      [
+        "country",
+        "Country",
+        "Ülke",
+        "text"
+      ]
+    ],
+    "crs": [
+      [
+        "name",
+        "EPSG system",
+        "EPSG koordinat sistemi",
+        "epsg"
+      ],
+      [
+        "geodetic_datum",
+        "Geodetic datum",
+        "Jeodezik datum",
+        "text"
+      ],
+      [
+        "vertical_datum",
+        "Vertical datum",
+        "Düşey datum",
+        "text"
+      ],
+      [
+        "projection",
+        "Map projection",
+        "Harita projeksiyonu",
+        "text"
+      ],
+      [
+        "zone",
+        "Central meridian",
+        "Merkez meridyen",
+        "text"
+      ],
+      [
+        "description",
+        "CRS description",
+        "Koordinat sistemi açıklaması",
+        "text"
+      ],
+      [
+        "eastings",
+        "Origin easting (m)",
+        "Orijin doğu (m)",
+        "number"
+      ],
+      [
+        "northings",
+        "Origin northing (m)",
+        "Orijin kuzey (m)",
+        "number"
+      ],
+      [
+        "height",
+        "Origin orthogonal height (m)",
+        "Orijin ortometrik yüksekliği (m)",
+        "number"
+      ],
+      [
+        "x_abscissa",
+        "Local X east component",
+        "Yerel X doğu bileşeni",
+        "number"
+      ],
+      [
+        "x_ordinate",
+        "Local X north component",
+        "Yerel X kuzey bileşeni",
+        "number"
+      ],
+      [
+        "scale",
+        "Map scale factor",
+        "Dönüşüm ölçek çarpanı",
+        "number"
+      ],
+      [
+        "precision",
+        "Geometric precision (m)",
+        "Geometrik hassasiyet (m)",
+        "number"
+      ]
+    ],
+    "filename": [
+      [
+        "building",
+        "Building code (2)",
+        "Bina kodu (2 karakter)",
+        "text"
+      ],
+      [
+        "discipline",
+        "Discipline",
+        "Disiplin",
+        "discipline"
+      ],
+      [
+        "subdiscipline",
+        "Subdiscipline / element (4)",
+        "Alt disiplin / öğe (4 harf)",
+        "text"
+      ],
+      [
+        "kind",
+        "Document kind",
+        "Dosya türü",
+        "kind"
+      ],
+      [
+        "type",
+        "Document type",
+        "Dosya tipi",
+        "doctype"
+      ],
+      [
+        "location",
+        "Storey / location (3)",
+        "Kat / konum (3 karakter)",
+        "text"
+      ],
+      [
+        "sequence",
+        "Sequence (2)",
+        "Sıra numarası (2 rakam)",
+        "text"
+      ],
+      [
+        "revision",
+        "Revision (3)",
+        "Revizyon (3 rakam)",
+        "text"
+      ],
+      [
+        "max_size_mb",
+        "Authority file limit (MB)",
+        "İdarenin dosya sınırı (MB)",
+        "number"
+      ]
+    ],
+    "application": [
+      [
+        "year",
+        "Application year",
+        "Başvuru yılı",
+        "integer"
+      ],
+      [
+        "province",
+        "Province",
+        "İl",
+        "text"
+      ],
+      [
+        "district",
+        "District",
+        "İlçe",
+        "text"
+      ],
+      [
+        "neighborhood",
+        "Neighbourhood",
+        "Mahalle",
+        "text"
+      ],
+      [
+        "block",
+        "Cadastral block",
+        "Ada numarası",
+        "text"
+      ],
+      [
+        "parcel",
+        "Parcel",
+        "Parsel numarası",
+        "text"
+      ],
+      [
+        "status",
+        "Application status",
+        "Başvuru / tadilat durumu",
+        "text"
+      ]
+    ],
+    "applicability": [
+      [
+        "use",
+        "Building use",
+        "Yapı kullanımı",
+        "use"
+      ],
+      [
+        "area",
+        "Construction area (m²)",
+        "Toplam yapı inşaat alanı (m²)",
+        "number"
+      ],
+      [
+        "province_population",
+        "Province population",
+        "İl nüfusu",
+        "integer"
+      ],
+      [
+        "municipality_population",
+        "Municipality population",
+        "Belediye nüfusu",
+        "integer"
+      ],
+      [
+        "storeys_above_ground",
+        "Above-ground storeys",
+        "Bodrum dışındaki kat sayısı",
+        "integer"
+      ],
+      [
+        "detached",
+        "Detached building",
+        "Müstakil yapı",
+        "boolean"
+      ],
+      [
+        "agricultural_exempt",
+        "Non-integrated agricultural building",
+        "Entegre olmayan tarım/hayvancılık yapısı",
+        "boolean"
+      ],
+      [
+        "preexisting_application",
+        "Application / tender predates transition",
+        "Geçişten önce ruhsat başvurusu / ihale kararı",
+        "boolean"
+      ],
+      [
+        "authority_reference",
+        "Applicability evidence",
+        "Kapsam / geçiş değerlendirme dayanağı",
+        "text"
+      ],
+      [
+        "decision",
+        "Scope / transition decision",
+        "Kapsam / geçiş değerlendirmesi",
+        "text"
+      ]
+    ],
+    "survey": [
+      [
+        "enabled",
+        "Include measured survey point",
+        "Ölçülmüş referans noktası ekle",
+        "boolean"
+      ],
+      [
+        "name",
+        "Survey point name",
+        "Ölçüm noktası adı",
+        "text"
+      ],
+      [
+        "description",
+        "Survey evidence / description",
+        "Ölçüm dayanağı / açıklama",
+        "text"
+      ],
+      [
+        "x",
+        "Model coordinate x (m)",
+        "Model x koordinatı (m)",
+        "number"
+      ],
+      [
+        "y",
+        "Model coordinate y (m)",
+        "Model y koordinatı (m)",
+        "number"
+      ],
+      [
+        "z",
+        "Model coordinate z (m)",
+        "Model z koordinatı (m)",
+        "number"
+      ]
+    ]
+  },
+  "labels": {
+    "Project and delivery package": {
+      "tr": "Proje ve teslim paketi"
+    },
+    "Spatial hierarchy": {
+      "tr": "Bina ve kat yapısı"
+    },
+    "Participants": {
+      "tr": "Müellif ve kurum"
+    },
+    "Coordinate reference system": {
+      "tr": "Koordinat sistemi"
+    },
+    "Delivery filename": {
+      "tr": "Teslim dosya adı"
+    },
+    "Quality review": {
+      "tr": "Kalite kontrolü"
+    },
+    "Application details": {
+      "tr": "Başvuru bilgileri"
+    },
+    "Applicability": {
+      "tr": "Kapsam ve geçiş"
+    },
+    "Not entered": {
+      "tr": "Girilmedi"
+    },
+    "Save project data": {
+      "tr": "Proje bilgilerini kaydet"
+    },
+    "Confirm review for this revision": {
+      "tr": "Kontrolü bu model sürümü için onayla"
+    },
+    "Build delivery package": {
+      "tr": "Teslim paketi oluştur"
+    },
+    "Current checks": {
+      "tr": "Güncel kontroller"
+    },
+    "Node": {
+      "tr": "Kayıt"
+    },
+    "Value": {
+      "tr": "Değer"
+    },
+    "Conditional exception / reason": {
+      "tr": "Koşula bağlı istisna / gerekçe"
+    },
+    "Apply node fields": {
+      "tr": "Kayıt alanlarını uygula"
+    },
+    "New building": {
+      "tr": "Bina ekle"
+    },
+    "New storey": {
+      "tr": "Kat ekle"
+    },
+    "Remove node": {
+      "tr": "Kaydı kaldır"
+    },
+    "Reviewer": {
+      "tr": "Kontrol eden"
+    },
+    "Review date": {
+      "tr": "Kontrol tarihi"
+    },
+    "Evidence / reference": {
+      "tr": "Kanıt / referans"
+    },
+    "No review": {
+      "tr": "İncelenmedi"
+    },
+    "Yes": {
+      "tr": "Evet"
+    },
+    "No": {
+      "tr": "Hayır"
+    },
+    "Not applicable": {
+      "tr": "Uygulanmaz"
+    },
+    "Use name / code examples: MM-BNA-A, MM-BNK-Zemin, K00. Assignment does not move geometry.": {
+      "tr": "Ad/kod örnekleri: MM-BNA-A, MM-BNK-Zemin, K00. Kat ataması geometriyi taşımaz."
+    },
+    "PDF/A validator JAR": {
+      "tr": "PDF/A doğrulayıcı CLI JAR dosyası"
+    },
+    "Choose validator": {
+      "tr": "Doğrulayıcı seç"
+    },
+    "Not reviewed for this model revision": {
+      "tr": "Bu model sürümü için kontrol onaylanmadı"
+    },
+    "Project and delivery workflow": {
+      "tr": "Proje ve teslim süreci"
+    },
+    "Project": {
+      "tr": "Proje"
+    },
+    "Author": {
+      "tr": "Müellif ve kurum"
+    },
+    "Crs": {
+      "tr": "Koordinat sistemi"
+    },
+    "Filename": {
+      "tr": "Teslim dosya adı"
+    },
+    "Application": {
+      "tr": "Başvuru bilgileri"
+    },
+    "Survey": {
+      "tr": "Ölçüm noktası"
+    },
+    "Site / buildings / storeys": {
+      "tr": "Arsa, bina ve katlar"
+    },
+    "Site": {
+      "tr": "Arsa"
+    },
+    "Building": {
+      "tr": "Bina"
+    },
+    "Storey": {
+      "tr": "Kat"
+    },
+    "Add building": {
+      "tr": "Bina ekle"
+    },
+    "Add storey": {
+      "tr": "Kat ekle"
+    },
+    "Remove selected": {
+      "tr": "Seçili kaydı kaldır"
+    },
+    "Conditional exception evidence": {
+      "tr": "Koşula bağlı istisnanın gerekçesi"
+    },
+    "Review date (YYYY-MM-DD)": {
+      "tr": "Kontrol tarihi (YYYY-AA-GG)"
+    },
+    "Check": {
+      "tr": "Kontrol"
+    },
+    "Answer": {
+      "tr": "Yanıt"
+    },
+    "Pending": {
+      "tr": "İncelenmedi"
+    },
+    "True": {
+      "tr": "Evet"
+    },
+    "False": {
+      "tr": "Hayır"
+    },
+    "Confirm review for current model": {
+      "tr": "Kontrolü bu model sürümü için onayla"
+    },
+    "Delivery package": {
+      "tr": "Teslim paketi"
+    },
+    "Build verified delivery package": {
+      "tr": "Doğrulanmış teslim paketi oluştur"
+    },
+    "Verified delivery package created": {
+      "tr": "Doğrulanmış teslim paketi oluşturuldu"
+    },
+    "Issues": {
+      "tr": "Eksikler / hatalar"
+    },
+    "Reviewer and valid review date required": {
+      "tr": "Kontrol eden kişi ve geçerli tarih gerekli"
+    },
+    "Invalid numeric value": {
+      "tr": "Geçersiz sayı"
+    },
+    "name": {
+      "tr": "Ad"
+    },
+    "long_name": {
+      "tr": "Uzun ad"
+    },
+    "object_type": {
+      "tr": "Nesne türü"
+    },
+    "ref_elevation": {
+      "tr": "Referans kotu (m)"
+    },
+    "elevation": {
+      "tr": "Kat kotu (m)"
+    },
+    "code": {
+      "tr": "Kat kodu"
+    },
+    "pass": {
+      "tr": "Geçti"
+    },
+    "fail": {
+      "tr": "Kaldı"
+    },
+    "pending": {
+      "tr": "Bekliyor"
+    },
+    "Enter object properties here; manage project structure and delivery checks in Project and delivery workflow.": {
+      "tr": "Buradan nesne özelliklerini düzenleyin. Bina–kat yapısını ve teslim kontrollerini Proje ve teslim süreci ekranından yönetin."
+    },
+    "Assigned storey": {
+      "tr": "Bağlı olduğu kat"
+    },
+    "Assigned space": {
+      "tr": "Bağlı olduğu mahal"
+    },
+    "Room number (K00_KNT_001)": {
+      "tr": "Mahal numarası (K00_KNT_001)"
+    },
+    "Material": {
+      "tr": "Malzeme"
+    },
+    "Thickness (m)": {
+      "tr": "Kalınlık (m)"
+    },
+    "Material layers in order": {
+      "tr": "Sıralı malzeme katmanları"
+    },
+    "Add layer": {
+      "tr": "Katman ekle"
+    },
+    "Remove layer": {
+      "tr": "Katmanı kaldır"
+    },
+    "Close": {
+      "tr": "Kapat"
+    },
+    "Apply": {
+      "tr": "Uygula"
+    },
+    "Recorded creation timestamp required": {
+      "tr": "Kayıtlı oluşturma zamanı gerekli"
+    },
+    "Record the authority's project identifier / naming instructions": {
+      "tr": "İdarenin proje kodu / isimlendirme dayanağını kaydedin"
+    },
+    "Required application / cadastral information": {
+      "tr": "Başvuru / kadastro bilgisi gerekli"
+    },
+    "Application year required": {
+      "tr": "Başvuru yılı gerekli"
+    },
+    "Record project scope, transition decision and its evidence": {
+      "tr": "Projenin kapsam / geçiş değerlendirmesini ve dayanağını kaydedin"
+    },
+    "Non-negative project-specific numeric value required": {
+      "tr": "Projeye ait sıfır veya pozitif sayısal değer gerekli"
+    },
+    "Explicit project-specific yes/no required": {
+      "tr": "Proje için açıkça evet veya hayır seçin"
+    },
+    "Survey reference information required": {
+      "tr": "Ölçüm noktasının referans bilgisi gerekli"
+    },
+    "Measured model-coordinate value required": {
+      "tr": "Ölçülmüş model koordinatı gerekli"
+    },
+    "Required participant information": {
+      "tr": "Müellif / kurum bilgisi gerekli"
+    },
+    "Invalid IFC actor role": {
+      "tr": "Geçersiz IFC kişi / kurum rolü"
+    },
+    "USERDEFINED requires the role description": {
+      "tr": "USERDEFINED için rol açıklaması gerekli"
+    },
+    "Required coordinate reference information": {
+      "tr": "Koordinat referans bilgisi gerekli"
+    },
+    "EK-7: select matching TUREF 3-degree EPSG / central meridian": {
+      "tr": "EK-7: TUREF 3 derece EPSG sistemi ile merkez meridyeni eşleşmeli"
+    },
+    "Finite numeric value required": {
+      "tr": "Sonlu sayısal değer gerekli"
+    },
+    "Scale must be positive": {
+      "tr": "Ölçek pozitif olmalı"
+    },
+    "EK-7 precision range is 1E-8..1E-5 metres": {
+      "tr": "EK-7 hassasiyeti 1E-8 ile 1E-5 metre arasında olmalı"
+    },
+    "Enter a unit direction for local X": {
+      "tr": "Yerel X için birim yön vektörü girin"
+    },
+    "EK-2: all nine filename fields must have the specified lengths": {
+      "tr": "EK-2: Dosya adının dokuz alanı belirtilen uzunlukta olmalı"
+    },
+    "EK-2: unsupported discipline or document kind": {
+      "tr": "EK-2: Geçersiz disiplin veya dosya türü"
+    },
+    "EK-2: unsupported document type": {
+      "tr": "EK-2: Geçersiz dosya tipi"
+    },
+    "EK-2: sequence starts at 01": {
+      "tr": "EK-2: Sıra numarası 01 ile başlar"
+    },
+    "At least one building and storey are required": {
+      "tr": "En az bir bina ve kat gerekli"
+    },
+    "Spatial IDs must be present and unique": {
+      "tr": "Arsa, bina ve kat kimlikleri dolu ve benzersiz olmalı"
+    },
+    "Each building requires at least one storey": {
+      "tr": "Her binada en az bir kat bulunmalı"
+    },
+    "Storey codes must be unique within each building": {
+      "tr": "Kat kodları aynı bina içinde benzersiz olmalı"
+    },
+    "EK-5: invalid spatial name": {
+      "tr": "EK-5: Geçersiz arsa / bina / kat adı"
+    },
+    "Long name required": {
+      "tr": "Uzun ad gerekli"
+    },
+    "Reference elevation required": {
+      "tr": "Referans kotu gerekli"
+    },
+    "Unknown parent building": {
+      "tr": "Bağlı olunan bina bulunamadı"
+    },
+    "Storey elevation required": {
+      "tr": "Kat kotu gerekli"
+    },
+    "Three-character storey code required": {
+      "tr": "Üç karakterli kat kodu gerekli"
+    },
+    "Required spatial value or documented conditional exception": {
+      "tr": "Gerekli özellik değerini veya koşula bağlı istisna gerekçesini girin"
+    },
+    "Assign the object to an existing storey": {
+      "tr": "Nesneyi mevcut bir kata atayın"
+    },
+    "Space assignment must belong to the same storey": {
+      "tr": "Mahal ataması aynı kat içinde olmalı"
+    },
+    "EK-3: floor_function_sequence required": {
+      "tr": "EK-3: kat_işlev_sıra biçiminde mahal numarası gerekli"
+    },
+    "Room sequence starts at 001 and must be unique": {
+      "tr": "Mahal sırası 001 ile başlamalı, numara binada benzersiz olmalı"
+    },
+    "Room number and assigned floor differ": {
+      "tr": "Mahal numarası ile atanan kat uyuşmuyor"
+    },
+    "Room mesh cannot be checked by the solid kernel": {
+      "tr": "Mahal geometrisi katı model çekirdeğiyle kontrol edilemedi"
+    },
+    "material layer span differs from geometry along the declared axis": {
+      "tr": "Malzeme katmanlarının aralığı belirtilen eksende geometriyle uyuşmuyor"
+    },
+    "Architectural model requires at least one space": {
+      "tr": "Mimari modelde en az bir mahal gerekli"
+    },
+    "File-size limit / actual exported file size required": {
+      "tr": "Dosya boyutu sınırı / dışa aktarılan gerçek dosya boyutu bekleniyor"
+    },
+    "File exceeds the entered delivery limit": {
+      "tr": "Dosya girilen teslim boyutu sınırını aşıyor"
+    },
+    "Independent IFC schema validation required": {
+      "tr": "Bağımsız IFC şema doğrulaması bekleniyor"
+    },
+    "IFC4X3_ADD2 delivery workflow required": {
+      "tr": "IFC4X3_ADD2 teslim süreci gerekli"
+    },
+    "Current-model PDF/A sheets required": {
+      "tr": "Güncel modelden PDF/A paftalar bekleniyor"
+    },
+    "Whole-number value required": {
+      "tr": "Tam sayı gerekli"
+    },
+    "The IFC model document kind must be MD": {
+      "tr": "IFC modelinin dosya türü MD olmalı"
+    },
+    "Enter the authority's positive file-size limit in MB": {
+      "tr": "İdarenin dosya boyutu sınırını MB olarak pozitif bir sayı girin"
+    }
+  }
+}

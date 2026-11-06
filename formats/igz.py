@@ -616,6 +616,11 @@ def save_scene(scene, path: Path) -> dict:
     large = _live_element_count(scene) > _LARGE_DOCUMENT
     geom: dict | None = {} if large else None
     payload = _mesh_json(mesh, geom)
+    namespace = getattr(scene, "ifc_namespace", None)
+    if namespace:
+        payload["ifc_namespace"] = namespace
+    if getattr(scene, "ifc_project", None):
+        payload["ifc_project"] = dict(scene.ifc_project)
     groups = getattr(scene, "groups", None)
     kept = getattr(scene, "kept_components", None)
     if groups or kept:
@@ -1174,6 +1179,10 @@ def _load_into_inner(scene, path: Path, progress=None) -> None:
         )
 
     payload = data.get("scene", {})
+    from core.ifc_identity import document_identity
+    scene.ifc_namespace = document_identity(payload.get("ifc_namespace"), path)
+    project = payload.get("ifc_project", {})
+    scene.ifc_project = dict(project) if isinstance(project, dict) else {}
     _normalize_text_curve_ids(payload, geom)
 
     scene.mesh.clear()
@@ -1268,7 +1277,12 @@ def _load_into_inner(scene, path: Path, progress=None) -> None:
             last = _time.monotonic()
     names: list = []
 
+    legacy_group_index = 0
+
     def _group_from(raw, depth=0):
+        nonlocal legacy_group_index
+        legacy_group_index += 1
+        legacy_index = legacy_group_index
         name = raw.get("name") or None
         if name:
             names.append(name)
@@ -1298,7 +1312,12 @@ def _load_into_inner(scene, path: Path, progress=None) -> None:
         if isinstance(raw.get("ext"), dict):
             group.ext = raw["ext"]
         if raw.get("uid"):
-            group.uid = str(raw["uid"])   # older documents keep the fresh one
+            group.uid = str(raw["uid"])
+        else:
+            # Pre-uid files must not generate new element IDs on every open.
+            import uuid
+            group.uid = uuid.uuid5(uuid.UUID(scene.ifc_namespace),
+                                   f"legacy-group:{legacy_index}").hex
         if raw.get("hidden"):
             group.hidden = True
         if raw.get("locked"):

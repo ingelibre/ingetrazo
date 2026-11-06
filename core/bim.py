@@ -10,7 +10,7 @@ quantity takeoff — and later the IFC export to IngePresupuestos. Untagged
 geometry stays plain drawing.
 
 Storage:
-- loose faces: ``face.attrs["ifc"] = {"id": n, "class": ..., "name": ...}``
+- loose faces: ``face.attrs["ifc"] = {"id": n, "uid": ..., "class": ..., "name": ...}``
   — the ``attrs`` dict already survives the engine's face churn (push/pull,
   rebuilds, heals) and serialises with the document, so tags are durable.
 - groups: ``group.ifc = {"class": ..., "name": ...}`` (the group IS the
@@ -31,6 +31,8 @@ from __future__ import annotations
 import math
 
 from PySide6.QtGui import QVector3D
+
+from core.ifc_identity import new_identity
 
 #: Curated civil/architecture classes (IFC4 names).
 IFC_CLASSES = [
@@ -100,8 +102,20 @@ def next_object_id(scene) -> int:
 def tag_faces(faces, ifc_class: str, name: str, obj_id: int) -> None:
     global _TAG_EPOCH
     _TAG_EPOCH += 1
+    faces = list(faces)
+    # Updating an existing local object preserves its token. Applying a new
+    # local id creates a new object (including a deleted id reused later).
+    previous = next((f.attrs["ifc"] for f in faces
+                     if f.attrs.get("ifc", {}).get("id") == obj_id), None)
+    # A legacy tag keeps the deterministic integer-id fallback until it is
+    # removed; adding a UUID during a rename would change its GlobalId.
+    token = previous.get("uid") if previous is not None else new_identity()
     for f in faces:
-        f.attrs["ifc"] = {"id": obj_id, "class": ifc_class, "name": name}
+        import copy
+        extra = {"delivery": copy.deepcopy(previous["delivery"])} if (
+            previous and "delivery" in previous) else {}
+        f.attrs["ifc"] = {"id": obj_id, "class": ifc_class, "name": name,
+                          **({"uid": token} if token else {}), **extra}
 
 
 def untag_faces(faces) -> None:
@@ -112,7 +126,10 @@ def untag_faces(faces) -> None:
 
 
 def tag_group(group, ifc_class: str, name: str) -> None:
-    group.ifc = {"class": ifc_class, "name": name}
+    import copy
+    previous = group.ifc or {}
+    extra = {"delivery": copy.deepcopy(previous["delivery"])} if "delivery" in previous else {}
+    group.ifc = {"class": ifc_class, "name": name, **extra}
 
 
 def untag_group(group) -> None:
@@ -256,7 +273,8 @@ def _face_tags_in(mesh, memo, seen) -> dict:
 
 def collect_objects(scene, memo: dict | None = None) -> list[dict]:
     """Every tagged BIM object in the document, with live quantities:
-    ``{"key", "class", "name", "area", "volume" (or None), "faces" | "group"}``.
+    ``{"key", "class", "name", "area", "volume" (or None), "faces"}``.
+    ``faces`` are in world space; whole-group objects also carry ``group``.
     Loose-face objects group by tag id; each tagged group is one object, at
     any depth of the tree. Tagged faces inside a group's mesh are one
     object per group and tag id: ``"faces"`` (world space) plus ``"owner"``
@@ -323,6 +341,9 @@ def collect_objects(scene, memo: dict | None = None) -> list[dict]:
             "name": tag.get("name", ""),
             "area": face_set_area(faces),
             "volume": face_set_volume(faces),
+            # Consumers must use the same placed geometry as the quantities;
+            # g.mesh alone loses instance transforms and nested placements.
+            "faces": faces,
             "group": g,
         }
         if memo is not None:

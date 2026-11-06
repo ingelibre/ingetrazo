@@ -8679,13 +8679,23 @@ class MainWindow(QMainWindow):
                 tr("Nothing to export: tag geometry in the BIM panel first "
                    "(only tagged objects go to IFC)."))
             return
-        path_str, _ = file_dialogs.getSaveFileName(
-            self, tr("Export IFC"), "model.ifc",
-            tr("IFC4 (*.ifc);;All files (*)"))
+        # Schema identifiers are technical names in every language. Retain
+        # the existing translated IFC4/All files filters and default.
+        ifc43_filter = "IFC4.3 ADD2 (*.ifc)"
+        filters = tr("IFC4 (*.ifc);;All files (*)").split(";;")
+        filters.insert(1, ifc43_filter)
+        from core.turkiye_delivery import PROFILE, ui as delivery_ui
+        delivery_filter = delivery_ui("Türkiye IFC4.3 profile") + " (*.ifc)"
+        filters.insert(2, delivery_filter)
+        path_str, selected_filter = file_dialogs.getSaveFileName(
+            self, tr("Export IFC"), "model.ifc", ";;".join(filters))
         if not path_str:
             return
         try:
-            count = ifc_format.save_ifc(self.viewport.scene, path_str)
+            profile = PROFILE if selected_filter == delivery_filter else None
+            schema = "IFC4X3_ADD2" if selected_filter == ifc43_filter or profile else "IFC4"
+            count = ifc_format.save_ifc(self.viewport.scene, path_str,
+                                       schema=schema, delivery_profile=profile)
         except Exception as exc:  # noqa: BLE001
             QMessageBox.critical(self, tr("Export IFC failed"), str(exc))
             return

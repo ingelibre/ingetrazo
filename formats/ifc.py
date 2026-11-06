@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2026 Marco Sumari Tellez and IngeTrazo contributors.
-"""IFC4 export — tagged BIM objects to a STEP Physical File, by hand.
+"""IFC4 / IFC4.3 ADD2 export — tagged BIM objects to a STEP Physical File.
 
 Only what the thesis needs, written without dependencies: IFC4 is a text
 format (ISO 10303-21) and our export scope is narrow — the spatial skeleton
@@ -21,13 +21,13 @@ import math
 import uuid
 from pathlib import Path
 
-from core.bim import class_quantities, collect_objects, face_set_volume
+from core.bim import IFC_CLASSES, class_quantities, collect_objects, face_set_volume
+from core.ifc_identity import compressed_guid, object_identity, stable_guid
 
-_GUID_CHARS = ("0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-               "abcdefghijklmnopqrstuvwxyz_$")
+SUPPORTED_SCHEMAS = ("IFC4", "IFC4X3_ADD2")
 
-#: IFC4 total attribute counts per element class (the first 8 are the common
-#: GlobalId..Tag layout; the rest are padded with ``$``). Classes with quirky
+#: Attribute counts shared by IFC4 and IFC4X3_ADD2. The first 8 are the
+#: common GlobalId..Tag layout; the rest are padded with ``$``. Classes with quirky
 #: layouts (doors/windows carry OverallHeight/Width…, IfcSpace has LongName
 #: where others have Tag) just get the right pad width.
 _ATTR_COUNT = {"IfcPile": 10, "IfcDoor": 13, "IfcWindow": 13, "IfcSpace": 11,
@@ -37,12 +37,11 @@ _DEFAULT_ATTRS = 9
 
 def ifc_guid() -> str:
     """A 22-character IFC compressed GUID (base-64 over the IFC alphabet)."""
-    n = uuid.uuid4().int
-    return "".join(_GUID_CHARS[(n >> (6 * i)) & 63] for i in range(21, -1, -1))
+    return compressed_guid(uuid.uuid4())
 
 
 def _s(text: str) -> str:
-    """IFC string literal: apostrophes doubled, non-ASCII as \\X2\\…\\X0\\."""
+    """IFC string literal: apostrophes doubled, non-ASCII as STEP X2/X4 escapes."""
     out = []
     run: list[str] = []
 
@@ -56,6 +55,9 @@ def _s(text: str) -> str:
         if ord(ch) < 128:
             flush()
             out.append("''" if ch == "'" else ch)
+        elif ord(ch) > 0xFFFF:
+            flush()
+            out.append("\\X4\\" + f"{ord(ch):08X}" + "\\X0\\")
         else:
             run.append(ch)
     flush()
@@ -67,11 +69,19 @@ def _f(v: float) -> str:
 
 
 class _Writer:
+    ROOT_ENTITIES = {"IFCPROJECT", "IFCSITE", "IFCBUILDING", "IFCBUILDINGSTOREY", "IFCSPACE",
+                     "IFCACTOR", "IFCPROPERTYSET", "IFCELEMENTQUANTITY", "IFCANNOTATION",
+                     "IFCBUILDINGELEMENTPROXY", *(c.upper() for c in IFC_CLASSES)}
     def __init__(self) -> None:
         self.lines: list[str] = []
         self._next = 1
+        self.owner = "$"
 
     def add(self, entity: str, *attrs) -> int:
+        if self.owner != "$" and (entity.startswith("IFCREL") or entity in self.ROOT_ENTITIES):
+            attrs = list(attrs)
+            if len(attrs) > 1 and attrs[1] == "$":
+                attrs[1] = self.owner
         eid = self._next
         self._next += 1
         self.lines.append(f"#{eid}={entity}({','.join(attrs)});")
@@ -119,18 +129,84 @@ def _brep(w: _Writer, faces, context_id: int) -> int:
                  rep_type, f"(#{item})")
 
 
-def save_ifc(scene, path, project_name: str = "IngeTrazo project") -> int:
-    """Write every tagged BIM object to ``path`` as IFC4. Returns how many
-    elements were exported; raises ``ValueError`` when nothing is tagged."""
+
+def _properties(w, owner, guid, owner_guid, values):
+    sets = {}
+    for pset, name, kind, value in values:
+        if kind == "IfcLabelList":
+            vals = "(" + ",".join(f"IFCLABEL({_s(v)})" for v in value) + ")"
+            prop = w.add("IFCPROPERTYLISTVALUE", _s(name), "$", vals, "$")
+        else:
+            encoded = (".T." if value else ".F.") if kind == "IfcBoolean" else (
+                _s(value) if kind in ("IfcLabel", "IfcIdentifier", "IfcText") else format(value, ".15E"))
+            prop = w.add("IFCPROPERTYSINGLEVALUE", _s(name), "$",
+                         f"{kind.upper()}({encoded})", "$")
+        sets.setdefault(pset, []).append(prop)
+    for name, props in sets.items():
+        pid = w.add("IFCPROPERTYSET", _s(guid("pset", owner_guid, name)), "$",
+                    _s(name), "$", "(" + ",".join(f"#{p}" for p in props) + ")")
+        w.add("IFCRELDEFINESBYPROPERTIES", _s(guid("pset-relation", owner_guid, name)),
+              "$", "$", "$", f"(#{owner})", f"#{pid}")
+
+
+def save_ifc(scene, path, project_name: str = "IngeTrazo project", *,
+             schema: str = "IFC4", delivery_profile: str | None = None) -> int:
+    """Write tagged objects as IFC4 (default) or IFC4X3_ADD2.
+
+    Returns the exported element count. Unsupported schemas and an empty
+    tagged model raise ValueError before the output file is written.
+    The supported classes use the same attribute layout in both schemas.
+    """
+    if schema not in SUPPORTED_SCHEMAS:
+        raise ValueError(f"Unsupported IFC schema: {schema!r}")
     objects = collect_objects(scene)
     if not objects:
         raise ValueError("No tagged BIM objects to export")
 
+    from core.turkiye_delivery import PROFILE, check_scene, metadata, object_issues
+    if delivery_profile not in (None, PROFILE):
+        raise ValueError(f"Unsupported delivery profile: {delivery_profile!r}")
+    if delivery_profile is not None:
+        if schema != "IFC4X3_ADD2":
+            raise ValueError("Türkiye delivery profile requires IFC4X3_ADD2")
+        report = check_scene(scene, objects)
+        if report["issues"]:
+            raise ValueError("\n".join(
+                f"{i['object']}: {i['field']} — {i['message']}" for i in report["issues"][:12])
+                + f"\n({len(report['issues'])} issues; see Türkiye delivery information)")
+    project_data = scene.ifc_project
+    full_delivery = project_data.get("delivery_version") == 2
+    if full_delivery:
+        from core.delivery_workflow import project_issues
+        errors = project_issues(scene, objects)
+        if errors:
+            raise ValueError(str(errors))
+    if any(not isinstance(project_data.get(k, ""), str) for k in ("name", "description", "project_type")):
+        raise ValueError("Project information must contain text values")
+    for obj in objects:
+        issues = object_issues(obj, schema, required=False)
+        if issues:
+            raise ValueError(str(issues))
+
+    def guid(*parts):
+        return stable_guid(scene.ifc_namespace, *parts)
+
+    # Reject identity collisions rather than publish an ambiguous IFC file.
+    identities = [object_identity(obj) for obj in objects]
+    element_guids = [guid("element", *key) for key in identities]
+    if len(set(element_guids)) != len(element_guids):
+        raise ValueError("Duplicate BIM object identity; copy or retag the objects")
+
     w = _Writer()
+    participant = None
+    if full_delivery:
+        from formats.ifc_delivery import participants
+        participant = participants(w, project_data, guid)
     origin = w.add("IFCCARTESIANPOINT", "(0.,0.,0.)")
     axis = w.add("IFCAXIS2PLACEMENT3D", f"#{origin}", "$", "$")
+    precision = format(project_data["crs"]["precision"], ".15E") if full_delivery else "1.E-5"
     context = w.add("IFCGEOMETRICREPRESENTATIONCONTEXT",
-                    "$", "'Model'", "3", "1.E-5", f"#{axis}", "$")
+                    "$", "'Model'", "3", precision, f"#{axis}", "$")
     units = [
         w.add("IFCSIUNIT", "*", ".LENGTHUNIT.", "$", ".METRE."),
         w.add("IFCSIUNIT", "*", ".AREAUNIT.", "$", ".SQUARE_METRE."),
@@ -138,26 +214,42 @@ def save_ifc(scene, path, project_name: str = "IngeTrazo project") -> int:
     ]
     unit_assign = w.add("IFCUNITASSIGNMENT",
                         "(" + ",".join(f"#{u}" for u in units) + ")")
-    project = w.add("IFCPROJECT", _s(ifc_guid()), "$", _s(project_name),
-                    "$", "$", "$", "$", f"(#{context})", f"#{unit_assign}")
+    if project_name == "IngeTrazo project":
+        project_name = project_data.get("name") or project_name
+    project = w.add("IFCPROJECT", _s(guid("project")), "$", _s(project_name),
+                    _s(project_data["description"]) if project_data.get("description") else "$",
+                    "$", _s(project_data["long_name"]) if project_data.get("long_name") else "$",
+                    _s(project_data["phase"]) if project_data.get("phase") else "$", f"(#{context})", f"#{unit_assign}")
+    if project_data.get("project_type"):
+        _properties(w, project, guid, guid("project"), [
+            ("Pset_ProjectCommon", "ProjectType", "IfcLabel", project_data["project_type"])])
     placement = w.add("IFCLOCALPLACEMENT", "$", f"#{axis}")
-    site = w.add("IFCSITE", _s(ifc_guid()), "$", "'Site'", "$", "$",
-                 f"#{placement}", "$", "$", ".ELEMENT.",
-                 "$", "$", "$", "$", "$")
-    building = w.add("IFCBUILDING", _s(ifc_guid()), "$", "'Building'", "$",
-                     "$", f"#{placement}", "$", "$", ".ELEMENT.",
-                     "$", "$", "$")
-    storey = w.add("IFCBUILDINGSTOREY", _s(ifc_guid()), "$", "'Storey'", "$",
-                   "$", f"#{placement}", "$", "$", ".ELEMENT.", "0.")
-    w.add("IFCRELAGGREGATES", _s(ifc_guid()), "$", "$", "$",
-          f"#{project}", f"(#{site})")
-    w.add("IFCRELAGGREGATES", _s(ifc_guid()), "$", "$", "$",
-          f"#{site}", f"(#{building})")
-    w.add("IFCRELAGGREGATES", _s(ifc_guid()), "$", "$", "$",
-          f"#{building}", f"(#{storey})")
-
+    spatial_export = None
+    if full_delivery:
+        from formats.ifc_delivery import actor_assignment, georeference, SpatialExport
+        actor_assignment(w, project, participant, guid)
+        georeference(w, context, units[0], project_data)
+        spatial_export = SpatialExport(w, project, placement, project_data, guid)
+        from formats.ifc_delivery import survey_annotation
+        survey_annotation(w, context, placement, spatial_export.site, project_data, guid, schema)
+    if not full_delivery:
+        site = w.add("IFCSITE", _s(guid("site")), "$", "'Site'", "$", "$",
+                     f"#{placement}", "$", "$", ".ELEMENT.",
+                     "$", "$", "$", "$", "$")
+        building = w.add("IFCBUILDING", _s(guid("building")), "$", "'Building'", "$",
+                         "$", f"#{placement}", "$", "$", ".ELEMENT.",
+                         "$", "$", "$")
+        storey = w.add("IFCBUILDINGSTOREY", _s(guid("storey")), "$", "'Storey'", "$",
+                       "$", f"#{placement}", "$", "$", ".ELEMENT.", "0.")
+        w.add("IFCRELAGGREGATES", _s(guid("project-site")), "$", "$", "$",
+              f"#{project}", f"(#{site})")
+        w.add("IFCRELAGGREGATES", _s(guid("site-building")), "$", "$", "$",
+              f"#{site}", f"(#{building})")
+        w.add("IFCRELAGGREGATES", _s(guid("building-storey")), "$", "$", "$",
+              f"#{building}", f"(#{storey})")
     element_ids = []
-    for obj in objects:
+    space_ids = []
+    for obj, element_guid in zip(objects, element_guids):
         faces = obj.get("faces") or list(obj["group"].mesh.faces)
         if not faces:
             continue
@@ -168,8 +260,9 @@ def save_ifc(scene, path, project_name: str = "IngeTrazo project") -> int:
             else "IfcBuildingElementProxy"
         qset_name, qentries, _metrado = class_quantities(obj["class"], faces)
         total = _ATTR_COUNT.get(cls, _DEFAULT_ATTRS)
-        attrs = [_s(ifc_guid()), "$", _s(obj["name"] or cls), "$", "$",
-                 f"#{placement}", f"#{pds}", "'IngeTrazo'"]
+        element_placement = spatial_export.placement(obj) if spatial_export else placement
+        attrs = [_s(element_guid), "$", _s(obj["name"] or cls), "$", "$",
+                 f"#{element_placement}", f"#{pds}", "'IngeTrazo'"]
         if cls in ("IfcDoor", "IfcWindow"):
             # Attributes 9/10 are OverallHeight/OverallWidth — viewers and
             # schedules read the leaf dimensions from here.
@@ -189,8 +282,38 @@ def save_ifc(scene, path, project_name: str = "IngeTrazo project") -> int:
                       _f(dims["Length"]) if "Length" in dims else "$",
                       ".NOTDEFINED."]
         attrs += ["$"] * (total - len(attrs))
+        data = metadata(obj)
+        if data.get("object_type"):
+            attrs[4] = _s(data["object_type"])
+        if data.get("tag") and cls != "IfcSpace":
+            attrs[7] = _s(data["tag"])
+        if cls == "IfcSpace" and data.get("room_number"):
+            attrs[7] = _s(data["room_number"])
+        if data.get("predefined_type"):
+            index = 10 if cls in ("IfcDoor", "IfcWindow") else 9 if cls == "IfcSpace" else 8
+            attrs[index] = f".{data['predefined_type']}."
         elem = w.add(cls.upper(), *attrs)
-        element_ids.append(elem)
+        from core.turkiye_delivery import property_values
+        _properties(w, elem, guid, element_guid, property_values(cls, data))
+        if data.get("material"):
+            material = w.add("IFCMATERIAL", _s(data["material"]), "$", "$")
+            if data.get("layer"):
+                layer = data["layer"]
+                layer_ids = []
+                for item in data.get("layers") or [{"material": data["material"],
+                                                    "thickness": layer["thickness"]}]:
+                    mat = w.add("IFCMATERIAL", _s(item["material"]), "$", "$")
+                    layer_ids.append(w.add("IFCMATERIALLAYER", f"#{mat}",
+                        format(item["thickness"], ".15E"), "$", "$", "$", "$", "$"))
+                mid = w.add("IFCMATERIALLAYERSET", "(" + ",".join(f"#{i}" for i in layer_ids) + ")", "$", "$")
+                material = w.add("IFCMATERIALLAYERSETUSAGE", f"#{mid}",
+                                 f".{layer['axis']}.", f".{layer['sense']}.",
+                                 format(layer["offset"], ".15E"), "$")
+            w.add("IFCRELASSOCIATESMATERIAL", _s(guid("material", element_guid)),
+                  "$", "$", "$", f"(#{elem})", f"#{material}")
+        if spatial_export:
+            spatial_export.register(obj, elem, element_guid)
+        (space_ids if cls == "IfcSpace" else element_ids).append(elem)
 
         # Per-class BaseQuantities (Qto_* naming): the takeoff numbers in
         # the budget's own measures, straight in the file.
@@ -202,30 +325,40 @@ def save_ifc(scene, path, project_name: str = "IngeTrazo project") -> int:
             for kind, name, val in qentries
         ]
         if quantities:
-            eq = w.add("IFCELEMENTQUANTITY", _s(ifc_guid()), "$",
+            eq = w.add("IFCELEMENTQUANTITY", _s(guid("quantities", element_guid)), "$",
                        _s(qset_name), "$", "$",
                        "(" + ",".join(quantities) + ")")
-            w.add("IFCRELDEFINESBYPROPERTIES", _s(ifc_guid()), "$", "$", "$",
+            w.add("IFCRELDEFINESBYPROPERTIES",
+                  _s(guid("quantity-relation", element_guid)), "$", "$", "$",
                   f"(#{elem})", f"#{eq}")
 
-    if not element_ids:
+    if not element_ids and not space_ids:
         raise ValueError("No tagged BIM objects to export")
-    w.add("IFCRELCONTAINEDINSPATIALSTRUCTURE", _s(ifc_guid()), "$", "$", "$",
-          "(" + ",".join(f"#{e}" for e in element_ids) + ")", f"#{storey}")
+    if spatial_export:
+        spatial_export.finish()
+    if element_ids and not spatial_export:
+        w.add("IFCRELCONTAINEDINSPATIALSTRUCTURE",
+              _s(guid("storey-containment")), "$", "$", "$",
+              "(" + ",".join(f"#{e}" for e in element_ids) + ")", f"#{storey}")
+    if space_ids and not spatial_export:
+        # Spaces are spatial structure: decompose the storey, never put
+        # them in RelatedElements (IfcRelContainedInSpatialStructure.WR31).
+        w.add("IFCRELAGGREGATES", _s(guid("storey-spaces")), "$", "$", "$",
+              f"#{storey}", "(" + ",".join(f"#{e}" for e in space_ids) + ")")
 
     stamp = datetime.datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
-    name = Path(path).name.replace("'", "''")
+    name = _s(Path(path).name)
     header = (
         "ISO-10303-21;\n"
         "HEADER;\n"
         "FILE_DESCRIPTION((''),'2;1');\n"
-        f"FILE_NAME('{name}','{stamp}',('IngeTrazo'),('IngeTrazo'),"
+        f"FILE_NAME({name},'{stamp}',('IngeTrazo'),('IngeTrazo'),"
         "'IngeTrazo','IngeTrazo','');\n"
-        "FILE_SCHEMA(('IFC4'));\n"
+        f"FILE_SCHEMA(('{schema}'));\n"
         "ENDSEC;\n"
         "DATA;\n"
     )
     footer = "ENDSEC;\nEND-ISO-10303-21;\n"
     Path(path).write_text(header + "\n".join(w.lines) + "\n" + footer,
                           encoding="ascii")
-    return len(element_ids)
+    return len(element_ids) + len(space_ids)
