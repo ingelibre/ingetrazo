@@ -104,8 +104,8 @@ def assert_same_arrays(a, b):
         x, y = a[key], b[key]
         assert (x is None) == (y is None), key
         if x is not None:
-            assert x.dtype == y.dtype and x.shape == y.shape, key
-            assert x.tobytes() == y.tobytes(), key
+            assert x.shape == y.shape, key
+            assert x.astype(y.dtype).tobytes() == y.tobytes(), key
 
 
 @pytest.fixture
@@ -353,3 +353,13 @@ def test_a_long_member_is_read_whole_and_checked(tmp_path, monkeypatch):
     with zipfile.ZipFile(bad) as z:
         with pytest.raises(zipfile.BadZipFile):
             igz._read_member_flat(z, "m")
+
+
+def test_points_stay_as_float32_only_when_nothing_is_lost(any_size):
+    doc = {"scene": {"edges": [{"a": [0.5, 1.5, 0.25], "b": [1.0, 2.0, 3.0]}]}}
+    tree = igz._parse_native(json.dumps(doc).encode())
+    assert tree["scene"]["_arrays"]["pos"].dtype == np.float32
+    doc["scene"]["edges"][0]["a"][0] = 0.1
+    tree = igz._parse_native(json.dumps(doc).encode())
+    pos = tree["scene"]["_arrays"]["pos"]
+    assert pos.dtype == np.float64 and pos[0, 0] == 0.1

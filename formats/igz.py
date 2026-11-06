@@ -1049,16 +1049,24 @@ def _native_blocks(meta) -> dict:
     meta_out: dict = {"face_attrs": table}
     if names:
         meta_out["edge_layers"] = list(names)
+    # In the dtypes of a format-3 block, for the arrays this stays alive as:
+    # a saved point is a float32 written out in full, so nothing is lost
+    # (hundreds of MB on the plant of #158). A value that is not one keeps
+    # its double.
+    pos32 = pos.astype(np.float32)
+    if pos32.astype(np.float64).tobytes() == pos.tobytes():
+        pos = pos32
+    index = np.int32 if len(pos) < 2 ** 31 else np.int64
     return dict(
         meta=meta_out,
         pos=pos,
-        edges=np.arange(n_edge_pts, dtype=np.int64).reshape(-1, 2),
+        edges=np.arange(n_edge_pts, dtype=index).reshape(-1, 2),
         flags=flags,
         curves=curves if (curves >= 0).any() else None,
         layers=layers if names else None,
-        rings=np.arange(n_edge_pts, len(pos), dtype=np.int64),
-        sizes=sizes,
-        counts=counts,
+        rings=np.arange(n_edge_pts, len(pos), dtype=index),
+        sizes=sizes.astype(np.int32),
+        counts=counts.astype(np.int32),
         face_attr=face_attr,
         sequential=small)
 
@@ -1081,8 +1089,7 @@ def _merge_native_attrs(src) -> None:
             lut.append(k)
         else:
             lut.append(-1)
-    src["face_attr"] = np.append(np.asarray(lut, dtype=np.int64),
-                                 -1)[src["face_attr"]]
+    src["face_attr"] = np.asarray(lut + [-1], dtype=np.int32)[src["face_attr"]]
     src["meta"]["face_attrs"] = table
 
 
