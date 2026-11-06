@@ -307,6 +307,11 @@ class PythonConsoleDialog(QDialog):
         cmd = SnapshotImport(mutate)
         saved_redo = list(history.redo_stack)
         history.execute(cmd)
+        # last_rejected only counts when cmd itself missed the undo stack:
+        # code may run a refused command of its own and still succeed.
+        committed = bool(history.undo_stack) and history.undo_stack[-1] is cmd
+        rolled_back = bool(history.last_error or (
+            None if committed else history.last_rejected))
 
         if history.last_error is None:
             unchanged = not cmd.changed
@@ -321,7 +326,7 @@ class PythonConsoleDialog(QDialog):
             self._append_text(out.rstrip(), "out")
         if err := err_buf.getvalue():
             self._append_text(err.rstrip(), "error")
-            if history.last_error is not None:
+            if rolled_back:
                 self._append_text(
                     tr("(rolled back — the document is unchanged)"),
                     "muted")
