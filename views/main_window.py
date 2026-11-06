@@ -4168,12 +4168,15 @@ class MainWindow(QMainWindow):
         if not ok:
             return
 
-        self.viewport.history.execute(SimplifyMeshCommand(angle))
-        error = self.viewport.history.last_error
-        if error:
-            QMessageBox.warning(self, tr("Simplify Mesh failed"), error)
+        history = self.viewport.history
+        command = SimplifyMeshCommand(angle)
+        if not history.execute(command):
+            if history.last_error:
+                QMessageBox.warning(self, tr("Simplify Mesh failed"),
+                                    history.last_error)
+            elif history.last_rejected:
+                self.viewport.flash_status(history.last_rejected)
             return
-        command = self.viewport.history.undo_stack[-1]
         removed = getattr(command, "faces_removed", 0)
         if removed:
             self.viewport.flash_status(
