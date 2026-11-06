@@ -5878,6 +5878,23 @@ class Viewport(QOpenGLWidget):
                         "_placement_tops", "_arc_mid_by_mesh",
                         "_billboard_extents", "_figure_tokens")
 
+    def forget_uploads(self) -> None:
+        """Free what this document has on the GPU, per prototype, for a
+        context about to go; its bakes and pick index stay, in plain memory."""
+        draws = getattr(self, "_proto_draw", None)
+        if draws and self.context() is not None:
+            self.makeCurrent()                # GPU objects need the context
+            try:
+                for entry in draws.values():
+                    self._destroy_proto_draw_entry(entry)
+            finally:
+                self.doneCurrent()
+        if draws:
+            draws.clear()
+        self._proto_draw_fast = None
+        self._frozen_cache_version = None
+        self._slot_layout = None
+
     def reset_document_caches(self) -> None:
         """Forget the previous document's chunks at the document boundary.
 
@@ -15846,11 +15863,16 @@ class Viewport(QOpenGLWidget):
         src, mesh, group = ref[4], ref[5], ref[6]
         fresh = None
         real = getattr(src, "real", None)
-        if real is not None:
-            # Found over a lazy mesh's light face: an edit asks of the real one.
+        from core.mesh import DeferredMesh
+        lazy = real is not None and type(mesh) is DeferredMesh
+        if real is not None and not lazy:
+            # Found over a lazy mesh's light face, since built: an edit asks
+            # of the real one. Still lazy, the mesh has not changed: only the
+            # matrix can have, and building it here cost a big group's whole
+            # build on the frame after any edit (#1092).
             src = real()
         if isinstance(src, Face):
-            if src in mesh.faces:
+            if lazy or src in mesh.faces:
                 # the same arc of the face, wherever it is now
                 from core.snap import curve_centers_of_face
                 xf = getattr(group, "xform", None) if group is not None else None
@@ -17856,11 +17878,7 @@ class Viewport(QOpenGLWidget):
             with reading_only():
                 face_at_click, group_at_click = self.pick_face_placement(
                     ev.position().x(), ev.position().y())
-        if getattr(self.active_tool, "click_reads_only", False):
-            with reading_only():
-                ctx = self._build_ctx(ev)
-        else:
-            ctx = self._build_ctx(ev)
+        ctx = self._build_ctx(ev)
         if ctx is not None:
             # The tool hears the cursor's snap KIND before it is called, as on
             # every hover (``_note_snap``): a click that never had its own
@@ -19481,8 +19499,13 @@ class Viewport(QOpenGLWidget):
         tool showed «nan m» in the length box and failed the Line's commit
         with «AddEdgeCommand: cannot convert float NaN to integer» (#466,
         #754). Whatever inference produced it, the cursor just gives
-        nothing for that pixel."""
-        snap = self.inference.snap(px_x, px_y, modifiers)
+        nothing for that pixel.
+
+        The answer is values, no face: whatever the search picks it only
+        reads, so a big lazy mesh under the cursor stays unbuilt (#1092)."""
+        from views.array_bake import reading_only
+        with reading_only():
+            snap = self.inference.snap(px_x, px_y, modifiers)
         if snap is not None and not _finite_point(snap.point):
             return None
         return snap

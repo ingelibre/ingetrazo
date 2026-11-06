@@ -560,8 +560,16 @@ class PushPullTool(Tool):
                     viewport.set_hover(self.hovered_face)
                     return
                 self._selected_arm = False
-            self.hovered_face, self._hover_group = viewport.pick_face_any(
-                ctx.screen.x(), ctx.screen.y())
+            # A closed group's face is only ever refused: a big lazy mesh is
+            # not built to learn that (#1092). A face that can be pushed is
+            # the real one.
+            from views.array_bake import LightFace, reading_only
+            with reading_only():
+                self.hovered_face, self._hover_group = viewport.pick_face_any(
+                    ctx.screen.x(), ctx.screen.y())
+            if self._hover_group is None and isinstance(self.hovered_face,
+                                                        LightFace):
+                self.hovered_face = self.hovered_face.real()
             # Shade the face that would be pushed, so the target
             # is unmistakable before clicking. A face inside a group that is not
             # open gets NO shading: it is not going to be pushed, and promising
@@ -1773,7 +1781,9 @@ class PushPullTool(Tool):
         # push doesn't pin to its own plane; a face the staged preview
         # created (its moving cap, a riser) would pin it to itself.
         pick = getattr(vp, "pick_face_placement", None) or vp.pick_face_any
-        face, _grp = pick(sx, sy)
+        from views.array_bake import reading_only
+        with reading_only():                # its plane is all it is asked
+            face, _grp = pick(sx, sy)
         if (face is not None and face is not self.base_face
                 and face not in self._stage_new
                 and not (_grp is None and self._borders_base(face, exclude))):

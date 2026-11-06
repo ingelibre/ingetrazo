@@ -232,7 +232,10 @@ class ProtractorBase(Tool):
         pick = getattr(ctx.viewport, "pick_face_any", None)
         face = None
         if pick is not None:
-            face, _group = pick(ctx.screen.x(), ctx.screen.y())
+            # Only its normal is read: a big lazy mesh stays unbuilt (#1092).
+            from views.array_bake import reading_only
+            with reading_only():
+                face, _group = pick(ctx.screen.x(), ctx.screen.y())
         if face is not None:
             self.work_plane = (QVector3D(ctx.world), face.normal().normalized())
         else:
