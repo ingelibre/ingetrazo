@@ -1160,7 +1160,9 @@ def test_the_name_column_width_is_the_users_and_is_remembered():
     win, scene, panel = _window_with()
     head = panel.tree.header()
     assert head.sectionResizeMode(0) == QHeaderView.Interactive
+    panel._header_pressed = True        # a drag on the header, mouse down
     head.resizeSection(0, 321)
+    panel._header_pressed = False
     _close(win)
     win2, scene2, panel2 = _window_with()
     assert panel2.tree.header().sectionSize(0) == 321

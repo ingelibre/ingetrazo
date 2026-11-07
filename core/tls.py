@@ -14,8 +14,8 @@ system's own store and never had the problem.
 OpenSSL at ``certifi``'s bundle when present, else at the system's own file
 (``/etc/ssl/cert.pem`` on macOS, the usual Linux ones), through
 ``SSL_CERT_FILE`` — which every new ``ssl`` context reads. Verification is
-never turned off. Windows reads its certificate store directly and is left
-as it is.
+never turned off. Windows has no bundle to point at: :func:`https_context`
+verifies there through ``truststore``, the Windows verifier (issue #783).
 """
 from __future__ import annotations
 
@@ -78,11 +78,26 @@ def ensure_ca_bundle(paths=None, candidates=SYSTEM_BUNDLES,
     return None
 
 
-def https_context() -> ssl.SSLContext:
-    """A verifying context for ``urlopen(context=…)``, loaded from the
+def https_context(platform: str | None = None) -> ssl.SSLContext:
+    """A verifying context for ``urlopen(context=…)``. Every Python HTTPS call
+    of the app goes through it.
+
+    On Windows, verification goes to the system verifier through
+    ``truststore``: Windows fetches a missing root certificate on demand for
+    programs that ask it, whereas Python's own store reading only sees the
+    roots already installed, which fails on a fresh installation (#783).
+    Elsewhere, and without ``truststore``, the context is loaded from the
     bundle :func:`ensure_ca_bundle` chose when there is one. Passing it
     explicitly does not depend on OpenSSL reading ``SSL_CERT_FILE`` again —
     it caches the default path once a connection has been tried."""
+    platform = platform or sys.platform
+    if platform.startswith("win"):
+        try:
+            import truststore
+        except ImportError:
+            pass
+        else:
+            return truststore.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
     ensure_once()
     bundle = os.environ.get("SSL_CERT_FILE")
     if bundle and Path(bundle).is_file():

@@ -120,11 +120,25 @@ def _facing_quad(mesh, toward):
     return out
 
 
+def _piece_paint(piece, top):
+    """The paint a piece's default faces show (``core.group.
+    effective_material``): its own, else the top-level object's."""
+    return (getattr(piece, "material", None)
+            or getattr(top, "material", None) or None)
+
+
+def _shown(face, paint) -> dict:
+    """The attrs ``face`` is drawn with under a container's ``paint``."""
+    from core.materials import effective_attrs
+    return effective_attrs(face.attrs, paint) or {}
+
+
 def _placements_facing(group, toward, figures: bool = True):
-    """Every placement of ``group`` in world space, face-me figures (at any
-    depth) turned toward the camera: a cut-out outline (``"mesh"``) by
-    :func:`_turned_toward`, a simple quad rebuilt by :func:`_facing_quad`.
-    ``figures=False`` leaves the figures out (:func:`faceme_figures`)."""
+    """Every placement of ``group`` in world space as ``(face, attrs)``,
+    face-me figures (at any depth) turned toward the camera: a cut-out
+    outline (``"mesh"``) by :func:`_turned_toward`, a simple quad rebuilt by
+    :func:`_facing_quad`. ``figures=False`` leaves the figures out
+    (:func:`faceme_figures`)."""
     from core.group import iter_placements, transformed_mesh
     for g, m in iter_placements(group):
         kind = getattr(g, "billboard", False)
@@ -135,7 +149,32 @@ def _placements_facing(group, toward, figures: bool = True):
             mesh = _turned_toward(mesh, toward)
         elif kind:
             mesh = _facing_quad(mesh, toward)
-        yield from mesh.faces
+        paint = _piece_paint(g, group)
+        for f in mesh.faces:
+            yield f, _shown(f, paint)
+
+
+def _group_faces(group):
+    """A group's faces in world space as ``(face, attrs)``, each with the
+    paint it shows: the face's own, else its piece's, else the group's.
+
+    When no nested piece carries paint of its own, the whole group is ONE
+    paint and comes through :func:`core.group.world_mesh` in a single
+    vectorized pass; only a group with painted pieces is walked piece by
+    piece (each through its own transform), since the merged mesh no longer
+    knows which piece a face came from."""
+    from core.group import iter_placements, transformed_mesh, world_mesh
+    pieces = list(iter_placements(group))
+    if not any(getattr(p, "material", None) for p, _m in pieces[1:]):
+        paint = getattr(group, "material", None)
+        for f in world_mesh(group).faces:
+            yield f, _shown(f, paint)
+        return
+    for p, m in pieces:
+        mesh = p.mesh if m is None else transformed_mesh(p.mesh, m)
+        paint = _piece_paint(p, group)
+        for f in mesh.faces:
+            yield f, _shown(f, paint)
 
 
 def _feet(mesh):
@@ -189,37 +228,33 @@ def world_faces(scene, face_me=None, figures: bool = True):
     a render needs them (#181). Without it they stay out, as before: a file
     has no camera for them to face. ``figures=False`` keeps them out even
     then — :func:`faceme_figures` hands them over one by one."""
-    if face_me is not None and hasattr(scene, "render_faces"):
-        for f in scene.loose_mesh.faces:
-            if scene.entity_visible(f):
-                yield f
-        from core.group import world_mesh
-        for g in getattr(scene, "groups", []):
-            if not scene.entity_visible(g):
-                continue
-            if _has_billboard(g):
-                yield from _placements_facing(g, face_me, figures)
-            else:
-                yield from world_mesh(g).faces
+    for face, _attrs in world_faces_painted(scene, face_me, figures):
+        yield face
+
+
+def world_faces_painted(scene, face_me=None, figures: bool = True):
+    """:func:`world_faces` as ``(face, attrs)``, ``attrs`` being what the
+    face SHOWS: inside a painted group or component, the faces that wear
+    the default material take the container's paint, as in the viewport
+    (``core.materials.effective_attrs``). A face's own ``attrs`` are never
+    changed — a classic group's faces are the document's own."""
+    if not hasattr(scene, "render_faces"):
+        faces = scene.mesh.faces if hasattr(scene, "mesh") else scene.faces
+        for f in faces:
+            yield f, f.attrs
         return
-    if hasattr(scene, "render_faces"):
-        groups = getattr(scene, "groups", [])
-        if not any(getattr(g, "xform", None) is not None
-                   or getattr(g, "children", None) for g in groups):
-            yield from scene.render_faces()
-            return
-        from core.group import world_mesh
-        for f in scene.loose_mesh.faces:
-            if scene.entity_visible(f):
-                yield f
-        for g in groups:
-            if not scene.entity_visible(g) or getattr(g, "billboard", False):
-                continue
-            yield from world_mesh(g).faces
-    elif hasattr(scene, "mesh"):
-        yield from scene.mesh.faces
-    else:
-        yield from scene.faces
+    for f in scene.loose_mesh.faces:
+        if scene.entity_visible(f):
+            yield f, f.attrs
+    for g in getattr(scene, "groups", []):
+        if not scene.entity_visible(g):
+            continue
+        if face_me is not None and _has_billboard(g):
+            yield from _placements_facing(g, face_me, figures)
+        elif face_me is None and getattr(g, "billboard", False):
+            continue             # a file has no camera for a figure to face
+        else:
+            yield from _group_faces(g)
 
 
 def collect_geometry(scene, face_me=None):
@@ -232,15 +267,19 @@ def collect_geometry(scene, face_me=None):
       materials; ``mat`` is the registry identity — ``attrs["mat"]`` — of
       the first face seen with one, consumed by :func:`export_names`), and
     * ``prims[key]`` is a list of triangles, each ``(normal, verts)`` with
-      ``verts`` a list of three ``(position: QVector3D, uv: (u, v) | None)``.
+      ``normal`` the face's flat one and ``verts`` a list of three
+      ``(position: QVector3D, uv: (u, v) | None, normal: QVector3D)`` — the
+      corner's own normal, smooth across soft edges (:func:`corner_normals`).
 
-    ``key`` is ``("color", rgb)`` or ``("tex", basename)`` — identical to the
-    OBJ exporter's material keys, so painted colours and textures survive.
+    ``key`` is ``("color", rgb)`` or ``("tex", basename)`` (see
+    :func:`material_key`) — identical to the OBJ exporter's material keys,
+    so painted colours and textures survive.
     """
     materials: dict[tuple, dict] = {}
     prims: dict[tuple, list] = {}
-    for face in world_faces(scene, face_me):
-        _add_face(face, materials, prims)
+    smoother = SmoothNormals()
+    for face, attrs in world_faces_painted(scene, face_me):
+        _add_face(face, materials, prims, attrs, smoother)
     _resolve_finishes(scene, materials)
     return materials, prims
 
@@ -252,34 +291,187 @@ def collect_geometry_split(scene, face_me):
     (see :func:`faceme_figures`); ``materials`` covers all of them."""
     materials: dict[tuple, dict] = {}
     prims: dict[tuple, list] = {}
-    for face in world_faces(scene, face_me, figures=False):
-        _add_face(face, materials, prims)
+    smoother = SmoothNormals()
+    for face, attrs in world_faces_painted(scene, face_me, figures=False):
+        _add_face(face, materials, prims, attrs, smoother)
     figures = []
     for faces, feet, yaw in faceme_figures(scene, face_me):
         own: dict[tuple, list] = {}
         for face in faces:
-            _add_face(face, materials, own)
+            _add_face(face, materials, own, smoother=smoother)
         if own:
             figures.append({"prims": own, "feet": feet, "yaw": yaw})
     _resolve_finishes(scene, materials)
     return materials, prims, figures
 
 
-def _add_face(face, materials, prims) -> None:
-    """One face's triangles into ``prims`` under its material's key."""
-    from core.texture import affine_uv, planar_uv
-    n = face.normal()
-    op = face.attrs.get("opacity")
+def material_key(attrs, with_opacity: bool = True) -> tuple:
+    """The key a face's triangles are grouped under in an exported file:
+    ``("tex", basename)`` for a textured face, ``("color", rgb)`` otherwise,
+    then the translucency when there is one (``with_opacity``), then the
+    registry name (``attrs["mat"]``) when the face wears a named material.
+
+    The name is part of the key so two materials that happen to look alike
+    — two whites, one picture under two names — stay two materials in the
+    file, each under its own name, instead of the second silently becoming
+    the first. Anonymous paint still merges by look, as it always did."""
+    attrs = attrs or {}
+    op = attrs.get("opacity")
     op = None if op is None or float(op) >= 0.999 else round(float(op), 3)
-    tex = face.attrs.get("texture")
+    tex = attrs.get("texture")
+    if tex is not None and tex.get("path"):
+        key: tuple = ("tex", Path(tex["path"]).name)
+    else:
+        key = ("color", tuple(attrs.get("color") or _DEFAULT_COLOR)[:3])
+    if with_opacity and op is not None:
+        key += (op,)
+    if attrs.get("mat"):
+        key += (("mat", attrs["mat"]),)
+    return key
+
+
+def _corner(p) -> tuple:
+    return p.toTuple()
+
+
+class SmoothNormals:
+    """The smooth normals of one export, worked out once per vertex.
+
+    Around a vertex, the faces joined through it by **soft** edges are one
+    surface there (a cylinder's sides, a sphere's patches): their normals
+    are summed into one, so the file shades the surface round instead of
+    showing every facet. A hard edge splits the fan, so a cylinder's cap
+    keeps its crease against the sides. A face wound the other way counts
+    turned round, so a stray flipped face can never cancel the normal out.
+
+    Each vertex's fan is solved the first time one of its faces asks, and
+    every face's flat normal is computed once: asking per corner instead
+    walked the same fans and recomputed the same normals over and over —
+    three times slower on a church of 135 000 soft edges."""
+
+    _NONE: dict = {}
+
+    def __init__(self) -> None:
+        self._flat: dict = {}
+        self._xyz: dict = {}
+        self._at: dict = {}
+
+    def flat(self, face):
+        n = self._flat.get(face)
+        if n is None:
+            n = self._flat[face] = face.normal()
+        return n
+
+    def _t(self, face) -> tuple:
+        """The flat normal as plain floats: the fan sums below run in pure
+        Python, where a tuple is several times cheaper than a QVector3D."""
+        t = self._xyz.get(face)
+        if t is None:
+            t = self._xyz[face] = self.flat(face).toTuple()
+        return t
+
+    def _fan(self, v) -> dict:
+        """``{face: normal}`` for the faces round ``v`` on a curved surface."""
+        got = self._at.get(v)
+        if got is not None:
+            return got
+        soft = [e for e in v.edges if e.soft and len(e.faces) > 1]
+        if not soft:                     # most vertices: nothing curved here
+            self._at[v] = self._NONE
+            return self._NONE
+        if len(soft) == 1:               # one seam through v: its faces
+            groups = [list(soft[0].faces)]
+        else:
+            parent: dict = {}
+
+            def find(f):
+                while parent.setdefault(f, f) is not f:
+                    parent[f] = parent[parent[f]]
+                    f = parent[f]
+                return f
+
+            for e in soft:
+                root = find(e.faces[0])
+                for g in e.faces[1:]:
+                    other = find(g)
+                    if other is not root:
+                        parent[other] = root
+            by_root: dict = {}
+            for f in list(parent):
+                by_root.setdefault(find(f), []).append(f)
+            groups = list(by_root.values())
+        from PySide6.QtGui import QVector3D
+        t = self._t
+        out: dict = {}
+        for members in groups:
+            if len(members) < 2:
+                continue
+            rx, ry, rz = t(members[0])
+            sx = sy = sz = 0.0
+            for g in members:
+                x, y, z = t(g)
+                if x * rx + y * ry + z * rz >= 0:
+                    sx += x; sy += y; sz += z           # noqa: E702
+                else:
+                    sx -= x; sy -= y; sz -= z           # noqa: E702
+            length = (sx * sx + sy * sy + sz * sz) ** 0.5
+            if length < 1e-9:
+                continue
+            sx, sy, sz = sx / length, sy / length, sz / length
+            pos = QVector3D(sx, sy, sz)
+            neg = -pos
+            for g in members:
+                x, y, z = t(g)
+                out[g] = pos if x * sx + y * sy + z * sz >= 0 else neg
+        self._at[v] = out
+        return out
+
+    def corners(self, face) -> dict:
+        """The smooth normal at each corner of ``face`` on a curved surface,
+        as ``{(x, y, z): QVector3D}``; the rest keep the face's flat one."""
+        out: dict = {}
+        fan = self._fan
+        for lp in (face.loop, *face.hole_loops):
+            for v in lp:
+                around = fan(v)
+                if around:
+                    n = around.get(face)
+                    if n is not None:
+                        out[v.position.toTuple()] = n
+        return out
+
+
+def corner_normals(face, smoother: SmoothNormals | None = None) -> dict:
+    """:meth:`SmoothNormals.corners` for one face; pass the export's
+    ``smoother`` so faces sharing vertices share the work."""
+    return (smoother or SmoothNormals()).corners(face)
+
+
+def _add_face(face, materials, prims, attrs=None, smoother=None) -> None:
+    """One face's triangles into ``prims`` under its material's key, each
+    corner with its normal: the face's own, or the surface's at a corner on
+    a soft edge (:class:`SmoothNormals`). ``attrs`` is what the face shows
+    (:func:`world_faces_painted`), its own by default."""
+    from core.texture import affine_uv, planar_uv
+    attrs = face.attrs if attrs is None else attrs
+    smoother = smoother or SmoothNormals()
+    n = smoother.flat(face)
+    smooth = smoother.corners(face)
+
+    def nrm(p):
+        return smooth.get(_corner(p), n) if smooth else n
+
+    op = attrs.get("opacity")
+    op = None if op is None or float(op) >= 0.999 else round(float(op), 3)
+    tex = attrs.get("texture")
+    key = material_key(attrs)
     if tex is not None and tex.get("path"):
         src = Path(tex["path"])
-        key = ("tex", src.name) if op is None else ("tex", src.name, op)
         materials.setdefault(key, {"color": (1.0, 1.0, 1.0),
                                    "map": src.name, "src": src,
                                    "opacity": op})
-        if face.attrs.get("mat") and "mat" not in materials[key]:
-            materials[key]["mat"] = face.attrs["mat"]
+        if attrs.get("mat") and "mat" not in materials[key]:
+            materials[key]["mat"] = attrs["mat"]
         sw = tex.get("sw", 1.0) or 1.0
         sh = tex.get("sh", 1.0) or 1.0
         rot = float(tex.get("rot", 0.0))
@@ -288,20 +480,20 @@ def _add_face(face, materials, prims) -> None:
             pts = list(tri)
             uv = affine_uv(uvw, pts) if uvw else planar_uv(n, pts, sw, sh, rot)
             prims.setdefault(key, []).append(
-                (n, [(pts[k], (uv[k][0], uv[k][1])) for k in range(3)]))
+                (n, [(pts[k], (uv[k][0], uv[k][1]), nrm(pts[k]))
+                     for k in range(3)]))
     else:
         # RGB: the AI recipes paint (r, g, b, 1.0) and every writer reads
         # three channels (transparency is attrs["opacity"], above).
-        col = tuple(face.attrs.get("color") or _DEFAULT_COLOR)[:3]
-        key = ("color", col) if op is None else ("color", col, op)
+        col = tuple(attrs.get("color") or _DEFAULT_COLOR)[:3]
         materials.setdefault(key, {"color": col, "map": None,
                                    "opacity": op})
-        if face.attrs.get("mat") and "mat" not in materials[key]:
-            materials[key]["mat"] = face.attrs["mat"]
+        if attrs.get("mat") and "mat" not in materials[key]:
+            materials[key]["mat"] = attrs["mat"]
         for tri in export_triangles(face):
             pts = list(tri)
             prims.setdefault(key, []).append(
-                (n, [(pts[k], None) for k in range(3)]))
+                (n, [(pts[k], None, nrm(pts[k])) for k in range(3)]))
 
 
 def _resolve_finishes(scene, materials) -> None:

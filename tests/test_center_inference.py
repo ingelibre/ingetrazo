@@ -84,7 +84,8 @@ class _Visor:
         from views.viewport import Viewport
         for m in ("_update_center_ref", "_center_of_edge", "_center_of_face",
                   "_valid_center_ref", "_snap_scene", "_selection_box_points",
-                  "_billboard_snap_edges", "_nearby_group_edges",
+                  "_billboard_snap_edges", "_billboard_placements",
+                  "_nearby_group_edges",
                   "_gedge_screen", "_pick_index", "_group_chunk",
                   "_placements", "_expand_placements", "_context_placements",
                   "_owner_of", "_rest_is_hidden", "_clip_segment_front"):

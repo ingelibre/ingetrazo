@@ -40,14 +40,15 @@ def _bind(vp):
     vp._samples_match = Viewport._samples_match
     vp._shift_obb = Viewport._shift_obb            # staticmethod
     vp._compute_obb = Viewport._compute_obb        # staticmethod
-    for name in ("_pick_index", "_ray_hits", "_hover_face_t", "pick_face",
+    for name in ("_pick_index", "_ray_hits", "_hover_hits", "pick_face",
                  "pick_face_any", "_coplanar_eps", "pick_edge", "pick_vertex",
                  "_project_px",
                  "_np_mvp", "_group_chunk", "_append_textured_face",
                  "_shaded_color", "_shade_factor", "_group_fp", "_gedge_screen",
                  "_nearby_group_edges", "_snap_scene",
                  "_selection_box_points", "_group_obb",
-                 "_billboard_snap_edges", "_billboard_quad",
+                 "_billboard_snap_edges", "_billboard_placements",
+                 "_billboard_quad",
                  "_instance_chunk", "_shift_instance_entry",
                  "_placements", "_expand_placements", "_owner_of",
                  "_context_placements"):

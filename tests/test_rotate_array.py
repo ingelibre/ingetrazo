@@ -173,3 +173,26 @@ def test_the_array_window_closes_when_something_else_is_undone():
     _rotate_copy(vp, tool, 30.0)
     vp.history.undo()
     assert tool.on_array_value(vp, 3, "x") is False
+
+
+def test_array_pending_says_when_x5_would_fan_the_copy():
+    """«x5» (#542): the viewport lets a bare X open the value box only while
+    ``array_pending`` is true — after a rotate-COPY, never after a plain
+    turn, and no longer once the copy is not the top of the undo stack."""
+    scene = Scene()
+    scene.selection = [_marker(scene)]
+    vp = _Vp(scene)
+    tool = RotateTool()
+    _rotate_copy(vp, tool, 30.0)
+    assert tool.array_pending(vp) is True
+    vp.history.undo()
+    assert tool.array_pending(vp) is False
+
+    scene = Scene()
+    scene.selection = [_marker(scene)]
+    vp = _Vp(scene)
+    tool = RotateTool()
+    tool.on_click(_ctx(vp, 0, 0))
+    tool.on_click(_ctx(vp, 2, 0))
+    tool.on_click(_ctx(vp, 0, 2))                     # a plain 90° turn
+    assert tool.array_pending(vp) is False

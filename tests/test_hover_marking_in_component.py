@@ -62,9 +62,9 @@ def _bounds(mesh):
     return pts.min(axis=0), pts.max(axis=0)
 
 
-def _ctx(vp, x, y):
+def _ctx(vp, x, y, modifiers=Qt.NoModifier):
     return ToolContext(viewport=vp, world=QVector3D(), screen=QPointF(x, y),
-                       modifiers=Qt.NoModifier, snap=None)
+                       modifiers=modifiers, snap=None)
 
 
 def _probe(vp):
@@ -82,7 +82,9 @@ def test_the_paint_hover_marking_lies_on_the_part_it_is_over():
         tool = PaintTool()
         checked = 0
         for x, y, _face, _placement in _probe(vp):
-            tool.on_hover(_ctx(vp, x, y))
+            # The eyedropper (Alt) marks the one face it samples; the bucket
+            # marks the closed component whole, as its click paints it.
+            tool.on_hover(_ctx(vp, x, y, Qt.AltModifier))
             face, placement = vp._hover_entity, vp._hover_placement
             assert face is not None and placement is not None
             marking = np.array(vp._hover_face_data(face, placement),

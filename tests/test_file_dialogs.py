@@ -86,3 +86,25 @@ def test_with_nothing_remembered_a_dialog_starts_beside_the_open_document(tmp_pa
     monkeypatch.setattr(QFileDialog, "getSaveFileName", staticmethod(fake_save))
     file_dialogs.getSaveFileName(_Composer(), "Export PDF…", "lamina.pdf", "PDF (*.pdf)")
     assert seen["dir"] == str(tmp_path / "proyecto" / "lamina.pdf")
+
+
+def test_a_share_that_refuses_the_login_falls_back_instead_of_raising(tmp_path, monkeypatch):
+    """#948: on Windows, Path.is_dir() on a network share that refuses the
+    login raises (WinError 1326) instead of answering False, and every
+    dialog died before showing."""
+    _fresh()
+    share = "//servidor/proyectos"         # what Windows writes as \\servidor\proyectos
+    real_is_dir = filedialogs.Path.is_dir
+
+    def is_dir(self):
+        if str(self).startswith("/servidor") or str(self).startswith(share):
+            raise OSError(1326, "The user name or password is incorrect")
+        return real_is_dir(self)
+    monkeypatch.setattr(filedialogs.Path, "is_dir", is_dir)
+    QSettings().setValue("files/last_dir", share)
+    assert last_dir(tmp_path) == str(tmp_path)
+    assert start_in("lamina.pdf", tmp_path) == os.path.join(str(tmp_path), "lamina.pdf")
+    assert start_in(share + "/plano.igz", tmp_path).endswith("plano.igz")
+    remember(share + "/plano.igz")                      # nothing raised, nothing learnt
+    assert QSettings().value("files/last_dir") == share
+    _fresh()

@@ -531,6 +531,10 @@ class ProtractorTool(ProtractorBase):
             viewport.update()
             return
         guide = Guide(self.start_point, d)
+        if not guide.is_finite() or not guide.is_line:
+            self._reset()           # a degenerate angle: leave nothing (#723)
+            viewport.update()
+            return
         viewport.history.execute(AddGuideCommand(guide))
         # The tool resets for the next measurement, but the angle
         # stays hot — typing a value + Enter re-aims this guide until the

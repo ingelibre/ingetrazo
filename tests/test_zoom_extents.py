@@ -89,3 +89,47 @@ def test_zoom_extents_frames_the_scale_figure_in_a_new_document():
     assert abs(cam.target.x() + 0.65) < 1.0 and abs(cam.target.y() + 0.6) < 1.0
     win._saved_version = win.viewport.scene.version
     win.close()
+
+
+def _image_window():
+    from PySide6.QtWidgets import QApplication
+    QApplication.instance() or QApplication([])
+    from core.image_plane import ImagePlane
+    from core.layers import Layer
+    from views.main_window import MainWindow
+    win = MainWindow()
+    scene = win.viewport.scene
+    img = ImagePlane("plan.png", V(200, 100, 0), V(20, 0, 0), V(0, 15, 0),
+                     aspect=4 / 3)
+    scene.image_planes.append(img)
+    scene.layers.append(Layer(img.layer))
+    scene.version += 1
+    return win, img
+
+
+def test_zoom_extents_frames_a_reference_image():
+    """An imported plan is what you start tracing on, often far from the
+    origin; Zoom Extents left it out (``Scene.bounds()`` covers geometry
+    only), so it framed the scale figure and the plan stayed off screen —
+    while Zoom Selection over the same plan did frame it."""
+    win, img = _image_window()
+    cam = win.viewport.camera
+    win._on_zoom_extents()
+    corners = img.corners()
+    lo = V(min(c.x() for c in corners), min(c.y() for c in corners), 0)
+    hi = V(max(c.x() for c in corners), max(c.y() for c in corners), 0)
+    assert _screen(cam, lo, hi)[1]                # the whole plan in view
+    win._saved_version = win.viewport.scene.version
+    win.close()
+
+
+def test_zoom_extents_leaves_out_a_hidden_reference_image():
+    win, img = _image_window()
+    scene = win.viewport.scene
+    scene.layer(img.layer).visible = False
+    scene.version += 1
+    cam = win.viewport.camera
+    win._on_zoom_extents()
+    assert cam.distance < 20                      # the figure alone
+    win._saved_version = win.viewport.scene.version
+    win.close()

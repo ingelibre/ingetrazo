@@ -3,8 +3,9 @@
 """OBJ export — indexed vertices + triangles, with per-face colour as materials.
 
 Wavefront OBJ with a sidecar ``.mtl``: vertices are de-duplicated by position,
-every face is triangulated, and triangles are grouped by their material colour
-(``Face.attrs["color"]``, default cream) so each colour becomes one ``usemtl``
+every face is triangulated, and triangles are grouped by their material
+(``Face.attrs["color"]``, default cream, under its registry name when it has
+one — ``formats.meshexport.material_key``) so each becomes one ``usemtl``
 material. Opens in Blender, MeshLab, etc. with the painted colours intact.
 """
 from __future__ import annotations
@@ -13,33 +14,11 @@ from pathlib import Path, PurePosixPath
 
 from PySide6.QtGui import QVector3D
 
-from .meshexport import export_triangles
+from .meshexport import (SmoothNormals, _corner, export_triangles,
+                         material_key, world_faces_painted)
 
 # Cream painted on faces with no material colour (mirrors the viewport default).
 _DEFAULT_COLOR = (0.96, 0.95, 0.925)
-
-
-def _faces(scene):
-    """Every renderable face in WORLD space: loose mesh + groups. Component
-    instances share a prototype mesh in local coordinates, so their faces
-    come from a transformed copy."""
-    if hasattr(scene, "render_faces"):
-        groups = getattr(scene, "groups", [])
-        if not any(getattr(g, "xform", None) is not None for g in groups):
-            yield from scene.render_faces()
-            return
-        from core.group import world_mesh
-        for f in scene.loose_mesh.faces:
-            if scene.entity_visible(f):
-                yield f
-        for g in groups:
-            if not scene.entity_visible(g) or getattr(g, "billboard", False):
-                continue
-            yield from world_mesh(g).faces
-    elif hasattr(scene, "mesh"):
-        yield from scene.mesh.faces
-    else:
-        yield from scene.faces
 
 
 def save_obj(scene, path) -> None:
@@ -47,7 +26,9 @@ def save_obj(scene, path) -> None:
     become ``Kd`` materials; textured faces become ``map_Kd`` materials with the
     image copied next to the .obj and per-vertex ``vt`` from the same planar
     projection the viewport uses — so the model opens with matching textures in
-    other modellers (Blender, ...)."""
+    other modellers (Blender, ...). Every corner carries a ``vn``: smooth
+    across soft edges, so curved surfaces open round, and the face's own
+    flat normal everywhere else."""
     import shutil
     from core.texture import planar_uv
 
@@ -73,20 +54,40 @@ def save_obj(scene, path) -> None:
             i = uvindex[key] = len(uvs)
         return i
 
+    nrms: list[tuple[float, float, float]] = []
+    nindex: dict[tuple, int] = {}
+
+    def nidx(n) -> int:
+        key = (round(n.x(), 5), round(n.y(), 5), round(n.z(), 5))
+        i = nindex.get(key)
+        if i is None:
+            nrms.append((n.x(), n.y(), n.z()))
+            i = nindex[key] = len(nrms)
+        return i
+
+    def corner_n(smooth, flat, p) -> int:
+        """``vn`` index of a corner: smooth across soft edges, else flat."""
+        return nidx(smooth.get(_corner(p), flat) if smooth else flat)
+
     # material key -> {"color": rgb, "map": basename|None} and its triangles
-    # (each triangle a list of (vi, ti|None)).
+    # (each triangle a list of (vi, ti|None, ni)).
     materials: dict[tuple, dict] = {}
     groups: dict[tuple, list] = {}
-    for face in _faces(scene):
-        tex = face.attrs.get("texture")
+    # Every face as it SHOWS: the paint of a group or component reaches the
+    # faces inside that wear the default material, as in the viewport.
+    smoother = SmoothNormals()
+    for face, attrs in world_faces_painted(scene):
+        tex = attrs.get("texture")
+        key = material_key(attrs, with_opacity=False)
+        flat = smoother.flat(face)
+        smooth = smoother.corners(face)
         if tex is not None and tex.get("path"):
             src = Path(tex["path"])
-            key = ("tex", src.name)
             materials.setdefault(key, {"color": (1.0, 1.0, 1.0),
                                        "map": src.name, "src": src})
-            if face.attrs.get("mat") and "mat" not in materials[key]:
-                materials[key]["mat"] = face.attrs["mat"]
-            n = face.normal()
+            if attrs.get("mat") and "mat" not in materials[key]:
+                materials[key]["mat"] = attrs["mat"]
+            n = flat
             sw = tex.get("sw", 1.0) or 1.0
             sh = tex.get("sh", 1.0) or 1.0
             rot = float(tex.get("rot", 0.0))
@@ -98,17 +99,18 @@ def save_obj(scene, path) -> None:
                 else:
                     uv = planar_uv(n, list(tri), sw, sh, rot)
                 groups.setdefault(key, []).append(
-                    [(vidx(tri[k]), uvidx(uv[k])) for k in range(3)])
+                    [(vidx(tri[k]), uvidx(uv[k]), corner_n(smooth, flat, tri[k]))
+                     for k in range(3)])
         else:
             # RGB only: an AI recipe's (r, g, b, 1.0) broke the .mtl writer.
-            col = tuple(face.attrs.get("color") or _DEFAULT_COLOR)[:3]
-            key = ("color", col)
+            col = tuple(attrs.get("color") or _DEFAULT_COLOR)[:3]
             materials.setdefault(key, {"color": col, "map": None})
-            if face.attrs.get("mat") and "mat" not in materials[key]:
-                materials[key]["mat"] = face.attrs["mat"]
+            if attrs.get("mat") and "mat" not in materials[key]:
+                materials[key]["mat"] = attrs["mat"]
             for tri in export_triangles(face):
                 groups.setdefault(key, []).append(
-                    [(vidx(tri[k]), None) for k in range(3)])
+                    [(vidx(tri[k]), None, corner_n(smooth, flat, tri[k]))
+                     for k in range(3)])
 
     keys = list(groups.keys())
     # Registry identities (attrs["mat"]) export under their real name —
@@ -129,8 +131,11 @@ def save_obj(scene, path) -> None:
             except Exception:  # noqa: BLE001 — best-effort; export still valid
                 pass
 
+    # UTF-8 on every platform: material names and texture files carry
+    # accents («Mármol»), and the locale default would write cp1252 on
+    # Windows — a file other machines read as mojibake.
     mtl_path = path.with_suffix(".mtl")
-    with open(mtl_path, "w") as m:
+    with open(mtl_path, "w", encoding="utf-8") as m:
         for k in keys:
             mat = materials[k]
             r, g, b = mat["color"]
@@ -140,22 +145,41 @@ def save_obj(scene, path) -> None:
                 m.write(f"map_Kd {mat['map']}\n")
             m.write("\n")
 
-    with open(path, "w") as o:
+    with open(path, "w", encoding="utf-8") as o:
         o.write("# IngeTrazo OBJ export\n")
         o.write(f"mtllib {mtl_path.name}\n")
         for x, y, z in verts:
             o.write(f"v {x:.6f} {y:.6f} {z:.6f}\n")
         for u, v in uvs:
             o.write(f"vt {u:.6f} {v:.6f}\n")
+        for x, y, z in nrms:
+            o.write(f"vn {x:.6f} {y:.6f} {z:.6f}\n")
         for k in keys:
             o.write(f"usemtl {matname[k]}\n")
             for tri in groups[k]:
-                toks = [(f"{vi}/{ti}" if ti is not None else f"{vi}")
-                        for vi, ti in tri]
+                toks = [(f"{vi}/{ti}/{ni}" if ti is not None else f"{vi}//{ni}")
+                        for vi, ti, ni in tri]
                 o.write("f " + " ".join(toks) + "\n")
 
 
 # ---- Import --------------------------------------------------------------------
+
+def read_obj_text(path) -> str:
+    """The text of an ``.obj`` or ``.mtl`` file, whatever machine wrote it.
+
+    OBJ declares no encoding. Our own export and most modern tools write
+    UTF-8, so that comes first, the same on every platform — Python's
+    default is the locale's, cp1252 on Windows, which read «Escultura
+    pública» back as «pÃºblica». A file that is not valid UTF-8 came from
+    an older Windows exporter and is read as cp1252, with ``errors=
+    "replace"``: a stray byte costs a character, never the model.
+    """
+    data = Path(path).read_bytes()
+    try:
+        return data.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        return data.decode("cp1252", errors="replace")
+
 
 def _is_number(tok: str) -> bool:
     try:
@@ -211,9 +235,9 @@ def _parse_mtl(path: Path) -> dict:
     if not path.exists():
         return mats
     current = None
-    # errors="replace": these files carry whatever encoding the author's
-    # machine had, and a stray byte must not cost the model either.
-    for line in path.read_text(errors="replace").splitlines():
+    # These files carry whatever encoding the author's machine had, and a
+    # stray byte must not cost the model either (see read_obj_text).
+    for line in read_obj_text(path).splitlines():
         parts = line.split()
         if not parts:
             continue
@@ -283,7 +307,7 @@ def suggest_unit(path) -> str:
 
 
 def load_obj(scene, path, progress=None, scale: float = 1.0,
-             matrix=None) -> None:
+             matrix=None):
     """See :func:`_load_obj_inner`. Wrapped to run with the generational GC off —
     mass vertex/edge/face construction ahead (see formats.skp.apply_payload);
     collection is merely deferred to the re-enable."""
@@ -291,15 +315,15 @@ def load_obj(scene, path, progress=None, scale: float = 1.0,
     _gc_was_enabled = gc.isenabled()
     gc.disable()
     try:
-        _load_obj_inner(scene, path, progress=progress, scale=scale,
-                        matrix=matrix)
+        return _load_obj_inner(scene, path, progress=progress, scale=scale,
+                               matrix=matrix)
     finally:
         if _gc_was_enabled:
             gc.enable()
 
 
 def _load_obj_inner(scene, path, progress=None, scale: float = 1.0,
-                    matrix=None) -> None:
+                    matrix=None):
     """Add the faces of a Wavefront OBJ at ``path`` to ``scene``'s mesh, then
     weld + merge coplanar so a triangulated file (e.g. our own export, or another
     modeller's OBJ) comes back as clean editable polygons. Material ``Kd`` colours
@@ -311,7 +335,11 @@ def _load_obj_inner(scene, path, progress=None, scale: float = 1.0,
     ``scale``: it stands a Y-up file up (:data:`Y_UP_TO_Z_UP`) and can carry
     whatever else the source says about the model — a catalogue's own
     rotation, a fit to a declared size. The file itself never says which
-    axis is the vertical, so this is the caller's to know, not a guess."""
+    axis is the vertical, so this is the caller's to know, not a guess.
+
+    A file in survey coordinates (a drone terrain in UTM) is moved near the
+    origin before any vertex is made (formats/recenter.py); returns that
+    offset, or ``None`` when the file was read where it is."""
     from core.history import run_stitch
     from core.orient import orient_outward
     from core.topology import _key
@@ -335,21 +363,41 @@ def _load_obj_inner(scene, path, progress=None, scale: float = 1.0,
     current_g = ""
     pending: list[tuple[list[QVector3D], object, object, int, tuple]] = []
 
-    for line in path.read_text().splitlines():
+    def placed(parts):
+        """A ``v`` line's point in metres, Z-up, still in double precision."""
+        x = float(parts[1]) * scale
+        y = float(parts[2]) * scale
+        z = float(parts[3]) * scale
+        if matrix is not None:
+            m = matrix
+            x, y, z = (m[0] * x + m[1] * y + m[2] * z,
+                       m[3] * x + m[4] * y + m[5] * z,
+                       m[6] * x + m[7] * y + m[8] * z)
+        return x, y, z
+
+    lines = read_obj_text(path).splitlines()
+    # Measure first, in double precision: a file in survey coordinates moves
+    # near the origin BEFORE its first vertex turns single precision.
+    from formats.recenter import Bounds
+    box = Bounds()
+    for line in lines:
+        if line.startswith("v "):
+            parts = line.split()
+            try:
+                box.add(*placed(parts))
+            except (IndexError, ValueError):
+                pass
+    offset = box.offset()
+    ox, oy, oz = offset or (0.0, 0.0, 0.0)
+
+    for line in lines:
         parts = line.split()
         if not parts:
             continue
         tag = parts[0]
         if tag == "v":
-            x = float(parts[1]) * scale
-            y = float(parts[2]) * scale
-            z = float(parts[3]) * scale
-            if matrix is not None:
-                m = matrix
-                x, y, z = (m[0] * x + m[1] * y + m[2] * z,
-                           m[3] * x + m[4] * y + m[5] * z,
-                           m[6] * x + m[7] * y + m[8] * z)
-            verts.append(QVector3D(x, y, z))
+            x, y, z = placed(parts)
+            verts.append(QVector3D(x - ox, y - oy, z - oz))
         elif tag == "vt":
             try:
                 uvs.append((float(parts[1]),
@@ -449,7 +497,7 @@ def _load_obj_inner(scene, path, progress=None, scale: float = 1.0,
             path.stem, pieces, _face_attrs, tick))
         scene.version += 1
         tick(1.0, "Done")
-        return
+        return offset
 
     if len(pending) > _MAX_FUSE_LOOPS:
         from core.group import Group
@@ -472,7 +520,7 @@ def _load_obj_inner(scene, path, progress=None, scale: float = 1.0,
         scene.groups.append(Group(target))
         scene.version += 1
         tick(1.0, "Done")
-        return
+        return offset
 
     target = scene.mesh
     seed: set = set()
@@ -499,6 +547,7 @@ def _load_obj_inner(scene, path, progress=None, scale: float = 1.0,
     soften_by_smoothing_group(scene.mesh)
     drop_smoothing_groups(scene.mesh)
     scene.version += 1
+    return offset
 
 
 def _piece_name(key: tuple, number: int) -> str:

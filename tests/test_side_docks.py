@@ -190,3 +190,18 @@ def test_the_whole_sidebar_crosses_over_and_back():
     _app.processEvents()
     assert set(right) <= set(win._side_docks(Qt.RightDockWidgetArea))
     _close(win)
+
+
+def test_both_folds_are_in_the_window_menu():
+    """Window shows Ctrl+F6 next to Ctrl+F5, so the left fold can be
+    found from the menu as the right one can."""
+    win = _window()
+    from PySide6.QtWidgets import QMenu
+    menus = [m for m in win._act_sidebar.associatedObjects()
+             if isinstance(m, QMenu)]
+    assert menus                                      # Window ▸ Sidebar
+    acts = menus[0].actions()
+    i = acts.index(win._act_sidebar)
+    assert acts[i + 1] is win._act_left_sidebar
+    assert win._act_left_sidebar.shortcut().toString() == "Ctrl+F6"
+    _close(win)

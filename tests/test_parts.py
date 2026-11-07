@@ -87,6 +87,23 @@ def test_the_material_is_the_one_covering_most_of_the_part():
     assert part_material(_part(mesh, "top")) == "#ff0000"
 
 
+def test_an_opening_does_not_vote_for_the_material():
+    """#742: the covering material is weighed by the surface that is
+    really there — a 16 m² outline that is nearly all opening must not
+    outvote a whole 1 m² face."""
+    mesh = Mesh()
+    red = mesh.add_face(
+        [QVector3D(0, 0, 0), QVector3D(4, 0, 0), QVector3D(4, 4, 0),
+         QVector3D(0, 4, 0)],
+        [[QVector3D(0.05, 0.05, 0), QVector3D(0.05, 3.95, 0),
+          QVector3D(3.95, 3.95, 0), QVector3D(3.95, 0.05, 0)]])
+    red.attrs["color"] = [1, 0, 0]         # 16 m² gross, 0.79 m² net
+    blue = mesh.add_face([QVector3D(5, 0, 0), QVector3D(6, 0, 0),
+                          QVector3D(6, 1, 0), QVector3D(5, 1, 0)])
+    blue.attrs["color"] = [0, 0, 1]        # 1 m², no opening
+    assert part_material(_part(mesh, "panel")) == "#0000ff"
+
+
 def test_a_part_inherits_its_containers_paint_on_default_faces():
     part = _part(_box(0.5, 0.5, 0.5), "cube")
     part.material = {"color": [0, 1, 0]}

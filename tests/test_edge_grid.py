@@ -147,3 +147,77 @@ def test_the_kill_switch_runs_the_full_pass(monkeypatch):
         d = Viewport._gedge_dist(vp, px, py)
         np.testing.assert_array_equal(d, segment_distances(*proj, px, py))
     assert getattr(vp, "_gedge_grid_cache", None) is None
+
+
+def _unique_reference(grid, px, py):
+    """near()'s answer the way it was always worked out: np.unique over the
+    long segments and the cell slices."""
+    c, r = grid.cell, grid.reach
+    x0 = max(int(np.floor((px - r) / c)) - grid.cx0, 0)
+    x1 = min(int(np.floor((px + r) / c)) - grid.cx0, grid.ncx - 1)
+    y0 = max(int(np.floor((py - r) / c)) - grid.cy0, 0)
+    y1 = min(int(np.floor((py + r) / c)) - grid.cy0, grid.ncy - 1)
+    parts = [grid.long_ids]
+    for row in range(y0, y1 + 1):
+        lo = np.searchsorted(grid.keys, row * grid.ncx + x0, "left")
+        hi = np.searchsorted(grid.keys, row * grid.ncx + x1, "right")
+        parts.append(grid.ids[lo:hi])
+    return np.unique(np.concatenate(parts))
+
+
+@pytest.mark.parametrize("n,spread", [(400000, 0.05), (40000, 1.0)])
+def test_near_answers_exactly_what_unique_did(n, spread):
+    """Dense (a whole plant in view: the mask path) or sparse (np.unique),
+    the very same sorted indices, dtype included."""
+    rng = np.random.default_rng(11)
+    ax, ay, bx, by, ok = _segments(rng, n)
+    ax, ay = W / 2 + (ax - W / 2) * spread, H / 2 + (ay - H / 2) * spread
+    bx, by = W / 2 + (bx - W / 2) * spread, H / 2 + (by - H / 2) * spread
+    grid = EdgeGrid(ax, ay, bx, by, ok, W, H, 48.0)
+    for px, py in rng.uniform([0, 0], [W, H], size=(40, 2)):
+        got = grid.near(px, py)
+        want = _unique_reference(grid, px, py)
+        assert got.dtype == want.dtype
+        np.testing.assert_array_equal(got, want)
+
+
+@pytest.mark.parametrize("seed", range(4))
+def test_the_native_pass_gives_numpys_bits(seed):
+    """Past ``NATIVE_MIN`` segments the distances come from the native
+    engine: bit for bit NumPy's, for all of them and for some, over
+    segments of every length, off screen and degenerate."""
+    import sys
+
+    from core import _native
+    from core import edge_grid as eg
+    if not hasattr(_native.native, "segment_distances"):
+        pytest.skip("no native engine")
+    if eg._native_pass() is None:
+        # Another C library may round hypot its own way: NumPy is kept.
+        # Here, with glibc, the native pass must be the one in use.
+        assert not sys.platform.startswith("linux")
+        pytest.skip("the native pass rounds otherwise here")
+    rng = np.random.default_rng(seed)
+    n = eg.NATIVE_MIN * 3
+    a = rng.uniform(-300, 1500, (4, n))
+    a[2:, : n // 10] = a[:2, : n // 10]            # zero length
+    a[:, n // 10: n // 5] = np.round(a[:, n // 10: n // 5])
+    ok = rng.random(n) < 0.85
+    which = np.sort(rng.choice(n, eg.NATIVE_MIN + 7, replace=False))
+    for px, py in ((400.5, 300.25), (float(a[0, 3]), float(a[1, 3])),
+                   (-20.0, 2000.0)):
+        for w in (None, which):
+            got = eg.segment_distances(*a, ok, px, py, w)
+            want = eg._numpy_distances(*a, ok, px, py, w)
+            assert got.dtype == want.dtype and got.shape == want.shape
+            assert np.array_equal(got, want)
+
+
+def test_few_segments_stay_in_numpy(monkeypatch):
+    from core import edge_grid as eg
+    called = []
+    monkeypatch.setattr(eg, "_native_pass",
+                        lambda: called.append(1) or None)
+    a = np.random.default_rng(0).uniform(0, 100, (4, 50))
+    eg.segment_distances(*a, np.ones(50, bool), 10.0, 10.0)
+    assert not called

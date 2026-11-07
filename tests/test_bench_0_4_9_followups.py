@@ -107,7 +107,7 @@ def test_switching_the_hidden_view_off_deselects_the_ghost():
 
 # ---- the Tape says it is on an axis --------------------------------------
 
-def test_the_tape_shows_on_axis_before_its_first_click():
+def test_tape_and_line_show_on_axis_before_their_first_click():
     from views.viewport import Viewport
     from tools.line import LineTool
     from tools.tape import TapeMeasureTool
@@ -124,6 +124,8 @@ def test_the_tape_shows_on_axis_before_its_first_click():
     snap = vp.last_snap
     assert snap.kind == "on_axis" and snap.axis == "x"
     assert abs(snap.point.y()) < 1e-6 and abs(snap.point.z()) < 1e-6
-    vp.set_active_tool(LineTool())                          # not a source for Line
+    vp.set_active_tool(LineTool())
     vp._process_hover(QPointF(px[0], px[1] + 2), Qt.NoModifier)
-    assert vp.last_snap.kind != "on_axis"
+    assert vp.last_snap.kind == "on_axis" and vp.last_snap.axis == "x"
+    assert abs(vp.last_snap.point.y()) < 1e-6
+    assert abs(vp.last_snap.point.z()) < 1e-6

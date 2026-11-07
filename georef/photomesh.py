@@ -685,8 +685,10 @@ def load_odm_obj(obj_path, datum, ground_ref: float = 0.0,
     if anchor is None:
         anchor = find_anchor(obj_path)
 
+    from formats.obj import read_obj_text
+
     positions, texcoords, corner_v, corner_t, runs = _parse_obj(
-        obj_path.read_text(errors="replace"))
+        read_obj_text(obj_path))
     vertices, uvs, triangles = _weld_corners(
         corner_v, corner_t, positions, texcoords)
     vertices = _place(vertices, datum, anchor, ground_ref)
@@ -696,7 +698,7 @@ def load_odm_obj(obj_path, datum, ground_ref: float = 0.0,
         maps: dict[str, str | None] = {}
         mtl = _sidecar_mtl(obj_path)
         if mtl is not None:
-            maps = parse_mtl(mtl.read_text(errors="replace"))
+            maps = parse_mtl(read_obj_text(mtl))
         for name, start, count in runs:
             if count == 0:
                 continue

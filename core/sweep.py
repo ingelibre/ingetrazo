@@ -446,6 +446,13 @@ def sweep_profile(mesh, face, path, closed) -> bool:
     before_edges = set(mesh.edges)
     before_faces = {id(f) for f in mesh.faces}
     profile_loops = [list(face.loop)] + [list(h) for h in face.hole_loops]
+    # Which profile edges and path segments were curves (circles, arcs): the
+    # caps and the rails the sweep builds from them become curves too.
+    profile_curves = [
+        [getattr(mesh.find_edge(lp[j], lp[(j + 1) % len(lp)]), "curve", None)
+         for j in range(len(lp))] for lp in profile_loops]
+    span_curves = [getattr(_edge_at(mesh, path[s], path[(s + 1) % n]),
+                           "curve", None) for s in range(spans)]
     mesh.remove_face(face)                           # profile is consumed
     for s in range(spans):
         r0 = rings[s]
@@ -492,5 +499,65 @@ def sweep_profile(mesh, face, path, closed) -> bool:
                                  e.faces[1].normal().normalized())
         if _CURVE_FACET_COS < d < 0.99995:
             e.soft = True
+    _tag_sweep_curves(mesh, rings, closed, spans, profile_curves, span_curves)
     orient_outward(mesh)
     return True
+
+
+def _edge_at(mesh, p, q):
+    """The mesh edge from point ``p`` to point ``q``, or ``None``."""
+    va, vb = mesh.vertex_at(p), mesh.vertex_at(q)
+    if va is None or vb is None or va is vb:
+        return None
+    return mesh.find_edge(va, vb)
+
+
+def _tag_sweep_curves(mesh, rings, closed, spans, profile_curves,
+                      span_curves) -> None:
+    """Give the sweep's curves their identity back, so one click selects the
+    whole circle: the end caps of a profile with arcs in it, and the rails
+    that follow a curved stretch of the path from a profile corner. Edges
+    that are already a curve, or soft (a smooth seam), are left alone."""
+    from core.mesh import Mesh
+    stations = len(rings)
+
+    def tag(edges):
+        edges = [e for e in edges
+                 if e is not None and e.curve is None and not e.soft]
+        if edges:
+            cid = Mesh.next_curve_id()
+            for e in edges:
+                e.curve = cid
+
+    if not closed:
+        for ring in (rings[0], rings[-1]):
+            for lp, curves in zip(ring, profile_curves):
+                m = len(lp)
+                runs: dict = {}
+                for j in range(m):
+                    if j < len(curves) and curves[j] is not None:
+                        runs.setdefault(curves[j], []).append(
+                            _edge_at(mesh, lp[j], lp[(j + 1) % m]))
+                for edges in runs.values():
+                    tag(edges)
+    if not any(c is not None for c in span_curves):
+        return
+    # A closed path's curve may run through station 0: start where a run
+    # starts, so it is not cut in two there.
+    start = 0
+    if closed:
+        start = next((s for s in range(spans)
+                      if span_curves[s] != span_curves[s - 1]), 0)
+    for loop_i, lp in enumerate(rings[0]):
+        for j in range(len(lp)):
+            run, run_c = [], None
+            for k in range(spans):
+                s = (start + k) % spans
+                c = span_curves[s]
+                if c != run_c:
+                    tag(run)
+                    run, run_c = [], c
+                if c is not None:
+                    run.append(_edge_at(mesh, rings[s][loop_i][j],
+                                        rings[(s + 1) % stations][loop_i][j]))
+            tag(run)

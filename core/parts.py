@@ -104,7 +104,9 @@ def part_material(part) -> str:
             attrs = f.attrs if has_own_material(f.attrs) else inherited
             label = _material_label(attrs)
             if label:
-                area[label] = area.get(label, 0.0) + f.area()
+                # Net: a face's opening covers nothing, so it must not
+                # vote for the material either (#742).
+                area[label] = area.get(label, 0.0) + f.net_area()
     if not area:
         return ""
     return max(area.items(), key=lambda kv: kv[1])[0]

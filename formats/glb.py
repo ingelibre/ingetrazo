@@ -132,10 +132,24 @@ def _node_transforms(js):
     for sc in js.get("scenes", []) or [{}]:
         roots.extend(sc.get("nodes", []))
     if not roots:
-        roots = list(range(len(nodes)))
+        # No scene: the roots are the nodes no other node holds (walking
+        # every node as a root placed each child a second time, at the
+        # origin); what is left after them, a loop, comes in as found.
+        held = {c for nd in nodes for c in nd.get("children", [])}
+        roots = ([i for i in range(len(nodes)) if i not in held]
+                 + [i for i in range(len(nodes)) if i in held])
     out = []
+    # The spec makes the hierarchy a set of trees: a node has one parent at
+    # most. A file that lists a node twice made each listing walk it again,
+    # so ten bytes per level doubled the import (a 1 KB file never finished)
+    # and a node inside itself overflowed the stack. Each node is placed
+    # once, where it is first reached.
+    placed: set = set()
 
     def walk(i, parent):
+        if i in placed:
+            return
+        placed.add(i)
         nd = nodes[i]
         world = parent @ local(nd)
         out.append((i, world))
@@ -353,7 +367,8 @@ def build_mesh(batches, progress=None):
                 attrs_list.append(a)
         done += len(tris)
         if progress is not None:
-            progress(0.3 + 0.4 * done / total, "Preparing geometry…")
+            # The DAE/OBJ importers' wording: already in every catalog.
+            progress(0.3 + 0.4 * done / total, "Collecting geometry…")
     if not flat_parts:
         raise ValueError("No triangle geometry found in the glTF file")
     flat = np.concatenate(flat_parts, axis=0)
@@ -368,7 +383,7 @@ def build_mesh(batches, progress=None):
                           attrs_list)
     if len(mesh.edges) <= _SOFTEN_EDGE_CAP:
         if progress is not None:
-            progress(0.9, "Smoothing seams…")
+            progress(0.9, "Smoothing edges…")
         soften_smooth_edges(mesh)
     _hide_cutout_card_edges(mesh)
     return mesh
@@ -404,15 +419,16 @@ def _hide_cutout_card_edges(mesh) -> None:
             e.hidden = True
 
 
-def load_glb(scene, path, progress=None) -> None:
+def load_glb(scene, path, progress=None):
     """Add the glTF/GLB at ``path`` to ``scene`` as a reference Group named
     after the file (or the embedded Sketchfab title). GC off during the
-    bulk build, like every mass import."""
+    bulk build, like every mass import. Returns the survey offset the file
+    was moved by (formats/recenter.py), or ``None``."""
     import gc
     was = gc.isenabled()
     gc.disable()
     try:
-        _load_glb_inner(scene, path, progress=progress)
+        return _load_glb_inner(scene, path, progress=progress)
     finally:
         if was:
             gc.enable()
@@ -438,8 +454,9 @@ def _guess_scale(batches) -> float:
     return 1.0
 
 
-def _load_glb_inner(scene, path, progress=None) -> None:
+def _load_glb_inner(scene, path, progress=None):
     from core.group import Group
+    from formats.recenter import Bounds
 
     def tick(frac, text):
         if progress is not None:
@@ -453,8 +470,19 @@ def _load_glb_inner(scene, path, progress=None) -> None:
     s = 1.0 if ours else _guess_scale(batches)
     if s != 1.0:
         batches = [(tris * s, uvs, r) for tris, uvs, r in batches]
+    # The world positions are still double precision here: a file in survey
+    # coordinates moves near the origin before the mesh makes them single.
+    # (The node placements, kept in double precision by glTF itself, are
+    # where a georeferenced file usually carries its far-out position.)
+    box = Bounds()
+    for tris, _uvs, _r in batches:
+        box.add_array(tris)
+    offset = box.offset()
+    if offset:
+        batches = [(tris - offset, uvs, r) for tris, uvs, r in batches]
     mesh = build_mesh(batches, progress=progress)
     title = (js.get("asset", {}).get("extras", {}) or {}).get("title")
     name = (title or Path(path).stem)[:60]
     group = Group(mesh, name=name)
     scene.groups.append(group)
+    return offset

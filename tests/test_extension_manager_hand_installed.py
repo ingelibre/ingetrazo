@@ -243,8 +243,11 @@ def test_an_included_extension_shows_its_own_preview_and_a_translated_line(
     root = tmp_path / "app"
     examples = root / "examples" / "extensions"
     examples.mkdir(parents=True)
+    # encoding: the «—» is cp1252 on Windows otherwise, and the manager
+    # reads extensions as UTF-8 like Python does.
     (examples / "demo.py").write_text(
-        '"""Demo — parametric windows from selected faces.\n\nHow to."""\n')
+        '"""Demo — parametric windows from selected faces.\n\nHow to."""\n',
+        encoding="utf-8")
     (examples / "demo.png").write_bytes(b"\x89PNG\r\n\x1a\n")
     monkeypatch.setattr(paths, "app_root", lambda: root)
     demo, = manager.bundled_extensions()

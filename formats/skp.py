@@ -22,6 +22,7 @@ unavailable backend.
 """
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 
@@ -30,10 +31,12 @@ class NeedsConverter(Exception):
     historical: it once meant "use the external converter".) Carries the
     path and detected format."""
 
-    def __init__(self, path, fmt: str) -> None:
-        super().__init__(f"No pure SKP backend for {path} (format={fmt})")
+    def __init__(self, path, fmt: str, reason: str = "") -> None:
+        msg = f"No pure SKP backend for {path} (format={fmt})"
+        super().__init__(f"{msg}: {reason}" if reason else msg)
         self.path = Path(path)
         self.format = fmt
+        self.reason = reason
 
 
 def detect_format(path) -> str:
@@ -114,12 +117,19 @@ def parse_skp(path, progress=None) -> dict:
     caller reports the file as unreadable. Touches no ``Scene``."""
     path = Path(path)
     fmt = detect_format(path)
+    error = None
     for backend in _BACKENDS:
         if not (backend.available() and backend.supports(fmt)):
             continue
         try:
             payload = backend.parse(path, progress=progress)
-        except Exception:  # noqa: BLE001 — a parser that chokes → try next / fall back
+        except Exception as exc:  # noqa: BLE001 — a parser that chokes → try next / fall back
+            # The user only hears "could not read"; the reader's own error
+            # goes to the error log, or a failed import is undiagnosable.
+            logging.getLogger(__name__).warning(
+                "SKP backend %s could not read %s", backend.name, path,
+                exc_info=True)
+            error = exc
             payload = None
         # Protos count as geometry: a file whose whole content is
         # components placed once yields no plain groups at all, and
@@ -127,17 +137,24 @@ def parse_skp(path, progress=None) -> dict:
         if payload and (payload.get("groups") or payload.get("protos")
                         or payload.get("empty")):
             return payload
-    raise NeedsConverter(path, fmt)
+    raise NeedsConverter(path, fmt, str(error or "")) from error
 
 
-def apply_payload(scene, payload) -> str:
+def apply_payload(scene, payload, progress=None) -> str:
     """Add a parsed payload's geometry to ``scene`` as reference groups (an
     isolated ``Mesh`` per group, like the big-DAE import). Runs the same
     clean-up the DAE reference import does — coplanar fusion (merges the raw
     ``.skp`` polygons and drops double-sided duplicates) and smooth-edge
     softening — so a ``.skp`` opened through the pure backend looks identical
     to one that came through the converter. Cheap relative to the parse; the
-    caller wraps it in a command for undo. Returns the backend name."""
+    caller wraps it in a command for undo. Returns the backend name.
+
+    ``progress(frac, text)``, when given, is called now and then (at most
+    every 0.15 s) while the scene is built: on a 946 000-face file this
+    stage ran for minutes without returning to the event loop, and Windows
+    marked the window "Not Responding" (#787). It is only called while no
+    half-built group is in the scene — inside a mesh not yet added, or
+    between whole groups."""
     import gc
     from PySide6.QtGui import QVector3D
     from core.group import Group
@@ -152,18 +169,37 @@ def apply_payload(scene, payload) -> str:
     _gc_was_enabled = gc.isenabled()
     gc.disable()
     try:
-        return _apply_payload_inner(scene, payload)
+        return _apply_payload_inner(scene, payload, progress)
     finally:
         if _gc_was_enabled:
             gc.enable()
 
 
-def _apply_payload_inner(scene, payload) -> str:
+def _apply_payload_inner(scene, payload, progress=None) -> str:
+    import time
     from PySide6.QtGui import QVector3D
     from core.group import Group
     from core.mesh import Mesh
     from formats.dae import _add_fused
     from formats.fuse import fuse_coplanar_loops, soften_smooth_edges
+
+    groups = payload.get("groups", []) or []
+    protos = payload.get("protos", []) or []
+    n_parts = max(1, len(groups) + 2 * len(protos))
+    done = [0, 0.0]               # parts built, time of the last report
+
+    def _tick(step=0):
+        """Report progress through this stage (0.75 → 0.96 of the bar),
+        throttled so the event loop is pumped without slowing the build."""
+        done[0] += step
+        if progress is None:
+            return
+        now = time.monotonic()
+        if now - done[1] < 0.15:
+            return
+        done[1] = now
+        progress(0.75 + 0.21 * min(1.0, done[0] / n_parts),
+                 "Building geometry…")
 
     def _q(p):
         # Payload corners are plain [x, y, z] lists from the openskp
@@ -171,7 +207,21 @@ def _apply_payload_inner(scene, payload) -> str:
         # the QVector3D-based fuse/add_face clean-up below.
         return p if hasattr(p, "x") else QVector3D(p[0], p[1], p[2])
 
-    def _build_mesh(faces, soft_edges=None):
+    def _add_lines(mesh, loose_edges):
+        """The file's loose edges (lines on no face), welded to the faces'
+        corners where they meet them."""
+        for a, b in loose_edges or ():
+            try:
+                mesh.add_edge(_q(a), _q(b))
+            except ValueError:      # endpoints weld to one vertex
+                continue
+
+    def _build_mesh(faces, soft_edges=None, loose_edges=None):
+        mesh = _build_faces(faces, soft_edges)
+        _add_lines(mesh, loose_edges)
+        return mesh
+
+    def _build_faces(faces, soft_edges=None):
         mesh = Mesh()
         if soft_edges is not None:
             # The backend carried the file's ORIGINAL polygons plus the
@@ -236,7 +286,9 @@ def _apply_payload_inner(scene, payload) -> str:
                 # float noise between the payload's segment coordinates and
                 # the stored vertex positions can never drop a flag (the old
                 # rounded-cell comparison could).
-                for a, b in soft_edges:
+                for k, (a, b) in enumerate(soft_edges):
+                    if not k & 4095:
+                        _tick()     # one group can carry 1.7 M flags
                     va = mesh.vertex_at(QVector3D(a[0], a[1], a[2]))
                     vb = mesh.vertex_at(QVector3D(b[0], b[1], b[2]))
                     if va is None or vb is None or va is vb:
@@ -361,9 +413,11 @@ def _apply_payload_inner(scene, payload) -> str:
             scene.text_labels.append(TextLabel(
                 anchor, label - anchor, raw["text"]))
 
-    for gp in payload.get("groups", []):
-        mesh = _build_mesh(gp["faces"], gp.get("soft_edges"))
-        if mesh.faces:
+    for gp in groups:
+        _tick(1)
+        mesh = _build_mesh(gp["faces"], gp.get("soft_edges"),
+                           gp.get("loose_edges"))
+        if mesh.faces or mesh.edges:        # a group of lines is one too
             g = Group(mesh, name=gp.get("name"))
             if gp.get("layer"):
                 g.layer = gp["layer"]
@@ -388,28 +442,38 @@ def _apply_payload_inner(scene, payload) -> str:
     # prototype may PLACE other prototypes — the sharing a component already
     # has inside itself — and those become the instance's ``children``, one
     # object to the user however deep the tree.
-    protos = payload.get("protos", []) or []
-    proto_meshes = [_build_mesh(pr["faces"], pr.get("soft_edges"))
-                    for pr in protos]
+    proto_meshes = []
+    for pr in protos:
+        _tick(1)
+        proto_meshes.append(_build_mesh(pr["faces"], pr.get("soft_edges"),
+                                        pr.get("loose_edges")))
 
-    def _place(idx, xf, layer=None, depth=0):
+    def _place(idx, xf, layer=None, depth=0, name=None):
         pr = protos[idx]
-        g = Group(proto_meshes[idx], name=pr.get("name"))
+        # The placement's own name (what the user called the group or
+        # copy), else the definition's.
+        g = Group(proto_meshes[idx], name=name or pr.get("name"))
         g.xform = xf
+        # A .skp GROUP stays a group: only a component definition is one.
+        g.component = bool(pr.get("component", True))
         if layer:
             g.layer = layer
         if depth < 32:      # a malformed file must not spin
             g.adopt(_place(kid["proto"], kid["xform"], kid.get("layer"),
-                           depth + 1)
+                           depth + 1, kid.get("name"))
                     for kid in pr.get("children", []) or [])
         return g
 
     for idx, pr in enumerate(protos):
-        if not proto_meshes[idx].faces and not (pr.get("children") or []):
+        if not proto_meshes[idx].faces and not proto_meshes[idx].edges \
+                and not (pr.get("children") or []):
             continue
+        _tick(1)
         layers = pr.get("instance_layers") or []
+        names = pr.get("instance_names") or []
         for i, xf in enumerate(pr.get("instances", []) or []):
-            g = _place(idx, xf, layers[i] if i < len(layers) else None)
+            g = _place(idx, xf, layers[i] if i < len(layers) else None,
+                       name=names[i] if i < len(names) else None)
             scene.groups.append(g)
     back = payload.get("back_color")
     if back and getattr(scene, "back_face_color", None) is None:

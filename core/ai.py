@@ -11,7 +11,8 @@ Two halves:
   AI Bridge (MCP) and the in-app Asistente IA.
 - A provider layer mirroring IngePresupuestos' ``ai_specs``: ONE API key,
   provider auto-detected by its prefix (gsk_ → Groq, sk-ant- → Anthropic,
-  AIza → Gemini, sk-or- → OpenRouter, sk- → OpenAI) plus local Ollama.
+  AIza → Gemini, sk-or- → OpenRouter, oc_sk_ → OpenCode Go, sk- → OpenAI)
+  plus local Ollama.
   Anthropic speaks its native Messages API; everyone else goes through
   their OpenAI-compatible endpoint — two wire formats cover them all,
   images (viewport screenshots) included, stdlib urllib only.
@@ -21,6 +22,7 @@ from __future__ import annotations
 import io
 import json
 import math
+import os
 import sys
 import re
 import traceback
@@ -44,6 +46,7 @@ def build_scope(viewport, scope: dict | None = None) -> dict:
     from PySide6.QtGui import QVector3D
     from core import bim
     from core.group import Group
+    from core.layers import Layer
     from core.mesh import Edge, Face, Mesh, Vertex
     scope = scope if scope is not None else {"__name__": "__ai__"}
     scope.update(
@@ -51,9 +54,31 @@ def build_scope(viewport, scope: dict | None = None) -> dict:
         mesh=viewport.scene.mesh, selection=viewport.scene.selection,
         groups=viewport.scene.groups, layers=viewport.scene.layers, bim=bim,
         QVector3D=QVector3D, Mesh=Mesh, Group=Group, Vertex=Vertex,
-        Edge=Edge, Face=Face)
+        Edge=Edge, Face=Face, Layer=Layer)
     scope.update(_recipe_helpers(viewport.scene))
     return scope
+
+
+def _check_scene_lists(scene) -> None:
+    """Refuse a recipe that left something foreign in the scene's lists.
+    Asked for «dos láminas», a model wrote ``layers.append('Lámina 1')``:
+    the step went through and every paint, hover and the Layers panel
+    raised «'str' object has no attribute 'name'» until the user undid it.
+    Raising here rolls the step back whole and
+    tells the model what each list takes."""
+    from core.composition import Composicion
+    from core.group import Group
+    from core.layers import Layer
+    for attr, cls, hint in (
+            ("layers", Layer, "Layer('nombre') (una CAPA/etiqueta)"),
+            ("groups", Group, "Group(mesh, name=...)"),
+            ("compositions", Composicion,
+             "sheet('nombre') (una LÁMINA del compositor)")):
+        for item in getattr(scene, attr, None) or ():
+            if not isinstance(item, cls):
+                raise TypeError(
+                    f"scene.{attr} solo admite {cls.__name__}: se añadió "
+                    f"{type(item).__name__} {item!r:.40}. Usa {hint}.")
 
 
 def _recipe_helpers(scene) -> dict:
@@ -352,8 +377,20 @@ def _recipe_helpers(scene) -> dict:
         out.append(_finish(roof_mesh, roof_color, f"{name} · Techo"))
         return out
 
+    def sheet(name=None, paper="A3", landscape=True):
+        """A new sheet of the composer (a page for printing, NOT a layer)
+        with one view frame filling it; the composer and the sheet tabs
+        pick it up on their own."""
+        from core.composition import Composicion
+        comps = scene.compositions
+        c = Composicion(name=name or f"Lámina {len(comps) + 1}",
+                        paper=paper, landscape=landscape)
+        c.frames.append(c.default_frame())
+        comps.append(c)
+        return c
+
     return {"box": box, "revolve": revolve, "extrude": extrude,
-            "prism": prism, "wall": wall, "house": house}
+            "prism": prism, "wall": wall, "house": house, "sheet": sheet}
 
 
 def _tidy_groups(scene) -> None:
@@ -404,6 +441,7 @@ def run_transactional(viewport, code: str, scope: dict) -> dict:
                     scope["_"] = result
                     print(repr(result))
             _tidy_groups(_scene)
+            _check_scene_lists(_scene)
         except Exception:
             traceback.print_exc(file=err_buf)
             raise
@@ -416,10 +454,7 @@ def run_transactional(viewport, code: str, scope: dict) -> dict:
     error = history.last_error
     changed = True
     if error is None:
-        unchanged = (cmd.before == cmd.after
-                     and not cmd.added_groups and not cmd.added_layers
-                     and not cmd.added_views and not cmd.added_dims
-                     and not cmd.added_texts)
+        unchanged = not cmd.changed
         if (unchanged and history.undo_stack
                 and history.undo_stack[-1] is cmd):
             history.undo_stack.pop()
@@ -435,7 +470,7 @@ def run_transactional(viewport, code: str, scope: dict) -> dict:
 # ---- Provider layer (mirrors IngePresupuestos ai_specs) ---------------------
 
 PROVIDERS = ("groq", "anthropic", "openai", "gemini", "openrouter",
-             "deepseek", "ollama")
+             "deepseek", "opencode", "ollama")
 
 #: OpenAI-compatible chat endpoints; Anthropic goes through its native API.
 _OPENAI_BASES = {
@@ -444,6 +479,10 @@ _OPENAI_BASES = {
     "gemini": "https://generativelanguage.googleapis.com/v1beta/openai",
     "openrouter": "https://openrouter.ai/api/v1",
     "deepseek": "https://api.deepseek.com/v1",
+    # OpenCode GO — the flat-rate subscription catalog — is NOT Zen
+    # (pay-per-use): same host, different path. Go also asks each client
+    # for a stable session id (see _session_id) and a real User-Agent.
+    "opencode": "https://opencode.ai/zen/go/v1",
 }
 
 #: Providers ROTATE their catalogs: Groq retired llama-3.3-70b-versatile
@@ -456,6 +495,10 @@ DEFAULT_MODELS = {
     "gemini": "gemini-2.5-flash",
     "openrouter": "anthropic/claude-sonnet-5",
     "deepseek": "deepseek-chat",
+    # Go mixes wire formats per model: GPT ids only answer on
+    # /v1/responses, Claude ids on /messages — Kimi speaks the plain
+    # chat/completions this layer sends.
+    "opencode": "kimi-k2.6",
     # A code model: llama3.2 (3B) wrote wall() for a cube and broke on
     # plain Python in Rafael's review 6 (#461).
     "ollama": "qwen2.5-coder:7b",
@@ -481,8 +524,14 @@ VISION = {"anthropic", "openai", "gemini", "openrouter"}
 #: Model-name tags that mark a vision-capable model on providers whose
 #: DEFAULT model is text-only: Groq serves Llama 4 Scout/Maverick
 #: (multimodal) on its free tier, Ollama runs llava/qwen-vl locally.
+#: The Go-catalog tags (kimi-k3, glm-5.3-flash, step-5, minimax-m3,
+#: mimo-v2, longcat-2.0, omen, hy3/hy4) were probed live against
+#: /zen/go/v1 on 2026-10-20 — e.g. glm-5.3 does NOT take images but
+#: glm-5.3-flash does, so the tags stay that specific on purpose.
 _VISION_TAGS = ("llama-4", "scout", "maverick", "llava", "vision",
-                "-vl", "vl-", "gemma3", "gemma-3", "pixtral")
+                "-vl", "vl-", "gemma3", "gemma-3", "pixtral",
+                "glm-5.3-flash", "kimi-k3", "step-5", "minimax-m3",
+                "mimo-v2", "longcat-2.0", "omen", "hy3", "hy4")
 
 
 def supports_vision(provider: str, model: str) -> bool:
@@ -534,6 +583,8 @@ def detect_provider(api_key: str) -> str:
         return "gemini"
     if api_key.startswith("sk-or-"):
         return "openrouter"
+    if api_key.startswith("oc_sk_"):
+        return "opencode"
     if api_key.startswith("sk-"):
         return "openai"
     return "anthropic"
@@ -553,10 +604,26 @@ def _message_image(m: dict) -> tuple[str | None, str]:
     return shot, mime
 
 
+#: OpenCode Go requires a stable session id in ``x-opencode-session`` on
+#: EVERY request (missing → HTTP 400 MissingSessionID); it routes and
+#: caches prompts by it. One id per app run is stable enough — callers
+#: with a real conversation can pass their own ``session_id``.
+_SESSION_ID: str | None = None
+
+
+def _session_id() -> str:
+    global _SESSION_ID
+    if _SESSION_ID is None:
+        import uuid
+        _SESSION_ID = uuid.uuid4().hex
+    return _SESSION_ID
+
+
 def build_request(provider: str, model: str, api_key: str,
                   system: str, messages: list,
                   ollama_url: str = "http://localhost:11434",
-                  max_tokens: int = 4096):
+                  max_tokens: int = 4096,
+                  session_id: str | None = None):
     """(url, headers, payload-bytes) for one chat turn.
 
     ``messages``: [{"role": "user"/"assistant", "text": str,
@@ -583,7 +650,7 @@ def build_request(provider: str, model: str, api_key: str,
                  "anthropic-version": "2023-06-01"},
                 json.dumps(payload).encode())
 
-    base = (ollama_url.rstrip("/") + "/v1" if provider == "ollama"
+    base = (_local_base(ollama_url) if provider == "ollama"
             else _OPENAI_BASES[provider])
     oai_msgs = [{"role": "system", "content": system}]
     for m in messages:
@@ -600,7 +667,15 @@ def build_request(provider: str, model: str, api_key: str,
                "User-Agent": USER_AGENT}
     if api_key:
         headers["Authorization"] = f"Bearer {api_key}"
-    payload = {"model": model, "max_tokens": max_tokens,
+    if provider == "opencode":
+        headers["x-opencode-session"] = session_id or _session_id()
+    # OpenAI's own API deprecated max_tokens and its newer models reject
+    # it with HTTP 400 («Use 'max_completion_tokens' instead», #517); the
+    # new name works for every OpenAI model. The other OpenAI-compatible
+    # services (Groq, Gemini, OpenRouter, DeepSeek, Ollama) keep the name
+    # they have always accepted.
+    limit = "max_completion_tokens" if provider == "openai" else "max_tokens"
+    payload = {"model": model, limit: max_tokens,
                "messages": oai_msgs}
     return (f"{base}/chat/completions", headers,
             json.dumps(payload).encode())
@@ -669,12 +744,14 @@ def _urlopen(url: str, headers: dict, payload: bytes | None = None,
 def chat(provider: str, model: str, api_key: str, system: str,
          messages: list, ollama_url: str = "http://localhost:11434",
          timeout: float = 180.0, max_tokens: int = 4096,
-         retries: int = 4, on_retry=None) -> str:
+         retries: int = 4, on_retry=None,
+         session_id: str | None = None) -> str:
     """One blocking chat turn. Raises with a readable message on failure —
     callers run this in a worker thread, never on the UI thread. A busy
     provider is retried ``retries`` times (see :func:`_urlopen`)."""
     url, headers, payload = build_request(
-        provider, model, api_key, system, messages, ollama_url, max_tokens)
+        provider, model, api_key, system, messages, ollama_url, max_tokens,
+        session_id)
     return parse_reply(provider, _urlopen(url, headers, payload, timeout,
                                           retries=retries, on_retry=on_retry))
 
@@ -702,12 +779,14 @@ def list_models(provider: str, api_key: str,
         headers = {"User-Agent": USER_AGENT, "x-api-key": api_key,
                    "anthropic-version": "2023-06-01"}
     else:
-        base = (ollama_url.rstrip("/") + "/v1" if provider == "ollama"
+        base = (_local_base(ollama_url) if provider == "ollama"
                 else _OPENAI_BASES[provider])
         url = f"{base}/models"
         headers = {"User-Agent": USER_AGENT}
         if api_key:
             headers["Authorization"] = f"Bearer {api_key}"
+        if provider == "opencode":
+            headers["x-opencode-session"] = _session_id()
     data = json.loads(_urlopen(url, headers, timeout=timeout))
     ids = [str(m.get("id", "")) for m in data.get("data", [])]
     # Gemini's OpenAI-compat endpoint prefixes ids with "models/"; chat
@@ -731,8 +810,49 @@ PROVIDER_INFO = {
                "https://aistudio.google.com/app/apikey"),
     "openrouter": ("OpenRouter", "https://openrouter.ai/keys"),
     "deepseek": ("DeepSeek", "https://platform.deepseek.com/api_keys"),
-    "ollama": ("Local: Ollama / LM Studio", "https://ollama.com/download"),
+    "opencode": ("OpenCode Go", "https://opencode.ai/console"),
+    "ollama": ("Local / OpenAI-compatible (Ollama, LM Studio…)",
+               "https://ollama.com/download"),
 }
+
+
+#: The environment variables each hosted provider's own tools read, first
+#: one wins (#998): a user who keeps ``ANTHROPIC_API_KEY`` in the
+#: environment should not have to paste it again. Google's SDKs accept
+#: both ``GEMINI_API_KEY`` and ``GOOGLE_API_KEY``.
+ENV_KEYS = {
+    "groq": ("GROQ_API_KEY",),
+    "anthropic": ("ANTHROPIC_API_KEY",),
+    "openai": ("OPENAI_API_KEY",),
+    "gemini": ("GEMINI_API_KEY", "GOOGLE_API_KEY"),
+    "openrouter": ("OPENROUTER_API_KEY",),
+    "deepseek": ("DEEPSEEK_API_KEY",),
+    # The variable OpenCode's own client reads for its hosted models.
+    "opencode": ("OPENCODE_API_KEY",),
+}
+
+
+def env_key(provider: str, environ=None) -> tuple[str, str] | None:
+    """``(variable, key)`` for the first of ``provider``'s variables set
+    to something other than blanks, or None. Read only, never saved: the
+    environment stays the user's place for it."""
+    env = os.environ if environ is None else environ
+    for var in ENV_KEYS.get(provider, ()):
+        value = (env.get(var) or "").strip()
+        if value:
+            return var, value
+    return None
+
+
+def _local_base(url: str) -> str:
+    """The API root of the «Local / OpenAI-compatible» provider.
+
+    Ollama and LM Studio are given as ``http://host:port`` and serve under
+    ``/v1``; a hosted OpenAI-compatible service (OpenCode, vLLM, LiteLLM...)
+    is usually given with its version already, ``https://.../v1`` -- that
+    one is taken as it is, not turned into ``/v1/v1`` (#650)."""
+    base = (url or "").strip().rstrip("/")
+    return base if re.search(r"/v\d+[a-z]*$", base) else base + "/v1"
 
 
 def probar_conexion(provider: str, model: str, api_key: str,

@@ -61,10 +61,16 @@ def test_make_unique_keeps_the_subgroups_and_shares_nothing():
                for a, b in zip(parent.children, sibling.children))
 
 
-def test_a_component_without_subgroups_still_bakes_to_a_group():
+def test_a_component_without_subgroups_becomes_a_component_of_its_own():
+    """Still a component, placed where it was, with a definition of its
+    own: the other copy is not touched (#620)."""
     scene = Scene()
     hist = History(scene)
     a = _placed(_quad(), dx=3.0)
-    scene.groups.extend([a, copy_group(a, V(5, 0, 0))])
+    other = copy_group(a, V(5, 0, 0))
+    scene.groups.extend([a, other])
+    before = _points(a)
     hist.execute(MakeUniqueCommand(a))
-    assert a.xform is None and not a.children
+    assert a.is_component() and a.xform is not None and not a.children
+    assert a.mesh is not other.mesh
+    assert _points(a) == before                     # nothing moved
