@@ -3274,5 +3274,13 @@
  "Front color — paints faces in Hidden line and Monochrome": "表面の色 — 隠線と単色モードで面を塗ります",
  "Restore defaults": "既定値に戻す",
  "Puts the settings of this window back to how IngeTrazo comes. Nothing is saved until you press OK. The language, the AI Assistant, the keyboard shortcuts and the units of the open document stay as they are.": "このウィンドウの設定を IngeTrazo の初期状態に戻します。OK を押すまで何も保存されません。言語、AI アシスタント、キーボードショートカット、開いている文書の単位はそのままです。",
- "Distance ({unit}):": "距離（{unit}）："
+ "Distance ({unit}):": "距離（{unit}）：",
+  "Type a length greater than zero to resize": "サイズを変更するには0より大きい長さを入力してください",
+  "Resized: the distance is now {d}": "サイズを変更しました：距離は{d}です",
+  "Do you want to resize the model?": "モデルのサイズを変更しますか？",
+  "Note that components loaded from external files will not be resized.": "外部ファイルから読み込んだコンポーネントのサイズは変更されません。",
+  "Do you want to resize the active component?": "編集中のコンポーネントのサイズを変更しますか？",
+  "Do you want to resize the active group?": "編集中のグループのサイズを変更しますか？",
+  "Resize": "サイズ変更",
+  "Type the new length and Enter to resize.": "新しい長さを入力し、Enterでサイズ変更。"
 }

@@ -3274,5 +3274,13 @@
  "Front color — paints faces in Hidden line and Monochrome": "앞면 색상 — 숨은선 모드와 단색 모드에서 면을 칠합니다",
  "Distance ({unit}):": "거리 ({unit}):",
  "Restore defaults": "기본값 복원",
- "Puts the settings of this window back to how IngeTrazo comes. Nothing is saved until you press OK. The language, the AI Assistant, the keyboard shortcuts and the units of the open document stay as they are.": "이 창의 설정을 IngeTrazo 기본 상태로 되돌립니다. 확인을 누르기 전까지는 아무것도 저장되지 않습니다. 언어, AI 도우미, 단축키, 열린 문서의 단위는 그대로 유지됩니다."
+ "Puts the settings of this window back to how IngeTrazo comes. Nothing is saved until you press OK. The language, the AI Assistant, the keyboard shortcuts and the units of the open document stay as they are.": "이 창의 설정을 IngeTrazo 기본 상태로 되돌립니다. 확인을 누르기 전까지는 아무것도 저장되지 않습니다. 언어, AI 도우미, 단축키, 열린 문서의 단위는 그대로 유지됩니다.",
+  "Type a length greater than zero to resize": "크기를 변경하려면 0보다 큰 길이를 입력하세요",
+  "Resized: the distance is now {d}": "크기 변경 완료: 현재 거리는 {d}입니다",
+  "Do you want to resize the model?": "모델 크기를 변경하시겠습니까?",
+  "Note that components loaded from external files will not be resized.": "외부 파일에서 불러온 구성 요소의 크기는 변경되지 않습니다.",
+  "Do you want to resize the active component?": "활성 구성 요소의 크기를 변경하시겠습니까?",
+  "Do you want to resize the active group?": "활성 그룹의 크기를 변경하시겠습니까?",
+  "Resize": "크기 변경",
+  "Type the new length and Enter to resize.": "새 길이를 입력하고 Enter로 크기를 변경하세요."
 }

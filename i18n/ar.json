@@ -3309,5 +3309,13 @@
   "Locked rows are not deleted: unlock them first": "لا تُحذف الصفوف المقفلة: ألغِ قفلها أولًا",
   "Distance ({unit}):": "المسافة ({unit}):",
   "Restore defaults": "استعادة الإعدادات الافتراضية",
-  "Puts the settings of this window back to how IngeTrazo comes. Nothing is saved until you press OK. The language, the AI Assistant, the keyboard shortcuts and the units of the open document stay as they are.": "يعيد إعدادات هذه النافذة إلى ما يأتي به IngeTrazo. لا يُحفظ شيء حتى تضغط موافق. تبقى اللغة ومساعد الذكاء الاصطناعي واختصارات لوحة المفاتيح ووحدات المستند المفتوح كما هي."
+  "Puts the settings of this window back to how IngeTrazo comes. Nothing is saved until you press OK. The language, the AI Assistant, the keyboard shortcuts and the units of the open document stay as they are.": "يعيد إعدادات هذه النافذة إلى ما يأتي به IngeTrazo. لا يُحفظ شيء حتى تضغط موافق. تبقى اللغة ومساعد الذكاء الاصطناعي واختصارات لوحة المفاتيح ووحدات المستند المفتوح كما هي.",
+  "Type a length greater than zero to resize": "أدخل طولًا أكبر من الصفر لتغيير الحجم",
+  "Resized: the distance is now {d}": "تم تغيير الحجم: المسافة الآن {d}",
+  "Do you want to resize the model?": "هل تريد تغيير حجم النموذج؟",
+  "Note that components loaded from external files will not be resized.": "لاحظ أن المكونات المحمّلة من ملفات خارجية لن يتغير حجمها.",
+  "Do you want to resize the active component?": "هل تريد تغيير حجم المكوّن النشط؟",
+  "Do you want to resize the active group?": "هل تريد تغيير حجم المجموعة النشطة؟",
+  "Resize": "تغيير الحجم",
+  "Type the new length and Enter to resize.": "أدخل الطول الجديد واضغط Enter لتغيير الحجم."
 }

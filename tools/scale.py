@@ -30,7 +30,8 @@ selected (issue #44), and on the drawing axes otherwise — the
 world's at the top level, the open group's inside it. It is kept in that
 frame's coordinates (``_lo``/``_hi``), mapped to the world to draw and pick.
 
-DEFERRED (documented, not built): the Tape Measure whole-model rescale.
+The Tape Measure's rescale — measure, then type the length it should be —
+scales the whole model or the open group instead (core/resize.py).
 """
 from __future__ import annotations
 

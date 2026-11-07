@@ -3289,5 +3289,13 @@
  "Ukrainian translation of the interface.": "Переклад інтерфейсу українською.",
  "Distance ({unit}):": "Відстань ({unit}):",
  "Restore defaults": "Відновити типові",
- "Puts the settings of this window back to how IngeTrazo comes. Nothing is saved until you press OK. The language, the AI Assistant, the keyboard shortcuts and the units of the open document stay as they are.": "Повертає налаштування цього вікна до стандартних налаштувань IngeTrazo. Нічого не зберігається, доки ви не натиснете «Гаразд». Мова, Асистент ШІ, сполучення клавіш і одиниці відкритого документа залишаються без змін."
+ "Puts the settings of this window back to how IngeTrazo comes. Nothing is saved until you press OK. The language, the AI Assistant, the keyboard shortcuts and the units of the open document stay as they are.": "Повертає налаштування цього вікна до стандартних налаштувань IngeTrazo. Нічого не зберігається, доки ви не натиснете «Гаразд». Мова, Асистент ШІ, сполучення клавіш і одиниці відкритого документа залишаються без змін.",
+  "Type a length greater than zero to resize": "Для зміни розміру введіть довжину більшу за нуль",
+  "Resized: the distance is now {d}": "Розмір змінено: відстань тепер {d}",
+  "Do you want to resize the model?": "Змінити розмір моделі?",
+  "Note that components loaded from external files will not be resized.": "Компоненти, завантажені із зовнішніх файлів, збережуть свій розмір.",
+  "Do you want to resize the active component?": "Змінити розмір активного компонента?",
+  "Do you want to resize the active group?": "Змінити розмір активної групи?",
+  "Resize": "Змінити розмір",
+  "Type the new length and Enter to resize.": "Нова довжина та Enter — змінити розмір."
 }

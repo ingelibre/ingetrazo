@@ -3277,5 +3277,13 @@
  "Front color — paints faces in Hidden line and Monochrome": "สีด้านหน้า — ระบายพื้นผิวในโหมดซ่อนเส้นและโหมดสีเดียว",
  "Distance ({unit}):": "ระยะ ({unit}):",
  "Restore defaults": "คืนค่าเริ่มต้น",
- "Puts the settings of this window back to how IngeTrazo comes. Nothing is saved until you press OK. The language, the AI Assistant, the keyboard shortcuts and the units of the open document stay as they are.": "คืนการตั้งค่าในหน้าต่างนี้เป็นค่าที่มากับ IngeTrazo จะไม่มีการบันทึกจนกว่าคุณจะกด ตกลง ภาษา ผู้ช่วย AI ปุ่มลัด และหน่วยของเอกสารที่เปิดอยู่จะคงเดิม"
+ "Puts the settings of this window back to how IngeTrazo comes. Nothing is saved until you press OK. The language, the AI Assistant, the keyboard shortcuts and the units of the open document stay as they are.": "คืนการตั้งค่าในหน้าต่างนี้เป็นค่าที่มากับ IngeTrazo จะไม่มีการบันทึกจนกว่าคุณจะกด ตกลง ภาษา ผู้ช่วย AI ปุ่มลัด และหน่วยของเอกสารที่เปิดอยู่จะคงเดิม",
+  "Type a length greater than zero to resize": "ป้อนความยาวที่มากกว่าศูนย์เพื่อปรับขนาด",
+  "Resized: the distance is now {d}": "ปรับขนาดแล้ว: ระยะทางตอนนี้คือ {d}",
+  "Do you want to resize the model?": "ต้องการปรับขนาดโมเดลหรือไม่?",
+  "Note that components loaded from external files will not be resized.": "ส่วนประกอบที่โหลดจากไฟล์ภายนอกจะไม่ถูกปรับขนาด",
+  "Do you want to resize the active component?": "ต้องการปรับขนาดส่วนประกอบที่กำลังแก้ไขหรือไม่?",
+  "Do you want to resize the active group?": "ต้องการปรับขนาดกลุ่มที่กำลังแก้ไขหรือไม่?",
+  "Resize": "ปรับขนาด",
+  "Type the new length and Enter to resize.": "ป้อนความยาวใหม่แล้วกด Enter เพื่อปรับขนาด"
 }
