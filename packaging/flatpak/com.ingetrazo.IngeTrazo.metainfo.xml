@@ -75,7 +75,7 @@
   <url type="vcs-browser">https://github.com/ingelibre/ingetrazo</url>
   <content_rating type="oars-1.1"/>
   <releases>
-    <release version="0.6.1" date="2026-11-10">
+    <release version="0.6.1" date="2026-11-08">
       <description>
         <p>Up to four views in one tab, scenes as tabs, a notice when a newer
         version is out, PNG with a transparent background, translucent glass

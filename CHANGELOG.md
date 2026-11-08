@@ -6,7 +6,7 @@ follow [SemVer](https://semver.org).
 
 ## [Unreleased]
 
-## [0.6.1] — 2026-11-10
+## [0.6.1] — 2026-11-08
 
 **Vistas en la misma pestaña: una, dos, tres o cuatro, con líneas que se
 arrastran y escenas en su propia fila; aviso cuando sale una versión nueva;
