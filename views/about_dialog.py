@@ -264,6 +264,10 @@ CONTRIBUTORS = [
      "The IngeTrazo Tutorials channel on YouTube, and nine extensions: "
      "MultiView, Phasing Animator, Kitchen Maker, Taper and more.",
      "https://github.com/aashishzharbade-arch"),
+    ("Phillip Edwards (Eddy)",
+     "Twenty-three extensions in the catalogue: period doors and windows, "
+     "roof tiles, brick and block, gutters, fences, Loft, Wrap and more.",
+     "https://github.com/eddy-99"),
     ("Dugan Caswell",
      "Levels: heights in the document's units.",
      "https://github.com/consumr"),
@@ -513,6 +517,9 @@ class AboutDialog(QDialog):
         head.setContentsMargins(0, 8, 0, 0)
         self.credits = _Credits(CONTRIBUTORS, self)
         col.addWidget(self.credits)
+        para("<small><a href='https://github.com/ingelibre/ingetrazo-extensions'>"
+             f"{tr('Thanks as well to all the authors of the extensions catalogue')}"
+             "</a>.</small>")
         para(f"<small>{tr('And thanks to everyone who tries IngeTrazo and reports what they find.')}</small>")
         para(f"<small>{tr('Licensed under GPL-3.0-or-later.')} · "
              "<a href='https://github.com/ingelibre/ingetrazo'>"
