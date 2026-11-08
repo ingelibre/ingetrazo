@@ -147,3 +147,24 @@ def test_planned_vertices_read_like_the_vertex_list(binary, tmp_path):
         got = [pv[i].position.toTuple() for i in range(len(pv))]
         assert type(m) is M.DeferredMesh
         assert got == [v.position.toTuple() for v in m.vertices]
+
+
+@pytest.mark.parametrize("engine", ["numpy", "rust"])
+@pytest.mark.parametrize("seed", range(12))
+def test_near_coincident_cloud_keeps_the_plan_vertex_order(monkeypatch, engine, seed):
+    mod = _native.available()
+    if engine == "rust" and mod is None:
+        pytest.skip("native module not built")
+    monkeypatch.setattr(_native, "native", mod if engine == "rust" else None)
+    rng = np.random.default_rng(seed)
+    points = rng.integers(-4, 5, size=(300, 3)) * 0.1
+    points += rng.choice([0, 4.9e-5, 5.1e-5, 9.9e-5, 1.01e-4], size=points.shape)
+    line = np.zeros((60, 3))
+    line[:, 1] = np.arange(60) * 4.9e-5
+    points = np.concatenate([points, line, points[::3]])
+    rng.shuffle(points)
+    mesh = M.Mesh()
+    vertices, ids = mesh.bulk_weld(points)
+    pos, planned_ids = lazy_mesh.weld(points)
+    assert pos.tolist() == [list(v.position.toTuple()) for v in mesh.vertices]
+    assert [mesh.vertices.index(vertices[i]) for i in ids] == planned_ids.tolist()
