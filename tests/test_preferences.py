@@ -44,9 +44,13 @@ class _Win(QWidget):
 
         class _VP:
             edit_rest_mode = "fade"
+            edit_rest_fade = 0.75
 
             def set_edit_rest_mode(self, mode):
                 self.edit_rest_mode = mode
+
+            def set_edit_rest_fade(self, strength):
+                self.edit_rest_fade = strength
 
         self.viewport = _VP()
         self._rest_actions = {}
@@ -95,19 +99,25 @@ def test_cancel_touches_nothing(settings_file):
     win = _Win()
     dlg = PreferencesDialog(win)
     dlg._obj_unit.setCurrentIndex(dlg._obj_unit.findData("ft"))
+    dlg._rest_fade.setValue(21)
     dlg.reject()
     st = _fresh(settings_file)
     assert st.value("import/obj_unit") is None      # never written
     assert win.viewport.edit_rest_mode == "fade"
+    assert win.viewport.edit_rest_fade == 0.75
 
 
 def test_rest_mode_applies_through_the_viewport(settings_file):
     win = _Win()
     dlg = PreferencesDialog(win)
     assert dlg._rest.currentData() == "fade"        # mirrors the viewport
+    assert dlg._rest_fade.value() == 75
+    dlg._rest_fade.setValue(42)
     dlg._rest.setCurrentIndex(dlg._rest.findData("hide"))
+    assert not dlg._rest_fade.isEnabled()
     dlg.accept()
     assert win.viewport.edit_rest_mode == "hide"
+    assert win.viewport.edit_rest_fade == 0.42
 
 
 def test_dialog_reloads_saved_values(settings_file):

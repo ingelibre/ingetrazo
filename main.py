@@ -38,7 +38,7 @@ elif sys.stderr is not None:
 # if the ghost bothers you: run with QT_QPA_PLATFORM=xcb. Re-test the ghost
 # when Mutter/Qt update; no app-side workaround cured it (see CLAUDE.md).
 
-from PySide6.QtCore import (QEvent, QLibraryInfo, QLocale, QSettings, Qt,
+from PySide6.QtCore import (QEvent, QLibraryInfo, QSettings, Qt,
                             QTranslator)
 from PySide6.QtGui import QSurfaceFormat
 from PySide6.QtWidgets import QApplication
@@ -47,27 +47,26 @@ from core import i18n
 
 
 def _init_language() -> None:
-    """Load the saved UI language, or default to the system locale.
+    """Load the saved UI language, or follow the system's.
 
-    Reads the persisted choice from :class:`QSettings`; on first run, falls back
-    to Spanish when the OS locale is Spanish, Brazilian Portuguese when it is
-    Portuguese, Korean when it is Korean, English otherwise.
+    Reads the persisted choice from :class:`QSettings`; with none yet, or
+    "Same as the system" chosen (#818), the OS display language picks the
+    closest catalog (see :func:`core.i18n.language_for_locales`).
     """
-    saved = QSettings().value("language")
-    if not saved:
-        system = QLocale.system()
-        if system.language() == QLocale.Spanish:
-            saved = "es"
-        elif system.language() == QLocale.Portuguese:
-            # The Brazilian Portuguese catalogue (PR #54, @dafrobozao)
-            # serves every Portuguese locale until a pt-PT one exists.
-            saved = "pt-BR"
-        elif system.language() == QLocale.Korean:
-            saved = "ko"
-        else:
-            saved = "en"
-    i18n.set_language(str(saved))
-    _install_qt_translator(str(saved))
+    lang = i18n.resolve_language(QSettings().value("language"))
+    i18n.set_language(lang)
+    _install_qt_translator(lang)
+    # Arabic (#1067) and the other right-to-left languages mirror the
+    # interface. Qt would do it from its own catalogue's QT_LAYOUT_DIRECTION
+    # entry, which the buttons-only translator leaves out on purpose.
+    from views.rtl import apply_language_direction
+    app = QApplication.instance()
+    if app is not None:
+        apply_language_direction(app, lang)
+        # Lao (#850) on Windows: a font that holds the script, so its marks
+        # compose with their consonants.
+        from views.script_fonts import apply_script_font
+        apply_script_font(app, lang)
 
 
 class _ButtonsOnlyTranslator(QTranslator):
@@ -189,6 +188,21 @@ def _open_document_in(window, doc: "Path") -> None:
     if hasattr(window, "load_extensions"):
         window.load_extensions()
     ext = doc.suffix.lower()
+    if hasattr(window, "documents") and (
+            ext in (".igz", ".skp", ".dae", ".dxf", ".dwg")
+            or ext in getattr(window, "file_openers", {})):
+        # Projects in tabs (#1066): the document comes in a tab of its own
+        # (or its tab comes to the front), so nothing is discarded and
+        # nothing needs asking. An .skp after the first paint, as below (a
+        # big one parses for seconds); the rest at once — a cold start
+        # queues the units question right after this call, and it must not
+        # come up in the middle of the load.
+        if ext == ".skp":
+            from PySide6.QtCore import QTimer
+            QTimer.singleShot(0, lambda: window.open_path(doc))
+        else:
+            window.open_path(doc)
+        return
     if ext == ".igz" or ext in getattr(window, "file_openers", {}):
         # A document REPLACES the drawing this window holds. File ▸ Open
         # and Open Recent ask about unsaved changes before they call
@@ -652,6 +666,7 @@ def main() -> int:
         # came up in the middle of it, and the document stayed frozen at
         # 5 % behind it, the view blank, until it was answered.
         QTimer.singleShot(0, window.offer_units_at_start)
+        QTimer.singleShot(4000, window.check_updates_quietly)
 
     QTimer.singleShot(0, _after_first_frame)
     _offer_appimage_integration(window)
@@ -708,7 +723,31 @@ def _exit_now(code) -> None:
             stream.flush()
         except Exception:
             pass
-    os._exit(code if isinstance(code, int) else 0)
+    status = code if isinstance(code, int) else 0
+    if sys.platform == "win32":
+        _terminate_windows_process(status)
+    os._exit(status)
+
+
+def _terminate_windows_process(status: int) -> None:
+    """End the process without running the DLLs' exit code. On Windows
+    os._exit still unloads them, and the destructor of shiboken's binding
+    manager can then crash (0xC0000005) walking wrappers Qt has already
+    deleted. It happens after everything is saved, but the system logs a
+    crash. Returns only if the call fails, and the caller then exits the
+    usual way."""
+    import ctypes
+    try:
+        kernel32 = ctypes.WinDLL("kernel32")
+        kernel32.GetCurrentProcess.argtypes = []
+        kernel32.GetCurrentProcess.restype = ctypes.c_void_p
+        kernel32.TerminateProcess.argtypes = [ctypes.c_void_p, ctypes.c_uint]
+        kernel32.TerminateProcess.restype = ctypes.c_int
+        # A negative status keeps its 32 bits, as with os._exit.
+        kernel32.TerminateProcess(
+            kernel32.GetCurrentProcess(), status & 0xFFFFFFFF)
+    except (OSError, AttributeError, ValueError):
+        pass
 
 
 if __name__ == "__main__":

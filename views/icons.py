@@ -946,6 +946,35 @@ def _zoom_window(p, ink):
     _magnifier(p, ink, 21, 22, 6.5)              # magnifier inside it
 
 
+def _four_views(p, ink):
+    # Views at once: four panes of a window, the one where the model is
+    # seen in perspective filled with the accent.
+    p.save()
+    p.setPen(_rpen(ink, 3.0))
+    a, gap, side = 8.0, 4.0, 14.0
+    for row in range(2):
+        for col in range(2):
+            r = QRectF(a + col * (side + gap), a + row * (side + gap), side, side)
+            if (row, col) == (0, 1):
+                c = QColor(_accent())
+                c.setAlpha(150)
+                p.setBrush(c)
+            else:
+                p.setBrush(Qt.NoBrush)
+            p.drawRoundedRect(r, 2.0, 2.0)
+    p.restore()
+
+
+def _close(p, ink):
+    # The cross of a project tab's close button: round, centred, filling
+    # most of its square (a small one read as a speck at tab size).
+    p.save()
+    p.setPen(_rpen(ink, 4.6))
+    p.drawLine(QPointF(10, 10), QPointF(38, 38))
+    p.drawLine(QPointF(38, 10), QPointF(10, 38))
+    p.restore()
+
+
 def _zoom_extents(p, ink):
     # Zoom Extents (#112): the four corners of the view as accent brackets
     # and a magnifier in the middle — everything brought inside the frame.
@@ -1608,6 +1637,18 @@ def _layers_collapse(p, ink):
     _fold_arrows(p, ink, outward=False)
 
 
+def _layers_rename(p, ink):
+    """The layers' own pencil, alone and centred: rename. Drawn from the
+    same glyph as the Layers list's active mark, so one pencil means one
+    thing across the tray."""
+    p.save()
+    p.translate(24, 24)
+    p.scale(1.55, 1.55)
+    p.translate(-35.25, -33.75)          # the glyph's own centre
+    pencil_glyph(p)
+    p.restore()
+
+
 def _layers_templates(p, ink):
     # A sheet with a folded corner holding a list of coloured layers: a
     # layer set kept to be used again.
@@ -1623,6 +1664,21 @@ def _layers_templates(p, ink):
                       (35, QColor(90, 160, 90))):
         p.setBrush(_accent() if colour is None else colour)
         p.drawRoundedRect(QRectF(14, y, 20, 5), 1.5, 1.5)
+    p.restore()
+
+
+def _layers_order(p, ink):
+    """The sheets, as every layer button draws them, beside a down arrow:
+    the rows put in the layers' order."""
+    p.save()
+    _layer_sheets(p, ink, x=4, y=8, s=0.68, fill=True, count=3)
+    pen = QPen(ink, 3.0)
+    pen.setCapStyle(Qt.RoundCap)
+    pen.setJoinStyle(Qt.RoundJoin)
+    p.setPen(pen)
+    p.drawLine(QPointF(36, 8), QPointF(36, 34))
+    p.drawPolyline(QPolygonF([QPointF(30, 28), QPointF(36, 35),
+                              QPointF(42, 28)]))
     p.restore()
 
 
@@ -1799,6 +1855,16 @@ def _side_collapse(p, ink):
     p.setPen(pen)
     p.drawLine(QPointF(19, 13), QPointF(30, 24))
     p.drawLine(QPointF(30, 24), QPointF(19, 35))
+    p.restore()
+
+
+def _plus(p, ink):
+    # «+» to add: drawn, not a font's glyph (which sits off centre by the
+    # font's own metrics), so it is centred to the pixel.
+    p.save()
+    p.setPen(_rpen(ink, 3.6))
+    p.drawLine(QPointF(24, 13), QPointF(24, 35))
+    p.drawLine(QPointF(13, 24), QPointF(35, 24))
     p.restore()
 
 
@@ -2096,7 +2162,7 @@ def _first_person(p, ink):
 _DRAW = {
     **_SOLID_ICONS,
     "select": _select, "line": _line, "freehand": _freehand,
-    "side_collapse": _side_collapse,
+    "side_collapse": _side_collapse, "plus": _plus,
     "overflow_h": _overflow_h, "overflow_v": _overflow_v,
     "side_expand": _side_expand,
     "arr_left": _arr_left, "arr_right": _arr_right, "arr_top": _arr_top,
@@ -2139,12 +2205,15 @@ _DRAW = {
     "layers_filter": _layers_filter, "layers_filter_on": _layers_filter_on,
     "layers_colour": _layers_colour,
     "layers_expand": _layers_expand, "layers_collapse": _layers_collapse,
+    "layers_rename": _layers_rename,
+    "layers_order": _layers_order,
     "layers_templates": _layers_templates,
     "section_planes": _section_planes, "section_cuts": _section_cuts,
     "section_fill": _section_fill,
     "zoom": _zoom, "zoom_window": _zoom_window,
     "position_camera": _position_camera, "walk": _walk,
     "look_around": _look_around, "first_person": _first_person,
+    "four_views": _four_views, "close": _close,
     "zoom_extents": _zoom_extents, "zoom_selection": _zoom_selection,
     "view_iso": _view_iso,
     "proj_parallel": _proj_parallel, "proj_perspective": _proj_perspective,

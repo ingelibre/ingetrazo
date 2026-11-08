@@ -6,11 +6,14 @@
 // "On this surface" is measured against the plane through the centre (its
 // depth slope read off the neighbours): a fixed depth window rejected every
 // neighbour of a floor seen at a grazing angle and left its noise in.
+// It runs twice: taps a texel apart (the tile), then two apart (u_spread),
+// so the gradient of a corner is spread wide and smooth.
 uniform sampler2D u_ao;
 uniform sampler2D u_depth;
 uniform vec2 u_texel;           // 1 / occlusion texture size
 uniform mat4 u_inv_proj;
 uniform float u_radius;
+uniform float u_spread;         // texels between taps: 1, then 2
 
 in vec2 v_uv;
 out vec4 fragColor;
@@ -31,24 +34,29 @@ float slope(float z0, float zm, float zp) {
 }
 
 void main() {
-    float z0 = view_z(v_uv);
-    float gx = slope(z0, view_z(v_uv - vec2(u_texel.x, 0.0)),
-                     view_z(v_uv + vec2(u_texel.x, 0.0)));
-    float gy = slope(z0, view_z(v_uv - vec2(0.0, u_texel.y)),
-                     view_z(v_uv + vec2(0.0, u_texel.y)));
+    // Same alignment as ao.frag: this pass is half size too, so its centre
+    // sits on a full-size depth texel corner (u_texel here is the HALF-size
+    // one, hence a quarter). Without it the depth test that keeps the blur
+    // from crossing a silhouette reads the wrong side of the step.
+    vec2 uv0 = v_uv + u_texel * 0.25;
+    float z0 = view_z(uv0);
+    float gx = slope(z0, view_z(uv0 - vec2(u_texel.x, 0.0)),
+                     view_z(uv0 + vec2(u_texel.x, 0.0)));
+    float gy = slope(z0, view_z(uv0 - vec2(0.0, u_texel.y)),
+                     view_z(uv0 + vec2(0.0, u_texel.y)));
     float tol = max(u_radius * 0.2, abs(z0) * 0.004);
     float sum = 0.0;
     float wsum = 0.0;
     for (int y = -2; y < 2; ++y) {
         for (int x = -2; x < 2; ++x) {
             vec2 o = vec2(float(x), float(y)) + 0.5;
-            vec2 uv = v_uv + o * u_texel;
-            float expect = z0 + gx * o.x + gy * o.y;
+            vec2 uv = uv0 + o * u_texel * u_spread;
+            float expect = z0 + (gx * o.x + gy * o.y) * u_spread;
             float w = abs(view_z(uv) - expect) < tol ? 1.0 : 0.0;
             sum += texture(u_ao, uv).r * w;
             wsum += w;
         }
     }
-    float ao = wsum > 0.0 ? sum / wsum : texture(u_ao, v_uv).r;
+    float ao = wsum > 0.0 ? sum / wsum : texture(u_ao, uv0).r;
     fragColor = vec4(vec3(ao), 1.0);
 }

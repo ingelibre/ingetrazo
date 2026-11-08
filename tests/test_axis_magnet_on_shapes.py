@@ -39,18 +39,15 @@ def test_free_placements_declare_the_line_tools_magnet():
         assert _magnet(cls()) == (3.0, 9.0), cls.__name__
 
 
-def test_shapes_that_live_in_a_plane_keep_only_the_world_detector():
-    """A circle, a polygon, an arc and a rotated rectangle are laid out in
-    ONE plane, and half of the magnet exists for the axes that plane CANNOT
-    hold: over an axis-aligned face the screen detector's own axis is the
-    plane's normal, and following it takes the rim off the face while the
-    radius is measured IN it — the circle came out «a metade ou menos
-    ainda» (@pacaeiro, #545). They magnetise along the axes their plane
-    holds, which is the world detector's business; see
-    ``test_a_planar_shape_is_not_magnetised_off_its_plane``."""
+def test_shapes_that_live_in_a_plane_keep_both_detectors():
+    """A circle, a polygon, an arc and a rotated rectangle carry BOTH halves
+    of the magnet, like the Line. The screen detector's answer is confined
+    to the axes the plane HOLDS by the snap engine (``axis_in_plane``), so
+    it widens the capture to 9 px without ever taking the rim off the
+    plane — see ``test_a_planar_shape_is_not_magnetised_off_its_plane``."""
     for cls in (ArcTool, ThreePointArcTool, CenterArcTool, CircleTool,
                 PolygonTool, RotatedRectangleTool):
-        assert _magnet(cls()) == (3.0, None), cls.__name__
+        assert _magnet(cls()) == (3.0, 9.0), cls.__name__
 
 
 def test_freehand_and_rectangle_stay_out():
@@ -63,12 +60,12 @@ def test_freehand_and_rectangle_stay_out():
 def test_the_magnet_is_off_for_clicks_that_are_not_a_direction_from_the_start():
     arc = ArcTool()
     arc.start_point = V(0, 0)
-    assert _magnet(arc) == (3.0, None)                # the chord end
+    assert _magnet(arc) == (3.0, 9.0)                 # the chord end
     arc.end_point = V(2, 0)
     assert _magnet(arc) == (None, None)               # the bulge
     rr = RotatedRectangleTool()
     rr.start_point = V(0, 0)
-    assert _magnet(rr) == (3.0, None)                 # the base edge
+    assert _magnet(rr) == (3.0, 9.0)                  # the base edge
     rr.base_point = V(2, 0)
     assert _magnet(rr) == (None, None)                # the height
     dim = DimensionTool()
@@ -125,6 +122,39 @@ def test_a_planar_shape_is_not_magnetised_off_its_plane():
 
     livre = compute_snap(**call, axis_in_plane=False)
     assert livre.axis == "z", "the magnet is expected to answer the normal"
+    assert abs(livre.point.z() - 2.0) > 0.5, "and to leave the plane"
+
+    preso = compute_snap(**call, axis_in_plane=True)
+    assert preso.axis is None
+    assert QVector3D(preso.point) == cursor
+
+
+def test_a_planar_shapes_screen_detector_also_stays_in_its_plane():
+    """#962: the planar shapes now keep the SCREEN detector too, so the
+    magnet grabs at 9 px instead of only a 3° world cone — but still only
+    along the axes the plane holds. Over a horizontal plane the blue axis
+    is the plane's own normal; the screen detector would answer it, and the
+    ``axis_in_plane`` guard refuses it, exactly as it does for the world
+    detector."""
+    normal = V(0.0, 0.0, 1.0)
+    start = V(0.0, 0.0, 2.0)
+    cursor = V(0.05, 0.0, 1.0)                  # on the blue line, ~2.9° off +Z
+
+    def w2p(p):
+        # A camera looking down -Y: X right, Z up, Y a dot (no screen span).
+        return (p.x() * 100.0, -p.z() * 100.0)
+
+    call = dict(
+        candidate_world=cursor, candidate_pixel=w2p(cursor),
+        scene=SimpleNamespace(edges=[]), world_to_pixel=w2p,
+        threshold_px=9.0, edge_threshold_px=14.0, start_point=start,
+        project_onto_line=lambda s, d: s + d * QVector3D.dotProduct(
+            cursor - s, d),
+        magnetic_axis_deg=3.0, screen_axis_px=9.0,
+        work_plane_normal=normal)
+
+    livre = compute_snap(**call, axis_in_plane=False)
+    assert livre.axis == "z", "the screen detector is expected to answer the normal"
     assert abs(livre.point.z() - 2.0) > 0.5, "and to leave the plane"
 
     preso = compute_snap(**call, axis_in_plane=True)

@@ -48,6 +48,10 @@ def _ink() -> QColor:
 
 # ---- Icons -------------------------------------------------------------------
 
+#: The isolate marks drawn so far, by state and ink (see isolate_icon).
+_ISOLATE_ICONS: dict = {}
+
+
 def toolbar_icon(key: str) -> QIcon:
     """The Layers toolbar's icons: drawn with the other tool icons
     (views.icons, keys ``layers_*``), in the same ink and accent."""
@@ -56,8 +60,14 @@ def toolbar_icon(key: str) -> QIcon:
 
 
 def isolate_icon(on: bool) -> QIcon:
-    """A row's isolate mark: a target, filled on the layer shown alone."""
+    """A row's isolate mark: a target, filled on the layer shown alone.
+    Drawn once per state and theme: the Browser paints one per row, and a
+    document with ten thousand rows would otherwise draw ten thousand."""
     ink = _ink()
+    key = (bool(on), ink.rgba())
+    icon = _ISOLATE_ICONS.get(key)
+    if icon is not None:
+        return icon
     pm = QPixmap(18, 18)
     pm.fill(Qt.transparent)
     p = QPainter(pm)
@@ -77,7 +87,9 @@ def isolate_icon(on: bool) -> QIcon:
         p.drawEllipse(QRectF(2, 2, 14, 14))
         p.drawEllipse(QRectF(6.5, 6.5, 5, 5))
     p.end()
-    return QIcon(pm)
+    icon = QIcon(pm)
+    _ISOLATE_ICONS[key] = icon
+    return icon
 
 
 # ---- The drop-down -----------------------------------------------------------
@@ -237,7 +249,10 @@ class LayerCombo(QComboBox):
         self._window.statusBar().showMessage(
             tr("{n} entities moved to '{layer}'", n=len(targets), layer=name),
             2500)
-        self.refresh()
+        # The list is still closing: rebuilding it here (clear, then its
+        # rows again) while Qt is inside its own activation crashed the app.
+        from PySide6.QtCore import QTimer
+        QTimer.singleShot(0, self.refresh)
 
     def eventFilter(self, obj, event) -> bool:
         """A click on a row's eye, padlock or isolate mark acts on that
@@ -424,4 +439,14 @@ class LayersToolbar:
             2500)
 
     def on_scene_changed(self) -> None:
-        self.combo.refresh()
+        """The window's per-change call: the list follows the document,
+        rebuilt once the event loop is back — ``sceneVersionChanged`` also
+        arrives from inside ``paintGL`` and from the list's own activation,
+        where clearing it crashed the app."""
+        timer = getattr(self, "_refresh_timer", None)
+        if timer is None:
+            from PySide6.QtCore import QTimer
+            timer = self._refresh_timer = QTimer(self.combo)
+            timer.setSingleShot(True)
+            timer.timeout.connect(self.combo.refresh)
+        timer.start(0)

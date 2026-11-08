@@ -70,6 +70,11 @@ in vec3 v_local;
 // (Viewport._shade_factor), unquantised so neighbouring pixels agree.
 uniform int u_reshade;
 uniform vec3 u_light_fixed;
+// 1 while drawing the default backs of the shaded modes: the back colour
+// takes the same matte light as the fronts' baked shade, so the inside of
+// a sphere reads round instead of a flat disc (issue #873). Per pixel,
+// from the face's plane — the back pass carries positions only.
+uniform int u_back_shade;
 
 out vec4 fragColor;
 
@@ -205,6 +210,10 @@ void main() {
         // path), where it is honest "you are looking at the inside" feedback.
         vec4 front = (u_use_vcolor == 1) ? vec4(v_color, u_opacity) : u_color;
         c = (gl_FrontFacing || u_use_vcolor == 1) ? front : u_back_color;
+        if (u_back_shade == 1 && !gl_FrontFacing && u_use_vcolor == 0) {
+            float lb = length(n_world);
+            if (lb > 1e-20) c.rgb *= matte(n_world / lb);
+        }
     }
     if (u_reshade == 1 && (u_use_texture == 1 || u_use_vcolor == 1)) {
         float ll = length(n_local);
