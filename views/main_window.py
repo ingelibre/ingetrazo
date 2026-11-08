@@ -1899,12 +1899,15 @@ class MainWindow(QMainWindow):
         units_action.triggered.connect(self._on_units)
         window_menu.addAction(units_action)
         self._act_units = units_action
+        # Ctrl+, (Control + comma): the usual key for Preferences elsewhere.
         prefs_action = QAction(tr("Preferences…"), self)
+        prefs_action.setShortcut(QKeySequence("Ctrl+,"))
         prefs_action.setStatusTip(tr(
             "Change the units, auto-save, icons and the rest of the "
             "settings."))
         prefs_action.triggered.connect(self._on_preferences)
         window_menu.addAction(prefs_action)
+        self._act_preferences = prefs_action
         self._build_language_menu(window_menu)
 
         # Blender's F3 / a command Search: one box that runs any command
