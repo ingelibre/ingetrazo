@@ -152,7 +152,16 @@ def face_net_area(f) -> float:
 def face_set_volume(faces):
     """Volume enclosed by ``faces``, or ``None`` when the set is not
     watertight by itself. Signed tetrahedron sum over the set's triangles;
-    closure = every edge of the set borders exactly two faces of the set."""
+    closure = every edge of the set borders exactly two faces of the set.
+
+    The tetrahedra are measured from the set's own first vertex and
+    accumulated in Python floats (double precision). Summing from the
+    world origin in ``QVector3D`` (single precision) instead makes the
+    terms cancel out for geometry far from the origin — a column that
+    reads exactly at the origin is already wrong by percent at 300 m
+    and meaningless at kilometres (#1221). For a closed set the sum is
+    the same from any reference point, so the set's own vertex costs
+    nothing and keeps every term the size of the set itself."""
     faces = list(faces)
     if not faces:
         return None
@@ -167,10 +176,19 @@ def face_set_volume(faces):
     if any(c != 2 for c in counts.values()):
         return None
     total = 0.0
+    ref = None
     for f in faces:
         for t0, t1, t2 in f.triangulate():
-            total += QVector3D.dotProduct(
-                t0, QVector3D.crossProduct(t1, t2)) / 6.0
+            if ref is None:
+                ref = (t0.x(), t0.y(), t0.z())
+            ax, ay, az = t0.x() - ref[0], t0.y() - ref[1], t0.z() - ref[2]
+            bx, by, bz = t1.x() - ref[0], t1.y() - ref[1], t1.z() - ref[2]
+            cx, cy, cz = t2.x() - ref[0], t2.y() - ref[1], t2.z() - ref[2]
+            total += (
+                ax * (by * cz - bz * cy)
+                - ay * (bx * cz - bz * cx)
+                + az * (bx * cy - by * cx)
+            ) / 6.0
     return abs(total)
 
 
