@@ -2,9 +2,9 @@
 # Copyright (C) 2026 Marco Sumari Tellez and IngeTrazo contributors.
 """The units to work in, asked once when IngeTrazo starts.
 
-Three ready configurations — metres (m, m², m³, degrees), millimetres and
-imperial feet-and-inches — or Custom…, which takes the user to the units
-panel (Preferences ▸ Units) to pick each one; so the first thing drawn is
+Four ready configurations — metres (m, m², m³, degrees), centimetres,
+millimetres and imperial feet-and-inches — or Custom…, which takes the
+user to the units panel (Preferences ▸ Units) to pick each one; so the first thing drawn is
 already in the right unit. The choice applies to the new document and to every new one
 after it. «Don't show this at startup» turns the question off; Preferences
 ▸ Units turns it back on, and Ctrl+U opens the full panel any time.
@@ -22,11 +22,12 @@ from core.i18n import tr
 #: QSettings key: "0" once the user asked not to see the dialog again.
 ASK_KEY = "units/ask_at_start"
 
-#: The three configurations, in the order shown: (profile, title, what
+#: The four configurations, in the order shown: (profile, title, what
 #: it sets). Everything else follows the length (areas in its square,
 #: volumes in its cube) and angles are degrees.
 CHOICES = (
     ("metric", "Metres", "m · m² · m³ · °"),
+    ("centimetric", "Centimetres", "cm · cm² · cm³ · °"),
     ("millimetric", "Millimetres", "mm · mm² · cm³ · °"),
     ("imperial", "Imperial (feet and inches)", "ft-in, 1/16\" · ft² · ft³ · °"),
 )
@@ -154,7 +155,7 @@ def open_units_panel(window) -> dict | None:
         return None
     if untouched:
         # Choosing the units of an empty new document is not an edit:
-        # nothing to save yet, as with the three ready choices.
+        # nothing to save yet, as with the ready choices.
         window._saved_version = scene.version
         update_title = getattr(window, "_update_title", None)
         if callable(update_title):
