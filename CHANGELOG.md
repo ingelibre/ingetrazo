@@ -26,7 +26,7 @@ fiables, y decenas de arreglos de importación, pintura y grupos.**
 - **Escenas como pestañas** (#1127): una fila de pestañas bajo el visor, que
   solo aparece si el proyecto tiene escenas. Se crean, renombran, reordenan y
   eliminan desde la fila o desde el panel; crear una es un paso de Deshacer.
-  Alt+T oculta la fila.
+  Alt+E oculta la fila.
 - **Área vacía** (#1127): al cerrar la última pestaña queda un área vacía con
   un «+» que abre un documento nuevo.
 - **Aviso de versión nueva**: una vez al día, al abrir, IngeTrazo pregunta a
