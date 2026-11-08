@@ -549,6 +549,22 @@ def visible_placements(scene, group):
         yield from walk(group, m, bool(group.hidden), forced, None)
 
 
+def iter_painted_placements(group, base=None, paint=None):
+    """:func:`iter_placements` with the paint each placement's default faces
+    show: ``(group, world_matrix, paint)``. A placement with no paint of its
+    own wears the nearest painted container above it, at any depth — the
+    .skp rule the import already follows (#1101: a plain piece two levels
+    down showed the top-level object's paint, or none). ``paint`` is what
+    ``group`` itself sits in."""
+    m = getattr(group, "xform", None)
+    if base is not None:
+        m = base if m is None else base * m
+    paint = getattr(group, "material", None) or paint
+    yield group, m, paint
+    for child in getattr(group, "children", None) or ():
+        yield from iter_painted_placements(child, m, paint)
+
+
 def _copy_mesh(mesh) -> Mesh:
     from PySide6.QtGui import QMatrix4x4
     return transformed_mesh(mesh, QMatrix4x4())
