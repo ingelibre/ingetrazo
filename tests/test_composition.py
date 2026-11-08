@@ -250,7 +250,7 @@ class TestFieldNames:
         from core.composition import expand_fields, set_field_context
         c = Composicion(name="A-01")
         c.cajetin = c.default_cajetin()
-        c.cajetin.proyecto = "Plaza"
+        c.cajetin.set_field("PROYECTO", "Plaza")
         set_field_context(comp=c, index=1, total=3)
         try:
             assert expand_fields("{proyecto} {project} {Projekt}") == \

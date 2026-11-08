@@ -29,3 +29,20 @@ def limit() -> bool:
         return bool(libc.mallopt(M_ARENA_MAX, ARENAS))
     except (OSError, AttributeError):
         return False                    # not glibc (musl…): leave it
+
+
+def trim() -> bool:
+    """Hand the heap's free pages back to the system (glibc malloc_trim).
+
+    Closing a big project frees gigabytes, but glibc keeps them: the
+    system monitor saw the SPR's tab close drop only ~1 GB of ~5.8 GB,
+    and a trim right after took it to ~1 GB in all. True when it ran
+    (Linux with glibc); elsewhere nothing happens."""
+    if not sys.platform.startswith("linux"):
+        return False
+    try:
+        import ctypes
+        ctypes.CDLL("libc.so.6").malloc_trim(0)
+        return True
+    except (OSError, AttributeError):
+        return False                    # not glibc (musl…): leave it

@@ -67,3 +67,22 @@ def test_the_pointer_stops_the_roll_and_the_wheel_scrolls_it():
     QApplication.sendEvent(roll, QEvent(QEvent.Leave))
     assert roll.running
     dlg.close()
+
+
+def test_every_credit_line_is_translated():
+    """A new line in CONTRIBUTORS needs its translations, or the About box
+    shows it in English whatever the interface language (#1271)."""
+    import json
+    from pathlib import Path
+    root = Path(__file__).resolve().parent.parent / "i18n"
+    lines = [what for _, what, _ in CONTRIBUTORS]
+    lines.append("Thanks as well to all the authors of the extensions catalogue")
+    missing = {}
+    for path in sorted(root.glob("*.json")):
+        if path.stem == "en":
+            continue
+        catalog = json.loads(path.read_text(encoding="utf-8"))
+        gaps = [line[:40] for line in lines if not catalog.get(line)]
+        if gaps:
+            missing[path.stem] = gaps
+    assert not missing, missing

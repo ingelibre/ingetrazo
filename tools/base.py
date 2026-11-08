@@ -45,10 +45,10 @@ class AxisMagnet:
     lands ON the axis instead of merely lighting the cue, and the axis the
     work plane cannot hold is found in pixels. Alt still switches it off.
 
-    A shape that lives in ONE plane (``PlaneLock``) ever only gets the
-    first of the two. The screen detector exists for the axes the plane
-    CANNOT hold, so an inference along one of them takes the point off the
-    drawing plane: see :meth:`magnet_off_plane`.
+    A shape that lives in ONE plane (``PlaneLock``) still gets both, but
+    the screen detector's answer is confined to the axes the plane HOLDS
+    (``axis_in_plane`` in the snap engine): it widens the capture to the
+    screen's 9 px for those two axes, never pulling the point off the plane.
 
     Only a click that is a *direction from the start point* wants this:
     an arc's bulge, a rotated rectangle's height or a dimension's placement
@@ -72,18 +72,14 @@ class AxisMagnet:
         """Whether an inference may take the point OFF the plane the tool
         is drawing on.
 
-        Only the screen detector can, and its whole reason to exist is the
-        axes the work plane CANNOT hold (issues #31/#42) — right for a Line,
-        which leaves the plane it started on, and for the free placement of
-        a Text or a Dimension. A shape that LIVES in one plane
-        (``PlaneLock``: circle, polygon, the arcs, the rotated rectangle)
-        can only be drawn with its points in it. Over a face the magnet
-        answered with the one axis that plane cannot hold — the face's own
-        normal, the first axis the cursor crosses when it moves up the
-        screen — so the rim left the face while the radius was measured IN
-        it, and the circle came out «a metade ou menos ainda» (Marco,
-        #545). A planar shape magnetises along the axes its plane holds;
-        that is the whole of the first half of issue #31.
+        A shape that LIVES in one plane (``PlaneLock``: circle, polygon,
+        the arcs, the rotated rectangle) says no: the snap engine then
+        keeps the magnet — world and screen detectors alike — on the axes
+        the plane HOLDS (``axis_in_plane``). Over a face, following the one
+        axis the plane cannot hold (its own normal) left the rim off the
+        face while the radius was measured in it, and the circle came out
+        «a metade ou menos ainda» (Marco, #545). A Line, a Text and a
+        Dimension are free placements and may leave the plane.
         """
         return not isinstance(self, PlaneLock)
 
@@ -93,7 +89,11 @@ class AxisMagnet:
 
     @property
     def screen_axis_px(self):
-        if not self.magnet_on() or not self.magnet_off_plane():
+        """The pixel-space detector's threshold (9 px), for every magnetised
+        tool. A planar shape's answer stays confined to its plane by the
+        snap engine's ``axis_in_plane``, so here it only widens the capture
+        from the 3° world cone to the screen's 9 px (#962)."""
+        if not self.magnet_on():
             return None
         return self._MAGNET_PX
 
@@ -548,6 +548,19 @@ class Tool(ABC):
     # (Endpoint, On Edge, On Face, ...). Tools that only pick existing
     # geometry (Select, Push/Pull) set this False: no snap engine, no markers.
     uses_snap: bool = True
+    #: Whether the tool also takes the engine's SOFT inferences — the
+    #: encouraged points (pausing over a corner), their «level with» /
+    #: «from point» lines, the axis magnet. A tool that only reads the hard
+    #: point snaps sets this False: the dwell encouragement never runs, so
+    #: those directional cues are never produced. The Offset does.
+    allow_inferences: bool = True
+    #: The snap kinds a tool accepts from the engine; ``None`` accepts every
+    #: kind. A tool whose own operation only makes sense on certain snaps
+    #: sets this, and the engine then refuses the rest — the Offset only
+    #: takes NAMED model points (endpoint, midpoint, …): ``on_edge`` and
+    #: ``on_face`` follow the cursor and are not reliable snaps, so they are
+    #: dropped (no distance change, no marker) instead of being offered.
+    allowed_snap_kinds: frozenset | None = None
     # Tools that support a click-drag rubber-band box (Select). For these the
     # viewport defers the click to release: a tiny drag is a click (on_click),
     # a real drag is a box (on_box_select).

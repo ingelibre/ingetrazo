@@ -29,7 +29,7 @@ each in [−1, 1] at full deflection.
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 #: What the devices report at full deflection. spacenavd and the HID
 #: reports of every current 3Dconnexion model sit around ±350; a little
@@ -67,6 +67,69 @@ class NdofSample:
                         self.tilt, self.spin, self.roll))
 
 
+AXES = ("right", "up", "forward", "tilt", "spin", "roll")
+ACTIONS = ("pan_x", "pan_y", "zoom", "orbit_x", "orbit_y", "disabled")
+DEFAULT_MAPPING = dict(zip(AXES, ("pan_x", "pan_y", "zoom",
+                                  "orbit_y", "orbit_x", "disabled")))
+# Based on the user's tested FreeCAD-style configuration; true camera roll
+# is not supported by OrbitCamera yet.
+FREECAD_MAPPING = dict(zip(AXES, ("pan_x", "zoom", "pan_y",
+                                  "orbit_y", "disabled", "orbit_x")))
+FREECAD_INVERSION = {axis: axis in ("up", "tilt") for axis in AXES}
+
+
+
+def default_axis_mapping():
+    return DEFAULT_MAPPING.copy()
+
+
+def default_axis_inversion():
+    return {axis: False for axis in AXES}
+
+
+def default_axis_sensitivity():
+    return {axis: 1.0 for axis in AXES}
+
+
+def effective_axis_mapping(settings):
+    """Use the original mapping unless the user selected Custom."""
+    return (settings.axis_mapping if settings.mapping_preset == "custom"
+            else FREECAD_MAPPING if settings.mapping_preset == "freecad"
+            else DEFAULT_MAPPING)
+
+
+def mapped_movements(sample, settings):
+    """Five camera actions from six physical axes; sum duplicate assignments."""
+    outputs = {action: 0.0 for action in ACTIONS if action != "disabled"}
+    mapping = effective_axis_mapping(settings)
+    for axis in AXES:
+        action = mapping.get(axis, DEFAULT_MAPPING[axis])
+        if action not in outputs:
+            continue
+        value = shape(getattr(sample, axis), settings.deadzone)
+        if settings.mapping_preset in ("custom", "freecad"):
+            inversion = (settings.axis_inversion if settings.mapping_preset == "custom"
+                         else FREECAD_INVERSION)
+            if inversion.get(axis, False):
+                value = -value
+            value *= (settings.axis_sensitivity.get(axis, 1.0)
+                      if settings.mapping_preset == "custom" else 1.0)
+        else:
+            legacy = {
+                "right": settings.invert_pan != settings.invert_pan_x,
+                "up": settings.invert_pan != settings.invert_pan_y,
+                "forward": settings.invert_zoom,
+                "tilt": settings.invert_rotate != settings.invert_tilt,
+                "spin": settings.invert_rotate != settings.invert_spin,
+                "roll": False,
+            }
+            if legacy[axis]:
+                value = -value
+        outputs[action] += value
+    return {key: max(-1.0, min(1.0, value))
+            for key, value in outputs.items()}
+
+
 @dataclass
 class NdofSettings:
     enabled: bool = True
@@ -85,6 +148,10 @@ class NdofSettings:
     #: Only translations (pan + zoom) — for plan drawing, where an accidental
     #: twist that tips the view out of Top is the last thing wanted.
     lock_rotation: bool = False
+    mapping_preset: str = "original"
+    axis_mapping: dict = field(default_factory=default_axis_mapping)
+    axis_inversion: dict = field(default_factory=default_axis_inversion)
+    axis_sensitivity: dict = field(default_factory=default_axis_sensitivity)
 
 
 def shape(v: float, deadzone: float) -> float:
@@ -109,23 +176,12 @@ def apply_ndof(camera, sample: NdofSample, dt: float, viewport_h: int,
         return False
     k = st.sensitivity * dt
     h = max(int(viewport_h), 1)
-    right = shape(sample.right, st.deadzone)
-    up = shape(sample.up, st.deadzone)
-    forward = shape(sample.forward, st.deadzone)
-    tilt = spin = 0.0
-    if not st.lock_rotation:
-        tilt = shape(sample.tilt, st.deadzone)
-        spin = shape(sample.spin, st.deadzone)
-    if st.invert_pan != st.invert_pan_x:
-        right = -right
-    if st.invert_pan != st.invert_pan_y:
-        up = -up
-    if st.invert_zoom:
-        forward = -forward
-    if st.invert_rotate != st.invert_tilt:
-        tilt = -tilt
-    if st.invert_rotate != st.invert_spin:
-        spin = -spin
+    movements = mapped_movements(sample, st)
+    right, up, forward = (movements["pan_x"], movements["pan_y"],
+                          movements["zoom"])
+    spin, tilt = movements["orbit_x"], movements["orbit_y"]
+    if st.lock_rotation:
+        spin = tilt = 0.0
     moved = False
     if right or up:
         # camera.pan GRABS the model like a mouse drag: +dx carries it right,

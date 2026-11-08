@@ -76,7 +76,14 @@ res = {"commit": os.popen("git rev-parse --short HEAD").read().strip(),
        "rss_empty_mb": round(rss_mb(), 1), "open_s": [], "rss_after_open_mb": [],
        "live_after_open": []}
 doc = Path(sys.argv[1])
-for _ in range(REOPENS):
+for i in range(REOPENS):
+    # Projects in tabs (0.6.0, #1066): opening a file that is already open
+    # only brings its tab forward, so it was never read again and every
+    # reopening after the first timed nothing. Close its tab first, as a
+    # user reopening it would; earlier versions have no tabs to close.
+    if i and hasattr(win, "close_document"):
+        win.close_document(ask=False)
+        settle()
     t = time.perf_counter()
     win.open_path(doc)
     settle()

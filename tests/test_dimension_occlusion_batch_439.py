@@ -94,28 +94,48 @@ class _RecordingPainter:
 
 
 def test_segment_draws_the_runs_the_per_point_walk_draws(vp_with_wall):
+    import math
     vp = vp_with_wall
     # Behind the wall (y=2), running down the frame's centre so its samples
     # cross the wall's band on screen: visible, hidden, visible again.
     a, b = V(0.0, 2.0, 4.5), V(0.0, 2.0, -3.5)
     painter = _RecordingPainter()
     vp._draw_occluded_segment(painter, a, b, samples=16)
-    # The reference walk: the pre-#439 loop, point by point.
+    # The reference walk, point by point, at the segment's sample count
+    # (one about every _OCCLUSION_STEP_PX on screen, at least 16).
+    pa, pb = vp._world_to_pixel(a), vp._world_to_pixel(b)
+    n = max(16, min(vp._OCCLUSION_MAX_SAMPLES,
+                    int(math.hypot(pb[0] - pa[0], pb[1] - pa[1])
+                        / vp._OCCLUSION_STEP_PX)))
     want = []
+    cuts = []
     prev_px, prev_vis = None, False
-    for i in range(17):
-        wpt = a + (b - a) * (i / 16)
+    for i in range(n + 1):
+        wpt = a + (b - a) * (i / n)
         px = vp._world_to_pixel(wpt)
         vis = px is not None and not vp._occluded_on_screen(wpt)
         if prev_px is not None and px is not None and prev_vis and vis:
             want.append((prev_px, px))
+        elif prev_px is not None and px is not None and prev_vis != vis:
+            cuts.append((prev_px, px) if prev_vis else (px, prev_px))
         prev_px, prev_vis = px, vis
     got = painter.lines
-    assert len(got) == len(want)
-    for (g0, g1), (w0, w1) in zip(got, want):
-        assert g0 == pytest.approx(w0, rel=1e-6, abs=1e-3)
-        assert g1 == pytest.approx(w1, rel=1e-6, abs=1e-3)
-    assert 0 < len(got) < 16      # the wall eats the middle, not everything
+    # Every step seen at both ends is drawn whole, in order...
+    whole = [ln for ln in got if any(
+        ln[0] == pytest.approx(w0, rel=1e-6, abs=1e-3)
+        and ln[1] == pytest.approx(w1, rel=1e-6, abs=1e-3) for w0, w1 in want)]
+    assert len(whole) == len(want)
+    # ...and each step that goes behind the wall adds the piece from its
+    # seen end toward the hidden one (#918), no further than the step.
+    assert len(got) == len(want) + len(cuts) and len(cuts) == 2
+    for seen, hidden in cuts:
+        piece = [ln for ln in got if ln[0] == pytest.approx(seen, abs=1e-3)
+                 and ln not in whole]
+        assert len(piece) == 1
+        end = piece[0][1]
+        assert min(seen[1], hidden[1]) - 1e-3 <= end[1] \
+            <= max(seen[1], hidden[1]) + 1e-3
+    assert 0 < len(want) < n      # the wall eats the middle, not everything
 
 
 def test_the_matrix_is_built_once_per_segment_not_per_sample(vp_with_wall,
