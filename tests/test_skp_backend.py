@@ -235,34 +235,49 @@ def test_openskp_adapter_places_instances_with_transform():
     assert placed.x() == pytest.approx(2.54, abs=1e-4)  # +100 in on X
 
 
-def test_openskp_adapter_divides_an_instance_matrix_by_its_w():
-    # Issue #865: SketchUp sometimes stores a placement scaled through the
-    # matrix's own scalar (element 12, the homogeneous w): the 3x3 AND the
-    # translation are stored multiplied by it, and the real transform
-    # divides them back out. Reading the stored values raw brought the
-    # reported component in 100x large and 100x away. This matrix is the
-    # w=1 placement of the test above (identity, +100 in on X) stored with
-    # w = 100, so it must land exactly where that one lands.
+def test_openskp_adapter_folds_an_instance_matrix_scale():
+    # Issue #1196, following #865: SketchUp can keep a uniform scale in
+    # the transform's homogeneous term (w = 100 for a 0.01 scale), and
+    # OpenSKP hands that over as element 12 = 1/w = 0.01 — the scale
+    # itself — with the 3x3 and the translation as stored. The real
+    # transform multiplies by it (OpenSKP's own fold, openskp#444). The
+    # old adapter divided, reading the element as w itself, so this
+    # instance — a 100 in child placed at x = 2000 in, scaled through
+    # w — came in 10000x large at x = 200000 in instead of 1x at 20 in.
     child = _fake_definition(
         id=5, name="Child",
         verts={1: (0, 0, 0), 2: (10, 0, 0), 3: (10, 10, 0)},
         edges={10: (1, 2), 11: (2, 3), 12: (3, 1)},
         faces={20: [[(10, 1), (11, 1), (12, 1)]]},
     )
-    inst = NS(ref_idx=5, matrix=[100, 0, 0, 0, 100, 0, 0, 0, 100,
-                                 10000, 0, 0, 100])
-    root = _fake_definition(
-        id=0, name="ROOT_MODEL", verts={}, edges={}, faces={}, instances=[inst])
-    model = NS(definitions={0: root, 5: child})
-    payload = skp_openskp._adapt(model, "instw")
-    proto = payload["protos"][0]
-    assert len(proto["instances"]) == 1
-    from PySide6.QtGui import QVector3D
-    placed = proto["instances"][0]
-    origin = placed.map(QVector3D(0.0, 0.0, 0.0))
-    assert origin.x() == pytest.approx(2.54, abs=1e-4)   # +100 in, not +10000
-    corner = placed.map(QVector3D(0.254, 0.0, 0.0))       # 10 in along X
-    assert corner.x() == pytest.approx(2.54 + 0.254, abs=1e-4)
+
+    def placed_origin_and_corner(matrix):
+        inst = NS(ref_idx=5, matrix=matrix)
+        root = _fake_definition(
+            id=0, name="ROOT_MODEL", verts={}, edges={}, faces={},
+            instances=[inst])
+        payload = skp_openskp._adapt(NS(definitions={0: root, 5: child}),
+                                     "instw")
+        proto = payload["protos"][0]
+        assert len(proto["instances"]) == 1
+        from PySide6.QtGui import QVector3D
+        placed = proto["instances"][0]
+        return (placed.map(QVector3D(0.0, 0.0, 0.0)),
+                placed.map(QVector3D(0.254, 0.0, 0.0)))   # 10 in along X
+
+    # Scaled through w: identity 3x3, translation as stored, scale 0.01
+    # in element 12 — what OpenSKP 1.4 produces for the #1196 repro file.
+    origin, corner = placed_origin_and_corner(
+        [1, 0, 0, 0, 1, 0, 0, 0, 1, 2000, 0, 0, 0.01])
+    assert origin.x() == pytest.approx(0.508, abs=1e-4)    # 20 in, in metres
+    assert corner.x() == pytest.approx(0.508 + 0.00254, abs=1e-4)
+
+    # The same component with the scale in the 3x3 itself (element 12 = 1)
+    # reads exactly as before.
+    origin, corner = placed_origin_and_corner(
+        [0.01, 0, 0, 0, 0.01, 0, 0, 0, 0.01, 0, 0, 0, 1])
+    assert origin.x() == pytest.approx(0.0, abs=1e-4)
+    assert corner.x() == pytest.approx(0.00254, abs=1e-4)
 
 
 def test_openskp_adapter_returns_none_without_geometry():

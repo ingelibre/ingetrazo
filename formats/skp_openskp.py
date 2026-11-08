@@ -97,15 +97,20 @@ def _matrix(m) -> QMatrix4x4:
     """An OpenSKP instance ``matrix`` (row-major 3×3 + translation, in inches)
     as a ``QMatrix4x4`` whose translation is already in metres.
 
-    Element 12 is the placement's homogeneous scalar (SketchUp's w): when
-    it is not 1, the 3×3 AND the translation are stored multiplied by it
-    and the real transform divides them back out. Ignoring it brought a
-    component scaled through w = 100 in 100x large and 100x away (#865)."""
-    w = float(m[12]) if len(m) > 12 and m[12] else 1.0
+    Element 12 is the placement's scale: SketchUp can keep a uniform
+    scale in the transform's homogeneous term (``to_a``'s w), and OpenSKP
+    stores ``1/w`` there — the scale itself — with the 3×3 and the
+    translation as stored, so the real transform *multiplies* them by
+    it, the same fold OpenSKP's own scene builder does (openskp#444).
+    Dividing by it instead — reading the element as SketchUp's w itself
+    — turned a component scaled through w = 100 into one 10000x large
+    and 10000x away (#1196; the divide was #865's fix, aimed at
+    SketchUp's own matrix rather than OpenSKP's reading of it)."""
+    s = float(m[12]) if len(m) > 12 and m[12] else 1.0
     return QMatrix4x4(
-        m[0] / w, m[1] / w, m[2] / w, m[9] / w * _INCH,
-        m[3] / w, m[4] / w, m[5] / w, m[10] / w * _INCH,
-        m[6] / w, m[7] / w, m[8] / w, m[11] / w * _INCH,
+        m[0] * s, m[1] * s, m[2] * s, m[9] * s * _INCH,
+        m[3] * s, m[4] * s, m[5] * s, m[10] * s * _INCH,
+        m[6] * s, m[7] * s, m[8] * s, m[11] * s * _INCH,
         0.0, 0.0, 0.0, 1.0)
 
 
