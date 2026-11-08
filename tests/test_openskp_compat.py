@@ -57,8 +57,16 @@ class _Archive:
     def __init__(self, ver):
         self.ver = ver
 
+    current_obj_slot = None
+
     def read_object(self, r, expect=None):
         return 0, None, None
+
+    def _skip_clayer_colour_ext(self, r):
+        pass
+
+    def _skip_clayer_parent_ref(self, r, slot):
+        pass
 
 
 def _utf16(text: str) -> bytes:

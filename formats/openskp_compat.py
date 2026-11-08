@@ -152,6 +152,20 @@ def _note_definition_kinds() -> bool:
     return True
 
 
+def note_model_kinds(model) -> None:
+    """Take the kinds from the parsed model when the reader keeps them.
+
+    ``Definition.is_group`` is what SketchUp reports, in both file formats.
+    The single-pass VFF reader also no longer hands definitions to
+    ``_extract_geometry_from_nodes``, so :func:`_note_definition_kinds` sees
+    nothing there. A reader without the field keeps the notes taken above."""
+    definitions = list((getattr(model, "definitions", None) or {}).values())
+    if not definitions or not all(hasattr(d, "is_group") for d in definitions):
+        return
+    _parse_tables.groups = {d.id for d in definitions if d.is_group}
+    _parse_tables.kinds = True
+
+
 def group_definitions() -> set:
     """The definition ids the last parse on this thread placed as GROUPS:
     through a ``CGroup`` in a classic file, by the definition's own kind in
@@ -405,11 +419,12 @@ def _fix_definition_list_end(L) -> bool:
 
 
 def _fix_layer_tail_2019(L) -> bool:
-    # A reader that already tells the versions apart in its layer record
-    # has the fix: leave it alone.
+    # A reader that spells out the 2019 tail has the fix: leave it alone.
+    # Reading ``ar.ver`` alone proves nothing: 1.3's reader does, for the
+    # shorter SketchUp 3 tail, and still stops two bytes early on 2019.
     original = getattr(L, "_read_layer", None)
     if (original is None or getattr(original, "_long_tail", False)
-            or "ver" in original.__code__.co_names):
+            or 23 in original.__code__.co_consts):
         return False
 
     def _read_layer(ar, r):
