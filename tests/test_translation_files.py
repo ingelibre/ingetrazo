@@ -53,6 +53,25 @@ def test_every_language_has_every_message(path):
     assert not missing, f"{len(missing)} messages missing: {missing[:3]}"
 
 
+def test_traditional_chinese_is_offered_under_its_own_name():
+    """The file name is the language code, with a hyphen like ``zh-CN``: with
+    an underscore the system's language would not find it (#1010)."""
+    assert "zh-TW" in available_languages()
+    assert LANGUAGE_NAMES["zh-TW"] == "正體中文"
+
+
+def test_bulgarian_is_offered_under_its_own_name():
+    """Bulgarian (#1185) only needs its file and its name."""
+    assert "bg" in available_languages()
+    assert LANGUAGE_NAMES["bg"] == "Български"
+
+
+def test_traditional_chinese_keeps_the_composer_tab_generic():
+    """Its source used a product's name for the sheet layout tab."""
+    data = json.loads((_I18N_DIR / "zh-TW.json").read_text(encoding="utf-8"))
+    assert data["Layout"] == "版面配置"
+
+
 def test_lao_is_offered_again():
     """Lao (#850) is offered again since its marks compose on Windows
     (Windows round 0.6.0, views/script_fonts.py)."""
@@ -62,7 +81,7 @@ def test_lao_is_offered_again():
 
 #: Scripts written without spaces between words: a suffix there attaches
 #: straight to the number or word before it.
-_NO_SPACE_SCRIPTS = {"ja", "ko", "zh-CN"}
+_NO_SPACE_SCRIPTS = {"ja", "ko", "zh-CN", "zh-TW"}
 
 
 @pytest.mark.parametrize("path", [p for p in _FILES

@@ -946,6 +946,35 @@ def _zoom_window(p, ink):
     _magnifier(p, ink, 21, 22, 6.5)              # magnifier inside it
 
 
+def _four_views(p, ink):
+    # Views at once: four panes of a window, the one where the model is
+    # seen in perspective filled with the accent.
+    p.save()
+    p.setPen(_rpen(ink, 3.0))
+    a, gap, side = 8.0, 4.0, 14.0
+    for row in range(2):
+        for col in range(2):
+            r = QRectF(a + col * (side + gap), a + row * (side + gap), side, side)
+            if (row, col) == (0, 1):
+                c = QColor(_accent())
+                c.setAlpha(150)
+                p.setBrush(c)
+            else:
+                p.setBrush(Qt.NoBrush)
+            p.drawRoundedRect(r, 2.0, 2.0)
+    p.restore()
+
+
+def _close(p, ink):
+    # The cross of a project tab's close button: round, centred, filling
+    # most of its square (a small one read as a speck at tab size).
+    p.save()
+    p.setPen(_rpen(ink, 4.6))
+    p.drawLine(QPointF(10, 10), QPointF(38, 38))
+    p.drawLine(QPointF(38, 10), QPointF(10, 38))
+    p.restore()
+
+
 def _zoom_extents(p, ink):
     # Zoom Extents (#112): the four corners of the view as accent brackets
     # and a magnifier in the middle — everything brought inside the frame.
@@ -1854,6 +1883,16 @@ def _side_collapse(p, ink):
     p.restore()
 
 
+def _plus(p, ink):
+    # «+» to add: drawn, not a font's glyph (which sits off centre by the
+    # font's own metrics), so it is centred to the pixel.
+    p.save()
+    p.setPen(_rpen(ink, 3.6))
+    p.drawLine(QPointF(24, 13), QPointF(24, 35))
+    p.drawLine(QPointF(13, 24), QPointF(35, 24))
+    p.restore()
+
+
 def _overflow_h(p, ink):
     # Double chevron «»»: the toolbar's hidden tools, on a horizontal bar.
     pen = QPen(_accent(), 3.4)
@@ -2148,7 +2187,7 @@ def _first_person(p, ink):
 _DRAW = {
     **_SOLID_ICONS,
     "select": _select, "line": _line, "freehand": _freehand,
-    "side_collapse": _side_collapse,
+    "side_collapse": _side_collapse, "plus": _plus,
     "overflow_h": _overflow_h, "overflow_v": _overflow_v,
     "side_expand": _side_expand,
     "arr_left": _arr_left, "arr_right": _arr_right, "arr_top": _arr_top,
@@ -2200,6 +2239,7 @@ _DRAW = {
     "zoom": _zoom, "zoom_window": _zoom_window,
     "position_camera": _position_camera, "walk": _walk,
     "look_around": _look_around, "first_person": _first_person,
+    "four_views": _four_views, "close": _close,
     "zoom_extents": _zoom_extents, "zoom_selection": _zoom_selection,
     "view_iso": _view_iso,
     "proj_parallel": _proj_parallel, "proj_perspective": _proj_perspective,

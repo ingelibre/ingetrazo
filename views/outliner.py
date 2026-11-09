@@ -298,30 +298,33 @@ def inherited_states(groups) -> dict:
 def node_icon(key: str) -> QIcon:
     """The icon for a row kind — ``group``, ``component``, ``ifc``,
     ``image``, ``text``, ``document``, ``scene``, ``sheet``, ``frame``,
-    ``eye``, ``eye_off``, ``warning``. Kept per theme: drawn in the
-    palette's ink, an icon of the light theme is no icon of the dark one."""
-    key_ink = (key, _ink().rgba(), _accent().rgba())
-    if key_ink not in _ICONS:
+    ``eye``, ``eye_off``, ``warning``.
+
+    Kept once per theme: they are painted in the palette's ink and accent,
+    and a theme switched with the app open must not get the old ones back
+    (#1086)."""
+    from PySide6.QtWidgets import QApplication
+    # The palette's cache key, not its colours: the Browser asks three times
+    # per row, and reading the colours cost a 20 000-row refresh 0.2 s.
+    slot = (key, QApplication.palette().cacheKey())
+    if slot not in _ICONS:
         if key.startswith("layers_"):
             # The Layers bar's icons (views/icons.py): the two trees draw
             # the same buttons with the same set.
             from views.icons import tool_icon
-            _ICONS[key_ink] = tool_icon(key)
+            _ICONS[slot] = tool_icon(key)
         elif key in ("image", "text", "sections"):
             from views.icons import tool_icon
-            _ICONS[key_ink] = tool_icon({"image": "image", "text": "text3d",
-                                         "sections": "section_planes"}[key])
+            _ICONS[slot] = tool_icon({"image": "image", "text": "text3d",
+                                      "sections": "section_planes"}[key])
         elif key == "warning":
-            from PySide6.QtWidgets import QApplication
-            _ICONS[key_ink] = QApplication.style().standardIcon(
+            _ICONS[slot] = QApplication.style().standardIcon(
                 QStyle.SP_MessageBoxWarning)
         elif key == "folder":
-            from PySide6.QtWidgets import QApplication
-            _ICONS[key_ink] = QApplication.style().standardIcon(
-                QStyle.SP_DirIcon)
+            _ICONS[slot] = QApplication.style().standardIcon(QStyle.SP_DirIcon)
         else:
-            _ICONS[key_ink] = _draw(key)
-    return _ICONS[key_ink]
+            _ICONS[slot] = _draw(key)
+    return _ICONS[slot]
 
 
 def fill_icon(color, on: bool) -> QIcon:
@@ -4568,11 +4571,7 @@ class SheetsPanel(QWidget):
 
     def rename_scene(self, view, name: str) -> bool:
         """Rename a scene and carry the sheet views that show it along."""
-        if not outliner.rename_scene(self._scene(), view, name):
-            if name and name != view.name:
-                self._window.viewport.flash_status(tr(
-                    "Another scene is already called «{name}»", name=name),
-                    3500)
+        if not self._window.tray.scenes.rename_view(view, name):
             self._touch()
             return False
         self._window.tray.scenes.refresh()
