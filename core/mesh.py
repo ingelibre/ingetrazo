@@ -1114,6 +1114,9 @@ class Mesh:
         """Restore a :meth:`capture_state` snapshot. Objects created since are
         dropped; captured ones are re-listed with their fields reset."""
         self._chunk_dirty = True
+        # The faces' attrs come back too, and a repaint moves no vertex: a
+        # bake that took this for a move kept the old material on screen.
+        self._attrs_dirty = True
         self._mut_serial += 1
         self.vertices[:] = snap["vertices"]
         self.edges[:] = snap["edges"]

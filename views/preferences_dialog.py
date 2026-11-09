@@ -192,6 +192,22 @@ class PreferencesDialog(QDialog):
             str(st.value("section/ask_name", "1")) != "0")
         form.addRow("", self._ask_section)
 
+        self._hover_picture = QCheckBox(tr(
+            "Show a picture of the project on hover over its tab"))
+        self._hover_picture.setChecked(
+            str(st.value("tabs/hover_picture", "1")) != "0")
+        form.addRow("", self._hover_picture)
+
+        from core.update_check import auto_enabled, store_managed
+        self._check_updates = QCheckBox(tr("Check for new versions at startup"))
+        self._check_updates.setToolTip(tr(
+            "Once a day, IngeTrazo asks GitHub for the latest version number. "
+            "Nothing about you or your files is sent."))
+        self._check_updates.setChecked(auto_enabled(st))
+        self._check_updates.setVisible(not store_managed())
+        if not store_managed():
+            form.addRow("", self._check_updates)
+
         # A new document starts with the 1.70 m scale figure; someone who
         # models parts for a 3D printer starts on an empty sheet (#221).
         self._scale_figure = QCheckBox(tr(
@@ -899,6 +915,8 @@ class PreferencesDialog(QDialog):
         self._backup.setChecked(True)
         self._undo_steps.setValue(200)
         self._ask_section.setChecked(True)
+        self._hover_picture.setChecked(True)
+        self._check_updates.setChecked(True)
         self._scale_figure.setChecked(True)
         pick(self._figure, sf.DEFAULT_PICK)
         self._invert.setChecked(False)
@@ -1010,6 +1028,10 @@ class PreferencesDialog(QDialog):
         _gs.set_value("backup", "1" if self._backup.isChecked() else "0", st)
         st.setValue("section/ask_name",
                     "1" if self._ask_section.isChecked() else "0")
+        st.setValue("tabs/hover_picture",
+                    "1" if self._hover_picture.isChecked() else "0")
+        from core.update_check import KEY_AUTO
+        st.setValue(KEY_AUTO, "1" if self._check_updates.isChecked() else "0")
         st.setValue("new_document/scale_figure",
                     "1" if self._scale_figure.isChecked() else "0")
         self._save_figure(st)
