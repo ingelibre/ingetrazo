@@ -24,6 +24,7 @@ V = QVector3D
 
 def test_the_value_reads_signed_with_a_datum_and_plus_minus_zero():
     nv = NivelItem(z_m=0.15)
+    assert nv.units == "m"
     assert nv.label() == "N.P.T. +0.15"
     nv.z_m = -0.3
     assert nv.value_text() == "-0.30"
@@ -39,6 +40,32 @@ def test_the_value_reads_signed_with_a_datum_and_plus_minus_zero():
     nv.anchor_uid, nv.a_world = "f", [1.0, 2.0, 3.7]   # anchored: reads Z
     assert nv.anchored and nv.level_m() == pytest.approx(1.2)
     assert nv.label() == "NIVEL +1.20"
+
+
+def test_a_level_mark_writes_its_own_unit_with_the_same_signs():
+    """Issue #403: a mark stores the unit it was born with. Metres keep the
+    bare «+0.15» every existing sheet shows; any other unit is the same
+    sign in front of the shared length format."""
+    feet = NivelItem(z_m=0.15, units="ft", decimals=2)
+    assert feet.value_text() == "+0.49'"
+    inches = NivelItem(z_m=0.0381, units="in", decimals=2)
+    assert inches.value_text() == '+1.50"'
+    mixed = NivelItem(z_m=0.15, units="ft-in", decimals=2)
+    assert mixed.value_text() == '+0\'5.91"'
+    below = NivelItem(z_m=-0.3, units="ft-in", decimals=2)
+    assert below.value_text() == '-0\'11.81"'
+    zero = NivelItem(z_m=0.0, units="ft-in", decimals=2)
+    assert zero.value_text() == '±0\'0.00"'
+    cm = NivelItem(z_m=0.15, units="cm", decimals=2)
+    assert cm.value_text() == "+15.00 cm"
+    assert NivelItem(z_m=0.0, units="cm").value_text() == "±0.00 cm"
+    # a sheet saved before the field existed is still a metre mark
+    old = Composicion.from_dict({"niveles": [{"z_m": 0.15}]}).niveles[0]
+    assert old.units == "m" and old.label() == "N.P.T. +0.15"
+    gone = Composicion.from_dict(Composicion(
+        niveles=[NivelItem(z_m=0.3048, units="ft", decimals=1)]).to_dict())
+    assert gone.niveles[0].units == "ft"
+    assert gone.niveles[0].value_text() == "+1.0'"
 
 
 def _composer():
@@ -130,6 +157,77 @@ def test_the_mark_follows_the_model_and_keeps_its_slide():
     (npx, npy), = composer._frame_world_to_page(frame, [nv.a_world])
     assert (nv.x_mm + nv.ax_mm, nv.y_mm + nv.ay_mm) == pytest.approx((npx, npy))
     assert nv.ax_mm == pytest.approx(-8.0)          # the slide survived
+
+
+def test_new_sheet_annotations_are_born_in_the_document_units():
+    """Issue #403: a new dimension or level mark takes the document's unit
+    and precision. A style remembered from an earlier cota does not keep
+    the next one in metres, and changing the document later leaves the
+    mark that was already placed alone."""
+    from core.units import apply_units
+    composer, _frame, _host = _composer()
+    apply_units(composer._scene(), {"length": "ft", "precision": 3})
+    composer._last_cota_style = {"units": "m", "decimals": 2, "text_mm": 3.1}
+    composer._last_nivel_style = {"units": "m", "decimals": 2, "datum_m": 0.5}
+    ct = composer._new_cota((10.0, 10.0), (40.48, 10.0), 0.0)
+    assert ct.units == "ft" and ct.decimals == 3 and ct.text_mm == 3.1
+    assert ct.auto_label() == "10.000'"
+    composer.place_radial((0.0, 0.0), (30.48, 0.0))
+    rad = composer.comp.cotas_rad[-1]
+    assert rad.units == "ft" and rad.decimals == 3
+    assert rad.auto_label() == "R10.000'"
+    composer.tool_mode = "nivel"
+    composer.place_tool(12.0, 12.0, 12.0, 12.0)
+    nv = composer.comp.niveles[-1]
+    assert nv.units == "ft" and nv.decimals == 3 and nv.datum_m == 0.5
+    apply_units(composer._scene(), {"length": "mm", "precision": 0})
+    assert ct.units == "ft" and ct.auto_label() == "10.000'"
+    assert nv.units == "ft" and nv.value_text().endswith("'")
+
+
+def test_the_level_panel_edits_in_the_mark_unit():
+    """Level and Datum stay metres in the file. The spinboxes show the
+    mark's unit, and switching Units rescales them without moving the
+    stored height."""
+    composer, _frame, _host = _composer()
+    composer.comp.niveles.append(NivelItem(
+        x_mm=50, y_mm=50, z_m=0.3048, units="ft", decimals=2))
+    composer._rebuild_canvas()
+    item = next(it for it in composer.canvas.items()
+                if isinstance(it, NivelCanvasItem))
+    item.setSelected(True)
+    composer.on_selection_changed()
+    assert composer.nv_units.currentText() == "ft"
+    assert composer.nv_z.suffix() == "'" and composer.nv_datum.suffix() == "'"
+    assert composer.nv_z.value() == pytest.approx(1.0)
+    composer.nv_z.setValue(3.0)
+    m = item.model
+    assert m.z_m == pytest.approx(0.9144)
+    assert m.value_text() == "+3.00'"
+    composer.nv_units.setCurrentText("m")
+    assert m.units == "m" and m.z_m == pytest.approx(0.9144)
+    # The box shows three decimals (0.914 m). Touching another field must
+    # not replace the stored 0.9144 m with that rounded number.
+    assert composer.nv_z.value() == pytest.approx(0.914)
+    assert composer.nv_z.suffix() == " m"
+    composer.nv_decimals.setValue(3)
+    assert m.decimals == 3 and m.z_m == pytest.approx(0.9144)
+    assert m.label() == "N.P.T. +0.914"
+
+
+def test_pasting_a_level_mark_style_carries_its_unit():
+    composer, _frame, _host = _composer()
+    src = NivelItem(x_mm=20, y_mm=20, units="ft", decimals=3, z_m=1.0)
+    dst = NivelItem(x_mm=40, y_mm=20, z_m=1.0)
+    composer.comp.niveles.extend([src, dst])
+    composer._rebuild_canvas()
+    items = {id(it.model): it for it in composer.canvas.items()
+             if isinstance(it, NivelCanvasItem)}
+    composer.copy_style(items[id(src)])
+    items[id(dst)].setSelected(True)
+    composer.paste_style()
+    assert dst.units == "ft" and dst.decimals == 3
+    assert dst.value_text() == "+3.281'"
 
 
 def test_level_marks_roundtrip_and_live_on_the_canvas():

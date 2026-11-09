@@ -165,6 +165,19 @@ def _saved_shortcuts() -> dict:
     return saved
 
 
+def _unique(seqs) -> list:
+    """``seqs`` without repeats, first one kept: a key listed twice on one
+    action does not fire (#313)."""
+    seen: set = set()
+    out = []
+    for q in seqs:
+        t = q.toString(QKeySequence.PortableText)
+        if t and t not in seen:
+            seen.add(t)
+            out.append(q)
+    return out
+
+
 def apply_user_shortcuts(window) -> int:
     """Put the remembered keys on the window's actions. Returns how many."""
     saved = _saved_shortcuts()
@@ -172,8 +185,8 @@ def apply_user_shortcuts(window) -> int:
     for act in collect_actions(window):
         key = action_key(act)
         if key in saved:
-            seqs = [q for q in _from_text(saved[key])
-                    if reserved_reason(q) is None]   # never a reserved key
+            seqs = _unique(q for q in _from_text(saved[key])
+                           if reserved_reason(q) is None)  # never reserved
             act.setShortcuts(seqs)
             n += 1
     return n
@@ -209,8 +222,12 @@ def import_shortcuts(window, data) -> tuple:
     remember them. Actions this machine does not have (a plugin not
     installed) and reserved keys are skipped; a key the file gives to one
     action is taken from any other that held it, as assigning it by hand
-    does. Returns ``(applied, skipped)``; raises ValueError for a file
-    that is not an IngeTrazo shortcuts file."""
+    does. A key the file gives to SEVERAL actions stays with the first and
+    is taken from the rest: two actions sharing a key both go dead, as Z
+    did for Zoom and Zoom Selection in a file written from another
+    program's keys (#323, @tomlai-git). Returns ``(applied, skipped,
+    clashes)`` — ``clashes`` lists ``(key, kept_by, dropped_from)``; raises
+    ValueError for a file that is not an IngeTrazo shortcuts file."""
     if (not isinstance(data, dict) or data.get("format") != EXPORT_FORMAT
             or not isinstance(data.get("shortcuts"), dict)):
         raise ValueError(tr("This is not an IngeTrazo shortcuts file."))
@@ -218,15 +235,23 @@ def import_shortcuts(window, data) -> tuple:
     actions = collect_actions(window)
     by_key = {action_key(a): a for a in actions}
     applied = 0
-    taken: set = set()
+    taken: dict = {}                      # key text -> the action that has it
+    clashes: list = []
     for key, text in wanted.items():
         act = by_key.get(key)
         if act is None:
             continue
-        seqs = [q for q in _from_text(text) if reserved_reason(q) is None]
+        seqs = []
+        for q in _unique(q for q in _from_text(text)
+                         if reserved_reason(q) is None):
+            t = q.toString(QKeySequence.PortableText)
+            if t in taken:
+                clashes.append((t, taken[t], act))
+                continue
+            taken[t] = act
+            seqs.append(q)
         act.setShortcuts(seqs)
         save_shortcut(act, seqs)
-        taken |= {s.toString(QKeySequence.PortableText) for s in seqs}
         applied += 1
     for act in actions:
         if action_key(act) in wanted:
@@ -236,7 +261,37 @@ def import_shortcuts(window, data) -> tuple:
         if len(kept) != len(act.shortcuts()):
             act.setShortcuts(kept)
             save_shortcut(act, kept)
-    return applied, len(wanted) - applied
+    return applied, len(wanted) - applied, clashes
+
+
+# The digit row by physical key: with Shift held, Qt reports the symbol the
+# layout types (Shift+5 → «%» on most layouts) and the shortcut was saved
+# as «Shift+%» (#493, @pacaeiro). Qt matches «Shift+5» on a real Shift+5
+# (checked by hand on xcb and Wayland, 10-10), so the digit is what we keep.
+_DIGITS = "1234567890"
+#: macOS virtual key codes (kVK_ANSI_1 … kVK_ANSI_0).
+_MAC_DIGIT_VK = {0x12: "1", 0x13: "2", 0x14: "3", 0x15: "4", 0x17: "5",
+                 0x16: "6", 0x1A: "7", 0x1C: "8", 0x19: "9", 0x1D: "0"}
+
+
+def digit_row_key(event):
+    """The Qt key of the digit-row key pressed, read from the physical
+    key — or ``None`` when it is not one (or the platform says nothing)."""
+    from PySide6.QtGui import QGuiApplication
+    platform = QGuiApplication.platformName()
+    scan = event.nativeScanCode()
+    if platform in ("xcb", "wayland", "offscreen"):
+        index = scan - 10               # xkb keycodes: «1» is 10 … «0» is 19
+    elif platform == "windows":
+        index = (scan & 0xFF) - 2       # set-1 scan codes: «1» is 2 … «0» is 11
+    elif platform == "cocoa":
+        digit = _MAC_DIGIT_VK.get(event.nativeVirtualKey())
+        return None if digit is None else Qt.Key(ord(digit))
+    else:
+        return None
+    if 0 <= index < 10:
+        return Qt.Key(ord(_DIGITS[index]))
+    return None
 
 
 class _KeyCapture(QLineEdit):
@@ -270,6 +325,8 @@ class _KeyCapture(QLineEdit):
                    Qt.Key_AltGr, Qt.Key_unknown, 0):
             return                            # wait for the real key
         mods = event.modifiers() & ~Qt.KeypadModifier
+        if mods & Qt.ShiftModifier and not (Qt.Key_0 <= key <= Qt.Key_9):
+            key = digit_row_key(event) or key   # Shift+5, not Shift+%
         self.setKeySequence(QKeySequence(QKeyCombination(mods, Qt.Key(key))))
         self.keyCaptured.emit(self._seq)
 
@@ -288,12 +345,16 @@ class ShortcutsPanel(QWidget):
         self._filter.textChanged.connect(self._apply_filter)
         lay.addWidget(self._filter)
         self._tree = QTreeWidget()
-        self._tree.setColumnCount(2)
-        self._tree.setHeaderLabels([tr("Action"), tr("Shortcut")])
+        self._tree.setColumnCount(3)
+        self._tree.setHeaderLabels([tr("Action"), tr("Menu"), tr("Shortcut")])
         self._tree.setRootIsDecorated(False)
-        self._tree.header().setSectionResizeMode(0, QHeaderView.Stretch)
+        # Name and menu share the width: sized to its contents, one long
+        # path would leave no room for the names.
+        for column in (0, 1):
+            self._tree.header().setSectionResizeMode(
+                column, QHeaderView.Stretch)
         self._tree.header().setSectionResizeMode(
-            1, QHeaderView.ResizeToContents)
+            2, QHeaderView.ResizeToContents)
         self._tree.currentItemChanged.connect(self._on_row)
         lay.addWidget(self._tree, 1)
         edit_row = QHBoxLayout()
@@ -328,6 +389,11 @@ class ShortcutsPanel(QWidget):
         foot.addWidget(reset_all)
         lay.addLayout(foot)
         self._actions = collect_actions(window)
+        # «Selected», «Last» and «All» say little alone: each row also says
+        # where its command lives (#1107). Imported here because
+        # views/command_search.py imports this module.
+        from views.command_search import menu_paths
+        self._paths = menu_paths(window)
         self._fill()
 
     # ---- list -----------------------------------------------------------------
@@ -335,8 +401,10 @@ class ShortcutsPanel(QWidget):
         self._tree.clear()
         for act in self._actions:
             row = QTreeWidgetItem([_plain(act.text()),
+                                   self._paths.get(action_key(act), ""),
                                    _to_text(act.shortcuts())])
             row.setData(0, Qt.UserRole, act)
+            row.setToolTip(1, row.text(1))
             self._tree.addTopLevelItem(row)
         self._apply_filter(self._filter.text())
 
@@ -345,8 +413,8 @@ class ShortcutsPanel(QWidget):
         first = None
         for i in range(self._tree.topLevelItemCount()):
             row = self._tree.topLevelItem(i)
-            row.setHidden(bool(t) and t not in row.text(0).lower()
-                          and t not in row.text(1).lower())
+            row.setHidden(bool(t) and not any(
+                t in row.text(column).lower() for column in range(3)))
             if first is None and not row.isHidden():
                 first = row
         cur = self._tree.currentItem()
@@ -453,7 +521,8 @@ class ShortcutsPanel(QWidget):
             return
         try:
             with open(path, encoding="utf-8") as f:
-                applied, skipped = import_shortcuts(self._window, json.load(f))
+                applied, skipped, clashes = import_shortcuts(
+                    self._window, json.load(f))
         except (OSError, ValueError) as exc:
             QMessageBox.warning(self, tr("Import shortcuts"), str(exc))
             return
@@ -463,6 +532,17 @@ class ShortcutsPanel(QWidget):
             msg += " " + tr("{n} belong to actions this installation does "
                             "not have (a plugin, say) and were left out.",
                             n=skipped)
+        if clashes:
+            lines = [tr("{key}: kept for «{kept}», taken from «{dropped}»",
+                        key=QKeySequence(k).toString(
+                            QKeySequence.NativeText),
+                        kept=_plain(kept.text()),
+                        dropped=_plain(dropped.text()))
+                     for k, kept, dropped in clashes]
+            msg += "\n\n" + tr(
+                "The file gave the same key to more than one command; "
+                "a shared key works for none, so each stays with the "
+                "first:") + "\n" + "\n".join(lines)
         QMessageBox.information(self, tr("Import shortcuts"), msg)
 
     def _on_reset_all(self) -> None:

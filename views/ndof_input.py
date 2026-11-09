@@ -24,6 +24,7 @@ the device.
 from __future__ import annotations
 
 import os
+import math
 import struct
 import sys
 import time
@@ -43,11 +44,22 @@ class NdofInput(QObject):
 
     motion = Signal(object, float)
     button = Signal(int, bool)
+    #: The six numbers exactly as the device sent them (x y z rx ry rz),
+    #: before any frame or sign — what Preferences ▸ 3D Mouse shows live, so
+    #: an owner can tell which number each move of the cap changes.
+    raw = Signal(object)
+
+    #: How long after the cap last moved a wheel event still counts as the
+    #: driver's: 3Dconnexion's driver turns the cap into wheel notches for
+    #: programs it does not know, ON TOP of what we read (a reviewer's
+    #: video: a zoom step about eight times a second over our smooth move).
+    WHEEL_QUIET_S = 0.4
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
         self._backend = None
         self._last_t: float | None = None
+        self._moved_t: float | None = None
 
     @property
     def backend_name(self) -> str | None:
@@ -84,7 +96,21 @@ class NdofInput(QObject):
             # reading after a pause gets one report's worth of time.
             dt = (now - self._last_t) if self._last_t is not None else 1 / 60
         self._last_t = None if sample.is_idle() else now
+        # Off centre past the user's own dead zone: a cap that rests a
+        # little off zero must not lock the wheel for good.
+        if max(abs(v) for v in (sample.right, sample.up, sample.forward,
+                                sample.tilt, sample.spin)) > \
+                current_settings().deadzone:
+            self._moved_t = now
         self.motion.emit(sample, float(dt))
+
+    def _emit_raw(self, values) -> None:
+        self.raw.emit(tuple(int(v) for v in values))
+
+    def in_use(self) -> bool:
+        """True while the cap is off centre, and a moment after."""
+        return (self._moved_t is not None and
+                time.monotonic() - self._moved_t < self.WHEEL_QUIET_S)
 
     def _emit_button(self, number: int, down: bool) -> None:
         self.button.emit(int(number), bool(down))
@@ -157,6 +183,7 @@ class SpnavBackend:
                 # Coalesce: a burst read at once is one camera step with the
                 # time the device says it covered (``period``, in ms).
                 x, y, z, rx, ry, rz, period = vals
+                self.owner._emit_raw((x, y, z, rx, ry, rz))
                 latest = (from_spacenavd(x, y, z, rx, ry, rz),
                           (latest[1] if latest else 0.0) + period / 1000.0)
             elif kind in (1, 2):
@@ -301,6 +328,8 @@ class RawInputBackend:
             before = self.state.get("buttons", 0)
             sample = parse_hid_report(report, self.state)
             if sample is not None:
+                self.owner._emit_raw((*self.state.get("t", (0, 0, 0)),
+                                      *self.state.get("r", (0, 0, 0))))
                 self.owner._emit_motion(sample)
             after = self.state.get("buttons", 0)
             for bit in range(32):
@@ -334,6 +363,20 @@ def load_settings():
                 setattr(out, key, max(0.25, min(4.0, float(raw))))
             except (TypeError, ValueError):
                 pass
+    from core.ndof import AXES, ACTIONS, DEFAULT_MAPPING
+    preset = str(st.value("ndof/mapping_preset", "original"))
+    out.mapping_preset = preset if preset in ("original", "custom", "freecad") else "original"
+    for axis in AXES:
+        action = str(st.value(f"ndof/map/{axis}", DEFAULT_MAPPING[axis]))
+        out.axis_mapping[axis] = action if action in ACTIONS else DEFAULT_MAPPING[axis]
+        out.axis_inversion[axis] = str(st.value(
+            f"ndof/map_invert/{axis}", "0")).lower() in ("1", "true")
+        try:
+            speed = float(st.value(f"ndof/map_speed/{axis}", 1.0))
+            if math.isfinite(speed):
+                out.axis_sensitivity[axis] = max(0.25, min(4.0, speed))
+        except (TypeError, ValueError):
+            pass
     return out
 
 
@@ -359,10 +402,26 @@ def save_settings(settings) -> None:
         st.setValue(f"ndof/{key}",
                     ("1" if val else "0") if isinstance(default, bool)
                     else float(val))
+    from core.ndof import AXES, ACTIONS, DEFAULT_MAPPING
+    st.setValue("ndof/mapping_preset", settings.mapping_preset
+                if settings.mapping_preset in ("original", "custom", "freecad") else "original")
+    for axis in AXES:
+        action = settings.axis_mapping.get(axis, DEFAULT_MAPPING[axis])
+        st.setValue(f"ndof/map/{axis}", action if action in ACTIONS else DEFAULT_MAPPING[axis])
+        st.setValue(f"ndof/map_invert/{axis}",
+                    "1" if settings.axis_inversion.get(axis, False) else "0")
+        speed = settings.axis_sensitivity.get(axis, 1.0)
+        st.setValue(f"ndof/map_speed/{axis}", max(0.25, min(4.0, float(speed))))
     st.sync()
 
 
 _shared: NdofInput | None = None
+
+
+def cap_in_use() -> bool:
+    """Whether a 3D mouse is moving the view right now — without opening a
+    connection if there is none yet."""
+    return _shared is not None and _shared.in_use()
 
 
 def shared_input() -> NdofInput:

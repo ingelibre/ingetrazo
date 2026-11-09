@@ -1564,3 +1564,29 @@ def setup(app) -> None:
                    faces=bool(faces), wins=bool(wins), later=True)
 
     app.add_context_menu(context)
+
+    # The Browser says «Window» on each window, with its panes and
+    # size in the tooltip (API 2: add_outliner_kind; an older host has no
+    # browser and skips it).
+    add_kind = getattr(app, "add_outliner_kind", None)
+    if add_kind is not None:
+        add_kind(outliner_kind)
+
+
+def outliner_kind(group):
+    """What a Windowizer container is, for the Browser."""
+    data = window_data(group)
+    if data is None:
+        return None
+    from core.units import fmt_len
+    p = normalize_params(data.get("params"))
+    props = [("Panes", f"{len(parse_bands(p['cols']))} × "
+                       f"{len(parse_bands(p['rows']))}")]
+    pts = data.get("outline") or []
+    if pts:
+        xs = [float(q[0]) for q in pts]
+        zs = [float(q[2]) for q in pts]
+        props += [("Width", fmt_len(max(xs) - min(xs))),
+                  ("Height", fmt_len(max(zs) - min(zs)))]
+    props.append(("Frame", fmt_len(p["frame_w"])))
+    return {"type": "Window", "props": props}

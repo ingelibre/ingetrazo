@@ -77,8 +77,10 @@ def test_the_menu_entry_hides_and_shows_its_tab(win):
 
 def test_asking_for_a_tab_unfolds_a_folded_sidebar(win):
     ai = _dock(win, "extension_ai")
-    win._act_sidebar.setChecked(False)
-    assert all(d.isHidden() for d in win._sidebar_docks())
+    win._act_sidebar.setChecked(False)              # Ctrl+F5: the right side
+    from PySide6.QtCore import Qt
+    assert all(d.isHidden() for d in win._sidebar_docks()
+               if win.dockWidgetArea(d) != Qt.LeftDockWidgetArea)
     win.set_tray_shown(ai, True)
     assert win._act_sidebar.isChecked()
     assert not ai.isHidden()

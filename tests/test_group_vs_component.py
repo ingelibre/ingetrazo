@@ -51,7 +51,9 @@ def test_make_component_over_several_groups_makes_one_holding_them():
     assert scene.groups == [a, b]
 
 
-def test_make_unique_turns_a_component_with_subgroups_into_a_group():
+def test_make_unique_keeps_a_component_with_subgroups_a_component():
+    """A component of its own, with this one copy (#620) — it used to come
+    out a group."""
     scene, hist, a, b = _two_groups()
     hist.execute(MakeComponentOfCommand([], [], [a, b], name="Banca"))
     comp = scene.groups[0]
@@ -59,10 +61,11 @@ def test_make_unique_turns_a_component_with_subgroups_into_a_group():
     scene.groups.append(sibling)
     assert sibling.is_component()
     hist.execute(MakeUniqueCommand(comp))
-    assert not comp.is_component() and len(comp.children) == 2
+    assert comp.is_component() and len(comp.children) == 2
+    assert comp.mesh is not sibling.mesh            # its own definition
     assert sibling.is_component()
     hist.undo()
-    assert comp.is_component()
+    assert comp.is_component() and comp.mesh is sibling.mesh
 
 
 def test_the_panel_says_group_for_a_group_of_groups(monkeypatch):

@@ -15,6 +15,10 @@ class _Tool:
 
 class _ViewportStub:
     _SHIFT_LOCKABLE = Viewport._SHIFT_LOCKABLE
+    # Shift also marks the plane the shape is drawing on (``PlaneLock.
+    # mark_plane``). The tool stubbed here is not a PlaneLock, so that hook
+    # has nothing to do — but it is called all the same, so it has to exist.
+    _mark_plane_for_shift = Viewport._mark_plane_for_shift
 
     def __init__(self, snap_point):
         self.last_snap = SnapResult(

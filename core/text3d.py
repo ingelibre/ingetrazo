@@ -3,8 +3,8 @@
 """3D Text — real, editable geometry generated from font glyphs (Texto
 3D).
 
-Qt supplies the glyph outlines (``QPainterPath.addText`` →
-``toSubpathPolygons``); each outline ring is classified outer/hole by
+Qt supplies the glyph outlines (the line shaped by ``QTextLayout``, its
+glyph paths → ``toSubpathPolygons``); each outline ring is classified outer/hole by
 containment parity, becomes a front face (with holes) and, when a thickness
 is given, a back face plus side walls — one closed solid per contour group.
 The result is a plain ``Mesh`` for a ``Group``: the letters push/pull, paint
@@ -18,12 +18,13 @@ Text…» reopens the dialog and :func:`rebuild_text_group` lays the letters
 out again in place (double-click keeps its usual meaning: it enters).
 
 The text STANDS UP by default: width along +X, height along +Z (base at
-z=0), thickness along +Y — so placing it with the component-placement tool
-plants the sign on the ground plane.
+z=0), thickness along -Y — the BACK face sits at y=0 (the local origin, the
+insertion point), so gluing the back to a face keeps the sign flush even
+after the thickness is re-edited.
 """
 from __future__ import annotations
 
-from PySide6.QtGui import QFont, QPainterPath, QVector3D
+from PySide6.QtGui import QFont, QPainterPath, QTextLayout, QVector3D
 
 from core.mesh import Mesh
 
@@ -40,14 +41,49 @@ def _font(font_family: str, bold: bool, italic: bool) -> QFont:
     return font
 
 
-def _rings(text: str, font_family: str, bold: bool, italic: bool,
-           x: float = 0.0) -> tuple[list[list[tuple[float, float]]], float]:
-    """Glyph outline rings in font units (y already flipped to 'up') and the
-    layout height of one line. ``x`` is where the text starts, in font
-    units — a single letter of a longer string is drawn at its advance."""
-    font = _font(font_family, bold, italic)
-    path = QPainterPath()
-    path.addText(x, 0.0, font, text)
+def _shaped_paths(text: str, font_family: str, bold: bool,
+                  italic: bool) -> dict[int, QPainterPath]:
+    """The line shaped ONCE (kerning, font fallback, ligatures) as glyph
+    outlines per owning character index, baseline at y=0. The whole text
+    and its letters both come from here: ``QPainterPath.addText`` places
+    glyphs its own way, and on Windows (Segoe UI) and macOS its advances
+    differ from the shaped line's, so a text built in one piece and the
+    same text split into letters did not match (MAC-07, ronda Windows
+    0.5.9)."""
+    layout = QTextLayout(text, _font(font_family, bold, italic))
+    layout.beginLayout()
+    line = layout.createLine()
+    layout.endLayout()
+    # Qt string indexes count UTF-16 units; Python indexes Unicode characters.
+    owners = {}
+    offset = 0
+    for i, ch in enumerate(text):
+        owners[offset] = i
+        offset += len(ch.encode("utf-16-le")) // 2
+    paths = {}
+    for run in layout.glyphRuns(0, -1, QTextLayout.GlyphRunRetrievalFlag.RetrieveAll):
+        raw = run.rawFont()
+        for glyph, pos, index in zip(run.glyphIndexes(), run.positions(),
+                                     run.stringIndexes()):
+            owner = owners[index]
+            path = raw.pathForGlyph(glyph)
+            path.translate(pos.x(), pos.y() - line.ascent())
+            paths.setdefault(owner, QPainterPath()).addPath(path)
+    return paths
+
+
+def _rings(text: str, font_family: str, bold: bool,
+           italic: bool) -> tuple[list[list[tuple[float, float]]], float]:
+    """Glyph outline rings of the whole shaped line in font units (y already
+    flipped to 'up') and the layout height of one line."""
+    rings = []
+    for _i, path in sorted(_shaped_paths(text, font_family, bold,
+                                         italic).items()):
+        rings.extend(_path_rings(path))
+    return rings, _FONT_PT
+
+
+def _path_rings(path: QPainterPath) -> list[list[tuple[float, float]]]:
     rings = []
     for poly in path.toSubpathPolygons():
         ring = [(pt.x(), -pt.y()) for pt in poly]   # Qt y-down → up
@@ -56,7 +92,7 @@ def _rings(text: str, font_family: str, bold: bool, italic: bool,
                 ring = ring[:-1]
             if len(ring) >= 3:
                 rings.append(ring)
-    return rings, _FONT_PT
+    return rings
 
 
 def _ring_area(ring) -> float:
@@ -110,12 +146,17 @@ def _group_rings(rings):
 def _solid_from_rings(rings, scale: float, y_min: float,
                       thickness: float) -> Mesh:
     """The extruded solid of ``rings`` (font units) at ``scale`` metres per
-    unit, its lowest point at ``y_min`` sitting on z=0."""
+    unit, its lowest point at ``y_min`` sitting on z=0 and its BACK face at
+    y=0 (the thickness grows toward -Y)."""
     mesh = Mesh()
 
     def V(x, y, side_y: float) -> QVector3D:
         # Font plane (x, up) → world: X = x, Z = up, Y = extrusion depth.
-        return QVector3D(x * scale, side_y, (y - y_min) * scale)
+        # The depth runs toward -Y so the BACK face lands on y=0: that is the
+        # local origin / insertion point, the one coordinate the re-edit keeps
+        # put, so a sign glued by its back stays flush when its thickness
+        # changes (only the front moves out).
+        return QVector3D(x * scale, side_y - thickness, (y - y_min) * scale)
 
     for outer, holes in _group_rings(rings):
         # Windings are set ANALYTICALLY — no orient_outward pass. Its parity
@@ -190,26 +231,22 @@ def build_text_letters(text: str, font_family: str = "", bold: bool = False,
     the block's scale and baseline, so the letters line up exactly as the
     one-piece build lays them — each simply arrives in its own mesh.
 
-    A glyph is drawn at the advance of the text before it (``QFontMetricsF``
-    honours the font's kerning for that prefix), never as a separate string
-    at x=0 shifted by hand."""
-    from PySide6.QtGui import QFontMetricsF
+    The whole line is shaped once, including kerning, font fallback and
+    ligatures. Shared glyphs belong to their first character's mesh.
+    """
     rings, _layout_h = _rings(text, font_family, bold, italic)
     if not rings:
         return []
     scale, y_min = _block_scale(rings, height)
-    metrics = QFontMetricsF(_font(font_family, bold, italic))
+    paths = _shaped_paths(text, font_family, bold, italic)
     letters: list = []
-    for i, ch in enumerate(text):
-        if ch.isspace():
-            continue
-        x = metrics.horizontalAdvance(text[:i]) if i else 0.0
-        glyph, _h = _rings(ch, font_family, bold, italic, x=x)
+    for i in sorted(paths):
+        glyph = _path_rings(paths[i])
         if not glyph:
             continue
         mesh = _solid_from_rings(glyph, scale, y_min, thickness)
         if mesh.faces:
-            letters.append((ch, mesh))
+            letters.append((text[i], mesh))
     return letters
 
 
@@ -327,8 +364,28 @@ def text_frame(group):
     return QMatrix4x4()
 
 
+def _legacy_back(group) -> float:
+    """Where the BACK face of letters laid out the older way sits, in the
+    text's frame: those grew their thickness toward +Y from the front at
+    y=0, so the back is at y=+thickness. 0.0 for letters laid out the
+    current way (back at y=0, thickness toward -Y)."""
+    ys = [v.position.y() for k in (getattr(group, "children", None) or ())
+          for v in k.mesh.vertices]
+    if ys and min(ys) > -1e-9 and max(ys) > 1e-9:
+        return max(ys)
+    return 0.0
+
+
 def rebuild_text_group(group, params: dict) -> list:
     """The letters for ``params`` laid out where ``group``'s current letters
     are — the new ``children`` list, NOT yet assigned (the command that
-    swaps them keeps the old list for undo)."""
-    return _letter_groups(params, xform=text_frame(group))
+    swaps them keeps the old list for undo).
+
+    A text from an older document keeps its back face where it was: the
+    frame shifts by the old thickness, so re-editing it does not make the
+    sign jump off (or into) the face it hangs on."""
+    frame = text_frame(group)
+    back = _legacy_back(group)
+    if back:
+        frame.translate(0.0, back, 0.0)
+    return _letter_groups(params, xform=frame)

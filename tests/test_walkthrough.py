@@ -295,3 +295,25 @@ def test_look_around_and_walk_keep_hearing_the_cursor_above_the_horizon():
     finally:
         win._saved_version = vp.scene.version
         win.close()
+
+
+def test_wall_feelers_ask_only_as_far_as_the_step_reaches(monkeypatch):
+    """The feelers bound their query to the step plus the clearance, so a
+    huge model bakes and tests only what is within reach; the kill switch
+    sends them unbounded, as before."""
+    import tools.walkthrough as wt
+    from PySide6.QtGui import QVector3D as V
+    asked = []
+
+    class Stub:
+        def ray_distance(self, origin, direction, reach=None):
+            asked.append(reach)
+            return None
+
+    assert not wt._blocked(Stub(), V(0, 0, 1.68), V(0.1, 0, 0), 1.68,
+                           0.4, 0.5)
+    assert asked == [pytest.approx(0.5), pytest.approx(0.5)]
+    asked.clear()
+    monkeypatch.setattr(wt, "_NO_WALK_REACH", True)
+    wt._blocked(Stub(), V(0, 0, 1.68), V(0.1, 0, 0), 1.68, 0.4, 0.5)
+    assert asked == [None, None]

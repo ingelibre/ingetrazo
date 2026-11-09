@@ -58,3 +58,45 @@ def test_a_fresh_install_packs_the_left_column_and_keeps_the_top_order(
     finally:
         win._saved_version = win.viewport.scene.version
         win.close()
+
+
+def test_toolbars_that_do_not_fit_on_the_screen_go_to_a_new_row(
+        settings_file):
+    """With the 52 catalog extensions installed, 34 toolbars shared the top
+    row and the window could not be narrower than 2205 px on a 1477 px
+    screen: Marco could not resize it (18-10). A row that stops fitting is
+    wrapped; the rows that fit stay as they were."""
+    from PySide6.QtGui import QAction
+    from PySide6.QtWidgets import QToolBar
+    from views.main_window import MainWindow
+    win = MainWindow()
+    try:
+        win.resize(800, 600)
+        win.show()
+        for _ in range(3):
+            _app.processEvents()
+        before = {tb.objectName(): win.toolBarBreak(tb)
+                  for tb in win.toolbars.values()}
+        avail = win.screen().availableGeometry().width()
+        own_min = win.minimumSizeHint().width()
+        extra = []
+        n = avail // 40 + 5          # far more than one row can hold
+        for i in range(n):
+            tb = QToolBar(f"Extension {i}", win)
+            tb.setObjectName(f"ext_{i}")
+            for k in range(4):
+                tb.addAction(QAction(f"a{k}", tb))
+            win.addToolBar(Qt.TopToolBarArea, tb)
+            extra.append(tb)
+        for _ in range(4):
+            _app.processEvents()
+        # the extra bars add rows, not width (the offscreen screen is
+        # narrower than the window's own minimum, hence the max)
+        assert win.minimumSizeHint().width() <= max(own_min, avail)
+        assert any(win.toolBarBreak(tb) for tb in extra)
+        # the window's own bars keep their rows
+        assert {tb.objectName(): win.toolBarBreak(tb)
+                for tb in win.toolbars.values()} == before
+    finally:
+        win._saved_version = win.viewport.scene.version
+        win.close()

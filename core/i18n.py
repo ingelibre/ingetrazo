@@ -27,18 +27,86 @@ _I18N_DIR = app_root() / "i18n"
 
 #: How each language names itself in the Language menu and Preferences.
 LANGUAGE_NAMES = {"en": "English", "es": "Español",
-                  "pt-BR": "Português (Brasil)", "zh-CN": "简体中文", "it": "Italiano",
-                  "id": "Bahasa Indonesia"}
+                  "pt-BR": "Português (Brasil)", "zh-CN": "简体中文",
+                  "zh-TW": "正體中文", "it": "Italiano",
+                  "id": "Bahasa Indonesia", "fr": "Français", "de": "Deutsch",
+                  "pl": "Polski", "ru": "Русский", "vi": "Tiếng Việt",
+                  "lo": "ລາວ", "th": "ไทย",
+                  "ja": "日本語", "ko": "한국어", "uk": "Українська",
+                  "ar": "العربية", "bg": "Български"}
+
+#: Languages written from right to left: the whole interface is mirrored
+#: for them (see views/rtl.py). Arabic ships; the rest are ready for when
+#: their catalogue comes.
+RTL_LANGUAGES = frozenset({"ar", "he", "fa", "ur"})
+
+
+def is_rtl(lang: str | None) -> bool:
+    """Whether ``lang`` (``"ar"``, ``"fa-IR"``…) is written right to left."""
+    return str(lang or "").split("-")[0].split("_")[0].lower() in RTL_LANGUAGES
+
+
+#: The saved choice that follows the operating system's language (#818);
+#: also what an unset choice means.
+SYSTEM = "system"
 
 _catalog: dict[str, str] = {}
 _lang = "en"
 
 
+#: Catalogues that ship but are not offered yet. Lao (#850) was here until
+#: its marks composed on Windows (views/script_fonts.py, round 0.6.0).
+HIDDEN_LANGUAGES: frozenset[str] = frozenset()
+
+
 def available_languages() -> list[str]:
-    """Language codes with a JSON file in ``i18n/`` (e.g. ``["en", "es"]``)."""
+    """Language codes with a JSON file in ``i18n/`` (e.g. ``["en", "es"]``),
+    less :data:`HIDDEN_LANGUAGES`."""
     if not _I18N_DIR.is_dir():
         return ["en"]
-    return sorted(p.stem for p in _I18N_DIR.glob("*.json"))
+    return sorted(p.stem for p in _I18N_DIR.glob("*.json")
+                  if p.stem not in HIDDEN_LANGUAGES)
+
+
+#: What in a Chinese locale tag means the traditional script: a system in
+#: Taiwan says ``zh-Hant-TW``, which would read the simplified catalog by its
+#: base language.
+_TRADITIONAL_CHINESE = frozenset({"hant", "tw", "hk", "mo"})
+
+
+def language_for_locales(locales) -> str:
+    """The catalog that best serves ``locales`` — the system's UI
+    languages, most preferred first (``["pt-PT", "en-US"]``).
+
+    An exact tag wins, else the same base language: Portuguese from
+    Portugal reads the Brazilian catalog, ``zh-Hans-CN`` the simplified
+    Chinese one, and ``zh-Hant-TW`` or ``zh-HK`` the traditional one. The
+    first locale with any match decides, so an English system stays English;
+    nothing matching at all means English."""
+    have = available_languages()
+    by_tag = {code.lower(): code for code in have}
+    by_base: dict[str, str] = {}
+    for code in have:
+        by_base.setdefault(code.lower().split("-")[0], code)
+    for name in locales:
+        tag = str(name).replace("_", "-").lower()
+        found = by_tag.get(tag)
+        if not found and _TRADITIONAL_CHINESE.intersection(tag.split("-")[1:]) \
+                and tag.startswith("zh-"):
+            found = by_tag.get("zh-tw")
+        found = found or by_base.get(tag.split("-")[0])
+        if found:
+            return found
+    return "en"
+
+
+def resolve_language(choice: str | None) -> str:
+    """The language code a saved ``choice`` runs in: itself, or for
+    :data:`SYSTEM` (or no choice yet) the operating system's."""
+    if choice and str(choice) != SYSTEM:
+        return str(choice)
+    from PySide6.QtCore import QLocale
+    return language_for_locales(QLocale.system().uiLanguages())
 
 
 def set_language(lang: str) -> None:

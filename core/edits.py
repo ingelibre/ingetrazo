@@ -20,7 +20,8 @@ Kept in its own module to avoid an import cycle: ``history`` imports
 """
 from __future__ import annotations
 
-from typing import Iterable, Sequence
+import math
+from typing import Iterable, Optional, Sequence
 
 from PySide6.QtGui import QVector3D
 
@@ -47,6 +48,10 @@ from core.topology import (
 Segment = tuple[QVector3D, QVector3D]
 
 
+def _finite(p) -> bool:
+    return all(math.isfinite(c) for c in (p.x(), p.y(), p.z()))
+
+
 def plan_edge_commands(
     scene,
     segments: Sequence[Segment],
@@ -63,9 +68,22 @@ def plan_edge_commands(
     commands: list[Command] = []
     simulated: list[Edge] = list(scene.edges)
     faces_snapshot: list[Face] = list(scene.faces)
+    near = _Nearby(simulated, faces_snapshot)
+    from core.topology import KeyMemo
+    near.key = KeyMemo()            # nothing moves while a plan is made
 
     for a, b in segments:
-        new_segments, edge_cuts = plan_edge_split(simulated, a, b)
+        if not (_finite(a) and _finite(b)):
+            # A NaN or infinite end is no place in the model; planned, it
+            # failed the commit deep inside (#466 «cannot convert float NaN
+            # to integer»). The segment is simply not drawn.
+            continue
+        # The searches only look at what can touch the segment (a box test
+        # far wider than the welding tolerance); the plan's own edits still
+        # go to the full lists. Inside the Plaza's 25 797-face group every
+        # stroke tested every edge and face — ~1 s each (09-10).
+        new_segments, edge_cuts = plan_edge_split(
+            near.edges(simulated, a, b), a, b)
 
         # Replace each crossed existing edge with its two sub-edges.
         for edge, point in edge_cuts.items():
@@ -79,7 +97,8 @@ def plan_edge_commands(
             e_soft = getattr(edge, "soft", False) or None
             e_curve = getattr(edge, "curve", None)
             for sa, sb in ((edge.a, point), (point, edge.b)):
-                if find_duplicate_edge(simulated, sa, sb) is None:
+                if find_duplicate_edge(near.edges(simulated, sa, sb),
+                                       sa, sb) is None:
                     commands.append(
                         AddEdgeCommand(sa, sb, soft=e_soft, curve=e_curve))
                     simulated.append(Edge(sa, sb))
@@ -102,7 +121,8 @@ def plan_edge_commands(
             # dissolves the door back into the wall. The same door drawn with
             # three lines left the box closed, which is what gave it away.
             for f, new_verts in split_edge_in_faces(
-                faces_snapshot, edge.a, edge.b, point, skip_endpoints=(a, b)
+                near.faces(faces_snapshot, edge.a, edge.b),
+                edge.a, edge.b, point, skip_endpoints=(a, b)
             ):
                 # Same face, one collinear vertex richer: it keeps its own
                 # paint, exactly as it stands (the texture's world→UV map
@@ -120,7 +140,8 @@ def plan_edge_commands(
 
         # Add the new segment's pieces (welding duplicates), auto-facing.
         for sa, sb in new_segments:
-            already = find_duplicate_edge(simulated, sa, sb)
+            already = find_duplicate_edge(near.edges(simulated, sa, sb),
+                                          sa, sb)
             # Always emit the add: AddEdgeCommand welds, so a duplicate is a
             # no-op, but face detection below must still run (drawing over an
             # existing edge can still close a new face).
@@ -128,12 +149,117 @@ def plan_edge_commands(
             if already is None:
                 simulated.append(Edge(sa, sb))
             if detect_faces:
-                _plan_faces(commands, faces_snapshot, simulated, sa, sb, eye)
+                _plan_faces(commands, faces_snapshot, simulated, sa, sb, eye,
+                            near)
 
     return commands
 
 
-def _plan_faces(commands, faces_snapshot, simulated, sa, sb, eye=None) -> None:
+class _Nearby:
+    """Box filter for the planner's searches. Every edge and face is boxed
+    once per plan, in one NumPy array (the plan's own simulated pieces are
+    boxed on first sight); a search then gets, in their original order, only
+    those whose box, grown by a margin far beyond the 0.1 mm welding
+    tolerance, reaches the segment. Anything that can cross, contain or
+    duplicate the segment is kept, so the plan is the one the full lists
+    give (tests/test_planner_box_filter.py)."""
+
+    def __init__(self, edges, faces) -> None:
+        import numpy as np
+        self._np = np
+        self._items: list = []
+        self._row: dict = {}
+        rows = []
+        for e in edges:
+            self._row[id(e)] = len(self._items)
+            self._items.append(e)
+            a, b = e.a, e.b
+            ax, ay, az, bx, by, bz = a.x(), a.y(), a.z(), b.x(), b.y(), b.z()
+            rows.append((min(ax, bx), min(ay, by), min(az, bz),
+                         max(ax, bx), max(ay, by), max(az, bz)))
+        for f in faces:
+            self._row[id(f)] = len(self._items)
+            self._items.append(f)
+            rows.append(self._points_box(f.vertices))
+        self._arr = (np.asarray(rows, dtype=np.float64) if rows
+                     else np.zeros((0, 6)))
+        self._extra: dict = {}
+
+    @staticmethod
+    def _points_box(pts):
+        xs = [p.x() for p in pts]
+        ys = [p.y() for p in pts]
+        zs = [p.z() for p in pts]
+        if not xs:
+            return (0.0,) * 6
+        return (min(xs), min(ys), min(zs), max(xs), max(ys), max(zs))
+
+    def _box(self, item):
+        hit = self._extra.get(id(item))
+        if hit is not None and hit[0] is item:
+            return hit[1]
+        pts = item.vertices if hasattr(item, "vertices") else (item.a, item.b)
+        box = self._points_box(pts)
+        self._extra[id(item)] = (item, box)
+        return box
+
+    @staticmethod
+    def _window(pts):
+        xs = [p.x() for p in pts]
+        ys = [p.y() for p in pts]
+        zs = [p.z() for p in pts]
+        lo = (min(xs), min(ys), min(zs))
+        hi = (max(xs), max(ys), max(zs))
+        # 1 cm, plus a relative term for coordinates far from the origin
+        # (float32 positions, segment_intersection's relative tolerance).
+        m = 0.01 + 1e-6 * max(abs(c) for c in lo + hi)
+        return (lo[0] - m, lo[1] - m, lo[2] - m,
+                hi[0] + m, hi[1] + m, hi[2] + m)
+
+    def _pick(self, items, pts):
+        np = self._np
+        w = self._window(pts)
+        arr = self._arr
+        mask = ((arr[:, 3] >= w[0]) & (arr[:, 0] <= w[3])
+                & (arr[:, 4] >= w[1]) & (arr[:, 1] <= w[4])
+                & (arr[:, 5] >= w[2]) & (arr[:, 2] <= w[5]))
+        known = self._items
+        # Boxed at the start (kept alive in ``known``, so an id is never
+        # reused): the mask says. The plan's own new pieces are boxed here.
+        # The set work runs in C; only the hits and the new pieces reach
+        # Python, and the result keeps the order of ``items``.
+        keep = {id(known[r]) for r in np.flatnonzero(mask)}
+        ids = list(map(id, items))
+        new = set(ids).difference(self._row)
+        if new:
+            for it in items:
+                if id(it) in new:
+                    x0, y0, z0, x1, y1, z1 = self._box(it)
+                    if (x1 >= w[0] and x0 <= w[3] and y1 >= w[1]
+                            and y0 <= w[4] and z1 >= w[2] and z0 <= w[5]):
+                        keep.add(id(it))
+        if not keep:
+            return []
+        return [it for it, i in zip(items, ids) if i in keep]
+
+    def edges(self, edges, a, b):
+        return self._pick(edges, (a, b))
+
+    def faces(self, faces, a, b):
+        return self._pick(faces, (a, b))
+
+    def faces_around(self, faces, pts):
+        return self._pick(faces, list(pts))
+
+
+def _around(near, faces, loop):
+    """The faces a same-vertex face can be among: an equal face has the same
+    corners, hence the same box (``face_exists`` compares vertex sets)."""
+    return near.faces_around(faces, loop) if near is not None else faces
+
+
+def _plan_faces(commands, faces_snapshot, simulated, sa, sb, eye=None,
+                near=None) -> None:
     """Emit the face commands for a freshly added edge ``sa``–``sb``.
 
     Two paths, mutually exclusive:
@@ -145,7 +271,9 @@ def _plan_faces(commands, faces_snapshot, simulated, sa, sb, eye=None) -> None:
       ``find_cycles_through`` returns both sides, so a diagonal across a
       face-less square still faces both triangles.
     """
-    chord = find_chord_split(faces_snapshot, sa, sb)
+    chord = find_chord_split(
+        near.faces(faces_snapshot, sa, sb) if near is not None
+        else faces_snapshot, sa, sb)
     if chord is not None:
         mother, loop_a, loop_b = chord
         # Both halves ARE the mother, cut in two: they keep her paint, and
@@ -158,13 +286,17 @@ def _plan_faces(commands, faces_snapshot, simulated, sa, sb, eye=None) -> None:
         commands.append(DeleteFaceCommand(mother))
         faces_snapshot.remove(mother)
         for loop in (loop_a, loop_b):
-            if is_planar(loop) and not face_exists(faces_snapshot, loop):
+            if is_planar(loop) and not face_exists(
+                    _around(near, faces_snapshot, loop), loop):
                 commands.append(AddFaceCommand(loop, attrs=keep))
                 faces_snapshot.append(Face(list(loop), attrs=keep))
         return
 
-    for cycle in find_cycles_through(simulated, sa, sb):
-        if is_planar(cycle) and not face_exists(faces_snapshot, cycle):
+    for cycle in find_cycles_through(
+            simulated, sa, sb,
+            key=getattr(near, "key", None) if near is not None else None):
+        if is_planar(cycle) and not face_exists(
+                _around(near, faces_snapshot, cycle), cycle):
             cycle = face_up_or_toward(cycle, eye)
             commands.append(AddFaceCommand(cycle))
             faces_snapshot.append(Face(list(cycle)))
@@ -355,16 +487,24 @@ def build_add_edges(
     detect_faces: bool = True,
     extra: Iterable[Command] = (),
     eye=None,
+    plane_rebuild: bool = False,
 ) -> Command:
     """Batch convenience: many drawn edges (+ optional ``extra`` commands such
     as a tool-managed face) → one atomic command. ``eye`` (the camera's
-    position) decides which way a new vertical face looks."""
+    position) decides which way a new vertical face looks.
+
+    ``plane_rebuild``: a tool that owns its face (the Rectangle) asks for
+    the plane it lands on to be rebuilt, as a drawn Line has been since
+    July — drawn over a ring on walls it stacked a full face on the ring
+    instead of filling the hole (#538)."""
     commands = plan_edge_commands(scene, segments, detect_faces=detect_faces,
                                   eye=eye)
     commands.extend(extra)
     _append_active_tag(scene, commands)
-    _append_flat_curve_rebuild(
-        scene, commands, [p for seg in segments for p in seg])
+    points = [p for seg in segments for p in seg]
+    _append_flat_curve_rebuild(scene, commands, points)
+    if plane_rebuild:
+        _append_face_plane_rebuild(scene, commands, points)
     if len(commands) == 1 and not _scene_has_curves(scene):
         return commands[0]
     return SnapshotCompound(commands)
@@ -442,6 +582,149 @@ def divide_edges(mesh, edges, n: int) -> int:
                 for f in facets:
                     f.curve = cid
     return cuts
+
+
+# How far a point may sit off the line through its neighbours and still go.
+# A distance, not an angle: float32 coordinates tilt a 2 cm piece 300 m
+# out more than a real 0.1° kink in a 10 m line, yet move the point far
+# less. And it follows that precision, not a fixed figure: a few float32
+# steps of the coordinates' size (~1e-7 each), so mm work near the origin
+# gets a thousandth of a mm, and the first facet of a 2 mm fillet is never
+# taken for part of the line it leaves. Capped at the mesh's own stitch
+# tolerance (0.1 mm); beyond that the point is not on the line.
+_JOIN_TOL_FLOOR = 1e-6
+_JOIN_TOL_REL = 1e-6
+_JOIN_TOL_MAX = 1e-4
+
+
+def _off_line(p, a, b) -> tuple:
+    """Distance from ``p`` to the line through ``a`` and ``b``, and the
+    tolerance the size of those coordinates allows it — in double
+    precision, so the test adds no float32 noise of its own."""
+    p, a, b = ((q.x(), q.y(), q.z()) for q in (p, a, b))
+    ab = [b[i] - a[i] for i in range(3)]
+    ap = [p[i] - a[i] for i in range(3)]
+    cross = (ap[1] * ab[2] - ap[2] * ab[1],
+             ap[2] * ab[0] - ap[0] * ab[2],
+             ap[0] * ab[1] - ap[1] * ab[0])
+    off = math.sqrt(sum(c * c for c in cross)) / math.sqrt(
+        sum(c * c for c in ab))
+    size = max(abs(c) for q in (p, a, b) for c in q)
+    tol = min(_JOIN_TOL_MAX, _JOIN_TOL_FLOOR + _JOIN_TOL_REL * size)
+    return off, tol
+
+
+#: Why Join Segments leaves a point where it is, for its preview: the
+#: points it takes away ("join") and the ones on a straight line that it
+#: keeps all the same, each for its reason. A plain corner is not listed:
+#: only a kink close enough to straight to be mistaken for none.
+JOIN_REASONS = ("join", "kink", "branch", "flags", "curve")
+
+# Under this angle a corner kept by Join Segments is worth pointing out:
+# it looks straight but is not (a fillet's first facet, a stray click).
+_JOIN_KINK_DEG = 1.0
+
+
+def _kink_deg(v, a, b) -> float:
+    """The turn, in degrees, a path a → v → b takes at ``v``."""
+    d1, d2 = v.position - a.position, b.position - v.position
+    if d1.length() == 0 or d2.length() == 0:
+        return 180.0
+    c = QVector3D.dotProduct(d1.normalized(), d2.normalized())
+    return math.degrees(math.acos(max(-1.0, min(1.0, c))))
+
+
+def _straight_through(v, picked) -> bool:
+    """Whether two of the ``picked`` edges at ``v`` run on in one straight
+    line through it — a T or a cross whose bar Join Segments must keep."""
+    ends = [e.other(v) for e in v.edges if id(e) in picked]
+    for i, a in enumerate(ends):
+        for b in ends[i + 1:]:
+            off, tol = _off_line(v.position, a.position, b.position)
+            if off <= tol and _kink_deg(v, a, b) < 90.0:
+                return True
+    return False
+
+
+def join_edges(mesh, edges, verdicts: Optional[dict] = None) -> list:
+    """Join Segments, the inverse of Divide: every vertex where two of
+    ``edges`` meet in a straight line, with nothing else attached to it,
+    goes, and the two segments become one line. A long line drawn in
+    pieces, or one left cut by a divide or by an erased crossing, comes out
+    clean, its faces (if it bounds any) losing the needless corner.
+
+    A vertex stays when a third edge meets it, when the two segments are
+    not collinear, bound different faces, carry different flags (soft,
+    hidden, layer), or belong to a curve: an arc's facets are not
+    segments to merge. Returns the edges the selection is made of
+    afterwards, the joined lines in place of their pieces.
+
+    ``verdicts``, when given, is filled with what happened to each point
+    on the way, ``{vertex: reason}`` (see :data:`JOIN_REASONS`): what
+    :func:`join_preview` shows."""
+    from core.mesh import edge_flags, stamp_edge_flags
+    live = [e for e in edges if e in mesh.edges]
+    picked = set(map(id, live))
+    seen: set = set()
+    candidates = []
+    for e in live:
+        for v in (e.v0, e.v1):
+            if id(v) not in seen:
+                seen.add(id(v))
+                candidates.append(v)
+
+    def keep(v, reason):
+        if verdicts is not None:
+            verdicts[v] = reason
+
+    for v in candidates:
+        if len(v.edges) != 2:
+            if len(v.edges) > 2 and _straight_through(v, picked):
+                keep(v, "branch")
+            continue
+        e1, e2 = list(v.edges)
+        if id(e1) not in picked or id(e2) not in picked:
+            continue
+        a, b = e1.other(v), e2.other(v)
+        off, tol = _off_line(v.position, a.position, b.position)
+        if off > tol:
+            if _kink_deg(v, a, b) < _JOIN_KINK_DEG:
+                keep(v, "kink")
+            continue
+        flags = edge_flags(e1)
+        if flags != edge_flags(e2):
+            keep(v, "flags")
+            continue
+        if e1.curve is not None or e2.curve is not None:
+            keep(v, "curve")
+            continue
+        if not mesh.collapsible_vertex(v):
+            continue
+        if mesh.find_edge(a, b) is not None:
+            continue                     # the whole line is there already
+        joined = mesh.collapse_vertex(v)["new_edge"]
+        stamp_edge_flags(joined, flags)
+        keep(v, "join")
+        picked.discard(id(e1))
+        picked.discard(id(e2))
+        picked.add(id(joined))
+        live.append(joined)
+    return [e for e in live if id(e) in picked and e in mesh.edges]
+
+
+def join_preview(mesh, edges) -> dict:
+    """What Join Segments would do to ``edges``, without doing it:
+    ``{vertex: reason}`` for the points it would take away and the ones on
+    a straight line it would keep (see :data:`JOIN_REASONS`). A dry run of
+    :func:`join_edges` itself, so the preview never disagrees with the
+    command; the mesh is put back as it was, the same objects included."""
+    verdicts: dict = {}
+    snap = mesh.capture_state()
+    try:
+        join_edges(mesh, edges, verdicts)
+    finally:
+        mesh.restore_state(snap)
+    return verdicts
 
 
 def _order_chain(chain, seed):

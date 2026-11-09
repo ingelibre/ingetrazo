@@ -373,3 +373,18 @@ class TileCache:
                 f.unlink()
             except OSError:
                 pass
+
+
+def default_cache_dir() -> Path:
+    """``<AppLocalData>/tiles`` — the on-disk tile cache location.
+
+    Uses Qt's per-user data location (honours the app/org name set in
+    ``main.py``); falls back to ``~/.cache/ingetrazo`` if Qt returns nothing.
+    Lives here, away from QtNetwork, so the viewport can read the cache
+    inside paintGL without loading the network stack (#327)."""
+    from PySide6.QtCore import QStandardPaths
+    base = QStandardPaths.writableLocation(
+        QStandardPaths.StandardLocation.AppLocalDataLocation)
+    if not base:
+        base = str(Path.home() / ".cache" / "ingetrazo")
+    return Path(base) / "tiles"

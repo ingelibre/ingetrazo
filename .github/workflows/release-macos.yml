@@ -4,8 +4,13 @@
 # IngeTrazo.app and the .app in a drag-to-Applications .dmg).
 #
 # Its own workflow so a Mac-side failure never holds up the Linux and
-# Windows assets. Apple Silicon (arm64) only for now; unsigned — the first
-# launch is right-click ▸ Open, as the README says.
+# Windows assets. Apple Silicon (arm64) and Intel (x86_64): a class of 60
+# students had 8 Intel Macs among 12 (José Castro, UDELAR, 2026-10-05).
+# Unsigned — the first launch is right-click ▸ Open, as the README says.
+#
+# macos-14 left GitHub Actions on 2026-11-02 (actions/runner-images#13518). A
+# runner sets the floor of what is compiled on it unless told otherwise, so the
+# arm64 job asks for 14.0 and its package keeps asking what it asked before.
 name: release-macos
 
 on:
@@ -16,10 +21,23 @@ on:
 permissions:
   contents: write           # to upload the .dmg to the release
 
+# The bundle's --check fails if the Rust engine is missing (core._native).
+env:
+  INGETRAZO_REQUIRE_RUST: "1"
+
 jobs:
   dmg:
-    name: .app + .dmg (arm64)
-    runs-on: macos-14
+    name: .app + .dmg (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false            # one Mac failing never holds the other
+      matrix:
+        include:
+          - runner: macos-15        # Apple Silicon
+            arch: arm64
+            deployment_target: "14.0"
+          - runner: macos-15-intel  # Intel; the .dmg is named by uname -m
+            arch: x86_64
     steps:
       - uses: actions/checkout@v4
 
@@ -27,11 +45,27 @@ jobs:
         with:
           python-version: "3.12"
 
+      # Read by rustc, by the C compiler of the DWG step and by PyInstaller.
+      - name: Oldest macOS this package asks for
+        if: matrix.deployment_target
+        run: echo "MACOSX_DEPLOYMENT_TARGET=${{ matrix.deployment_target }}" >> "$GITHUB_ENV"
+
       - name: Python packages
         run: |
           python -m pip install --upgrade pip
           grep -vE '^\s*pytest\b' requirements.txt > reqs.txt
           python -m pip install -r reqs.txt pyinstaller
+
+      # The Rust engine (rust/ingetrazo_core, Preferences ▸
+      # General; on by default since 0.5.10), built for this runner's architecture.
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust engine
+        run: |
+          python -m pip install maturin
+          maturin build --release -m rust/ingetrazo_core/Cargo.toml -o "$RUNNER_TEMP/wheels"
+          python -m pip install "$RUNNER_TEMP"/wheels/ingetrazo_core-*.whl
+          INGETRAZO_RUST=1 python -c "import core._native as n; assert n.native is not None; print('engine:', n.engine())"
 
       # DWG on macOS (#101): LibreDWG publishes no Mac binaries, so build
       # dwg2dxf from the release tarball (hash from its dist.sha256, the
@@ -62,9 +96,15 @@ jobs:
       - name: The bundle finds everything it needs
         run: dist/IngeTrazo.app/Contents/MacOS/ingetrazo --check
 
+      # A report: it must not hold up a package that was fine.
+      - name: No Mach-O asks for a newer macOS
+        if: matrix.deployment_target
+        continue-on-error: true
+        run: python scripts/check_macos_minos.py dist/IngeTrazo.app "${{ matrix.deployment_target }}"
+
       - uses: actions/upload-artifact@v4
         with:
-          name: ingetrazo-macos-dmg
+          name: ingetrazo-macos-dmg-${{ matrix.arch }}
           path: dist/*.dmg
 
       - name: Attach to the release

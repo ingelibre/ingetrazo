@@ -173,6 +173,31 @@ def test_igz_packs_texture_images_into_the_document(tmp_path, monkeypatch):
     assert live["path"] == str(src)
 
 
+def test_igz_never_embeds_a_file_that_is_not_an_image(tmp_path, monkeypatch):
+    """A crafted document can name any file as a texture; saving it must not
+    copy that file into the container (e.g. an SSH key)."""
+    import json
+    import zipfile
+
+    monkeypatch.setenv("INGETRAZO_TEXTURE_CACHE", str(tmp_path / "cache"))
+    secret = tmp_path / "id_ed25519"
+    secret.write_text("-----BEGIN OPENSSH PRIVATE KEY-----\nsecret\n")
+    crafted = tmp_path / "crafted.igz"
+    crafted.write_text(json.dumps({"igz_format": 1, "scene": {"edges": [],
+        "faces": [{"vertices": [[0, 0, 0], [1, 0, 0], [1, 1, 0]],
+                   "texture": {"path": str(secret), "sw": 1.0, "sh": 1.0}}]}}))
+    scene = Scene()
+    igz.load_into(scene, crafted)
+
+    out = tmp_path / "resaved.igz"
+    assert igz.save_scene(scene, out)["embedded"] == 0
+    raw = out.read_bytes()
+    if raw.startswith(b"PK"):
+        with zipfile.ZipFile(out) as zf:
+            raw = b"".join(zf.read(n) for n in zf.namelist())
+    assert b"secret" not in raw
+
+
 def test_igz_document_opens_on_another_machine(tmp_path, monkeypatch):
     # The whole point: the .igz travels alone — original image gone, texture
     # cache empty (a different computer) — and the texture is still there.
@@ -496,6 +521,44 @@ def test_rotating_and_scaling_a_group_keep_its_texture():
     assert _uvs(face) == before
     ScaleGroupCommand(group, V(0, 0, 0), 2.5).do(scene)
     assert _uvs(face) == before
+
+
+def _rendered_uvs(face):
+    """The UVs the viewport computes for ``face`` — fitted map when the
+    face carries one, else the planar projection of its CURRENT normal."""
+    from core.texture import face_uv_axes
+    gu, cu, gv, cv = face_uv_axes(face.attrs["texture"], face.normal())
+    return [(round(QVector3D.dotProduct(gu, p) + cu, 6),
+             round(QVector3D.dotProduct(gv, p) + cv, 6))
+            for p in face.vertices]
+
+
+def test_rotating_a_group_keeps_a_planar_texture_on_its_face():
+    # #847: a face textured by planar projection alone (no fitted uvw —
+    # the normal case for a texture painted in the app) showed its image
+    # correctly in the Rotate live preview, then jumped on commit: the
+    # commit re-projected onto the TURNED face's normal (measured on the
+    # report's setup: V range 0..1 became -0.933..-0.433). The rotation
+    # must pin the projection the face is showing into a fitted map and
+    # carry it, like it already does for imported maps.
+    from core.group import Group
+    from core.history import RotateGroupCommand
+    from core.mesh import Mesh
+    mesh = Mesh()
+    face = mesh.add_face([V(0.1, 0, 0), V(0.2, 0, 0),
+                          V(0.2, 0.2, 0), V(0.1, 0.2, 0)])
+    face.attrs["texture"] = {"path": "skin.jpg", "sw": 0.1, "sh": 0.2,
+                             "rot": 0.0}
+    group = Group(mesh)
+    scene = Scene()
+    scene.groups.append(group)
+    before = _rendered_uvs(face)
+    cmd = RotateGroupCommand(group, V(0.1, 0, 0), V(0, 1, 0), 30.0)
+    cmd.do(scene)
+    assert _rendered_uvs(face) == before
+    cmd.undo(scene)
+    assert _rendered_uvs(face) == before
+    assert "uvw" not in face.attrs["texture"]
 
 
 def test_undoing_the_move_puts_the_texture_back():

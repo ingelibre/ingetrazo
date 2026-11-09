@@ -33,18 +33,22 @@ _AUTO_NAME = re.compile(r"^Group \d+$")
 
 
 def is_scale_figure(group) -> bool:
-    """The app's own scale figure (Sumari), which every fresh document
-    starts with: a face-me whose image is the bundled ``sumari.png``.
-    Named "Sumari" by the app, but an older file carries no group names,
-    so the picture is what identifies it."""
-    if not getattr(group, "billboard", False):
+    """The scale figure the app put in a fresh document — what inserting
+    one document into another leaves out. Marked in ``ext`` since #655
+    (any person, or the user's own picture); a file from before the mark
+    is recognised by the picture the app used then (Sumari, then the
+    Engineer from 26-09), since an older file carries no group names."""
+    from core.scale_figure import LEGACY_IMAGES, is_marked
+    if is_marked(group):
+        return True
+    if getattr(group, "billboard", False) is not True:
         return False
     if (group.name or "") == "Sumari":
         return True
     for f in group.mesh.faces:
         tex = (f.attrs or {}).get("texture") or {}
         path = str(tex.get("path", "")).replace("\\", "/")
-        if path.rsplit("/", 1)[-1].endswith("sumari.png"):
+        if path.rsplit("/", 1)[-1].endswith(LEGACY_IMAGES):
             return True
     return False
 

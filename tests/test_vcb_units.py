@@ -115,6 +115,26 @@ def test_fractional_inches_read_like_a_carpenter_writes_them():
     assert format_length(1.5, "mm", 0) == "1500 mm"
 
 
+def test_a_length_spin_edits_decimal_feet_for_feet_and_inches():
+    """Feet-and-inches and fractional feet edit as decimal feet; fractional
+    inches edit as decimal inches. The sheet text keeps the carpenter form."""
+    from core.units import length_number, length_suffix, metres_from_number
+    assert length_number(0.3048, "ft") == pytest.approx(1.0)
+    assert length_number(0.3048, "ft-in") == pytest.approx(1.0)
+    assert length_number(0.3048, "ft-in-frac") == pytest.approx(1.0)
+    assert length_number(0.0254, "in") == pytest.approx(1.0)
+    assert length_number(0.0254, "in-frac") == pytest.approx(1.0)
+    assert length_number(1.5, "mm") == pytest.approx(1500.0)
+    assert length_number(-0.3048, "ft") == pytest.approx(-1.0)
+    assert metres_from_number(2.0, "ft-in") == pytest.approx(0.6096)
+    assert metres_from_number(12.0, "in-frac") == pytest.approx(0.3048)
+    assert length_suffix("ft-in") == "'"
+    assert length_suffix("in-frac") == '"'
+    assert length_suffix("cm") == " cm"
+    assert length_suffix("mm") == " mm"
+    assert length_suffix("m") == " m"
+
+
 def test_sheet_cotas_take_units():
     from core.composition import CotaItem, Composicion
     c = CotaItem(x_mm=10.0, y_mm=10.0, dx_mm=38.1, scale_n=1.0, units="in-frac",

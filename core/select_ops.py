@@ -120,6 +120,21 @@ def same_layer(scene, entities) -> list:
     return [e for e in pool if layer_of(e) in layers]
 
 
+def on_layers(scene, names) -> list:
+    """Every edge, face, group and annotation in the current context on one
+    of the layers ``names`` that can be selected (the Layers panel's
+    «Select content»: a hidden or locked layer gives nothing)."""
+    names = set(names)
+    pool = (list(scene.edges) + list(scene.faces)
+            + list(_context_groups(scene))
+            + list(getattr(scene, "dimensions", None) or ())
+            + list(getattr(scene, "text_labels", None) or ())
+            + list(getattr(scene, "guides", None) or ())
+            + list(getattr(scene, "image_planes", None) or ()))
+    return [e for e in pool
+            if layer_of(e) in names and scene.entity_selectable(e)]
+
+
 def _is_group(e) -> bool:
     from core.group import Group
     return isinstance(e, Group)
@@ -129,3 +144,17 @@ def _context_groups(scene):
     ctx = getattr(scene, "edit_group", None)
     return scene.groups if ctx is None else (getattr(ctx, "children", None)
                                              or [])
+
+
+def same_definition(scene, entities) -> list:
+    """Every component instance in the current context that shares its
+    definition with one of the selected components (Select ▸ All
+    Instances). Copies share the prototype mesh, so identity is the test —
+    no geometry is compared. Groups that only carry a matrix are not
+    components and match nothing."""
+    protos = {id(g.mesh) for g in entities
+              if _is_group(g) and g.is_component()}
+    if not protos:
+        return []
+    return [g for g in _context_groups(scene)
+            if g.is_component() and id(g.mesh) in protos]

@@ -31,12 +31,23 @@ def _magnet(tool):
             getattr(tool, "screen_axis_px", None))
 
 
-def test_the_shapes_declare_the_line_tools_magnet():
-    line = _magnet(LineTool())
-    assert line == (3.0, 9.0)
+def test_free_placements_declare_the_line_tools_magnet():
+    """A Text and a Dimension are placed freely, so both halves of the
+    magnet reach them: the world detector and the screen one."""
+    assert _magnet(LineTool()) == (3.0, 9.0)
+    for cls in (TextTool, DimensionTool):
+        assert _magnet(cls()) == (3.0, 9.0), cls.__name__
+
+
+def test_shapes_that_live_in_a_plane_keep_both_detectors():
+    """A circle, a polygon, an arc and a rotated rectangle carry BOTH halves
+    of the magnet, like the Line. The screen detector's answer is confined
+    to the axes the plane HOLDS by the snap engine (``axis_in_plane``), so
+    it widens the capture to 9 px without ever taking the rim off the
+    plane — see ``test_a_planar_shape_is_not_magnetised_off_its_plane``."""
     for cls in (ArcTool, ThreePointArcTool, CenterArcTool, CircleTool,
-                PolygonTool, RotatedRectangleTool, TextTool, DimensionTool):
-        assert _magnet(cls()) == line, cls.__name__
+                PolygonTool, RotatedRectangleTool):
+        assert _magnet(cls()) == (3.0, 9.0), cls.__name__
 
 
 def test_freehand_and_rectangle_stay_out():
@@ -84,3 +95,68 @@ def test_a_circles_radius_point_lands_on_the_axis_through_the_engine():
         screen_axis_px=tool.screen_axis_px)
     assert snap.kind == "axis" and snap.axis == "x"
     assert abs(snap.point.y()) < 1e-6 and abs(snap.point.x() - 2.0) < 1e-6
+
+
+def test_a_planar_shape_is_not_magnetised_off_its_plane():
+    """The other half of #545: over a face the magnet answered with an axis
+    the shape's plane CANNOT hold, and the rim left the face while the
+    radius was measured in it (@pacaeiro: «o círculo já não segue a posição
+    do rato, fica a metade ou menos ainda»). ``axis_in_plane`` refuses any
+    axis that is not in the plane, and the cursor's own point stands.
+
+    The cursor here runs 1.7° off the BLUE axis while the shape is laid out
+    on a horizontal plane — the blue axis is the plane's own normal, the
+    one direction that leaves it — and the plain call really does answer
+    with it, so the guard is what keeps the point in the plane."""
+    normal = V(0.0, 0.0, 1.0)
+    start = V(0.0, 0.0, 2.0)
+    cursor = V(0.03, 0.0, 1.0)                        # 1.7° off +Z
+    call = dict(
+        candidate_world=cursor, candidate_pixel=_w2p(cursor),
+        scene=SimpleNamespace(edges=[]), world_to_pixel=_w2p,
+        threshold_px=9.0, edge_threshold_px=14.0, start_point=start,
+        project_onto_line=lambda s, d: s + d * QVector3D.dotProduct(
+            cursor - s, d),
+        magnetic_axis_deg=3.0, screen_axis_px=None,
+        work_plane_normal=normal)
+
+    livre = compute_snap(**call, axis_in_plane=False)
+    assert livre.axis == "z", "the magnet is expected to answer the normal"
+    assert abs(livre.point.z() - 2.0) > 0.5, "and to leave the plane"
+
+    preso = compute_snap(**call, axis_in_plane=True)
+    assert preso.axis is None
+    assert QVector3D(preso.point) == cursor
+
+
+def test_a_planar_shapes_screen_detector_also_stays_in_its_plane():
+    """#962: the planar shapes now keep the SCREEN detector too, so the
+    magnet grabs at 9 px instead of only a 3° world cone — but still only
+    along the axes the plane holds. Over a horizontal plane the blue axis
+    is the plane's own normal; the screen detector would answer it, and the
+    ``axis_in_plane`` guard refuses it, exactly as it does for the world
+    detector."""
+    normal = V(0.0, 0.0, 1.0)
+    start = V(0.0, 0.0, 2.0)
+    cursor = V(0.05, 0.0, 1.0)                  # on the blue line, ~2.9° off +Z
+
+    def w2p(p):
+        # A camera looking down -Y: X right, Z up, Y a dot (no screen span).
+        return (p.x() * 100.0, -p.z() * 100.0)
+
+    call = dict(
+        candidate_world=cursor, candidate_pixel=w2p(cursor),
+        scene=SimpleNamespace(edges=[]), world_to_pixel=w2p,
+        threshold_px=9.0, edge_threshold_px=14.0, start_point=start,
+        project_onto_line=lambda s, d: s + d * QVector3D.dotProduct(
+            cursor - s, d),
+        magnetic_axis_deg=3.0, screen_axis_px=9.0,
+        work_plane_normal=normal)
+
+    livre = compute_snap(**call, axis_in_plane=False)
+    assert livre.axis == "z", "the screen detector is expected to answer the normal"
+    assert abs(livre.point.z() - 2.0) > 0.5, "and to leave the plane"
+
+    preso = compute_snap(**call, axis_in_plane=True)
+    assert preso.axis is None
+    assert QVector3D(preso.point) == cursor

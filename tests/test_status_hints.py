@@ -26,9 +26,11 @@ def test_the_hint_follows_the_tools_step():
     assert phase_of("arc", arc) == "bulge"
     assert "Ns" in hint_for("arc", arc)
     fil = FilletTool()
-    assert "radius" in hint_for("fillet", fil)
+    assert "size" in hint_for("fillet", fil)
+    assert "Ctrl = measure (Radius)" in hint_for("fillet", fil)
     fil.sizing = True
     assert phase_of("fillet", fil) == "sizing"
+    assert "'0.3p' = profile" in hint_for("fillet", fil)
 
 
 def test_navigation_and_unknown_tools_have_a_line_too():

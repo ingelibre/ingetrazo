@@ -209,7 +209,9 @@ def test_the_sidebar_handle_sits_on_the_resize_line_and_folds_the_trays(settings
         win.show()
         QApplication.processEvents()
         btn = win._sidebar_handle
-        docks = win._sidebar_docks()
+        from PySide6.QtCore import Qt
+        docks = [d for d in win._sidebar_docks()        # the right side's
+                 if win.dockWidgetArea(d) != Qt.LeftDockWidgetArea]
         assert btn.isVisible() and win.tray.isVisible()
         edge = win.viewport.mapTo(win, win.viewport.rect().topRight()).x()
         assert abs((btn.x() + btn.width() // 2) - edge) <= 2       # on the line
@@ -259,8 +261,8 @@ def test_the_composer_has_the_same_handle_and_clean_screen(settings_file, monkey
         comp.show()
         QApplication.processEvents()
         btn = comp._sidebar_handle
-        panel = comp._splitter.widget(1)
-        area = comp._splitter.widget(0)
+        panel = comp._side_panel              # the right side panel
+        area = comp._canvas_area               # the page, left of it
         assert btn.isVisible() and panel.isVisible()
         edge = area.mapTo(comp, area.rect().topRight()).x()
         assert btn.x() >= edge                 # never over the canvas' scroll bar

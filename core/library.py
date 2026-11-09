@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import threading
 import urllib.error
 import urllib.parse
@@ -44,6 +45,17 @@ DEFAULT_URL = "https://ingetrazo.com/biblioteca"
 #: A download that takes longer than this is a server that is not answering.
 #: Short, because it is the UI thread waiting.
 TIMEOUT = 20
+
+
+#: What a model id may look like. The id comes from the server's index and
+#: becomes part of a cache path: ``../..`` in it would let the server write
+#: anywhere under the user's home (the plugins folder included).
+_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")
+
+
+def valid_id(ident) -> bool:
+    return (isinstance(ident, str) and bool(_ID_RE.match(ident))
+            and ".." not in ident)
 
 
 def library_url() -> str:
@@ -68,9 +80,11 @@ def _get(rel: str) -> bytes | None:
         except OSError:
             return None
     url = base + "/" + urllib.parse.quote(rel)
+    from core.tls import https_context
     req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
     try:
-        with urllib.request.urlopen(req, timeout=TIMEOUT) as r:
+        with urllib.request.urlopen(req, timeout=TIMEOUT,
+                                    context=https_context()) as r:
             return r.read()
     except (urllib.error.URLError, OSError, ValueError):
         return None
@@ -107,20 +121,26 @@ def index(refresh: bool = False) -> list:
     if p is None:
         return []
     try:
-        return json.loads(p.read_text(encoding="utf-8")).get("modelos", [])
-    except (OSError, ValueError):
+        entries = json.loads(p.read_text(encoding="utf-8")).get("modelos", [])
+    except (OSError, ValueError, AttributeError):
         return []
+    return [e for e in entries
+            if isinstance(e, dict) and valid_id(e.get("id"))]
 
 
 def thumbnail(ident: str) -> Path | None:
     """The 128 px preview of a model, downloading it if need be. Blocks —
     see :func:`prefetch_thumbnails` for the browsing path."""
+    if not valid_id(ident):
+        return None
     return _cached("miniaturas/%s.png" % ident)
 
 
 def cached_thumbnail(ident: str) -> Path | None:
     """The preview if it is ALREADY on disk, else ``None``. Never touches
     the network, so the tray can paint what it has without waiting."""
+    if not valid_id(ident):
+        return None
     p = library_cache() / ("miniaturas/%s.png" % ident)
     return p if p.is_file() else None
 
@@ -183,6 +203,8 @@ def model_dir(ident: str) -> Path | None:
     The zip holds the OBJ next to the images its MTL names, so unpacking it
     whole is what lets the importer resolve them.
     """
+    if not valid_id(ident):
+        return None
     out = library_cache() / "modelos" / ident
     if out.is_dir() and any(out.iterdir()):
         return out
@@ -191,7 +213,9 @@ def model_dir(ident: str) -> Path | None:
         return None
     try:
         out.mkdir(parents=True, exist_ok=True)
+        from core import zip_limits
         with zipfile.ZipFile(z) as zf:
+            zip_limits.check(zf, ident)
             for m in zf.namelist():
                 # Flat by construction, but never trust an archive's names.
                 name = Path(m).name

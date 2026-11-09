@@ -145,10 +145,12 @@ def test_dae_is_wellformed_zup_with_geometry(tmp_path):
     root = ET.parse(path).getroot()
     up = root.find(f"{_NS}asset/{_NS}up_axis")
     assert up is not None and up.text.strip() == "Z_UP"
-    tris = list(root.iter(f"{_NS}triangles"))
-    assert tris, "expected <triangles>"
-    total = sum(int(t.get("count")) for t in tris)
-    assert total == 12  # box = 12 triangles
+    # A box is six convex quads: real polygons, no triangulation diagonals.
+    polys = list(root.iter(f"{_NS}polylist"))
+    assert polys, "expected <polylist>"
+    assert sum(int(p.get("count")) for p in polys) == 6
+    vcounts = " ".join(p.find(f"{_NS}vcount").text for p in polys).split()
+    assert vcounts == ["4"] * 6
     # geometry sits inside a <node> (importers skip top-level instance_geometry)
     node = root.find(f"{_NS}library_visual_scenes/{_NS}visual_scene/{_NS}node")
     assert node.find(f"{_NS}instance_geometry") is not None
@@ -204,3 +206,51 @@ def test_dae_copies_texture_image(tmp_path):
     img = root.find(f"{_NS}library_images/{_NS}image/{_NS}init_from")
     assert img is not None and img.text == "wood.png"
     assert (out.parent / "wood.png").exists(), "image copied next to the .dae"
+    # One textured face: exactly one <library_images>, with one <image>.
+    libs = root.findall(f"{_NS}library_images")
+    assert len(libs) == 1 and len(libs[0]) == 1
+
+
+def test_dae_without_textures_has_no_empty_library_images(tmp_path):
+    # COLLADA 1.4.1 needs at least one <image> in <library_images>; strict
+    # importers refuse the empty element, so it is left out (#314).
+    scene = Scene()
+    hist = History(scene)
+    _cube(scene, hist)
+    path = tmp_path / "plain.dae"
+    dae_format.save_dae(scene, path)
+    root = ET.parse(path).getroot()
+    assert root.find(f"{_NS}library_images") is None
+    # The materials still reach the file and re-import.
+    assert root.findall(f"{_NS}library_materials/{_NS}material")
+    scene2 = Scene()
+    dae_format.load_dae(scene2, path)
+    assert scene2.mesh.faces or scene2.groups
+
+
+def test_rgba_painted_faces_export_to_glb_dae_and_obj(tmp_path):
+    """The AI recipes (and the MCP bridge's run_python) paint
+    ``attrs["color"] = (r, g, b, 1.0)``; every mesh writer unpacked three
+    channels and File ▸ Export failed with "too many values to unpack" on
+    any model the assistant had built."""
+    from formats import obj as obj_format
+    scene = Scene()
+    hist = History(scene)
+    _cube(scene, hist)
+    for f in scene.mesh.faces:
+        f.attrs["color"] = (0.8, 0.2, 0.1, 1.0)
+
+    glb = tmp_path / "rgba.glb"
+    gltf_format.save_glb(scene, glb)
+    gltf, _ = _read_glb(glb)
+    factors = [m["pbrMetallicRoughness"].get("baseColorFactor")
+               for m in gltf["materials"]]
+    assert [0.8, 0.2, 0.1, 1.0] in factors
+
+    dae = tmp_path / "rgba.dae"
+    dae_format.save_dae(scene, dae)
+    assert "0.8000 0.2000 0.1000 1" in dae.read_text(encoding="utf-8")
+
+    obj = tmp_path / "rgba.obj"
+    obj_format.save_obj(scene, obj)
+    assert "Kd 0.8000 0.2000 0.1000" in (tmp_path / "rgba.mtl").read_text()

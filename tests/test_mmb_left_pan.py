@@ -110,3 +110,21 @@ def test_the_tool_never_sees_the_left_button():
     assert vp._last_pos is None and vp._left_pan_restore is None
     win._activate_tool("select")
     _close(win)
+
+
+def test_releasing_shift_keeps_panning_while_both_buttons_are_held():
+    from PySide6.QtCore import QEvent
+    from PySide6.QtGui import QKeyEvent
+
+    win = _window()
+    vp = win.viewport
+    _press(vp, 400, 300, MMB, MMB, Qt.ShiftModifier)
+    _press(vp, 400, 300, LMB, BOTH)
+    vp.keyReleaseEvent(QKeyEvent(QEvent.KeyRelease, Qt.Key_Shift, Qt.NoModifier))
+    assert vp._pan_mode
+    angles = _angles(vp.camera)
+    _move(vp, 460, 340, BOTH)
+    assert _angles(vp.camera) == angles
+    _release(vp, 460, 340, LMB, MMB)
+    _release(vp, 460, 340, MMB, Qt.NoButton)
+    _close(win)

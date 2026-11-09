@@ -25,6 +25,7 @@ def test_detect_provider_by_key_prefix():
     assert ai.detect_provider("sk-ant-xxx") == "anthropic"
     assert ai.detect_provider("AIzaXXX") == "gemini"
     assert ai.detect_provider("sk-or-xxx") == "openrouter"
+    assert ai.detect_provider("oc_sk_xxx") == "opencode"
     assert ai.detect_provider("sk-xxx") == "openai"
     assert ai.detect_provider("") == "ollama"
 
@@ -199,6 +200,43 @@ def test_failed_recipe_leaves_no_orphan_groups():
         win.close()
 
 
+def test_failed_recipe_restores_deleted_groups_layers_and_history():
+    from views.main_window import MainWindow
+
+    win = MainWindow()
+    try:
+        vp, scope = win.viewport, {"__name__": "__ai__"}
+        for name in ("First", "Second", "Redo"):
+            result = ai.run_transactional(
+                vp, f"box((0, 0, 0), (1, 1, 1), name={name!r})", scope)
+            assert result["error"] is None
+        assert vp.history.undo()
+        scene = vp.scene
+        groups, layers = scene.groups, scene.layers
+        before_groups, before_layers = list(groups), list(layers)
+        undo, redo = list(vp.history.undo_stack), list(vp.history.redo_stack)
+
+        result = ai.run_transactional(vp, (
+            "groups.pop(0)\n"
+            "groups.reverse()\n"
+            "box((0, 0, 0), (2, 2, 2), name='Discarded')\n"
+            "layers.clear()\n"
+            "raise ValueError('rollback deletion')"), scope)
+
+        assert result["error"] is not None and not result["changed"]
+        assert scene.groups is groups and scope["groups"] is groups
+        assert scene.layers is layers and scope["layers"] is layers
+        assert groups == before_groups
+        assert layers == before_layers
+        assert vp.history.undo_stack == undo
+        assert vp.history.redo_stack == redo
+        assert vp.history.redo()
+        assert [g.name for g in scene.groups][-3:] == ["First", "Second", "Redo"]
+    finally:
+        win._saved_version = win.viewport.scene.version
+        win.close()
+
+
 def test_supports_vision_by_provider_or_model():
     assert ai.supports_vision("anthropic", "claude-sonnet-5")
     assert ai.supports_vision("gemini", "gemini-2.5-flash")
@@ -210,6 +248,12 @@ def test_supports_vision_by_provider_or_model():
     assert ai.supports_vision("ollama", "qwen2.5-vl-7b")
     assert not ai.supports_vision("ollama", "llama3.2")
     assert not ai.supports_vision("groq", "llama-3.3-70b-versatile")
+    # OpenCode Go, probed live 2026-10-20: flash takes images, plain
+    # glm-5.3 does not — the tags must stay that specific.
+    assert ai.supports_vision("opencode", "glm-5.3-flash")
+    assert ai.supports_vision("opencode", "kimi-k3")
+    assert not ai.supports_vision("opencode", "glm-5.3")
+    assert not ai.supports_vision("opencode", "kimi-k2.6")
 
 
 def test_slim_messages_keeps_photo_and_latest_screenshot_only():
@@ -467,6 +511,89 @@ def test_step_limit_announces_instead_of_silent_stop(monkeypatch):
         win.close()
 
 
+def test_consecutive_failures_hand_control_back(monkeypatch):
+    # #461: llama3.2 fed its own TypeError back for all 12 rounds. Three
+    # failed blocks in a row stop the loop and say so; a success between
+    # failures resets the count.
+    import plugins.ai_assistant as pa
+    from views.main_window import MainWindow
+
+    sent = []
+    replies = iter(["```python\n1/0\n```", "```python\nprint('ok')\n```"]
+                   + ["```python\n'a' | 'b'\n```"] * 10)
+
+    def fake_chat(*a, **k):
+        sent.append(1)
+        return next(replies)
+
+    monkeypatch.setattr(ai, "chat", fake_chat)
+    win = MainWindow()
+    try:
+        dlg = pa.AsistenteDialog(win.viewport, parent=win)
+        dlg._provider.setCurrentIndex(0)
+        dlg._key.setText("AIzaTest")
+        dlg._shots.setChecked(False)
+        dlg._input.setText("dibuja un cubo")
+        dlg._on_send()
+        app = QApplication.instance()
+        for _ in range(2000):
+            app.processEvents()
+            if not dlg._busy:
+                break
+        assert not dlg._busy
+        # fail, ok, fail ×3 → stop: five blocks, not twelve.
+        assert len(sent) == 5
+        assert "3 attempts in a row failed" in dlg._chat.toPlainText()
+    finally:
+        win._saved_version = win.viewport.scene.version
+        win.close()
+
+
+def test_small_local_models_are_flagged():
+    assert ai.small_local_model("ollama", "llama3.2")
+    assert ai.small_local_model("ollama", "qwen2.5-coder:1.5b")
+    assert not ai.small_local_model("ollama", ai.DEFAULT_MODELS["ollama"])
+    assert not ai.small_local_model("ollama", "llama3.1:8b")
+    assert not ai.small_local_model("groq", "llama3.2")
+
+
+def test_box_helper_builds_a_closed_box():
+    from core.orient import is_closed
+    from views.main_window import MainWindow
+    win = MainWindow()
+    try:
+        vp = win.viewport
+        r = ai.run_transactional(
+            vp, "g = box((1, 2, 0), (6, 6, 6), name='Cubo')", {"__name__": "__ai__"})
+        assert r["error"] is None and r["changed"]
+        g = vp.scene.groups[-1]
+        assert g.name == "Cubo" and len(g.mesh.faces) == 6
+        assert is_closed(g.mesh)
+        xs = sorted({round(v.position.x(), 6) for v in g.mesh.vertices})
+        zs = sorted({round(v.position.z(), 6) for v in g.mesh.vertices})
+        assert xs == [1.0, 7.0] and zs == [0.0, 6.0]
+        # A model that appends what the helpers already added (live with
+        # qwen3.5): no duplicate, and house()'s LIST is flattened, not
+        # left in scene.groups to crash the next paint.
+        n0 = len(vp.scene.groups)
+        r = ai.run_transactional(vp, (
+            "b = box((20, 0, 0), (1, 1, 1))\ngroups.append(b)\n"
+            "gs = house(6, 4, origin=(30, 0))\ngroups.append(gs)"),
+            {"__name__": "__ai__"})
+        assert r["error"] is None
+        from core.group import Group
+        added = vp.scene.groups[n0:]
+        assert all(isinstance(x, Group) for x in vp.scene.groups)
+        # box + house walls, floor, roof (no openings → no carpentry).
+        assert len(added) == len({id(x) for x in added}) == 1 + 3
+        # The recipe book teaches it to both doors.
+        from core import ai_recipes
+        assert "box((x,y,z), (dx,dy,dz)" in ai_recipes.RECIPES
+    finally:
+        win._saved_version = win.viewport.scene.version
+        win.close()
+
+
 def test_encode_photo_rejects_garbage(tmp_path):
     from plugins.ai_assistant import AsistenteDialog
     from views.main_window import MainWindow
@@ -479,6 +606,116 @@ def test_encode_photo_rejects_garbage(tmp_path):
         dlg._attach_photo(str(bad))                    # reports, no crash
         assert dlg._foto is None
         assert "Could not read the image." in dlg._chat.toPlainText()
+    finally:
+        win._saved_version = win.viewport.scene.version
+        win.close()
+
+
+def test_send_becomes_stop_and_a_stopped_turn_is_discarded(monkeypatch):
+    """While a turn runs, Send turns into Stop; stopping frees the UI at
+    once and the late reply lands nowhere (stale gen is dropped)."""
+    import threading
+    from plugins.ai_assistant import AsistenteDialog
+    from views.main_window import MainWindow
+    gate = threading.Event()
+
+    def slow_chat(*a, **k):
+        gate.wait(10)
+        return "late answer"
+
+    monkeypatch.setattr(ai, "chat", slow_chat)
+    win = MainWindow()
+    try:
+        dlg = AsistenteDialog(win.viewport, parent=win)
+        dlg._provider.setCurrentIndex(0)
+        dlg._key.setText("sk-ant-test")
+        dlg._input.setText("hola")
+        dlg._on_send()
+        assert dlg._busy
+        assert dlg._send.text() == "Stop"
+        assert dlg._status.isVisibleTo(dlg)              # thinking…
+        dlg._on_stop()
+        assert not dlg._busy
+        assert dlg._send.text() == "Send"
+        dlg._on_reply({"ok": True, "text": "late answer",
+                       "gen": dlg._gen - 1})
+        assert len(dlg._convo) == 1                    # only the user turn
+        dlg._on_reply({"ok": True, "text": "fresh", "gen": dlg._gen})
+        assert len(dlg._convo) == 2                    # a current one lands
+    finally:
+        gate.set()
+        win._saved_version = win.viewport.scene.version
+        win.close()
+
+
+def test_dropped_or_pasted_image_attaches_with_thumbnail(tmp_path):
+    """An image dragged onto the prompt (or pasted from the clipboard)
+    attaches like Photo… — and the chip shows a thumbnail preview."""
+    from PySide6.QtCore import QMimeData, QUrl
+    from PySide6.QtGui import QImage
+    from pathlib import Path
+    from plugins.ai_assistant import AsistenteDialog, _drop_image
+    from views.main_window import MainWindow
+    photo = tmp_path / "pieza.png"
+    assert QImage(64, 32, QImage.Format_RGB32).save(str(photo))
+    win = MainWindow()
+    try:
+        dlg = AsistenteDialog(win.viewport, parent=win)
+        mime = QMimeData()
+        mime.setUrls([QUrl.fromLocalFile(str(photo))])
+        path = _drop_image(mime)
+        assert Path(path) == photo     # toLocalFile() uses / on Windows
+        dlg._on_drop_image(path)
+        assert dlg._foto is not None and dlg._foto[2] == "pieza.png"
+        assert dlg._foto_chip.isVisibleTo(dlg)
+        assert not dlg._foto_chip.pixmap().isNull()      # the thumbnail
+        dlg._clear_foto()
+        assert dlg._foto_chip.pixmap().isNull()
+
+        # A pasted clipboard bitmap (no file behind it) attaches too.
+        dlg._on_drop_image(QImage(20, 10, QImage.Format_RGB32))
+        assert dlg._foto is not None
+
+        # Non-image drags do not pretend to be photos.
+        mime2 = QMimeData()
+        other = tmp_path / "x.txt"
+        other.write_text("hi")
+        mime2.setUrls([QUrl.fromLocalFile(str(other))])
+        assert _drop_image(mime2) is None
+    finally:
+        win._saved_version = win.viewport.scene.version
+        win.close()
+
+
+def test_sent_photo_bubble_is_clickable(tmp_path, monkeypatch):
+    """A sent photo lands in the chat as a thumbnail resource; clicking
+    its link opens the viewer dialog with the full image."""
+    from PySide6.QtCore import QUrl
+    from PySide6.QtGui import QImage, QTextDocument
+    from PySide6.QtWidgets import QDialog
+    from plugins.ai_assistant import AsistenteDialog
+    from views.main_window import MainWindow
+    photo = tmp_path / "pieza.png"
+    assert QImage(64, 32, QImage.Format_RGB32).save(str(photo))
+    win = MainWindow()
+    try:
+        dlg = AsistenteDialog(win.viewport, parent=win)
+        b64, mime = dlg._encode_photo(str(photo))
+        dlg._append_foto(b64, mime, "pieza.png")
+        assert len(dlg._fotos) == 1
+        # The thumbnail is a document resource under foto:0.
+        res = dlg._chat.document().resource(
+            QTextDocument.ImageResource, QUrl("foto:0"))
+        assert isinstance(res, QImage) and not res.isNull()
+        # Clicking it opens a dialog (exec is patched — offscreen).
+        opened = []
+        monkeypatch.setattr(QDialog, "exec",
+                            lambda self: opened.append(self.windowTitle()))
+        dlg._on_chat_link(QUrl("foto:0"))
+        assert opened == ["pieza.png"]
+        dlg._on_chat_link(QUrl("foto:9"))          # out of range: no crash
+        dlg._on_chat_link(QUrl("https://x"))       # foreign links ignored
+        assert len(opened) == 1
     finally:
         win._saved_version = win.viewport.scene.version
         win.close()
@@ -569,6 +806,42 @@ def test_list_models_filters_and_strips(monkeypatch):
     ai.list_models("anthropic", "sk-ant-k")
     assert "api.anthropic.com/v1/models" in calls["url"]
     assert calls["headers"]["x-api-key"] == "sk-ant-k"
+
+
+def test_panel_builds_without_fixed_font_lookup(monkeypatch):
+    # Flatpak (#279): resolving QFontDatabase.FixedFont walks a host
+    # fontconfig fallback and can segfault while the panel is built. The
+    # chat must come up on the inherited application font instead.
+    from PySide6.QtGui import QFontDatabase
+    from plugins.ai_assistant import AsistentePanel
+
+    original = QFontDatabase.systemFont
+
+    def reject_fixed(which):
+        if which == QFontDatabase.FixedFont:
+            raise RuntimeError("FixedFont lookup must not run")
+        return original(which)
+
+    monkeypatch.setattr(QFontDatabase, "systemFont", reject_fixed)
+
+    panel = AsistentePanel(object())
+    try:
+        chat, prompt = panel._chat, panel._input
+        assert chat.isReadOnly()
+        chat.setPlainText("respuesta")
+        assert chat.toPlainText() == "respuesta"
+        prompt.setText("dibuja un muro")
+        assert prompt.text() == "dibuja un muro"
+
+        app_font = QApplication.instance().font()
+        for widget in (chat, prompt):
+            assert widget.font().family() == app_font.family()
+            assert widget.fontMetrics().lineSpacing() > 0
+        line = prompt.fontMetrics().lineSpacing()
+        assert prompt.minimumHeight() == 2 * line + 12
+    finally:
+        panel.deleteLater()
+        QApplication.instance().processEvents()
 
 
 def test_chat_colors_follow_theme():
@@ -768,3 +1041,43 @@ def test_rejected_key_names_the_prefix_to_check():
     hint = AsistenteDialog._bad_key_hint("groq", err)
     assert hint is not None and "gsk_" in hint
     assert AsistenteDialog._bad_key_hint("groq", "HTTP 503: busy") is None
+
+
+def test_openai_asks_for_max_completion_tokens():
+    """OpenAI's newer models reject ``max_tokens`` with HTTP 400 (#517);
+    ``max_completion_tokens`` works for all of them. The other
+    OpenAI-compatible services keep ``max_tokens``, the name they accept."""
+    msgs = [{"role": "user", "text": "x"}]
+    _u, _h, payload = ai.build_request("openai", "gpt-5", "sk-k", "SYS",
+                                       msgs, max_tokens=8192)
+    body = json.loads(payload)
+    assert body["max_completion_tokens"] == 8192
+    assert "max_tokens" not in body
+    for provider in ("groq", "gemini", "openrouter", "deepseek", "opencode",
+                     "ollama"):
+        _u, _h, payload = ai.build_request(provider, "m", "k", "SYS", msgs,
+                                           max_tokens=8192)
+        body = json.loads(payload)
+        assert body["max_tokens"] == 8192, provider
+        assert "max_completion_tokens" not in body, provider
+    _u, _h, payload = ai.build_request("anthropic", "claude-sonnet-5", "k",
+                                       "SYS", msgs, max_tokens=8192)
+    assert json.loads(payload)["max_tokens"] == 8192
+
+
+def test_test_connection_to_openai_sends_max_completion_tokens(monkeypatch):
+    """#1032 reported the 400 «Use 'max_completion_tokens' instead» from
+    Test connection: that button goes through probar_conexion → chat, the
+    same request builder, so it must carry the new name too."""
+    sent = []
+
+    def fake_urlopen(url, headers, payload, timeout, **_kw):
+        sent.append((url, json.loads(payload)))
+        return json.dumps({"choices": [{"message": {"content": "OK"}}]}).encode()
+
+    monkeypatch.setattr(ai, "_urlopen", fake_urlopen)
+    ok, msg = ai.probar_conexion("openai", "gpt-6-sol", "sk-proj-k")
+    assert ok and msg == "OK"
+    url, body = sent[0]
+    assert url == "https://api.openai.com/v1/chat/completions"
+    assert "max_completion_tokens" in body and "max_tokens" not in body

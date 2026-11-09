@@ -33,6 +33,10 @@ Behavior (the classic Paint Bucket, ``B``):
 
 The current colour is class-level (shared across activations) and is set from
 the toolbar swatch (a ``QColorDialog``); the tool only applies it.
+
+Every paint also puts the material at the head of ``PaintTool.recent``, the
+last few materials actually painted with; the tray shows them as a row of
+swatches so texturing does not mean digging through the library each time.
 """
 from __future__ import annotations
 
@@ -54,6 +58,49 @@ from tools.base import Tool, ToolContext
 # The default cream the viewport paints unpainted faces with — sampling an
 # unpainted face yields this, and it is what "no colour" reads as.
 DEFAULT_FACE_COLOR = (0.96, 0.95, 0.925)
+
+
+#: How many materials the «Recent» row keeps.
+RECENT_MAX = 6
+
+
+def recent_key(entry: dict) -> tuple:
+    """What makes two recent entries THE SAME material: its name when it
+    has one, else the image with its size and turn (or the colour)."""
+    if entry.get("mat"):
+        return ("m", entry["mat"])
+    tex = entry.get("texture")
+    if tex:
+        tint = tex.get("tint")
+        return ("t", tex.get("path"), tex.get("sw"), tex.get("sh"),
+                tex.get("rot", 0.0), tuple(tint) if tint else None,
+                entry.get("opacity"))
+    col = entry.get("color") or ()
+    return ("c", tuple(round(float(c), 4) for c in col),
+            entry.get("opacity"))
+
+
+def push_recent(entries: list, entry: dict, cap: int = RECENT_MAX) -> list:
+    """``entries`` with ``entry`` moved (or added) to the front, without
+    duplicates and at most ``cap`` long."""
+    key = recent_key(entry)
+    rest = [e for e in entries if recent_key(e) != key]
+    return [entry] + rest[:max(cap - 1, 0)]
+
+
+def rename_recent(entries: list, old: str, stamp: dict) -> list:
+    """``entries`` with every one named *old* now wearing *stamp* (the
+    new material's face attrs): a material renamed or recoloured in the
+    model is not offered back under its old name and colour."""
+    out = []
+    for e in entries:
+        if e.get("mat") == old:
+            e = {k: v for k, v in e.items()
+                 if k not in ("mat", "color", "texture", "opacity")}
+            e.update({k: (list(v) if isinstance(v, tuple) else v)
+                      for k, v in stamp.items()})
+        out.append(e)
+    return out
 
 
 def _face_plane(face) -> tuple:
@@ -174,6 +221,10 @@ class PaintTool(Tool):
     # REMOVES the paint (@pacaeiro, #47 point 2). While it is set the
     # colour/texture fields above are ignored.
     current_is_default: bool = False
+    # The last materials painted with, newest first, as material dicts
+    # (``_current_as_material``). The tray loads them from the settings,
+    # shows them and saves them back (``recent_materials_changed``).
+    recent: list[dict] = []
 
     def on_activate(self, viewport) -> None:
         pass
@@ -181,13 +232,67 @@ class PaintTool(Tool):
     def on_deactivate(self, viewport) -> None:
         viewport.set_hover(None)
 
+    @staticmethod
+    def _sampling(ctx: ToolContext) -> bool:
+        """Whether a click now samples (the eyedropper) instead of painting:
+        Alt held, or tapped (a toggle), or the toolbar's pipette armed."""
+        return (bool(ctx.modifiers & Qt.AltModifier)
+                or bool(getattr(ctx.viewport, "_alt_down", False))
+                or PaintTool.sample_armed)
+
+    @staticmethod
+    def _container_under(vp, group, x: float, y: float):
+        """The group or component a click at ``(x, y)`` paints as a whole —
+        a face inside a container reached from OUTSIDE it — or ``None``
+        when the click paints the face. The hover and the click both ask
+        here, so the marking always shows what the click will paint."""
+        if group is None:
+            return None
+        pick_obj = getattr(vp, "pick_group", None)
+        return pick_obj(x, y) if pick_obj is not None else None
+
+    @staticmethod
+    def _every_face_painted(obj) -> bool:
+        """Whether every face of the group or component — nested
+        placements included — carries its own material, so painting it as
+        a whole shows no change."""
+        from core.group import iter_placements
+        from core.materials import has_own_material
+        seen = False
+        for g, _m in iter_placements(obj):
+            for f in g.mesh.faces:
+                seen = True
+                if not has_own_material(f.attrs):
+                    return False
+        return seen
+
     def on_hover(self, ctx: ToolContext) -> None:
-        face, _group = ctx.viewport.pick_face_any(ctx.screen.x(), ctx.screen.y())
-        ctx.viewport.set_hover(face)
+        vp = ctx.viewport
+        x, y = ctx.screen.x(), ctx.screen.y()
+        # A closed group or component is painted whole, so no face of it is
+        # marked: a marked face promised a paint the click does not do. The
+        # eyedropper samples one face and marks that face.
+        if not self._sampling(ctx):
+            _face, group = vp.pick_face_any(x, y)
+            if self._container_under(vp, group, x, y) is not None:
+                vp.set_hover(None)
+                return
+        # A face inside a component is marked through the placement it was
+        # reached through, or the marking is drawn where the part WOULD be
+        # unplaced and assembled, not where the placed, exploded part is.
+        pick = getattr(vp, "pick_face_placement", None)
+        if pick is not None:
+            face, placement = pick(ctx.screen.x(), ctx.screen.y())
+            vp.set_hover(face, placement)
+            return
+        face, _group = vp.pick_face_any(ctx.screen.x(), ctx.screen.y())
+        vp.set_hover(face)
 
     def on_click(self, ctx: ToolContext) -> None:
         vp = ctx.viewport
         face, group = vp.pick_face_any(ctx.screen.x(), ctx.screen.y())
+        if self._sampling(ctx) and self._sample_image(ctx, face):
+            return
         if face is None:
             return
         back_side = clicked_back_side(vp, face, group,
@@ -195,9 +300,7 @@ class PaintTool(Tool):
 
         # The pointer is the promise: whenever it shows the eyedropper — Alt
         # held, or tapped (a toggle) — the click samples.
-        alt = (bool(ctx.modifiers & Qt.AltModifier)
-               or bool(getattr(vp, "_alt_down", False)))
-        if alt or PaintTool.sample_armed:
+        if self._sampling(ctx):
             # Eyedropper: adopt the face's material (texture if it has one, else
             # colour) as the current paint material — identity included, so
             # sampling "Concreto visto" paints "Concreto visto". The side
@@ -240,9 +343,11 @@ class PaintTool(Tool):
             # it stayed on the old paint after a sample (issue #47,
             # @pacaeiro: «the Active Material in Materials List is not
             # updated»).
-            tray = getattr(win, "tray", None)
-            if hasattr(tray, "sync_from_paint"):
-                tray.sync_from_paint()
+            # The swatch lives on the dock's Materials panel, not on the
+            # dock itself.
+            panel = getattr(getattr(win, "tray", None), "materials", None)
+            if hasattr(panel, "sync_from_paint"):
+                panel.sync_from_paint()
             vp.update()
             # Optional, like the other viewport niceties this package uses:
             # the tool has to work against a bare viewport too.
@@ -256,26 +361,33 @@ class PaintTool(Tool):
         # (issue #47, @pacaeiro: «it's painting the picked face, instead of
         # the whole group or component»). Its default faces take the paint;
         # faces painted themselves keep their own.
-        if group is not None:
-            pick_obj = getattr(vp, "pick_group", None)
-            obj = (pick_obj(ctx.screen.x(), ctx.screen.y())
-                   if pick_obj is not None else None)
-            if obj is not None:
-                mat = PaintTool.current_material
-                vp.history.execute(CompoundCommand([
-                    SetFaceMaterialTagCommand(
-                        [], mat.name if mat is not None else None, mat),
-                    SetGroupMaterialCommand(
-                        obj, None if PaintTool.current_is_default
-                        else self._current_as_material()),
-                ]))
-                flash = getattr(vp, "flash_status", None)
-                if callable(flash):
-                    flash(tr("{name} painted as a whole; a face that already "
-                             "had its own material keeps it",
-                             name=getattr(obj, "name", "") or tr("Group")))
-                vp.update()
-                return
+        obj = self._container_under(vp, group, ctx.screen.x(), ctx.screen.y())
+        if obj is not None:
+            mat = PaintTool.current_material
+            vp.history.execute(CompoundCommand([
+                SetFaceMaterialTagCommand(
+                    [], mat.name if mat is not None else None, mat),
+                SetGroupMaterialCommand(
+                    obj, None if PaintTool.current_is_default
+                    else self._current_as_material()),
+            ]))
+            flash = getattr(vp, "flash_status", None)
+            if callable(flash):
+                name = getattr(obj, "name", "") or tr("Group")
+                if self._every_face_painted(obj):
+                    # Nothing on screen changes: say why, and how (#807,
+                    # components from a .skp whose faces carry their own
+                    # material — the SketchUp rule, as in #408).
+                    flash(tr("{name}: every face has its own material, so "
+                             "nothing changed — open it and paint the "
+                             "faces", name=name), 10000)
+                else:
+                    flash(tr("{name} painted as a whole; a face that "
+                             "already had its own material keeps it",
+                             name=name))
+            self._remember_current(vp)
+            vp.update()
+            return
 
         # Paint the clicked face — or, if it is part of the current face
         # selection, the whole selection. A face on a curved surface (cylinder
@@ -309,6 +421,7 @@ class PaintTool(Tool):
                 SetFaceBackCommand(faces, [self._back_material_for(f)
                                            for f in faces]),
             ]))
+            self._remember_current(vp)
             vp.update()
             return
         tag = SetFaceMaterialTagCommand(
@@ -337,7 +450,67 @@ class PaintTool(Tool):
                 opacity,
                 tag,
             ]))
+        self._remember_current(vp)
         vp.update()
+
+    @staticmethod
+    def _sample_image(ctx: ToolContext, face) -> bool:
+        """The eyedropper over a reference image (#687: «el gotero no da la
+        opción de seleccionarla»): its picture becomes the current paint,
+        mapped where the image sits — a face drawn over the image on its
+        plane takes the picture exactly under it, any other face projects
+        it at the image's real size. An image behind the face under the
+        cursor does not count. True when an image was sampled."""
+        vp = ctx.viewport
+        x, y = ctx.screen.x(), ctx.screen.y()
+        if face is not None:
+            image = (vp.image_in_front_of(face, x, y)
+                     if hasattr(vp, "image_in_front_of") else None)
+        else:
+            image = (vp.image_plane_at(x, y)
+                     if hasattr(vp, "image_plane_at") else None)
+        if image is None:
+            return False
+        from PySide6.QtGui import QVector3D
+        tex = image.texture()
+        n = image.normal()
+        PaintTool.current_is_default = False
+        PaintTool.current_texture = tex
+        PaintTool.current_texture_plane = (
+            (n, QVector3D.dotProduct(n, image.origin)) if tex.get("uvw")
+            else None)
+        opacity = float(getattr(image, "opacity", 1.0))
+        PaintTool.current_opacity = opacity if opacity < 1.0 else None
+        PaintTool.current_material = None
+        win = vp.window() if hasattr(vp, "window") else None
+        if PaintTool.sample_armed:
+            PaintTool.sample_armed = False
+            if hasattr(win, "release_eyedropper"):
+                win.release_eyedropper()
+        panel = getattr(getattr(win, "tray", None), "materials", None)
+        if hasattr(panel, "sync_from_paint"):
+            panel.sync_from_paint()
+        vp.update()
+        flash = getattr(vp, "flash_status", None)
+        if callable(flash):
+            flash(tr("Material sampled — click a face to paint it"))
+        return True
+
+    @classmethod
+    def _remember_current(cls, vp=None) -> None:
+        """Put the material just painted at the head of ``recent`` and let
+        the tray know. The «Default» material is not one: painting with it
+        takes paint off."""
+        if cls.current_is_default:
+            return
+        before = cls.recent
+        cls.recent = push_recent(cls.recent, cls._current_as_material())
+        if cls.recent == before:
+            return
+        win = vp.window() if hasattr(vp, "window") else None
+        panel = getattr(getattr(win, "tray", None), "materials", None)
+        if hasattr(panel, "recent_materials_changed"):
+            panel.recent_materials_changed()
 
     @classmethod
     def _current_as_material(cls) -> dict:

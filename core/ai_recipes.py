@@ -27,21 +27,27 @@ from __future__ import annotations
 #: What is bound in the execution scope. Same names through both doors.
 SCOPE = (
     "En el scope tienes: scene, mesh, selection, groups, layers, "
-    "viewport, QVector3D, Mesh, Group, Edge, Face, bim.")
+    "viewport, QVector3D, Mesh, Group, Edge, Face, Layer, bim.")
 
 #: The one-line builders. Hand-rolling these is the single biggest waste of
 #: turns we have measured — every model that was not told reinvented a
 #: ring-of-quads lathe, faceted and wrongly wound.
-RECIPES = """Recetario:
+RECIPES = """Recetario (usa PRIMERO estas funciones; existen ya, no las \
+definas):
+- CAJA / CUBO: g = box((x,y,z), (dx,dy,dz), name="Cubo", color=(r,g,b,1.0)) \
+— esquina inferior y medidas. Un cubo de 6 m es box((0,0,0), (6,6,6)). \
+Crea el grupo y lo agrega (igual que revolve, extrude, prism, wall y \
+house): NO hagas groups.append.
+- CASA COMPLETA: ver house(...) más abajo — para «una casa» úsala SIEMPRE \
+en vez de armar muros y techo a mano.
 - TORNO (prefiérelo para toda pieza redonda): g = revolve([(radio,z), ...], \
 name="Columna", color=(r,g,b,1.0), segments=32, scallop=None, closed=False) \
 — perfil de abajo a arriba; abierto se tapa solo; closed=True si el perfil \
 es una sección cerrada (p.ej. la pared de una taza); scallop=(profundidad, \
 lóbulos) talla festones/gallones en el borde. Crea el grupo y lo agrega.
 - PRISMA: g = extrude([(x,y), ...], z0, z1, name="Base", color=...) — \
-contorno en planta extruido; crea el grupo y lo agrega. Una CAJA (tablero, \
-pata, larguero, peldaño) es un extrude de cuatro puntos: no la armes cara \
-por cara.
+contorno en planta extruido; crea el grupo y lo agrega. Una caja \
+(tablero, pata, larguero, peldaño) es box(...): no la armes cara por cara.
 - LOSA / PLANCHA: g = prism([puntos 3D de un polígono plano], (dx,dy,dz), \
 holes=[[...]], name=..., color=...) — barre el polígono (con agujeros) \
 a lo largo del vector.
@@ -68,6 +74,12 @@ QVector3D(dx,dy,dz))  — y si g.xform is not None (instancia de \
 componente), compón la traslación en g.xform en vez de tocar vértices.
 - Cámara: viewport.camera.target/distance/yaw/pitch (RADIANES); \
 viewport.update()
+- LÁMINA (hoja del compositor para imprimir; «lámina»/«sheet»/«layout», \
+NO es una capa): c = sheet("Planta", paper="A3", landscape=True) — la crea \
+con un marco de vista y aparece sola en las pestañas de láminas. Borrar: \
+scene.compositions.remove(c) (queda al menos una si había).
+- CAPA / ETIQUETA: ly = Layer("Muros"); layers.append(ly); g.layer = \
+"Muros". En layers solo van objetos Layer, nunca textos.
 - print(...) para reportar datos (breve: el resultado viaja cada turno)."""
 
 #: What the engine guarantees, and what the model should not waste turns on.

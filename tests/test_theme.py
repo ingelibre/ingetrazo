@@ -55,6 +55,7 @@ def test_dark_is_the_default(app):
     # Marco, 2026-09-22: IngeTrazo opens dark; light or «same as the
     # system» is the user's choice.
     from PySide6.QtCore import QSettings
+    QSettings().remove("General/theme")
     QSettings().remove("general/theme")
     assert theme.saved_theme() == theme.DARK
     theme.save_theme("sepia")

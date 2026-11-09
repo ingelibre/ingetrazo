@@ -16,9 +16,28 @@ al lado, el PDF que sale de ahí para que compares.
 Están guardados con la versión 0.3.12 o posterior; una versión anterior no
 los abre. Los cuatro pesan 6,3 MB en total.
 
+## Capas
+
+`capas-prueba.igz` — un documento de ejemplo, sintético, con todas las
+funciones de capas: carpetas anidadas, capa activa, los diez tipos de línea,
+grosores, transparencia, una capa bloqueada, otra que no se imprime, capas
+vacías para purgar, escenas y una lámina con la leyenda. Es el que siguen el
+manual [`docs/layers.md`](../docs/layers.md) y sus capturas. Lo genera
+`capas-prueba.py` (`python examples/capas-prueba.py` desde la carpeta de
+IngeTrazo), que lo deja como nuevo si lo has modificado al probar.
+
+## Pestañas, escenas y vistas
+
+`pestanas-prueba.igz` — una casa sencilla con cuatro escenas (Exterior,
+Planta, Alzado, Lateral) que salen como pestañas bajo la vista; sirve
+también para probar las distribuciones de vistas. Es el que sigue el manual
+[`docs/project-tabs.md`](../docs/project-tabs.md). Lo genera
+`pestanas-prueba.py` (`python examples/pestanas-prueba.py` desde la carpeta
+de IngeTrazo).
+
 ## Extensiones
 
-`extensions/niveles.py` — **Niveles**: niveles del edificio (PB, PA…) guardados en el documento, guías a trazos en alzados y cortes en proyección paralela, y el cursor que se engancha a esas alturas. Idea y primera versión de José Castro Basso (FADU–UDELAR). Viene con IngeTrazo pero sin activar: se instala desde **Extensiones ▸ Extensiones de ejemplo ▸ Niveles** (o copiándola en la carpeta de complementos) y se reinicia IngeTrazo: aparece la pestaña «Niveles» en la bandeja lateral.
+`extensions/niveles.py` — **Niveles**: niveles del edificio (PB, PA…) guardados en el documento, guías a trazos en alzados y cortes en proyección paralela, y el cursor que se engancha a esas alturas. Idea y primera versión de José Castro Basso (FADU–UDELAR). Viene con IngeTrazo pero sin activar: se instala desde **Extensiones ▸ Gestionar extensiones…** (o copiándola en la carpeta de complementos) y se reinicia IngeTrazo: aparece la pestaña «Niveles» en la bandeja lateral.
 
 ## Licencia
 

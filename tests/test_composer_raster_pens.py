@@ -51,7 +51,7 @@ class _RecordingViewport(_FakeViewport):
         from core.style import Style
         return self.style_override or Style()
 
-    def render_image(self, w, h, overlays=True):
+    def render_image(self, w, h, overlays=True, sharp_shadows=False):
         self.seen.append((self._export_edge_px, self._export_profile_px))
         return None
 

@@ -15,6 +15,7 @@ from PySide6.QtGui import QMatrix4x4, QVector3D
 from core.dimension import Dimension
 from core.group import Group
 from core.history import (AddDimensionCommand, History, MoveDimensionsCommand,
+                          MoveGroupCommand,
                           MoveVerticesCommand)
 from core.mesh import Mesh
 from core.scene import Scene
@@ -345,3 +346,140 @@ def test_new_documents_take_arrows_and_old_ones_keep_their_ticks(tmp_path):
     igz.load_into(back, old)
     assert back.dimension_style["ends"] == "tick"
     assert back.dimension_style["decimals"] == 3
+
+
+# ---- 4. edit contexts (issue #621) ------------------------------------------
+
+def _component(scene, at=10.0):
+    m = Mesh()
+    m.add_face([V(0, 0), V(2, 0), V(2, 2), V(0, 2)])
+    g = Group(m, "caja")
+    g.xform = QMatrix4x4()
+    g.xform.translate(at, 0.0, 0.0)
+    scene.groups.append(g)
+    return g
+
+
+def _classic_group(scene):
+    m = Mesh()
+    m.add_face([V(10, 0), V(12, 0), V(12, 2), V(10, 2)])
+    g = Group(m, "grupo")
+    scene.groups.append(g)
+    return g
+
+
+def test_entering_a_component_leaves_its_dimensions_where_they_were():
+    """#621, item 5: entering a component puts the instance on a world copy
+    of its definition and clears the placement; a hold on the definition's
+    vertex then read its LOCAL coordinates as world ones — the dimension
+    jumped by the placement, and came back on leaving."""
+    scene = Scene()
+    g = _component(scene)
+    d = Dimension(V(10, 0), V(12, 0), V(0, -1))
+    d.bind(scene)
+    assert d.anchored
+    scene.begin_group_edit(g)
+    assert d.a == V(10, 0) and d.b == V(12, 0)
+    assert d.line_points()[0] == V(10, -1)
+    scene.end_group_edit()
+    assert d.a == V(10, 0) and d.b == V(12, 0)
+    t = QMatrix4x4()
+    t.translate(0.0, 5.0, 0.0)
+    g.xform = t * g.xform                                 # and still holds
+    assert d.a == V(10, 5) and d.b == V(12, 5)
+
+
+@pytest.mark.parametrize("make", [_component, _classic_group],
+                         ids=["component", "group"])
+def test_a_dimension_drawn_inside_an_object_moves_with_it(make):
+    """#621, item 6: a dimension added while the object is open held the
+    edited mesh as if it were loose geometry, so the hold was dead from
+    the start and the dimension froze — moving the closed object left it
+    behind."""
+    scene = Scene()
+    g = make(scene)
+    hist = History(scene)
+    scene.begin_group_edit(g)
+    d = Dimension(V(10, 0), V(12, 0), V(0, -1))
+    hist.execute(AddDimensionCommand(d))
+    assert d.value() == pytest.approx(2.0)                # read while open
+    scene.end_group_edit()
+    assert d.anchored
+    assert d.a == V(10, 0) and d.b == V(12, 0)
+    hist.execute(MoveGroupCommand(g, V(0, 5)))
+    assert d.a == V(10, 5) and d.b == V(12, 5)
+    assert d.line_points()[0] == V(10, 4)
+    hist.undo()
+    assert d.a == V(10, 0)
+
+
+def test_an_edit_inside_a_component_reaches_its_dimension_on_leaving():
+    """Leaving after an edit writes the world copy back into the shared
+    definition; the dimension lets go of the copy and holds the definition
+    again — the edit measured, the placement still applied once."""
+    scene = Scene()
+    g = _component(scene)
+    hist = History(scene)
+    d = Dimension(V(10, 0), V(12, 0), V(0, -1))
+    hist.execute(AddDimensionCommand(d))
+    scene.begin_group_edit(g)
+    hist.execute(MoveVerticesCommand([V(12, 0), V(12, 2)], V(1, 0)))
+    assert d.b == V(13, 0)                                # live inside
+    scene.end_group_edit()
+    assert d.a == V(10, 0) and d.b == V(13, 0)
+    assert d.anchor_b.mesh is g.mesh and d.anchor_b.chain == (g,)
+    hist.execute(MoveGroupCommand(g, V(0, 5)))
+    assert d.b == V(13, 5)
+
+
+def _close(p, q):
+    return (p - q).length() < 1e-5
+
+
+@pytest.mark.parametrize("make", [_component, _classic_group],
+                         ids=["component", "group"])
+@pytest.mark.parametrize("motion", ["move", "rotate"])
+def test_a_groups_preview_shows_the_dimension_where_the_commit_puts_it(
+        make, motion):
+    """#621, item 7: Move and Rotate preview a group through a matrix and
+    touch no geometry until the commit, so a dimension on it waited for
+    the release. ``carried`` draws it through the same matrix — and it
+    must land exactly where the committed command then reads it."""
+    from core.history import RotateGroupCommand, rotation_matrix
+    scene = Scene()
+    g = make(scene)
+    hist = History(scene)
+    d = Dimension(V(10, 0), V(12, 2), V(1, -1))
+    hist.execute(AddDimensionCommand(d))
+    assert d.ends_riding({id(g)}) == ("a", "b")
+    assert d.ends_riding({id(object())}) == ()
+    if motion == "move":
+        m = QMatrix4x4()
+        m.translate(V(3, 4, 1))
+        cmd = MoveGroupCommand(g, V(3, 4, 1))
+    else:
+        m = rotation_matrix(V(11, 1), V(0, 0, 1), 90.0)
+        cmd = RotateGroupCommand(g, V(11, 1), V(0, 0, 1), 90.0)
+    shown = d.carried(m, d.ends_riding({id(g)}))
+    assert d.a == V(10, 0)                         # the original untouched
+    hist.execute(cmd)
+    assert _close(shown.a, d.a) and _close(shown.b, d.b)
+    for p, q in zip(shown.line_points(), d.line_points()):
+        assert _close(p, q)
+    assert shown.value() == pytest.approx(d.value())
+
+
+def test_only_the_riding_end_is_carried():
+    """A dimension from loose geometry to a group: the group's end comes
+    along, the loose end stays."""
+    scene = Scene()
+    scene.mesh.add_face([V(0, 0), V(1, 0), V(1, 1), V(0, 1)])
+    g = _component(scene)
+    hist = History(scene)
+    d = Dimension(V(1, 0), V(10, 0), V(0, -1))
+    hist.execute(AddDimensionCommand(d))
+    assert d.ends_riding({id(g)}) == ("b",)
+    m = QMatrix4x4()
+    m.translate(V(5, 0))
+    shown = d.carried(m, ("b",))
+    assert shown.a == V(1, 0) and shown.b == V(15, 0)

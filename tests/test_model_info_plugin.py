@@ -187,3 +187,18 @@ def test_stats_to_text_mentions_the_essentials():
     assert "rgb(255,0,0)" in text
     assert "IfcSlab" in text and "Losa" in text
     assert "Layer 0" in text
+
+
+def test_a_painted_slab_with_an_opening_counts_its_net_area():
+    """The finishes takeoff paints the slab, not its opening: a 4×4 m slab
+    with a 1×1 m hole is 15 m² of red. Face.area() is the outline's area;
+    the takeoff used it and said 16."""
+    scene = Scene()
+    f = scene.mesh.add_face(
+        [QVector3D(0, 0, 0), QVector3D(4, 0, 0),
+         QVector3D(4, 4, 0), QVector3D(0, 4, 0)],
+        [[QVector3D(1, 1, 0), QVector3D(1, 2, 0),
+          QVector3D(2, 2, 0), QVector3D(2, 1, 0)]])
+    f.attrs["color"] = (0.8, 0.1, 0.1)
+    red = _collect_stats(scene)["colors"][0]
+    assert abs(red["area"] - 15.0) < 1e-6

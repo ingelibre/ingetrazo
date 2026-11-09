@@ -153,3 +153,15 @@ def test_its_menus_come_from_the_extension_api(win, monkeypatch):
     # ...and the window's own QMenu name is never swapped any more.
     import views.main_window as mw
     assert mw.QMenu is QMenu
+
+
+def test_the_project_browser_reads_a_window_as_a_window(win, monkeypatch):
+    mod, vp, g = _windowize(win, monkeypatch, rows="2", cols="3")
+    panel = win.project_browser.outliner
+    panel.refresh()
+    row = panel._items[id(g)]
+    assert row.text(3) == "Window"                      # the Type column
+    tip = row.toolTip(3)
+    assert "Panes: 3 × 2" in tip and "Width:" in tip and "Height:" in tip
+    panel.search.setText("window")
+    assert not row.isHidden()

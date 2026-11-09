@@ -1,0 +1,380 @@
+{
+ "version": "0.5.7",
+ "compared_with": "v0.5.7",
+ "date": "2026-10-10",
+ "document": "plaza.igz",
+ "tests": {
+  "fast": "4477 passed, 10 skipped, 805 deselected, 379 warnings in 551s (6 batches)",
+  "slow": "804 passed, 1 xfailed, 4487 deselected in 83s (6 batches)"
+ },
+ "viewport": {
+  "head": [
+   {
+    "label": "0.5.7",
+    "commit": "50c2489",
+    "open_s": 6.58,
+    "first_paint_s": 0.04,
+    "root": {
+     "paint": {
+      "median_ms": 7.58,
+      "mean_ms": 8.33,
+      "max_ms": 15.0,
+      "n": 30
+     },
+     "orbit_frame": {
+      "median_ms": 7.52,
+      "mean_ms": 8.35,
+      "max_ms": 14.87,
+      "n": 40
+     },
+     "resync_vbos": {
+      "median_ms": 31.34,
+      "mean_ms": 33.39,
+      "max_ms": 38.51,
+      "n": 20
+     },
+     "chunks_rebuild+paint": {
+      "median_ms": 1236.51,
+      "mean_ms": 1236.51,
+      "max_ms": 1300.65,
+      "n": 2
+     },
+     "pick_index_cold": {
+      "median_ms": 31.07,
+      "mean_ms": 46.64,
+      "max_ms": 78.86,
+      "n": 3
+     },
+     "hover_select_x60": {
+      "median_ms": 140.56,
+      "mean_ms": 143.77,
+      "max_ms": 150.89,
+      "n": 3
+     },
+     "hover_line_x60": {
+      "median_ms": 606.71,
+      "mean_ms": 608.74,
+      "max_ms": 618.63,
+      "n": 3
+     }
+    },
+    "container": {
+     "name": null,
+     "children": 0
+    },
+    "scene": {
+     "groups": 1035,
+     "faces_drawn": 35697,
+     "edges": 60072,
+     "dback": 124611
+    }
+   },
+   {
+    "label": "0.5.7",
+    "commit": "50c2489",
+    "open_s": 6.57,
+    "first_paint_s": 0.03,
+    "root": {
+     "paint": {
+      "median_ms": 7.35,
+      "mean_ms": 8.25,
+      "max_ms": 14.79,
+      "n": 30
+     },
+     "orbit_frame": {
+      "median_ms": 7.3,
+      "mean_ms": 8.29,
+      "max_ms": 15.0,
+      "n": 40
+     },
+     "resync_vbos": {
+      "median_ms": 31.71,
+      "mean_ms": 33.7,
+      "max_ms": 39.86,
+      "n": 20
+     },
+     "chunks_rebuild+paint": {
+      "median_ms": 1231.29,
+      "mean_ms": 1231.29,
+      "max_ms": 1284.46,
+      "n": 2
+     },
+     "pick_index_cold": {
+      "median_ms": 31.11,
+      "mean_ms": 47.17,
+      "max_ms": 80.0,
+      "n": 3
+     },
+     "hover_select_x60": {
+      "median_ms": 142.59,
+      "mean_ms": 145.1,
+      "max_ms": 152.41,
+      "n": 3
+     },
+     "hover_line_x60": {
+      "median_ms": 614.07,
+      "mean_ms": 618.04,
+      "max_ms": 628.68,
+      "n": 3
+     }
+    },
+    "container": {
+     "name": null,
+     "children": 0
+    },
+    "scene": {
+     "groups": 1035,
+     "faces_drawn": 35697,
+     "edges": 60072,
+     "dback": 124611
+    }
+   }
+  ],
+  "prev": [
+   {
+    "label": "v0.5.7",
+    "commit": "4ad32ed",
+    "open_s": 5.23,
+    "first_paint_s": 0.05,
+    "root": {
+     "paint": {
+      "median_ms": 8.28,
+      "mean_ms": 9.96,
+      "max_ms": 22.78,
+      "n": 30
+     },
+     "orbit_frame": {
+      "median_ms": 8.18,
+      "mean_ms": 10.25,
+      "max_ms": 23.55,
+      "n": 40
+     },
+     "resync_vbos": {
+      "median_ms": 34.15,
+      "mean_ms": 39.4,
+      "max_ms": 47.31,
+      "n": 20
+     },
+     "chunks_rebuild+paint": {
+      "median_ms": 1061.18,
+      "mean_ms": 1061.18,
+      "max_ms": 1067.07,
+      "n": 2
+     },
+     "pick_index_cold": {
+      "median_ms": 60.27,
+      "mean_ms": 61.1,
+      "max_ms": 65.08,
+      "n": 3
+     },
+     "hover_select_x60": {
+      "median_ms": 330.78,
+      "mean_ms": 332.89,
+      "max_ms": 338.46,
+      "n": 3
+     },
+     "hover_line_x60": {
+      "median_ms": 1057.51,
+      "mean_ms": 1059.47,
+      "max_ms": 1065.3,
+      "n": 3
+     }
+    },
+    "container": {
+     "name": null,
+     "children": 0
+    },
+    "scene": {
+     "groups": 1035,
+     "faces_drawn": 35697,
+     "edges": 60072,
+     "dback": 124611
+    }
+   },
+   {
+    "label": "v0.5.7",
+    "commit": "4ad32ed",
+    "open_s": 5.18,
+    "first_paint_s": 0.05,
+    "root": {
+     "paint": {
+      "median_ms": 8.33,
+      "mean_ms": 9.89,
+      "max_ms": 23.2,
+      "n": 30
+     },
+     "orbit_frame": {
+      "median_ms": 8.32,
+      "mean_ms": 10.23,
+      "max_ms": 23.04,
+      "n": 40
+     },
+     "resync_vbos": {
+      "median_ms": 33.64,
+      "mean_ms": 37.9,
+      "max_ms": 49.15,
+      "n": 20
+     },
+     "chunks_rebuild+paint": {
+      "median_ms": 1070.03,
+      "mean_ms": 1070.03,
+      "max_ms": 1074.91,
+      "n": 2
+     },
+     "pick_index_cold": {
+      "median_ms": 58.67,
+      "mean_ms": 60.96,
+      "max_ms": 66.12,
+      "n": 3
+     },
+     "hover_select_x60": {
+      "median_ms": 325.15,
+      "mean_ms": 328.5,
+      "max_ms": 335.43,
+      "n": 3
+     },
+     "hover_line_x60": {
+      "median_ms": 1086.99,
+      "mean_ms": 1088.09,
+      "max_ms": 1091.39,
+      "n": 3
+     }
+    },
+    "container": {
+     "name": null,
+     "children": 0
+    },
+    "scene": {
+     "groups": 1035,
+     "faces_drawn": 35697,
+     "edges": 60072,
+     "dback": 124611
+    }
+   }
+  ]
+ },
+ "startup_memory": {
+  "head": {
+   "commit": "50c2489",
+   "startup_s": 0.84,
+   "rss_empty_mb": 284.5,
+   "open_s": [
+    6.47,
+    4.38,
+    4.28,
+    4.37,
+    4.37,
+    4.43
+   ],
+   "rss_after_open_mb": [
+    638.9,
+    884.3,
+    888.3,
+    890.2,
+    889.0,
+    888.3
+   ],
+   "live_after_open": [
+    {
+     "Face": 71402,
+     "Mesh": 892,
+     "QOpenGLVertexArrayObject": 32,
+     "QProgressDialog": 1
+    },
+    {
+     "Face": 71402,
+     "Mesh": 892,
+     "QOpenGLVertexArrayObject": 32,
+     "QProgressDialog": 1
+    },
+    {
+     "Face": 71402,
+     "Mesh": 892,
+     "QOpenGLVertexArrayObject": 32,
+     "QProgressDialog": 1
+    },
+    {
+     "Face": 71402,
+     "Mesh": 892,
+     "QOpenGLVertexArrayObject": 32,
+     "QProgressDialog": 1
+    },
+    {
+     "Face": 71402,
+     "Mesh": 892,
+     "QOpenGLVertexArrayObject": 32,
+     "QProgressDialog": 1
+    },
+    {
+     "Face": 71402,
+     "Mesh": 892,
+     "QOpenGLVertexArrayObject": 32,
+     "QProgressDialog": 1
+    }
+   ],
+   "leaked_objects": {},
+   "rss_growth_last3_mb": -1.0
+  },
+  "prev": {
+   "commit": "4ad32ed",
+   "startup_s": 0.72,
+   "rss_empty_mb": 279.8,
+   "open_s": [
+    5.09,
+    4.09,
+    4.11,
+    4.21,
+    4.24,
+    4.32
+   ],
+   "rss_after_open_mb": [
+    618.4,
+    859.1,
+    861.5,
+    866.4,
+    868.5,
+    866.5
+   ],
+   "live_after_open": [
+    {
+     "Face": 71402,
+     "Mesh": 892,
+     "QOpenGLVertexArrayObject": 32,
+     "QProgressDialog": 1
+    },
+    {
+     "Face": 71402,
+     "Mesh": 892,
+     "QOpenGLVertexArrayObject": 32,
+     "QProgressDialog": 1
+    },
+    {
+     "Face": 71402,
+     "Mesh": 892,
+     "QOpenGLVertexArrayObject": 32,
+     "QProgressDialog": 1
+    },
+    {
+     "Face": 71402,
+     "Mesh": 892,
+     "QOpenGLVertexArrayObject": 32,
+     "QProgressDialog": 1
+    },
+    {
+     "Face": 71402,
+     "Mesh": 892,
+     "QOpenGLVertexArrayObject": 32,
+     "QProgressDialog": 1
+    },
+    {
+     "Face": 71402,
+     "Mesh": 892,
+     "QOpenGLVertexArrayObject": 32,
+     "QProgressDialog": 1
+    }
+   ],
+   "leaked_objects": {},
+   "rss_growth_last3_mb": 0.1
+  }
+ }
+}

@@ -92,9 +92,14 @@ class _Sources:
         self.attrs: list[dict] = []
         #: Pairs of source face ids joined by a soft edge (curved surfaces).
         self.soft_pairs: set[tuple[int, int]] = set()
+        #: Source edges that carry more than their ends — a circle's curve
+        #: id, a tag, hidden — as ``(a, b, curve_key, layer, hidden)`` in
+        #: world space; ``curve_key`` is ``(input index, id)`` because two
+        #: instances of one component share their curve ids.
+        self.flagged: list[tuple] = []
 
 
-def _to_manifold(group, sources: _Sources):
+def _to_manifold(group, sources: _Sources, index_in_op: int = 0):
     import manifold3d as m3d
     from core.materials import effective_attrs
     from core.group import effective_material
@@ -132,6 +137,13 @@ def _to_manifold(group, sources: _Sources):
             fs = [x for x in fs if x is not None]
             if len(fs) == 2:
                 sources.soft_pairs.add((min(fs), max(fs)))
+        cid = getattr(e, "curve", None)
+        layer = getattr(e, "layer", None)
+        hidden = getattr(e, "hidden", False)
+        if cid is not None or layer is not None or hidden:
+            sources.flagged.append((
+                (e.a.x(), e.a.y(), e.a.z()), (e.b.x(), e.b.y(), e.b.z()),
+                None if cid is None else (index_in_op, cid), layer, hidden))
     if not tris:
         raise SolidError("empty")
     v = np.asarray(verts, dtype=np.float64)
@@ -140,11 +152,75 @@ def _to_manifold(group, sources: _Sources):
     a, b, c = v[t[:, 0]], v[t[:, 1]], v[t[:, 2]]
     if np.einsum("ij,ij->i", a, np.cross(b, c)).sum() < 0:
         t = t[:, ::-1].copy()
-    man = m3d.Manifold(m3d.Mesh64(vert_properties=v, tri_verts=t,
-                                  face_id=np.asarray(fids, dtype=np.uint32)))
+    f = np.asarray(fids, dtype=np.uint32)
+    man = m3d.Manifold(m3d.Mesh64(vert_properties=v, tri_verts=t, face_id=f))
     if man.status() != m3d.Error.NoError:
-        raise SolidError("not manifold")
+        # A face's triangulation can leave a corner of a neighbouring face
+        # lying ON one of its triangle edges — two door openings in a row,
+        # their tops at one height, give a triangle whose long edge runs
+        # past both holes' corners. That draws fine but is not a closed
+        # triangle surface, and the boolean refuses it (#227). Only then,
+        # split those triangles at the corners and try once more: what
+        # converts today converts exactly as before.
+        v, t, f = _conform_t_junctions(v, t, f)
+        man = m3d.Manifold(m3d.Mesh64(vert_properties=v, tri_verts=t,
+                                      face_id=f))
+        if man.status() != m3d.Error.NoError:
+            raise SolidError("not manifold")
     return man
+
+
+def _conform_t_junctions(v, t, f, rel_tol: float = 1e-9):
+    """Split every triangle that has a vertex of the mesh lying inside one
+    of its edges: the triangle's outline with those vertices inserted, in
+    order, fanned from a new point at its centroid (strictly inside, so no
+    sliver comes out). Returns new ``(vertices, triangles, face_ids)``."""
+    scale = max(1.0, float(np.abs(v).max())) if len(v) else 1.0
+    tol = rel_tol * scale
+    verts = [tuple(p) for p in v.tolist()]
+    out_t: list = []
+    out_f: list = []
+    for tri, fid in zip(t.tolist(), f.tolist()):
+        ring: list = []
+        split = False
+        for k in range(3):
+            a, b = tri[k], tri[(k + 1) % 3]
+            ring.append(a)
+            pa, pb = v[a], v[b]
+            d = pb - pa
+            length2 = float(d @ d)
+            if length2 <= tol * tol:
+                continue
+            box_lo = np.minimum(pa, pb) - tol
+            box_hi = np.maximum(pa, pb) + tol
+            near = np.flatnonzero(np.all((v >= box_lo) & (v <= box_hi),
+                                         axis=1))
+            hits = []
+            for i in near.tolist():
+                if i in (a, b):
+                    continue
+                s = float((v[i] - pa) @ d) / length2
+                if s <= 1e-9 or s >= 1.0 - 1e-9:
+                    continue
+                off = v[i] - (pa + s * d)
+                if float(off @ off) <= tol * tol:
+                    hits.append((s, i))
+            if hits:
+                split = True
+                ring.extend(i for _s, i in sorted(hits))
+        if not split:
+            out_t.append(tri)
+            out_f.append(fid)
+            continue
+        c = len(verts)
+        verts.append(tuple(v[tri].mean(axis=0).tolist()))
+        n = len(ring)
+        for k in range(n):
+            out_t.append((c, ring[k], ring[(k + 1) % n]))
+            out_f.append(fid)
+    return (np.asarray(verts, dtype=np.float64),
+            np.asarray(out_t, dtype=np.uint32),
+            np.asarray(out_f, dtype=np.uint32))
 
 
 def _loops_from(man, sources: _Sources, drop_voids: bool = False):
@@ -235,10 +311,74 @@ def _group_from_loops(loops, sources: _Sources, name: str, layer):
         if len(fs) == 2 and None not in fs:
             if (min(fs), max(fs)) in sources.soft_pairs:
                 e.soft = True
+    _carry_edge_flags(mesh, sources)
     g = Group(mesh, name=name)
     if layer is not None:
         g.layer = layer
     return g
+
+
+def _carry_edge_flags(mesh, sources: _Sources, rel_tol: float = 1e-7) -> None:
+    """Every result edge lying along a source edge takes that edge's curve,
+    tag and hidden flag. Without this a cylinder's top circle came out of
+    any cut as loose segments — even when the cut never touched it. A curve
+    the cut broke comes back as one curve per remaining arc."""
+    if not sources.flagged or not mesh.edges:
+        return
+    a = np.array([f[0] for f in sources.flagged], dtype=np.float64)
+    b = np.array([f[1] for f in sources.flagged], dtype=np.float64)
+    d = b - a
+    len2 = np.maximum((d * d).sum(axis=1), 1e-300)
+    lo, hi = np.minimum(a, b), np.maximum(a, b)
+    scale = max(1.0, float(np.abs(np.concatenate([a, b])).max()))
+    tol = rel_tol * scale
+
+    def off2(p):
+        s = np.clip(((p - a) * d).sum(axis=1) / len2, 0.0, 1.0)
+        q = a + s[:, None] * d - p
+        return (q * q).sum(axis=1)
+
+    by_key: dict = {}
+    for e in mesh.edges:
+        pa = np.array((e.a.x(), e.a.y(), e.a.z()))
+        pb = np.array((e.b.x(), e.b.y(), e.b.z()))
+        near = (np.all(lo <= np.minimum(pa, pb) + tol, axis=1)
+                & np.all(hi >= np.maximum(pa, pb) - tol, axis=1))
+        if not near.any():
+            continue
+        hit = near & (off2(pa) <= tol * tol) & (off2(pb) <= tol * tol)
+        idx = np.flatnonzero(hit)
+        if not len(idx):
+            continue
+        _a, _b, key, layer, hidden = sources.flagged[int(idx[0])]
+        e.layer = layer
+        e.hidden = bool(hidden)
+        if key is not None:
+            by_key.setdefault(key, []).append(e)
+    # One id per unbroken run: the chain goes on through a vertex where
+    # exactly two of its edges meet (the side seams of a cylinder meet the
+    # rim there too, so other edges do not break it).
+    for edges in by_key.values():
+        eset = set(edges)
+        parent = {e: e for e in edges}
+
+        def find(x):
+            while parent[x] is not x:
+                parent[x] = parent[parent[x]]
+                x = parent[x]
+            return x
+
+        for e in edges:
+            for v in (e.v0, e.v1):
+                mine = [o for o in v.edges if o in eset]
+                if len(mine) == 2:
+                    parent[find(mine[0])] = find(mine[1])
+        ids: dict = {}
+        for e in edges:
+            r = find(e)
+            if r not in ids:
+                ids[r] = Mesh.next_curve_id()
+            e.curve = ids[r]
 
 
 def _drop_collinear(polys, tol: float = 1e-9) -> None:
@@ -290,7 +430,7 @@ def run(op: str, groups: list) -> tuple[list, list]:
     for g in groups:
         _need_solid(g)
     sources = _Sources()
-    mans = [_to_manifold(g, sources) for g in groups]
+    mans = [_to_manifold(g, sources, i) for i, g in enumerate(groups)]
     first, second = groups[0], groups[1]
     from core.i18n import tr
     name = tr(RESULT_NAMES[op])

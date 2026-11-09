@@ -510,7 +510,8 @@ class TexturePositionTool(Tool):
         as the Measurements box shows it; ``None`` otherwise."""
         if self._sweep_deg is None or not self.active:
             return None
-        return (f"{self._sweep_deg:+.1f}°",
+        from core.units import fmt_angle_deg
+        return (fmt_angle_deg(self._sweep_deg, signed=True),
                 self.map.world(*self.pin_uv[PIN_SCALE_ROTATE]))
 
     def _protractor_segments(self, viewport):

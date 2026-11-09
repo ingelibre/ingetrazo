@@ -93,3 +93,57 @@ def test_copying_a_face_with_its_edges_does_not_double_it():
     _copy(vp, (0, 0), (5, 0))
     assert len(scene.mesh.faces) == 2                # original + ONE copy
     assert len(scene.mesh.edges) == 8
+
+
+def _box_and_its_top():
+    """A 1 × 0.5 × 0.8 box; the selection is its top face with its edges —
+    a piece picked whole, as a triple-click does."""
+    from core.edits import build_add_edges
+    from tests.test_coplanar_merge import _push
+    scene = Scene()
+    vp = _Vp(scene)
+    c = [V(0, 0), V(1, 0), V(1, 0.5), V(0, 0.5)]
+    vp.history.execute(build_add_edges(
+        scene, [(c[i], c[(i + 1) % 4]) for i in range(4)]))
+    _push(scene, vp.history, scene.mesh.faces[0], 0.8)
+    top = next(f for f in scene.mesh.faces
+               if all(abs(v.z() - 0.8) < 1e-6 for v in f.vertices))
+    edges = [e for e in scene.mesh.edges if top in e.faces]
+    return scene, vp, top, edges
+
+
+def _front(scene):
+    return [f for f in scene.mesh.faces
+            if all(abs(v.y()) < 1e-6 for v in f.vertices)]
+
+
+def _at_height(scene, z):
+    return [f for f in scene.mesh.faces
+            if all(abs(v.z() - z) < 1e-6 for v in f.vertices)]
+
+
+def test_a_copied_face_s_edges_split_the_faces_they_land_on():
+    # #379 (ArqAi review, 37:00): the edges of a piece copied 1 cm down
+    # left the box's walls whole; a line drawn there splits them.
+    scene, vp, top, edges = _box_and_its_top()
+    tool = MoveTool()
+    tool._groups, tool._sel_faces, tool._sel_edges = [], [top], edges
+    vp.history.execute(tool._make_copy_builder(scene)([V(0, 0, -0.01)]))
+    assert len(_front(scene)) == 2, "the copy did not split the wall"
+    assert len(_at_height(scene, 0.79)) == 1          # ONE copied face
+    vp.history.undo()
+    assert len(_front(scene)) == 1 and not _at_height(scene, 0.79)
+    vp.history.redo()
+    assert len(_front(scene)) == 2 and len(_at_height(scene, 0.79)) == 1
+
+
+def test_an_array_of_copied_faces_splits_at_every_copy():
+    # «4/» in the video: several copies at once, each one splits.
+    scene, vp, top, edges = _box_and_its_top()
+    tool = MoveTool()
+    tool._groups, tool._sel_faces, tool._sel_edges = [], [top], edges
+    deltas = [V(0, 0, -0.2 * k) for k in (1, 2, 3)]
+    vp.history.execute(tool._make_copy_builder(scene)(deltas))
+    assert len(_front(scene)) == 4
+    for z in (0.6, 0.4, 0.2):
+        assert len(_at_height(scene, z)) == 1

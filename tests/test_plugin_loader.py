@@ -220,8 +220,9 @@ def test_menu_placeholder_when_no_plugins(main_window):
     assert not actions[0].isEnabled()
     # The plugin-author on-ramp is always at the bottom of the menu.
     texts = [a.text() for a in actions]
-    assert "Open plugins folder" in texts
-    assert "Develop a plugin…" in texts
+    assert "Open extensions folder" in texts
+    assert "Develop an extension…" in texts
+    assert "Manage extensions…" in texts
 
 
 def test_plugin_cannot_steal_a_builtin_shortcut(tmp_path, main_window):
@@ -261,3 +262,62 @@ def test_activating_a_plugin_keeps_the_real_tool_active(tmp_path, main_window):
     assert win.viewport._plugin_ran is True
     assert win.viewport.active_tool is active_before
     assert win._tool_label.text() == label_before
+
+
+SETUP_BUILT_TOOL = """
+    from tools.base import Tool
+
+    class WallTool(Tool):
+        name = "Wall"
+
+        def __init__(self, app, mode):        # the extension builds it
+            super().__init__()
+            self.app, self.mode = app, mode
+
+        def on_activate(self, viewport):
+            pass
+
+        def on_deactivate(self, viewport):
+            pass
+
+    BUILT = []
+
+    def setup(app):
+        BUILT.append(WallTool(app, "draw"))
+"""
+
+
+def test_a_tool_that_needs_arguments_is_left_to_setup(tmp_path):
+    # planArq (José Castro) builds its tools in setup(app) with the app and
+    # a mode; the loader tried WallTool() itself, it raised, and the whole
+    # extension — setup and panel — was thrown away.
+    _write(tmp_path, "walls.py", SETUP_BUILT_TOOL)
+    plugins, errors = discover_plugins([tmp_path])
+    assert errors == []
+    (plug,) = plugins
+    assert plug.stem == "walls" and plug.setup is not None
+    assert plug.tools == []                  # not made by the loader
+    plug.setup(object())
+    assert len(sys.modules[plug.setup.__module__].BUILT) == 1
+
+
+def test_a_tool_with_optional_arguments_is_still_listed(tmp_path):
+    _write(tmp_path, "opt.py", """
+        from tools.base import Tool
+
+        class OptTool(Tool):
+            name = "Opt"
+
+            def __init__(self, mode="draw"):
+                super().__init__()
+                self.mode = mode
+
+            def on_activate(self, viewport):
+                pass
+
+            def on_deactivate(self, viewport):
+                pass
+    """)
+    plugins, errors = discover_plugins([tmp_path])
+    assert errors == [] and [type(t).__name__ for t in plugins[0].tools] == [
+        "OptTool"]

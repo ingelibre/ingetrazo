@@ -138,7 +138,8 @@ def test_make_unique_detaches_the_instance():
     a.xform = QMatrix4x4()
     scene.groups.append(a)
     hist.execute(MakeUniqueCommand(a))
-    assert a.xform is None and a.mesh is not proto  # its own mesh now
+    assert a.mesh is not proto                      # its own mesh now
+    assert a.is_component()                         # still a component
     assert hist.undo()
     assert a.mesh is proto and a.xform is not None  # sharing restored
 
@@ -186,7 +187,9 @@ def test_flip_tool_flips_group_and_copy_mode():
     assert xs == [1.0, 1.0, 2.0, 2.0]              # mirrored about centre 1.5
     assert vp.history.undo()
 
-    assert t.on_key(vp, Qt.Key_Control, Qt.NoModifier) is True  # copy mode
+    assert t.on_key(vp, Qt.Key_Control, Qt.NoModifier) is True
+    assert t.on_key_release(vp, Qt.Key_Control) is True        # Ctrl tap
+    assert t._copy is True
     assert t._lock_axis == "x"                     # the red lock stays armed
     t.on_click(_ctx(vp, 0, 0))
     assert len(scene.groups) == 2                  # original + flipped copy

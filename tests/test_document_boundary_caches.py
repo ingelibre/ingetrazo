@@ -28,14 +28,80 @@ def test_open_forgets_every_id_keyed_cache(tmp_path):
     win = MainWindow()
     vp = win.viewport
     try:
+        _seed_inference_references(vp)
         for name in vp._DOCUMENT_CACHES:
             setattr(vp, name, {12345: "stale"})
         win._saved_version = vp.scene.version
         assert win.open_path(path)
         for name in vp._DOCUMENT_CACHES:
             assert not getattr(vp, name), name
+        _assert_inference_references_cleared(vp)
     finally:
         win._saved_version = vp.scene.version
+        win.close()
+
+
+def _seed_inference_references(vp):
+    from PySide6.QtGui import QVector3D
+
+    inference = vp.inference
+    inference._hover_edge = object()
+    inference._hover_center = object()
+    inference._center_ref = object()
+    inference._acquired_edge = object()
+    inference._acquired_face_normal = QVector3D(0, 0, 1)
+    inference._acquired_point = QVector3D(1, 2, 3)
+    inference._encouraged = [QVector3D(4, 5, 6)]
+    inference._dwell_point = QVector3D(7, 8, 9)
+    inference._dwell_timer.start()
+
+
+def _assert_inference_references_cleared(vp):
+    inference = vp.inference
+    assert inference._hover_edge is None
+    assert inference._hover_center is None
+    assert inference._center_ref is None
+    assert inference._acquired_edge is None
+    assert inference._acquired_face_normal is None
+    assert inference._acquired_point is None
+    assert inference._encouraged == []
+    assert inference._dwell_point is None
+    assert not inference._dwell_timer.isActive()
+
+
+def test_new_drawing_drops_acquired_inference_references():
+    from views.main_window import MainWindow
+
+    win = MainWindow()
+    try:
+        _seed_inference_references(win.viewport)
+        win._confirm_discard = lambda *_a, **_k: True
+        win._on_new()
+        _assert_inference_references_cleared(win.viewport)
+    finally:
+        win._saved_version = win.viewport.scene.version
+        win.close()
+
+
+def test_undo_drops_acquired_inference_references():
+    from PySide6.QtGui import QVector3D
+
+    from core.history import AddEdgeCommand
+    from views.main_window import MainWindow
+
+    win = MainWindow()
+    try:
+        vp = win.viewport
+        vp.history.execute(AddEdgeCommand(QVector3D(0, 0, 0),
+                                           QVector3D(1, 0, 0)))
+        _seed_inference_references(vp)
+        vp.axis_lock = "x"
+        win._on_undo()
+        _assert_inference_references_cleared(vp)
+        assert vp.axis_lock == "x"
+        assert not vp.history.undo_stack
+    finally:
+        win._saved_version = win.viewport.scene.version
         win.close()
 
 

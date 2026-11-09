@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-# Run the fast test suite on every pull request and on every push to main.
+# Run the fast test suite on every pull request and on every push to main
+# (in the private development repository: pull requests and manual runs only).
 #
 # This is the gate the release workflows don't provide: build-windows.yml and
 # release.yml only fire on a vX.Y.Z tag, so until now a PR showed "no checks
@@ -30,6 +31,11 @@ permissions:
 jobs:
   tests:
     name: pytest (not slow)
+    # In the private development repository Actions minutes are counted, and a
+    # push to main has already passed both suites locally before it went up:
+    # there the gate runs on pull requests (and by hand) only. The public
+    # repository keeps every trigger — its minutes are free.
+    if: github.event_name != 'push' || !github.event.repository.private
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
@@ -61,7 +67,9 @@ jobs:
       - name: Tests
         # The slow marker is long fuzz sweeps; the PR gate is the fast set,
         # same as the release gate. Offscreen so no test can accidentally
-        # depend on a display.
+        # depend on a display. In batches, one process each: the fast suite
+        # no longer fits in a runner's memory as one process (see
+        # scripts/pytest_batches.py).
         env:
           QT_QPA_PLATFORM: offscreen
-        run: python -m pytest -q -m "not slow"
+        run: python scripts/pytest_batches.py -m "not slow" tests

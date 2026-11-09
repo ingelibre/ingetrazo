@@ -79,11 +79,16 @@ def test_face_me_figures_travel_as_nodes_with_their_feet_and_heading(tmp_path):
     assert spec["serve"] is True and spec["blend"] is None
 
 
-def test_a_file_export_without_camera_keeps_one_node(tmp_path):
+def test_a_file_export_without_camera_brings_the_figure_standing(tmp_path):
+    """A file has no camera, and the figures used to stay out of it; a
+    user wants them in (#353): the model and the figure are nodes of their
+    own, the figure standing toward the Front view and tagged as one."""
     from formats.gltf import save_glb
     scene = _scene_with_figure(tmp_path)
     save_glb(scene, tmp_path / "plain.glb")
-    assert len(_glb_json(tmp_path / "plain.glb")["nodes"]) == 1
+    nodes = _glb_json(tmp_path / "plain.glb")["nodes"]
+    figures = [n for n in nodes if "ingetrazo_faceme" in n.get("extras", {})]
+    assert len(figures) == 1 and len(nodes) == 2
 
 
 def test_a_sync_request_is_one_line_with_the_camera_and_a_draft_quality():

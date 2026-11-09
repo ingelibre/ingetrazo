@@ -14,6 +14,8 @@ that carry eye/target/up cameras (e.g. .skp) convert once at import time.
 """
 from __future__ import annotations
 
+from core.history import Command, CommandRejected
+
 
 class SavedView:
     """A named camera + layer-visibility snapshot."""
@@ -224,6 +226,29 @@ def georef_objects(scene) -> list[tuple[str, object]]:
             ("survey", getattr(scene, "photo_mesh", None))]
 
 
+def shown_state(scene) -> tuple:
+    """Everything a recalled view can change besides the camera, as a value
+    to compare: layer visibility, style, section, geographic layers,
+    shadows, hidden objects. A recall that leaves it equal moved the camera
+    only, and the caches keyed on ``scene.version`` (every edge and profile
+    of the model, re-synced) have nothing to rebuild."""
+    style = getattr(scene, "display_style", None)
+    shadows = getattr(scene, "shadows", None)
+    section = (scene.active_section()
+               if hasattr(scene, "active_section") else None)
+    return (tuple((ly.name, ly.visible) for ly in scene.layers),
+            style.to_dict() if style is not None else None,
+            getattr(section, "uid", None),
+            getattr(scene, "show_section_planes", None),
+            getattr(scene, "show_section_cuts", None),
+            tuple(sorted(georef_state(scene).items())),
+            shadows.to_dict() if shadows is not None else None,
+            tuple(sorted(uid for uid, g in scene.groups_by_uid().items()
+                         if getattr(g, "hidden", False))),
+            getattr(scene, "show_hidden_objects", None),
+            getattr(scene, "show_hidden_geometry", None))
+
+
 def georef_state(scene) -> dict:
     """Visibility of the geographic layers right now — a missing object
     counts as hidden, so a scene made before any base map existed recalls
@@ -267,3 +292,57 @@ def from_lookat(name: str, eye, target, up, fov_deg: float = 45.0,
     return SavedView(name, target=tuple(target), distance=distance, yaw=yaw,
                      pitch=pitch, fov_deg=fov_deg, perspective=perspective,
                      hidden_layers=hidden_layers)
+
+
+class RenameSceneCommand(Command):
+    """A scene's new name, and the sheet views that show it along with it
+    (``core.outliner.rename_scene``). A name refused there is no step."""
+
+    keeps_paint = True
+
+    def __init__(self, view, name: str) -> None:
+        self.view = view
+        self.name = name
+        self._prev = None
+        self._frames: list = []
+
+    def do(self, scene) -> None:
+        from core.outliner import frames_showing, rename_scene
+        prev = self.view.name
+        frames = [frame for _comp, frame in frames_showing(scene, prev)]
+        if not rename_scene(scene, self.view, self.name):
+            raise CommandRejected(self.name)
+        self._prev, self._frames = prev, frames
+        scene.version += 1
+
+    def undo(self, scene) -> None:
+        self.view.name = self._prev
+        for frame in self._frames:
+            frame.view_key = f"scene:{self._prev}"
+        scene.version += 1
+
+
+class MoveSceneCommand(Command):
+    """A scene to another place in the list: the order of the list is the
+    order of the scene tabs and the panel, and what the document saves."""
+
+    keeps_paint = True
+
+    def __init__(self, view, index: int) -> None:
+        self.view = view
+        self.index = int(index)
+        self._from = None
+
+    def do(self, scene) -> None:
+        views = scene.saved_views
+        if self.view not in views or self.index == views.index(self.view):
+            raise CommandRejected(self.view.name)
+        self._from = views.index(self.view)
+        views.remove(self.view)
+        views.insert(self.index, self.view)
+        scene.version += 1
+
+    def undo(self, scene) -> None:
+        scene.saved_views.remove(self.view)
+        scene.saved_views.insert(self._from, self.view)
+        scene.version += 1

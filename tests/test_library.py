@@ -84,6 +84,21 @@ def test_a_model_zip_cannot_write_outside_its_folder(served):
     assert not (d.parent.parent / "fuera.txt").exists()
 
 
+def test_a_model_id_cannot_climb_out_of_the_cache(served, tmp_path):
+    """The id comes from the server; ``../..`` in it must not become a path
+    (it could drop a .py into the user's plugins folder)."""
+    evil = "../../../../plugins"
+    with zipfile.ZipFile(tmp_path / "evil.zip", "w") as z:
+        z.writestr("evil.py", "raise SystemExit")
+    idx = json.loads((served / "index.json").read_text(encoding="utf-8"))
+    idx["modelos"].append({"id": evil, "nombre": "x", "obj": "evil.py"})
+    (served / "index.json").write_text(json.dumps(idx), encoding="utf-8")
+    assert [e["id"] for e in library.index()] == ["silla"]
+    assert library.model_dir(evil) is None
+    assert library.thumbnail(evil) is None
+    assert not list(tmp_path.rglob("evil.py"))
+
+
 def _load(obj, entry):
     """The model as the tray inserts it, and the size it ends up."""
     from core.scene import Scene
@@ -164,7 +179,7 @@ def test_a_download_says_who_it_is(monkeypatch, tmp_path):
         def __exit__(self, *a):
             return False
 
-    def fake_urlopen(req, timeout=None):
+    def fake_urlopen(req, timeout=None, context=None):
         seen["ua"] = req.get_header("User-agent")
         return _Resp()
 

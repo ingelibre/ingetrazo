@@ -27,7 +27,8 @@ elif not isinstance(_inst, QApplication):
 
 from core.composition import (Cajetin, Composicion, CotaItem,   # noqa: E402
                               FormaItem, MarcoVista)
-from views.composer import ComposerCanvasView, ComposerWindow, _SheetItem   # noqa: E402
+from views.composer import (ComposerCanvasView, ComposerWindow,   # noqa: E402
+                            CotaCanvasItem, _SheetItem)
 
 
 class _StubComposer:
@@ -68,7 +69,11 @@ def _view(mode="linea"):
 def _mouse(view, etype, px, py, button=Qt.LeftButton,
            buttons=Qt.NoButton, mods=Qt.NoModifier):
     pos = QPointF(px, py)
-    ev = QMouseEvent(etype, pos, pos, button, buttons, mods)
+    # The global point is where that viewport pixel is on the screen: the
+    # scene finds what is under a press through it, so passing the local
+    # point again only worked while the page sat at the window's left edge.
+    glob = QPointF(view.viewport().mapToGlobal(pos.toPoint()))
+    ev = QMouseEvent(etype, pos, glob, button, buttons, mods)
     if etype == QEvent.MouseButtonPress:
         view.mousePressEvent(ev)
     elif etype == QEvent.MouseMove:
@@ -352,6 +357,61 @@ class TestAnchoredEndToEnd:
         # and on paper the cota grew with it: 6.2 m at 1:100 = 62 mm
         import math
         assert math.hypot(ct.dx_mm, ct.dy_mm) == pytest.approx(62.0)
+
+    def _stretch(self, composer, x_from, x_to, undo=None):
+        # Through the real Move command, as the user's push/move does: it
+        # keeps the vertex registry (and so vertex identity) right.
+        from PySide6.QtGui import QVector3D
+        from core.history import MoveVerticesCommand
+        scene = composer._scene()
+        if undo is not None:
+            undo.undo(scene)
+            cmd = None
+        else:
+            src = [QVector3D(v.position) for v in scene.mesh.vertices
+                   if abs(v.position.x() - x_from) < 1e-9]
+            cmd = MoveVerticesCommand(src, QVector3D(x_to - x_from, 0, 0))
+            cmd.do(scene)
+        composer._invalidate_geometry_caches()
+        composer._rebuild_canvas()
+        return cmd
+
+    def test_cota_follows_a_face_moved_past_the_snap_tolerance_854(self):
+        # #854 (@cescmari): a face pushed further than the re-snap
+        # tolerance (0.25 m at 1:100) left the cota where it was. It
+        # follows the vertex it measured, both ways.
+        composer, frame = self._composer()
+        composer.tool_mode = "cota"
+        composer.place_tool(30.0, 100.0, 90.0, 100.0, sep_mm=6.0,
+                            anchors=(frame, (0.0, 0.0, 0.0),
+                                     (6.0, 0.0, 0.0)))
+        ct = composer.comp.cotas[0]
+        cmd = self._stretch(composer, 6.0, 8.0)
+        assert ct.b_world[0] == pytest.approx(8.0)
+        assert ct.label() == "8.00 m"
+        assert ct.a_world == pytest.approx([0.0, 0.0, 0.0])
+        self._stretch(composer, 8.0, 6.0, undo=cmd)          # and undone
+        assert ct.label() == "6.00 m"
+        self._stretch(composer, 6.0, 3.0)                    # and shorter
+        assert ct.label() == "3.00 m"
+
+    def test_cota_on_deleted_geometry_keeps_its_anchor_854(self):
+        composer, frame = self._composer()
+        composer.tool_mode = "cota"
+        composer.place_tool(30.0, 100.0, 90.0, 100.0, sep_mm=6.0,
+                            anchors=(frame, (0.0, 0.0, 0.0),
+                                     (6.0, 0.0, 0.0)))
+        ct = composer.comp.cotas[0]
+        composer._rebuild_canvas()
+        mesh = composer._scene().mesh
+        for f in list(mesh.faces):
+            mesh.remove_face(f)
+        for e in list(mesh.edges):
+            mesh.remove_edge(e)
+        composer._invalidate_geometry_caches()
+        composer._rebuild_canvas()
+        assert ct.anchored
+        assert ct.b_world == pytest.approx([6.0, 0.0, 0.0])
 
     def test_free_cota_is_left_alone(self):
         composer, frame = self._composer()
@@ -1149,3 +1209,67 @@ class TestLostMouseRelease:
                buttons=Qt.MiddleButton)
         _mouse(view, QEvent.MouseMove, 380, 360, buttons=Qt.NoButton)
         assert view.viewport().cursor().shape() == Qt.OpenHandCursor
+
+
+class TestReanchorByDraggingBack1053:
+    """A measured point dragged off the model lets the cota go (blue
+    handles); dragged back ONTO a point of the same view it anchors again
+    (#1053, @cescmari: «para volver a anclarla hay que colocarla de nuevo
+    sobre el punto» did not work — the drag did not even snap)."""
+
+    def _setup(self):
+        composer, frame = TestAnchoredEndToEnd._composer(self)
+        composer.tool_mode = "cota"
+        _pts, wpts = composer.frame_snap_points(frame)
+        pts, _w = composer.frame_snap_points(frame)
+        page = {tuple(round(c, 6) for c in w): (float(p[0]), float(p[1]))
+                for p, w in zip(pts, wpts)}
+        a, b = page[(0.0, 0.0, 0.0)], page[(6.0, 0.0, 0.0)]
+        composer.place_tool(a[0], a[1], b[0], b[1], sep_mm=6.0,
+                            anchors=(frame, (0.0, 0.0, 0.0),
+                                     (6.0, 0.0, 0.0)))
+        composer.tool_mode = "select"
+        composer._rebuild_canvas()
+        ct = composer.comp.cotas[0]
+        item = next(it for it in composer.canvas.items()
+                    if isinstance(it, CotaCanvasItem) and it.model is ct)
+        return composer, frame, ct, item, a, b
+
+    @staticmethod
+    def _drag_end(item, to_page):
+        from PySide6.QtWidgets import QGraphicsSceneMouseEvent
+        m = item.model
+
+        def ev(kind, local):
+            e = QGraphicsSceneMouseEvent(kind)
+            e.setPos(local)
+            e.setButton(Qt.LeftButton)
+            return e
+        start = QPointF(m.dx_mm, m.dy_mm)            # on the end's handle
+        item.mousePressEvent(ev(QEvent.GraphicsSceneMousePress, start))
+        assert item._resizing
+        local = QPointF(to_page[0] - m.x_mm, to_page[1] - m.y_mm)
+        item.mouseMoveEvent(ev(QEvent.GraphicsSceneMouseMove, local))
+        item.mouseReleaseEvent(ev(QEvent.GraphicsSceneMouseRelease, local))
+
+    def test_dragged_off_it_lets_go_and_back_on_it_anchors_again(self):
+        composer, frame, ct, item, a, b = self._setup()
+        assert ct.anchored
+        self._drag_end(item, (b[0] + 15.0, b[1] + 9.0))     # off the model
+        assert not ct.anchored
+        # Back next to its vertex (within the ~7 px snap): it lands ON it
+        # and holds the model again.
+        self._drag_end(item, (b[0] + 0.3, b[1] - 0.2))
+        assert ct.anchored and ct.anchor_uid == frame.uid
+        assert (ct.x_mm + ct.dx_mm, ct.y_mm + ct.dy_mm) == pytest.approx(b)
+        assert ct.a_world == pytest.approx([0.0, 0.0, 0.0])
+        assert ct.b_world == pytest.approx([6.0, 0.0, 0.0])
+        # …and it follows the wall again, the way #854 made it.
+        TestAnchoredEndToEnd._stretch(self, composer, 6.0, 8.0)
+        assert ct.label() == "8.00 m"
+
+    def test_a_drag_onto_nothing_stays_free(self):
+        composer, frame, ct, item, a, b = self._setup()
+        self._drag_end(item, (b[0] + 15.0, b[1] + 9.0))
+        self._drag_end(item, (b[0] + 25.0, b[1] + 19.0))
+        assert not ct.anchored

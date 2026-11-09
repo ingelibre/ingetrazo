@@ -13,7 +13,13 @@ in an extension they choose, not in everyone's IngeTrazo.
 Contract (``API_VERSION`` 2; still 0.x — see docs/plugins.md). Version 2
 adds, without changing anything version 1 did: named panels that keep
 their place and have a Window-menu entry, the projection an overlay needs,
-opening an extension's own file type, and workspaces.
+opening an extension's own file type, and workspaces. Projects in tabs
+only add to it, so the number stays 2 — published extensions check for
+``api_version in (1, 2)`` and a 3 would turn them away for nothing:
+:attr:`ExtensionApp.viewport` and ``scene`` are the project in front,
+``on_document_changed`` also fires when another tab comes to the front,
+and ``on_document_closed`` (test for it with ``hasattr``) says when a tab
+goes.
 
 - **Document data** is ONE JSON-safe value per extension (its key: the
   plugin's file name). It is saved in the .igz, reset by New/Open, and every
@@ -35,6 +41,9 @@ opening an extension's own file type, and workspaces.
   extension already claimed, is refused (logged, not raised).
 - A **workspace** shows the extension's own document instead of the model,
   which waits untouched ("parked") until the workspace is left.
+- **Projects in tabs**: overlays, snap providers and pickables registered
+  once work in every tab; ``viewport``/``scene`` are always read anew (do
+  not keep them from ``setup``).
 """
 from __future__ import annotations
 
@@ -75,6 +84,33 @@ class ExtensionApp:
     def scene(self):
         return self._window.viewport.scene
 
+    # ---- Asynchronous toolbar setup ---------------------------------------
+    def restore_toolbar_layout(self) -> bool:
+        """Restore saved positions after this extension's toolbars exist.
+
+        Call once on the GUI thread when asynchronous startup is ready,
+        after adding all toolbars with stable object names. Repeated ready
+        notifications do not undo the user's subsequent rearrangement.
+        Returns whether a saved layout was restored by this call.
+        """
+        if getattr(self, "_toolbar_layout_restored", False):
+            return False
+        # IngeTrazo's window restores, places new bars and re-seats every
+        # bar to its length, as for bars made in setup(); a bare
+        # QMainWindow (tests) only restores.
+        late = getattr(self._window, "restore_late_toolbars", None)
+        if late is not None:
+            restored = bool(late())
+        else:
+            from PySide6.QtCore import QSettings
+            state = QSettings().value("ui/window_state")
+            if state is None:
+                return False
+            restored = bool(self._window.restoreState(state))
+        if restored:
+            self._toolbar_layout_restored = True
+        return restored
+
     # ---- Document data -----------------------------------------------------
     def document_data(self, default=None):
         """This extension's value in the open document (a copy: change it
@@ -106,12 +142,31 @@ class ExtensionApp:
 
     def on_document_changed(self, fn) -> None:
         """Call ``fn()`` whenever the document changes — an edit, an undo,
-        New, Open — so a panel can show the current data."""
+        New, Open, and another project tab brought to the front — so a
+        panel can show the current data (:attr:`scene` is then the
+        project in front)."""
+        win = self._window
+        if hasattr(win, "_wire_viewport"):
+            # Projects in tabs: every viewport, the ones opened later too,
+            # and each answers only while its project is in front.
+            win.__dict__.setdefault("_doc_change_hooks", []).append(fn)
+            for vp in win.all_viewports():
+                vp.sceneVersionChanged.connect(
+                    lambda _v, v=vp: fn() if v is win.viewport else None)
+            return
         self.viewport.sceneVersionChanged.connect(lambda _v: fn())
+
+    def on_document_closed(self, fn) -> None:
+        """Call ``fn(scene)`` when a project's tab is closed, with the
+        scene that goes — to drop whatever the extension kept for it. The
+        project in front at that moment may be another one."""
+        win = self._window
+        win.__dict__.setdefault("_doc_close_hooks", []).append(fn)
 
     # ---- Side panel ----------------------------------------------------------
     def add_panel(self, title: str, widget, name: str | None = None, *,
-                  panel: str | None = None, stretch: int = 0):
+                  panel: str | None = None, stretch: int = 0,
+                  start_hidden: bool = False):
         """Put ``widget`` in the side tray as a tab of its own, beside
         Properties / BIM / Terrain. Returns the dock.
 
@@ -127,7 +182,11 @@ class ExtensionApp:
         ``extension_<panel>``): the first call creates it, named ``title``;
         the next ones stack their widget under the previous (``stretch`` as
         in ``QBoxLayout.addWidget``) — the assistant and the MCP bridge both
-        live in the «AI» tab."""
+        live in the «AI» tab.
+
+        ``start_hidden``: the panel starts closed the first time (for a
+        panel few users need open all the time); Window ▸ Panels opens it,
+        and from then on the user's choice is kept."""
         from PySide6.QtWidgets import QDockWidget, QVBoxLayout, QWidget
         win = self._window
         shared = getattr(win, "_shared_panels", None)
@@ -153,6 +212,10 @@ class ExtensionApp:
             widget = holder
         dock = QDockWidget(title, win)
         dock.setObjectName(object_name)
+        if start_hidden:
+            if not hasattr(win, "_start_hidden"):
+                win._start_hidden = set()
+            win._start_hidden.add(object_name)
         dock.setWidget(widget)
         dock.setTitleBarWidget(QWidget(dock))   # the tab already names it
         win._register_extension_dock(dock)
@@ -189,7 +252,17 @@ class ExtensionApp:
                 action.setShortcut(QKeySequence(shortcut))
                 taken.add(seq)
         action.triggered.connect(lambda _c=False: fn())
-        menu.addAction(action)
+        # Whose it is, to gather one extension's loose entries in a submenu.
+        win.__dict__.setdefault("_ext_action_owner", {})[action] = self.key
+        anchor = getattr(win, "_ext_anchor", None)
+        if anchor is not None:
+            # Above the menu's own entries (examples, manager, plugins
+            # folder, guide), as in 0.5.7: since setup() runs after the
+            # window is up (#440) those entries already exist, and an
+            # appended action landed under «Develop an extension…».
+            menu.insertAction(anchor, action)
+        else:
+            menu.addAction(action)
         return action
 
     def add_menu(self, title: str):
@@ -197,18 +270,52 @@ class ExtensionApp:
         for an extension with several commands; returns the QMenu to fill
         (``None`` outside a window with that menu)."""
         menu = getattr(self._window, "_ext_menu", None)
-        return menu.addMenu(title) if menu is not None else None
+        if menu is None:
+            return None
+        # Its name, for the submenu of its right-click entries.
+        self._window.__dict__.setdefault("_ext_menu_titles", {}).setdefault(
+            self.key, title.replace("&", ""))
+        anchor = getattr(self._window, "_ext_anchor", None)
+        if anchor is None:
+            sub = menu.addMenu(title)
+        else:
+            from PySide6.QtWidgets import QMenu
+            sub = QMenu(title, menu)
+            menu.insertMenu(anchor, sub)    # above the menu's own entries
+        self._window.__dict__.setdefault(
+            "_ext_action_owner", {})[sub.menuAction()] = self.key
+        return sub
+
+    def add_outliner_kind(self, fn) -> None:
+        """Say what YOUR container groups are, in the Browser:
+        ``fn(group)`` → ``{"type": "Window", "props": [("Panes", "3 × 2"),
+        ("Width", "1.20 m")]}`` for a group of yours (read ``group.ext``),
+        ``None`` for the rest. The type shows in the Type column (and the
+        filter finds it), the properties in its tooltip. Keep it cheap: it
+        is asked for every row as the tree refreshes. A provider that
+        raises is logged and skipped."""
+        win = self._window
+        if not hasattr(win, "_outliner_kinds"):
+            win._outliner_kinds = []
+        win._outliner_kinds.append(fn)
+        browser = getattr(win, "project_browser", None)
+        if browser is not None:
+            browser.outliner.refresh()
 
     def add_context_menu(self, fn) -> None:
         """``fn(menu, selection)`` adds entries to the viewport's
         right-click menu (a QMenu), after the ones for the selection and
         before Paste and Undo; ``selection`` is a list of what is
         selected. Open dialogs from the entries with
-        ``QTimer.singleShot(0, …)``, after the menu has closed."""
+        ``QTimer.singleShot(0, …)``, after the menu has closed.
+
+        Several entries from one extension go into a submenu with its
+        name; with many extensions they all go under «Extensions ▸»."""
         win = self._window
         if not hasattr(win, "_ext_context_menus"):
             win._ext_context_menus = []
         win._ext_context_menus.append(fn)
+        win.__dict__.setdefault("_ext_context_owner", {})[fn] = self.key
 
     # ---- Viewport ------------------------------------------------------------
     def add_overlay(self, fn) -> None:

@@ -122,6 +122,16 @@ def test_las_dos_herramientas_que_cedieron_siguen_a_mano(ventana):
     assert _pulsar(ventana, Qt.Key_O, Qt.ShiftModifier) == ["Center Arc"]
 
 
+def test_redondear_3d_va_con_mayus_f_y_la_f_sigue_siendo_equidistancia(ventana):
+    """Redondear 3D no tenía tecla. La F es de Equidistancia en la tarjeta,
+    así que Redondear toma Mayús+F, como las otras que llegaron después."""
+    _calentar(ventana)
+    assert _pulsar(ventana, Qt.Key_F, Qt.ShiftModifier) == ["Fillet 3D"]
+    assert ventana.viewport.active_tool is ventana._tools["fillet"]
+    assert _pulsar(ventana, Qt.Key_F) == ["Offset"]
+    assert ventana.viewport.active_tool is ventana._tools["offset"]
+
+
 #: Lo que la tarjeta de referencia habitual SÍ trae atado de fábrica y
 #: nosotros respetamos (edición 2026). Lo que falta de esa lista es
 #: deliberado y está anotado abajo; lo que sobra son teclas que allá están libres.
@@ -187,7 +197,7 @@ def test_la_barra_muestra_el_atajo_configurado_y_no_el_de_fabrica(ventana):
 
     assert primera(linea).endswith("(L)")
     linea.setShortcuts([QKeySequence("Ctrl+Alt+L")])
-    assert "Ctrl+Alt+L" in primera(linea)
+    assert QKeySequence("Ctrl+Alt+L").toString(QKeySequence.NativeText) in primera(linea)
     assert "(L)" not in primera(linea)
     linea.setShortcuts([])
     assert "(" not in primera(linea)                 # sin atajo, sin paréntesis
@@ -195,4 +205,87 @@ def test_la_barra_muestra_el_atajo_configurado_y_no_el_de_fabrica(ventana):
     assert primera(linea).endswith("(L)")
     ze = ventana._act_zoom_extents
     ze.setShortcuts([QKeySequence("Ctrl+E")])
-    assert "Ctrl+E" in primera(ze)                   # el que venía escrito a mano
+    # el que venía escrito a mano
+    assert QKeySequence("Ctrl+E").toString(QKeySequence.NativeText) in primera(ze)
+
+
+#: Vistas estándar por comodidad (Marco, 2026-09-30): Ctrl con el meñique y
+#: los dedos en 1-4 sin mover la mano — planta, alzado, lateral y 3D; las
+#: raras quedan lejos. Los dígitos solos escriben la medida en la casilla.
+VISTAS = {
+    Qt.Key_1: "Top", Qt.Key_2: "Front", Qt.Key_3: "Right",
+    Qt.Key_4: "Isometric", Qt.Key_5: "Back", Qt.Key_6: "Left",
+    Qt.Key_7: "Bottom",
+}
+
+
+def test_ctrl_numero_pone_la_vista_estandar(ventana, monkeypatch):
+    pedidas = []
+    monkeypatch.setattr(ventana, "_on_standard_view", pedidas.append)
+    _calentar(ventana)
+    for tecla, nombre in VISTAS.items():
+        assert _pulsar(ventana, tecla, Qt.ControlModifier) == [nombre]
+    assert pedidas == ["top", "front", "right", "iso", "back", "left",
+                       "bottom"]
+
+
+def test_menu_y_barra_comparten_la_accion_de_cada_vista(ventana):
+    """Una sola acción por vista: si el menú tuviera la suya, el atajo
+    estaría dos veces y Qt no dispararía ninguna."""
+    barra = ventana.toolbars["views"].actions()
+    for act in ventana._view_actions.values():
+        assert act in barra
+        assert len([a for a in ventana.findChildren(QAction)
+                    if a.text() == act.text()]) == 1
+
+
+def test_el_boton_de_vista_muestra_su_atajo(ventana):
+    top = ventana._view_actions["top"]
+    assert top.toolTip().split("\n")[0].endswith(
+        "(" + QKeySequence("Ctrl+1").toString(QKeySequence.NativeText) + ")")
+def _caja(nombre: str, x0: float):
+    """Un grupo cúbico de lado 1 generado en el momento."""
+    from PySide6.QtGui import QVector3D
+    from core.group import Group
+    from core.mesh import Mesh
+    malla = Mesh()
+    P = [QVector3D(x0 + (i & 1), (i >> 1) & 1, i >> 2) for i in range(8)]
+    for q in ([0, 2, 3, 1], [4, 5, 7, 6], [0, 1, 5, 4], [2, 6, 7, 3],
+              [0, 4, 6, 2], [1, 3, 7, 5]):
+        malla.add_face([P[i] for i in q])
+    return Group(malla, name=nombre)
+
+
+def test_ocultar_es_ctrl_h_y_mostrar_todo_ctrl_mayus_h(ventana):
+    """Ocultar y Mostrar ▸ Todo se usan sin parar y no tenían tecla. La H
+    sola es Encuadre y Mayús+H el Transportador, así que van con Ctrl."""
+    atajos = _todos_los_atajos(ventana)
+    assert atajos["Ctrl+H"] == ["Hide"]
+    assert atajos["Ctrl+Shift+H"] == ["All"]
+    _calentar(ventana)
+    assert _pulsar(ventana, Qt.Key_H, Qt.ControlModifier) == ["Hide"]
+    assert _pulsar(ventana, Qt.Key_H,
+                   Qt.ControlModifier | Qt.ShiftModifier) == ["All"]
+    # Las dos que ya tenían la H no se mueven.
+    assert _pulsar(ventana, Qt.Key_H) == ["Pan"]
+    assert _pulsar(ventana, Qt.Key_H, Qt.ShiftModifier) == ["Protractor"]
+
+
+def test_ctrl_h_oculta_la_seleccion_y_ctrl_mayus_h_lo_devuelve_todo(ventana):
+    vp = ventana.viewport
+    cajas = [_caja(f"caja{i}", 2.0 * i) for i in range(3)]
+    vp.scene.groups += cajas
+    vp.scene.version += 1
+    _calentar(ventana)
+
+    for caja in cajas[:2]:                  # dos ocultaciones separadas
+        vp.scene.select([caja])
+        QTest.keyClick(vp, Qt.Key_H, Qt.ControlModifier)
+        QApplication.processEvents()
+    assert [c.hidden for c in cajas] == [True, True, False]
+
+    QTest.keyClick(vp, Qt.Key_H, Qt.ControlModifier | Qt.ShiftModifier)
+    QApplication.processEvents()
+    assert not any(c.hidden for c in cajas)
+    vp.history.undo()                       # Mostrar todo es un solo paso
+    assert [c.hidden for c in cajas] == [True, True, False]

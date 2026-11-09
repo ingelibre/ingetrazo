@@ -31,7 +31,7 @@ MANIFEST = (Path(__file__).resolve().parents[1]
 
 def _trimmed_modules() -> set[str]:
     """The Qt module stems the Flatpak recipe deletes from PySide6."""
-    text = MANIFEST.read_text()
+    text = MANIFEST.read_text(encoding="utf-8")
     m = re.search(r"for stem in ([^;]+); do", text)
     assert m, "the Flatpak recipe lost its PySide6 trim loop"
     return set(m.group(1).split())

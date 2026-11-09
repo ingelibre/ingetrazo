@@ -403,3 +403,40 @@ def test_hovering_an_arc_ghosts_the_dimension_before_the_click():
     assert ghost.contains(QPointF(cx + r, cy))      # …out to the ring
     assert view._track(QPointF(cx + 3 * r, cy + 3 * r), Qt.NoModifier)
     assert view._preview is None
+
+
+def test_its_panel_edits_the_selected_one(monkeypatch):
+    """The panel's handler asked for a helper that never existed, so every
+    change in the panel of a radius dimension raised and did nothing (app
+    bench, 10-10)."""
+    from PySide6.QtCore import QEvent, QPoint, QPointF, Qt
+    from PySide6.QtGui import QMouseEvent
+    from views.composer import ComposerWindow, CotaRadialCanvasItem
+    from views.main_window import MainWindow
+    monkeypatch.setattr(ComposerWindow, "render_frame", lambda self, f: None)
+    win = MainWindow()
+    comp = None
+    try:
+        comp = ComposerWindow(win)
+        view = comp._view
+        comp.tool_mode = "cota_radio"
+        for x in (60.0, 90.0):
+            px = view.mapFromScene(QPointF(x, 60.0))
+            view.mousePressEvent(QMouseEvent(
+                QEvent.MouseButtonPress, QPointF(px),
+                view.mapToGlobal(QPoint(px)),
+                Qt.LeftButton, Qt.LeftButton, Qt.NoModifier))
+        ct = comp.comp.cotas_rad[0]
+        comp._rebuild_canvas()
+        item = next(i for i in comp.canvas.items()
+                    if isinstance(i, CotaRadialCanvasItem) and i.model is ct)
+        comp.canvas.clearSelection()
+        item.setSelected(True)
+        comp.crad_radius.setValue(42.0)
+        comp._on_cota_rad_props()
+        assert comp.comp.cotas_rad[0].radius_mm == pytest.approx(42.0)
+    finally:
+        if comp is not None:
+            comp.close()
+        win._saved_version = win.viewport.scene.version
+        win.close()

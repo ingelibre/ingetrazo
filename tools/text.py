@@ -58,8 +58,8 @@ class TextTool(AxisMagnet, Tool):
             return
         # Second click: label position → ask for the text.
         offset = ctx.world - self.anchor
-        from PySide6.QtWidgets import QInputDialog
-        text, ok = QInputDialog.getMultiLineText(
+        from views.prompts import get_multiline_text
+        text, ok = get_multiline_text(
             ctx.viewport.window(), tr("Text"), tr("Label text:"),
             self._default_text)
         if ok and text.strip():
@@ -84,6 +84,11 @@ class TextTool(AxisMagnet, Tool):
             face = None
         if face is not None:
             f = face[0] if isinstance(face, tuple) else face
+            # The label quotes the surface as drawn: net of openings
+            # when the face knows them (#742).
+            net = getattr(f, "net_area", None)
+            if callable(net):
+                return fmt_area(net())
             area = getattr(f, "area", None)
             if callable(area):
                 return fmt_area(f.area())

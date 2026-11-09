@@ -18,6 +18,7 @@ import math
 from dataclasses import dataclass, field
 from typing import Optional
 
+from core.i18n import current_language
 from core.i18n import tr as _tr
 
 #: ISO 216 portrait sizes, mm (width, height).
@@ -315,6 +316,9 @@ class MarcoVista:
     #: Hidden edges inked thin and dashed (issue #81) — the standard of a
     #: technical drawing; off by default, as a view shows what is seen.
     hidden_lines: bool = False
+    #: Lines inked in their layer's colour (the faces keep their material):
+    #: a services or zoning plan in colour without Colour by layer.
+    layer_colours: bool = False
     #: Poché of the vector style where the section plane slices a solid:
     #: "solid" | "hatch" (45° lines every ``cut_hatch_mm``) | "none".
     cut_fill: str = "solid"
@@ -667,6 +671,10 @@ class Leyenda:
     w_mm: float = 55.0
     title: str = "LEYENDA"
     rows: list = field(default_factory=list)
+    #: Each row's swatch, snapshotted with the rows: ``{name: {"color":
+    #: [r, g, b], "linetype": str}}`` (core.layers). A row without one
+    #: keeps the plain grey box older legends drew.
+    swatches: dict = field(default_factory=dict)
     z: float = 0.0            # stacking order on the page (higher = on top)
     locked: bool = False         # locked: shown but not movable/resizable
     group_id: str = ""            # sheet group (Ctrl+G); "" = ungrouped
@@ -807,6 +815,7 @@ class NivelItem:
     text: str = "N.P.T. {z}"     # {z} = the signed level
     z_m: float = 0.0             # the level when free (metres)
     datum_m: float = 0.0         # the project's ±0.00, in model metres
+    units: str = "m"             # how {z} reads; "" / missing stays metres
     decimals: int = 2
     size_mm: float = 2.5         # text height
     line_mm: float = 14.0        # the level line from the apex
@@ -838,12 +847,11 @@ class NivelItem:
         return z - float(self.datum_m)
 
     def value_text(self) -> str:
-        """«+0.15», «-0.30», «±0.00» (zero at the shown precision)."""
-        d = max(0, int(self.decimals))
-        v = self.level_m()
-        if round(v, d) == 0:
-            return "±" + f"{0.0:.{d}f}"
-        return f"{v:+.{d}f}"
+        """«+0.15», «-0.30», «±0.00» in metres; the same signs in the
+        mark's own unit otherwise («+0'5.91"»)."""
+        from core.units import format_signed_level
+        return format_signed_level(
+            self.level_m(), getattr(self, "units", "m") or "m", self.decimals)
 
     def label(self) -> str:
         text = self.text or "{z}"
@@ -1012,6 +1020,9 @@ class CotaItem:
     text_mm: float = 2.8         # label height on paper
     decimals: int = 2
     units: str = "m"            # m | cm | mm | in | ft | ft-in | in-frac | ft-in-frac
+    #: «1.30» instead of «1.30 m» when the sheet states the unit once
+    #: (#637). Feet and inches together keep their marks.
+    show_unit: bool = True
     ends: str = "tick"           # tick | arrow | none
     stroke_mm: float = 0.25
     color: str = "#1e242c"
@@ -1158,9 +1169,12 @@ class CotaItem:
         d = self.real_distance_m()
         n = max(0, min(int(self.decimals), 6))
         units = getattr(self, "units", "m") or "m"
-        if units == "m" and d >= 1000:
+        show = bool(getattr(self, "show_unit", True))
+        # Without its symbol a value in km would read as metres: the bare
+        # number stays in the cota's own unit.
+        if units == "m" and d >= 1000 and show:
             return f"{d / 1000:.3f} km"
-        return format_length(d, units, n)
+        return format_length(d, units, n, show)
 
     def label(self) -> str:
         """Custom text when set — with ``<>`` standing for the measured
@@ -1201,6 +1215,7 @@ class CotaRadialItem:
     text_mm: float = 2.8
     decimals: int = 2
     units: str = "m"
+    show_unit: bool = True       # as CotaItem's (#637)
     offset_mm: float = 0.5       # line → text baseline gap
     ends: str = "arrow"          # arrow | tick | none
     stroke_mm: float = 0.25
@@ -1308,9 +1323,10 @@ class CotaRadialItem:
         d = self.real_distance_m()
         n = max(0, min(int(self.decimals), 6))
         units = getattr(self, "units", "m") or "m"
-        if units == "m" and d >= 1000:
+        show = bool(getattr(self, "show_unit", True))
+        if units == "m" and d >= 1000 and show:
             return self.symbol() + f"{d / 1000:.3f} km"
-        return self.symbol() + format_length(d, units, n)
+        return self.symbol() + format_length(d, units, n, show)
 
     def label(self) -> str:
         if self.text:
@@ -1529,6 +1545,22 @@ def _migrate_fixed_scale_labels(c: "Composicion") -> None:
 #: before painting a sheet (canvas or print), read by ``expand_fields``.
 _FIELD_CTX: dict = {}
 
+#: Each field by its Spanish name — the one documents and the catalogs
+#: carry — with its English and German names, then any further aliases.
+#: All of them expand alike.
+FIELD_NAMES = {
+    "proyecto": ("project", "projekt"),
+    "autor": ("author", "verfasser"),
+    "lamina": ("sheet", "plannr"),
+    "escala": ("scale", "massstab"),
+    "escena": ("scene", "szene"),
+    "fecha": ("date", "datum"),
+    "archivo": ("file", "datei"),
+    "nombre": ("name", "planname", "sheet_name"),   # {sheet} is the LÁMINA row
+    "hoja": ("page", "blatt"),
+    "total": ("total", "gesamt"),
+}
+
 
 def set_field_context(comp=None, scene=None, path=None, index=None,
                       total=None) -> None:
@@ -1558,11 +1590,26 @@ def field_values(frame_uid: str = "") -> dict:
             scene_name = f.view_key[6:]          # the main frame's, else any
             break
     idx, total = _FIELD_CTX.get("index"), _FIELD_CTX.get("total")
-    return {
-        "proyecto": (getattr(caj, "proyecto", "") or "") if caj else "",
-        "autor": (getattr(caj, "autor", "") or "") if caj else "",
-        "lamina": ((getattr(caj, "lamina", "") or "") if caj else "")
-                  or (comp.name if comp is not None else ""),
+
+    def row(es: str) -> str:
+        """The title block's row for field *es*, found by its label in any
+        of the field's names (PROYECTO, Project, PROJEKT…) — the rows the
+        user edits; the legacy attribute only when there is no such row."""
+        if caj is None:
+            return ""
+        import unicodedata
+        names = {es, *FIELD_NAMES[es]}
+        for r in getattr(caj, "campos", None) or []:
+            label = unicodedata.normalize("NFKD", str(r[0]).strip().lower())
+            label = "".join(ch for ch in label if not unicodedata.combining(ch))
+            if label in names:
+                return str(r[1] or "")
+        return getattr(caj, es, "") or ""
+
+    vals = {
+        "proyecto": row("proyecto"),
+        "autor": row("autor"),
+        "lamina": row("lamina") or (comp.name if comp is not None else ""),
         "nombre": comp.name if comp is not None else "",
         "escala": format_scale(main.scale_n) if main is not None else "",
         "escena": scene_name,
@@ -1571,6 +1618,24 @@ def field_values(frame_uid: str = "") -> dict:
         "hoja": str(idx + 1) if idx is not None else "",
         "total": str(total) if total else "",
     }
+    for es, names in FIELD_NAMES.items():
+        for name in names:
+            vals.setdefault(name, vals[es])
+    return vals
+
+
+def local_field_names(text: str) -> str:
+    """``text`` with each ``{campo}`` it names spelled the way the
+    language running spells it: ``{projekt}`` in German, ``{project}`` in
+    English. Every other language keeps the Spanish names."""
+    col = {"en": 0, "de": 1}.get(current_language())
+    if col is None:
+        return text
+    import re
+    return re.sub(r"\{([a-z]+)\}",
+                  lambda m: ("{%s}" % FIELD_NAMES[m.group(1)][col]
+                             if m.group(1) in FIELD_NAMES else m.group(0)),
+                  text)
 
 
 _FIELD_RE = None
@@ -1579,7 +1644,8 @@ _FIELD_RE = None
 def expand_fields(text, frame_uid: str = "") -> str:
     """Replace ``{proyecto}``, ``{lamina}``, ``{escala}``, ``{escena}``,
     ``{fecha}``, ``{archivo}``, ``{autor}``, ``{nombre}``, ``{hoja}`` and
-    ``{total}`` with the sheet's live values (QGIS-style dynamic text).
+    ``{total}`` — or their English and German names, see ``FIELD_NAMES`` —
+    with the sheet's live values (QGIS-style dynamic text).
     Unknown fields — the scale label's ``{n}`` included — stay as typed."""
     global _FIELD_RE
     if not text or "{" not in text:

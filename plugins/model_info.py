@@ -42,7 +42,7 @@ from PySide6.QtWidgets import (
 from core import bim
 from core.i18n import tr
 from tools.base import Tool
-from core.units import fmt_area
+from core.units import fmt_area, fmt_volume
 
 
 # ---------------------------------------------------------------------------
@@ -123,7 +123,7 @@ def _collect_stats(scene) -> dict:
         if f.attrs.get("mat") and "mat" not in entry:
             entry["mat"] = f.attrs["mat"]
         entry["faces"] += 1
-        entry["area"] += f.area()
+        entry["area"] += bim.face_net_area(f)   # a slab's opening is not paint
 
     # --- BIM objects — the same call behind the BIM tray and IFC export ----
     objects = [{"class": o["class"], "name": o["name"],
@@ -203,7 +203,7 @@ def _stats_to_text(stats: dict) -> str:
     if s["bim_objects"]:
         lines += ["", f"--- {tr('BIM objects')} ({len(s['bim_objects'])}) ---"]
         for o in s["bim_objects"]:
-            vol = (f"{o['volume']:.3f} m³" if o["volume"] is not None
+            vol = (fmt_volume(o['volume']) if o["volume"] is not None
                    else "—")
             lines.append(f"  {o['class']}  {o['name']}: "
                          f"{fmt_area(o['area'])}, {vol}")
@@ -241,9 +241,16 @@ def _make_table(headers: list[str]) -> QTableWidget:
 class ModelInfoDialog(QDialog):
     """Tabbed, read-only model statistics."""
 
+    @property
+    def _viewport(self):
+        """The viewport of the project in front (projects in tabs, #1066):
+        the one handed in at setup may be a tab in the back, or closed."""
+        return self._live_viewport()
+
     def __init__(self, viewport, parent=None) -> None:
         super().__init__(parent or viewport.window())
-        self._viewport = viewport
+        from views.documents import live_viewport
+        self._live_viewport = live_viewport(viewport)
         self.setWindowTitle(tr("Model Info"))
         self.setMinimumSize(480, 520)
         self.resize(520, 600)
@@ -415,7 +422,7 @@ class ModelInfoDialog(QDialog):
             self._bim_table.setItem(i, 1, QTableWidgetItem(o["name"]))
             self._bim_table.setItem(
                 i, 2, QTableWidgetItem(f"{fmt_area(o['area'])}"))
-            vol = (f"{o['volume']:.3f} m³" if o["volume"] is not None
+            vol = (fmt_volume(o['volume']) if o["volume"] is not None
                    else tr("(not watertight)"))
             self._bim_table.setItem(i, 3, QTableWidgetItem(vol))
         self._bim_table.resizeRowsToContents()

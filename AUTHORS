@@ -10,7 +10,10 @@ Marco Sumari Tellez <ing.sumari@gmail.com>
 
 Contributors
 -------------
-Pedro Caeiro <pacaeiro2@sapo.pt>  (github.com/pacaeiro)
+★ marks those who have given the most (measured by merged pull requests,
+reports and the work they carried); they also come first in Help ▸ About.
+
+★ Pedro Caeiro <pacaeiro2@sapo.pt>  (github.com/pacaeiro)
     Architectural and mechanical draftsman.
     Five merged pull requests (#11, #13, #15, #17, #21): the protractor
     shortcut conflict with pan, the exact axis Shift lock, opt-in larger
@@ -30,8 +33,26 @@ Pedro Caeiro <pacaeiro2@sapo.pt>  (github.com/pacaeiro)
     keeps its drawing undistorted and renders again off the release.
     Two more for 0.5.4: a moved view catches vertices where it is (#124)
     and a centred rectangle's square cue is a real square (#126).
+    And for 0.5.9: a typed length drops the axis lock (#568), stale
+    inference references cleared after undo (#556), the arrows and Shift
+    locking the drawing plane (#634, #608), planar alignment on selected
+    geometry (#690), first-point axis snaps for the drawing tools (#718),
+    camera-aware planar previews (#719) and switching orbit and pan during a
+    middle-button drag (#720). Over a hundred issues filed in all.
+    And for 0.5.10: Shift and the arrow locks steering a dimension's
+    placement step (#770, #810).
+    And for 0.5.11: a locked line that finds where it crosses an edge or a
+    face (#245), and Scale… with X, Y and Z for groups and components
+    (#771).
+    And for 0.6.0: Iso snapping to the nearest isometric view (#995), 3D
+    text that no longer sinks into faces (#1057) and the Circle snapping to
+    the axes again (#962, #992).
+    For 0.6.1: Offset's snaps (#1084), the reference point in 3D (#1097), the
+    snap where an edge pierces a face (#1169), shapes anchored on the face
+    under the cursor (#1171), and the Protractor and Rotate disc and plane
+    lock (#1208, #1220).
 
-Rafael García Rodríguez — "Rafael 3D" (youtube.com/@Rafa3D)
+★ Rafael García Rodríguez — "Rafael 3D" (youtube.com/@Rafa3D)
     Draftsman and 3D modelling reviewer.
     Hour-long filmed reviews of IngeTrazo, walking the program as a
     professional would and narrating every friction — the source of the
@@ -45,7 +66,7 @@ Rafael García Rodríguez — "Rafael 3D" (youtube.com/@Rafa3D)
     on its own. In his words: «a software can be very powerful but it can
     all go to waste if it does not meet the standards designers need».
 
-Ahsan Mehmood <mail.ahsanmehmood@gmail.com>  (github.com/iamahsanmehmood)
+★ Ahsan Mehmood <mail.ahsanmehmood@gmail.com>  (github.com/iamahsanmehmood)
     Author of OpenSKP, the clean-room pure-Python .skp reader IngeTrazo's
     native .skp import is built on, and reviewer of the patches contributed
     back upstream. His plugin pull requests (#1–#3) became the Extensions
@@ -56,7 +77,7 @@ dafrobozao <dafrobozao.93@gmail.com>  (github.com/dafrobozao)
     1 260 strings): IngeTrazo's third language, and the first one
     contributed from outside.
 
-Félix Riestra  (github.com/felixriestra)
+★ Félix Riestra  (github.com/felixriestra)
     The macOS package (pull request #64): the IngeTrazo.app bundle and the
     .dmg built by CI for Apple Silicon, with double-click opening of .igz
     and .skp files. IngeTrazo's first Mac version.
@@ -67,7 +88,7 @@ Félix Riestra  (github.com/felixriestra)
     extension, overlays that project world points, file types an extension
     opens itself, and workspaces that stand in for the model.
 
-Gabriel Rodríguez Arregin  (github.com/canalsecuario-blip)
+★ Gabriel Rodríguez Arregin  (github.com/canalsecuario-blip)
     The Back color in Styles (pull request #99): the Front/Back colour
     pair, the tint of faces seen from behind.
     Edit ▸ Invert Selection (pull request #113), on Ctrl+Shift+I, leaving
@@ -77,6 +98,43 @@ Gabriel Rodríguez Arregin  (github.com/canalsecuario-blip)
     Command search (pull request #168): F3 runs any command by name, as in
     Blender — initials, typos and both languages, in the model and the
     sheet composer.
+    The Browser: the model's groups and components as a tree (the
+    Outliner, built with Carlos Martins's plugin, #87, on Roy Méndez
+    Castro's scope, #219), and Views and sheets in the sheet composer.
+    The units system: one core to show and read every measure, the Units
+    panel (Ctrl+U), a choice at startup and 3D Text in the document's
+    unit. Fillet 3D bevels, profiles and corners; the Solid Inspector,
+    repairing problem by problem; Join Segments with its preview; the
+    Browser's make, explode, make unique and batch rename (#642); floating
+    toolbars that look like a window (#670), Restore default toolbars and
+    panels (#668, #677), tooltips with the name in bold (#667), the left
+    sidebar shortcut (#662) and About ▸ Copy to clipboard (#674).
+    For 0.5.10: Camera ▸ Axes (Alt+A) to switch the drawing axes off;
+    guides moved, copied and rotated like the rest of the model (#627);
+    zoom that comes within 5 mm of a small part (#653, #692); a flat tilted
+    circle far from the origin planar again (#571); Make Group → Explode
+    keeping both redo steps (#737); survey-coordinate files imported near
+    the origin, undistorted (#798); smooth curved surfaces and named
+    materials in GLB, DAE and OBJ export (#131, #794).
+    For 0.5.11: Layers 2.0 (#652, #728) — the Layers tab with eye, lock,
+    isolate, active layer, colour, line type and weight, transparency and
+    printing per layer, folders and the Layers toolbar; Bridge between two
+    faces or lines (#614, #683); groups that leave no ghost geometry
+    behind (#987, #988); a drawn circle's or arc's sides changed in place
+    (#813); dimensions without their unit (#374, #741); renaming the
+    active material (#806); the "+" after the sidebar tabs (#797); whole
+    circles after copy and explode (#812); and the faded rest of the model
+    reaching images and face-me figures (#805).
+    For 0.6.0: the softer ambient occlusion with horizons and bounced light
+    (#1060, #1061) and no more vertical bands on grazing faces (#989, #991);
+    curved surfaces that shade round (#131, #809); the sheet composer in a
+    window of its own (#1068, #1069); the Browser that sorts, folds and
+    filters (#734, #1002); locking groups from the right-click (#782,
+    #1047); and Restore defaults in Preferences (#1052).
+    For 0.6.1: view layouts, scenes as tabs and the empty area (#1127), Make
+    Component on a group that stays on screen (#1150), the wheel's double
+    click (#1154), the shortcuts by menu (#1157), GLB pictures the right way
+    up (#1159) and Bridge arches that no longer cross (#1164).
 
 José Castro Basso — FADU–UDELAR, Montevideo  (github.com/castrobasso)
     Architect and teacher of architectural representation. Two-point
@@ -98,6 +156,8 @@ liuandy  (github.com/liujvnes)
 deedend  (github.com/deedend)
     Italian translation of the interface (pull request #182, some
     2 110 strings): IngeTrazo's fifth language.
+    For 0.6.0: the 3D mouse with configurable axes and navigation profiles
+    (#581).
 
 Rainjalin  (github.com/Rainjalin)
     Indonesian translation of the interface (issue #216, some 2 230
@@ -119,6 +179,11 @@ Carlos Martins  (github.com/fafecm)
     diagonal guides crossing a hair off (#110), a group's paint missing
     from the materials in the model (#133), groups drawn out of place
     after exploding (#134).
+    The Project Structure plugin (#87), shared with its code: the tree of
+    groups mirrored with the view both ways, the eye per node and nested
+    groups entered through their path, re-nesting by drag and drop and a
+    padlock per group — the base of the Outliner, which now keeps the lock
+    in the document.
 
 mnavarromugas  (github.com/mnavarromugas)
     The first to try the 3D mouse on a real 3Dconnexion SpaceMouse (#108)
@@ -129,10 +194,255 @@ xyont  (github.com/xyont)
     against a wall (#94), units kept for new documents (#121), colours by
     layer (#120).
 
+Roy Méndez Castro  (github.com/roymendezcastro)
+    Civil engineer, Costa Rica. Wrote down the Outliner (#219): the
+    minimum a tree of nested groups needs, what comes after it, and that
+    scenes must remember what it hides.
+
 kagehak  (github.com/kagehak)
     STL import (pull request #161): binary and ASCII, the model's unit,
     flat surfaces merged on import, the reading off the window's thread,
     and Edit ▸ Simplify Mesh for any mesh.
+    The extension manager (pull request #464): the community catalogue
+    browsed, installed and updated from inside the program.
+
+Orian Beltrame  (github.com/orianbsilva)
+    Performance, measured: hovering with Line and Move up to twice as fast
+    (#312), the pick index split into grid cells so a ray tests only the
+    cells it crosses (#346), scene recalls and First Person that no longer
+    re-sync the whole model (#360, #361), the interaction benchmark that
+    times what the hand on the mouse feels (#308) and the fast suite
+    passing on Windows (#288).
+
+FG-RVT  (github.com/FG-RVT)
+    Push/Pull usability (pull requests #455, #487): a preselected face
+    arms the tool, the release commits the drag, the distance stays ready
+    to retype, a dashed line shows what it is locked onto, and the drag
+    previews the real result on split faces.
+
+Guy Wydouw  (github.com/GWydouw)
+    Eight macOS regressions fixed in text layout, frame colours and tests
+    (#435), and faces kept the right way round when erasing a dividing
+    line (#529).
+
+Aaron Kern  (github.com/Aaron1992)
+    German corrections (#705), Zoom Extents that frames the visible
+    reference images (#702), and what is pulled out of a tagged .skp group
+    keeping the group's tag (#703).
+
+Alex Joedt  (github.com/alexjoedt)
+    Keeps the German translation in line with the Spanish source (#669).
+
+PESI3D  (github.com/PESI3D)
+    German translation of the interface (#365).
+
+Yann Steffan  (github.com/YannFR81)
+    French translation of the interface (#295).
+
+Piotr Szmitkowski  (github.com/jackalski)
+    Polish translation of the interface (#424).
+
+RomanErshow  (github.com/RomanErshow)
+    Russian translation of the interface (#399).
+
+vandang890615  (github.com/vandang890615)
+    Vietnamese translation of the interface.
+    Reviewed again for 0.6.0 (#1019).
+
+BoneNI  (github.com/bounkirdni-2025)
+    Lao translation of the interface.
+    Offered again in 0.6.0, now that its marks compose on Windows (#850).
+
+Prida Takon  (github.com/PRIDA-TAKON)
+    Thai translation of the interface.
+    For 0.6.0: the Python console names kept in English (#1023).
+
+ChangWoo Lee <ultracat.lcw@gmail.com>  (github.com/ultracat)
+    Korean translation of the interface.
+    For 0.6.0: the AI key read from an environment variable when the field
+    is empty (#998, #1014).
+
+nonasige-ui  (github.com/nonasige-ui)
+    Japanese translation of the interface.
+
+Francis Rebouças  (github.com/francisreboucas)
+    Sheet dimensions and level marks born in the document's units (#403),
+    and a sheet made through the AI bridge undone in one step (#694).
+    For 0.5.10: dimensions that stay put entering a component, follow the
+    object they were drawn in and ride the Move/Rotate preview (#621);
+    Push/Pull cutting a thin board with a corner (#710) and keeping a line
+    between two paints (#649); a tape guide point keeping its dashed
+    segment (#693).
+    For 0.6.0: «System language» as a choice of its own (#818, #875).
+
+pkoska  (github.com/pkoska)
+    The location map that starts no download inside its paint (#327), no
+    Rotate helper left behind by a tool change mid grip (#480), and a comma
+    after a decimal number starting the next typed value (#598).
+    For 0.5.10: the Line tool starting fresh once a segment cuts a face
+    (#496), an edge under the cursor beating the perpendicular lock (#544),
+    and managed extensions that left the catalog listed and set aside on
+    replacement (#611).
+    For 0.5.11: the extension manager and the library downloading again on
+    a fresh Windows (#783, #903), a long thin rectangle no longer turned
+    into a line (#389, #909), a clear notice below OpenGL 3.3 (#751, #910),
+    .skp thumbnails kept on Windows (#804, #905), the reason a .skp does
+    not open in the log (#497, #907) and sheet fields in English and German
+    (#899).
+    For 0.6.0: DWG conversion that no longer freezes the window, with a
+    Cancel button (#401, #904).
+
+Matt Van Horn  (github.com/mvanhorn)
+    The AI Assistant no longer crashes in the Flatpak (#706).
+
+Luis Romo  (github.com/luisfergromo)
+    Offset with its distance live in the measurements box and hot retype
+    (#665).
+
+Victor Crespo  (github.com/vicc3d)
+    A confirmation before installing an unreviewed extension (#578).
+    For 0.5.10: archives from outside that cannot unpack to all the memory
+    there is, and «Change date and time…» opening the Shadows panel again.
+    For 0.6.0: COLLADA export that keeps groups, components and tags
+    (#966), Move copy keeping a copied face's hole open (#1027), undoing an
+    import bringing back what it removed (#1073) and DAE/glTF nodes placed
+    twice no longer multiplying the walk (#1001).
+
+APBureauEtude  (github.com/APBureauEtude)
+    OBJ and MTL files read and written as UTF-8 on every platform (#523).
+    For 0.6.0: the active layer's pencil in the accent colour (#1018) and
+    a clearer view of where you are when editing a group (#947).
+
+SebWell  (github.com/SebWell)
+    The macOS package no longer bundles the Linux dwg2dxf (#515).
+
+BlackFlash73  (github.com/blackflash73)
+    RGBA face colours no longer break GLB, DAE and OBJ export (#462).
+
+borborborja  (github.com/borborborja)
+    Documents with textual curve IDs open again (#659).
+
+lelopes05  (github.com/lelopes05)
+    Malformed extension value labels guarded (#413).
+
+PINYO PATTANAWASANPORN  (github.com/PINYOPATTANAWASANPORN)
+    The base-map fix that stopped the program closing on Windows with AMD
+    graphics (#327), from their own fork.
+
+jonson7777  (github.com/jonson7777)
+    Bug reports and requests from daily use: Push/Pull keeping internal
+    faces, Offset's measurement box, toolbars and the sidebars.
+
+tomlai-git  (github.com/tomlai-git)
+    Reports on installation, the extension manager, keyboard shortcuts and
+    faceted curved surfaces.
+
+arthurarquitetoamb  (github.com/arthurarquitetoamb)
+    Feature requests from modelling practice: 3D text, copies along
+    Follow Me, points, and Push/Pull on lines.
+
+tony1233200  (github.com/tony1233200)
+    Dimensions no longer doubled on every reopen (#765), New clearing the
+    previous document's materials (#759), hand-installed extensions with
+    CRLF line endings recognised by the manager (#764), the net area of a
+    face in Parts and the Text label (#742), and group rotation keeping
+    textures on faces without a fitted UV map (#847).
+    For 0.5.11: opening a file from outside asks about unsaved changes
+    (#956, #977), unnamed groups numbered the same every time (#943,
+    #971), .skp components no longer 100 times too large (#865, #970),
+    Move's rotation grips kept inside a group's box (#871, #978), and a
+    faster viewer: cheaper dimensions (#439, #976), the still view saved
+    once (#944, #973) and boxes without known bounds kept (#952, #972).
+
+Bogdan Demchenko  (github.com/hamzah1985)
+    Extension toolbars back where they were saved after the asynchronous
+    start-up (#845), and the Rectangle's idle preview starting at its corner
+    on the pencil (#848).
+    For 0.5.11: Measure starting from the line under the cursor (#846),
+    Offset showing its reference edge and start point (#843, #844), units
+    that stay chosen after a restart (#883), an imported .skp framed in
+    the view (#867) and a second water material for pools (#941).
+    For 0.6.0: Push/Pull snapping to edge midpoints (#863).
+
+Kone Venkatesh  (github.com/konevenkatesh)
+    Fixes deep in the modelling core for 0.5.11: a window drawn against a
+    box's corner cutting only its wall (#895), a loose line partly over
+    another edge keeping the rest of its length (#896), a failed Follow Me
+    no longer undoing the step before (#897), and splitting an edge
+    reaching every face that uses it (#898).
+
+Clint Armstrong  (github.com/clinta)
+    A scripted import that fails gives back what it had removed (#893).
+
+nicolasmarc  (github.com/nicolasmarc)
+    DXF POLYFACE meshes, polygon meshes and MESH entities imported as
+    faces (#878, #879).
+    For 0.6.1: each DXF mesh part merged on its own and one named component
+    per part for assembly blocks (#1160).
+
+BastelBaus  (github.com/BastelBaus)
+    DAE imports that keep the file's groups, nested as in the file (#919).
+    For 0.6.0: .skp imports nested and named as in the file (#922, closes
+    #866), annotations with their anchor (#960), the BIM takeoff finding
+    tags inside groups (#1035) and Help ▸ Documentation (#1036).
+    For 0.6.1: {sheet_name} and title-block fields that read the edited rows
+    (#1168).
+
+David  (github.com/Booshdag-io)
+    The choice of tool cursor in Preferences: the tool's icon, the classic
+    crosshair or the arrow (#858).
+
+Alexis  (github.com/bernalalexis-try)
+    Ctrl+Enter accepting the leader-text dialog.
+
+SPMech  (github.com/SPMech)
+    Reports and requests from mechanical modelling: Follow Me after a
+    fillet, styles, locked groups, a snapping grid and the selection colour.
+
+xcd-droid  (github.com/xcd-droid)
+    Reports on snapping (intersections, midpoints for dimensions), the
+    Rectangle and pasting several copied objects.
+
+Oleksandr Bolotov (https://github.com/bolotov)
+    Ukrainian translation of the interface.
+
+Amer Alhlhli (https://github.com/Alhlhli)
+    Arabic translation of the interface.
+    With it, IngeTrazo's first right-to-left interface (#1067).
+
+Nicolas Grossi  (github.com/changastyle)
+    The OpenCode Go provider and a readable AI chat with bubbles, photos, a
+    thinking bar and Stop (#814).
+
+Alexey Tkachenko  (github.com/alteralto)
+    Pieces of a .skp component scaled by −1 keep their front (#1045, #1065).
+    For 0.6.1: nested groups that wear their nearest painted container
+    (#1156) and layer marks repainted on a theme switch (#1128).
+
+Aashish — IngeTrazo Tutorials  (github.com/aashishzharbade-arch)
+    The IngeTrazo Tutorials channel on YouTube, which shows the program,
+    its extensions and its workflows, and nine extensions in the catalogue:
+    MultiView, Phasing Animator, Kitchen Maker, Display Scale, Taper,
+    Bevel, Curve Tools, Texture Library and Make Stair.
+
+Phillip Edwards (Eddy)  (github.com/eddy-99)
+    Twenty-three extensions in the catalogue, most of them for building
+    work: Period Doors, Period Windows, Roof Tiles, Brick & Block Studio,
+    Gutters & Downpipes, Soil & Waste Pipes, Fences & Gates, Wood
+    Planking, Corrugated Iron, Chimneys, Station Canopies, Loft, Wrap,
+    Timeline, Notepad and more.
+
+Dugan Caswell  (github.com/consumr)
+    Levels: heights in the document's units (#1075).
+
+David Mavrov  (github.com/davidsmavrov-debug)
+    The Bulgarian translation (#1185).
+
+KuoYaMu  (github.com/KuoYaMu)
+    The Traditional Chinese translation (#1099).
+
+DarkBiscuits  (github.com/DarkBiscuits)
+    The .skp component that came in 10 000 times too big, traced (#1196).
 
 ---
 

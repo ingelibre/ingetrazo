@@ -42,6 +42,21 @@ def _key(x: float, y: float) -> tuple[int, int]:
     return (round(x / _TOL), round(y / _TOL))
 
 
+def _area_floor(xy) -> float:
+    """The least area a traced loop needs to be a face rather than noise.
+
+    A loop thinner than the weld tolerance -- an out-and-back walk, a
+    rounding sliver -- has a mean width ``2·area/perimeter`` under ``_TOL``.
+    The old floor was ``_TOL`` itself read as an AREA: 1 cm², so a 5 mm
+    circle or a countersink's rim never became a face (tutorial hunt 2, B8).
+    The cap stays at ``_TOL`` so a big loop is never asked for more than
+    before."""
+    n = len(xy)
+    per = sum(math.hypot(xy[(i + 1) % n][0] - xy[i][0],
+                         xy[(i + 1) % n][1] - xy[i][1]) for i in range(n))
+    return min(_TOL, _TOL * per / 2.0)
+
+
 def plane_basis(normal: QVector3D) -> tuple[QVector3D, QVector3D]:
     """Two orthonormal in-plane axes for ``normal`` (stable choice of reference)."""
     n = normal.normalized()
@@ -123,17 +138,52 @@ def _point_in_polygon(p, poly: list) -> bool:
 
 # ---- Arrangement -----------------------------------------------------------
 
+def _box_neighbours(segments_2d) -> list:
+    """For each segment, the ascending indices of the others whose bounding
+    boxes come within reach of it -- the only ones that can meet it.
+
+    Testing every pair was O(n²): an exploded DWG plan of 16 848 edges spent
+    70 s per Line click here (#491). A meeting point lies within ``_ON_SEG``
+    plus ``_EPS`` of a length of BOTH segments, so boxes padded by that never
+    miss a pair; ascending order keeps the split points in the order the full
+    scan appended them, and so the graph identical."""
+    n = len(segments_2d)
+    boxes = []
+    longest = 0.0
+    for a, b in segments_2d:
+        x0, x1 = (a[0], b[0]) if a[0] <= b[0] else (b[0], a[0])
+        y0, y1 = (a[1], b[1]) if a[1] <= b[1] else (b[1], a[1])
+        longest = max(longest, x1 - x0, y1 - y0)
+        boxes.append((x0, x1, y0, y1))
+    # Twice the pad each box needs, on both: a generous reach only adds
+    # candidates, it never changes an answer.
+    reach = 4.0 * (_ON_SEG + 2.0 * _EPS * longest) + 1e-9
+    order = sorted(range(n), key=lambda k: boxes[k][0])
+    near: list = [[] for _ in range(n)]
+    for pos, i in enumerate(order):
+        _, x1, y0, y1 = boxes[i]
+        for q in range(pos + 1, n):
+            j = order[q]
+            bx0, _, by0, by1 = boxes[j]
+            if bx0 > x1 + reach:
+                break
+            if by0 <= y1 + reach and y0 <= by1 + reach:
+                near[i].append(j)
+                near[j].append(i)
+    for lst in near:
+        lst.sort()
+    return near
+
+
 def _build_graph(segments_2d):
     """Split all segments at intersections and return ``(coords, adjacency)``:
     ``coords`` maps a vertex key to its (x, y); ``adjacency`` maps a key to the
     set of neighbour keys (undirected, deduplicated, no self-loops)."""
     n = len(segments_2d)
     split_pts = [list(seg) for seg in segments_2d]  # seed with endpoints
-    for i in range(n):
+    for i, near in enumerate(_box_neighbours(segments_2d)):
         a, b = segments_2d[i]
-        for j in range(n):
-            if i == j:
-                continue
+        for j in near:
             c, d = segments_2d[j]
             for p in _intersections(a, b, c, d):
                 if _on_seg(p, a, b) is not None:
@@ -252,9 +302,10 @@ def _classify(loops, coords) -> list:
     for loop in loops:
         xy = [coords[k] for k in loop]
         area = _signed_area(xy)
-        if area > _TOL:
+        floor = _area_floor(xy)
+        if area > floor:
             faces.append((xy, area))
-        elif area < -_TOL:
+        elif area < -floor:
             holes.append((xy, -area))
 
     if not faces:
@@ -274,7 +325,8 @@ def _classify(loops, coords) -> list:
     for hxy, harea in holes:
         hp = _interior_point(hxy)
         for fi, (fxy, farea) in enumerate(faces):
-            if farea > harea + _TOL and _point_in_polygon(hp, fxy):
+            if (farea > harea + _area_floor(hxy)
+                    and _point_in_polygon(hp, fxy)):
                 face_holes[fi].append(hxy)
                 break
 

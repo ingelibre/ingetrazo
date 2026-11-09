@@ -23,6 +23,7 @@ import json
 import struct
 from pathlib import Path
 
+from core.texture import is_image_bytes
 from .meshexport import collect_geometry, export_names, geolocation
 
 _F32 = 5126          # accessor componentType FLOAT
@@ -43,21 +44,156 @@ def _mime(name: str) -> str:
     return "image/png"
 
 
-def save_glb(scene, path, face_me=None) -> None:
+def _yup_matrix(m) -> list:
+    """A Z-up placement matrix as the matching glTF node matrix — the same
+    change of axes the vertices get (:func:`_yup`) on both sides, column
+    major as glTF wants it."""
+    from PySide6.QtGui import QMatrix4x4
+    c = QMatrix4x4(1, 0, 0, 0,
+                   0, 0, 1, 0,
+                   0, -1, 0, 0,
+                   0, 0, 0, 1)
+    return [float(v) for v in (c * m * c.transposed()).data()]
+
+
+def _mesh_name(key, tree) -> str:
+    """The name of the first node that draws mesh ``key``."""
+    stack = list(tree)
+    while stack:
+        part = stack.pop(0)
+        if part["mesh"] == key:
+            return part["name"]
+        stack.extend(part["children"])
+    return "Mesh"
+
+
+#: Where a face-me figure looks in a file with no camera: toward the Front
+#: view, the side the model is usually opened from.
+_FILE_FACING = (0.0, -1.0, 0.0)
+
+
+def _file_hierarchy(scene, only=None):
+    """The model as a tree for a file: ``(materials, meshes, roots)``.
+
+    ``meshes`` maps a key to the triangles of ONE mesh in its own
+    coordinates, grouped by material (see :func:`formats.meshexport.
+    collect_geometry`); the key of a component's prototype is shared by
+    all its copies. ``roots`` are the top nodes: ``{"name", "matrix"
+    (QMatrix4x4 Z-up, or None), "mesh" (a key or None), "children",
+    "extras"}``. A face-me figure is a world-space root standing toward
+    :data:`_FILE_FACING`, with ``ingetrazo_faceme`` = feet and heading,
+    as the Render with Blender export writes it."""
+    import math
+    from PySide6.QtGui import QVector3D
+    from core.group import transformed_mesh
+    from core.i18n import tr
+    from core.materials import material_sig
+    from .meshexport import (SmoothNormals, _add_face, _facing_quad, _feet,
+                             _resolve_finishes, _shown,
+                             _turned_toward)
+    smoother = SmoothNormals()
+    materials: dict = {}
+    meshes: dict = {}
+    roots: list = []
+    figures: list = []
+    facing = QVector3D(*_FILE_FACING)
+
+    def toward(_anchor):
+        return facing
+
+    loose = [f for f in scene.loose_mesh.faces
+             if scene.entity_visible(f) and (only is None or f in only)]
+    if loose:
+        prims: dict = {}
+        for f in loose:
+            _add_face(f, materials, prims, smoother=smoother)
+        meshes["loose"] = prims
+        roots.append({"name": tr("Loose geometry"), "matrix": None,
+                      "mesh": "loose", "children": []})
+
+    def part(g, base, above):
+        m = getattr(g, "xform", None)
+        world = m if base is None else (base if m is None else base * m)
+        # What the piece's unpainted faces show: its own paint, else the
+        # nearest painted container's above it — as the viewport draws it.
+        paint = getattr(g, "material", None) or above
+        kind = getattr(g, "billboard", False)
+        if kind:
+            mesh = g.mesh if world is None else transformed_mesh(g.mesh, world)
+            feet = _feet(mesh)
+            if feet is None:
+                return None
+            turned = (_turned_toward(mesh, toward) if kind == "mesh"
+                      else _facing_quad(mesh, toward))
+            prims = {}
+            for f in turned.faces:
+                _add_face(f, materials, prims, _shown(f, paint), smoother)
+            if prims:
+                key = ("figure", len(figures))
+                meshes[key] = prims
+                figures.append({
+                    "name": getattr(g, "name", "") or tr("Figure"),
+                    "matrix": None, "mesh": key, "children": [],
+                    "extras": {"ingetrazo_faceme": [
+                        feet.x(), feet.y(), feet.z(),
+                        math.atan2(facing.y(), facing.x())]}})
+            return None
+        # Copies of a component share ONE mesh in the file — unless they
+        # wear different paint, which makes them different meshes.
+        key = (id(g.mesh), material_sig(paint))
+        if key not in meshes:
+            prims = {}
+            for f in g.mesh.faces:
+                _add_face(f, materials, prims, _shown(f, paint), smoother)
+            meshes[key] = prims
+        node = {"name": getattr(g, "name", "") or tr("Group"),
+                "matrix": m, "mesh": key if meshes[key] else None,
+                "children": []}
+        for child in getattr(g, "children", None) or ():
+            sub = part(child, world, paint)
+            if sub is not None:
+                node["children"].append(sub)
+        return node
+
+    for g in getattr(scene, "groups", []):
+        if not scene.entity_visible(g):
+            continue
+        if only is not None and g not in only:
+            continue
+        node = part(g, None, None)
+        if node is not None:
+            roots.append(node)
+    roots.extend(figures)
+    _resolve_finishes(scene, materials)
+    return materials, meshes, roots
+
+
+def save_glb(scene, path, face_me=None, only=None) -> None:
     """Write the scene as a binary glTF (``.glb``) to ``path``.
 
     ``face_me`` turns the face-me figures toward a camera and brings them
     along (see :func:`formats.meshexport.world_faces`); Render with Blender
-    passes its camera (#181)."""
+    passes its camera (#181).
+
+    Without a camera — a file for other programs — the model keeps its
+    structure (#304): one node per group and component, nested as in the
+    model, with its name and transform, the copies of a component sharing
+    one mesh; the loose geometry is a node of its own, and every face-me
+    figure stands facing the Front view as a node with its feet and
+    heading in extras (#353: they were left out, or came out mirrored
+    from inside a group). ``only`` (a set of selected entities) writes
+    just those: loose faces and top-level groups."""
     # With a camera the face-me figures travel as nodes of their own, each
     # with its feet and heading in extras: a renderer that moves the camera
     # (Render ▸ sync with the view) turns them instead of re-exporting.
     figures: list = []
+    tree = None
     if face_me is not None:
         from formats.meshexport import collect_geometry_split
         materials_in, prims, figures = collect_geometry_split(scene, face_me)
     else:
-        materials_in, prims = collect_geometry(scene, face_me)
+        materials_in, mesh_prims, tree = _file_hierarchy(scene, only)
+        prims = {}
 
     buf = bytearray()
     buffer_views: list[dict] = []
@@ -87,6 +223,9 @@ def save_glb(scene, path, face_me=None) -> None:
     keys = list(prims.keys())
     for fig in figures:
         keys += [k for k in fig["prims"] if k not in keys]
+    if tree is not None:
+        for source in mesh_prims.values():
+            keys += [k for k in source if k not in keys]
     gltf_materials: list[dict] = []
     images: list[dict] = []
     textures: list[dict] = []
@@ -109,6 +248,8 @@ def save_glb(scene, path, face_me=None) -> None:
                 try:
                     img_bytes = Path(src).read_bytes()
                 except OSError:
+                    img_bytes = None
+                if img_bytes is not None and not is_image_bytes(img_bytes):
                     img_bytes = None
                 if img_bytes is not None:
                     _align()
@@ -135,7 +276,9 @@ def save_glb(scene, path, face_me=None) -> None:
             else:  # image unreadable → fall back to white
                 mat["pbrMetallicRoughness"]["baseColorFactor"] = [1, 1, 1, 1]
         else:
-            r, g, b = info["color"]
+            # A colour may carry an alpha (an imported model's): the
+            # exporter refused the whole file over it (pileta.igz).
+            r, g, b = tuple(info["color"])[:3]
             mat["pbrMetallicRoughness"]["baseColorFactor"] = [r, g, b, 1.0]
         # The finish (core.finish): plain glTF for every program, and the
         # name in extras for Render with Blender's full materials.
@@ -178,10 +321,10 @@ def save_glb(scene, path, face_me=None) -> None:
             uvs: list[tuple] = []
             indices: list[int] = []
             vindex: dict[tuple, int] = {}
-            for normal, verts in tris:
-                nn = _yup(normal)
-                for pos, uv in verts:
+            for _flat, verts in tris:
+                for pos, uv, normal in verts:
                     p = _yup(pos)
+                    nn = _yup(normal)      # smooth across soft edges
                     uvk = (round(uv[0], 6), round(uv[1], 6)) if textured else (0.0, 0.0)
                     vkey = (round(p[0], 6), round(p[1], 6), round(p[2], 6),
                             round(nn[0], 4), round(nn[1], 4), round(nn[2], 4), uvk)
@@ -239,20 +382,53 @@ def save_glb(scene, path, face_me=None) -> None:
     }
     meshes: list[dict] = []
     nodes: list[dict] = []
-    if primitives:
+    if tree is not None:
+        mesh_index: dict = {}
+        for key, source in mesh_prims.items():
+            prim_list = _primitives(source)
+            if prim_list:
+                mesh_index[key] = len(meshes)
+                meshes.append({"name": _mesh_name(key, tree), "primitives": prim_list})
+
+        def _emit(part) -> int:
+            node: dict = {"name": part["name"]}
+            mi = mesh_index.get(part["mesh"])
+            if mi is not None:
+                node["mesh"] = mi
+            m = part.get("matrix")
+            if m is not None and not m.isIdentity():
+                node["matrix"] = _yup_matrix(m)
+            if part.get("extras"):
+                node["extras"] = part["extras"]
+            nodes.append(node)
+            idx = len(nodes) - 1
+            kids = [_emit(c) for c in part["children"]]
+            if kids:
+                nodes[idx]["children"] = kids
+            return idx
+
+        roots = [_emit(part) for part in tree]
+        if meshes:
+            gltf["meshes"] = meshes
+        if nodes:
+            gltf["nodes"] = nodes
+        gltf["scenes"] = [{"nodes": roots}]
+        gltf["scene"] = 0
+    if tree is None and primitives:
         meshes.append({"name": "IngeTrazo", "primitives": primitives})
         nodes.append({"mesh": 0, "name": "IngeTrazo"})
-    for i, (fp, fig) in enumerate(figure_meshes, 1):
+    for i, (fp, fig) in enumerate(figure_meshes if tree is None else (), 1):
         feet = fig["feet"]
         meshes.append({"name": f"Figure {i}", "primitives": fp})
         nodes.append({"mesh": len(meshes) - 1, "name": f"Figure {i}",
                       "extras": {"ingetrazo_faceme": [
                           feet.x(), feet.y(), feet.z(), fig["yaw"]]}})
-    if meshes:
-        gltf["meshes"] = meshes
-        gltf["nodes"] = nodes
-    gltf["scenes"] = [{"nodes": list(range(len(nodes)))}]
-    gltf["scene"] = 0
+    if tree is None:
+        if meshes:
+            gltf["meshes"] = meshes
+            gltf["nodes"] = nodes
+        gltf["scenes"] = [{"nodes": list(range(len(nodes)))}]
+        gltf["scene"] = 0
     if accessors:
         gltf["accessors"] = accessors
         gltf["bufferViews"] = buffer_views

@@ -78,6 +78,9 @@ class ProtractorBase(Tool):
         self.ref_point: QVector3D | None = None     # base (0°) direction
         self.hover_point: QVector3D | None = None
         self.work_plane: tuple[QVector3D, QVector3D] | None = None
+        #: The plane the centre was placed on, kept so an arrow-key lock set
+        #: after the first click can be released back to it.
+        self._centre_plane: tuple[QVector3D, QVector3D] | None = None
         self._axis_pick: str | None = None          # arrow-key plane lock
         self._shift_normal: QVector3D | None = None  # Shift-frozen plane
         self._custom_axis: QVector3D | None = None  # drag-defined axis
@@ -140,24 +143,42 @@ class ProtractorBase(Tool):
         return True
 
     # ---- Keyboard -----------------------------------------------------------
+    def _toggle_guides(self, viewport, say: bool = True) -> None:
+        from core.i18n import tr as _tr
+        self._guides = not self._guides
+        if say:
+            viewport.flash_status(
+                _tr("Create guides: on") if self._guides
+                else _tr("Create guides: off — measure only"))
+        apply = getattr(viewport, "_apply_tool_cursor", None)
+        if apply is not None:
+            apply()
+        hint = getattr(viewport, "refresh_status_hint", None)
+        if hint is not None:
+            hint()                       # the clause says the new mode
+        viewport.update()
+
+    def on_key_release(self, viewport, key: int) -> bool:
+        # The guide toggle happens on the Ctrl PRESS, so the + shows at
+        # once; a Ctrl that turns out to be part of a shortcut (Ctrl+Z…)
+        # takes it back on the release, silently (#342, the Tape's #183).
+        if (key != Qt.Key_Control or not hasattr(type(self), "_guides")
+                or not getattr(self, "_ctrl_toggled", False)):
+            return False
+        self._ctrl_toggled = False
+        tapped = getattr(viewport, "ctrl_tapped", None)
+        if callable(tapped) and not tapped():
+            self._toggle_guides(viewport, say=False)
+        return True
+
     def on_key(self, viewport, key: int, modifiers) -> bool:
         # Ctrl toggles guide creation on the tools that leave one behind
         # (measure, or measure AND mark). Subclasses that never
         # create a guide — Rotate — take their own Ctrl first and never
         # reach here.
         if key == Qt.Key_Control and hasattr(type(self), "_guides"):
-            from core.i18n import tr as _tr
-            self._guides = not self._guides
-            viewport.flash_status(
-                _tr("Create guides: on") if self._guides
-                else _tr("Create guides: off — measure only"))
-            apply = getattr(viewport, "_apply_tool_cursor", None)
-            if apply is not None:
-                apply()
-            hint = getattr(viewport, "refresh_status_hint", None)
-            if hint is not None:
-                hint()                   # the clause says the new mode
-            viewport.update()
+            self._toggle_guides(viewport)
+            self._ctrl_toggled = True
             return True
         # Arrow keys lock the protractor plane to an axis: Right =
         # red, Left = green, Up = blue; the same arrow again releases it.
@@ -166,10 +187,18 @@ class ProtractorBase(Tool):
         if axis is None:
             return False
         self._axis_pick = None if self._axis_pick == axis else axis
-        if self._axis_pick is not None and self.start_point is None:
-            anchor = (self.hover_point if self.hover_point is not None
-                      else QVector3D(0, 0, 0))
-            self.work_plane = (anchor, QVector3D(_AXES[self._axis_pick]))
+        if self._axis_pick is not None:
+            # The lock re-anchors the work plane so the cursor — and the axis
+            # magnet — follow it. Before the centre the plane rides the
+            # cursor; after the centre it is pinned to the centre.
+            anchor = (self.start_point if self.start_point is not None
+                      else (self.hover_point if self.hover_point is not None
+                            else QVector3D(0, 0, 0)))
+            self.work_plane = (QVector3D(anchor),
+                               QVector3D(_AXES[self._axis_pick]))
+        elif self.start_point is not None and self._centre_plane is not None:
+            # Released after the centre: back to the plane it was placed on.
+            self.work_plane = self._centre_plane
         viewport.update()
         return True
 
@@ -231,12 +260,16 @@ class ProtractorBase(Tool):
                   else self.hover_point)
         if w2p is None or centre is None:
             return
-        u, _v = plane_axes(self._axis())
+        u, v = plane_axes(self._axis())
         p0 = w2p(centre)
         p1 = w2p(centre + u)
-        if p0 is None or p1 is None:
+        p2 = w2p(centre + v)
+        if p0 is None or p1 is None or p2 is None:
             return
-        px_per_unit = math.hypot(p1[0] - p0[0], p1[1] - p0[1])
+        # The larger of the two in-plane scales: along an axis that points
+        # into the screen, one unit is a few pixels and the radius exploded.
+        px_per_unit = max(math.hypot(p1[0] - p0[0], p1[1] - p0[1]),
+                          math.hypot(p2[0] - p0[0], p2[1] - p0[1]))
         if px_per_unit > 1e-6:
             self._disc_r = DISC_PX / px_per_unit
         if self.start_point is not None:
@@ -333,6 +366,7 @@ class ProtractorBase(Tool):
         self.start_point = None
         self.ref_point = None
         self.work_plane = None
+        self._centre_plane = None
         self._shift_normal = None
         self._custom_axis = None
         self._axis_drag_live = None
@@ -398,6 +432,9 @@ class ProtractorTool(ProtractorBase):
         self._last = None            # a click ends the retype window
         if self.start_point is None:
             self.start_point = ctx.world
+            # Remember the plane the centre sits on: an arrow lock set later
+            # re-anchors at the centre, and releasing it comes back here.
+            self._centre_plane = (self.start_point, QVector3D(self._axis()))
             self._axis_drag_armed = True   # a DRAG from here tilts the disc
             return
         if self.ref_point is None:
@@ -493,7 +530,8 @@ class ProtractorTool(ProtractorBase):
         deg = self._display_deg(self.hover_point)
         if deg is None:
             return None
-        return (f"{deg:+.1f}°", self.hover_point)
+        from core.units import fmt_angle_deg
+        return (fmt_angle_deg(deg, signed=True), self.hover_point)
 
     def vcb_caption(self) -> str:
         return "Angle"
@@ -504,12 +542,18 @@ class ProtractorTool(ProtractorBase):
         if not self._guides:
             # Measure only: report the angle and leave nothing behind.
             from core.i18n import tr as _tr
+            from core.units import fmt_angle_deg
             viewport.flash_status(
-                _tr("Angle: {a}°").format(a=f"{deg:+.1f}"), 4000)
+                _tr("Angle: {a}").format(a=fmt_angle_deg(deg, signed=True)),
+                4000)
             self._reset()
             viewport.update()
             return
         guide = Guide(self.start_point, d)
+        if not guide.is_finite() or not guide.is_line:
+            self._reset()           # a degenerate angle: leave nothing (#723)
+            viewport.update()
+            return
         viewport.history.execute(AddGuideCommand(guide))
         # The tool resets for the next measurement, but the angle
         # stays hot — typing a value + Enter re-aims this guide until the

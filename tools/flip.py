@@ -29,7 +29,7 @@ from core.history import (
 )
 from core.i18n import tr
 from core.mesh import Edge, Face, Mesh
-from tools.base import Tool, ToolContext
+from tools.base import Tool, ToolContext, ctrl_clause
 
 # The drawing axes (core.axes): the open group's own inside it (#44).
 from core.axes import AXES as _AXES  # noqa: E402
@@ -46,6 +46,7 @@ class FlipTool(Tool):
         self._hover_axis: str | None = None
         self._lock_axis: str | None = None      # arrow-key pick
         self._copy = False
+        self._ctrl_toggled = False              # …by the Ctrl still held down
 
     # ---- Lifecycle ----------------------------------------------------------
     def on_activate(self, viewport) -> None:
@@ -59,13 +60,45 @@ class FlipTool(Tool):
     def on_deactivate(self, viewport) -> None:
         self._hover_axis = None
 
+    @property
+    def cursor_plus(self) -> bool:
+        """The little + beside the cursor while Ctrl has it making a COPY,
+        as the Tape shows its guide mode: the status-bar flash alone was
+        easy to miss."""
+        return self._copy
+
+    def status_clause(self) -> str:
+        return ctrl_clause(self._copy, "copy", "original")
+
+    def _toggle_copy(self, viewport, say: bool = True) -> None:
+        self._copy = not self._copy
+        if say:
+            viewport.flash_status(tr("Flip a copy: on") if self._copy
+                                  else tr("Flip a copy: off"))
+        apply = getattr(viewport, "_apply_tool_cursor", None)
+        if apply is not None:
+            apply()                      # the + appears or disappears now
+        self.refresh_hint(viewport)      # …and the bar says which way
+        viewport.update()
+
+    def on_key_release(self, viewport, key: int) -> bool:
+        # The copy toggle happens on the Ctrl PRESS, so the + shows at
+        # once; a Ctrl that turns out to be part of a shortcut (Ctrl+Z,
+        # Ctrl+C…) takes it back on the release, silently — the Tape's
+        # #183, where Ctrl+Z switched its mode without a word.
+        if key != Qt.Key_Control or not self._ctrl_toggled:
+            return False
+        self._ctrl_toggled = False
+        tapped = getattr(viewport, "ctrl_tapped", None)
+        if callable(tapped) and not tapped():
+            self._toggle_copy(viewport, say=False)
+        return True
+
     # ---- Input --------------------------------------------------------------
     def on_key(self, viewport, key: int, modifiers) -> bool:
         if key == Qt.Key_Control:
-            self._copy = not self._copy
-            viewport.flash_status(tr("Flip a copy: on") if self._copy
-                                  else tr("Flip a copy: off"))
-            viewport.update()
+            self._toggle_copy(viewport)
+            self._ctrl_toggled = True
             return True
         picks = {Qt.Key_Right: "x", Qt.Key_Left: "y", Qt.Key_Up: "z"}
         axis = picks.get(key)
@@ -87,6 +120,9 @@ class FlipTool(Tool):
             return
         self.flip(ctx.viewport, axis, copy=self._copy)
         self._copy = False           # the modifier arms ONE flip
+        apply = getattr(ctx.viewport, "_apply_tool_cursor", None)
+        if apply is not None:
+            apply()                  # …and the + goes with it
 
     def flip(self, viewport, axis: str, copy: bool = False) -> bool:
         """Mirror the selection across its own centre, along the world
@@ -168,26 +204,31 @@ class FlipTool(Tool):
 
     # ---- Internals ----------------------------------------------------------
     def _bounds(self, viewport):
+        import numpy as np
+        from core.group import placement_points
         sel = viewport.scene.selection
-        pts: list[QVector3D] = []
+        arrays: list = []
+        pts: list = []
         for ent in sel:
             if isinstance(ent, Group):
-                xf = getattr(ent, "xform", None)
-                for v in ent.mesh.vertices:
-                    p = v.position
-                    pts.append(xf.map(p) if xf is not None else QVector3D(p))
+                # Its nested placements too: a group made of groups keeps
+                # its geometry there and its own mesh empty, and the box
+                # came out empty — no planes, nothing to click (#380).
+                # Kept as arrays: this runs on every hover.
+                arr = placement_points(ent)
+                if len(arr):
+                    arrays.append(arr)
             elif isinstance(ent, Face):
-                pts.extend(QVector3D(v) for v in ent.vertices)
+                pts.extend((v.x(), v.y(), v.z()) for v in ent.vertices)
             elif isinstance(ent, Edge):
-                pts.append(QVector3D(ent.a))
-                pts.append(QVector3D(ent.b))
-        if not pts:
+                pts.extend((p.x(), p.y(), p.z()) for p in (ent.a, ent.b))
+        if pts:
+            arrays.append(np.asarray(pts, dtype=np.float64))
+        if not arrays:
             return None, None
-        lo = QVector3D(min(p.x() for p in pts), min(p.y() for p in pts),
-                       min(p.z() for p in pts))
-        hi = QVector3D(max(p.x() for p in pts), max(p.y() for p in pts),
-                       max(p.z() for p in pts))
-        return lo, hi
+        allp = np.concatenate(arrays)
+        lo, hi = allp.min(axis=0), allp.max(axis=0)
+        return QVector3D(*lo.tolist()), QVector3D(*hi.tolist())
 
     def _targets(self, viewport, full: bool = False):
         sel = viewport.scene.selection

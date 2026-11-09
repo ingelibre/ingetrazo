@@ -8,6 +8,16 @@ from pathlib import Path
 from PySide6.QtWidgets import QApplication
 from PySide6.QtCore import QPointF, Qt
 app = QApplication([])
+# Never the user's own settings (window layout, recent files) nor their
+# extensions: closing the window saves its state, and release_check runs
+# these six times (09-10: Marco's window and recent files were the bench's).
+import tempfile as _tempfile
+from PySide6.QtCore import QSettings as _QSettings
+_bench_dir = _tempfile.mkdtemp(prefix="ingetrazo-bench-")
+os.environ["XDG_DATA_HOME"] = _bench_dir
+_QSettings.setDefaultFormat(_QSettings.IniFormat)
+for _scope in (_QSettings.UserScope, _QSettings.SystemScope):
+    _QSettings.setPath(_QSettings.IniFormat, _scope, _bench_dir)
 from views.main_window import MainWindow
 igz, label, out = Path(sys.argv[1]), sys.argv[2], sys.argv[3]
 res = {"label": label, "commit": os.popen("git rev-parse --short HEAD").read().strip()}

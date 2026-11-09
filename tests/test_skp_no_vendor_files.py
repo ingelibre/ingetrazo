@@ -28,6 +28,10 @@ def test_an_unreadable_skp_is_reported_and_nothing_else_runs(monkeypatch, tmp_pa
                         staticmethod(lambda *a, **k: said.append(a[2]) or QMessageBox.Ok))
     monkeypatch.setattr(QMessageBox, "question",
                         staticmethod(lambda *a, **k: pytest.fail("asked to install something")))
+    # The Render tab looks for Blender when the window opens (one
+    # `flatpak info` where Flatpak exists): that is not the .skp import.
+    import core.render_blender as rb
+    monkeypatch.setattr(rb, "find_blender", lambda *a, **k: None)
     import subprocess
     monkeypatch.setattr(subprocess, "run",
                         lambda *a, **k: pytest.fail("ran an external program"))
@@ -64,9 +68,9 @@ def test_no_skp_export_in_the_menu():
 
 
 def test_the_bundle_spec_leaves_the_sdk_template_out():
-    text = (ROOT / "ingetrazo.spec").read_text()
+    text = (ROOT / "ingetrazo.spec").read_text(encoding="utf-8")
     assert "'_scaffold' not in src" in text
-    flatpak = (ROOT / "packaging/flatpak/com.ingetrazo.IngeTrazo.yml").read_text()
+    flatpak = (ROOT / "packaging/flatpak/com.ingetrazo.IngeTrazo.yml").read_text(encoding="utf-8")
     assert "openskp/_scaffold" in flatpak and "rm -rf" in flatpak
-    snap = (ROOT / "packaging/snap/snapcraft.yaml.in").read_text()
+    snap = (ROOT / "packaging/snap/snapcraft.yaml.in").read_text(encoding="utf-8")
     assert "_scaffold" in snap

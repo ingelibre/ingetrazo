@@ -76,7 +76,7 @@ def test_typed_dimensions_rejects_non_pair():
     t = RectangleTool()
     t.start_point = V(0, 0)
     t.hover_point = V(5, 4)
-    assert t.on_value(vp, 3.0) is False          # a bare length isn't a W×H
+    assert t.on_value(vp, 3.0) is False          # no side being stretched
     assert t.on_value(vp, (1.0, 2.0, 3.0)) is False  # a 3D delta isn't either
     assert len(vp.scene.faces) == 0
 
@@ -92,6 +92,64 @@ def test_typed_single_dimension_builds_square_when_locked():
     assert _corner_keys(vp.scene.faces[0]) == {
         (0, 0, 0), (3, 0, 0), (3, 3, 0), (0, 3, 0)
     }
+
+
+def _hover(t, vp, x, y):
+    from PySide6.QtCore import QPointF, Qt
+    from tools.base import ToolContext
+    t.on_hover(ToolContext(viewport=vp, world=V(x, y), screen=QPointF(0, 0),
+                           modifiers=Qt.NoModifier, snap=None))
+
+
+def test_lone_number_sets_the_side_being_stretched():
+    # Width set (2 m, against an edge), then the cursor pulls the length out
+    # along Y: "5" + Enter is the length, the width stays.
+    vp = _Stub()
+    t = RectangleTool()
+    t.start_point = V(0, 0)
+    _hover(t, vp, 2.0, 0.3)
+    _hover(t, vp, 2.0, 1.4)
+    assert t.on_value(vp, 5.0) is True
+    assert _corner_keys(vp.scene.faces[0]) == {
+        (0, 0, 0), (2, 0, 0), (2, 5, 0), (0, 5, 0)
+    }
+
+
+def test_lone_number_sets_the_width_when_the_width_moves():
+    vp = _Stub()
+    t = RectangleTool()
+    t.start_point = V(0, 0)
+    _hover(t, vp, -0.5, -3.0)
+    _hover(t, vp, -1.8, -3.0)          # heading -X, the height kept at 3
+    assert t.on_value(vp, 4.0) is True
+    assert _corner_keys(vp.scene.faces[0]) == {
+        (0, 0, 0), (-4, 0, 0), (-4, -3, 0), (0, -3, 0)
+    }
+
+
+def test_lone_number_from_the_centre_keeps_the_whole_other_side():
+    from PySide6.QtCore import Qt
+    vp = _Stub()
+    t = RectangleTool()
+    t._set_from_center(vp, True)
+    t.start_point = V(0, 0)
+    _hover(t, vp, 1.0, 0.2)
+    _hover(t, vp, 1.0, 0.9)            # 2 m wide, stretching the height
+    assert t.on_value(vp, 4.0) is True
+    assert _corner_keys(vp.scene.faces[0]) == {
+        (-1, -2, 0), (1, -2, 0), (1, 2, 0), (-1, 2, 0)
+    }
+
+
+def test_lone_number_needs_the_other_side():
+    # Still on the first corner's row: no width to keep, nothing drawn.
+    vp = _Stub()
+    t = RectangleTool()
+    t.start_point = V(0, 0)
+    _hover(t, vp, 0.0, 0.5)
+    _hover(t, vp, 0.0, 1.5)
+    assert t.on_value(vp, 5.0) is False
+    assert len(vp.scene.faces) == 0
 
 
 # ---- Ctrl: from the centre (issue #39, @pacaeiro) ------------------------

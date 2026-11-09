@@ -136,6 +136,45 @@ def texture_file_name(name: str) -> str:
     return safe or "texture.png"
 
 
+_IMAGE_MAGIC = (
+    b"\x89PNG\r\n\x1a\n",            # PNG
+    b"\xff\xd8\xff",                   # JPEG
+    b"GIF87a", b"GIF89a",
+    b"BM",                              # BMP
+    b"II*\x00", b"MM\x00*",             # TIFF
+)
+
+
+def is_image_bytes(data: bytes) -> bool:
+    """True when ``data`` starts like an image file (PNG, JPEG, GIF, BMP,
+    TIFF, WebP). TGA has no signature: it is accepted only through
+    :func:`is_image_file` by extension plus a Qt decode."""
+    head = bytes(data[:16])
+    if head.startswith(_IMAGE_MAGIC):
+        return True
+    return head[:4] == b"RIFF" and head[8:12] == b"WEBP"
+
+
+def is_image_file(path) -> bool:
+    """True when ``path`` is a readable image. A document names its texture
+    files by path, and saving or exporting copies those files out: without
+    this check a crafted document pointing at ``~/.ssh/id_ed25519`` would
+    get that key embedded in the next save."""
+    p = Path(path)
+    try:
+        with open(p, "rb") as fh:
+            head = fh.read(16)
+    except OSError:
+        return False
+    if is_image_bytes(head):
+        return True
+    if p.suffix.lower() == ".tga":
+        from PySide6.QtGui import QImageReader
+        reader = QImageReader(str(p), b"tga")
+        return reader.canRead()
+    return False
+
+
 def cache_image(data: bytes, name: str, subdir: str) -> Path:
     """Store ``data`` in the texture cache under ``subdir`` and return its
     path. **Content-addressed**: the file name carries a hash of the bytes, so

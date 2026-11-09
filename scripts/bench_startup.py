@@ -19,10 +19,26 @@ REOPENS = 6
 t0 = time.perf_counter()
 os.environ["QT_QPA_PLATFORM"] = "xcb"
 sys.path.insert(0, os.getcwd())
+# What main.py does first, so the memory measured is the app's.
+try:
+    from core import malloc_arenas  # noqa: E402
+    malloc_arenas.limit()
+except ImportError:                     # an older tree (the previous tag)
+    pass
 from pathlib import Path  # noqa: E402
 from PySide6.QtWidgets import QApplication  # noqa: E402
 
 app = QApplication([])
+# Never the user's own settings (window layout, recent files) nor their
+# extensions: closing the window saves its state, and release_check runs
+# these six times (09-10: Marco's window and recent files were the bench's).
+import tempfile as _tempfile
+from PySide6.QtCore import QSettings as _QSettings
+_bench_dir = _tempfile.mkdtemp(prefix="ingetrazo-bench-")
+os.environ["XDG_DATA_HOME"] = _bench_dir
+_QSettings.setDefaultFormat(_QSettings.IniFormat)
+for _scope in (_QSettings.UserScope, _QSettings.SystemScope):
+    _QSettings.setPath(_QSettings.IniFormat, _scope, _bench_dir)
 app.setApplicationName("IngeTrazo")
 app.setOrganizationName("IngeTrazo")
 from views.main_window import MainWindow  # noqa: E402
@@ -60,13 +76,25 @@ res = {"commit": os.popen("git rev-parse --short HEAD").read().strip(),
        "rss_empty_mb": round(rss_mb(), 1), "open_s": [], "rss_after_open_mb": [],
        "live_after_open": []}
 doc = Path(sys.argv[1])
-for _ in range(REOPENS):
+for i in range(REOPENS):
+    # Projects in tabs (0.6.0, #1066): opening a file that is already open
+    # only brings its tab forward, so it was never read again and every
+    # reopening after the first timed nothing. Close its tab first, as a
+    # user reopening it would; earlier versions have no tabs to close.
+    if i and hasattr(win, "close_document"):
+        win.close_document(ask=False)
+        settle()
     t = time.perf_counter()
     win.open_path(doc)
     settle()
     win.viewport.repaint()
     settle()
     res["open_s"].append(round(time.perf_counter() - t, 2))
+    # The side panels refresh 300 ms after the last change (0.5.8): until
+    # then the «In model» list still points at the previous document, and
+    # counting at once found two documents alive (release_check 10-10).
+    time.sleep(0.5)
+    settle()
     res["rss_after_open_mb"].append(round(rss_mb(), 1))
     res["live_after_open"].append(live())
 first, last = res["live_after_open"][1], res["live_after_open"][-1]

@@ -6,6 +6,10 @@ app-id: com.ingetrazo.IngeTrazo
 runtime: org.freedesktop.Platform
 runtime-version: '25.08'
 sdk: org.freedesktop.Sdk
+# The Rust engine (rust/ingetrazo_core, #767) is compiled at build time;
+# only the SDK carries cargo, the finished module needs nothing at run time.
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.rust-stable
 command: ingetrazo
 
 finish-args:
@@ -64,10 +68,20 @@ modules:
     build-options:
       build-args:
         - --share=network        # pip downloads the wheels (self-dist only)
+      append-path: /usr/lib/sdk/rust-stable/bin
+      env:
+        CARGO_HOME: /run/build/ingetrazo/cargo
     build-commands:
       # 1. Python dependencies into /app's prefix. pytest is a test tool.
       - grep -vE '^\s*pytest\b' requirements.txt > reqs.txt
       - pip3 install --prefix=${FLATPAK_DEST} --no-warn-script-location -r reqs.txt
+      # 1b. The Rust engine, the same wheel the other builds make (cargo
+      #     fetches the crates: network, as for pip). maturin is a build
+      #     tool and stays out of /app.
+      - pip3 install --prefix=/run/build/ingetrazo/tools --no-warn-script-location maturin
+      - PYTHONPATH=$(echo /run/build/ingetrazo/tools/lib/python3*/site-packages) /run/build/ingetrazo/tools/bin/maturin build --release -m rust/ingetrazo_core/Cargo.toml -o wheels
+      - pip3 install --prefix=${FLATPAK_DEST} --no-deps --no-warn-script-location wheels/ingetrazo_core-*.whl
+      - python3 -c "import sys; sys.path.insert(0, [p for p in __import__('glob').glob('${FLATPAK_DEST}/lib/python3*/site-packages')][0]); import ingetrazo_core"
       # openskp's blank writer template is not distributed (no .skp export).
       - rm -rf ${FLATPAK_DEST}/lib/python3*/site-packages/openskp/_scaffold
       # 2. The application, as source — GPL code hides from nobody.
@@ -87,6 +101,15 @@ modules:
       - mkdir -p ${FLATPAK_DEST}/ingetrazo/examples
       - cp -a examples/extensions ${FLATPAK_DEST}/ingetrazo/examples/
       - find ${FLATPAK_DEST}/ingetrazo -name '__pycache__' -type d -exec rm -rf {} +
+      # Bytecode, compiled once here (#440, @cdblue999): /app is read-only,
+      # so without it Python recompiled the whole tree on every launch
+      # (import 1.2 → 0.26 s on his laptop). «unchecked-hash» because ostree
+      # sets every file's mtime to 0, which makes timestamp-checked .pyc
+      # files stale — these are trusted as built. site-packages too, for the
+      # same mtime reason (pip wrote timestamp .pyc there). PySide6's
+      # deploy templates (*.tmpl.py, Jinja, not Python) are skipped: they
+      # failed the v0.5.8 tag build.
+      - python3 -m compileall -q -j0 --invalidation-mode unchecked-hash -x '\.tmpl\.py$' ${FLATPAK_DEST}/ingetrazo ${FLATPAK_DEST}/lib
       # 3. Launcher + desktop integration (exports must carry the app id).
       - install -Dm755 packaging/flatpak/flatpak-launcher.sh ${FLATPAK_DEST}/bin/ingetrazo
       - install -Dm644 packaging/flatpak/${FLATPAK_ID}.desktop ${FLATPAK_DEST}/share/applications/${FLATPAK_ID}.desktop
@@ -150,5 +173,6 @@ modules:
           - capturas
           - analysis
           - tests
+          - rust/ingetrazo_core/target
           - packaging/flatpak/.staging
           - packaging/flatpak/.flatpak-builder

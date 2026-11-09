@@ -139,12 +139,16 @@ def test_the_default_cota_style_survives_a_new_composer():
     sample = CotaItem(text_mm=3.6, ends="arrow", color="#aa0000", units="cm")
     composer._remember_cota_style(sample)
     saved = json.loads(str(QSettings().value(ComposerWindow._COTA_STYLE_KEY)))
-    assert saved["ends"] == "arrow" and saved["units"] == "cm"
+    assert saved["ends"] == "arrow"
+    assert "units" not in saved and "decimals" not in saved
     again = ComposerWindow(host)
     assert again._last_cota_style["text_mm"] == 3.6
     assert again._last_cota_style["color"] == "#aa0000"
     ct = again._new_cota((0, 0), (30, 0), 5.0)
-    assert (ct.text_mm, ct.ends, ct.units) == (3.6, "arrow", "cm")
+    # The look travels. The unit does not: a new cota is born in the
+    # document's, here metres, even though the sample was centimetres.
+    assert (ct.text_mm, ct.ends, ct.units, ct.decimals) == (
+        3.6, "arrow", "m", 2)
     # clean up the shared settings for the other tests
     QSettings().remove(ComposerWindow._COTA_STYLE_KEY)
 
@@ -187,18 +191,20 @@ def test_a_new_cota_is_born_like_rafaels_sheet_and_the_old_memory_is_migrated():
 def test_the_second_key_comes_across_without_its_gap():
     """The «2» style of the same morning held the old 0.8 mm, which under
     the baseline rule is a wider gap than it was: it is dropped, the rest
-    (Marco's white background, his units) stays."""
+    (Marco's white background) stays. Its units do not travel either: a
+    new cota is born in the document's (issue #403)."""
     for key, _dropped in ComposerWindow._COTA_STYLE_KEYS_OLD:
         QSettings().remove(key)
     QSettings().remove(ComposerWindow._COTA_STYLE_KEY)
-    QSettings().setValue(ComposerWindow._COTA_STYLE_KEYS_OLD[0][0], json.dumps({
+    QSettings().setValue("composer/default_cota_style_2", json.dumps({
         "text_mm": 2.5, "ends": "arrow", "offset_mm": 0.8,
-        "text_bg": "#ffffff", "text_bg_opacity": 0.7, "units": "m"}))
+        "text_bg": "#ffffff", "text_bg_opacity": 0.7,
+        "units": "cm", "decimals": 0}))
     try:
         composer, _host = _composer()
         ct = composer._new_cota((0, 0), (30, 0), 5.0)
         assert ct.offset_mm == 0.5 and ct.text_bg == "#ffffff"
-        assert ct.ends == "arrow" and ct.units == "m"
+        assert ct.ends == "arrow" and ct.units == "m" and ct.decimals == 2
     finally:
         for key, _dropped in ComposerWindow._COTA_STYLE_KEYS_OLD:
             QSettings().remove(key)

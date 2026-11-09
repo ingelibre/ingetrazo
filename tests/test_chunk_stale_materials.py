@@ -139,3 +139,23 @@ def test_the_flag_reaches_nested_placements(images):
     deep._attrs_dirty = False
     _dirty_group_chunks(scene)
     assert getattr(deep, "_attrs_dirty", False), "the nested mesh was missed"
+
+
+def test_the_per_face_memo_stays_only_on_the_mesh_being_edited():
+    """The per-face geometry memo makes a stroke inside a big group cheap,
+    but kept on every mesh it cost +140 MB on the Plaza (release_check
+    10-10): a closed group's chunk lets it go once built."""
+    scene = Scene()
+    m = Mesh()
+    m.add_face([V(0, 0), V(1, 0), V(1, 1), V(0, 1)])
+    g = Group(m, "cerrado")
+    scene.groups.append(g)
+    vp = _stub(scene)
+    vp._group_chunk(g)
+    assert "_face_geom_memo" not in m.__dict__
+    # open for editing (its mesh is the edit context's): the memo stays
+    vp._editing_meshes = lambda: {id(m)}
+    m.add_face([V(2, 0), V(3, 0), V(3, 1), V(2, 1)])      # a stroke inside
+    scene.version += 1
+    vp._group_chunk(g)
+    assert "_face_geom_memo" in m.__dict__

@@ -50,7 +50,7 @@ def test_export_then_import_brings_the_keys_back(ventana):
     # Another machine: factory keys.
     line.setShortcuts(sc.default_shortcuts(line))
     QSettings().remove("shortcuts")
-    applied, skipped = sc.import_shortcuts(ventana, data)
+    applied, skipped, _clashes = sc.import_shortcuts(ventana, data)
     assert applied > 0 and skipped == 0
     assert _keys(_action(ventana, key)) == ["Ctrl+Alt+L"]
     assert QSettings().value(f"shortcuts/{key}") == "Ctrl+Alt+L"  # remembered
@@ -73,7 +73,7 @@ def test_unknown_actions_and_reserved_keys_are_left_out(ventana):
     data = {"format": sc.EXPORT_FORMAT, "version": 1,
             "shortcuts": {"a_plugin_not_installed": "Ctrl+Alt+9",
                           sc.action_key(line): "Esc"}}
-    applied, skipped = sc.import_shortcuts(ventana, data)
+    applied, skipped, _clashes = sc.import_shortcuts(ventana, data)
     assert (applied, skipped) == (1, 1)
     assert "Esc" not in _keys(line)                    # the tools own Esc
 

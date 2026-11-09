@@ -13,7 +13,8 @@ into the VCB.
 """
 from __future__ import annotations
 
-from PySide6.QtGui import QVector3D
+from PySide6.QtCore import QPointF, QRectF, Qt
+from PySide6.QtGui import QColor, QPainter, QPen, QVector3D
 
 from core.edits import build_add_edges
 from core.history import (
@@ -44,10 +45,29 @@ class OffsetTool(Tool):
     description = (
         "Draw a copy of a face's outline at an even distance inside "
         "or outside it — walls with thickness.")
-    uses_snap = False  # picks a face; no snap markers
+    allow_inferences = False  # no «from point» / «level with» lines while dragging
     vcb_label = "Offset"
     wireframe_color = (0.13, 0.17, 0.23, 1.0)
     wireframe_depth_tested = True
+
+    #: The snap kinds the Offset accepts (and the engine is restricted to,
+    #: ``Tool.allowed_snap_kinds``): named points of the model — a vertex
+    #: (endpoint), a midpoint, a centre, an intersection, the origin. The
+    #: offset is measured from the reference edge, so an edge's body
+    #: (``on_edge``), a face (``on_face``) and the engine's own directional
+    #: inferences neither set the distance nor show a marker: they follow the
+    #: cursor and are not reliable snaps.
+    allowed_snap_kinds = frozenset((
+        "endpoint", "midpoint", "arc_midpoint", "center", "origin",
+        "component_origin", "intersection", "intersection_edge",
+        "intersection_face",
+    ))
+
+    @property
+    def uses_snap(self) -> bool:
+        """Only during the drag, whose distance snaps to named model points.
+        Before it the click picks a face or a run of edges, not a point."""
+        return self.dragging
 
     def __init__(self) -> None:
         self.hovered_face: Face | None = None
@@ -68,15 +88,19 @@ class OffsetTool(Tool):
         #: (select the edges, then Offset): the first click
         #: starts the offset instead of picking.
         self._armed: bool = False
+        self._last: dict | None = None      # hot retype of the last offset
+        self._offset_reference: tuple[QVector3D, QVector3D, QVector3D] | None = None
 
     # ---- Lifecycle ----------------------------------------------------------
     def on_activate(self, viewport) -> None:
         self._reset()
+        self._last = None
         self._arm_from_selection(viewport)
 
     def on_deactivate(self, viewport) -> None:
         viewport.set_hover(None)
         self._reset()
+        self._last = None
         viewport.update()
 
     # ---- Spatial input ------------------------------------------------------
@@ -84,6 +108,8 @@ class OffsetTool(Tool):
         viewport = ctx.viewport
         if not self.dragging:
             if self._armed:
+                self._update_hover_reference(viewport, ctx.screen.x(), ctx.screen.y())
+                viewport.update()
                 return                       # the run is chosen; click starts
             self.hovered_face = viewport.pick_face(ctx.screen.x(), ctx.screen.y())
             self.hovered_edge = None
@@ -93,8 +119,10 @@ class OffsetTool(Tool):
                 self.hovered_edge = (pick_edge(ctx.screen.x(), ctx.screen.y())
                                      if pick_edge is not None else None)
             viewport.set_hover(self.hovered_face or self.hovered_edge)
+            self._update_hover_reference(viewport, ctx.screen.x(), ctx.screen.y())
+            viewport.update()
             return
-        cursor = self._cursor_on_plane(viewport, ctx.screen.x(), ctx.screen.y())
+        cursor = self._drag_cursor(ctx)
         if cursor is not None and self._ref_point is not None:
             self.distance = QVector3D.dotProduct(cursor - self._ref_point, self._ref_inward)
         viewport.update()
@@ -102,6 +130,7 @@ class OffsetTool(Tool):
     def on_click(self, ctx: ToolContext) -> None:
         viewport = ctx.viewport
         if not self.dragging:
+            self._last = None
             if self._armed:
                 self._armed = False          # the run is already in _loop
             elif self.hovered_face is not None:
@@ -123,6 +152,9 @@ class OffsetTool(Tool):
             viewport.set_hover(None)
             viewport.update()
             return
+        cursor = self._drag_cursor(ctx)
+        if cursor is not None and self._ref_point is not None:
+            self.distance = QVector3D.dotProduct(cursor - self._ref_point, self._ref_inward)
         if abs(self.distance) < 1e-6:
             return
         self._commit(viewport)
@@ -130,20 +162,105 @@ class OffsetTool(Tool):
     def on_value(self, viewport, value) -> bool:
         if isinstance(value, tuple):
             return False
-        if not self.dragging or not self._loop or value <= 0.0:
+        if value == 0.0:
             return False
-        # Keep the side the user is dragging toward; default to inward.
-        sign = -1.0 if self.distance < 0.0 else 1.0
-        self.distance = sign * value
+        if self.dragging and self._loop:
+            # Keep the side the user is dragging toward; default to inward.
+            sign = -1.0 if self.distance < 0.0 else 1.0
+            self.distance = sign * value
+            self._commit(viewport)
+            return True
+        # Hot retype: adjust the offset just made by typing into the VCB.
+        last = self._last
+        if last is None:
+            return False
+        stack = getattr(viewport.history, "undo_stack", None)
+        if not stack or stack[-1] is not last["cmd"]:
+            self._last = None
+            return False
+        viewport.history.undo()
+        self.base_face = last["base_face"]
+        self._loop = last["loop"]
+        self._normal = last["normal"]
+        self._chain = last["chain"]
+        self._closed = last["closed"]
+        self._ref_point = last["ref_point"]
+        self._ref_inward = last["ref_inward"]
+        self.distance = last["sign"] * value
+        self.dragging = True
+        depth = len(viewport.history.undo_stack)
         self._commit(viewport)
+        if len(viewport.history.undo_stack) == depth:
+            # The new distance was refused (too far for the face): the
+            # offset already made comes back instead of vanishing with the
+            # undo above, and the retype window stays open.
+            viewport.history.redo()
+            self._last = last
         return True
 
     def on_cancel(self, viewport) -> None:
         viewport.set_hover(None)
         self._reset()
+        self._last = None
         viewport.update()
 
+    def value_label(self):
+        """Floating distance readout while dragging (and the VCB readout)."""
+        if not self.dragging or self._ref_point is None:
+            return None
+        inward = self._ref_inward if self._ref_inward is not None else QVector3D(0, 0, 0)
+        start = (self._offset_reference[2] if self._offset_reference is not None
+                 else self._ref_point)
+        mid = start + inward * (self.distance * 0.5)
+        return (fmt_len(abs(self.distance)), mid)
+
     # ---- Visual preview -----------------------------------------------------
+    def draw_overlay(self, viewport, painter: QPainter) -> None:
+        """Show the boundary and the clicked start of the offset distance."""
+        if self._offset_reference is None:
+            return
+        a, b, start = self._offset_reference
+        hidden = getattr(viewport, "_occluded_on_screen", lambda _point: False)
+        if hidden(start):
+            return
+        pixel = viewport._world_to_pixel(start)
+        if pixel is None:
+            return
+        red = QColor(195, 28, 44)
+        painter.save()
+        try:
+            # A white under-stroke separates the reference from both the
+            # model outline and a stippled face highlight.
+            if not hidden((a + b) * 0.5):
+                segment = viewport._segment_to_pixels(a, b)
+                if segment is not None:
+                    p0, p1 = (QPointF(*xy) for xy in segment)
+                    painter.setPen(QPen(QColor(255, 255, 255, 235), 4.0))
+                    painter.drawLine(p0, p1)
+                    painter.setPen(QPen(QColor(0, 1, 255), 2.0))
+                    painter.drawLine(p0, p1)
+            if self.dragging and self._ref_inward is not None:
+                end = start + self._ref_inward * self.distance
+                segment = viewport._segment_to_pixels(start, end)
+                if segment is not None:
+                    pen = QPen(red, 1.25, Qt.DashLine)
+                    pen.setDashPattern([4.0, 3.0])
+                    painter.setPen(pen)
+                    painter.drawLine(*(QPointF(*xy) for xy in segment))
+                    target = viewport._world_to_pixel(end)
+                    if target is not None:
+                        painter.setBrush(QColor(255, 255, 255))
+                        painter.drawEllipse(QPointF(*target), 2.5, 2.5)
+            px, py = pixel
+            square = QRectF(px - 4.0, py - 4.0, 8.0, 8.0)
+            painter.setPen(QPen(QColor(255, 255, 255), 3.5))
+            painter.setBrush(red)
+            painter.drawRect(square)
+            painter.setPen(QPen(red, 1.2))
+            painter.drawRect(square)
+        finally:
+            painter.restore()
+
     def rubber_band_lines(self):
         if not self.dragging or not self._loop or abs(self.distance) < 1e-6:
             return []
@@ -159,6 +276,15 @@ class OffsetTool(Tool):
         return offset_chain(self._loop, self._normal, self.distance)
 
     # ---- Internals ----------------------------------------------------------
+    def _drag_cursor(self, ctx) -> QVector3D | None:
+        """The world point the drag distance is measured from: the cursor's
+        snapped point when it names a model point (an endpoint, a midpoint,
+        …), else the ray cast onto the face's plane."""
+        snap = getattr(ctx, "snap", None)
+        if snap is not None and snap.kind in self.allowed_snap_kinds:
+            return QVector3D(snap.point)
+        return self._cursor_on_plane(ctx.viewport, ctx.screen.x(), ctx.screen.y())
+
     def _pick_reference(self, viewport, sx, sy) -> None:
         """Lock onto the boundary edge nearest the click; offset is measured as
         the cursor's perpendicular distance from it (so dragging across that edge
@@ -174,6 +300,49 @@ class OffsetTool(Tool):
         e = (b - a).normalized()
         self._ref_point = QVector3D(a)
         self._ref_inward = QVector3D.crossProduct(self._normal.normalized(), e).normalized()
+        self._show_reference(a, b, cursor)
+
+    def _show_reference(self, a, b, cursor) -> None:
+        """Keep a display anchor on the edge, without moving the math anchor."""
+        if cursor is None:
+            self._offset_reference = None
+            return
+        delta = b - a
+        length_sq = QVector3D.dotProduct(delta, delta)
+        t = (max(0.0, min(1.0, QVector3D.dotProduct(cursor - a, delta) / length_sq))
+             if length_sq >= 1e-12 else 0.0)
+        self._offset_reference = (QVector3D(a), QVector3D(b), a + delta * t)
+
+    def _update_hover_reference(self, viewport, sx, sy) -> None:
+        """Preview the same nearest boundary that the first click will use."""
+        self._offset_reference = None
+        if self._armed and self._loop:
+            points, closed, normal = self._loop, self._closed, self._normal
+        elif self.hovered_face is not None:
+            points, closed = self.hovered_face.vertices, True
+            normal = self.hovered_face.normal()
+        elif self.hovered_edge is not None:
+            run = _run_from_edge(self.hovered_edge)
+            if run is None:
+                return
+            points, closed = run
+            normal = _newell(points)
+        else:
+            return
+        if normal is None or not points:
+            return
+        origin, direction = viewport._pixel_to_ray(sx, sy)
+        if origin is None or direction is None:
+            return
+        denom = QVector3D.dotProduct(direction, normal)
+        if abs(denom) < 1e-9:
+            return
+        t = QVector3D.dotProduct(points[0] - origin, normal) / denom
+        cursor = origin + direction * t
+        segments = _segments(points, closed)
+        if segments:
+            a, b = min(segments, key=lambda seg: _point_segment_distance(cursor, *seg))
+            self._show_reference(a, b, cursor)
 
     def _cursor_on_plane(self, viewport, sx, sy):
         """Cast the cursor ray onto the base face's plane."""
@@ -263,19 +432,35 @@ class OffsetTool(Tool):
         # in two at 40 cm). Outward: the biggest region is the ring and the
         # original is its single hole.
         attrs = dict(getattr(self.base_face, "attrs", None) or {})
+        # The face's own holes go back with it (#537): a ring on top of
+        # four walls came back as a full square over the room otherwise.
+        own_holes = [list(h) for h in
+                     (getattr(self.base_face, "holes", None) or [])]
         if self.distance > 0:
             outer = self._loop
             inners = [loop for loop, _holes in regions]
+            placed = _place_holes(own_holes, inners, self._normal)
+            if placed is None:
+                viewport.flash_status(tr(
+                    "{d} runs into a hole of this face — try a smaller "
+                    "offset", d=fmt_len(abs(self.distance))), 5000)
+                self._reset()
+                viewport.update()
+                return
+            inner_holes, strip_holes = placed
         else:
             outer = max((loop for loop, _holes in regions),
                         key=lambda lp: _loop_extent(lp))
             inners = [self._loop]
+            inner_holes, strip_holes = [own_holes], []
         commands = [DeleteFaceCommand(self.base_face),
                     AddFaceCommand(list(outer), auto=False,
-                                   holes=[list(lp) for lp in inners],
+                                   holes=[list(lp) for lp in inners]
+                                   + strip_holes,
                                    attrs=dict(attrs))]
-        for loop in inners:
+        for loop, holes in zip(inners, inner_holes):
             commands.append(AddFaceCommand(list(loop), auto=False,
+                                           holes=holes or None,
                                            attrs=dict(attrs)))
         # Curve ids only when the offset kept the source's shape one-to-one:
         # with the boundary re-arranged there is no run to mirror.
@@ -285,7 +470,20 @@ class OffsetTool(Tool):
         # Snapshot undo: Delete/Add compose fine forward, but the hole edges
         # the ring creates don't reverse cleanly command-by-command (they
         # leaked on undo). One snapshot reverses exactly.
-        viewport.history.execute(SnapshotCompound(commands))
+        cmd = SnapshotCompound(commands)
+        viewport.history.execute(cmd)
+        sign = -1.0 if self.distance < 0 else 1.0
+        self._last = {
+            "cmd": cmd,
+            "base_face": self.base_face,
+            "loop": list(self._loop),
+            "normal": self._normal,
+            "chain": False,
+            "closed": True,
+            "ref_point": self._ref_point,
+            "ref_inward": self._ref_inward,
+            "sign": sign,
+        }
         self._reset()
         viewport.update()
 
@@ -303,15 +501,28 @@ class OffsetTool(Tool):
             return
         cam = getattr(viewport, "camera", None)
         eye = cam.eye() if cam is not None and hasattr(cam, "eye") else None
-        viewport.history.execute(
-            build_add_edges(viewport.scene, _segments(off, self._closed),
-                            eye=eye))
+        cmd = build_add_edges(viewport.scene, _segments(off, self._closed),
+                                eye=eye)
+        viewport.history.execute(cmd)
+        sign = -1.0 if self.distance < 0 else 1.0
+        self._last = {
+            "cmd": cmd,
+            "base_face": None,
+            "loop": list(self._loop),
+            "normal": self._normal,
+            "chain": True,
+            "closed": self._closed,
+            "ref_point": self._ref_point,
+            "ref_inward": self._ref_inward,
+            "sign": sign,
+        }
         self._reset()
         viewport.update()
 
     def _refuse(self, viewport) -> None:
         """Nothing survives the offset — say the limit instead of going quiet.
         A 20 cm kerb takes no 10 cm inward offset: 0.20 - 2 x 0.10 is zero."""
+        self._last = None
         sign = -1.0 if self.distance < 0 else 1.0
         room = max_offset_distance(self._loop, self._normal, sign)
         side = tr("inward") if sign > 0 else tr("outward")
@@ -366,6 +577,7 @@ class OffsetTool(Tool):
         self._chain = False
         self._closed = True
         self._armed = False
+        self._offset_reference = None
 
 
 def _segments(points: list, closed: bool) -> list:
@@ -448,6 +660,67 @@ def _run_from_edge(edge: Edge):
     back, _ = walk(edge.v0, edge)
     return list(reversed(back)) + [QVector3D(edge.v0.position),
                                    QVector3D(edge.v1.position)] + fwd, False
+
+
+def _place_holes(holes: list, regions: list, normal: QVector3D):
+    """Where each of a face's ``holes`` goes after an inward offset:
+    ``(per_region, strip)`` — the holes inside each of ``regions`` (in
+    order), and those left in the strip between the outline and the
+    regions. ``None`` when a hole crosses or touches a region's outline:
+    the offset reaches into the hole, and no face drawn from these loops
+    would be right (#537)."""
+    from core.arrangement import _point_in_polygon, plane_basis
+    u, w = plane_basis(normal)
+    origin = regions[0][0] if regions else QVector3D()
+
+    def flat(loop):
+        return [(QVector3D.dotProduct(p - origin, u),
+                 QVector3D.dotProduct(p - origin, w)) for p in loop]
+
+    flat_regions = [flat(r) for r in regions]
+    per_region = [[] for _ in regions]
+    strip = []
+    for hole in holes:
+        fh = flat(hole)
+        if any(_outlines_meet(fh, fr) for fr in flat_regions):
+            return None
+        # Outlines that do not meet are nested or apart: one vertex says
+        # which. A region inside the hole means the offset went past it.
+        for i, fr in enumerate(flat_regions):
+            if _point_in_polygon(fh[0], fr):
+                per_region[i].append(list(hole))
+                break
+            if _point_in_polygon(fr[0], fh):
+                return None
+        else:
+            strip.append(list(hole))
+    return per_region, strip
+
+
+def _outlines_meet(a: list, b: list, eps: float = 1e-6) -> bool:
+    """Whether two closed 2D outlines cross, touch or overlap anywhere."""
+    def orient(p, q, r):
+        v = (q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0])
+        return 0 if abs(v) < eps else (1 if v > 0 else -1)
+
+    def on_seg(p, q, r):
+        return (min(p[0], r[0]) - eps <= q[0] <= max(p[0], r[0]) + eps
+                and min(p[1], r[1]) - eps <= q[1] <= max(p[1], r[1]) + eps)
+
+    for i in range(len(a)):
+        p1, p2 = a[i], a[(i + 1) % len(a)]
+        for j in range(len(b)):
+            q1, q2 = b[j], b[(j + 1) % len(b)]
+            o1, o2 = orient(p1, p2, q1), orient(p1, p2, q2)
+            o3, o4 = orient(q1, q2, p1), orient(q1, q2, p2)
+            if o1 != o2 and o3 != o4:
+                return True
+            if (o1 == 0 and on_seg(p1, q1, p2)
+                    or o2 == 0 and on_seg(p1, q2, p2)
+                    or o3 == 0 and on_seg(q1, p1, q2)
+                    or o4 == 0 and on_seg(q1, p2, q2)):
+                return True
+    return False
 
 
 def _loop_extent(loop) -> float:

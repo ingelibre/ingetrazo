@@ -18,6 +18,7 @@ HINTS: dict = {
     "select": "Shift = add/remove, Ctrl = add. Double-click a group to edit it. F3 = search commands.",
     "change_axes": ("Click the new origin.",
                     "Click the red direction, then the green one."),
+    "scale_manager": "Type the X, Y, Z scale in the window; Enter or leaving the field applies it.",
     "outer_shell": ("Click a solid group or component (1).",
                     "Click another solid (2) — and more to add them."),
     "solid_union": ("Click a solid group or component (1).",
@@ -44,14 +45,17 @@ HINTS: dict = {
     "polygon": ("Click the centre. Arrows pick the plane, Down = perpendicular to an edge. Type the sides first.",
                 "Click the radius, or type it and Enter."),
     "arc": {
-        "idle": "Click the start point — on an edge to draw a tangent arc.",
+        "idle": "Click the start point — on an edge, a tangent arc. Type the segments first.",
         "end": "End point. Magenta = same distance; double-click rounds.",
         "bulge": "Click the bulge, or type it. 'Nr' = radius, 'Ns' = segments. Alt keeps the corner.",
     },
-    "arc3": ("Click the start point.", "Click a point the arc passes through, then the end."),
-    "center_arc": ("Click the centre.", "Click the start of the arc, then its end; or type the angle."),
-    "pie": ("Click the centre.", "Click the start of the wedge, then its end; or type the angle."),
-    "pushpull": ("Click a face and move. Ctrl keeps the starting face.",
+    "arc3": ("Click the start point. Type the segments first.", "Click a point the arc passes through, then the end."),
+    "center_arc": ("Click the centre. Type the segments first.", "Click the start of the arc, then its end; or type the angle."),
+    "pie": ("Click the centre. Type the segments first.", "Click the start of the wedge, then its end; or type the angle."),
+    # Ctrl is not spelled out here any more: the tool's own clause carries it
+    # — «Ctrl = [keep the base] / move the base» — the way the Tape's does,
+    # and repeating it ate the room the instruction needs (Marco, 2026-09-17).
+    "pushpull": ("Click a face and move.",
                  "Move, or type the distance and Enter. Double-click repeats the last."),
     "move": ("Click what to move (or select it first). Red + on a group = rotate it.",
              "Click the destination, or type the distance and Enter."),
@@ -65,8 +69,8 @@ HINTS: dict = {
     "offset": ("Click a face, or connected edges, to offset.",
                "Move to set the offset, or type it and Enter."),
     "fillet": {
-        "idle": "Click an edge to round it (or select edges first); type the radius and Enter.",
-        "sizing": "Move to set the radius, or type it and Enter; click to round. 'Ns' = segments.",
+        "idle": "Click an edge (or select edges first); type the size and Enter.",
+        "sizing": "Move to set the size, or type it and Enter; click to apply. 'Ns' = segments, '0.3p' = profile.",
     },
     # Short on purpose: the Ctrl clause these two now carry says what they
     # leave behind, so repeating "to pull a guide" here only ate the room
@@ -192,7 +196,8 @@ def _with_alt(text: str, key, tool, linear_mode) -> str:
     # eraser, Scale, Select, Position Texture — was being offered a toggle
     # that changes nothing for it, and the dead clause was what pushed
     # those lines past the end of the bar.
-    if not getattr(tool, "uses_snap", False):
+    if (not getattr(tool, "uses_snap", False)
+            or not getattr(tool, "allow_inferences", True)):
         return text
     clause = alt_inference_hint(linear_mode)
     return f"{text} | {clause}" if clause else text

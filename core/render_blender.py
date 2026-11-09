@@ -102,6 +102,20 @@ def _host(args: list, timeout: float = 10.0) -> Optional[str]:
     return r.stdout if r.returncode == 0 else None
 
 
+def app_bundle_executable(path: str) -> str:
+    """A macOS ``Blender.app`` chosen in the picker is a folder: the
+    program is ``Contents/MacOS/Blender`` inside it. Anywhere it lives
+    (Blender Launcher keeps one per version under ~/Documents, #328);
+    any other path comes back unchanged."""
+    p = Path(path)
+    if p.suffix.lower() == ".app" and p.is_dir():
+        for name in ("Blender", "blender"):
+            exe = p / "Contents" / "MacOS" / name
+            if exe.is_file():
+                return str(exe)
+    return path
+
+
 def find_blender(saved: str | None = None) -> Optional[BlenderFound]:
     """The Blender to render with, or None. A path the user chose wins."""
     if in_flatpak():
@@ -116,6 +130,8 @@ def find_blender(saved: str | None = None) -> Optional[BlenderFound]:
                  "--filesystem=home", BLENDER_FLATPAK_ID],
                 f"Flatpak {BLENDER_FLATPAK_ID}")
         return None
+    if saved:
+        saved = app_bundle_executable(saved)
     if saved and Path(saved).is_file():
         return BlenderFound([saved], saved)
     which = shutil.which("blender")

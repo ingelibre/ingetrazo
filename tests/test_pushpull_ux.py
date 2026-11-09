@@ -16,7 +16,7 @@ from core.history import AddFaceCommand, History
 from core.orient import is_closed, signed_volume
 from core.scene import Scene
 from tools.base import ToolContext
-from tools.pushpull import PushPullTool
+from tools.pushpull import _MIN_EXTRUDE, PushPullTool
 
 
 def V(x: float, y: float, z: float = 0.0) -> QVector3D:
@@ -30,6 +30,9 @@ class _StubViewport:
         self._pick = pick
 
     last_status = None
+    # Additive capture of what set_hover was last asked to shade — the
+    # preselection-arm tests read it; nothing existing asserts on it.
+    last_hover = None
 
     def update(self):
         pass
@@ -38,7 +41,7 @@ class _StubViewport:
         self.last_status = text
 
     def set_hover(self, entity):
-        pass
+        self.last_hover = entity
 
     suppressed: set | None = None
 
@@ -863,6 +866,50 @@ def test_unpainted_push_stays_unpainted():
     assert all(not f.attrs for f in scene.faces)
 
 
+def _painted_quadrants(scene, hist):
+    """A box whose top is split in four, each quadrant its own colour."""
+    _cube(scene, hist, size=4.0, height=3.0)
+    hist.execute(build_add_edges(scene, [(V(2, 0, 3), V(2, 4, 3)),
+                                         (V(0, 2, 3), V(4, 2, 3))]))
+    for (cx, cy), mat in {(1, 1): "yellow", (3, 1): "green",
+                          (3, 3): "red", (1, 3): "grey"}.items():
+        _quadrant(scene, cx, cy, 3.0).attrs["mat"] = mat
+
+
+def _quadrant(scene, cx, cy, z):
+    return next(f for f in scene.faces
+                if all(abs(v.z() - z) < 1e-9 for v in f.vertices)
+                and abs(f.centroid().x() - cx) < 1e-6
+                and abs(f.centroid().y() - cy) < 1e-6)
+
+
+def _paint_at(scene, z):
+    return sorted((round(f.centroid().x(), 6), round(f.centroid().y(), 6),
+                   f.attrs.get("mat"))
+                  for f in scene.faces
+                  if all(abs(v.z() - z) < 1e-9 for v in f.vertices))
+
+
+def test_quadrants_pushed_back_level_keep_their_lines_and_paint():
+    # #649 (@Rainjalin): one painted quadrant pulled up and pushed back
+    # level dissolved every dividing line, and the whole top took one
+    # colour. The lines between different paints are the user's.
+    scene = Scene()
+    hist = History(scene)
+    _painted_quadrants(scene, hist)
+    start = _paint_at(scene, 3.0)
+    assert len(start) == 4
+    _push(scene, _quadrant(scene, 3, 1, 3.0), 1.0)      # green up
+    _push(scene, _quadrant(scene, 1, 1, 3.0), 1.0)      # yellow up
+    # Side by side at the same height they stay two faces, two colours.
+    assert _paint_at(scene, 4.0) == [(1.0, 1.0, "yellow"), (3.0, 1.0, "green")]
+    _push(scene, _quadrant(scene, 3, 1, 4.0), -1.0)     # green back
+    _push(scene, _quadrant(scene, 1, 1, 4.0), -1.0)     # yellow back
+    assert _paint_at(scene, 3.0) == start
+    assert is_closed(scene.mesh)
+    assert abs(signed_volume(scene.mesh) - 48.0) < 1e-6
+
+
 # ---- The drag wireframe follows the same softening as the commit ------------
 
 def _ngon_face(scene, n, r=2.0):
@@ -1147,15 +1194,16 @@ class _EdgeInferViewport(_StubViewport):
 
     snap_threshold_px = 9.0
 
-    def __init__(self, scene, edge):
+    def __init__(self, scene, edge, scale=10.0):
         super().__init__(scene)
         self._hover_edge = edge
+        self._scale = scale
 
     def _world_to_pixel(self, world):
-        return (world.x() * 10.0, -world.z() * 10.0)
+        return (world.x() * self._scale, -world.z() * self._scale)
 
     def _project_to_lock_line(self, start, direction, px, py):
-        cursor = QVector3D(px / 10.0, start.y(), -py / 10.0)
+        cursor = QVector3D(px / self._scale, start.y(), -py / self._scale)
         d = direction.normalized()
         return start + d * QVector3D.dotProduct(cursor - start, d)
 
@@ -1191,11 +1239,898 @@ def test_hovering_an_edge_infers_distance_and_says_on_edge():
     tool._attached, tool._prism_cap = tool._classify_base(scene)
     tool._cap_positions = tool._cap_loop_positions(top)
 
-    vp = _EdgeInferViewport(scene, top_edge)
-    # Cursor at (7, ·, 5): the middle of the edge, 10 px from either corner.
-    ctx = ToolContext(viewport=vp, world=QVector3D(), screen=QPointF(70.0, -50.0),
+    vp = _EdgeInferViewport(scene, top_edge, scale=20.0)
+    # Cursor at (6.5, ·, 5): a quarter of the edge, 10 px from its corner
+    # and from its midpoint (which has its own cue, #863).
+    ctx = ToolContext(viewport=vp, world=QVector3D(), screen=QPointF(130.0, -100.0),
                       modifiers=Qt.NoModifier, snap=None)
     d = tool._infer_reference_distance(ctx)
     assert d is not None and abs(d - 2.0) < 1e-6
     pt, kind = tool.inference_marker()
-    assert kind == "edge" and abs(pt.z() - 5.0) < 1e-6 and abs(pt.x() - 7.0) < 1e-6
+    assert kind == "edge" and abs(pt.z() - 5.0) < 1e-6 and abs(pt.x() - 6.5) < 1e-6
+
+
+# ---- Tiny push: a commit click that does nothing says so ----------------------
+
+# Fix 5, "Hint on tiny pushes": mid-drag, a second click with |extrusion| below
+# _MIN_EXTRUDE silently did nothing — the drag stayed alive with no word, and a
+# click that does nothing with no word reads as a broken tool. The status bar
+# flashes ONE hint per drag; the drag itself is unchanged.
+
+_TINY_PUSH_HINT = "Too small a push — drag further or type a distance"
+
+
+def test_tiny_push_flashes_hint_once():
+    scene = Scene()
+    hist = History(scene)
+    _cube(scene, hist, height=3.0)
+    top = _top(scene, 3.0)
+    vp = _StubViewport(scene)
+    tool = _locked_tool(scene, top, _MIN_EXTRUDE * 0.5)
+    tool.on_click(_ctx(vp))                 # the tiny "commit"
+    assert vp.last_status == _TINY_PUSH_HINT
+    assert tool.dragging is True            # the drag stays alive
+    assert tool.base_face is top
+    assert abs(tool.extrusion - _MIN_EXTRUDE * 0.5) < 1e-12
+
+
+def test_tiny_push_keeps_drag_alive():
+    # The hint must not disturb the drag: nothing moves, and the SAME drag can
+    # still commit once dragged further. Tiny NEGATIVE here too — |extrusion|
+    # is what matters, not the sign.
+    scene = Scene()
+    hist = History(scene)
+    _cube(scene, hist, height=3.0)
+    top = _top(scene, 3.0)
+    before = _fingerprint(scene)
+    vp = _StubViewport(scene)
+    tool = _locked_tool(scene, top, -_MIN_EXTRUDE * 0.5)
+    tool.on_click(_ctx(vp))
+    assert vp.last_status == _TINY_PUSH_HINT
+    assert tool.dragging is True
+    assert _fingerprint(scene) == before    # no geometry changed
+    tool.extrusion = 1.5                    # dragged further, still the same drag
+    tool.on_click(_ctx(vp))
+    assert tool.dragging is False           # it committed in the end
+    assert _top(scene, 4.5) is not None
+
+
+def test_second_tiny_click_does_not_reflash():
+    # ONE flash per drag: repeating it on every tiny click is its own
+    # annoyance.
+    scene = Scene()
+    hist = History(scene)
+    _cube(scene, hist, height=3.0)
+    top = _top(scene, 3.0)
+    vp = _StubViewport(scene)
+    tool = _locked_tool(scene, top, _MIN_EXTRUDE * 0.5)
+    tool.on_click(_ctx(vp))
+    assert vp.last_status == _TINY_PUSH_HINT
+    vp.last_status = None                   # sentinel: nothing may re-set it
+    tool.on_click(_ctx(vp))                 # still tiny, still the same drag
+    assert vp.last_status is not _TINY_PUSH_HINT
+
+
+def test_new_drag_flashes_again():
+    # The once-limit is per DRAG, not per tool: a fresh drag starts over.
+    scene = Scene()
+    hist = History(scene)
+    _cube(scene, hist, height=3.0)
+    vp = _StubViewport(scene)
+
+    tool = _locked_tool(scene, _top(scene, 3.0), _MIN_EXTRUDE * 0.5)
+    tool.on_click(_ctx(vp))                 # drag 1: tiny click
+    assert vp.last_status == _TINY_PUSH_HINT
+
+    tool.extrusion = 2.0                    # dragged further; commit
+    tool.on_click(_ctx(vp))
+    assert tool.dragging is False
+
+    tool.hovered_face = _top(scene, 5.0)    # drag 2, on the moved top
+    tool.on_click(_ctx(vp))                 # starts the new drag
+    assert tool.dragging is True
+    vp.last_status = None                   # forget drag 1's flash
+    tool.extrusion = _MIN_EXTRUDE * 0.5
+    tool.on_click(_ctx(vp))                 # tiny click in the NEW drag
+    assert vp.last_status == _TINY_PUSH_HINT
+
+
+def test_normal_commit_no_tiny_hint():
+    # A real commit (|extrusion| >= _MIN_EXTRUDE) never says "too small".
+    scene = Scene()
+    hist = History(scene)
+    _cube(scene, hist, height=3.0)
+    vp = _StubViewport(scene)
+    tool = _locked_tool(scene, _top(scene, 3.0), 2.0)
+    tool.on_click(_ctx(vp))
+    assert tool.dragging is False           # it did commit...
+    assert _top(scene, 5.0) is not None
+    assert vp.last_status != _TINY_PUSH_HINT
+
+
+# ---- Hot retype: adjust the last push by typing --------------------------------
+#
+# Fix 2: right after a Push/Pull commit the distance stays hot — typing a
+# number + Enter in the Measurements box REPLACES the committed distance (the
+# push is undone and re-committed at the typed value; a positive keeps the
+# committed direction, a negative reverses it), and the undo history holds
+# exactly ONE step for the push however many retypes. The window closes at a
+# click that starts a new drag, Esc, or the user's own undo — the contract
+# Rotate already has (test_hot_retype_redoes_the_rotation).
+
+
+def _has_top(scene, z):
+    # ``_top`` raises when no face sits at z; the retype tests also need to
+    # say "the old cap is GONE".
+    return any(len(f.vertices) == 4
+               and all(abs(v.z() - z) < 1e-9 for v in f.vertices)
+               for f in scene.faces)
+
+
+def test_hot_retype_replaces_the_last_push():
+    # Commit +2, then type 3: the push is redone at 3 — the stack entry is
+    # replaced, not stacked on (the rotate convention).
+    scene = Scene()
+    hist = History(scene)
+    _cube(scene, hist, height=3.0)
+    top = _top(scene, 3.0)
+    vp = _StubViewport(scene)
+    PushPullTool.last_distance = None
+    tool = _locked_tool(scene, top, 2.0)
+    tool.on_click(_ctx(vp))                    # the commit: +2.0
+    assert tool.dragging is False
+    assert _top(scene, 5.0) is not None
+    depth = len(vp.history.undo_stack)
+
+    assert tool.on_value(vp, 3.0) is True      # retype: 3.0 instead of 2.0
+    assert _top(scene, 6.0) is not None        # base + 3.0
+    assert not _has_top(scene, 5.0)            # the 2.0 push is gone
+    assert len(vp.history.undo_stack) == depth     # replaced, not stacked
+    assert PushPullTool.last_distance == 3.0
+
+
+def test_hot_retype_negative_reverses_the_push():
+    # A typed negative flips the side: +2 committed upward, "-3" lands 3 INTO
+    # the solid. A tall cube, so the reversed push stays clear of the
+    # collapse-at-the-floor limit.
+    scene = Scene()
+    hist = History(scene)
+    _cube(scene, hist, height=4.0)
+    top = _top(scene, 4.0)
+    vp = _StubViewport(scene)
+    PushPullTool.last_distance = None
+    tool = _locked_tool(scene, top, 2.0)
+    tool.on_click(_ctx(vp))                    # top now at 6.0
+    assert _top(scene, 6.0) is not None
+
+    assert tool.on_value(vp, -3.0) is True     # 3.0 the OTHER way
+    assert _top(scene, 1.0) is not None        # 4.0 − 3.0
+    assert not _has_top(scene, 6.0)
+    assert PushPullTool.last_distance == -3.0
+
+
+def test_retype_of_retype_keeps_one_undo_step():
+    scene = Scene()
+    hist = History(scene)
+    _cube(scene, hist, height=3.0)
+    top = _top(scene, 3.0)
+    vp = _StubViewport(scene)
+    PushPullTool.last_distance = None
+    tool = _locked_tool(scene, top, 2.0)
+    tool.on_click(_ctx(vp))
+    depth = len(vp.history.undo_stack)
+
+    assert tool.on_value(vp, 3.0) is True
+    assert tool.on_value(vp, 4.0) is True      # and again
+    assert _top(scene, 7.0) is not None        # 3.0 + 4.0
+    assert len(vp.history.undo_stack) == depth     # still ONE step for the push
+    assert PushPullTool.last_distance == 4.0
+
+
+def test_a_click_closes_the_retype_window():
+    # A click that starts a NEW drag owns the Measurements box again: the
+    # typed number commits that drag (the mid-drag semantics), it does not
+    # adjust the old push.
+    scene = Scene()
+    hist = History(scene)
+    _cube(scene, hist, height=3.0)
+    top = _top(scene, 3.0)
+    vp = _StubViewport(scene)
+    tool = _locked_tool(scene, top, 2.0)
+    tool.on_click(_ctx(vp))                    # +2.0, top at 5.0
+    depth = len(vp.history.undo_stack)
+
+    tool.hovered_face = _top(scene, 5.0)       # a fresh click, a new drag
+    tool.on_click(_ctx(vp))
+    assert tool.dragging is True
+
+    assert tool.on_value(vp, 3.0) is True      # commits the NEW drag at 3.0
+    assert tool.dragging is False
+    assert _top(scene, 8.0) is not None        # 3 + 2 + 3: both pushes stand
+    # a second entry landed — the new push, not a retype of the first
+    assert len(vp.history.undo_stack) == depth + 1
+
+
+def test_esc_closes_the_retype_window():
+    scene = Scene()
+    hist = History(scene)
+    _cube(scene, hist, height=3.0)
+    top = _top(scene, 3.0)
+    vp = _StubViewport(scene)
+    tool = _locked_tool(scene, top, 2.0)
+    tool.on_click(_ctx(vp))
+    before = _fingerprint(scene)
+
+    tool.on_cancel(vp)
+    assert tool.on_value(vp, 3.0) is False
+    assert _fingerprint(scene) == before       # the push stands, untouched
+
+
+def test_user_undo_closes_the_retype_window():
+    # The user's own undo pops the push off the stack top: a retype has
+    # nothing left to replace.
+    scene = Scene()
+    hist = History(scene)
+    _cube(scene, hist, height=3.0)
+    top = _top(scene, 3.0)
+    vp = _StubViewport(scene)
+    tool = _locked_tool(scene, top, 2.0)
+    tool.on_click(_ctx(vp))
+
+    assert vp.history.undo() is True           # the user undoes the push
+    assert tool.on_value(vp, 3.0) is False
+    assert _top(scene, 3.0) is not None        # still undone, not redone
+    assert not _has_top(scene, 5.0)
+
+
+def test_one_undo_after_retype_returns_to_before_the_push():
+    # However many retypes, ONE undo steps back over all of them: back to
+    # the plain cube, not to an intermediate distance.
+    scene = Scene()
+    hist = History(scene)
+    _cube(scene, hist, height=3.0)
+    top = _top(scene, 3.0)
+    vp = _StubViewport(scene)
+    before = _fingerprint(scene)
+    tool = _locked_tool(scene, top, 2.0)
+    tool.on_click(_ctx(vp))
+    assert tool.on_value(vp, 3.0) is True
+    assert _top(scene, 6.0) is not None
+
+    assert vp.history.undo() is True           # ONE undo, through the retype
+    assert _fingerprint(scene) == before       # the pre-push cube, exactly
+    assert _top(scene, 3.0) is not None
+
+
+def test_typing_mid_drag_still_commits_the_typed_distance():
+    # Regression, the pre-existing semantics: typing DURING a drag commits
+    # the drag at the typed distance, keeping the drag's sign.
+    scene = Scene()
+    hist = History(scene)
+    _cube(scene, hist, height=3.0)
+    vp = _StubViewport(scene)
+    tool = _locked_tool(scene, _top(scene, 3.0), 0.5)
+
+    assert tool.on_value(vp, 2.0) is True
+    assert tool.dragging is False
+    assert _top(scene, 5.0) is not None        # 3 + 2.0, not 3 + 0.5
+
+
+def test_retype_window_takes_no_tuple_and_no_zero():
+    # A 3D delta is not a push distance, and 0 would collapse the solid:
+    # both are refused, and neither adjusts anything.
+    scene = Scene()
+    hist = History(scene)
+    _cube(scene, hist, height=3.0)
+    top = _top(scene, 3.0)
+    vp = _StubViewport(scene)
+    tool = _locked_tool(scene, top, 2.0)
+    tool.on_click(_ctx(vp))
+    before = _fingerprint(scene)
+    depth = len(vp.history.undo_stack)
+
+    assert tool.on_value(vp, (1.0, 2.0, 3.0)) is False   # a 3D delta
+    assert tool.on_value(vp, 0.0) is False               # no adjust to zero
+    assert _fingerprint(scene) == before
+    assert len(vp.history.undo_stack) == depth
+
+
+# ---- Press-drag-release commits the push --------------------------------------
+#
+# Fix 1: releasing the left button mid-drag commits the push WHEN the gesture
+# was a real drag — >= ~6 px of screen motion from the press AND an extrusion
+# of at least _MIN_EXTRUDE. A release with no real motion does nothing, so
+# the click-click rhythm keeps working; motion that built no push flashes the
+# tiny-push hint once per drag; a release after Esc — or trailing any commit —
+# is a no-op. Driven through the tool's own on_click/on_hover/on_release, with
+# a stub viewport whose lock-line projection turns pixels into extrusion.
+
+#: Below this many pixels between press and release, the gesture is a click.
+_DRAG_MOTION_PX = 6.0
+
+
+def _px(vp, x, y, modifiers=Qt.NoModifier):
+    """A context whose screen point is the REAL pixel — a press or a hover
+    frame at (x, y)."""
+    return ToolContext(viewport=vp, world=QVector3D(), screen=QPointF(x, y),
+                       modifiers=modifiers, snap=None)
+
+
+class _DragViewport(_StubViewport):
+    """Stub whose lock-line projection maps horizontal screen motion to
+    extrusion: the cursor at (100 + 10*k, 100) reads as a push of k/10 m
+    along the drag's normal. Vertical motion maps to nothing."""
+
+    snap_threshold_px = 9.0
+
+    def _world_to_pixel(self, world):
+        return (world.x() * 10.0, -world.z() * 10.0)
+
+    def _project_to_lock_line(self, start, direction, px, py):
+        d = QVector3D(direction).normalized()
+        return QVector3D(start) + d * ((px - 100.0) / 100.0)
+
+
+class _FlatDragViewport(_StubViewport):
+    """The cursor crosses the screen, but the projection lands every pixel
+    BESIDE the push axis: plenty of motion, ~0 extrusion."""
+
+    snap_threshold_px = 9.0
+
+    def _world_to_pixel(self, world):
+        return (world.x() * 10.0, -world.z() * 10.0)
+
+    def _project_to_lock_line(self, start, direction, px, py):
+        d = QVector3D(direction).normalized()
+        side = QVector3D.crossProduct(d, QVector3D(1.0, 0.0, 0.0))
+        if side.length() < 1e-6:
+            side = QVector3D(0.0, 1.0, 0.0)
+        return QVector3D(start) + side.normalized() * ((px - 100.0) / 100.0)
+
+
+def _pressed_tool(scene, vp, px=100.0, py=100.0):
+    """A drag started the way the gesture starts it: hover preset, on_click
+    carrying the press pixel."""
+    tool = PushPullTool()
+    tool.hovered_face = _top(scene, 3.0)
+    tool.on_click(_px(vp, px, py))
+    assert tool.dragging is True
+    return tool
+
+
+def test_release_after_real_drag_commits():
+    # Rule 1: 50 px of real motion building a +0.5 m push — the release
+    # commits it (one undo step) and leaves the distance HOT: typing right
+    # after replaces the committed push.
+    scene = Scene()
+    hist = History(scene)
+    _cube(scene, hist, height=3.0)
+    vp = _DragViewport(scene)
+    PushPullTool.last_distance = None
+    tool = _pressed_tool(scene, vp)
+    tool.on_hover(_px(vp, 150.0, 100.0))
+    assert abs(tool.extrusion - 0.5) < 1e-9       # the harness reads the drag
+    depth = len(vp.history.undo_stack)
+
+    tool.on_release(vp)                           # release mid-drag commits
+
+    assert tool.dragging is False
+    assert _top(scene, 3.5) is not None           # the geometry moved
+    assert len(vp.history.undo_stack) == depth + 1  # exactly one undo step
+    # Hot retype is armed by the release-commit, same as a click-commit.
+    assert tool.on_value(vp, 3.0) is True
+    assert _top(scene, 6.0) is not None
+    assert not _has_top(scene, 3.5)               # replaced, not stacked
+    assert len(vp.history.undo_stack) == depth + 1
+
+
+def test_release_honours_a_tapped_keep_mode(monkeypatch):
+    # The Ctrl TAP arms "keep the base" with no key held (#322). A release
+    # commit must read Ctrl the way the commit click does — held OR tapped —
+    # or the tapped mode is silently dropped and the base moves after all.
+    from PySide6.QtWidgets import QApplication
+    monkeypatch.setattr(QApplication, "queryKeyboardModifiers",
+                        staticmethod(lambda: Qt.NoModifier))
+    scene = Scene()
+    hist = History(scene)
+    _cube(scene, hist, height=3.0)
+    vp = _DragViewport(scene)
+    PushPullTool.last_distance = None
+    tool = _pressed_tool(scene, vp)
+    tool._keep_mode = True                        # Ctrl tapped mid-drag
+    tool.on_hover(_px(vp, 150.0, 100.0))
+    assert abs(tool.extrusion - 0.5) < 1e-9
+
+    tool.on_release(vp)
+
+    assert tool.dragging is False
+    assert _top(scene, 3.5) is not None           # the new cap
+    assert _top(scene, 3.0) is not None           # the base face was kept
+    assert tool._keep_mode is False               # spent by the push it armed
+
+
+def test_release_without_motion_keeps_dragging():
+    # Rule 2: the release lands on the press pixel — no motion, no commit,
+    # and the click-click rhythm still works afterwards.
+    scene = Scene()
+    hist = History(scene)
+    _cube(scene, hist, height=3.0)
+    top = _top(scene, 3.0)
+    vp = _DragViewport(scene)
+    tool = _pressed_tool(scene, vp)
+    tool.on_release(vp)
+
+    assert tool.dragging is True                  # nothing happened
+    assert tool.base_face is top
+    assert len(vp.history.undo_stack) == 0
+
+    tool.on_hover(_px(vp, 150.0, 100.0))          # drag further, then...
+    tool.on_click(_px(vp, 150.0, 100.0))          # ...the second click commits
+    assert tool.dragging is False
+    assert _top(scene, 3.5) is not None
+
+
+def test_release_with_jitter_only_does_not_commit():
+    # Rule 2: a ~3 px wobble is not a drag — even though each jitter frame
+    # builds extrusion enough to commit by distance alone, the MOTION gate
+    # holds it: still dragging, nothing committed, nothing said.
+    scene = Scene()
+    hist = History(scene)
+    _cube(scene, hist, height=3.0)
+    vp = _DragViewport(scene)
+    tool = _pressed_tool(scene, vp)
+    for x, y in ((102.0, 100.0), (100.0, 102.0), (98.0, 99.0)):
+        tool.on_hover(_px(vp, x, y))
+    assert abs(tool.extrusion) >= _MIN_EXTRUDE    # distance alone would commit
+    tool.on_release(vp)
+
+    assert tool.dragging is True
+    assert len(vp.history.undo_stack) == 0
+    assert vp.last_status is not _TINY_PUSH_HINT  # no motion, no hint either
+
+
+def test_release_with_motion_but_tiny_extrusion_hints():
+    # Rule 3: 70 px of motion that built no push — the release flashes the
+    # tiny-push hint ONCE and keeps the drag alive.
+    scene = Scene()
+    hist = History(scene)
+    _cube(scene, hist, height=3.0)
+    vp = _FlatDragViewport(scene)
+    tool = _pressed_tool(scene, vp)
+    tool.on_hover(_px(vp, 170.0, 100.0))
+    assert abs(tool.extrusion) < _MIN_EXTRUDE     # motion, but no push
+    tool.on_release(vp)
+
+    assert vp.last_status == _TINY_PUSH_HINT
+    assert tool.dragging is True
+    assert len(vp.history.undo_stack) == 0
+
+    vp.last_status = None                         # sentinel
+    tool.on_hover(_px(vp, 220.0, 100.0))
+    tool.on_release(vp)                           # still tiny, same drag
+    assert vp.last_status is not _TINY_PUSH_HINT  # once per drag only
+    assert tool.dragging is True
+
+
+def test_release_after_cancel_is_a_no_op():
+    # Rule 4: Esc already cancelled the drag; the button coming up afterwards
+    # must not commit anything.
+    scene = Scene()
+    hist = History(scene)
+    _cube(scene, hist, height=3.0)
+    vp = _DragViewport(scene)
+    tool = _pressed_tool(scene, vp)
+    tool.on_hover(_px(vp, 150.0, 100.0))
+    tool.on_cancel(vp)
+    assert tool.dragging is False
+    before = _fingerprint(scene)
+
+    tool.on_release(vp)
+
+    assert _fingerprint(scene) == before
+    assert tool.dragging is False
+    assert len(vp.history.undo_stack) == 0
+
+
+def test_trailing_release_after_double_click_commit_is_no_op():
+    # Rule 5: a quick click-click commits; the release trailing that commit
+    # click must not commit again.
+    scene = Scene()
+    hist = History(scene)
+    _cube(scene, hist, height=3.0)
+    vp = _DragViewport(scene)
+    tool = _pressed_tool(scene, vp)
+    tool.on_hover(_px(vp, 150.0, 100.0))
+    tool.on_click(_px(vp, 150.0, 100.0))          # the commit click
+    assert tool.dragging is False
+    assert _top(scene, 3.5) is not None
+    depth = len(vp.history.undo_stack)
+    before = _fingerprint(scene)
+
+    tool.on_release(vp)                           # its trailing release
+
+    assert len(vp.history.undo_stack) == depth    # no double commit
+    assert _fingerprint(scene) == before
+    assert tool.dragging is False
+
+
+# ---- Dotted inference guide lines during the drag ------------------------------
+#
+# Fix 3: the distance inference pins the push to model geometry and the overlay
+# marks the reference point — but the LEVEL itself, the dotted "level with"
+# line from that reference to where the drag's anchor now sits, was exposed
+# nowhere. The tool says it as observable state: ``inference_guide_lines()``
+# returns exactly one segment ``(reference_point, moved_anchor_point, kind)``
+# while a drag holds an ACTIVE inference — the moved anchor being the drag
+# anchor translated by normal*extrusion — and ``[]`` otherwise (idle, or
+# mid-drag with nothing engaged). ``kind`` is the same string the inference
+# marker carries ("vertex" / "edge" / "face" / …).
+
+
+def _guide_lines(tool):
+    # The hook does not exist yet: it must fail as an INEQUALITY against the
+    # expected value, not blow up as an AttributeError (a vacuous red).
+    fn = getattr(tool, "inference_guide_lines", lambda: ["<missing>"])
+    return fn()
+
+
+def _dist(a: QVector3D, b: QVector3D) -> float:
+    return (a - b).length()
+
+
+class _GuideViewport(_StubViewport):
+    """The vertex-inference stub (_InferViewport) plus the lock-line
+    projection on_hover falls back to when no reference engages: the
+    cursor's (x, z) world point dropped onto the push axis."""
+
+    snap_threshold_px = 9.0
+
+    def _world_to_pixel(self, world):
+        return (world.x() * 10.0, -world.z() * 10.0)
+
+    def _project_to_lock_line(self, start, direction, px, py):
+        d = QVector3D(direction).normalized()
+        cursor = QVector3D(px / 10.0, start.y(), -py / 10.0)
+        return QVector3D(start) + d * QVector3D.dotProduct(cursor - start, d)
+
+
+def test_inference_guide_lines_empty_when_idle():
+    tool = PushPullTool()
+    assert tool.dragging is False                 # no drag, no inference...
+    assert tool.inference_marker() is None
+    assert _guide_lines(tool) == []
+
+
+def test_inference_guide_lines_empty_without_inference():
+    scene = Scene()
+    hist = History(scene)
+    _cube(scene, hist, height=3.0)
+    vp = _GuideViewport(scene)
+    tool = _locked_tool(scene, _top(scene, 3.0), 0.5)
+
+    # Mid-drag over empty space: a real extrusion (cursor (200, -40) reads
+    # +1.0 along the normal) but no vertex near, no edge, no face picked —
+    # the EMPTY result must key on the absent inference, not the drag.
+    tool.on_hover(_px(vp, 200.0, -40.0))
+    assert tool.dragging is True
+    assert abs(tool.extrusion - 1.0) < 1e-6        # the drag is live...
+    assert tool.inference_marker() is None         # ...with nothing engaged
+    assert _guide_lines(tool) == []
+
+
+def test_inference_guide_lines_with_vertex_inference():
+    scene = Scene()
+    hist = History(scene)
+    _cube(scene, hist, height=3.0)                 # cube A, top z=3
+    other = [V(6, 0, 0), V(8, 0, 0), V(8, 2, 0), V(6, 2, 0)]
+    hist.execute(build_add_edges(
+        scene, [(other[i], other[(i + 1) % 4]) for i in range(4)],
+        detect_faces=False, extra=[AddFaceCommand(list(other))]))
+    ref = next(f for f in scene.faces
+               if all(abs(v.z()) < 1e-9 for v in f.vertices)
+               and min(v.x() for v in f.vertices) >= 5.999)
+    _push(scene, ref, 5.0 if ref.normal().z() > 0 else -5.0)  # block top z=5
+
+    vp = _GuideViewport(scene)
+    tool = _locked_tool(scene, _top(scene, 3.0), 0.5)
+    tool._prism_verts = tool._cap_vertices(scene)  # as a real on_click arms it
+
+    # The real drag path: the cursor on the block's top corner (6, 0, 5).
+    tool.on_hover(_px(vp, 60.0, -50.0))
+    marker = tool.inference_marker()
+    assert marker is not None and marker[1] == "vertex"   # locked onto it
+    assert abs(tool.extrusion - 2.0) < 1e-6        # hover built the extrusion
+
+    guides = _guide_lines(tool)
+    assert len(guides) == 1 and len(guides[0]) == 3
+    reference, moved, kind = guides[0]
+    assert kind == "vertex"
+    assert _dist(reference, V(6, 0, 5)) < 1e-6     # the inferred corner itself
+    # The moved anchor: anchor + normal*extrusion — and since on_hover builds
+    # the extrusion from the inference (the corner projected onto the push
+    # axis), it sits level with the vertex.
+    assert _dist(moved, tool._anchor + tool._normal * tool.extrusion) < 1e-6
+    assert _dist(moved, V(2, 2, 5)) < 1e-6
+
+
+def test_inference_guide_lines_cleared_after_commit():
+    scene = Scene()
+    hist = History(scene)
+    _cube(scene, hist, height=3.0)
+    other = [V(6, 0, 0), V(8, 0, 0), V(8, 2, 0), V(6, 2, 0)]
+    hist.execute(build_add_edges(
+        scene, [(other[i], other[(i + 1) % 4]) for i in range(4)],
+        detect_faces=False, extra=[AddFaceCommand(list(other))]))
+    ref = next(f for f in scene.faces
+               if all(abs(v.z()) < 1e-9 for v in f.vertices)
+               and min(v.x() for v in f.vertices) >= 5.999)
+    _push(scene, ref, 5.0 if ref.normal().z() > 0 else -5.0)
+
+    vp = _GuideViewport(scene)
+    tool = _locked_tool(scene, _top(scene, 3.0), 0.5)
+    tool._prism_verts = tool._cap_vertices(scene)
+
+    tool.on_hover(_px(vp, 60.0, -50.0))            # vertex inference engaged
+    assert tool.inference_marker() is not None     # the guide line is up
+    tool.on_click(_ctx(vp))                        # the commit click
+
+    assert tool.dragging is False
+    assert _top(scene, 5.0) is not None            # the +2 push landed
+    assert tool.inference_marker() is None
+    assert _guide_lines(tool) == []
+
+
+def test_inference_guide_lines_with_face_inference():
+    # The second kind for free: the on-face fallback stub already makes
+    # _infer_reference_distance engage a face plane, so the guide line must
+    # carry that hit and its own kind.
+    scene = Scene()
+    hist = History(scene)
+    _cube(scene, hist, height=3.0)                 # cube top z=3
+    ref_loop = [V(20, 20, 7), V(24, 20, 7), V(24, 24, 7), V(20, 24, 7)]
+    hist.execute(build_add_edges(
+        scene, [(ref_loop[i], ref_loop[(i + 1) % 4]) for i in range(4)],
+        detect_faces=False, extra=[AddFaceCommand(list(ref_loop))]))
+    ref = next(f for f in scene.faces
+               if all(abs(v.z() - 7) < 1e-9 for v in f.vertices))
+
+    vp = _FaceInferViewport(scene, ref)
+    tool = _locked_tool(scene, _top(scene, 3.0), 0.5)
+
+    tool.on_hover(_px(vp, 220.0, -70.0))           # the face plane, z=7
+    marker = tool.inference_marker()
+    assert marker is not None and marker[1] == "face"
+    assert abs(tool.extrusion - 4.0) < 1e-6
+
+    guides = _guide_lines(tool)
+    assert len(guides) == 1 and len(guides[0]) == 3
+    reference, moved, kind = guides[0]
+    assert kind == "face"
+    assert _dist(reference, V(22, 1, 7)) < 1e-6    # the ray∩plane hit
+    assert _dist(moved, tool._anchor + tool._normal * tool.extrusion) < 1e-6
+    assert _dist(moved, V(2, 2, 7)) < 1e-6
+
+
+# ---- Preselection: Push/Pull arms on the preselected face -----------------------
+#
+# The SketchUp preselection workflow: Push/Pull activated while EXACTLY one
+# Face is selected (and it lives in the loose mesh) arms on it — the face is
+# hover-shaded, idle hovers do NOT steal the arm (no picking under the
+# cursor), and the FIRST CLICK ANYWHERE starts the drag on the armed face,
+# not on whatever sits under the cursor. The arm clears when the drag
+# starts, on Esc/cancel, and when the armed face disappears (undo) the next
+# idle hover falls back to normal picking. A selection that is not exactly
+# one Face (empty, several items, an edge, a Group) arms nothing — today's
+# behaviour.
+
+
+def _front(scene):
+    return next(f for f in scene.faces
+                if len(f.vertices) == 4
+                and all(abs(v.y()) < 1e-9 for v in f.vertices))
+
+
+def test_preselected_face_arms_the_tool():
+    scene = Scene()
+    hist = History(scene)
+    _cube(scene, hist, height=3.0)
+    top = _top(scene, 3.0)
+    scene.select([top])                        # the preselection
+
+    vp = _StubViewport(scene)                  # nothing under any cursor
+    tool = PushPullTool()
+    tool.on_activate(vp)
+
+    assert tool.hovered_face is top            # armed, not idle
+    assert tool.dragging is False
+    assert vp.last_hover is top                # the hover shade says it too
+
+
+def test_idle_hover_does_not_steal_the_arm():
+    scene = Scene()
+    hist = History(scene)
+    _cube(scene, hist, height=3.0)
+    top = _top(scene, 3.0)
+    scene.select([top])
+    vp = _StubViewport(scene, pick=_front(scene))   # the cursor is over the FRONT
+    tool = PushPullTool()
+    tool.on_activate(vp)
+    assert tool.hovered_face is top
+
+    tool.on_hover(_ctx(vp))                    # an idle frame elsewhere
+
+    assert tool.hovered_face is top            # the arm holds...
+    assert vp.last_hover is top                # ...and so does the shading
+
+
+def test_first_click_anywhere_starts_the_arm_drag():
+    scene = Scene()
+    hist = History(scene)
+    _cube(scene, hist, height=3.0)
+    top = _top(scene, 3.0)
+    scene.select([top])
+    vp = _StubViewport(scene)                  # pick=None: empty space
+    tool = PushPullTool()
+    tool.on_activate(vp)
+    assert tool.hovered_face is top
+
+    tool.on_click(_ctx(vp))                    # a click over NOTHING
+
+    assert tool.dragging is True               # the drag started anyway
+    assert tool.base_face is top               # ...on the ARMED face
+
+    tool.extrusion = 2.0
+    tool.on_click(_ctx(vp))                    # the commit click
+    assert _top(scene, 5.0) is not None
+
+    # The arm is spent: the next idle hover picks normally again.
+    vp2 = _StubViewport(scene, pick=_front(scene))
+    tool.on_hover(_ctx(vp2))
+    assert tool.hovered_face is _front(scene)
+
+
+def test_commit_from_armed_start_is_a_normal_push():
+    scene = Scene()
+    hist = History(scene)
+    _cube(scene, hist, height=3.0)
+    top = _top(scene, 3.0)
+    scene.select([top])
+    vp = _StubViewport(scene)
+    PushPullTool.last_distance = None
+    tool = PushPullTool()
+    tool.on_activate(vp)
+    tool.on_click(_ctx(vp))                    # the armed start
+    tool.extrusion = 2.0
+    depth = len(vp.history.undo_stack)
+    tool.on_click(_ctx(vp))                    # the commit
+
+    assert _top(scene, 5.0) is not None        # the geometry moved
+    assert len(vp.history.undo_stack) == depth + 1   # exactly one undo step
+    # The distance stays hot: typing right after replaces the push.
+    assert tool.on_value(vp, 3.0) is True
+    assert _top(scene, 6.0) is not None
+    assert not _has_top(scene, 5.0)
+
+
+def test_no_arm_without_single_face_selection():
+    # Only EXACTLY one Face in the loose mesh arms: nothing, two faces, an
+    # edge, a Group — each leaves the tool unarmed, today's behaviour.
+
+    # (a) nothing selected
+    scene = Scene()
+    hist = History(scene)
+    _cube(scene, hist, height=3.0)
+    tool = PushPullTool()
+    tool.on_activate(_StubViewport(scene))
+    assert tool.hovered_face is None
+
+    # (b) two faces selected
+    scene.select([_top(scene, 3.0), _front(scene)])
+    tool = PushPullTool()
+    tool.on_activate(_StubViewport(scene))
+    assert tool.hovered_face is None
+
+    # (c) an edge selected
+    scene2 = Scene()
+    hist2 = History(scene2)
+    _cube(scene2, hist2, height=3.0)
+    scene2.select([scene2.mesh.edges[0]])
+    tool = PushPullTool()
+    tool.on_activate(_StubViewport(scene2))
+    assert tool.hovered_face is None
+
+    # (d) a Group selected
+    g = _boxed_group(scene2)
+    scene2.select([g])
+    tool = PushPullTool()
+    tool.on_activate(_StubViewport(scene2))
+    assert tool.hovered_face is None
+
+
+def test_esc_drops_the_arm():
+    scene = Scene()
+    hist = History(scene)
+    _cube(scene, hist, height=3.0)
+    top = _top(scene, 3.0)
+    scene.select([top])
+    vp = _StubViewport(scene)
+    tool = PushPullTool()
+    tool.on_activate(vp)
+    assert tool.hovered_face is top
+
+    tool.on_cancel(vp)                         # Esc
+
+    assert tool.hovered_face is None           # the arm is gone
+    tool.on_click(_ctx(vp))                    # no hover pick under the cursor
+    assert tool.dragging is False              # ...so the click does nothing
+
+
+def test_dead_armed_face_falls_back():
+    scene = Scene()
+    hist = History(scene)
+    _cube(scene, hist, height=3.0)
+    top = _top(scene, 3.0)
+    scene.select([top])
+    vp = _StubViewport(scene)
+    tool = PushPullTool()
+    tool.on_activate(vp)
+    assert tool.hovered_face is top
+
+    scene.mesh.remove_face(top)                # undo took the armed face away
+
+    front = _front(scene)
+    vp2 = _StubViewport(scene, pick=front)
+    tool.on_hover(_ctx(vp2))                   # the next idle hover
+
+    assert tool.dragging is False              # no crash
+    assert tool.hovered_face is front          # a fresh pick, the arm dropped
+
+
+def test_activate_with_no_selection_unchanged():
+    # Regression: without a preselection, on_activate leaves the tool idle
+    # and the hover+click rhythm works exactly as before.
+    scene = Scene()
+    hist = History(scene)
+    _cube(scene, hist, height=3.0)
+    top = _top(scene, 3.0)
+    vp = _StubViewport(scene, pick=top)
+    tool = PushPullTool()
+    tool.on_activate(vp)
+
+    assert tool.hovered_face is None
+
+    tool.on_hover(_ctx(vp))
+    assert tool.hovered_face is top
+    tool.on_click(_ctx(vp))
+    assert tool.dragging is True
+    assert tool.base_face is top
+
+
+def test_hovering_the_origin_pushes_level_with_it():  # #407
+    """A box standing away from the origin, its top pushed down: hovering
+    the origin (nothing drawn there) brings the top level with z = 0."""
+    from PySide6.QtCore import QPointF
+    from tools.base import ToolContext
+
+    scene = Scene()
+    hist = History(scene)
+    ground = [V(3, 3, 0), V(5, 3, 0), V(5, 5, 0), V(3, 5, 0)]
+    hist.execute(build_add_edges(
+        scene, [(ground[i], ground[(i + 1) % 4]) for i in range(4)],
+        detect_faces=False, extra=[AddFaceCommand(list(ground))]))
+    base = scene.faces[0]
+    _push(scene, base, 2.0 if base.normal().z() > 0 else -2.0)
+    vp = _InferViewport(scene)
+    tool = PushPullTool()
+    top = _top(scene, 2.0)
+    tool.base_face = top
+    tool.dragging = True
+    tool._anchor = top.centroid()
+    tool._normal = top.normal()
+    tool._attached, tool._prism_cap = tool._classify_base(scene)
+    tool._cap_positions = tool._cap_loop_positions(top)
+    ctx = ToolContext(viewport=vp, world=QVector3D(), screen=QPointF(0.0, 0.0),
+                      modifiers=Qt.NoModifier, snap=None)
+    d = tool._infer_reference_distance(ctx)
+    assert d is not None and abs(d + 2.0) < 1e-6
+    assert tool._inference_kind == "origin"

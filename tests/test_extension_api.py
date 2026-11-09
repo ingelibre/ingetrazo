@@ -174,6 +174,24 @@ def test_a_raising_provider_cannot_take_the_cursor(levels):
     assert vp._extension_snap(s, 10, 10) is s
 
 
+def test_a_provider_is_handed_the_viewport_not_the_engine(levels):
+    """The provider signature stayed ``fn(viewport, snap, px, py)`` across
+    the extraction (the rule now lives in ``InferenceEngine``): a plugin
+    never learns that there is an engine."""
+    from core.snap import SnapResult
+    vp = levels.viewport
+    seen = []
+
+    def spy(viewport, snap, x, y):
+        seen.append((viewport, snap, x, y))
+        return None
+
+    vp._ext_snap_providers.insert(0, spy)
+    s = SnapResult(V(0, 0, 0), "on_face")
+    assert vp._extension_snap(s, 10, 10) is s
+    assert seen and seen[0][0] is vp and seen[0][2:] == (10, 10)
+
+
 def test_levels_panel_has_a_one_click_way_to_where_the_guides_show(levels):
     """«Hice niveles pero no veo nada en el dibujo» — the camera was in
     perspective. The panel's button goes to a parallel front elevation."""
@@ -189,9 +207,11 @@ def test_levels_panel_has_a_one_click_way_to_where_the_guides_show(levels):
 def test_the_example_extensions_ship_but_install_only_on_request(tmp_path,
                                                                  monkeypatch):
     """Marco: «sería bueno tener esa extensión como ejemplo en IngeTrazo para
-    que otros usuarios vean» — shipped with the app, listed in Extensions ▸
-    Example extensions, loaded only once someone installs it there."""
-    from PySide6.QtWidgets import QMessageBox
+    que otros usuarios vean» — shipped with the app and loaded only once
+    someone installs it. Since 0.5.8 they install from Manage extensions…
+    (the Extensions menu no longer has a submenu of its own for them), as
+    managed extensions: disable and uninstall work on them like on any."""
+    from core import extension_manager as manager
     from core import extensions
     from views.main_window import MainWindow
     examples = MainWindow.example_extensions()
@@ -200,33 +220,33 @@ def test_the_example_extensions_ship_but_install_only_on_request(tmp_path,
     user = tmp_path / "plugins"
     monkeypatch.setattr(extensions, "user_plugins_dir", lambda: user)
     monkeypatch.setattr(extensions, "plugin_dirs", lambda: [user])
-    monkeypatch.setattr(QMessageBox, "information",
-                        staticmethod(lambda *a, **k: None))
+    monkeypatch.setattr(manager, "user_plugins_dir", lambda: user)
     win = _window()
     try:
         assert not win._extension_docks            # not loaded by default
         menu = next(m for m in win.menuBar().actions()
                     if m.menu() is not None and "xtensi" in m.text()).menu()
-        sub = next(a.menu() for a in menu.actions()
-                   if a.menu() is not None)
-        act = next(a for a in sub.actions() if a.text() == "Niveles")
-        assert not act.isChecked()
-        act.trigger()                               # install
-        assert (user / "niveles.py").read_bytes() == \
-            (EXAMPLES / "niveles.py").read_bytes()
-        act.trigger()                               # and remove
-        assert not (user / "niveles.py").exists()
+        assert "Example extensions" not in [a.text() for a in menu.actions()]
     finally:
         _close(win)
+    niveles = next(e for e in manager.bundled_extensions()
+                   if e.id == "niveles")
+    manager.install_extension(niveles)             # from the local copy
+    assert (user / "niveles" / "__init__.py").read_bytes() == \
+        (EXAMPLES / "niveles.py").read_bytes()
+    assert manager.installed_info("niveles")["sha256"] == niveles.sha256
+    manager.set_extension_enabled("niveles", False)
+    assert not manager.is_extension_enabled("niveles")
+    manager.uninstall_extension("niveles")
+    assert not (user / "niveles").exists()
 
 
 def test_an_example_extension_can_be_a_package(tmp_path, monkeypatch):
     """A bigger example extension (CAM, PR #132) is a folder with an
     ``__init__.py``: it is listed from its package docstring, installed as
     the whole folder (no ``__pycache__``) and removed as a whole."""
-    from PySide6.QtWidgets import QMessageBox
-    from core import extensions, paths
-    from views.main_window import MainWindow
+    from core import extension_manager as manager
+    from core import paths
     root = tmp_path / "app"
     pkg = root / "examples" / "extensions" / "demo"
     (pkg / "engine").mkdir(parents=True)
@@ -238,14 +258,14 @@ def test_an_example_extension_can_be_a_package(tmp_path, monkeypatch):
     (pkg / "__pycache__" / "junk.pyc").write_bytes(b"x")
     monkeypatch.setattr(paths, "app_root", lambda: root)
     user = tmp_path / "plugins"
-    monkeypatch.setattr(extensions, "user_plugins_dir", lambda: user)
-    monkeypatch.setattr(QMessageBox, "information",
-                        staticmethod(lambda *a, **k: None))
-    examples = MainWindow.example_extensions()
-    assert [(p.name, t, b) for p, t, b in examples] == [
-        ("demo", "Demo", "Two files and a subfolder.")]
-    MainWindow._toggle_example_extension(None, pkg, "Demo", True)
+    monkeypatch.setattr(manager, "user_plugins_dir", lambda: user)
+    assert [(p.name, t, b) for p, t, b in manager.example_extension_files()] \
+        == [("demo", "Demo", "Two files and a subfolder.")]
+    demo, = manager.bundled_extensions()
+    assert demo.bundled and demo.name == {"en": "Demo"}
+    manager.install_extension(demo)
     assert (user / "demo" / "engine" / "core.py").read_text() == "X = 1\n"
     assert not (user / "demo" / "__pycache__").exists()
-    MainWindow._toggle_example_extension(None, pkg, "Demo", False)
+    assert manager.installed_info("demo")["sha256"] == demo.sha256
+    manager.uninstall_extension("demo")
     assert not (user / "demo").exists()

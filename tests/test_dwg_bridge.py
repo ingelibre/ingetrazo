@@ -24,7 +24,7 @@ def test_null_handles_are_stripped(tmp_path):
                           0, "ENDBLK", 5, 0,
                           0, "ENDSEC", 0, "EOF"))
     dwg_bridge._strip_null_handles(dxf)
-    lines = dxf.read_text().split("\n")
+    lines = dxf.read_text(encoding="utf-8").split("\n")
     assert "ENDBLK" in lines
     for i in range(0, len(lines) - 1, 2):
         assert not (lines[i].strip() == "5" and lines[i + 1].strip() == "0")
@@ -41,7 +41,7 @@ def test_reused_handles_are_renumbered_first_owner_keeps_it(tmp_path):
         0, "ENDSEC", 0, "EOF"))
     fixed = dwg_bridge._dedupe_handles(dxf)
     assert fixed == 1
-    lines = [ln.strip() for ln in dxf.read_text().split("\n")]
+    lines = [ln.strip() for ln in dxf.read_text(encoding="utf-8").split("\n")]
     handles = [lines[i + 1] for i in range(0, len(lines) - 1, 2)
                if lines[i] == "5"]
     assert handles[0] == "2"              # the table record kept its handle
@@ -141,20 +141,20 @@ def _root():
 
 
 def test_the_flatpak_installs_the_converter():
-    recipe = (_root() / "packaging/flatpak/com.ingetrazo.IngeTrazo.yml").read_text()
+    recipe = (_root() / "packaging/flatpak/com.ingetrazo.IngeTrazo.yml").read_text(encoding="utf-8")
     assert ("vendor/libredwg/bin/dwg2dxf ${FLATPAK_DEST}/ingetrazo/"
             "vendor/libredwg/bin/dwg2dxf") in recipe
     assert "vendor/libredwg/SOURCES.md" in recipe
 
 
 def test_the_spec_bundles_it_on_all_three_platforms():
-    spec = (_root() / "ingetrazo.spec").read_text()
+    spec = (_root() / "ingetrazo.spec").read_text(encoding="utf-8")
     for name in ('"dwg2dxf.exe"', '"libredwg-0.dll"', '"libiconv-2.dll"',
                  '"linux": ["dwg2dxf"]', '"darwin": ["dwg2dxf"]'):
         assert name in spec
-    win = (_root() / ".github/workflows/build-windows.yml").read_text()
+    win = (_root() / ".github/workflows/build-windows.yml").read_text(encoding="utf-8")
     assert "libredwg-$V-win64.zip" in win and "sha256sum -c" in win
-    mac = (_root() / ".github/workflows/release-macos.yml").read_text()
+    mac = (_root() / ".github/workflows/release-macos.yml").read_text(encoding="utf-8")
     assert "programs/dwg2dxf" in mac and "shasum -a 256 -c" in mac
 
 
@@ -162,3 +162,111 @@ def test_check_reports_the_converter(capsys):
     import main
     main._self_check()
     assert "DWG converter" in capsys.readouterr().out
+
+
+# ---- Converter as a QProcess (#401) -------------------------------------------
+_FAKE = r"""\
+import sys, time
+mode, out = sys.argv[1], sys.argv[2]
+if mode == "ok":
+    open(out, "w").write("0\nSECTION\n2\nENTITIES\n0\nENDSEC\n0\nEOF\n")
+elif mode == "fail":
+    sys.stderr.write("Error: cannot read this drawing\n")
+    sys.exit(1)
+elif mode == "hang":
+    time.sleep(60)
+"""
+
+
+@pytest.fixture
+def fake_converter(tmp_path, monkeypatch):
+    """Stand in for dwg2dxf: ``set_mode`` picks what the fake script does."""
+    import sys
+
+    script = tmp_path / "fake_dwg2dxf.py"
+    script.write_text(_FAKE)
+    mode = {"value": "ok"}
+
+    monkeypatch.setattr(dwg_bridge, "find_dwg2dxf", lambda: Path(sys.executable))
+    monkeypatch.setattr(
+        dwg_bridge, "_converter_command",
+        lambda tool, dwg, out: [str(tool), str(script), mode["value"], str(out)])
+    return lambda value: mode.update(value=value)
+
+
+def _temp_dirs_left():
+    import tempfile
+    return list(Path(tempfile.gettempdir()).glob("ingetrazo-dwg-*"))
+
+
+def test_sync_path_still_converts_headless(fake_converter, tmp_path):
+    fake_converter("ok")
+    dxf = dwg_bridge.dwg_to_dxf(tmp_path / "a.dwg")
+    try:
+        assert dxf.is_file()
+    finally:
+        dwg_bridge.discard_temp_dxf(dxf)
+
+
+def test_sync_failure_leaves_no_temp_dir(fake_converter, tmp_path):
+    fake_converter("fail")
+    before = set(_temp_dirs_left())
+    with pytest.raises(dwg_bridge.DwgBridgeError) as err:
+        dwg_bridge.dwg_to_dxf(tmp_path / "a.dwg")
+    assert err.value.kind == "failed"
+    assert set(_temp_dirs_left()) == before
+
+
+def test_converter_success(fake_converter, tmp_path):
+    fake_converter("ok")
+    dxf = dwg_bridge.DwgConverter().convert(tmp_path / "a.dwg")
+    try:
+        assert dxf.is_file()
+    finally:
+        dwg_bridge.discard_temp_dxf(dxf)
+
+
+def test_converter_failure_reports_the_converter_output(fake_converter, tmp_path):
+    fake_converter("fail")
+    before = set(_temp_dirs_left())
+    with pytest.raises(dwg_bridge.DwgBridgeError) as err:
+        dwg_bridge.DwgConverter().convert(tmp_path / "a.dwg")
+    assert err.value.kind == "failed"
+    assert "cannot read this drawing" in str(err.value)
+    assert set(_temp_dirs_left()) == before
+
+
+def test_converter_timeout_kills_the_process(fake_converter, tmp_path, monkeypatch):
+    fake_converter("hang")
+    monkeypatch.setattr(dwg_bridge, "_TIMEOUT", 0.5)
+    before = set(_temp_dirs_left())
+    with pytest.raises(dwg_bridge.DwgBridgeError) as err:
+        dwg_bridge.DwgConverter().convert(tmp_path / "a.dwg")
+    assert err.value.kind == "timeout"
+    assert set(_temp_dirs_left()) == before
+
+
+def test_converter_cancel_keeps_the_event_loop_alive(fake_converter, tmp_path):
+    from PySide6.QtCore import QTimer
+
+    fake_converter("hang")
+    conv = dwg_bridge.DwgConverter()
+    ticks = []
+    ticker = QTimer()
+    ticker.timeout.connect(lambda: ticks.append(1))
+    ticker.start(20)
+    QTimer.singleShot(400, conv.cancel)
+    before = set(_temp_dirs_left())
+    with pytest.raises(dwg_bridge.DwgBridgeError) as err:
+        conv.convert(tmp_path / "a.dwg")
+    ticker.stop()
+    assert err.value.kind == "cancelled"
+    assert len(ticks) >= 3                # the GUI thread was not blocked
+    assert set(_temp_dirs_left()) == before
+
+
+def test_missing_converter_error_kind(tmp_path, monkeypatch):
+    monkeypatch.setattr(dwg_bridge, "find_dwg2dxf", lambda: None)
+    with pytest.raises(dwg_bridge.DwgBridgeError) as err:
+        dwg_bridge.DwgConverter().convert(tmp_path / "x.dwg")
+    assert err.value.kind == "unavailable"
