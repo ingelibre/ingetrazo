@@ -110,9 +110,7 @@ def _add(win, name):
     win._scene_actions["scene_add"].trigger()
     view = win.viewport.scene.saved_views[-1]
     view.name = name
-    win.tray.scenes.refresh()
-    win.tray.scenes.list.setCurrentRow(
-        win.viewport.scene.saved_views.index(view))
+    win.tray.scenes.select_view(view)
     return view
 
 
@@ -129,6 +127,10 @@ def test_rename_scene_follows_the_browsers_rule(win, monkeypatch):
     from PySide6.QtWidgets import QInputDialog
     other = _add(win, "Corte")
     view = _add(win, "Planta")
+    # The name prompt is for the Scenes tab out of sight; in sight, the
+    # row itself is edited (test_scenes_tab).
+    win.scenes_dock.hide()
+    QApplication.processEvents()
     answer = ["Corte", True]
     monkeypatch.setattr(QInputDialog, "getText",
                         lambda *a, **k: tuple(answer))
@@ -139,7 +141,7 @@ def test_rename_scene_follows_the_browsers_rule(win, monkeypatch):
     answer[0] = "  Fachada  "
     win._scene_actions["scene_rename"].trigger()
     assert view.name == "Fachada"
-    assert win.tray.scenes.list.currentItem().data(Qt.UserRole) is view
+    assert win.tray.scenes.current_view() is view
 
     answer[:] = ["Outra", False]                  # Cancel
     win._scene_actions["scene_rename"].trigger()
@@ -150,16 +152,16 @@ def test_duplicate_scene_puts_a_copy_right_after_and_makes_it_current(win):
     scene = win.viewport.scene
     view = _add(win, "Planta")
     _add(win, "Corte")
-    win.tray.scenes.list.setCurrentRow(scene.saved_views.index(view))
+    win.tray.scenes.select_view(view)
     acts = win._scene_actions
     acts["scene_duplicate"].trigger()
     i = scene.saved_views.index(view)
     copy = scene.saved_views[i + 1]
     assert copy is not view and copy.name.startswith("Planta")
     assert copy.to_dict() | {"name": view.name} == view.to_dict()
-    assert win.tray.scenes.list.currentItem().data(Qt.UserRole) is copy
+    assert win.tray.scenes.current_view() is copy
     # Again from the original: the names never clash.
-    win.tray.scenes.list.setCurrentRow(i)
+    win.tray.scenes.select_view(view)
     acts["scene_duplicate"].trigger()
     names = [v.name for v in scene.saved_views]
     assert len(names) == len(set(names))

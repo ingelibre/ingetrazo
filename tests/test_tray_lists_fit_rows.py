@@ -10,17 +10,16 @@ from PySide6.QtWidgets import QApplication
 _app = QApplication.instance() or QApplication([])
 
 
-def test_scenes_and_components_lists_grow_with_their_rows():
-    """(The Layers list has a tab of its own now, beside the Browser, and
-    scrolls there like the Browser's tree.)"""
+def test_components_list_grows_with_its_rows():
+    """(The Layers and Scenes lists have tabs of their own now, beside the
+    Browser, and scroll there like the Browser's tree — #1158.)"""
     from views.main_window import MainWindow
     win = MainWindow()
     try:
-        tray = win.tray
-        for v in (tray.scenes.list, tray.components._in_model):
-            assert v.verticalScrollBarPolicy() == Qt.ScrollBarAlwaysOff
-        h_empty = tray.scenes.list.height()
-        assert h_empty >= 3 * (tray.scenes.list.fontMetrics().height())  # min rows
+        v = win.tray.components._in_model
+        assert v.verticalScrollBarPolicy() == Qt.ScrollBarAlwaysOff
+        h_empty = v.height()
+        assert h_empty >= 3 * v.fontMetrics().height()  # min rows
     finally:
         win._saved_version = win.viewport.scene.version
         win.close()

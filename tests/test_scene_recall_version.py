@@ -13,10 +13,9 @@ _app = QApplication.instance() or QApplication([])
 
 
 def _activate(win, name):
-    lst = win.tray.scenes.list
     win.tray.scenes.refresh()
-    item = next(lst.item(i) for i in range(lst.count())
-                if lst.item(i).text() == name)
+    item = next(it for it in win.tray.scenes.scene_rows()
+                if it.text(0) == name)
     win.tray.scenes._on_activate(item)
 
 

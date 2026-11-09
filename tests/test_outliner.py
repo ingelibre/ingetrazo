@@ -626,7 +626,8 @@ def test_f2_renames_a_scene_and_a_sheet_in_the_browser():
     sheets.scenes_root.child(0).setText(0, "Ground floor")
     assert scene.saved_views[0].name == "Ground floor"
     assert a101.frames[0].view_key == "scene:Ground floor"
-    assert win.tray.scenes.list.item(0).text() == "Ground floor"
+    win.tray.scenes.refresh()
+    assert win.tray.scenes.scene_rows()[0].text(0) == "Ground floor"
     sheets.sheets_root.child(0).setText(0, "A-101")
     assert a101.name == "A-101"
     _app.processEvents()
@@ -640,7 +641,7 @@ def test_the_scenes_panel_rename_no_longer_orphans_sheet_views():
     a101, _a102 = _sheets_model(win)
     scenes = win.tray.scenes
     scenes.refresh()
-    scenes.list.item(0).setText("Ground floor")
+    scenes.scene_rows()[0].setText(0, "Ground floor")
     assert a101.frames[0].view_key == "scene:Ground floor"
     _close(win)
 

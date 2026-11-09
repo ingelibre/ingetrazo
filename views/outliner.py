@@ -4742,12 +4742,7 @@ class SheetsPanel(QWidget):
     def _show_scene(self, view) -> None:
         """Through the Scenes panel, so a scene shown from here does all
         a scene shown there does (style menu, selection, layers)."""
-        scenes = self._window.tray.scenes
-        for i in range(scenes.list.count()):
-            row = scenes.list.item(i)
-            if row.data(Qt.UserRole) is view:
-                scenes._on_activate(row)
-                return
+        self._window.tray.scenes.activate_view(view)
 
     def _new_sheet(self) -> None:
         self._window._show_new_sheet()
