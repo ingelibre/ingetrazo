@@ -137,6 +137,50 @@ class _GroupScene:
         self._scene.version = value
 
 
+def _boundary_cracks(mesh) -> int:
+    """How many edges of ``mesh`` have an odd number of boundary faces
+    (faces not marked interior). Round a sound solid's edge the boundary
+    comes in pairs: two faces, or none where partitions meet inside. A
+    push must not add an edge that breaks that."""
+    return sum(1 for e in mesh.edges
+               if sum(1 for f in e.faces if not f.interior) % 2)
+
+
+def _drop_stranded_partitions(mesh) -> bool:
+    """Remove the partitions a push left with nothing around them.
+
+    A kept base standing on a face's plane (a beam's end butting into a
+    wall) has its whole rim on that face. Pushing the face out past it
+    swallows the beam's end into the wall, and the rebuild drops every face
+    around the old base, but not the base itself: it is left floating, open
+    on every edge, and the push was refused. A partition whose every edge
+    borders nothing else is inside the solid by then, so it goes. Only
+    faces marked as partitions are ever removed. Returns whether anything
+    was removed."""
+    removed = False
+    while True:
+        stranded = []
+        for f in mesh.faces:
+            if not f.interior:
+                continue
+            edges = []
+            for lp in (f.loop, *f.hole_loops):
+                n = len(lp)
+                edges.extend(mesh.find_edge(lp[i], lp[(i + 1) % n])
+                             for i in range(n))
+            if edges and all(e is not None and e.faces == [f] for e in edges):
+                stranded.append((f, edges))
+        if not stranded:
+            return removed
+        for f, edges in stranded:
+            mesh.remove_face(f)
+            for e in edges:
+                if not e.faces:
+                    mesh.remove_edge(e)
+        mesh.prune_orphan_vertices()
+        removed = True
+
+
 def _component_is_closed(mesh, face) -> bool:
     """Whether ``face``'s edge-connected component is watertight — every edge
     reachable from it borders at least two faces. An open sheet (a flat
@@ -2166,8 +2210,22 @@ class PushPullTool(Tool):
         guard = (mesh.capture_state()
                  if is_closed(mesh) and not _mesh_is_flat(mesh) else None)
         fp_before = self._mesh_fingerprint(mesh) if guard is not None else None
+        self._cracks_before = None
         self._mutate_inner(scene, preview)
+        if guard is not None and not is_closed(mesh):
+            _drop_stranded_partitions(mesh)
         if guard is not None and not (is_closed(mesh) or _mesh_is_flat(mesh)):
+            mesh.restore_state(guard)
+            self._refused = True
+            return
+        if (guard is not None and not preview
+                and self._cracks_before is not None
+                and _boundary_cracks(mesh) > self._cracks_before):
+            # Closed, but not sound: a partition left standing where the
+            # boundary needed a face (or a boundary face doubled up), so
+            # some edge has an odd number of boundary faces. Every
+            # edge has two faces or more, so is_closed can't see it, and
+            # committing it skewed the volume and broke the pushes after.
             mesh.restore_state(guard)
             self._refused = True
             return
@@ -2358,6 +2416,9 @@ class PushPullTool(Tool):
                       else face.normal())
         if entry_closed and not self._drag_pre_oriented:
             orient_outward(scene.mesh, only=(face,))
+        if entry_closed and not preview:
+            # Counted once the partitions are marked: _mutate compares.
+            self._cracks_before = _boundary_cracks(scene.mesh)
         normal = face.normal()
         if QVector3D.dotProduct(normal, pre_normal) < 0:
             d = -d

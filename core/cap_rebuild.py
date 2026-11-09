@@ -544,6 +544,31 @@ def rebuild_plane(mesh, origin: QVector3D, normal: QVector3D,
     # face covering a both-sides region keeps its partition role.
     old_boundary_polys = _proj_polys(f for f in scope_faces
                                      if f not in fresh_set and not f.interior)
+    # The kept bases of earlier Ctrl-pushes: a strip that would go as inside
+    # the solid (below) but shares an edge with one of them carries that
+    # division on instead — the two cells the slab parts still meet there.
+    # Dropped, the slab was left alone under side faces that dissolved the
+    # crease it stands on, open on three edges, and the guard refused the
+    # push: a box divided with Ctrl, its first part pulled up, then the
+    # second part's top pulled up against it (or the first part's wall
+    # pushed out over it).
+    partition_segs = [
+        (to2d(e.a), to2d(e.b)) for e in scope_edges
+        if any(f.interior and f not in fresh_set for f in e.faces)
+        and _on_plane(e.a, origin, normal) and _on_plane(e.b, origin, normal)]
+
+    def _meets_partition(outer_xy, holes_xy) -> bool:
+        for loop in (outer_xy, *holes_xy):
+            n = len(loop)
+            for i in range(n):
+                a2, b2 = loop[i], loop[(i + 1) % n]
+                if (a2[0] - b2[0]) ** 2 + (a2[1] - b2[1]) ** 2 < _TOL * _TOL:
+                    continue
+                for c2, d2 in partition_segs:
+                    if ((_on_seg2(a2, c2, d2) and _on_seg2(b2, c2, d2))
+                            or (_on_seg2(c2, a2, b2) and _on_seg2(d2, a2, b2))):
+                        return True
+        return False
 
     # Group boundary regions by which side holds the material — each group is
     # unioned separately because its faces wind the other way (outward points
@@ -589,6 +614,9 @@ def rebuild_plane(mesh, origin: QVector3D, normal: QVector3D,
                         _poly_covers(fpoly, ip_xy) and fplus != plus
                         for fpoly, fplus in fresh_polys)
                         for poly, plus in old_boundary_polys)):
+                if partition_segs and _meets_partition(outer_xy, holes_xy):
+                    partitions.append((outer_xy, holes_xy))
+                    continue
                 # The strip is inside the solid now, and so is its outline:
                 # the old crease along its rim (a riser's top edge) is the
                 # op's seam from here on, free to dissolve when the next
