@@ -185,26 +185,125 @@ def test_the_sheets_live_only_in_the_composer():
 
 
 def test_the_scenes_are_just_a_list_with_room_for_seven():
-    """Above the sheets the scenes are there to drag onto them: no buttons,
-    no hint, no renaming or deleting (that is the Scenes tab's), and
-    room for seven before the list scrolls."""
+    """Above the sheets the scenes are there to drag onto them: no buttons
+    but the list-or-thumbnails one, no hint, no renaming or deleting (that
+    is the Scenes tab's), and room for seven before the list scrolls."""
     from PySide6.QtWidgets import QAbstractButton, QLabel
     win, scene, page, *_ = _model_window()
     panel = page.scenes
     assert not panel.findChildren(QAbstractButton)
     assert not panel.findChildren(QLabel)
-    item = panel.list.item(0)
-    assert item.text() == "Plan L1"
+    # The list-or-thumbnails button sits in the «Scenes» heading, on its
+    # line: no row of its own above the list.
+    box = page.splitter.widget(0)
+    head = next(lb for lb in box.findChildren(QLabel)
+                if lb.text() == "Scenes")
+    assert panel.view_btn.parentWidget() is box
+    page.resize(400, 600)
+    page.show()
+    _app.processEvents()
+    btn = panel.view_btn.geometry()
+    assert btn.top() < head.geometry().bottom()
+    assert btn.bottom() > head.geometry().top()
+    assert btn.height() <= head.height() + 6
+    page.hide()
+    item = panel.scene_rows()[0]
+    assert item.text(0) == "Plan L1"
     assert not item.flags() & Qt.ItemIsEditable
-    panel.list.setCurrentItem(item)
-    QTest.keyClick(panel.list, Qt.Key_Delete)
+    panel.tree.setCurrentItem(item)
+    QTest.keyClick(panel.tree, Qt.Key_Delete)
     assert [v.name for v in scene.saved_views] == ["Plan L1",
                                                    "North elevation"]
-    lst = panel.list
+    lst = panel.tree
     row = max(lst.fontMetrics().height(), lst.iconSize().height()) + 6
     assert lst.maximumHeight() == SCENE_ROWS * row + 2 * lst.frameWidth()
     assert SCENE_ROWS == 7
     assert win.tray.scenes.findChildren(QAbstractButton)  # Scenes tab: all
+    _close(win)
+
+
+def test_the_scenes_sit_in_the_folders_of_the_scenes_tab():
+    """The scenes above the sheets keep the Scenes tab's folders, nested,
+    subfolders first; a folder neither drags nor places anything, and a
+    scene made in a folded folder is shown with its folder unfolded."""
+    from core import scene_folders as SF
+    from views.composer import SCENE_MIME
+    win, scene, page, *_ = _model_window()
+    plans = SF.add_folder(scene, "Plans")
+    ground = SF.add_folder(scene, "Ground", parent=plans)
+    plan, north = scene.saved_views
+    plan.folder = ground
+    SF.sync_order(scene)
+    scene.version += 1
+    page.on_scene_changed()
+    tree = page.scenes.tree
+    top = [tree.topLevelItem(i) for i in range(tree.topLevelItemCount())]
+    assert [it.text(0) for it in top] == ["Plans", "North elevation"]
+    assert top[0].data(0, Qt.UserRole) == ("folder", "Plans")
+    sub = top[0].child(0)
+    assert sub.text(0) == "Ground" and sub.child(0).text(0) == "Plan L1"
+    assert top[0].isExpanded() and sub.isExpanded()
+    assert not top[0].flags() & Qt.ItemIsDragEnabled
+    data = tree.mimeData([top[0], sub.child(0)])
+    assert bytes(data.data(SCENE_MIME)).decode() == "Plan L1"
+    frames = [list(c.frames) for c in scene.compositions]
+    page.scenes._on_activate(top[0])                  # a folder: nothing
+    assert [list(c.frames) for c in scene.compositions] == frames
+    top[0].setExpanded(False)                         # folded here...
+    page.scenes._shape = None
+    page.scenes.refresh()                             # ...stays folded
+    assert not tree.topLevelItem(0).isExpanded()
+    page.show_scene_row("Plan L1")
+    assert tree.currentItem().text(0) == "Plan L1"
+    assert tree.topLevelItem(0).isExpanded()
+    _close(win)
+
+
+def test_the_scenes_show_as_a_list_or_with_thumbnails():
+    """The Scenes tab's switch, here too: the button's icon says which is
+    shown, the choice is kept, the rows fit seven either way, and a list
+    draws no pictures."""
+    from PySide6.QtCore import QSettings
+    from views.icons import tool_icon
+    from views.sheet_browser import SceneList
+    win, scene, page, *_ = _model_window()
+    panel = page.scenes
+    drawn = []
+    panel._icon_for = lambda name: drawn.append(name)
+
+    def same(a, b):
+        return a.pixmap(24, 24).toImage() == b.pixmap(24, 24).toImage()
+    try:
+        assert panel.thumbnails                       # the default
+        assert panel.view_btn.toolTip()
+        assert same(panel.view_btn.icon(), tool_icon("scenes_thumbs"))
+        tall = panel.tree.maximumHeight()
+        panel.list_action.trigger()
+        assert not panel.thumbnails
+        assert panel.list_action.isChecked()
+        assert not panel.thumbs_action.isChecked()
+        assert same(panel.view_btn.icon(), tool_icon("scenes_list"))
+        assert panel.tree.iconSize().height() == 16
+        assert panel.tree.maximumHeight() < tall      # smaller rows
+        assert all(not it.icon(0).isNull() for it in panel.scene_rows())
+        assert QSettings().value(SceneList.THUMBS_KEY) in (False, "false")
+        win._composer.show()
+        win._composer._show_page("views")
+        for _ in range(20):
+            _app.processEvents()
+        assert drawn == []                            # a list: no pictures
+        again = SceneList(win, icon_for=lambda name: None)
+        assert not again.thumbnails                   # the choice is kept
+        panel.thumbs_action.trigger()
+        assert panel.thumbnails and panel.tree.maximumHeight() == tall
+        import time
+        until = time.monotonic() + 5.0                # one per 20 ms tick
+        while len(drawn) < 2 and time.monotonic() < until:
+            _app.processEvents()
+        assert sorted(drawn) == ["North elevation", "Plan L1"]
+        assert SceneList(win).view_btn is None        # no pictures to show
+    finally:
+        QSettings().remove(SceneList.THUMBS_KEY)
     _close(win)
 
 
@@ -265,17 +364,18 @@ def test_deleting_a_scene_flags_its_frames_instead_of_breaking():
 def test_a_scene_marks_its_views_and_a_view_marks_its_scene():
     win, scene, page, a101, a102 = _model_window()
     explorer = page.sheets
-    page.scenes.list.setCurrentRow(0)                  # «Plan L1»
+    rows = page.scenes.scene_rows()
+    page.scenes.tree.setCurrentItem(rows[0])           # «Plan L1»
     marked = explorer.related()
     assert sorted(it.text(COL_NAME) for it in marked) == [
         "Plan L1 · 1:100", "Plan L1 · 1:200"]
     assert all(it.data(COL_NAME, Qt.UserRole + 1) for it in marked)
     explorer.tree.setCurrentItem(explorer.items[id(a102.frames[0])])
-    assert page.scenes.list.item(0).data(Qt.UserRole + 1)
-    assert not page.scenes.list.item(1).data(Qt.UserRole + 1)
+    assert rows[0].data(0, Qt.UserRole + 1)
+    assert not rows[1].data(0, Qt.UserRole + 1)
     explorer.tree.setCurrentItem(explorer.items[id(a101.frames[1])])
-    assert not page.scenes.list.item(0).data(Qt.UserRole + 1)  # lost: none
-    page.scenes.list.setCurrentRow(1)                  # on no sheet
+    assert not rows[0].data(0, Qt.UserRole + 1)       # lost: none
+    page.scenes.tree.setCurrentItem(rows[1])           # on no sheet
     assert explorer.related() == []
     assert not marked[0].data(COL_NAME, Qt.UserRole + 1)       # cleared
     _close(win)
@@ -633,8 +733,7 @@ def test_alt_arrows_move_a_sheet_among_its_neighbours():
 def test_the_scene_list_drags_scenes_by_name():
     from views.composer import SCENE_MIME
     win, scene, page, *_ = _model_window()
-    lst = page.scenes.list
-    data = lst.mimeData([lst.item(0), lst.item(1)])
+    data = page.scenes.tree.mimeData(page.scenes.scene_rows())
     assert bytes(data.data(SCENE_MIME)).decode() == \
         "Plan L1\nNorth elevation"
     _close(win)
@@ -694,7 +793,7 @@ def test_double_click_on_a_scene_places_it_on_the_open_sheet():
     win, scene, page, a101, a102 = _model_window()
     win._composer.show_sheet(1)                       # A102 open
     frames0 = list(a102.frames)
-    page.scenes._on_activate(page.scenes.list.item(1))   # «North elevation»
+    page.scenes._on_activate(page.scenes.scene_rows()[1])  # «North elev.»
     new = [f for f in a102.frames if f not in frames0]
     assert len(new) == 1
     for other in frames0:
@@ -741,7 +840,7 @@ def test_the_scene_pictures_do_not_rebuild_the_list_nor_touch_the_document():
         _app.processEvents()
     assert len(fills) == 1
     assert scene.version == version                   # nothing «modified»
-    assert not panel.list.item(0).icon().isNull()
+    assert not panel.scene_rows()[0].icon(0).isNull()
     _close(win)
 
 
@@ -760,8 +859,8 @@ def test_creating_a_plan_shows_its_scene_in_the_composer():
     panel = win.project_browser.outliner
     panel.refresh()
     panel.create_plan(level2, 1.2, sheet=False)
-    current = page.scenes.list.currentItem()          # its scene, marked
-    assert current is not None and current.text() == "Plan Level 2"
+    current = page.scenes.tree.currentItem()          # its scene, marked
+    assert current is not None and current.text(0) == "Plan Level 2"
     _close(win)
 
 

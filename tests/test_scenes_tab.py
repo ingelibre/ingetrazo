@@ -397,7 +397,7 @@ def test_a_row_dragged_reorders_the_scenes_in_one_undo_step(win):
 def _sheet_list_scenes(lst):
     """The scenes of the composer's Sheets page list, top to bottom."""
     lst.refresh()
-    return [lst.list.item(i).text() for i in range(lst.list.count())]
+    return [it.text(0) for it in lst.scene_rows()]
 
 
 def test_the_sheets_page_lists_the_scenes_in_the_new_order(win):
@@ -549,7 +549,7 @@ def test_a_scene_shown_from_the_sheets_page_is_marked_here(win):
     panel = _scenes(win, "A", "B")
     view = _view(win, "B")
     lst = SceneList(win)                     # no on_activate: shows it
-    lst._on_activate(lst.list.item(1))
+    lst._on_activate(lst.scene_rows()[1])
     assert panel.shown is view
     assert panel.row_for(view).font(0).bold()
 
