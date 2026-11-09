@@ -198,6 +198,121 @@ def test_zoom_selection_frames_every_view_shown(win):
         assert vp.camera.target.x() > 90, "the selection, in this view too"
 
 
+# ---- each view its own style (Styles menu, Alt+X, Styles panel) -------------
+def _cell_of(win, vp):
+    return next(c for c in _grid(win).cells if c.viewport is vp)
+
+
+def _mode(vp):
+    return vp._effective_style().face_mode
+
+
+def test_a_style_picked_in_one_view_stays_in_that_view(win):
+    """Wireframe picked with the Top view active draws in the Top view only:
+    the window's view and the other views keep the style they had."""
+    from core.style import style_by_name
+    win.set_view_layout("four")
+    top, *others = _grid(win).extras()
+    _grid(win).set_active_cell(_cell_of(win, top))
+    win._apply_display_style(style_by_name("Wireframe"))
+    assert _mode(top) == "wireframe"
+    assert win.viewport.scene.display_style.face_mode != "wireframe"
+    assert _mode(win.viewport) != "wireframe"
+    for vp in others:
+        assert _mode(vp) != "wireframe", "only the view it was picked in"
+
+
+def test_a_style_picked_in_the_windows_view_leaves_the_others_alone(win):
+    """Shaded in the window's view (Perspective): the scene's style changes,
+    every other view keeps what it showed — the one never touched too."""
+    from core.style import style_by_name
+    win.set_view_layout("four")
+    top, front, _right = _grid(win).extras()
+    front_mode = _mode(front)
+    _grid(win).set_active_cell(_cell_of(win, top))
+    win._apply_display_style(style_by_name("Wireframe"))
+    _grid(win).set_active_cell(_cell_of(win, win.viewport))
+    win._apply_display_style(style_by_name("Shaded"))
+    assert win.viewport.scene.display_style.face_mode == "shaded"
+    assert _mode(front) == front_mode != "shaded"
+    assert _mode(top) == "wireframe"
+    win._set_style_field("edges", False)
+    assert front._effective_style().edges
+
+
+def test_a_style_switch_in_one_view_copies_the_style_first(win):
+    """Edges off with Front active: Front's own copy changes, the scene's
+    style (the window's view, saved with the file) does not."""
+    win.set_view_layout("four")
+    front = _grid(win).extras()[1]
+    assert win.viewport.scene.display_style.edges
+    _grid(win).set_active_cell(_cell_of(win, front))
+    win._set_style_field("edges", False)
+    assert front.view_style is not win.viewport.scene.display_style
+    assert not front._effective_style().edges
+    assert win.viewport.scene.display_style.edges
+
+
+def test_xray_goes_in_and_out_in_the_active_view_alone(win):
+    from core.style import style_by_name
+    win.set_view_layout("four")
+    top = _grid(win).extras()[0]
+    _grid(win).set_active_cell(_cell_of(win, top))
+    win._apply_display_style(style_by_name("Hidden line"))
+    win._toggle_xray()
+    assert _mode(top) == "xray"
+    assert _mode(win.viewport) != "xray"
+    win._toggle_xray()
+    assert _mode(top) == "hidden_line", "back to the style it left"
+    assert _mode(win.viewport) != "hidden_line"
+
+
+def test_the_style_menu_shows_the_style_of_the_view_clicked(win):
+    from core.style import style_by_name
+    win.set_view_layout("four")
+    top = _grid(win).extras()[0]
+    _grid(win).set_active_cell(_cell_of(win, top))
+    win._apply_display_style(style_by_name("Wireframe"))
+    assert win._style_actions["Wireframe"].isChecked()
+    _grid(win).set_active_cell(_cell_of(win, win.viewport))
+    assert not win._style_actions["Wireframe"].isChecked()
+    assert win._style_actions[
+        win.viewport.scene.display_style.name].isChecked()
+    _grid(win).set_active_cell(_cell_of(win, top))
+    assert win._style_actions["Wireframe"].isChecked()
+    win.set_view_layout("single")           # one view: the window's style
+    assert not win._style_actions["Wireframe"].isChecked()
+
+
+def test_the_styles_panel_edits_the_active_view(win):
+    win.set_view_layout("four")
+    right = _grid(win).extras()[2]
+    _grid(win).set_active_cell(_cell_of(win, right))
+    panel = win.styles_panel
+    panel.refresh()
+    panel._mode.setCurrentIndex(panel._mode.findData("monochrome"))
+    panel._apply_edits()
+    assert _mode(right) == "monochrome"
+    assert win.viewport.scene.display_style.face_mode != "monochrome"
+
+
+def test_each_view_keeps_its_style_in_the_project_state(win):
+    from core.style import style_by_name
+    win.set_view_layout("four")
+    grid = _grid(win)
+    top = grid.extras()[0]
+    grid.set_active_cell(_cell_of(win, top))
+    win._apply_display_style(style_by_name("Wireframe"))
+    state = grid.state()
+    grid.restore(None)
+    assert top.view_style is None
+    grid.restore(state)
+    assert _mode(top) == "wireframe"
+    old = [(view, cam) for view, cam, _style in state]
+    grid.restore(old)                        # a state from before styles
+    assert top.view_style is None
+
+
 def _enter(vp):
     QApplication.sendEvent(vp, QEnterEvent(QPointF(5, 5), QPointF(5, 5),
                                            QPointF(5, 5)))
@@ -991,3 +1106,110 @@ def test_changing_layout_keeps_the_extra_views_caches(win, monkeypatch):
     win.set_view_layout("two")
     win.set_view_layout("three")
     assert made == []
+
+
+# ---- each view its own projection ------------------------------------------
+def test_a_projection_picked_in_one_view_stays_in_that_view(win):
+    """The projection buttons and Shift+P change the active view's camera,
+    not the window's view nor the others."""
+    win.set_view_layout("four")
+    grid = _grid(win)
+    top, front, _right = grid.extras()
+    main_mode = win.viewport.camera.projection_mode()
+    front_mode = front.camera.projection_mode()
+    grid.set_active_cell(_cell_of(win, top))
+    win._projection_actions["perspective"].trigger()
+    assert top.camera.projection_mode() == "perspective"
+    assert win.viewport.camera.projection_mode() == main_mode
+    assert front.camera.projection_mode() == front_mode
+    win._toggle_projection()                       # Shift+P
+    assert top.camera.projection_mode() == "parallel"
+    assert win.viewport.camera.projection_mode() == main_mode
+
+
+def test_the_projection_buttons_show_the_view_clicked(win):
+    win.set_view_layout("four")
+    grid = _grid(win)
+    top = grid.extras()[0]
+    grid.set_active_cell(_cell_of(win, win.viewport))
+    win._projection_actions["two_point"].trigger()
+    grid.set_active_cell(_cell_of(win, top))
+    assert win._projection_actions[
+        top.camera.projection_mode()].isChecked()
+    assert not win._projection_actions["two_point"].isChecked()
+    grid.set_active_cell(_cell_of(win, win.viewport))
+    assert win._projection_actions["two_point"].isChecked()
+
+
+def test_field_of_view_changes_the_active_view(win):
+    win.set_view_layout("four")
+    grid = _grid(win)
+    top = grid.extras()[0]
+    grid.set_active_cell(_cell_of(win, top))
+    win._set_projection("perspective")
+    before = win.viewport.camera.fov_deg
+    assert win.set_field_of_view(80.0)
+    assert top.camera.fov_deg == 80.0
+    assert win.viewport.camera.fov_deg == before
+
+
+# ---- a scene from the active view ------------------------------------------
+def test_a_new_scene_takes_the_active_views_camera_and_style(win):
+    """«+ Scene» with the Top view active keeps what the Top view shows:
+    its camera, its projection and its own style."""
+    from core.style import style_by_name
+    win.set_view_layout("four")
+    grid = _grid(win)
+    top = grid.extras()[0]
+    grid.set_active_cell(_cell_of(win, top))
+    win._apply_display_style(style_by_name("Wireframe"))
+    from views.tray import ScenesPanel
+    panel = next(p for p in win.findChildren(ScenesPanel))
+    panel._on_add()
+    view = win.viewport.scene.saved_views[-1]
+    assert view.pitch == top.camera.pitch
+    assert view.pitch != win.viewport.camera.pitch
+    assert view.perspective == top.camera.perspective
+    assert view.style["face_mode"] == "wireframe"
+    # Update, from the window's view: its camera and the scene's style.
+    grid.set_active_cell(_cell_of(win, win.viewport))
+    panel.update_view(view)
+    assert view.pitch == win.viewport.camera.pitch
+    assert view.style["face_mode"] == \
+        win.viewport.scene.display_style.face_mode
+
+
+def test_a_scene_shows_in_the_active_view(win):
+    """A scene made in the Top view, picked with Front active, shows in
+    Front: its camera and its style become Front's own; the window's view
+    and the scene's style are left as they were."""
+    from core.style import style_by_name
+    from views.tray import ScenesPanel
+    win.set_view_layout("four")
+    grid = _grid(win)
+    top, front, _right = grid.extras()
+    grid.set_active_cell(_cell_of(win, top))
+    win._apply_display_style(style_by_name("Wireframe"))
+    panel = next(p for p in win.findChildren(ScenesPanel))
+    panel._on_add()
+    view = win.viewport.scene.saved_views[-1]
+    main_pitch = win.viewport.camera.pitch
+    main_mode = win.viewport.scene.display_style.face_mode
+    grid.set_active_cell(_cell_of(win, front))
+    assert front.camera.pitch != view.pitch
+    panel.show_view(view)
+    assert front.camera.pitch == view.pitch
+    assert _mode(front) == "wireframe"
+    assert win._style_actions["Wireframe"].isChecked()
+    assert win.viewport.camera.pitch == main_pitch
+    assert win.viewport.scene.display_style.face_mode == main_mode
+    # The window's view active: there, as before — and the other views
+    # keep their camera and their style.
+    right = grid.extras()[2]
+    right_mode, right_pitch = _mode(right), right.camera.pitch
+    grid.set_active_cell(_cell_of(win, win.viewport))
+    panel.show_view(view)
+    assert win.viewport.camera.pitch == view.pitch
+    assert win.viewport.scene.display_style.face_mode == "wireframe"
+    assert _mode(right) == right_mode != "wireframe"
+    assert right.camera.pitch == right_pitch
