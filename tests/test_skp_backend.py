@@ -1270,3 +1270,70 @@ def test_openskp_adapter_an_extracted_part_keeps_its_own_tag(monkeypatch):
         NS(definitions={0: root, 5: container, 8: person}), "m")
     groups = {gp["name"]: gp for gp in payload["groups"]}
     assert groups["Susan"].get("layer") == "Gente"
+
+
+# ── VFF dimension axes and definition-owned annotations (#1226) ───────
+
+def _vff_dim(**kw):
+    base = dict(a=(0.0, 0.0, 0.0), b=(100.0, 0.0, 0.0), offset=10.0,
+                plane_x=(0.0, 0.0, 1.0), normal=(1.0, 0.0, 0.0), text="")
+    base.update(kw)
+    return NS(**base)
+
+
+def test_vff_dimension_offset_vector_follows_the_constraint_axis():
+    # 5BCF is the plane normal N, 5BD0 its X axis (openskp#481): axis 1
+    # resolves the offset as (N × X)·offset, axis 2 as −X·offset. The
+    # historical reading (cross of the stored "normal" with the segment)
+    # pointed out of the dimension plane for both.
+    root = _fake_definition(
+        id=0, name="ROOT_MODEL",
+        verts={1: (0, 0, 0), 2: (100, 0, 0), 3: (100, 100, 0)},
+        edges={10: (1, 2), 11: (2, 3), 12: (3, 1)},
+        faces={20: [[(10, 1), (11, 1), (12, 1)]]})
+    for axis, expect in ((1, (0.0, 0.254, 0.0)), (2, (-0.254, 0.0, 0.0))):
+        dm = _vff_dim(vff_axis=axis)
+        model = NS(definitions={0: root}, dimensions=[dm], root=root)
+        payload = skp_openskp._adapt(model, "m")
+        (entry,) = payload["dimensions"]
+        assert entry["offset_vector"] == pytest.approx(expect)
+        assert "offset" not in entry
+
+
+def test_vff_owned_dimension_and_text_are_lifted_by_the_placement():
+    # A group drawn away from the origin: its dimension and leader text
+    # are definition-local, so the placement's matrix (here +100 in in X)
+    # must lift them, exactly as it lifts the geometry.
+    child = _fake_definition(
+        id=40, name="Group#2",
+        verts={1: (0, 0, 0), 2: (100, 0, 0), 3: (100, 100, 0)},
+        edges={10: (1, 2), 11: (2, 3), 12: (3, 1)},
+        faces={20: [[(10, 1), (11, 1), (12, 1)]]})
+    child.dimensions = [_vff_dim(vff_axis=2, vff_owned=True)]
+    child.texts = [NS(text="9 steps", point=(0.0, 0.0, 0.0),
+                      label_point=(10.0, 0.0, 0.0), hidden=False,
+                      vff_recovered=True)]
+    place = NS(ref_idx=40, matrix=[1, 0, 0, 0, 1, 0, 0, 0, 1,
+                                   100, 0, 0, 1.0])
+    root = _fake_definition(id=0, name="ROOT_MODEL", verts={}, edges={},
+                            faces={}, instances=[place])
+    model = NS(definitions={0: root, 40: child}, dimensions=[], root=root)
+    payload = skp_openskp._adapt(model, "m")
+    (entry,) = payload["dimensions"]
+    assert entry["a"] == pytest.approx([2.54, 0.0, 0.0])
+    assert entry["b"] == pytest.approx([5.08, 0.0, 0.0])
+    assert entry["offset_vector"] == pytest.approx([-0.254, 0.0, 0.0])
+    (text,) = payload["texts"]
+    assert text["anchor"] == pytest.approx([2.54, 0.0, 0.0])
+    assert text["label"] == pytest.approx([2.794, 0.0, 0.0])
+
+
+def test_apply_payload_uses_a_resolved_offset_vector_verbatim():
+    scene = Scene()
+    payload = {"backend": "openskp", "groups": [], "protos": [],
+               "dimensions": [{"a": [0.0, 0.0, 0.0], "b": [1.0, 0.0, 0.0],
+                               "offset_vector": [0.0, 0.5, 0.25]}]}
+    assert skp_format.apply_payload(scene, payload) == "openskp"
+    (dim,) = scene.dimensions
+    assert (dim.offset.x(), dim.offset.y(), dim.offset.z()) \
+        == (0.0, 0.5, 0.25)

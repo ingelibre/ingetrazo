@@ -98,3 +98,94 @@ def test_older_layer_records_keep_their_length():
         r = L._R(data, 0)
         L._READERS['CLayer'](_Archive(ver), r)
         assert data[r.pos:] == b'\x00\x00TAIL', ver
+
+
+# ── VFF annotations (#1226) ────────────────────────────────────────────
+# Synthetic records in the shapes the scans read: flat TLV fields inside
+# a CC 5B / F0 55 record, the definitions inside F401 > F901 > 7017 >
+# 7117 > 7C15. The reporter's file is not in the repository.
+
+def _tlv(tag, payload):
+    return struct.pack('<HI', tag, len(payload)) + payload
+
+
+def _free_conn(point):
+    inner = _tlv(0x5209, struct.pack('<I', 1)) \
+        + _tlv(0x520A, struct.pack('<3d', *point))
+    return _tlv(0x5208, inner)
+
+
+def _record(marker, body):
+    return marker + struct.pack('<I', len(body)) + body
+
+
+def _wrap(tag_bytes, payload):
+    return tag_bytes + struct.pack('<I', len(payload)) + payload
+
+
+def _dim_record(a, b, axis, offset=5.0):
+    body = _tlv(0x5BCD, _free_conn(a)) + _tlv(0x5BCE, _free_conn(b)) \
+        + _tlv(0x5BCF, struct.pack('<3d', 0, 0, 1)) \
+        + _tlv(0x5BD0, struct.pack('<3d', 1, 0, 0)) \
+        + _tlv(0x5BD1, struct.pack('<I', axis)) \
+        + _tlv(0x5BD2, struct.pack('<d', offset))
+    return _record(b'\xcc\x5b', body)
+
+
+def _text_record(text, point, label_raw):
+    body = _tlv(0x55F1, text.encode()) + _tlv(0x55F4, _free_conn(point)) \
+        + _tlv(0x55F5, struct.pack('<3d', *label_raw))
+    return _record(b'\xf0\x55', body)
+
+
+def _model_dat_with_definition(*records):
+    defs = _wrap(b'\x7c\x15', b''.join(records))
+    return _wrap(b'\xf4\x01', _wrap(b'\xf9\x01', _wrap(b'\x70\x17',
+                 _wrap(b'\x71\x17', defs))))
+
+
+def test_vff_scans_read_the_axis_and_the_texts():
+    from formats import openskp_compat as C
+    dat = _dim_record((0, 0, 0), (100, 0, 0), axis=2) \
+        + _text_record('9 steps', (50, 50, 50), (-5, 0, 0))
+    dims = C._scan_vff_dimensions(dat, {}, {})
+    assert len(dims) == 1
+    assert dims[0]['axis'] == 2
+    assert dims[0]['a'] == (0, 0, 0) and dims[0]['b'] == (100, 0, 0)
+    texts = C._scan_vff_texts(dat, {}, {})
+    assert len(texts) == 1
+    assert texts[0]['text'] == '9 steps'
+    assert texts[0]['point'] == (50, 50, 50)
+    assert texts[0]['label_raw'] == (-5, 0, 0)
+
+
+def test_resolve_moves_owned_annotations_onto_the_definition():
+    from types import SimpleNamespace as NS
+
+    from openskp.model import Dimension
+
+    from formats import openskp_compat as C
+    dat = _model_dat_with_definition(
+        _dim_record((0, 0, 0), (100, 0, 0), axis=1),
+        _text_record('9 steps', (50, 50, 50), (-5, 0, 0)))
+    defn = NS(vertices={1: NS(x=0, y=0, z=0), 2: NS(x=100, y=100, z=100)},
+              dimensions=[], texts=[])
+    root = NS(texts=[])
+    dm = Dimension(a=(0, 0, 0), b=(100, 0, 0), offset=5.0,
+                   plane_x=(0, 0, 1), normal=(1, 0, 0))
+    model = NS(definitions={40: defn}, dimensions=[dm], root=root)
+    C._parse_tables.vff = (dat, {}, {})
+    touched = C.resolve_vff_annotations(model)
+    assert touched == 2
+    # The dimension left the model list with its axis, on its definition.
+    assert model.dimensions == []
+    assert defn.dimensions == [dm]
+    assert dm.vff_axis == 1 and dm.vff_owned is True
+    # The text was rebuilt on the definition; the stored label triple is
+    # relative to the anchor here (the absolute reading is off-model).
+    assert [t.text for t in defn.texts] == ['9 steps']
+    tx = defn.texts[0]
+    assert tx.point == (50, 50, 50)
+    assert tx.label_point == (45, 50, 50)
+    assert tx.vff_recovered is True
+    assert root.texts == []

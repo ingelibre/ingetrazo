@@ -109,6 +109,99 @@ def _matrix(m) -> QMatrix4x4:
         0.0, 0.0, 0.0, 1.0)
 
 
+def _placements_by_definition(model):
+    """{definition id: [world matrix, ...]} — every placement of every
+    definition, composed over the model's instance tree. The matrices
+    map definition-local metres to world metres (see :func:`_matrix`)."""
+    out = {}
+
+    def walk(defn, parent, depth):
+        if defn is None or depth > _MAX_DEPTH:
+            return
+        for inst in getattr(defn, "instances", None) or []:
+            local = getattr(inst, "matrix", None)
+            if not local:
+                continue
+            world = parent * _matrix(local)
+            ref = getattr(inst, "ref_idx", None)
+            out.setdefault(ref, []).append(world)
+            walk((getattr(model, "definitions", None) or {}).get(ref),
+                 world, depth + 1)
+
+    walk(getattr(model, "root", None), QMatrix4x4(), 0)
+    return out
+
+
+def _cross3(a, b):
+    return (a[1] * b[2] - a[2] * b[1],
+            a[2] * b[0] - a[0] * b[2],
+            a[0] * b[1] - a[1] * b[0])
+
+
+def _dimension_entry(dm, world=None):
+    """One payload dimension (metres, world space) for an OpenSKP
+    dimension; ``world`` lifts a definition-local one by one placement
+    of its definition.
+
+    The offset leaves as a VECTOR when the dimension's constraint axis
+    is known (VFF files, via openskp_compat): with N the plane normal
+    (``plane_x``, stored in 5BCF) and X the plane's x axis (``normal``,
+    stored in 5BD0), the grammar upstream resolved (openskp#481) is
+    ``(N × X) · offset`` for axis 1 and ``−X · offset`` for axis 2.
+    Without an axis the scalar + stored axis go out as before and the
+    consumer keeps its historical reading of them."""
+    a = [c * _INCH for c in dm.a]
+    b = [c * _INCH for c in dm.b]
+    offset = float(getattr(dm, "offset", 0.0) or 0.0) * _INCH
+    frame_x = getattr(dm, "normal", None)      # 5BD0 — the plane's X axis
+    plane_n = getattr(dm, "plane_x", None)     # 5BCF — the plane's normal
+    axis = getattr(dm, "vff_axis", None)
+    ov = None
+    if axis in (1, 2) and plane_n and frame_x:
+        d = _cross3(plane_n, frame_x) if axis == 1 \
+            else tuple(-c for c in frame_x)
+        ov = [c * offset for c in d]
+    if world is not None:
+        a = list(world.map(QVector3D(*a)).toTuple())
+        b = list(world.map(QVector3D(*b)).toTuple())
+        if ov is not None:
+            ov = list(world.mapVector(QVector3D(*ov)).toTuple())
+    entry = {"a": a, "b": b, "text": getattr(dm, "text", "") or ""}
+    if ov is not None:
+        entry["offset_vector"] = ov
+    else:
+        entry["offset"] = offset
+        if frame_x:
+            n = [float(c) for c in frame_x]
+            if world is not None:
+                n = list(world.mapVector(QVector3D(*n)).toTuple())
+            entry["normal"] = n
+    return entry
+
+
+def _text_entry(tx, world=None):
+    """One payload leader text (metres, world space) for an OpenSKP text;
+    ``world`` lifts a definition-local one by one placement. A text
+    whose anchor did not resolve still shows at its label position."""
+    pt = getattr(tx, "point", None)
+    lp = getattr(tx, "label_point", None)
+    if pt is None and lp is None:
+        return None
+    anchor = pt if pt is not None else lp
+    entry = {"anchor": [c * _INCH for c in anchor],
+             "text": (getattr(tx, "text", "") or "").strip(),
+             "hidden": bool(getattr(tx, "hidden", False))}
+    if lp is not None and pt is not None:
+        entry["label"] = [c * _INCH for c in lp]
+    if world is not None:
+        entry["anchor"] = list(world.map(QVector3D(*entry["anchor"]))
+                               .toTuple())
+        if "label" in entry:
+            entry["label"] = list(world.map(QVector3D(*entry["label"]))
+                                  .toTuple())
+    return entry
+
+
 def _texture_dir(skp_path) -> Path:
     """Directory for a ``.skp``'s extracted texture images, inside the app's
     own cache (``core.texture.texture_cache_root()``) — importing must never
@@ -1531,40 +1624,59 @@ def _adapt(model, name: str, skp_path=None):
         })
     if scenes:
         payload["scenes"] = scenes
-    # Linear dimensions (.skp dimension entities), inches → metres. Endpoints
-    # come in world space for model-root dimensions (the common case).
+    # Linear dimensions (.skp dimension entities), inches → metres. Model
+    # dimensions are world space; the ones openskp_compat moved onto a
+    # definition (#1226) are definition-local, so each placement of that
+    # definition contributes a world-space copy.
     dims = []
     for dm in getattr(model, "dimensions", []) or []:
         if getattr(dm, "a", None) is None or getattr(dm, "b", None) is None:
             continue
-        dims.append({
-            "a": [c * _INCH for c in dm.a],
-            "b": [c * _INCH for c in dm.b],
-            "offset": getattr(dm, "offset", 0.0) * _INCH,
-            "normal": list(dm.normal) if getattr(dm, "normal", None) else None,
-            "text": getattr(dm, "text", "") or "",
-        })
+        dims.append(_dimension_entry(dm))
+    placements = None
+    for did, defn in (getattr(model, "definitions", None) or {}).items():
+        owned = [dm for dm in (getattr(defn, "dimensions", None) or [])
+                 if getattr(dm, "vff_owned", False)
+                 and getattr(dm, "a", None) is not None
+                 and getattr(dm, "b", None) is not None]
+        if not owned:
+            continue
+        if placements is None:
+            placements = _placements_by_definition(model)
+        for world in placements.get(did, []):
+            dims.extend(_dimension_entry(dm, world) for dm in owned)
     if dims:
         payload["dimensions"] = dims
     # Leader texts (.skp text entities), inches → metres. Only free
     # (point-anchored) texts carry a resolved anchor; model-root texts are
-    # world space.
+    # world space. The texts openskp_compat recovered from VFF records
+    # (#1226) may sit on a definition — placed per instance like its
+    # dimensions — and one whose anchor did not resolve still shows at
+    # its label position.
     texts = []
     root_def = getattr(model, "root", None)
     for tx in (getattr(root_def, "texts", []) or []) if root_def else []:
-        pt = getattr(tx, "point", None)
-        body = (getattr(tx, "text", "") or "").strip()
-        if pt is None or not body:
+        if getattr(tx, "point", None) is None \
+                and not getattr(tx, "vff_recovered", False):
             continue
-        entry = {
-            "anchor": [c * _INCH for c in pt],
-            "text": body,
-            "hidden": bool(getattr(tx, "hidden", False)),
-        }
-        lp = getattr(tx, "label_point", None)
-        if lp is not None:
-            entry["label"] = [c * _INCH for c in lp]
-        texts.append(entry)
+        if not (getattr(tx, "text", "") or "").strip():
+            continue
+        entry = _text_entry(tx)
+        if entry:
+            texts.append(entry)
+    for did, defn in (getattr(model, "definitions", None) or {}).items():
+        recovered = [tx for tx in (getattr(defn, "texts", None) or [])
+                     if getattr(tx, "vff_recovered", False)
+                     and (getattr(tx, "text", "") or "").strip()]
+        if not recovered:
+            continue
+        if placements is None:
+            placements = _placements_by_definition(model)
+        for world in placements.get(did, []):
+            for tx in recovered:
+                entry = _text_entry(tx, world)
+                if entry:
+                    texts.append(entry)
     if texts:
         payload["texts"] = texts
     # The file's style back-face colour (our upstream PR openskp#10): adopt it
@@ -1590,6 +1702,7 @@ def parse(path, progress=None):
         progress(0.1, "Parsing .skp (OpenSKP)…")
     model = openskp.SkpFile.open(str(path)).parse()
     openskp_compat.resolve_face_layers(model)   # tag ids → names (#700)
+    openskp_compat.resolve_vff_annotations(model)   # dims/texts (#1226)
     if progress is not None:
         progress(0.6, "Building geometry…")
     return _adapt(model, Path(path).stem, skp_path=path)
