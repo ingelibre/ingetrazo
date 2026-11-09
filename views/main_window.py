@@ -4146,6 +4146,8 @@ class MainWindow(QMainWindow):
             merge_materials(getattr(temp, "materials", {}) or {},
                             scene.materials, t)
             ensure_layers(scene, t)
+            # Loaded from an external file: a model resize keeps its size.
+            t.source = Path(path).name
         self.viewport.history.execute(AddKeptComponentsCommand(templates))
         self.viewport.notify_scene_changed()
         return len(templates)
@@ -7898,6 +7900,7 @@ class MainWindow(QMainWindow):
             # A model written as parts keeps them: one component to place,
             # its pieces inside (see formats.obj._pieces_group).
             parts.name = entry.get("nombre", "") or parts.name
+            parts.source = obj.name        # a model resize keeps its size
             return parts
         mesh = temp.mesh
         if not mesh.faces and temp.groups:
@@ -7908,7 +7911,9 @@ class MainWindow(QMainWindow):
                 tr("“{name}” has no geometry.", name=entry.get("nombre", "")))
             return None
         soften_smooth_edges(mesh, cos_threshold=0.55)
-        return Group(mesh, name=entry.get("nombre", ""))
+        piece = Group(mesh, name=entry.get("nombre", ""))
+        piece.source = obj.name            # a model resize keeps its size
+        return piece
 
     def _on_open_library(self) -> None:
         from views.library_dialog import LibraryDialog
@@ -8491,6 +8496,8 @@ class MainWindow(QMainWindow):
                                             path.stem)
         if comp is None:
             return None
+        # Loaded from an external file: a model resize keeps its size.
+        comp.source = path.name
         # The file's origin is the handle (the component axes): the
         # arch's footings, drawn below z=0, go below grade in the plaza too.
         origin = QVector3D(0.0, 0.0, 0.0)

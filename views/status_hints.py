@@ -77,8 +77,13 @@ HINTS: dict = {
     # and got the line elided (Marco, 2026-09-17). The classic hint is just
     # as terse — «Haz clic en un elemento que desees medir.» — with the
     # modifiers as their own clauses after it.
-    "tape": ("Click a point or an edge to measure. Arrows lock an axis.",
-             "Click the second point, or type the distance and Enter."),
+    # «measured»: the second click is down and the reading stays in the
+    # Measurements box — typing over it resizes (core/resize.py).
+    "tape": {
+        "idle": "Click a point or an edge to measure. Arrows lock an axis.",
+        "started": "Click the second point, or type the distance and Enter.",
+        "measured": "Type the new length and Enter to resize.",
+    },
     "protractor": ("Click the vertex of the angle.",
                    "Click the start of the angle, then the end; or type the degrees."),
     "dimension": ("Click the first point of the dimension.",
@@ -120,6 +125,9 @@ def phase_of(key: str, tool) -> str:
         return "end" if getattr(tool, "start_point", None) is not None else "idle"
     if key == "fillet":
         return "sizing" if getattr(tool, "sizing", False) else "idle"
+    if (key == "tape" and getattr(tool, "start_point", None) is None
+            and getattr(tool, "_measure_ends", None) is not None):
+        return "measured"
     if getattr(tool, "start_point", None) is not None:
         return "started"
     if getattr(tool, "dragging", False) or getattr(tool, "nodes", None):
@@ -185,7 +193,9 @@ def _with_alt(text: str, key, tool, linear_mode) -> str:
     # the classic line carries «Ctrl = …» before the first click and
     # «Alt = …» once a line is under way, never both. Stacking them made
     # the bar elide (Marco, 2026-09-17: «no sale completo el texto»).
-    if phase_of(key, tool) == "idle":
+    # A Tape that has just measured is at rest too: the next click starts
+    # over, so its Ctrl clause still applies.
+    if phase_of(key, tool) in ("idle", "measured"):
         own = getattr(tool, "status_clause", None)
         own = own() if callable(own) else ""
         return f"{text} | {own}" if own else text

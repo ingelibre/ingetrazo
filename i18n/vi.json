@@ -3376,5 +3376,13 @@
  "The Bulgarian translation.": "Bản dịch tiếng Bulgaria.",
  "The Traditional Chinese translation.": "Bản dịch tiếng Trung phồn thể.",
  "A .skp component 10 000 times too big, traced.": "Truy ra một thành phần .skp lớn gấp 10 000 lần.",
- "Thanks as well to all the authors of the extensions catalogue": "Xin cảm ơn tất cả tác giả trong danh mục tiện ích mở rộng"
+ "Thanks as well to all the authors of the extensions catalogue": "Xin cảm ơn tất cả tác giả trong danh mục tiện ích mở rộng",
+ "Type a length greater than zero to resize": "Nhập chiều dài lớn hơn không để đổi kích thước",
+ "Resized: the distance is now {d}": "Đã đổi kích thước: khoảng cách hiện là {d}",
+ "Do you want to resize the model?": "Bạn có muốn đổi kích thước mô hình không?",
+ "Note that components loaded from external files will not be resized.": "Các thành phần được tải từ tệp bên ngoài sẽ giữ nguyên kích thước.",
+ "Do you want to resize the active component?": "Bạn có muốn đổi kích thước thành phần đang chỉnh sửa không?",
+ "Do you want to resize the active group?": "Bạn có muốn đổi kích thước nhóm đang chỉnh sửa không?",
+ "Resize": "Đổi kích thước",
+ "Type the new length and Enter to resize.": "Nhập chiều dài mới, Enter để đổi kích thước."
 }

@@ -3352,5 +3352,13 @@
  "The Bulgarian translation.": "Terjemahan bahasa Bulgaria.",
  "The Traditional Chinese translation.": "Terjemahan bahasa Tionghoa Tradisional.",
  "A .skp component 10 000 times too big, traced.": "Komponen .skp yang 10 000 kali terlalu besar, berhasil dilacak.",
- "Thanks as well to all the authors of the extensions catalogue": "Terima kasih juga kepada semua pembuat katalog ekstensi"
+ "Thanks as well to all the authors of the extensions catalogue": "Terima kasih juga kepada semua pembuat katalog ekstensi",
+ "Type a length greater than zero to resize": "Ketik panjang lebih dari nol untuk mengubah ukuran",
+ "Resized: the distance is now {d}": "Ukuran diubah: jaraknya sekarang {d}",
+ "Do you want to resize the model?": "Apakah Anda ingin mengubah ukuran model?",
+ "Note that components loaded from external files will not be resized.": "Perhatikan bahwa komponen yang dimuat dari berkas eksternal tidak akan diubah ukurannya.",
+ "Do you want to resize the active component?": "Apakah Anda ingin mengubah ukuran komponen aktif?",
+ "Do you want to resize the active group?": "Apakah Anda ingin mengubah ukuran grup aktif?",
+ "Resize": "Ubah Ukuran",
+ "Type the new length and Enter to resize.": "Ketik panjang baru lalu Enter untuk mengubah ukuran."
 }

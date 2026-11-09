@@ -680,6 +680,10 @@ def save_scene(scene, path: Path) -> dict:
                 entry["hidden"] = True
             if getattr(g, "locked", False):
                 entry["locked"] = True          # older readers ignore it
+            if getattr(g, "source", None):
+                # The external file a component was loaded from (a model
+                # resize keeps it at its size); older readers ignore it.
+                entry["source"] = str(g.source)
             if getattr(g, "exploded", None):
                 # An exploded view and each part's share of it, so the
                 # document reopens able to reassemble (core/explode.py).
@@ -1306,6 +1310,8 @@ def _load_into_inner(scene, path: Path, progress=None) -> None:
             group.hidden = True
         if raw.get("locked"):
             group.locked = True
+        if raw.get("source"):
+            group.source = str(raw["source"])
         if isinstance(raw.get("material"), dict):
             group.material = dict(raw["material"])
         if isinstance(raw.get("exploded"), dict):

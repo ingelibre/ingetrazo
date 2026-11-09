@@ -3350,5 +3350,13 @@
  "The Bulgarian translation.": "保加利亞文翻譯。",
  "The Traditional Chinese translation.": "繁體中文翻譯。",
  "A .skp component 10 000 times too big, traced.": "追查出一個大了 10 000 倍的 .skp 元件。",
- "Thanks as well to all the authors of the extensions catalogue": "同樣感謝擴充功能目錄的所有作者"
+ "Thanks as well to all the authors of the extensions catalogue": "同樣感謝擴充功能目錄的所有作者",
+ "Type a length greater than zero to resize": "輸入大於零的長度以調整大小",
+ "Resized: the distance is now {d}": "已調整大小：目前距離為 {d}",
+ "Do you want to resize the model?": "要調整模型的大小嗎？",
+ "Note that components loaded from external files will not be resized.": "請注意，從外部檔案載入的元件不會調整大小。",
+ "Do you want to resize the active component?": "要調整目前元件的大小嗎？",
+ "Do you want to resize the active group?": "要調整目前群組的大小嗎？",
+ "Resize": "調整大小",
+ "Type the new length and Enter to resize.": "輸入新長度並按 Enter 調整大小。"
 }

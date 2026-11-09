@@ -80,7 +80,7 @@ class Group:
     __slots__ = ("mesh", "name", "layer", "ifc", "billboard", "xform",
                  "children", "owner", "context", "text3d", "hidden", "uid",
                  "material", "axes", "component", "exploded",
-                 "explode_offset", "ext", "locked")
+                 "explode_offset", "ext", "locked", "source")
 
     def __init__(self, mesh: Mesh | None = None, name: str | None = None) -> None:
         self.mesh = mesh if mesh is not None else Mesh()
@@ -113,6 +113,14 @@ class Group:
         # Structure plugin of #87 kept it outside the document: «the
         # padlock function is not saved in the .igz file»).
         self.locked = False
+        #: The external file this component was loaded from — its file
+        #: name, from Insert (a document), the component library or the
+        #: kept components of another document — or ``None`` for one
+        #: modelled here. A Tape Measure resize of the whole model leaves
+        #: such a component at its real size and only moves it
+        #: (core/resize.py): a chair placed in a plan stays a chair when
+        #: the plan is rescaled.
+        self.source = None
         # Stable identity that survives save/load — what a scene names when
         # it remembers which objects it hides. Fresh per object; a copy gets
         # its own (see ``copy_group``).
@@ -720,6 +728,7 @@ def copy_group(group, delta=None, _in_definition=False):
     g.ext = copy.deepcopy(group.ext) if getattr(group, "ext", None) else None
     g.hidden = group.hidden
     g.locked = getattr(group, "locked", False)
+    g.source = getattr(group, "source", None)
     g.material = dict(group.material) if getattr(group, "material", None) else None
     g.component = getattr(group, "component", True)
     g.exploded = dict(group.exploded) if group.exploded else None

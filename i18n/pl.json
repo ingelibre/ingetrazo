@@ -3357,5 +3357,13 @@
  "The Bulgarian translation.": "Tłumaczenie bułgarskie.",
  "The Traditional Chinese translation.": "Tłumaczenie na chiński tradycyjny.",
  "A .skp component 10 000 times too big, traced.": "Namierzony komponent .skp 10 000 razy za duży.",
- "Thanks as well to all the authors of the extensions catalogue": "Dziękujemy też wszystkim autorom katalogu rozszerzeń"
+ "Thanks as well to all the authors of the extensions catalogue": "Dziękujemy też wszystkim autorom katalogu rozszerzeń",
+ "Type a length greater than zero to resize": "Wpisz długość większą od zera, aby zmienić rozmiar",
+ "Resized: the distance is now {d}": "Zmieniono rozmiar: odległość wynosi teraz {d}",
+ "Do you want to resize the model?": "Czy chcesz zmienić rozmiar modelu?",
+ "Note that components loaded from external files will not be resized.": "Uwaga: komponenty wczytane z plików zewnętrznych zachowają swój rozmiar.",
+ "Do you want to resize the active component?": "Czy chcesz zmienić rozmiar aktywnego komponentu?",
+ "Do you want to resize the active group?": "Czy chcesz zmienić rozmiar aktywnej grupy?",
+ "Resize": "Zmień rozmiar",
+ "Type the new length and Enter to resize.": "Wpisz nową długość i Enter, aby zmienić rozmiar."
 }
