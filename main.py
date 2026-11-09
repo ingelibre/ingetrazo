@@ -75,10 +75,13 @@ class _ButtonsOnlyTranslator(QTranslator):
     ``qtbase_<lang>.qm`` also names the keys — «Control+Mayúsculas+Re Pág»
     for Ctrl+Shift+PgUp in menus, tooltips and the shortcut editor — and
     the shortcuts stay in English on purpose. The button texts live in
-    these contexts; everything else is left untranslated."""
+    these contexts; everything else is left untranslated. QColorDialog
+    joins them (#1178): the colour picker's own labels («Basic colors»,
+    «Custom colors», the channel names) are plain words, no key names,
+    so they translate with the rest of the interface."""
 
     _CONTEXTS = frozenset({"QPlatformTheme", "QMessageBox",
-                           "QDialogButtonBox"})
+                           "QDialogButtonBox", "QColorDialog"})
 
     _BUILTIN = {
         "vi": {
