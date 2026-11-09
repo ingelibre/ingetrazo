@@ -1,0 +1,17 @@
+name: Publish to Winget
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  publish-to-winget:
+    name: Publish release to Winget
+    runs-on: ubuntu-latest
+    steps:
+      - name: Submit to Winget
+        uses: vedantmgoyal2009/winget-releaser@v2
+        with:
+          identifier: Ingelibre.IngeTrazo
+          installers-regex: '\.exe$' # Captura qualquer arquivo .exe anexado na release
+          token: ${{ secrets.WINGET_TOKEN }}
