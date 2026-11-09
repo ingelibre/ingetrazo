@@ -260,6 +260,12 @@ class _DockDropZone(QWidget):
         p.end()
 
 
+class _OpenAborted(Exception):
+    """Raised by an open's progress callback when the user closed the
+    window while the file was still coming in (#1269): the load unwinds
+    at its next milestone instead of finishing behind the close."""
+
+
 class MainWindow(QMainWindow):
     """Top-level IngeTrazo window."""
 
@@ -435,6 +441,12 @@ class MainWindow(QMainWindow):
 
         self._saved_version = self.viewport.scene.version
         self._wire_viewport(self.viewport)
+
+        # An .igz open in flight, a close that lands during it, and a
+        # close that has been accepted for good (#1269).
+        self._open_in_progress = False
+        self._open_aborted = False
+        self._closed = False
 
         # Toolbar/dock layout: the user's own arrangement survives sessions
         # (saved on close); a fresh profile starts from the factory layout
@@ -7390,6 +7402,12 @@ class MainWindow(QMainWindow):
         An extension may claim a suffix of its own
         (``ExtensionApp.add_file_opener``); anything else needs the model,
         so a workspace in front of it is left first."""
+        if getattr(self, "_closed", False):
+            # The window's close was already accepted while this open was
+            # still queued (the deferred command-line open, #1269):
+            # loading into a closed window would bring back a session
+            # the user has already ended.
+            return False
         if self.__dict__.get("_empty_on"):
             # The blank project behind the empty area takes it; the area
             # comes back if nothing could be opened.
@@ -7453,15 +7471,30 @@ class MainWindow(QMainWindow):
         # seconds with nothing on screen, «feeling of freeze». Small ones
         # never show it (the dialog waits 400 ms before appearing).
         dlg, cb = self._import_progress(tr("Opening {name}…", name=path.name))
+
+        def guarded_cb(frac, text):
+            # A close that landed while the file was still coming in
+            # (#1269) unwinds the load at its next milestone, instead of
+            # letting it finish behind the closing window.
+            if self._open_aborted:
+                raise _OpenAborted()
+            cb(frac, text)
+
         # The viewport stays still while the document comes in: each
         # progress tick lets the window repaint, and a paint over a model
         # half loaded built every drawing chunk in one go — 61 s without
         # answering the desktop on the model of #158.
+        self._open_in_progress = True
         self.viewport.setUpdatesEnabled(False)
         try:
             try:
                 igz_format.load_into(self.viewport.scene,
-                                     slot if recovered else path, progress=cb)
+                                     slot if recovered else path,
+                                     progress=guarded_cb)
+            except _OpenAborted:
+                dlg.close()
+                self._finish_aborted_open()
+                return False
             except Exception as exc:  # noqa: BLE001 - surface any IO/parse error to the user
                 dlg.close()
                 QMessageBox.critical(self, tr("Open failed"), str(exc))
@@ -7478,6 +7511,14 @@ class MainWindow(QMainWindow):
                 pass
         finally:
             self.viewport.setUpdatesEnabled(True)
+            self._open_in_progress = False
+        if self._open_aborted:
+            # The close landed during prepare_drawing, too late to
+            # unwind the load itself — the document is in, but the
+            # user's close still wins over keeping it (#1269).
+            dlg.close()
+            self._finish_aborted_open()
+            return False
         dlg.close()
         # Painting was off while it loaded: turning it back on does not ask
         # for a frame, and the view stayed black until the first click.
@@ -7541,6 +7582,17 @@ class MainWindow(QMainWindow):
         self._update_title()
         self.settle_heap()
         return True
+
+    def _finish_aborted_open(self) -> None:
+        """The user closed the window while a file was loading (#1269)
+        and the load has now unwound. What is on screen is the loader's
+        half-finished work, not the user's: adopt it as the saved
+        baseline so the close below does not stop to ask about
+        discarding it, then close for real — deferred, so the open's
+        own call stack has fully left the window first."""
+        self._open_aborted = False
+        self._saved_version = self.viewport.scene.version
+        QTimer.singleShot(0, self.close)
 
     #: Young-generation threshold: how many net allocations between
     #: collector passes. Python's default (2000) made the incremental
@@ -9641,6 +9693,17 @@ class MainWindow(QMainWindow):
 
     # ---- Window lifecycle ---------------------------------------------------
     def closeEvent(self, event) -> None:
+        if getattr(self, "_open_in_progress", False):
+            # A file is still loading into this window (#1269). What is
+            # on screen is the loader's half-finished work, not the
+            # user's, so there is nothing to ask about discarding — but
+            # accepting the close here would tear the window down under
+            # the loader. Refuse it for the moment and flag the load to
+            # unwind at its next progress milestone; the abort path
+            # then closes the window for real.
+            self._open_aborted = True
+            event.ignore()
+            return
         # A workspace first (its own unsaved job), then the model it parked.
         if self._workspace is not None and not self.leave_workspace():
             event.ignore()
@@ -9683,6 +9746,10 @@ class MainWindow(QMainWindow):
         for doc in self._documents:
             if doc.composer is not None:
                 doc.composer.close()
+        # The close is really happening: an open still queued behind
+        # this window (the deferred command-line open) must not load
+        # into it afterwards (#1269).
+        self._closed = True
         super().closeEvent(event)
 
     def _confirm_quit(self) -> bool:

@@ -65,7 +65,7 @@ def _window(lazy):
             vp.scene.groups.append(g)
     by = {g.name: g for g in vp.scene.groups}
     by["C23"].hidden = True             # neither hides nor snaps
-    by["C51"].locked = True             # hides, but does not snap
+    by["C51"].locked = True             # hides and snaps, but cannot be edited
     for k, (x, y) in enumerate(((5.1, 3.3), (11.7, 8.2), (1.4, 12.6))):
         m = _cube(1.0 + 0.4 * k, 0.8, 2.0 - 0.3 * k, (x, y, 0.4 * k))
         vp.scene.groups.append(Group(m, name=f"G{k}"))   # fixed: no matrix
