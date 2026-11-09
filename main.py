@@ -75,10 +75,13 @@ class _ButtonsOnlyTranslator(QTranslator):
     ``qtbase_<lang>.qm`` also names the keys — «Control+Mayúsculas+Re Pág»
     for Ctrl+Shift+PgUp in menus, tooltips and the shortcut editor — and
     the shortcuts stay in English on purpose. The button texts live in
-    these contexts; everything else is left untranslated."""
+    these contexts; everything else is left untranslated. QColorDialog
+    joins them (#1178): the colour picker's own labels («Basic colors»,
+    «Custom colors», the channel names) are plain words, no key names,
+    so they translate with the rest of the interface."""
 
     _CONTEXTS = frozenset({"QPlatformTheme", "QMessageBox",
-                           "QDialogButtonBox"})
+                           "QDialogButtonBox", "QColorDialog"})
 
     _BUILTIN = {
         "vi": {
@@ -650,6 +653,10 @@ def main() -> int:
                "again in Preferences ▸ General.")))
 
     def _after_first_frame():
+        if getattr(window, "_closed", False):
+            # The user closed the window before this deferred slot got
+            # to run (#1269): the command-line open dies with it.
+            return
         # The plugins' setup, now that the window is up (#440) — and only
         # then the document passed on the command line (the OS file
         # association's double-click hands it as argv[1]): an extension may
@@ -659,6 +666,10 @@ def main() -> int:
             doc = Path(arg)
             if doc.exists():
                 _open_document_in(window, doc)
+        if getattr(window, "_closed", False):
+            # Closed while the document was coming in: no units question
+            # or update check on a window that is going away (#1269).
+            return
         # Which units to work in, once the window is up and the document in
         # (off for good with «Don't show this at startup»; Preferences ▸
         # Units turns it back on). Offered after the opening, not beside
