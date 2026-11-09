@@ -5,7 +5,9 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import re
 import sys
+import time
 from pathlib import Path
 
 from PySide6.QtCore import (QEvent, QObject, QPoint, QRunnable, Qt,
@@ -69,6 +71,15 @@ _SCREENSHOT_BASE = (
 #: The same files through the website (Cloudflare-cached), as its own
 #: extensions page shows them: the second try when GitHub fails.
 _SCREENSHOT_MIRROR = "https://ingetrazo.com/extensiones-img/"
+#: The catalog's small copies (512 × 320, 10–40 KB) of the screenshots,
+#: what a card shows: the full screenshot, up to 600 KB, was fetched to
+#: be shown at 256 × 160 (#1296). Same two sources.
+_THUMB_BASE = (
+    "https://raw.githubusercontent.com/ingelibre/"
+    "ingetrazo-extensions/main/thumbs/")
+_THUMB_MIRROR = "https://ingetrazo.com/extensiones-img/thumbs/"
+#: Where the downloaded small copies are kept, beside the screenshots.
+_THUMB_CACHE_DIR = "catalog-thumbs"
 #: A screenshot that failed is asked for again on its own — before, it
 #: stayed «Preview unavailable» until the list was scrolled (caza 2).
 _SCREENSHOT_RETRIES = 3
@@ -89,6 +100,9 @@ _THUMBS_DIR = "thumbs"
 #: and the next opening find them ready.
 _PREFETCH_DELAY_MS = 150
 _PREFETCH_BATCH = 4
+#: Once the visible cards are in, the images not yet on disk are fetched
+#: in the background, this many at a time, so scrolling finds them ready.
+_PREFETCH_DOWNLOADS = 3
 _ROW_MAX_HEIGHT = 300
 _ROW_MAX_WIDTH = 660
 #: The width a column of cards asks for: two at the usual size, three on a
@@ -215,6 +229,8 @@ class ExtensionManagerDialog(QDialog):
                                else extension_startup_state())
         self._requested_images: set[str] = set()
         self._image_failures: dict[str, int] = {}
+        #: When a failed picture may be asked for again in the background.
+        self._retry_at: dict[str, float] = {}
         # Screenshots already decoded and scaled, by extension id: a card
         # built again (a filter, an install) is born with its image instead
         # of «Preview unavailable» and then the picture (#555).
@@ -963,16 +979,87 @@ class ExtensionManagerDialog(QDialog):
         open_url(user_log_dir())
 
 
+    @staticmethod
+    def _remote_image(extension: Extension) -> tuple[str, str, str] | None:
+        """The file a card's picture is fetched as, and its two sources:
+        the catalog's small copy when it has one, else the screenshot."""
+        if extension.thumb:
+            return extension.thumb, _THUMB_BASE, _THUMB_MIRROR
+        if extension.screenshot:
+            return extension.screenshot, _SCREENSHOT_BASE, _SCREENSHOT_MIRROR
+        return None
+
     def _screenshot_cache(self, extension: Extension) -> Path | None:
-        if not extension.screenshot:
-            return None
         if extension.bundled:
+            if not extension.screenshot:
+                return None
             # Shipped beside the extension: read from disk, never fetched.
             local = Path(extension.screenshot)
             return local if local.is_file() else None
+        remote = self._remote_image(extension)
+        if remote is None:
+            return None
         base = Path(QStandardPaths.writableLocation(
-            QStandardPaths.AppLocalDataLocation))
-        return base / "extension-screenshots" / extension.screenshot
+            QStandardPaths.AppLocalDataLocation)) / "extension-screenshots"
+        if extension.thumb:
+            base = base / _THUMB_CACHE_DIR
+        name = remote[0]
+        if extension.screenshot_sha:
+            # The print in the name: a new picture under the same name is
+            # another file, fetched again (#1296).
+            path = Path(name)
+            name = f"{path.stem}-{extension.screenshot_sha}{path.suffix}"
+        return base / name
+
+    def _forget_old_copies(self, extension: Extension, cache: Path) -> None:
+        """Remove the copies of this extension's picture kept under an
+        older print (or none), and their scaled card images."""
+        remote = self._remote_image(extension)
+        if remote is None or not extension.screenshot_sha:
+            return
+        name = Path(remote[0])
+        pattern = re.compile(re.escape(name.stem) + r"(-[0-9a-f]{16})?"
+                             + re.escape(name.suffix))
+        try:
+            olds = [p for p in cache.parent.iterdir()
+                    if p != cache and pattern.fullmatch(p.name)]
+        except OSError:
+            return
+        for old in olds:
+            for path in (old, self._thumb_path(old)):
+                try:
+                    path.unlink(missing_ok=True)
+                except OSError:
+                    log.warning("could not remove old extension image %s",
+                                path, exc_info=True)
+
+    def _request_image(self, extension: Extension, cache: Path) -> bool:
+        """Ask for a card's picture unless it is on its way or out of
+        tries; GitHub first, then the website, alternating."""
+        if extension.id in self._requested_images:
+            return False
+        failures = self._image_failures.get(extension.id, 0)
+        if failures > _SCREENSHOT_RETRIES:
+            return False
+        remote = self._remote_image(extension)
+        if remote is None:
+            return False
+        name, primary, mirror = remote
+        self._requested_images.add(extension.id)
+        url = (mirror if failures % 2 else primary) + name
+        if failures % 2 and not extension.thumb and extension.screenshot_sha:
+            # The website's cache keeps an old screenshot under its name;
+            # the print asks for this one.
+            url += f"?v={extension.screenshot_sha}"
+        request = QNetworkRequest(QUrl(url))
+        request.setAttribute(
+            QNetworkRequest.RedirectPolicyAttribute,
+            QNetworkRequest.NoLessSafeRedirectPolicy)
+        reply = self._network.get(request)
+        reply.finished.connect(
+            lambda extension=extension, target=cache, r=reply:
+            self._screenshot_finished(extension, target, r))
+        return True
 
     def _load_visible_images(self, *_args) -> None:
         page = self._active_page()
@@ -998,24 +1085,12 @@ class ExtensionManagerDialog(QDialog):
             if cache.is_file():
                 self._set_screenshot(extension.id, cache)
                 continue
-            if extension.id in self._requested_images:
-                continue
-            failures = self._image_failures.get(extension.id, 0)
-            if failures > _SCREENSHOT_RETRIES:
-                continue
-            self._requested_images.add(extension.id)
-            base = _SCREENSHOT_MIRROR if failures % 2 else _SCREENSHOT_BASE
-            request = QNetworkRequest(QUrl(base + extension.screenshot))
-            request.setAttribute(
-                QNetworkRequest.RedirectPolicyAttribute,
-                QNetworkRequest.NoLessSafeRedirectPolicy)
-            reply = self._network.get(request)
-            reply.finished.connect(
-                lambda ident=extension.id, target=cache, r=reply:
-                self._screenshot_finished(ident, target, r))
+            self._request_image(extension, cache)
         self._prefetch_timer.start()
 
-    def _screenshot_finished(self, ident: str, cache: Path, reply) -> None:
+    def _screenshot_finished(self, extension: Extension, cache: Path,
+                             reply) -> None:
+        ident = extension.id
         self._requested_images.discard(ident)
         try:
             data = bytes(reply.readAll())
@@ -1027,8 +1102,10 @@ class ExtensionManagerDialog(QDialog):
                          ident, reply.errorString())
                 self._retry_screenshot(ident)
                 return
-            image = QPixmap()
-            if not image.loadFromData(data):
+            # Decoded once: the same image is checked here and scaled for
+            # the card (#1296: it was decoded twice on the UI thread).
+            full = QImage()
+            if not full.loadFromData(data):
                 log.warning("invalid screenshot image for extension %s", ident)
                 self._retry_screenshot(ident)
                 return
@@ -1036,35 +1113,50 @@ class ExtensionManagerDialog(QDialog):
             temporary = cache.with_suffix(cache.suffix + ".part")
             temporary.write_bytes(data)
             temporary.replace(cache)
-            self._set_screenshot(ident, cache, data)
+            self._forget_old_copies(extension, cache)
+            self._set_screenshot(ident, cache, decoded=full)
         except OSError:
             log.warning("could not cache extension screenshot %s",
                         ident, exc_info=True)
         finally:
             reply.deleteLater()
+            if self.isVisible():
+                self._prefetch_timer.start()
 
     def _retry_screenshot(self, ident: str) -> None:
         """Ask again, a little later and from the other source, while the
         tries last; the visible cards are looked at again then."""
         failures = self._image_failures.get(ident, 0) + 1
         self._image_failures[ident] = failures
+        delay = _SCREENSHOT_RETRY_MS * failures
+        self._retry_at[ident] = time.monotonic() + delay / 1000
         if failures <= _SCREENSHOT_RETRIES:
-            QTimer.singleShot(_SCREENSHOT_RETRY_MS * failures, self,
-                              self._images_timer.start)
+            QTimer.singleShot(delay, self, self._images_timer.start)
 
     def _prefetch_screenshots(self) -> None:
         """Scale a few more of the screenshots already on disk, off
-        screen; again a moment later while any is left."""
+        screen, and fetch a few of those not on disk yet (the cards in
+        the order shown first); again a moment later while any is left."""
         if not self.isVisible():
             return
         done = 0
-        for extension in self._extensions:
+        missing = []
+        # The cards of the page in view, in the order shown, come first.
+        order = {ident: index for index, ident in enumerate(
+            self._active_page()["image_labels"])}
+        ordered = sorted(self._extensions,
+                         key=lambda e: order.get(e.id, len(order)))
+        for extension in ordered:
             if (extension.id in self._screenshots
                     or extension.id in self._unreadable_shots):
                 continue
             cache = self._screenshot_cache(extension)
-            if cache is None or not cache.is_file():
-                continue          # downloaded only when its card is seen
+            if cache is None:
+                continue
+            if not cache.is_file():
+                if not extension.bundled:
+                    missing.append((extension, cache))
+                continue
             if done == _PREFETCH_BATCH:
                 self._prefetch_timer.start()
                 return
@@ -1072,6 +1164,13 @@ class ExtensionManagerDialog(QDialog):
             if extension.id not in self._screenshots:
                 self._unreadable_shots.add(extension.id)
             done += 1
+        now = time.monotonic()
+        for extension, cache in missing:
+            if len(self._requested_images) >= _PREFETCH_DOWNLOADS:
+                break
+            if self._retry_at.get(extension.id, 0) > now:
+                continue           # its retry timer asks again later
+            self._request_image(extension, cache)
 
     @staticmethod
     def _thumb_path(source: Path) -> Path:
@@ -1092,7 +1191,11 @@ class ExtensionManagerDialog(QDialog):
         self._screenshots[extension.id] = pixmap
         return pixmap
 
-    def _scaled_image(self, source: Path, data: bytes | None) -> QImage | None:
+    def _scaled_image(self, source: Path,
+                      decoded: QImage | None = None) -> QImage | None:
+        """The card image for ``source``: from this run's memory, the
+        scaled copy on disk, or scaled from the picture — ``decoded`` when
+        it was just downloaded and decoded, read from ``source`` if not."""
         key = _screenshot_key(source)
         if key is None:
             return None
@@ -1102,20 +1205,22 @@ class ExtensionManagerDialog(QDialog):
         thumb = self._thumb_path(source)
         image = QImage()
         try:
-            fresh = thumb.stat().st_mtime_ns >= key[1]
+            fresh = (decoded is None
+                     and thumb.stat().st_mtime_ns >= key[1])
         except OSError:
             fresh = False
         if not (fresh and image.load(str(thumb)) and not image.isNull()):
-            full = QImage()
-            try:
-                if data is None:
+            full = decoded
+            if full is None:
+                full = QImage()
+                try:
                     data = source.read_bytes()
-            except OSError:
-                log.warning("could not read extension screenshot cache %s",
-                            source, exc_info=True)
-                return None
-            if not full.loadFromData(data):
-                return None
+                except OSError:
+                    log.warning("could not read extension screenshot cache %s",
+                                source, exc_info=True)
+                    return None
+                if not full.loadFromData(data):
+                    return None
             image = full.scaled(
                 *_IMAGE_SIZE, Qt.KeepAspectRatioByExpanding,
                 Qt.SmoothTransformation)
@@ -1131,8 +1236,8 @@ class ExtensionManagerDialog(QDialog):
         return image
 
     def _set_screenshot(self, ident: str, source: Path,
-                        data: bytes | None = None) -> None:
-        image = self._scaled_image(source, data)
+                        decoded: QImage | None = None) -> None:
+        image = self._scaled_image(source, decoded)
         if image is None:
             return
         scaled = QPixmap.fromImage(image)

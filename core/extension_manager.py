@@ -37,6 +37,9 @@ MAX_ARCHIVE_FILES = 2000
 MAX_EXTRACTED_BYTES = 128 * 1024 * 1024
 _ID_RE = re.compile(r"^[a-zA-Z0-9_-]+$")
 _SHA_RE = re.compile(r"^[0-9a-fA-F]{64}$")
+#: The catalog's short print of a screenshot: 16 hex of its SHA-256.
+_SHOT_SHA_RE = re.compile(r"^[0-9a-f]{16}$")
+_IMAGE_SUFFIXES = (".png", ".jpg", ".jpeg", ".webp")
 
 
 class ExtensionManagerError(Exception):
@@ -58,6 +61,12 @@ class Extension:
     tags: tuple[str, ...]
     screenshot: str | None = None
     updated_at: str | None = None
+    #: The catalog's small copy of the screenshot (``thumbs/<thumb>``),
+    #: what a card shows; None when the catalog has none.
+    thumb: str | None = None
+    #: 16 hex of the screenshot's SHA-256: a new one means a new picture
+    #: under the same name, so the cached copy is fetched again.
+    screenshot_sha: str | None = None
     #: An extension that ships inside IngeTrazo (``examples/extensions``):
     #: the local file or folder it installs from — nothing is downloaded.
     bundled: str | None = None
@@ -96,6 +105,12 @@ def _text_map(value, field: str) -> dict[str, str]:
     return value
 
 
+def _safe_image_name(name: object) -> bool:
+    return (isinstance(name, str) and bool(name)
+            and "/" not in name and "\\" not in name
+            and PurePosixPath(name).suffix.lower() in _IMAGE_SUFFIXES)
+
+
 def _parse_extension(raw: object) -> Extension:
     if not isinstance(raw, dict):
         raise ExtensionManagerError("Invalid extension entry in catalog.")
@@ -118,13 +133,21 @@ def _parse_extension(raw: object) -> Extension:
     if not isinstance(tags, list) or not all(isinstance(t, str) for t in tags):
         raise ExtensionManagerError(f"Extension {ident!r} has invalid tags.")
     screenshot = raw.get("screenshot")
-    if screenshot is not None and (
-            not isinstance(screenshot, str)
-            or "/" in screenshot or "\\" in screenshot
-            or PurePosixPath(screenshot).suffix.lower() not in (
-                ".png", ".jpg", ".jpeg", ".webp")):
+    if screenshot is not None and not (
+            isinstance(screenshot, str)
+            and "/" not in screenshot and "\\" not in screenshot
+            and PurePosixPath(screenshot).suffix.lower() in _IMAGE_SUFFIXES):
         raise ExtensionManagerError(
             f"Extension {ident!r} has an invalid screenshot filename.")
+    # Both only speed up the cards: a bad one is dropped, never the
+    # extension.
+    thumb = raw.get("thumb")
+    if thumb is not None and not _safe_image_name(thumb):
+        thumb = None
+    screenshot_sha = raw.get("screenshot_sha")
+    if not (isinstance(screenshot_sha, str)
+            and _SHOT_SHA_RE.fullmatch(screenshot_sha)):
+        screenshot_sha = None
     updated_at = raw.get("updated_at")
     if updated_at is not None and not isinstance(updated_at, str):
         raise ExtensionManagerError(
@@ -143,6 +166,8 @@ def _parse_extension(raw: object) -> Extension:
         tags=tuple(tags),
         screenshot=screenshot,
         updated_at=updated_at,
+        thumb=thumb,
+        screenshot_sha=screenshot_sha,
     )
 
 
