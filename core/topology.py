@@ -1589,6 +1589,79 @@ def resolve_tjunctions(mesh, max_iter: int = 1000) -> None:
     sweep_tjunctions(mesh)
 
 
+#: The largest warped face folded by the exact search below (O(n³)); a
+#: bigger one keeps earcut's pieces.
+_FOLD_DP_MAX = 96
+
+
+def _flat_on_neighbour(mesh, face, tri) -> bool:
+    """Whether a fold piece of ``face`` would have all three corners on
+    another face — lying in that face's plane, doubling it."""
+    common = None
+    for p in tri:
+        v = mesh.vertex_at(p)
+        if v is None:
+            return False
+        at = mesh.faces_at(v)
+        common = set(at) if common is None else common & at
+        common.discard(face)
+        if not common:
+            return False
+    return bool(common)
+
+
+def _fold_pieces(mesh, face) -> list | None:
+    """The triangles of the least total area that cover ``face`` (a
+    polygon without holes) with no piece flat on another face — the
+    smoothest fold, as a lowered curve makes a ruled ramp. Every piece
+    faces the way the warped face does: one turned over would cut through
+    the solid (a box's corner moved through it onto the far corner) and
+    must stay refused. ``None`` when no such triangulation exists."""
+    pts = [QVector3D(p) for p in face.vertices]
+    n = len(pts)
+    inf = float("inf")
+    facing = face.normal()
+
+    def area(i, k, j):
+        a, b, c = pts[i], pts[k], pts[j]
+        cross = QVector3D.crossProduct(b - a, c - a)
+        if QVector3D.dotProduct(cross, facing) <= 0.0:
+            return 0.0          # turned over: never a piece
+        return cross.length() * 0.5
+
+    cost = [[0.0] * n for _ in range(n)]
+    pick = [[-1] * n for _ in range(n)]
+    for gap in range(2, n):
+        for i in range(0, n - gap):
+            j = i + gap
+            best, at = inf, -1
+            for k in range(i + 1, j):
+                sub = cost[i][k] + cost[k][j]
+                if sub >= best:
+                    continue
+                tri_area = area(i, k, j)
+                if tri_area < 1e-12:
+                    continue
+                if _flat_on_neighbour(mesh, face, (pts[i], pts[k], pts[j])):
+                    continue
+                if sub + tri_area < best:
+                    best, at = sub + tri_area, k
+            cost[i][j], pick[i][j] = best, at
+    if cost[0][n - 1] == inf:
+        return None
+    out = []
+    stack = [(0, n - 1)]
+    while stack:
+        i, j = stack.pop()
+        if j - i < 2:
+            continue
+        k = pick[i][j]
+        out.append((pts[i], pts[k], pts[j]))
+        stack.append((i, k))
+        stack.append((k, j))
+    return out
+
+
 def fold_nonplanar_faces(mesh, tolerance: float = _PLANAR_TOLERANCE) -> list:
     """*Autofold*: split every face a move has warped out of its
     plane into planar pieces along fold edges.
@@ -1610,6 +1683,17 @@ def fold_nonplanar_faces(mesh, tolerance: float = _PLANAR_TOLERANCE) -> list:
         tris = face.triangulate()
         if len(tris) < 2:
             continue
+        exact = False
+        if (not face.holes and len(face.loop) <= _FOLD_DP_MAX
+                and any(_flat_on_neighbour(mesh, face, t) for t in tris)):
+            # Earcut laid a piece flat on a neighbouring face (#1294): a
+            # curve lowered onto the one below it left three of its points
+            # in the floor's plane, the piece doubled the floor and the
+            # join guard refused the whole move. Fold so no piece does.
+            better = _fold_pieces(mesh, face)
+            if better:
+                tris = better
+                exact = True
         mesh.remove_face(face)
         pieces = {
             mesh.add_face([QVector3D(a), QVector3D(b), QVector3D(c)])
@@ -1632,8 +1716,18 @@ def fold_nonplanar_faces(mesh, tolerance: float = _PLANAR_TOLERANCE) -> list:
                     g = e.faces[0] if e.faces[1] is f else e.faces[1]
                     if g is f or g not in pieces:
                         continue
-                    if QVector3D.dotProduct(f.normal().normalized(),
-                                            g.normal().normalized()) > 0.999:
+                    # The exact fold's fan of thin pieces turns a little at
+                    # each: merged on nearly parallel normals alone they made
+                    # "faces" millimetres out of their plane (#1294). Half
+                    # the tolerance: is_planar measures from a plane through
+                    # three corners, and which three depends on the merge
+                    # order. Earcut's pieces keep the old rule for now.
+                    if (QVector3D.dotProduct(f.normal().normalized(),
+                                             g.normal().normalized()) > 0.999
+                            and (not exact
+                                 or is_planar(list(f.vertices)
+                                              + list(g.vertices),
+                                              tolerance * 0.5))):
                         region = mesh.dissolve_edge(e)
                         if region is not None:
                             region.attrs = dict(face.attrs)
