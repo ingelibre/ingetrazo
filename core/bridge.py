@@ -135,10 +135,18 @@ def _connected(edges, most: int | None = None) -> list[list] | None:
 # ---------------------------------------------------------------- pairing
 
 def _centre(points) -> QVector3D:
-    c = QVector3D()
-    for p in points:
-        c += p
-    return c / len(points)
+    """The middle of a closed loop, each side weighing what it measures: a
+    mean of the points slides towards a curve, drawn with many of them, and
+    two arches rounded at opposite ends then matched best upside down, an
+    hourglass (issue #1050)."""
+    c, total = QVector3D(), 0.0
+    for p, q in zip(points, points[1:] + points[:1]):
+        d = (q - p).length()
+        c += (p + q) * 0.5 * d
+        total += d
+    if total < _EPS:
+        return sum(points, QVector3D()) / len(points)
+    return c / total
 
 
 def _normalised(points) -> list:
