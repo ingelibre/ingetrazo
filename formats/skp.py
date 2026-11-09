@@ -22,6 +22,7 @@ unavailable backend.
 """
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 
@@ -30,10 +31,12 @@ class NeedsConverter(Exception):
     historical: it once meant "use the external converter".) Carries the
     path and detected format."""
 
-    def __init__(self, path, fmt: str) -> None:
-        super().__init__(f"No pure SKP backend for {path} (format={fmt})")
+    def __init__(self, path, fmt: str, reason: str = "") -> None:
+        msg = f"No pure SKP backend for {path} (format={fmt})"
+        super().__init__(f"{msg}: {reason}" if reason else msg)
         self.path = Path(path)
         self.format = fmt
+        self.reason = reason
 
 
 def detect_format(path) -> str:
@@ -114,12 +117,19 @@ def parse_skp(path, progress=None) -> dict:
     caller reports the file as unreadable. Touches no ``Scene``."""
     path = Path(path)
     fmt = detect_format(path)
+    error = None
     for backend in _BACKENDS:
         if not (backend.available() and backend.supports(fmt)):
             continue
         try:
             payload = backend.parse(path, progress=progress)
-        except Exception:  # noqa: BLE001 — a parser that chokes → try next / fall back
+        except Exception as exc:  # noqa: BLE001 — a parser that chokes → try next / fall back
+            # The user only hears "could not read"; the reader's own error
+            # goes to the error log, or a failed import is undiagnosable.
+            logging.getLogger(__name__).warning(
+                "SKP backend %s could not read %s", backend.name, path,
+                exc_info=True)
+            error = exc
             payload = None
         # Protos count as geometry: a file whose whole content is
         # components placed once yields no plain groups at all, and
@@ -127,7 +137,7 @@ def parse_skp(path, progress=None) -> dict:
         if payload and (payload.get("groups") or payload.get("protos")
                         or payload.get("empty")):
             return payload
-    raise NeedsConverter(path, fmt)
+    raise NeedsConverter(path, fmt, str(error or "")) from error
 
 
 def apply_payload(scene, payload, progress=None) -> str:
@@ -197,7 +207,21 @@ def _apply_payload_inner(scene, payload, progress=None) -> str:
         # the QVector3D-based fuse/add_face clean-up below.
         return p if hasattr(p, "x") else QVector3D(p[0], p[1], p[2])
 
-    def _build_mesh(faces, soft_edges=None):
+    def _add_lines(mesh, loose_edges):
+        """The file's loose edges (lines on no face), welded to the faces'
+        corners where they meet them."""
+        for a, b in loose_edges or ():
+            try:
+                mesh.add_edge(_q(a), _q(b))
+            except ValueError:      # endpoints weld to one vertex
+                continue
+
+    def _build_mesh(faces, soft_edges=None, loose_edges=None):
+        mesh = _build_faces(faces, soft_edges)
+        _add_lines(mesh, loose_edges)
+        return mesh
+
+    def _build_faces(faces, soft_edges=None):
         mesh = Mesh()
         if soft_edges is not None:
             # The backend carried the file's ORIGINAL polygons plus the
@@ -391,8 +415,9 @@ def _apply_payload_inner(scene, payload, progress=None) -> str:
 
     for gp in groups:
         _tick(1)
-        mesh = _build_mesh(gp["faces"], gp.get("soft_edges"))
-        if mesh.faces:
+        mesh = _build_mesh(gp["faces"], gp.get("soft_edges"),
+                           gp.get("loose_edges"))
+        if mesh.faces or mesh.edges:        # a group of lines is one too
             g = Group(mesh, name=gp.get("name"))
             if gp.get("layer"):
                 g.layer = gp["layer"]
@@ -420,27 +445,35 @@ def _apply_payload_inner(scene, payload, progress=None) -> str:
     proto_meshes = []
     for pr in protos:
         _tick(1)
-        proto_meshes.append(_build_mesh(pr["faces"], pr.get("soft_edges")))
+        proto_meshes.append(_build_mesh(pr["faces"], pr.get("soft_edges"),
+                                        pr.get("loose_edges")))
 
-    def _place(idx, xf, layer=None, depth=0):
+    def _place(idx, xf, layer=None, depth=0, name=None):
         pr = protos[idx]
-        g = Group(proto_meshes[idx], name=pr.get("name"))
+        # The placement's own name (what the user called the group or
+        # copy), else the definition's.
+        g = Group(proto_meshes[idx], name=name or pr.get("name"))
         g.xform = xf
+        # A .skp GROUP stays a group: only a component definition is one.
+        g.component = bool(pr.get("component", True))
         if layer:
             g.layer = layer
         if depth < 32:      # a malformed file must not spin
             g.adopt(_place(kid["proto"], kid["xform"], kid.get("layer"),
-                           depth + 1)
+                           depth + 1, kid.get("name"))
                     for kid in pr.get("children", []) or [])
         return g
 
     for idx, pr in enumerate(protos):
-        if not proto_meshes[idx].faces and not (pr.get("children") or []):
+        if not proto_meshes[idx].faces and not proto_meshes[idx].edges \
+                and not (pr.get("children") or []):
             continue
         _tick(1)
         layers = pr.get("instance_layers") or []
+        names = pr.get("instance_names") or []
         for i, xf in enumerate(pr.get("instances", []) or []):
-            g = _place(idx, xf, layers[i] if i < len(layers) else None)
+            g = _place(idx, xf, layers[i] if i < len(layers) else None,
+                       name=names[i] if i < len(names) else None)
             scene.groups.append(g)
     back = payload.get("back_color")
     if back and getattr(scene, "back_face_color", None) is None:

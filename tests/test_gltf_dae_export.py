@@ -145,10 +145,12 @@ def test_dae_is_wellformed_zup_with_geometry(tmp_path):
     root = ET.parse(path).getroot()
     up = root.find(f"{_NS}asset/{_NS}up_axis")
     assert up is not None and up.text.strip() == "Z_UP"
-    tris = list(root.iter(f"{_NS}triangles"))
-    assert tris, "expected <triangles>"
-    total = sum(int(t.get("count")) for t in tris)
-    assert total == 12  # box = 12 triangles
+    # A box is six convex quads: real polygons, no triangulation diagonals.
+    polys = list(root.iter(f"{_NS}polylist"))
+    assert polys, "expected <polylist>"
+    assert sum(int(p.get("count")) for p in polys) == 6
+    vcounts = " ".join(p.find(f"{_NS}vcount").text for p in polys).split()
+    assert vcounts == ["4"] * 6
     # geometry sits inside a <node> (importers skip top-level instance_geometry)
     node = root.find(f"{_NS}library_visual_scenes/{_NS}visual_scene/{_NS}node")
     assert node.find(f"{_NS}instance_geometry") is not None

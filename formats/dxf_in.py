@@ -12,7 +12,10 @@ our machinery. D1 + D2:
   nested blocks deserve (piscina's hedge lesson). INSERTs *inside* a
   block explode into its prototype for now (nested sharing deferred);
   MINSERT arrays explode in place.
-- **3DFACE / SOLID / TRACE become faces** (D2), then each mesh that gained
+- **3DFACE / SOLID / TRACE become faces** (D2), and so do the mesh
+  entities CAD and joinery programs export their 3D parts with: POLYFACE
+  and polygon-mesh POLYLINEs and MESH (each face of the mesh one face,
+  invisible edges included). Then each mesh that gained
   faces runs the stitch + coplanar merge every importer here uses — a
   triangulated CAD terrain comes back as clean polygons, as with a "merge
   coplanar faces" option always on.
@@ -39,6 +42,7 @@ DEFERRED, documented: nested block sharing (children placements), the
 """
 from __future__ import annotations
 
+from contextlib import contextmanager
 from pathlib import Path
 
 from PySide6.QtGui import QMatrix4x4, QVector3D
@@ -75,10 +79,37 @@ _SKIP_SILENT = {"ATTDEF", "VIEWPORT", "XLINE", "RAY"}
 _MAX_INSERT_DEPTH = 8
 
 
+class NothingToImport(ValueError):
+    """The file reads, but its model space has nothing to build. ``skipped``:
+    the entity kinds left out, with how many of each."""
+
+    def __init__(self, skipped=None) -> None:
+        super().__init__("no importable geometry (lines, polylines, arcs, "
+                         "circles, ellipses, splines or faces) in the "
+                         "model space")
+        self.skipped = dict(skipped or {})
+
+
 # ---- Reading ---------------------------------------------------------------
 def open_document(path: Path):
     """ezdxf's strict reader, falling back to its recover mode — real-world
-    DXF (LibreDWG conversions included) is often structurally bruised."""
+    DXF (LibreDWG conversions included) is often structurally bruised.
+
+    One bruise ezdxf does not survive on its own: a paper-space LAYOUT the
+    layout dictionary does not list (a 14 MB DWG of the Windows round 0.6.0,
+    layout «OF-01»). Linking MTEXT columns asks for the layout of their
+    owner, and the lookup ends in a bare KeyError where ezdxf only expects
+    its own DXFKeyError. The file is read again with that lookup answering
+    «no such layout», which ezdxf already handles (the block of the layout
+    is used instead)."""
+    try:
+        return _read_document(path)
+    except KeyError:
+        with _unlisted_layout_is_no_layout():
+            return _read_document(path)
+
+
+def _read_document(path: Path):
     import ezdxf
     from ezdxf import recover
 
@@ -87,6 +118,31 @@ def open_document(path: Path):
     except ezdxf.DXFStructureError:
         doc, _auditor = recover.readfile(str(path))
         return doc
+
+
+@contextmanager
+def _unlisted_layout_is_no_layout():
+    """While reading: a layout key whose LAYOUT is missing from the layout
+    dictionary raises ezdxf's DXFKeyError, not a bare KeyError."""
+    from ezdxf.lldxf.const import DXFKeyError
+    from ezdxf.layouts.layouts import Layouts
+
+    original = Layouts.get_layout_by_key
+
+    def get_layout_by_key(self, layout_key):
+        try:
+            return original(self, layout_key)
+        except KeyError as exc:
+            if isinstance(exc, DXFKeyError):
+                raise
+            raise DXFKeyError(f'Layout with key "{layout_key}" is not '
+                              f'listed') from exc
+
+    Layouts.get_layout_by_key = get_layout_by_key
+    try:
+        yield
+    finally:
+        Layouts.get_layout_by_key = original
 
 
 def read_unit_scale(path):
@@ -205,6 +261,39 @@ def _entity_segments(e, sagitta: float):
     return None, False
 
 
+def _mesh_faces(e):
+    """The face loops of a mesh entity (POLYFACE / polygon-mesh POLYLINE,
+    MESH), or ``None`` for any other entity. A plain 2D/3D POLYLINE is
+    linework and stays with :func:`_entity_segments`."""
+    kind = e.dxftype()
+    try:
+        if kind == "POLYLINE":
+            if not (e.is_poly_face_mesh or e.is_polygon_mesh):
+                return None
+            from ezdxf.render import MeshBuilder
+            mb = MeshBuilder.from_polyface(e)
+        elif kind == "MESH":
+            from ezdxf.render import MeshBuilder
+            mb = MeshBuilder.from_mesh(e)
+        else:
+            return None
+    except Exception:
+        return []                           # unreadable mesh: nothing, not a crash
+    verts = mb.vertices
+    loops = []
+    for face in mb.faces:
+        seen: list = []
+        for i in face:
+            p = verts[i]
+            if not seen or (p - seen[-1]).magnitude > 1e-12:
+                seen.append(p)
+        if len(seen) > 1 and (seen[0] - seen[-1]).magnitude <= 1e-12:
+            seen.pop()
+        if len(seen) >= 3:
+            loops.append(seen)
+    return loops
+
+
 def _entity_face(e):
     """The corner loop of a face entity, or ``None``. SOLID/TRACE store their
     quad in Z order — corners 2 and 3 swap to walk the perimeter."""
@@ -230,11 +319,12 @@ def _entity_face(e):
 class _Bucket:
     """Linework + faces collected for one destination mesh."""
 
-    __slots__ = ("runs", "faces")
+    __slots__ = ("runs", "faces", "meshes")
 
     def __init__(self) -> None:
         self.runs: list = []                # (point_run, curved)
         self.faces: list = []               # point loops
+        self.meshes: list = []              # one list of point loops per mesh entity
 
 
 def _scan(space, sagitta, skipped, counter, per_layer, depth=0):
@@ -260,8 +350,48 @@ def _scan(space, sagitta, skipped, counter, per_layer, depth=0):
     return placements
 
 
+def _expand_assemblies(doc, placements, depth: int = 0) -> list:
+    """Replace each placement of an ASSEMBLY block — one whose definition
+    holds nothing but INSERTs, the way stair, joinery and mechanical CAD
+    export a model: one block for the whole, one per part — by placements
+    of its parts, matrices composed. Each part then keeps its own name and
+    its own prototype (and its own stitch), instead of all parts exploding
+    into one mesh where touching pieces weld together. Blocks that mix
+    geometry and INSERTs keep the current behaviour (explode into one
+    prototype); a real nested hierarchy waits for nested placements."""
+    out = []
+    for name, m, layer in placements:
+        try:
+            ents = list(doc.blocks[name])
+        except Exception:
+            out.append((name, m, layer))
+            continue
+        inserts = [e for e in ents if e.dxftype() == "INSERT"]
+        rest = [e for e in ents if e.dxftype() not in ("INSERT", "ATTDEF")]
+        if not inserts or rest or depth >= _MAX_INSERT_DEPTH:
+            out.append((name, m, layer))
+            continue
+        parts = []
+        for e in inserts:
+            try:
+                km = e.matrix44()
+            except Exception:
+                continue
+            sub = getattr(e.dxf, "layer", "0") or "0"
+            # row vectors: the part's own placement first, then the whole's
+            parts.append((e.dxf.name, km * m, layer if sub == "0" else sub))
+        out.extend(_expand_assemblies(doc, parts, depth + 1))
+    return out
+
+
 def _bucket_one(e, layer, sagitta, skipped, counter, per_layer) -> None:
     kind = e.dxftype()
+    loops = _mesh_faces(e)
+    if loops is not None:
+        if loops:
+            counter[0] += 1
+            per_layer.setdefault(layer, _Bucket()).meshes.append(loops)
+        return
     loop = _entity_face(e)
     if loop is not None:
         counter[0] += 1
@@ -307,6 +437,8 @@ def _build_mesh(bucket: _Bucket, scale: float, offset) -> "Mesh":
         vobjs, ids = mesh.bulk_weld(np.array(pts, dtype=np.float64))
         mesh.add_edges_welded(vobjs, np.asarray(ids)[ia],
                               np.asarray(ids)[ib], flags=flags)
+    if bucket.meshes:
+        _add_mesh_entities(mesh, bucket.meshes, scale, offset)
     if bucket.faces:
         from core.history import run_stitch
         from core.topology import _key
@@ -330,6 +462,57 @@ def _build_mesh(bucket: _Bucket, scale: float, offset) -> "Mesh":
             except Exception:
                 pass                        # merge is a nicety, never fatal
     return mesh
+
+
+def _add_mesh_entities(mesh, entities, scale: float, offset) -> None:
+    """Add the faces of each mesh entity (a POLYFACE / MESH: one part as the
+    CAD program wrote it) to ``mesh``, each stitched and coplanar-merged on
+    its own in a scratch mesh first.
+
+    Merging part by part keeps every merge small: a whole layer of curved
+    parts (balusters, handrails: thousands of facets each) merged in the one
+    destination mesh is quadratic in the number of faces — minutes, or a
+    crash, on a real stair — while each part alone takes milliseconds. It is
+    also the right scope: two parts that touch never fuse their faces."""
+    from core.history import run_stitch
+    from core.mesh import Mesh
+    from core.topology import _key
+
+    kept = set()
+    for loops in entities:
+        part = Mesh()
+        added, seed = [], set()
+        for loop in loops:
+            corners = [QVector3D(p.x * scale - offset[0],
+                                 p.y * scale - offset[1],
+                                 p.z * scale - offset[2]) for p in loop]
+            try:
+                f = part.add_face(corners)
+            except Exception:
+                continue                    # degenerate sliver: only itself
+            if f is not None:
+                added.append(f)
+                seed.update(_key(c) for c in corners)
+        if not added:
+            continue
+        try:
+            run_stitch(part, seed, set(added), coplanar_merge=True)
+        except Exception:
+            pass                            # merge is a nicety, never fatal
+        for f in part.faces:
+            # Two parts flush against each other, or one part written twice,
+            # bring the same face: one stays, as the layer-wide stitch left
+            # it. A second one on the same edges is no face of a solid.
+            outline = frozenset(_key(v.position) for v in f.loop)
+            if outline in kept:
+                continue
+            kept.add(outline)
+            try:
+                mesh.add_face([v.position for v in f.loop],
+                              [[v.position for v in h] for h in f.hole_loops]
+                              or None)
+            except Exception:
+                continue
 
 
 def _fold_xform(m44, scale: float, offset) -> QMatrix4x4:
@@ -382,6 +565,7 @@ def _load_dxf_inner(scene, path, progress=None, scale: float = 1.0,
     skipped: dict[str, int] = {}
     counter = [0]
     placements = _scan(msp, sagitta, skipped, counter, per_layer)
+    placements = _expand_assemblies(doc, placements)
 
     # ---- Block prototypes (one mesh per used definition, local metres) ----
     proto_buckets: dict[str, dict] = {}
@@ -400,10 +584,9 @@ def _load_dxf_inner(scene, path, progress=None, scale: float = 1.0,
         proto_buckets[block_name] = {"0": bucket}
 
     if not per_layer and not any(
-            b["0"].runs or b["0"].faces for b in proto_buckets.values()):
-        raise ValueError("no importable geometry (lines, polylines, arcs, "
-                         "circles, ellipses, splines or faces) in the "
-                         "model space")
+            b["0"].runs or b["0"].faces or b["0"].meshes
+            for b in proto_buckets.values()):
+        raise NothingToImport(skipped)
 
     # ---- Measure for the UTM recentring (placements count too) ----
     tick(0.45, "Scaling…")
@@ -421,7 +604,7 @@ def _load_dxf_inner(scene, path, progress=None, scale: float = 1.0,
         for run, _c in bucket.runs:
             for p in run:
                 absorb(p.x * scale, p.y * scale, p.z * scale)
-        for loop in bucket.faces:
+        for loop in bucket.faces + [l for m in bucket.meshes for l in m]:
             for p in loop:
                 absorb(p.x * scale, p.y * scale, p.z * scale)
     for _bname, m, _layer in placements:
@@ -477,9 +660,7 @@ def _load_dxf_inner(scene, path, progress=None, scale: float = 1.0,
                        if components[block_name] == 1 else 0)
 
     if groups_made == 0:
-        raise ValueError("no importable geometry (lines, polylines, arcs, "
-                         "circles, ellipses, splines or faces) in the "
-                         "model space")
+        raise NothingToImport(skipped)
 
     scene.version += 1
     tick(1.0, "Done")

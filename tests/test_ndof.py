@@ -18,7 +18,7 @@ from PySide6.QtGui import QVector3D
 
 from core.camera import OrbitCamera
 from core.ndof import (NdofSample, NdofSettings, apply_ndof, from_hid,
-                       from_spacenavd, shape)
+                       from_spacenavd, mapped_movements, shape)
 from views.ndof_input import parse_hid_report, parse_spnav_packets
 
 
@@ -293,3 +293,213 @@ def test_wheel_notches_do_not_zoom_while_the_cap_moves_the_view(monkeypatch):
     monkeypatch.setattr(ndof_input, "_shared", None)
     notch()
     assert vp.camera.distance < d0                # an ordinary wheel zooms
+
+
+# ---- configurable physical-axis mapping -------------------------------------
+
+def test_original_preset_preserves_legacy_inversion():
+    from core.ndof import mapped_movements
+    st = NdofSettings(invert_pan_x=True)
+    assert mapped_movements(NdofSample(right=1), st)["pan_x"] == -1
+
+
+def test_custom_axis_can_drive_different_action():
+    from core.ndof import mapped_movements
+    st = NdofSettings(mapping_preset="custom")
+    st.axis_mapping["right"] = "zoom"
+    st.axis_mapping["forward"] = "pan_x"
+    result = mapped_movements(NdofSample(right=1), st)
+    assert result["zoom"] == 1
+    assert result["pan_x"] == 0
+
+
+def test_custom_inversion_and_per_axis_speed():
+    from core.ndof import mapped_movements
+    st = NdofSettings(mapping_preset="custom")
+    st.axis_inversion["right"] = True
+    st.axis_sensitivity["right"] = 0.5
+    assert mapped_movements(NdofSample(right=1), st)["pan_x"] == pytest.approx(-0.5)
+
+
+def test_duplicate_actions_sum_and_clamp():
+    from core.ndof import mapped_movements
+    st = NdofSettings(mapping_preset="custom")
+    st.axis_mapping["up"] = "pan_x"
+    result = mapped_movements(NdofSample(right=0.5, up=0.5), st)
+    assert result["pan_x"] > 0.5
+    assert mapped_movements(NdofSample(right=1, up=1), st)["pan_x"] == 1
+
+
+def test_sixth_axis_can_be_assigned_and_rotation_lock_still_applies():
+    st = NdofSettings(mapping_preset="custom")
+    st.axis_mapping["roll"] = "orbit_x"
+    cam, moved = _push(NdofSample(roll=1), cam=_cam(),
+                       mapping_preset="custom", axis_mapping=st.axis_mapping)
+    assert moved
+    cam, moved = _push(NdofSample(roll=1), cam=_cam(),
+                       mapping_preset="custom", axis_mapping=st.axis_mapping,
+                       lock_rotation=True)
+    assert not moved
+
+
+def test_disabled_axis_does_nothing():
+    st = NdofSettings(mapping_preset="custom")
+    st.axis_mapping["right"] = "disabled"
+    assert not _push(NdofSample(right=1), mapping_preset="custom",
+                     axis_mapping=st.axis_mapping)[1]
+
+
+def test_freecad_style_preset_matches_hardware_test():
+    from core.ndof import FREECAD_MAPPING, FREECAD_INVERSION, mapped_movements
+    st = NdofSettings(mapping_preset="freecad")
+    assert FREECAD_MAPPING == {
+        "right": "pan_x", "up": "zoom", "forward": "pan_y",
+        "tilt": "orbit_y", "spin": "disabled", "roll": "orbit_x"}
+    assert FREECAD_INVERSION["up"] and FREECAD_INVERSION["tilt"]
+    output = mapped_movements(NdofSample(up=1, forward=1), st)
+    assert output["zoom"] == -1 and output["pan_y"] == 1
+
+
+def test_profile_json_round_trip(tmp_path):
+    from core.ndof_profiles import save_profile, load_profile
+    st = NdofSettings(mapping_preset="custom", sensitivity=1.75)
+    st.axis_mapping["roll"] = "pan_y"
+    st.axis_inversion["roll"] = True
+    st.axis_sensitivity["roll"] = 2.25
+    path = tmp_path / "custom.json"
+    save_profile(path, st)
+    loaded = load_profile(path)
+    assert loaded.mapping_preset == "custom"
+    assert loaded.axis_mapping == st.axis_mapping
+    assert loaded.axis_inversion == st.axis_inversion
+    assert loaded.axis_sensitivity == st.axis_sensitivity
+    assert loaded.sensitivity == st.sensitivity
+
+
+@pytest.mark.parametrize("change", [
+    {"version": 99},
+    {"mapping": {"right": "bad"}},
+    {"inversion": {"right": "true"}},
+    {"sensitivity": {"right": float("nan")}},
+    {"global_speed": 100},
+])
+def test_profile_rejects_invalid_data(change):
+    from core.ndof_profiles import profile_to_dict, profile_from_dict
+    from copy import deepcopy
+    data = profile_to_dict(NdofSettings())
+    for key, value in change.items():
+        if isinstance(value, dict):
+            data[key].update(value)
+        else:
+            data[key] = value
+    with pytest.raises(ValueError):
+        profile_from_dict(data)
+
+
+# ---- the default profile moves the camera exactly as before the mapping ------
+
+def _legacy_movements(sample, st):
+    """The five camera inputs as apply_ndof computed them before the
+    axis mapping existed (main a369d1e), kept here as the reference."""
+    right = shape(sample.right, st.deadzone)
+    up = shape(sample.up, st.deadzone)
+    forward = shape(sample.forward, st.deadzone)
+    tilt = spin = 0.0
+    if not st.lock_rotation:
+        tilt = shape(sample.tilt, st.deadzone)
+        spin = shape(sample.spin, st.deadzone)
+    if st.invert_pan != st.invert_pan_x:
+        right = -right
+    if st.invert_pan != st.invert_pan_y:
+        up = -up
+    if st.invert_zoom:
+        forward = -forward
+    if st.invert_rotate != st.invert_tilt:
+        tilt = -tilt
+    if st.invert_rotate != st.invert_spin:
+        spin = -spin
+    return right, up, forward, tilt, spin
+
+
+def _samples():
+    vals = (-1.0, -0.7, -0.04, 0.0, 0.3, 1.0)   # from_raw clamps to ±1
+    for i, r in enumerate(vals):
+        for j, t in enumerate(vals):
+            yield NdofSample(right=r, up=vals[(i + 1) % 6],
+                             forward=vals[(i + 2) % 6], tilt=t,
+                             spin=vals[(j + 3) % 6], roll=vals[(i + j) % 6])
+
+
+@pytest.mark.parametrize("flags", range(128))
+def test_the_default_profile_changes_nothing(flags):
+    """Every combination of the old inversion boxes and the rotation lock,
+    on a grid of deflections (roll included, which was always ignored):
+    apply_ndof gets the same five inputs the old code computed (what it
+    does with them is unchanged)."""
+    names = ("invert_pan", "invert_zoom", "invert_rotate", "invert_pan_x",
+             "invert_pan_y", "invert_tilt", "invert_spin")
+    kw = {n: bool(flags >> k & 1) for k, n in enumerate(names)}
+    for lock in (False, True):
+        st = NdofSettings(lock_rotation=lock, **kw)
+        assert st.mapping_preset == "original"
+        for s in _samples():
+            right, up, forward, tilt, spin = _legacy_movements(s, st)
+            m = mapped_movements(s, st)
+            if st.lock_rotation:
+                m["orbit_x"] = m["orbit_y"] = 0.0
+            assert (m["pan_x"], m["pan_y"], m["zoom"],
+                    m["orbit_y"], m["orbit_x"]) == (right, up, forward,
+                                                    tilt, spin)
+
+
+def test_preferences_ok_untouched_keeps_the_motion(tmp_path, monkeypatch):
+    """Opening Preferences and pressing OK without touching the 3D mouse
+    page must not change how the cap moves the view, whatever the old
+    inversion boxes said."""
+    import os
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtCore import QSettings
+    from PySide6.QtWidgets import QApplication, QWidget
+    QApplication.instance() or QApplication([])
+    import views.preferences_dialog as prefs_mod
+    from views import ndof_input
+    path = tmp_path / "p.ini"
+    mk = lambda: QSettings(str(path), QSettings.IniFormat)   # noqa: E731
+    monkeypatch.setattr(prefs_mod, "QSettings", mk)
+    monkeypatch.setattr(ndof_input, "QSettings", mk, raising=False)
+    import PySide6.QtCore as QtCore
+    monkeypatch.setattr(QtCore, "QSettings", mk)
+    st = mk()
+    for key in ("invert_pan_x", "invert_tilt", "invert_zoom"):
+        st.setValue(f"ndof/{key}", "1")
+    st.setValue("ndof/sensitivity", 1.5)
+    st.sync()
+    before = ndof_input.load_settings()
+    assert before.mapping_preset == "original"
+
+    class _Win(QWidget):
+        def __init__(self):
+            super().__init__()
+
+            class _VP:
+                edit_rest_mode = "fade"
+
+                def set_edit_rest_mode(self, mode):
+                    self.edit_rest_mode = mode
+            self.viewport = _VP()
+            self._rest_actions = {}
+
+    win = _Win()
+    dlg = prefs_mod.PreferencesDialog(win)
+    dlg.accept()
+    after = ndof_input.load_settings()
+    assert after.sensitivity == before.sensitivity
+    for s in _samples():
+        for lock in (False, True):
+            before.lock_rotation = after.lock_rotation = lock
+            assert mapped_movements(s, after) == mapped_movements(s, before)
+            a, b = _cam(), _cam()
+            apply_ndof(a, s, 0.05, 600, before)
+            apply_ndof(b, s, 0.05, 600, after)
+            assert (a.yaw, a.pitch, a.distance, a.target) == \
+                   (b.yaw, b.pitch, b.distance, b.target)

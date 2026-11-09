@@ -9,6 +9,9 @@ Snap kinds (priority high → low):
 4. ``"close"``          — closing the current polygon chain.
 5. ``"endpoint"``       — vertex of an existing edge.
 6. ``"intersection"``   — where two edges / guide lines actually cross (green X).
+   Under a direction lock the crossing of the lock line with an edge is
+   ``"intersection_edge"`` and with a face (loose, in a group or component)
+   ``"intersection_face"``.
 7. ``"midpoint"``       — midpoint of an existing edge.
 8. ``"origin"``         — world origin.
 9. ``"on_edge"``        — arbitrary point along an edge (start a shape on it).
@@ -50,6 +53,7 @@ COLOR_AXIS_Y = (0.16, 0.62, 0.36)
 COLOR_AXIS_Z = (0.20, 0.40, 0.78)
 COLOR_REFERENCE = (0.85, 0.30, 0.80)  # magenta — parallel / perpendicular
 COLOR_EXTENSION = (0.55, 0.55, 0.58)  # grey — collinear extension of an edge
+COLOR_LOCK_INTERSECT = (0.85, 0.20, 0.20)  # red — a Shift lock meeting an acquired edge / face
 COLOR_IN_GROUP = (0.85, 0.30, 0.80)   # magenta — a point inside a group / component
 COLOR_TANGENT = (0.20, 0.66, 0.74)    # cyan — an arc tangent to the arc it starts from
 COLOR_NONE = (0.0, 0.0, 0.0)
@@ -75,7 +79,8 @@ AXIS_NAMES = {"x": "X", "y": "Y", "z": "Z"}
 #: _planar_face_plane``, #545). Same test as ``RotatedRectangleTool.
 #: _POINT_SNAPS``, which asks the same question of the protractor's width.
 POINT_SNAP_KINDS = frozenset({
-    "endpoint", "midpoint", "intersection", "on_edge", "on_line", "close",
+    "endpoint", "midpoint", "intersection", "intersection_edge",
+    "intersection_face", "on_edge", "on_line", "close",
     "origin", "center", "centre", "component_origin", "arc_midpoint",
 })
 
@@ -295,6 +300,28 @@ def _detect_axis_on_screen(
     return best[1] if best else None
 
 
+def _still_along_axis(
+    axis: str, start: QVector3D, candidate: QVector3D, angle_deg: float
+) -> bool:
+    """Whether start→candidate is still within ``angle_deg`` of ``axis``.
+
+    The STICKY release test: looser than the engage cone, so a hand drifting
+    in perspective keeps the line on the axis it already took."""
+    d = candidate - start
+    if d.length() < 1e-6:
+        return True                       # too close to tell: keep holding
+    a = _AXIS_VECTORS[axis]
+    return abs(QVector3D.dotProduct(d.normalized(), a)) >= math.cos(
+        math.radians(angle_deg))
+
+
+#: How far (degrees) a draw may drift from an engaged axis before the STICKY
+#: axis lets go. Generous on purpose: once a line is being drawn along an
+#: axis, a hand drifting in perspective must not drop it (issue #1095) — but
+#: far enough that a deliberate diagonal still breaks out.
+_STICKY_AXIS_RELEASE_DEG = 20.0
+
+
 #: How far out of a plane an axis may sit and still count as IN it: the same
 #: 1 mm-per-metre the shapes use to tell a point off their plane
 #: (``PlaneLock.OFF_PLANE_TOL``), so everything agrees on what "on the plane"
@@ -325,6 +352,8 @@ def _engaged_axis(
     project_onto_line,
     magnetic_axis_deg: Optional[float],
     screen_axis_px: Optional[float],
+    work_plane_normal: Optional[QVector3D] = None,
+    axis_in_plane: bool = False,
 ) -> Optional[str]:
     """Which axis the drag has taken command of, or ``None``.
 
@@ -359,6 +388,12 @@ def _engaged_axis(
             start_point, candidate_world, candidate_pixel,
             world_to_pixel, screen_axis_px,
         )
+        if axis is not None and axis_in_plane:
+            # A planar shape may not follow an axis its plane cannot hold:
+            # keep the screen detector's generous pixel capture for the
+            # plane's own two axes and let the world detector answer for
+            # the rest (#962).
+            axis = _axis_in_plane(axis, work_plane_normal)
         if axis is not None:
             reach = (candidate_world - start_point).length()
             locked = project_onto_line(start_point, _AXIS_VECTORS[axis])
@@ -702,7 +737,7 @@ def _two_point_snap(
 
 def _first_point_from_point(
     ref, candidate, cx, cy, world_to_pixel, threshold_px, is_occluded=None,
-    plane_normal=None,
+    plane_normal=None, project_onto_line=None, free_3d=False,
 ) -> Optional[SnapResult]:
     """The foot of the cursor on the axis line through ``ref`` (the last
     hovered corner), when the cursor sits within the snap radius of one of
@@ -716,7 +751,32 @@ def _first_point_from_point(
     plane its foot as before, and one running parallel to the plane off
     it offers nothing. It used to hand back the foot on the line in the
     air, which is a point nowhere near the wall the cursor is pointing at
-    and, for a rectangle started on that wall, a corner off its plane."""
+    and, for a rectangle started on that wall, a corner off its plane.
+
+    ``free_3d`` — a tool that is not a planar ``PlaneLock`` (the Line, the
+    free placements) — reads the foot off the cursor RAY instead, so an
+    elevated corner still offers its horizontal 'level with' line while the
+    cursor sits on the ground (#1095)."""
+    if free_3d and project_onto_line is not None:
+        best = None
+        for axis, a in _AXIS_VECTORS.items():
+            foot = project_onto_line(ref, a)
+            fp = world_to_pixel(foot)
+            if fp is None:
+                continue
+            d = math.hypot(fp[0] - cx, fp[1] - cy)
+            if d > threshold_px:
+                continue
+            if is_occluded is not None and is_occluded(foot):
+                continue
+            if best is None or d < best[0]:
+                best = (d, foot, axis)
+        if best is None:
+            return None
+        _, foot, axis = best
+        return SnapResult(foot, "from_point", COLOR_ENDPOINT,
+                          guide=(QVector3D(ref), foot),
+                          guide_color=AXIS_COLORS[axis], axis=axis)
     best = None
     n = None
     if plane_normal is not None and plane_normal.length() > 1e-9:
@@ -753,7 +813,7 @@ def _first_point_from_point(
     _, foot, axis = best
     return SnapResult(foot, "from_point", COLOR_ENDPOINT,
                       guide=(QVector3D(ref), foot),
-                      guide_color=AXIS_COLORS[axis])
+                      guide_color=AXIS_COLORS[axis], axis=axis)
 
 
 def _edge_from_point_crossing(
@@ -822,7 +882,7 @@ def _in_plane_with_point_snap(
     best = None
     for axis, a in _AXIS_VECTORS.items():
         d = QVector3D.crossProduct(a, n)
-        if d.length() < 1e-6:
+        if d.length() < 1e-5:     # normalized() gives the NULL vector below this
             continue      # the axis plane is parallel to the face: no line
         d = d.normalized()
         # In the face, square to the line: the way the cursor has to move
@@ -995,6 +1055,7 @@ def _from_point_snap(
     is_occluded, extra_point=None, axis_deg: float = 10.0,
     hovered_refs: bool = False, line_dir: Optional[QVector3D] = None,
     project_onto_line: Optional[ProjectOntoLine] = None,
+    edge_body: bool = True,
 ) -> Optional[SnapResult]:
     """'From point' inference ("Desde el punto"), the single clean version.
 
@@ -1053,7 +1114,7 @@ def _from_point_snap(
     # nothing (issue #27, @pacaeiro).
     refs.append((QVector3D(0.0, 0.0, 0.0), "origin", COLOR_ORIGIN))
 
-    if hovered_refs:
+    if hovered_refs and edge_body:
         # The point of an edge under the cursor is a reference too (the
         # window's sill, not just its corners): the closest point of the
         # nearest edge, as a plain 'from point'. Corners and midpoints come
@@ -1275,10 +1336,133 @@ def _intersection_snap(
     return SnapResult(hit, "intersection", COLOR_ENDPOINT)
 
 
+def _edge_face_snap(
+    cx, cy, scene, world_to_pixel, et, is_occluded, outline
+) -> Optional[SnapResult]:
+    """Green intersection where an edge — a guide line, a loose line, a
+    facet of an arc or circle — pierces the face under the cursor.
+
+    ``_intersection_snap`` only pairs edges with edges and
+    ``face_crossing`` only faces with faces, so a line through a face
+    offered nothing. ``outline`` is ``(outer, holes, context)``: the face's
+    loops in world space. The crossing counts only INSIDE the face (outer
+    loop, outside every hole), on the edge's own span, and under the cursor.
+    An edge lying in the face's plane has no single crossing and is skipped."""
+    from core.topology import _point_inside_2d
+    from core.triangulate import plane_axes
+    outer, holes, context = outline
+    if len(outer) < 3:
+        return None
+    nx = ny = nz = 0.0
+    for i in range(len(outer)):
+        a, b = outer[i], outer[(i + 1) % len(outer)]
+        nx += (a.y() - b.y()) * (a.z() + b.z())
+        ny += (a.z() - b.z()) * (a.x() + b.x())
+        nz += (a.x() - b.x()) * (a.y() + b.y())
+    n = QVector3D(nx, ny, nz)
+    if n.length() < 1e-12:
+        return None
+    n = n.normalized()
+    origin = outer[0]
+    u, w = plane_axes(n)
+
+    def proj(p):
+        rel = p - origin
+        return (QVector3D.dotProduct(rel, u), QVector3D.dotProduct(rel, w))
+
+    outer2 = [proj(p) for p in outer]
+    holes2 = [[proj(p) for p in h] for h in holes if len(h) >= 3]
+
+    found = []
+    for edge in scene.edges:
+        if getattr(edge, "center", False):
+            continue
+        ab = edge.b - edge.a
+        if QVector3D.dotProduct(ab, ab) < 1e-12:
+            continue
+        den = QVector3D.dotProduct(n, ab)
+        if abs(den) < 1e-9 * ab.length():
+            continue                      # parallel / in the plane
+        t = QVector3D.dotProduct(n, origin - edge.a) / den
+        # Strictly inside the span: an edge that merely ENDS on the face (a
+        # wall rising from a slab) has an endpoint there, with its own radius.
+        margin = 1e-4 / ab.length()
+        if t <= margin or t >= 1.0 - margin:
+            continue                      # stops short of the plane, or on it
+        hit = edge.a + ab * t
+        hp = world_to_pixel(hit)
+        if hp is None:
+            continue
+        dh = math.hypot(hp[0] - cx, hp[1] - cy)
+        if dh > et:
+            continue
+        pt = proj(hit)
+        if not _point_inside_2d(pt, outer2):
+            continue
+        if any(_point_inside_2d(pt, h) for h in holes2):
+            continue
+        found.append((dh, hit))
+    found.sort(key=lambda f: f[0])
+    for _dh, hit in found:
+        if is_occluded is None or not is_occluded(hit):
+            return SnapResult(hit, "intersection", COLOR_ENDPOINT,
+                              context=context)
+    return None
+
+
+def _lock_reference_snap(
+    start_point, line_dir, world_to_pixel, hover_edge, hover_plane,
+) -> Optional[SnapResult]:
+    """SketchUp's «constrained on line / plane» under a direction lock (arrow,
+    Shift or reference lock): with the cursor ON an edge or a face, the point
+    where the lock line meets that edge's INFINITE line
+    (``intersection_edge``) or that face's PLANE (``intersection_face``) is
+    offered automatically - the cursor need not be anywhere near it. The
+    dotted guide runs from the edge's near end (or from the cursor, for a
+    face) to the point. An edge wins over a face. ``hover_plane`` is
+    ``(point, normal, ref)``; skew and parallel cases offer nothing."""
+    if hover_edge is not None:
+        a, b = hover_edge.a, hover_edge.b
+        v = b - a
+        if v.lengthSquared() > 1e-12:
+            w0 = start_point - a
+            bb = QVector3D.dotProduct(line_dir, v)
+            cc = QVector3D.dotProduct(v, v)
+            dd = QVector3D.dotProduct(line_dir, w0)
+            ee = QVector3D.dotProduct(v, w0)
+            uu = QVector3D.dotProduct(line_dir, line_dir)
+            den = cc * uu - bb * bb
+            if abs(den) > 1e-9 * cc * uu:
+                s = (bb * ee - cc * dd) / den
+                t = (ee * uu - bb * dd) / den
+                on_line = start_point + line_dir * s
+                on_edge = a + v * t
+                if ((on_line - on_edge).length() <= 1e-3
+                        and world_to_pixel(on_edge) is not None):
+                    # Beyond an end of the edge that stretch is the dotted
+                    # extension; inside it, the crossing rule answered.
+                    near_end = a if t < 0.5 else b
+                    return SnapResult(on_edge, "intersection_edge",
+                                      COLOR_LOCK_INTERSECT,
+                                      guide=(near_end, on_edge),
+                                      guide_color=COLOR_EXTENSION)
+    if hover_plane is not None:
+        p0, n, ref = hover_plane
+        den = QVector3D.dotProduct(n, line_dir)
+        if abs(den) > 1e-6:
+            s = QVector3D.dotProduct(n, p0 - start_point) / den
+            hit = start_point + line_dir * s
+            if world_to_pixel(hit) is not None:
+                return SnapResult(hit, "intersection_face",
+                                  COLOR_LOCK_INTERSECT, guide=(ref, hit),
+                                  guide_color=COLOR_EXTENSION)
+    return None
+
+
 def _lock_line_snaps(
     scene, start_point, line_dir, cx, cy, world_to_pixel, threshold_px,
     is_occluded, acquired_point, chain_first_point=None,
-    project_onto_line=None,
+    project_onto_line=None, hover_edge=None, hover_plane=None,
 ) -> Optional[SnapResult]:
     """What a directional lock still lets you fetch, in order: the chain's
     own first point (closing), a vertex sitting ON the lock line, the
@@ -1337,12 +1521,27 @@ def _lock_line_snaps(
                           guide=(start_point, best_hit[1]))
     # 'From point' along the lock line: line up with a corner (green) or
     # midpoint (cyan) projected onto the locked axis — or hover it.
-    return _from_point_snap(
+    # The cursor ON an edge: its meeting with the lock line is the answer
+    # (SketchUp's «constrained on line»), so the edge's body must not offer
+    # an arbitrary 'from point' instead; corners and midpoints still do.
+    edge_hit = (_lock_reference_snap(start_point, line_dir, world_to_pixel,
+                                     hover_edge, None)
+                if hover_edge is not None else None)
+    hit = _from_point_snap(
         scene, start_point, line_dir, cx, cy, world_to_pixel,
         threshold_px, is_occluded, extra_point=acquired_point,
         hovered_refs=True, line_dir=line_dir,
         project_onto_line=project_onto_line,
+        edge_body=edge_hit is None,
     )
+    if hit is not None:
+        return hit
+    if edge_hit is not None:
+        return edge_hit
+    # Nothing better: the cursor over a face constrains the lock line to
+    # that plane.
+    return _lock_reference_snap(start_point, line_dir, world_to_pixel,
+                                None, hover_plane)
 
 
 #: Two point candidates closer than this on screen are a tie, and the tie
@@ -1403,11 +1602,19 @@ def compute_snap(
     acquired_points=None,
     shift_lock_dir=None,
     shift_lock_color=None,
+    shift_lock_ref=None,
     linear_mode: str = "all",
+    diagonal_span: bool = False,
     work_plane_normal: Optional[QVector3D] = None,
     radial_arm: bool = False,
     axis_in_plane: bool = False,
+    free_3d: bool = False,
+    sticky_axis: Optional[str] = None,
+    dwell_axis_lock: bool = False,
+    hover_lock_edge=None,
+    hover_lock_plane: Optional[tuple] = None,
     face_crossing: Optional[Callable[[], Optional[tuple]]] = None,
+    face_outline: Optional[Callable[[], Optional[tuple]]] = None,
 ) -> SnapResult:
     # Linear-inference toggle (Alt): "all" = every inference, "off" =
     # point snaps only, "parallel_perp" = keep only parallel/perpendicular. The
@@ -1441,6 +1648,26 @@ def compute_snap(
             and (acquired_point - start_point).lengthSquared() < 1e-12):
         acquired_point = None
 
+    # A rectangle's second click is its OPPOSITE corner: the span from the
+    # start to the cursor is a DIAGONAL, not a line being drawn (#389,
+    # @jonson7777: «snaps to some purpel line and turns it into a line»). A
+    # thin rectangle's diagonal runs a fraction of a degree off an axis, and
+    # every rule that reads start→cursor as a line's direction — the axis,
+    # perpendicular, parallel, through point, extension, 'from point' along
+    # the draw — held the far corner on a line through the first one: width
+    # zero. Per side those inferences have nothing to do, because the sides
+    # run along the drawing plane's own axes by construction. What a side
+    # CAN take from the model is its length, lined up with a point — the
+    # far corner level with a visited corner (8d, 8e) — and those rules
+    # start at the cursor, so they stay, as do the point snaps. The
+    # explicit locks (arrows, Down, a captured Shift) keep ``start_point``.
+    line_start = None if diagonal_span else start_point
+    if diagonal_span and start_point is not None and acquired_points:
+        # The first corner, encouraged on the way to clicking it, would cross
+        # its own axis lines with another point's: a corner on its own row.
+        acquired_points = [p for p in acquired_points if p is not None
+                           and (p - start_point).lengthSquared() >= 1e-12]
+
     # The axis that has taken command of the drag, settled once here and used
     # twice below: it silences the DERIVED linear inferences (rules 4b, 5, 5b,
     # 5c, 7, 8b, 8c, 8d) so nothing can steal the point off the line, and rule 9
@@ -1453,8 +1680,9 @@ def compute_snap(
     axis_engaged = None
     if allow_axis and project_onto_line is not None:
         axis_engaged = _engaged_axis(
-            start_point, candidate_world, candidate_pixel, world_to_pixel,
+            line_start, candidate_world, candidate_pixel, world_to_pixel,
             project_onto_line, magnetic_axis_deg, screen_axis_px,
+            work_plane_normal, axis_in_plane,
         )
         if axis_in_plane:
             # A shape that lives in ONE plane can only be magnetised along
@@ -1467,6 +1695,42 @@ def compute_snap(
             # the magnet keeps working; over a sloped one it holds none of
             # them and the cursor's own point on the face stands.
             axis_engaged = _axis_in_plane(axis_engaged, work_plane_normal)
+        if (axis_engaged is None and sticky_axis is not None
+                and line_start is not None):
+            # Sticky axis: the magnet engaged ``sticky_axis`` on an earlier
+            # hover. Hold it while the draw keeps heading along that axis, so
+            # a line started along X stays on X in perspective even as the
+            # hand drifts (issue #1095). A deliberate diagonal breaks out once
+            # it turns past ``_STICKY_AXIS_RELEASE_DEG``.
+            if _still_along_axis(sticky_axis, line_start, candidate_world,
+                                 _STICKY_AXIS_RELEASE_DEG):
+                axis_engaged = sticky_axis
+
+    # 0.5 Axis lock BEFORE the first click (issue #1095): with no start point
+    #     yet, an arrow key constrains the first click to the encouraged
+    #     point's own axis line, so a line starts 'level with' the dwell. The
+    #     point snaps a lock normally offers stay available on that line.
+    if (dwell_axis_lock and axis_lock and start_point is None
+            and acquired_point is not None and project_onto_line is not None):
+        axis_dir = _AXIS_VECTORS[axis_lock]
+        cx, cy = candidate_pixel
+        hit = _lock_line_snaps(
+            scene, acquired_point, axis_dir, cx, cy, world_to_pixel,
+            threshold_px, is_occluded, acquired_point, chain_first_point,
+            project_onto_line, hover_lock_edge, hover_lock_plane,
+        )
+        guide = (QVector3D(acquired_point),
+                 project_onto_line(acquired_point, _AXIS_VECTORS[axis_lock]))
+        guide_color = AXIS_COLORS[axis_lock]
+        if hit is not None:
+            hit.lock_color = AXIS_COLORS[axis_lock]
+            if hit.guide is None:
+                hit.guide = guide
+                hit.guide_color = guide_color
+            return hit
+        locked = project_onto_line(acquired_point, axis_dir)
+        return SnapResult(locked, "axis", AXIS_COLORS[axis_lock], axis=axis_lock,
+                          guide=guide, guide_color=guide_color)
 
     # 1. Explicit axis lock (arrow keys). Use the viewport's camera-aware
     #    projection so locks to Z (vertical) actually move along Z. Existing
@@ -1492,12 +1756,53 @@ def compute_snap(
         hit = _lock_line_snaps(
             scene, start_point, axis_dir, cx, cy, world_to_pixel,
             threshold_px, is_occluded, acquired_point, chain_first_point,
-            project_onto_line,
+            project_onto_line, hover_lock_edge, hover_lock_plane,
         )
+        # A hard lock also keeps the 'level with' reference to an encouraged
+        # point visible: its dashed axis line, so the cursor can go fetch
+        # another point on the locked axis without losing the reference
+        # (issue #1095).
+        guide = guide_color = None
+        if acquired_point is not None:
+            guide = (QVector3D(acquired_point),
+                     project_onto_line(acquired_point, _AXIS_VECTORS[axis_lock]))
+            guide_color = AXIS_COLORS[axis_lock]
         if hit is not None:
             hit.lock_color = AXIS_COLORS[axis_lock]
+            if hit.guide is None and guide is not None:
+                hit.guide = guide
+                hit.guide_color = guide_color
             return hit
-        return SnapResult(locked, "axis", AXIS_COLORS[axis_lock], axis=axis_lock)
+        return SnapResult(locked, "axis", AXIS_COLORS[axis_lock], axis=axis_lock,
+                          guide=guide, guide_color=guide_color)
+
+    # 1.4 Shift lock BEFORE the first click (issue #1095): the lock was captured
+    #     from a 'from point' reference, so it anchors on that point's own axis
+    #     line until the line starts. The point snaps a lock normally offers
+    #     stay available on that line.
+    if (shift_lock_dir is not None and shift_lock_ref is not None
+            and start_point is None and project_onto_line is not None):
+        ref_pt, ref_axis = shift_lock_ref
+        if ref_axis in _AXIS_VECTORS:
+            axis_dir = _AXIS_VECTORS[ref_axis]
+            cx, cy = candidate_pixel
+            hit = _lock_line_snaps(
+                scene, ref_pt, axis_dir, cx, cy, world_to_pixel,
+                threshold_px, is_occluded, ref_pt, chain_first_point,
+                project_onto_line, hover_lock_edge, hover_lock_plane,
+            )
+            color = shift_lock_color if shift_lock_color is not None else COLOR_REFERENCE
+            guide = (QVector3D(ref_pt), project_onto_line(ref_pt, axis_dir))
+            guide_color = AXIS_COLORS[ref_axis]
+            if hit is not None:
+                hit.lock_color = color
+                if hit.guide is None:
+                    hit.guide = guide
+                    hit.guide_color = guide_color
+                return hit
+            locked = project_onto_line(ref_pt, axis_dir)
+            return SnapResult(locked, "reference", color,
+                              guide=guide, guide_color=guide_color)
 
     # 1.5 Sticky inference lock (Shift captured an active inference): hold that
     #     direction regardless of cursor, the way Shift classically locks whatever
@@ -1525,13 +1830,27 @@ def compute_snap(
         hit = _lock_line_snaps(
             scene, start_point, lock_dir, cx, cy, world_to_pixel,
             threshold_px, is_occluded, acquired_point, chain_first_point,
-            project_onto_line,
+            project_onto_line, hover_lock_edge, hover_lock_plane,
         )
         color = shift_lock_color if shift_lock_color is not None else COLOR_REFERENCE
+        # A lock captured from a 'from point' keeps its dashed, axis-coloured
+        # guide (the dwell point's own axis line) while the cursor is free to
+        # fetch another point on the locked line (issue #1095).
+        guide = guide_color = None
+        if shift_lock_ref is not None:
+            ref_pt, ref_axis = shift_lock_ref
+            if ref_axis in _AXIS_VECTORS:
+                guide = (QVector3D(ref_pt),
+                         project_onto_line(ref_pt, _AXIS_VECTORS[ref_axis]))
+                guide_color = AXIS_COLORS[ref_axis]
         if hit is not None:
             hit.lock_color = color
+            if hit.guide is None and guide is not None:
+                hit.guide = guide
+                hit.guide_color = guide_color
             return hit
-        return SnapResult(locked, "reference", color)
+        return SnapResult(locked, "reference", color,
+                          guide=guide, guide_color=guide_color)
 
     # 2. Reference edge lock (Down arrow + edge under cursor).
     if (
@@ -1550,7 +1869,7 @@ def compute_snap(
                 scene, start_point, direction, candidate_pixel[0],
                 candidate_pixel[1], world_to_pixel, threshold_px,
                 is_occluded, acquired_point, chain_first_point,
-                project_onto_line,
+                project_onto_line, hover_lock_edge, hover_lock_plane,
             )
             if hit is not None:
                 hit.lock_color = COLOR_REFERENCE
@@ -1563,20 +1882,20 @@ def compute_snap(
     #    had NO snaps — the third such lock (issue #34, @pacaeiro: «release
     #    Shift to reposition the camera… reactivate the Shift, half of the
     #    Snap points are not detected»). Same sub-rules as the other two.
-    if allow_axis and shift_held and start_point is not None and project_onto_line is not None:
+    if allow_axis and shift_held and line_start is not None and project_onto_line is not None:
         inferred = _detect_axis_alignment(
-            start_point, candidate_world, inference_angle_deg
+            line_start, candidate_world, inference_angle_deg
         )
         if inferred is not None:
             axis_dir = QVector3D(_AXIS_VECTORS[inferred])
-            locked = project_onto_line(start_point, axis_dir)
-            if QVector3D.dotProduct(locked - start_point, axis_dir) < 0:
+            locked = project_onto_line(line_start, axis_dir)
+            if QVector3D.dotProduct(locked - line_start, axis_dir) < 0:
                 axis_dir = -axis_dir
             cx3, cy3 = candidate_pixel
             hit = _lock_line_snaps(
-                scene, start_point, axis_dir, cx3, cy3, world_to_pixel,
+                scene, line_start, axis_dir, cx3, cy3, world_to_pixel,
                 threshold_px, is_occluded, acquired_point, chain_first_point,
-                project_onto_line,
+                project_onto_line, hover_lock_edge, hover_lock_plane,
             )
             if hit is not None:
                 hit.lock_color = AXIS_COLORS[inferred]
@@ -1745,15 +2064,15 @@ def compute_snap(
     if (
         allow_parperp
         and axis_engaged is None
-        and start_point is not None
+        and line_start is not None
         and project_onto_line is not None
     ):
-        draw = candidate_world - start_point
+        draw = candidate_world - line_start
         if draw.length() > 1e-6:
             draw_u = draw.normalized()
             cos_tol = math.cos(math.radians(8.0))  # forgiving: it snaps to exact
             for edge in scene.edges:
-                if not _point_on_segment_world(start_point, edge.a, edge.b):
+                if not _point_on_segment_world(line_start, edge.a, edge.b):
                     continue
                 perp = _direction_from_edge(edge, "perpendicular",
                                             work_plane_normal)
@@ -1763,13 +2082,13 @@ def compute_snap(
                     continue
                 best_hit = None
                 for other in scene.edges:
-                    if _point_on_segment_world(start_point, other.a, other.b):
+                    if _point_on_segment_world(line_start, other.a, other.b):
                         continue
                     hit = _line_segment_intersection(
-                        start_point, perp, other.a, other.b)
+                        line_start, perp, other.a, other.b)
                     if hit is None:
                         continue
-                    if QVector3D.dotProduct(hit - start_point, draw_u) <= 0:
+                    if QVector3D.dotProduct(hit - line_start, draw_u) <= 0:
                         continue  # behind the cursor
                     hp = world_to_pixel(hit)
                     if hp is None:
@@ -1783,7 +2102,7 @@ def compute_snap(
                         best_hit = (dh, hit)
                 if best_hit is not None:
                     return SnapResult(best_hit[1], "intersection", COLOR_ENDPOINT,
-                                      guide=(start_point, best_hit[1]))
+                                      guide=(line_start, best_hit[1]))
                 # Before settling for a bare perpendicular lock, let a corner's
                 # projection win: landing where this perpendicular lines up with
                 # a corner is the exact point the user is after, and the generic
@@ -1792,7 +2111,7 @@ def compute_snap(
                 if line_inferences and axis_engaged is None:
 
                     fp = _from_point_snap(
-                        scene, start_point, candidate_world - start_point,
+                        scene, line_start, candidate_world - line_start,
                         cx, cy, world_to_pixel, threshold_px, is_occluded,
                         extra_point=acquired_point,
                     )
@@ -1805,9 +2124,9 @@ def compute_snap(
                 # it started on (#544). An edge under the cursor is a target
                 # the user pointed at: it wins. The edges the line starts on
                 # are not such targets - the perpendicular may be one of them.
-                if _edge_under_cursor(start_point):
+                if _edge_under_cursor(line_start):
                     break
-                locked = project_onto_line(start_point, perp)
+                locked = project_onto_line(line_start, perp)
                 return SnapResult(locked, "reference", COLOR_REFERENCE)
 
     # 4e. 'Through point': heading along the line from the start through an
@@ -1829,7 +2148,7 @@ def compute_snap(
     #     what gave it away. Same shape as the from-point fix an hour
     #     earlier: an inference DERIVED from a point must not beat the
     #     point it came from.
-    if line_inferences and start_point is not None:
+    if line_inferences and line_start is not None:
         sobre_el_punto = False
         if acquired_point is not None:
             ap = world_to_pixel(acquired_point)
@@ -1837,7 +2156,7 @@ def compute_snap(
                 sobre_el_punto = math.hypot(ap[0] - cx, ap[1] - cy) <= threshold_px
         if not sobre_el_punto:
             tp = _through_point_snap(
-                start_point, acquired_point, candidate_world - start_point,
+                line_start, acquired_point, candidate_world - line_start,
                 project_onto_line, inference_angle_deg,
             )
             if tp is not None:
@@ -1853,7 +2172,7 @@ def compute_snap(
     if line_inferences and axis_engaged is None:
 
         ext = _extension_snap(
-            candidate_world, cx, cy, scene, world_to_pixel, et, start_point,
+            candidate_world, cx, cy, scene, world_to_pixel, et, line_start,
             is_occluded, project_onto_line=project_onto_line,
             plane_normal=on_plane,
         )
@@ -1864,9 +2183,9 @@ def compute_snap(
     #     corner (green) or midpoint (cyan) — the fixed foot of that point on the
     #     axis-aligned draw line. Only fires on-axis, so free-angle draws stay
     #     quiet and the point never scatters or slides.
-    if line_inferences and start_point is not None and axis_engaged is None:
+    if line_inferences and line_start is not None and axis_engaged is None:
         fp = _from_point_snap(
-            scene, start_point, candidate_world - start_point,
+            scene, line_start, candidate_world - line_start,
             cx, cy, world_to_pixel, threshold_px, is_occluded,
             extra_point=acquired_point,
         )
@@ -1882,6 +2201,18 @@ def compute_snap(
                                are_occluded)
     if inter is not None and axis_engaged is None:
         return inter
+
+    # 5d. An edge — guide, line, arc or circle facet — piercing the face under
+    #     the cursor. Asked after the edge/edge crossing and before the
+    #     midpoint / on-edge / on-line rules, which would otherwise slide
+    #     along the edge past the crossing.
+    if face_outline is not None and face_under_cursor and axis_engaged is None:
+        outline = face_outline()
+        if outline is not None:
+            pierce = _edge_face_snap(cx, cy, scene, world_to_pixel, et,
+                                     is_occluded, outline)
+            if pierce is not None:
+                return pierce
 
     # 6. Midpoint + origin.
     best = None
@@ -1987,11 +2318,11 @@ def compute_snap(
         allow_parperp
         and axis_engaged is None
         and acquired_edge is not None
-        and start_point is not None
+        and line_start is not None
         and project_onto_line is not None
     ):
         ev = acquired_edge.b - acquired_edge.a
-        draw = candidate_world - start_point
+        draw = candidate_world - line_start
         if (
             ev.length() > 1e-9
             and draw.length() > 1e-6
@@ -2001,7 +2332,7 @@ def compute_snap(
             ev_u = ev.normalized()
             par_cos = math.cos(math.radians(inference_angle_deg))
             if abs(QVector3D.dotProduct(draw.normalized(), ev_u)) >= par_cos:
-                locked = project_onto_line(start_point, ev_u)
+                locked = project_onto_line(line_start, ev_u)
                 return SnapResult(locked, "reference", COLOR_REFERENCE)
 
     # 8c. Perpendicular to an encouraged face: heading along its normal locks
@@ -2009,11 +2340,11 @@ def compute_snap(
     if (
         allow_parperp
         and axis_engaged is None
-        and start_point is not None
+        and line_start is not None
         and project_onto_line is not None
     ):
         pf = _perpendicular_face_snap(
-            start_point, acquired_face_normal, candidate_world - start_point,
+            line_start, acquired_face_normal, candidate_world - line_start,
             project_onto_line, inference_angle_deg,
         )
         if pf is not None:
@@ -2073,10 +2404,12 @@ def compute_snap(
                 return tp
         if acquired_point is not None:
             # On a face, the point stays on the face (see the function and
-            # ``on_plane`` up top).
+            # ``on_plane`` up top) — except for a tool that is not a planar
+            # shape, whose 'level with' reads the cursor ray in 3D (#1095).
             fp = _first_point_from_point(
                 acquired_point, candidate_world, cx, cy, world_to_pixel,
                 threshold_px, is_occluded, plane_normal=on_plane,
+                project_onto_line=project_onto_line, free_3d=free_3d,
             )
             if fp is not None:
                 return fp
@@ -2110,9 +2443,9 @@ def compute_snap(
     #    The cue kept below is the visual-only fallback: the cursor is near an
     #    axis and the marker says so, but nothing is projected and nothing is
     #    locked.
-    if start_point is not None and allow_axis:
+    if line_start is not None and allow_axis:
         inferred = _detect_axis_alignment(
-            start_point, candidate_world, inference_angle_deg
+            line_start, candidate_world, inference_angle_deg
         )
         if axis_in_plane:
             # …and the cue itself obeys the plane: left unfiltered it lit

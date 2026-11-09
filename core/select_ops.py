@@ -120,6 +120,21 @@ def same_layer(scene, entities) -> list:
     return [e for e in pool if layer_of(e) in layers]
 
 
+def on_layers(scene, names) -> list:
+    """Every edge, face, group and annotation in the current context on one
+    of the layers ``names`` that can be selected (the Layers panel's
+    «Select content»: a hidden or locked layer gives nothing)."""
+    names = set(names)
+    pool = (list(scene.edges) + list(scene.faces)
+            + list(_context_groups(scene))
+            + list(getattr(scene, "dimensions", None) or ())
+            + list(getattr(scene, "text_labels", None) or ())
+            + list(getattr(scene, "guides", None) or ())
+            + list(getattr(scene, "image_planes", None) or ()))
+    return [e for e in pool
+            if layer_of(e) in names and scene.entity_selectable(e)]
+
+
 def _is_group(e) -> bool:
     from core.group import Group
     return isinstance(e, Group)

@@ -306,7 +306,8 @@ class ScaleTool(Tool):
     #: the grip's line. Not a face (the grip would jump across every
     #: surface it passes) and not the engine's own directional inferences.
     _TARGET_KINDS = frozenset({
-        "endpoint", "midpoint", "intersection", "center", "origin",
+        "endpoint", "midpoint", "intersection", "intersection_edge",
+        "intersection_face", "center", "origin",
         "on_edge", "on_line", "from_point", "close", "guide",
         "component_origin", "arc_midpoint"})
 

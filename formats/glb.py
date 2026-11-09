@@ -132,10 +132,24 @@ def _node_transforms(js):
     for sc in js.get("scenes", []) or [{}]:
         roots.extend(sc.get("nodes", []))
     if not roots:
-        roots = list(range(len(nodes)))
+        # No scene: the roots are the nodes no other node holds (walking
+        # every node as a root placed each child a second time, at the
+        # origin); what is left after them, a loop, comes in as found.
+        held = {c for nd in nodes for c in nd.get("children", [])}
+        roots = ([i for i in range(len(nodes)) if i not in held]
+                 + [i for i in range(len(nodes)) if i in held])
     out = []
+    # The spec makes the hierarchy a set of trees: a node has one parent at
+    # most. A file that lists a node twice made each listing walk it again,
+    # so ten bytes per level doubled the import (a 1 KB file never finished)
+    # and a node inside itself overflowed the stack. Each node is placed
+    # once, where it is first reached.
+    placed: set = set()
 
     def walk(i, parent):
+        if i in placed:
+            return
+        placed.add(i)
         nd = nodes[i]
         world = parent @ local(nd)
         out.append((i, world))
@@ -337,7 +351,9 @@ def build_mesh(batches, progress=None):
                 base["opacity"] = opacity
             attrs_list.extend([dict(base) if base else None] * len(tris))
         else:
-            uvw, okm = _triangle_uvws(tris, uvs)
+            # glTF counts V from the top of the image; the viewport, like
+            # OBJ and COLLADA, from the bottom (#1141).
+            uvw, okm = _triangle_uvws(tris, uvs * (1.0, -1.0) + (0.0, 1.0))
             glu = np.linalg.norm(uvw[:, 0:3], axis=1)
             glv = np.linalg.norm(uvw[:, 4:7], axis=1)
             sw = np.where(glu > 1e-9, 1.0 / np.maximum(glu, 1e-9), 1.0)

@@ -115,7 +115,10 @@ def test_right_click_layer_submenu_and_new_layer():
         win._add_layer_submenu(menu, list(scene.selection))
         sub = [a for a in menu.actions() if a.menu() is not None][0].menu()
         names = [a.text() for a in sub.actions() if not a.isSeparator()]
-        assert names[:2] == ["Layer 0", "Muros"] and names[-1] == "New layer…"
+        assert names[:2] == ["Layer 0", "Muros"] and names[2] == "New layer…"
+        # …then what to do with the clicked object's own layer.
+        assert names[3:] == ["Hide this layer", "Isolate this layer",
+                             "Make this layer active"]
         ticked = [a.text() for a in sub.actions() if a.isChecked()]
         assert ticked == ["Layer 0"]
         [a for a in sub.actions() if a.text() == "Muros"][0].trigger()
@@ -139,7 +142,7 @@ def test_layers_panel_assign_button_speaks_and_undoes():
         scene.layers.append(Layer("Muros"))
         g = Group(Mesh(), name="caja")
         scene.groups.append(g)
-        panel = win.tray.layers
+        panel = win.layers_dock.panel
         panel.refresh()
         # nothing highlighted in the list: it says so instead of doing nothing
         panel.tree.setCurrentItem(None)
@@ -148,8 +151,7 @@ def test_layers_panel_assign_button_speaks_and_undoes():
         assert layer_of(g) == "Layer 0"
         assert "layer" in win.statusBar().currentMessage().lower()
         # highlight Muros, nothing selected in the model: says so too
-        item = [panel.tree.topLevelItem(i) for i in range(panel.tree.topLevelItemCount())
-                if panel.tree.topLevelItem(i).text(0) == "Muros"][0]
+        item = panel.item_for("Muros")
         panel.tree.setCurrentItem(item)
         scene.clear_selection()
         panel._on_assign()

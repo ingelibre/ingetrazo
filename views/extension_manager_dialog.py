@@ -602,13 +602,15 @@ class ExtensionManagerDialog(QDialog):
             self._clear_cards(key)
             extensions = self._filtered_extensions(key)
             language = current_language()
-            rows = [self._make_row(extension, language, cards, key)
+            rows = [self._card(self._make_row, extension, language, cards, key)
                     for extension in extensions]
             unknown = self._hand_only(key) if key == "installed" else []
-            rows += [self._make_hand_row(path, cards) for path in unknown]
+            rows += [self._card(self._make_hand_row, path, cards)
+                     for path in unknown]
             retired = self._retired(key) if key == "installed" else []
-            rows += [self._make_retired_row(path, cards) for path in retired]
-            self._place_cards(key, rows)
+            rows += [self._card(self._make_retired_row, path, cards)
+                     for path in retired]
+            self._place_cards(key, [row for row in rows if row is not None])
         finally:
             cards.setUpdatesEnabled(True)
         page["shown"] = len(extensions) + len(unknown) + len(retired)
@@ -621,6 +623,18 @@ class ExtensionManagerDialog(QDialog):
         if key == self._active_page_key():
             self._show_count(key)
             self._images_timer.start()
+
+    @staticmethod
+    def _card(build, subject, *args):
+        """A card, or None and a note in the log: one extension must never
+        keep the manager from showing the rest (#1152)."""
+        try:
+            return build(subject, *args)
+        except Exception:  # noqa: BLE001
+            from core.extensions import note_failure
+            log.exception("could not build the card of %r", subject)
+            note_failure(f"could not build the card of {subject!r}")
+            return None
 
     def _show_count(self, key: str) -> None:
         page = self._pages[key]

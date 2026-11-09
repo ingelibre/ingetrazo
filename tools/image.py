@@ -34,6 +34,9 @@ class ImageTool(Tool):
     # Below this the drag is treated as "no size yet" and the click is
     # ignored, so a stray double-click can't commit a degenerate image.
     MIN_SIZE = 1e-4
+    # The second click is the opposite corner: the span to the cursor is the
+    # diagonal, never a line to infer along (#389, see ``compute_snap``).
+    diagonal_span = True
 
     def __init__(self) -> None:
         self.path: str | None = None

@@ -69,24 +69,85 @@ def iter_meshes(scene):
 
 def _annotations(scene):
     for coll in ("dimensions", "text_labels", "image_planes",
-                 "section_planes"):
+                 "section_planes", "guides"):
         yield from (getattr(scene, coll, None) or ())
 
 
-def used_layers(scene) -> set[str]:
-    """Every layer name something in the document carries."""
-    used = {DEFAULT_LAYER}
+def layer_carriers(scene):
+    """Every entity in the document that can carry a layer label: faces and
+    edges of every mesh, every group (nested placements and kept definitions
+    included), the annotations and the photogrammetric survey. What renaming
+    or deleting a layer has to relabel — missing one leaves it tagged with a
+    name that no longer exists."""
     for mesh in iter_meshes(scene):
-        for f in mesh.faces:
-            used.add(layer_of(f))
-        for e in mesh.edges:
-            used.add(layer_of(e))
-    for g in iter_groups(_document_groups(scene)):
-        if getattr(g, "layer", None):
-            used.add(g.layer)
+        yield from mesh.faces
+        yield from mesh.edges
+    yield from iter_groups(_document_groups(scene))
+    yield from _annotations(scene)
+    photo = getattr(scene, "photo_mesh", None)
+    if photo is not None:
+        yield photo
+
+
+def layer_counts(scene, *, photo: bool = True) -> dict[str, int]:
+    """How many of :func:`layer_carriers` carry each layer name — without
+    building a lazy mesh. Reading ``mesh.faces`` of a group the loader left
+    unbuilt builds it: the Layers panel counting on every open built all
+    888 of plaza's group meshes (95 MB more, release_check 0.5.11). A lazy
+    mesh is counted from what it was read from: each edge's layer from its
+    plan, each face's from the attribute table of its source."""
+    from collections import Counter
+
+    import numpy as np
+
+    from core import lazy_mesh
+
+    tally: Counter = Counter()          # raw names; None folds in at the end
+    for mesh in iter_meshes(scene):
+        plan = lazy_mesh.plan_of(mesh)
+        if plan is None:
+            tally.update(layer_of(f) for f in mesh.faces)
+            tally.update(layer_of(e) for e in mesh.edges)
+            continue
+        tally.update(plan.layer)
+        src = mesh.__dict__["_deferred_source"]
+        face_attr = src.get("face_attr")
+        if face_attr is None:
+            tally[None] += plan.nfaces
+            continue
+        # One pass over the face → attribute-row index (14 M faces on the
+        # plant of #158: a Python loop per face was 0.5 s on every edit).
+        table = src["meta"].get("face_attrs") or []
+        rows = np.asarray(face_attr)
+        per_row = np.bincount(rows[rows >= 0], minlength=len(table))
+        tally[None] += int(rows.size - per_row.sum())
+        for raw, n in zip(table, per_row.tolist()):
+            if n:
+                tally[(raw or {}).get("layer")] += n
+    counts: dict[str, int] = {}
+
+    def add(name, n=1):
+        name = name or DEFAULT_LAYER
+        counts[name] = counts.get(name, 0) + n
+
+    for name, n in tally.items():
+        add(name, n)
+    for ent in iter_groups(_document_groups(scene)):
+        add(layer_of(ent))
     for ent in _annotations(scene):
-        used.add(layer_of(ent))
-    return used
+        add(layer_of(ent))
+    survey = getattr(scene, "photo_mesh", None) if photo else None
+    if survey is not None:
+        add(layer_of(survey))
+    return counts
+
+
+def used_layers(scene) -> set[str]:
+    """Every layer name something in the document carries — counted as the
+    Layers panel counts, so a lazy group mesh is not built to answer (the
+    «In use» and «Unused» filters ask on every edit). The survey's layer is
+    left out, as it always was."""
+    return {DEFAULT_LAYER} | set(layer_counts(scene, photo=False))
 
 
 def layers_held_by_scenes(scene) -> set[str]:

@@ -47,3 +47,54 @@ def test_apply_is_idempotent_and_leaves_a_fixed_upstream_alone(monkeypatch):
     assert openskp_compat.apply() is False          # second call: no-op
     monkeypatch.setattr(openskp_compat, "_applied", False)
     assert openskp_compat.apply() is False          # upstream has it now
+
+
+class _Archive:
+    """Just enough of the legacy reader's archive for one layer record: no
+    attribute container, no persistent ids."""
+    has_pid = False
+
+    def __init__(self, ver):
+        self.ver = ver
+
+    def read_object(self, r, expect=None):
+        return 0, None, None
+
+
+def _utf16(text: str) -> bytes:
+    return b'\xff\xfe\xff' + bytes([len(text)]) + text.encode('utf-16le')
+
+
+def _layer_record(tail: int) -> bytes:
+    """A plain-colour layer record whose fixed tail is ``tail`` bytes."""
+    return (_utf16('Layer0') + b'\x00\x00\x00\x00' + _utf16('Layer_Layer0')
+            + b'\x00\x01' + b'\xff\x54\x54\xff' + _utf16('')
+            + b'\x00' * (tail - 8 - 5) + b'\x00\x00\x00\x00\x00\x00\xe0\x3f'
+            + b'\x00' * 5)
+
+
+def test_a_2019_layer_record_reads_its_two_extra_bytes():
+    """#157: from the 2019 version on the layer record ends 23 bytes after
+    its last string; reading 21 left the first definition's entity count
+    two bytes early, and the castle did not open."""
+    from formats import openskp_compat
+    from openskp import legacy as L
+    openskp_compat.apply()
+    data = _layer_record(23) + b'TAIL'
+    r = L._R(data, 0)
+    rec = L._READERS['CLayer'](_Archive(19), r)
+    assert rec['name'] == 'Layer0'
+    assert data[r.pos:] == b'TAIL'
+
+
+def test_older_layer_records_keep_their_length():
+    """A 2018 record is 21 bytes long, and two zero bytes after it belong to
+    whatever follows — they are not eaten."""
+    from formats import openskp_compat
+    from openskp import legacy as L
+    openskp_compat.apply()
+    for ver in (17, 18, 20):
+        data = _layer_record(21) + b'\x00\x00TAIL'
+        r = L._R(data, 0)
+        L._READERS['CLayer'](_Archive(ver), r)
+        assert data[r.pos:] == b'\x00\x00TAIL', ver

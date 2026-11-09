@@ -27,3 +27,13 @@ def test_main_calls_it_before_the_crash_log_and_qt():
     call = src.index("malloc_arenas.limit()")
     assert call < src.index("open_crash_log()")
     assert call < src.index("from PySide6")
+
+
+@pytest.mark.skipif(not sys.platform.startswith("linux"), reason="glibc only")
+def test_trim_runs_on_linux():
+    assert malloc_arenas.trim() is True
+
+
+def test_trim_does_nothing_elsewhere(monkeypatch):
+    monkeypatch.setattr(sys, "platform", "darwin")
+    assert malloc_arenas.trim() is False

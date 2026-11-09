@@ -65,6 +65,13 @@ def on_activate(self, viewport):
     viewport.notify_scene_changed()
 ```
 
+On failure, `SnapshotImport` restores the original membership and order of
+groups, layers, saved views, dimensions, text labels and sheets, including
+objects removed by the failed mutation. These collections are restored in
+place so existing scripting-scope references stay valid. On undo it takes
+away what the mutation added and puts back, in its old place, what it
+removed: replacing your own container group is one clean step.
+
 Useful, honest data points (what the app itself uses — see the bundled
 `plugins/model_info.py` for a worked example):
 
@@ -76,7 +83,19 @@ Useful, honest data points (what the app itself uses — see the bundled
 - BIM: `core.bim` (`tag_faces`, `tag_group`, `collect_objects`) — the same
   calls behind the BIM tray and the IFC export;
 - lengths for display: `scene.dimension_style` + the viewport's
-  `_format_dim_value`.
+  `_format_dim_value`;
+- location: `scene.georef` is `None` until the user sets one in the
+  Terrain tab; then a `georef.datum.SceneDatum` (`lat`, `lon`, `alt`,
+  `north`). `geodetic_to_local(lat, lon)` gives the model's local metres
+  (X east, Y north, Z up, already turned by the north angle; without `alt`,
+  Z = 0 on the reference plane), `local_to_geodetic(point)` goes back.
+  Read it when you need it rather than keeping it: moving the location or
+  "Straighten model on the map" replaces it;
+- terrain: `scene.terrain` is `None` until the user builds the 3D terrain,
+  and is rebuilt in the background as tiles arrive. Its
+  `height_at(x, y)` gives the ground Z at a local point, in the same
+  frame as the model, or `None` outside the captured area. It is display
+  only (never part of the mesh) and may be hidden (`visible`).
 
 ## Developing interactively
 
@@ -96,7 +115,7 @@ The two AI plugins share a reusable layer that any plugin can import:
   whole rollback on error, no undo entry for inspect-only runs. This is
   the canonical way for generated or scripted code to mutate the model.
 - A provider layer following the IngePresupuestos convention: one API
-  key, provider detected by its prefix (`ai.detect_provider`), seven
+  key, provider detected by its prefix (`ai.detect_provider`), eight
   providers over two wire formats (Anthropic native + OpenAI-compatible),
   stdlib `urllib` only. `ai.chat(...)` does one blocking turn (run it on
   a worker thread), `ai.list_models(...)` returns what the key can
@@ -132,7 +151,8 @@ def setup(app):
     # .igz, reset by New/Open. Each set is one undo step.
     data = app.document_data(default={})
     app.set_document_data({"levels": [...]})
-    app.on_document_changed(refresh)      # edits, undo, New, Open
+    app.on_document_changed(refresh)      # edits, undo, New, Open, tab switch
+    app.on_document_closed(forget)        # forget(scene): a project tab closed
 
     # A tab in the side tray, beside Properties / BIM / Terrain. It goes
     # back where the user left it and is listed in Window ▸ Panels (the
@@ -201,6 +221,24 @@ it; a provider that raises is logged and skipped, an overlay that raises
 is logged once and removed, never breaking the frame or the cursor; the
 painter state is saved and restored around every overlay; document data
 that is not JSON-safe is dropped on save rather than failing it.
+
+### Several projects in tabs
+
+Tabs only add to API 2, so `API_VERSION` stays 2: an extension that
+checks `app.api_version in (1, 2)` keeps loading. To know whether the
+window has tabs, test `hasattr(app, "on_document_closed")`.
+
+The window holds several projects, one per tab above the viewport, and
+each project has a viewport of its own (scene, undo history, camera).
+`app.viewport` and `app.scene` always answer the project **in front**, so
+read them when you need them — a viewport kept from `setup()` stays the
+first tab's. `on_document_changed(fn)` also fires when another tab comes
+to the front, so a panel that shows document data refreshes with the same
+callback; `on_document_closed(fn)` calls `fn(scene)` when a tab is closed,
+with the scene that goes, to drop whatever you kept for it (keyed by the
+scene object). Overlays, snap providers and pickables registered once
+work in every tab, the ones opened later included. While a workspace is
+shown, the tabs do not switch.
 
 ### Toolbars created after startup
 

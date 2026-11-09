@@ -243,9 +243,9 @@ def test_a_hint_or_a_hand_over_does_not_rebuild_the_tabs(monkeypatch):
 
 
 def test_model_tab_steps_the_composer_aside_when_it_overlaps_the_model_window(monkeypatch):
-    """The hand-over never guesses (Wayland may refuse to raise, Windows
-    keeps an owned window on top): overlapping, the composer hides at
-    once; side by side it stays; a sheet tab brings it back as it was."""
+    """The hand-over never guesses (Wayland may refuse to raise a
+    window): overlapping, the composer hides at once; side by side it
+    stays; a sheet tab brings it back as it was."""
     win = _window(monkeypatch)
     try:
         win.show()
@@ -373,3 +373,264 @@ def test_the_model_window_returns_to_the_last_sheet(monkeypatch):
         assert comp.comp is win.viewport.scene.compositions[1]
     finally:
         _close(win)
+
+
+# ---- #1184: the strip takes the free width, arrows only when it must --------
+
+def _settle(ms=40):
+    from PySide6.QtCore import QEventLoop, QTimer
+    loop = QEventLoop()
+    QTimer.singleShot(ms, loop.quit)
+    loop.exec()
+
+
+def _arrows(tabs):
+    from PySide6.QtWidgets import QToolButton
+    return [b for b in tabs.findChildren(QToolButton) if b.isVisible()]
+
+
+def _composer_with(win, count):
+    from core.composition import Composicion
+    win.viewport.scene.compositions[:] = [
+        Composicion(name=f"L-{i + 1:02d} Planta de trazo general")
+        for i in range(count)]
+    win._update_title()
+    if getattr(win, "_composer", None) is None:
+        win._sheet_tabs.click(1)
+    comp = win._composer
+    comp._refresh_sheet_tabs()
+    comp.show_sheet(0)
+    return comp
+
+
+def _assert_right_end_untouched(comp):
+    bar = comp.statusBar()
+    assert bar.tabs.geometry().right() < bar._msg.x()
+    for w in (comp.auto_check, comp._pos_label, comp._zoom_combo):
+        assert w.width() >= w.sizeHint().width()
+        assert bar._msg.geometry().right() < w.x()
+        assert w.geometry().right() < bar.width()
+
+
+def test_five_sheets_on_a_wide_bar_show_whole_without_arrows(monkeypatch):
+    """The strip had a fixed share of the bar: 2,5 tabs and arrows with
+    500 px free beside them (Marco, #1184)."""
+    win = _window(monkeypatch)
+    try:
+        comp = _composer_with(win, 5)
+        comp.show()
+        comp.resize(1920, 900)
+        _settle()
+        comp.statusBar().showMessage("Select objects. " * 12)
+        _settle()
+        tabs = comp._sheet_tabs
+        assert tabs.width() == tabs.sizeHint().width()
+        assert not _arrows(tabs)
+        _assert_right_end_untouched(comp)
+    finally:
+        _close(win)
+
+
+@pytest.mark.parametrize("width", [1920, 1366])
+def test_many_sheets_scroll_and_leave_the_hint_a_useful_stub(monkeypatch, width):
+    win = _window(monkeypatch)
+    try:
+        comp = _composer_with(win, 30)
+        comp.show()
+        comp.resize(width, 900)
+        _settle()
+        bar = comp.statusBar()
+        bar.showMessage("Select objects. " * 12)
+        _settle()
+        tabs = comp._sheet_tabs
+        assert _arrows(tabs)                         # the arrows stay
+        assert tabs.width() > width * 0.3            # ... past the old share
+        chars = bar._msg.width() / bar._msg.fontMetrics().averageCharWidth()
+        assert chars >= 40                           # the hint still reads
+        _assert_right_end_untouched(comp)
+        assert tabs.x() < 20                         # glued to the left
+        comp.show_sheet(24)                          # the marked tab is in view
+        _settle()
+        rect = tabs.tabRect(tabs.currentIndex())
+        assert rect.left() >= 0 and rect.right() <= tabs.width()
+    finally:
+        _close(win)
+
+
+def test_the_budget_follows_a_resize_and_a_rename(monkeypatch):
+    win = _window(monkeypatch)
+    try:
+        comp = _composer_with(win, 5)
+        comp.show()
+        comp.resize(1920, 900)
+        _settle()
+        tabs = comp._sheet_tabs
+        assert not _arrows(tabs)
+        comp.resize(1100, 900)                       # narrower: they scroll
+        _settle()
+        assert _arrows(tabs)
+        _assert_right_end_untouched(comp)
+        comp.resize(1920, 900)                       # wider: the arrows go
+        _settle()
+        assert not _arrows(tabs)
+        assert tabs.width() == tabs.sizeHint().width()
+        # Long names eat the room with no resize at all ...
+        comp.resize(1100, 900)
+        sheets = win.viewport.scene.compositions
+        long_names = [s.name for s in sheets]
+        for i, s in enumerate(sheets):
+            s.name = f"L{i}"
+        comp._refresh_sheet_tabs()
+        _settle()
+        assert not _arrows(tabs)
+        for s, name in zip(sheets, long_names):
+            s.name = name
+        comp._refresh_sheet_tabs()
+        _settle()
+        assert _arrows(tabs)
+        _assert_right_end_untouched(comp)
+        for i, s in enumerate(sheets):               # ... and give it back
+            s.name = f"L{i}"
+        comp._refresh_sheet_tabs()
+        _settle()
+        assert not _arrows(tabs)
+    finally:
+        _close(win)
+
+
+def test_a_new_sheet_while_the_composer_is_hidden_is_not_squeezed(monkeypatch):
+    """A hidden QTabBar does not announce its new size: the composer came up
+    with the arrows on three short tabs."""
+    win = _window(monkeypatch)
+    try:
+        comp = _composer_with(win, 1)
+        comp.hide()
+        _settle()
+        win._sheet_tabs.click(1)
+        comp.show_sheet(0)
+        comp.show()
+        comp.resize(1920, 900)
+        _settle()
+        assert comp._sheet_tabs.width() == comp._sheet_tabs.sizeHint().width()
+        assert not _arrows(comp._sheet_tabs)
+    finally:
+        _close(win)
+
+
+@pytest.mark.parametrize("width", [1920, 1366])
+def test_the_main_window_keeps_its_two_tabs_and_its_long_hint(monkeypatch, width):
+    win = _window(monkeypatch)
+    try:
+        _composer_with(win, 30)
+        win._composer.hide()
+        win._update_status_hint = lambda: None
+        win.show()
+        win.resize(width, 900)
+        _settle()
+        bar = win.statusBar()
+        bar.showMessage("Select objects. " * 12)
+        _settle()
+        tabs = win._sheet_tabs
+        assert len(tabs.names()) == 2
+        assert tabs.width() == tabs.sizeHint().width()
+        assert not _arrows(tabs)
+        assert bar._msg.width() >= int(width * bar.MESSAGE_SHARE) - 1
+        assert bar._msg.x() + bar._msg.width() <= width
+    finally:
+        _close(win)
+
+
+# ---- #1184: a very long name is cut on its tab, and only there --------------
+
+_LONG = ("Planta de arquitectura general", "Cortes y elevaciones del bloque",
+         "Instalaciones sanitarias nivel", "Estructuras de cimentacion gen",
+         "Detalles constructivos de obra")
+
+
+def _strip(names, current=None):
+    from views.sheet_tabs import SheetTabs
+    tabs = SheetTabs(None, lambda: None, lambda i: None, lambda: None)
+    tabs.refresh(names, current)
+    return tabs
+
+
+def test_a_long_name_is_cut_on_its_tab_and_whole_everywhere_else():
+    from PySide6.QtCore import Qt
+    tabs = _strip([_LONG[0], "Planta"])
+    assert tabs.elideMode() == Qt.ElideNone             # never squeezed by Qt
+    assert tabs.names() == ["Model", _LONG[0], "Planta"]
+    cut = tabs.tabText(1)
+    assert cut.endswith("…") and _LONG[0].startswith(cut[:-1])
+    assert _LONG[0] in tabs.tabToolTip(1)
+    assert tabs.tabText(2) == "Planta"                  # a short one as it is
+    assert "Planta" not in tabs.tabToolTip(2)
+    assert tabs.tabText(0) == "Model"
+
+
+def test_a_name_that_fits_is_not_cut():
+    from views.sheet_tabs import SheetTabs
+    tabs = _strip(["x"])
+    room = SheetTabs.LABEL_MAX_CHARS * tabs.fontMetrics().averageCharWidth()
+    name = "i"
+    while tabs.fontMetrics().horizontalAdvance(name + "ii") < room:
+        name += "i"
+    tabs.refresh([name], None)
+    assert tabs.tabText(1) == name
+
+
+def test_two_names_cut_alike_keep_their_own_tooltip():
+    """What the tab reads did not change, the name did: a rebuild decided
+    on the text shown left the old name in the tooltip."""
+    a, b = _LONG[0] + " A", _LONG[0] + " B"
+    tabs = _strip([a])
+    text = tabs.tabText(1)
+    tabs.refresh([b], None)
+    assert tabs.tabText(1) == text
+    assert b in tabs.tabToolTip(1) and a not in tabs.tabToolTip(1)
+    assert tabs.names() == ["Model", b]
+
+
+@pytest.mark.parametrize("budget", [120, 250, 600])
+def test_a_tight_budget_scrolls_and_never_squeezes_a_name(budget):
+    """However little room there is: the arrows, not «L…»."""
+    tabs = _strip(list(_LONG))
+    tabs.set_budget(budget)
+    tabs.show()
+    _settle()
+    for i in range(1, 1 + len(_LONG)):
+        assert tabs.tabRect(i).width() == tabs.tabSizeHint(i).width()
+        assert len(tabs.tabText(i)) >= 15
+        assert tabs.fontMetrics().horizontalAdvance(tabs.tabText(i)) \
+            <= tabs.tabRect(i).width()
+    tabs.close()
+
+
+def test_five_long_names_fit_at_the_laptops_width_and_model_stays(monkeypatch):
+    """Marco's screen, 1536 logical px, at the tests' 9 pt font: going to
+    the last sheet scrolled «Model» out with room to spare."""
+    win = _window(monkeypatch)
+    try:
+        from core.composition import Composicion
+        win.viewport.scene.compositions[:] = [
+            Composicion(name=n) for n in _LONG]
+        win._update_title()
+        win._sheet_tabs.click(1)
+        comp = win._composer
+        comp.show()
+        comp.resize(1536, 800)
+        _settle()
+        comp.show_sheet(4)
+        _settle()
+        tabs = comp._sheet_tabs
+        assert tabs.names() == ["Model", *_LONG]
+        assert not _arrows(tabs)
+        assert tabs.tabRect(0).left() == 0              # «Model» in view
+        last = tabs.tabRect(tabs.currentIndex())
+        assert last.right() <= tabs.width()
+        _assert_right_end_untouched(comp)
+        chars = comp.statusBar()._msg.width() \
+            / comp.statusBar()._msg.fontMetrics().averageCharWidth()
+        assert chars >= 40                              # the hint's room stays
+    finally:
+        _close(win)
+

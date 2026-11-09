@@ -12,7 +12,6 @@ import os
 import random
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-os.environ.setdefault("INGETRAZO_RUST", "1")
 
 import numpy as np  # noqa: E402
 import pytest  # noqa: E402

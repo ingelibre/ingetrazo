@@ -900,9 +900,9 @@ def find_subdividing_chain(
 
     This is the "rectangle drawn in a corner / along an edge" case: the loop
     neither sits strictly inside the face (a hole) nor is a single straight
-    chord — it carves a connected sub-region. Loops that poke outside the face,
-    and loops touching the boundary in more than one place are out of scope and
-    return ``None``.
+    chord — it carves a connected sub-region. Loops that poke outside the face
+    or leave its plane, and loops touching the boundary in more than one place
+    are out of scope and return ``None``.
 
     Holes on ``face`` are allowed and ignored here (the chain only concerns the
     outer boundary): drawing a door on a wall that already has a window must
@@ -912,15 +912,23 @@ def find_subdividing_chain(
     if len(face.vertices) < 3 or len(loop) < 3:
         return None
     proj, poly2 = _face_plane_proj(face)
+    normal, origin = face.normal(), face.vertices[0]
 
     labels: list[str] = []
     for v in loop:
         if _locate_on_loop(face.vertices, v) is not None:
             labels.append("bdry")
-        elif _strictly_inside_2d(proj(v), poly2):
+        elif (abs(QVector3D.dotProduct(normal, v - origin)) <= _PLANAR_TOLERANCE
+              and _strictly_inside_2d(proj(v), poly2)):
             labels.append("in")
         else:
-            return None  # loop pokes outside the face → not a clean subdivision
+            # The loop pokes outside the face, or off its plane → not a clean
+            # subdivision. The projection alone is not enough: a window drawn
+            # against a box's corner edge has its far corners 3 m in front of
+            # the side wall, projected onto that wall's edge, and float noise
+            # on a turned box put them a hair inside it — the side wall was
+            # carved into a face 2.9 m off its plane.
+            return None
     if "in" not in labels or "bdry" not in labels:
         return None
 
@@ -1684,14 +1692,16 @@ def _box_grid(lo, hi):
 
 def prune_collinear_orphan_edges(mesh) -> list:
     """Remove edges that bound no face and lie collinearly over another edge — the
-    unwelded collinear overlaps that leave a duplicate 'division line'. Returns
-    the removed edges."""
+    unwelded collinear overlaps that leave a duplicate 'division line'. Only
+    the stretch the other edges run along goes: the rest of a loose line stays,
+    as new edges carrying its flags. Returns the removed edges."""
     removed = []
     edges = list(mesh.edges)
     orphans = [e for e in edges if len(e.faces) == 0]
     if not orphans:
         return removed
     import numpy as np
+    from core.mesh import edge_flags, stamp_edge_flags
     # Broad phase: an edge can only overlap one whose box it meets. The bare
     # loop tested every orphan against EVERY edge — 850k calls to the
     # collinearity predicate on the imported barbecue, 2.8 s of a Delete.
@@ -1704,18 +1714,75 @@ def prune_collinear_orphan_edges(mesh) -> list:
     # An orphan already pruned must not prune the one it lay on: the bare
     # loop read the LIVE edge list, so the partner had to still be there.
     gone: set = set()
+    curved = False
     for e in orphans:
         i = slot[id(e)]
-        for j in meeting(i):
-            other = edges[j]
-            if other is e or id(other) in gone:
-                continue
-            if _collinear_overlapping(e, other):
-                mesh.remove_edge(e)
-                removed.append(e)
-                gone.add(id(e))
-                break
+        cover = [edges[j] for j in meeting(i)
+                 if edges[j] is not e and id(edges[j]) not in gone
+                 and _collinear_overlapping(e, edges[j])]
+        if not cover:
+            continue
+        # The whole edge used to go: an 8.60 m line with a face pasted across
+        # it kept only the 2.46 m inside the face, and two overlapping lines
+        # of an imported drawing lost one of them at the next Delete.
+        pieces = _uncovered_stretches(e.a, e.b, cover)
+        flags = edge_flags(e)
+        mesh.remove_edge(e)
+        removed.append(e)
+        gone.add(id(e))
+        for p, q in pieces:
+            va, vb = mesh.vertex_at(p), mesh.vertex_at(q)
+            if (va is not None and vb is not None
+                    and mesh.find_edge(va, vb) is not None):
+                continue                     # already there: leave it as it is
+            stamp_edge_flags(mesh.add_edge(p, q), flags)
+            curved = curved or e.curve is not None
+    if curved:
+        mesh.resplit_curves()   # each piece of a trimmed curve is a curve
     return removed
+
+
+def _uncovered_stretches(a: QVector3D, b: QVector3D, cover) -> list:
+    """The stretches of segment ``a``–``b`` that no edge of ``cover`` (edges
+    collinear with it) runs along, as ``(start, end)`` pairs of points.
+
+    A gap shorter than the collinearity tolerance counts as covered, and a
+    stretch that ends within it of a covering edge's corner ends on that
+    corner, so what is left of the line joins the edge instead of dangling
+    a fraction of a millimetre beside it."""
+    a, b = QVector3D(a), QVector3D(b)
+    length = (b - a).length()
+    u = (b - a) / length
+    spans = []
+    corners = []
+    for c in cover:
+        t0 = QVector3D.dotProduct(c.a - a, u)
+        t1 = QVector3D.dotProduct(c.b - a, u)
+        spans.append((min(t0, t1), max(t0, t1)))
+        corners += [c.a, c.b]
+    spans.sort()
+    bare, at = [], 0.0
+    for s0, s1 in spans:
+        if s0 - at > _PLANAR_TOLERANCE:
+            bare.append((at, s0))
+        at = max(at, s1)
+    if length - at > _PLANAR_TOLERANCE:
+        bare.append((at, length))
+
+    def point(t: float) -> QVector3D:
+        p = a + u * t
+        corner = min(corners, key=lambda c: (c - p).lengthSquared())
+        if (corner - p).length() <= _PLANAR_TOLERANCE:
+            return QVector3D(corner)
+        return p
+
+    out = []
+    for s0, s1 in bare:
+        p = a if s0 <= 0.0 else point(s0)
+        q = b if s1 >= length else point(s1)
+        if (q - p).length() > _PLANAR_TOLERANCE:
+            out.append((p, q))
+    return out
 
 
 def _mesh_is_flat(mesh) -> bool:

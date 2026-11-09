@@ -4,7 +4,8 @@ slow on my Windows machine"."""
 from __future__ import annotations
 
 from core.glinfo import (GL_RENDERER, GL_VENDOR, GL_VERSION, describe,
-                         is_software_renderer, read_gl_info, write_gl_report)
+                         is_software_renderer, meets_gl_requirement,
+                         parse_gl_version, read_gl_info, write_gl_report)
 
 
 class _GL:
@@ -53,3 +54,35 @@ def test_the_report_lands_in_the_log_folder(tmp_path):
     text = out.read_text(encoding="utf-8")
     assert "renderer : Intel(R) UHD Graphics 620" in text
     assert "software : no" in text
+
+
+def test_the_version_number_is_read_from_the_vendor_text():
+    assert parse_gl_version("3.0 Mesa 11.2.2") == (3, 0)
+    assert parse_gl_version("4.6.0 NVIDIA 552.44") == (4, 6)
+    assert parse_gl_version("3.3 (Core Profile) Mesa 24.0.5") == (3, 3)
+    assert parse_gl_version("4.6.0 - Build 31.0.101.2111") == (4, 6)
+    assert parse_gl_version("1.1.0") == (1, 1)
+    assert parse_gl_version("") is None
+    assert parse_gl_version("unknown") is None
+
+
+def test_only_desktop_gl_3_3_or_newer_can_compile_the_shaders():
+    # Issue #751: Qt fell back to opengl32sw.dll, whose llvmpipe gave a
+    # 3.0 context, and every #version 330 core shader failed.
+    assert not meets_gl_requirement("3.0 Mesa 11.2.2")
+    assert not meets_gl_requirement("2.1 Mesa 23.2.1")
+    assert not meets_gl_requirement("1.1.0")             # GDI Generic
+    assert not meets_gl_requirement("3.2.0 NVIDIA 340.108")
+    assert meets_gl_requirement("3.3.0 NVIDIA 552.44")
+    assert meets_gl_requirement("4.6.0 NVIDIA 552.44")
+    assert meets_gl_requirement("4.1 INTEL-20.5.17")
+    assert meets_gl_requirement("10.0 Future 1.0")
+    # GLSL ES cannot take a desktop #version 330 core shader at any version.
+    assert not meets_gl_requirement("OpenGL ES 3.2 Mesa 24.0.5")
+    assert not meets_gl_requirement("OpenGL ES 3.0 (ANGLE 2.1.0)")
+
+
+def test_an_unreadable_version_is_left_to_the_shader_compiler():
+    # read_gl_info yields "" when the driver answers nothing; refusing then
+    # would block a working machine on a missing string.
+    assert meets_gl_requirement("")

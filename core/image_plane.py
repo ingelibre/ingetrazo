@@ -100,6 +100,40 @@ class ImagePlane:
         return (QVector3D.dotProduct(d, self.u) / lu if lu > 1e-18 else 0.0,
                 QVector3D.dotProduct(d, self.v) / lv if lv > 1e-18 else 0.0)
 
+    # ---- As a material / as geometry ----------------------------------------
+    def texture(self) -> dict:
+        """The picture as a face texture that shows it exactly where the
+        image sits: the whole picture once over the rectangle, mapped the
+        way the image draws it, with ``sw``/``sh`` its real size — what a
+        face on another plane projects (the eyedropper's rule)."""
+        from core.texture import fit_uv_affine
+        tex = {"path": self.path, "sw": self.width(), "sh": self.height()}
+        uvw = fit_uv_affine(self.corners(),
+                            [(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)])
+        if uvw is not None:
+            tex["uvw"] = uvw
+        return tex
+
+    def as_group(self):
+        """Explode: the picture as real geometry — a group holding one face
+        the size of the image, textured with it on both sides (an image is
+        seen from both), on the image's layer. ``None`` for a degenerate
+        rectangle. The face is new geometry in a group of its own, so it
+        never welds into what was drawn over the image."""
+        from core.group import Group
+        from core.mesh import Mesh
+        if QVector3D.crossProduct(self.u, self.v).length() <= 1e-12:
+            return None
+        mesh = Mesh()
+        face = mesh.add_face(self.corners())
+        attrs = {"texture": self.texture(), "back": True}
+        if self.opacity < 1.0:
+            attrs["opacity"] = self.opacity
+        face.attrs.update(attrs)
+        group = Group(mesh, name=self.name or None)
+        group.layer = self.layer
+        return group
+
     # ---- Scaling ------------------------------------------------------------
     def scaled(self, width: float, keep_aspect: bool = True) -> tuple[QVector3D, QVector3D]:
         """The ``(u, v)`` a rescale to ``width`` metres would produce, anchored
