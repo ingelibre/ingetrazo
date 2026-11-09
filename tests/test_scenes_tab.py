@@ -573,10 +573,30 @@ def test_a_scene_shown_from_views_and_sheets_is_marked_here(win):
 
 # ---- The list or the thumbnails ---------------------------------------------
 
-def _wait():
-    """Long enough for the pictures, drawn one per tick of the loop."""
+def _wait(timeout_ms=5000):
+    """Until the pictures are drawn, one per tick of the loop: a while,
+    then on until the Scenes tab has none left to draw nor an old-picture
+    timer running (a slow machine needs more than a fixed pause)."""
+    import time
     from PySide6.QtTest import QTest
     QTest.qWait(300)
+    panel = _app_panel()
+    deadline = time.monotonic() + timeout_ms / 1000
+    while (panel is not None and panel.isVisible()
+           and (panel._thumb_queue or panel._old_timer.isActive())
+           and time.monotonic() < deadline):
+        QTest.qWait(20)
+
+
+def _app_panel():
+    """The Scenes tab on screen, if there is one (a hidden tab draws
+    nothing, so there is nothing to wait for)."""
+    from views.tray import ScenesPanel
+    from shiboken6 import isValid
+    panels = [w for w in _app.allWidgets()
+              if isinstance(w, ScenesPanel) and isValid(w)
+              and w.isVisible()]
+    return panels[-1] if panels else None
 
 
 def test_thumbnails_are_the_default_and_the_choice_is_kept(win):
