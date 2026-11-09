@@ -18,14 +18,35 @@ its mere existence is the "offer to recover" signal.
 from __future__ import annotations
 
 import hashlib
+import os
+import sys
 from pathlib import Path
 
 
-def autosave_dir() -> Path:
+def _app_data_base() -> Path:
+    """The per-user data folder the slots live under.
+
+    On Windows the base is built from the process's ``APPDATA`` variable
+    whenever one is set (#1180): ``QStandardPaths`` resolves the roaming
+    folder through the OS and never looks at the variable, so a caller
+    that points ``APPDATA`` somewhere else — the test suite points it at
+    a sandbox — still wrote its slots into the real profile. The
+    ``org/app`` suffix Qt appends is kept, so a normal run (whose
+    ``APPDATA`` IS the roaming folder) lands exactly where it always has.
+    The suffix is the organization and application name ``main.py``
+    registers — asked of ``QCoreApplication`` instead, a caller that
+    never set them (a test runner) would get a name derived from
+    ``argv[0]`` and a different folder again.
+    """
+    if sys.platform == "win32" and os.environ.get("APPDATA"):
+        return Path(os.environ["APPDATA"]) / "IngeTrazo" / "IngeTrazo"
     from PySide6.QtCore import QStandardPaths
-    base = QStandardPaths.writableLocation(
-        QStandardPaths.AppDataLocation) or str(Path.home() / ".ingetrazo")
-    d = Path(base) / "autosave"
+    return Path(QStandardPaths.writableLocation(
+        QStandardPaths.AppDataLocation) or str(Path.home() / ".ingetrazo"))
+
+
+def autosave_dir() -> Path:
+    d = _app_data_base() / "autosave"
     d.mkdir(parents=True, exist_ok=True)
     return d
 
