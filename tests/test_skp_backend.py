@@ -235,22 +235,19 @@ def test_openskp_adapter_places_instances_with_transform():
     assert placed.x() == pytest.approx(2.54, abs=1e-4)  # +100 in on X
 
 
-def test_openskp_adapter_divides_an_instance_matrix_by_its_w():
-    # Issue #865: SketchUp sometimes stores a placement scaled through the
-    # matrix's own scalar (element 12, the homogeneous w): the 3x3 AND the
-    # translation are stored multiplied by it, and the real transform
-    # divides them back out. Reading the stored values raw brought the
-    # reported component in 100x large and 100x away. This matrix is the
-    # w=1 placement of the test above (identity, +100 in on X) stored with
-    # w = 100, so it must land exactly where that one lands.
+def test_openskp_adapter_scales_an_instance_matrix_by_element_12():
+    # Issues #865 and #1196: the reader hands over a placement stored with
+    # w = 100 as this matrix, the one printed in #1196: 3x3 and translation
+    # as stored, and element 12 already the scale, 0.01. A 100 in cube must
+    # land as a 1 in cube at x = 20 in, not 100x or 10000x too large.
     child = _fake_definition(
-        id=5, name="Child",
-        verts={1: (0, 0, 0), 2: (10, 0, 0), 3: (10, 10, 0)},
+        id=5, name="Big",
+        verts={1: (0, 0, 0), 2: (100, 0, 0), 3: (100, 100, 0)},
         edges={10: (1, 2), 11: (2, 3), 12: (3, 1)},
         faces={20: [[(10, 1), (11, 1), (12, 1)]]},
     )
-    inst = NS(ref_idx=5, matrix=[100, 0, 0, 0, 100, 0, 0, 0, 100,
-                                 10000, 0, 0, 100])
+    inst = NS(ref_idx=5, matrix=[1, 0, 0, 0, 1, 0, 0, 0, 1,
+                                 2000, 0, 0, 0.01])
     root = _fake_definition(
         id=0, name="ROOT_MODEL", verts={}, edges={}, faces={}, instances=[inst])
     model = NS(definitions={0: root, 5: child})
@@ -260,9 +257,9 @@ def test_openskp_adapter_divides_an_instance_matrix_by_its_w():
     from PySide6.QtGui import QVector3D
     placed = proto["instances"][0]
     origin = placed.map(QVector3D(0.0, 0.0, 0.0))
-    assert origin.x() == pytest.approx(2.54, abs=1e-4)   # +100 in, not +10000
-    corner = placed.map(QVector3D(0.254, 0.0, 0.0))       # 10 in along X
-    assert corner.x() == pytest.approx(2.54 + 0.254, abs=1e-4)
+    assert origin.x() == pytest.approx(20 * 0.0254, abs=1e-4)
+    corner = placed.map(QVector3D(100 * 0.0254, 0.0, 0.0))  # the cube's side
+    assert corner.x() - origin.x() == pytest.approx(1 * 0.0254, abs=1e-4)
 
 
 def test_openskp_adapter_returns_none_without_geometry():

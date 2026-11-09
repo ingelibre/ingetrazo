@@ -1546,7 +1546,8 @@ def _migrate_fixed_scale_labels(c: "Composicion") -> None:
 _FIELD_CTX: dict = {}
 
 #: Each field by its Spanish name — the one documents and the catalogs
-#: carry — with its English and German names. All three expand alike.
+#: carry — with its English and German names, then any further aliases.
+#: All of them expand alike.
 FIELD_NAMES = {
     "proyecto": ("project", "projekt"),
     "autor": ("author", "verfasser"),
@@ -1555,7 +1556,7 @@ FIELD_NAMES = {
     "escena": ("scene", "szene"),
     "fecha": ("date", "datum"),
     "archivo": ("file", "datei"),
-    "nombre": ("name", "planname"),
+    "nombre": ("name", "planname", "sheet_name"),   # {sheet} is the LÁMINA row
     "hoja": ("page", "blatt"),
     "total": ("total", "gesamt"),
 }
@@ -1589,11 +1590,26 @@ def field_values(frame_uid: str = "") -> dict:
             scene_name = f.view_key[6:]          # the main frame's, else any
             break
     idx, total = _FIELD_CTX.get("index"), _FIELD_CTX.get("total")
+
+    def row(es: str) -> str:
+        """The title block's row for field *es*, found by its label in any
+        of the field's names (PROYECTO, Project, PROJEKT…) — the rows the
+        user edits; the legacy attribute only when there is no such row."""
+        if caj is None:
+            return ""
+        import unicodedata
+        names = {es, *FIELD_NAMES[es]}
+        for r in getattr(caj, "campos", None) or []:
+            label = unicodedata.normalize("NFKD", str(r[0]).strip().lower())
+            label = "".join(ch for ch in label if not unicodedata.combining(ch))
+            if label in names:
+                return str(r[1] or "")
+        return getattr(caj, es, "") or ""
+
     vals = {
-        "proyecto": (getattr(caj, "proyecto", "") or "") if caj else "",
-        "autor": (getattr(caj, "autor", "") or "") if caj else "",
-        "lamina": ((getattr(caj, "lamina", "") or "") if caj else "")
-                  or (comp.name if comp is not None else ""),
+        "proyecto": row("proyecto"),
+        "autor": row("autor"),
+        "lamina": row("lamina") or (comp.name if comp is not None else ""),
         "nombre": comp.name if comp is not None else "",
         "escala": format_scale(main.scale_n) if main is not None else "",
         "escena": scene_name,
