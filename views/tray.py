@@ -3258,21 +3258,26 @@ class StylesPanel(QWidget):
         self._sky_c = self._swatch(tr("Sky color"), "sky_color")
         grid.addWidget(self._sky_c, 6, 1)
 
-        grid.addWidget(QLabel(tr("Ground:")), 7, 0)
-        self._ground_c = self._swatch(tr("Ground color"), "ground_color")
-        grid.addWidget(self._ground_c, 7, 1)
+        grid.addWidget(QLabel(tr("Horizon:")), 7, 0)
+        self._horizon_c = self._swatch(
+            tr("Horizon color"), "horizon_color")
+        grid.addWidget(self._horizon_c, 7, 1)
 
-        grid.addWidget(QLabel(tr("Background:")), 8, 0)
+        grid.addWidget(QLabel(tr("Ground:")), 8, 0)
+        self._ground_c = self._swatch(tr("Ground color"), "ground_color")
+        grid.addWidget(self._ground_c, 8, 1)
+
+        grid.addWidget(QLabel(tr("Background:")), 9, 0)
         self._bg_c = self._swatch(
             tr("Background — visible with the sky off"), "background")
-        grid.addWidget(self._bg_c, 8, 1)
+        grid.addWidget(self._bg_c, 9, 1)
 
         self._fill = QCheckBox(tr("Section Fill"))
         self._fill.toggled.connect(self._apply_edits)
-        grid.addWidget(self._fill, 9, 0)
+        grid.addWidget(self._fill, 10, 0)
         self._fill_c = self._swatch(tr("Section fill color"),
                                     "section_fill_color")
-        grid.addWidget(self._fill_c, 9, 1)
+        grid.addWidget(self._fill_c, 10, 1)
 
         # Ambient occlusion (#954): off in every preset. The
         # two values only take edits while the switch is on.
@@ -3281,9 +3286,9 @@ class StylesPanel(QWidget):
             "Softly darkens where surfaces meet — corners, the foot of a "
             "wall, under a bench."))
         self._ao.toggled.connect(self._apply_edits)
-        grid.addWidget(self._ao, 10, 0, 1, 2)
+        grid.addWidget(self._ao, 11, 0, 1, 2)
         self._ao_dist_lbl = QLabel()             # its unit: _sync_ao_controls
-        grid.addWidget(self._ao_dist_lbl, 11, 0)
+        grid.addWidget(self._ao_dist_lbl, 12, 0)
         # A slider and its value, like the intensity below, on a log scale:
         # a centimetre matters at the foot of a skirting board, ten metres
         # between two buildings.
@@ -3297,9 +3302,9 @@ class StylesPanel(QWidget):
         self._ao_dist_val = QLabel()
         self._ao_dist_val.setMinimumWidth(28)
         dist_row.addWidget(self._ao_dist_val)
-        grid.addLayout(dist_row, 11, 1)
+        grid.addLayout(dist_row, 12, 1)
         self._ao_int_lbl = QLabel(tr("Intensity:"))
-        grid.addWidget(self._ao_int_lbl, 12, 0)
+        grid.addWidget(self._ao_int_lbl, 13, 0)
         int_row = QHBoxLayout()
         self._ao_int = QSlider(Qt.Horizontal)
         self._ao_int.setRange(0, 20)             # tenths: 0.0 – 2.0
@@ -3308,7 +3313,7 @@ class StylesPanel(QWidget):
         self._ao_int_val = QLabel()
         self._ao_int_val.setMinimumWidth(28)
         int_row.addWidget(self._ao_int_val)
-        grid.addLayout(int_row, 12, 1)
+        grid.addLayout(int_row, 13, 1)
 
         row = QHBoxLayout()
         save_btn = QPushButton(tr("Save style…"))
@@ -3317,7 +3322,7 @@ class StylesPanel(QWidget):
         self._del_btn = QPushButton(tr("Delete"))
         self._del_btn.clicked.connect(self._on_delete)
         row.addWidget(self._del_btn)
-        grid.addLayout(row, 13, 0, 1, 2)
+        grid.addLayout(row, 14, 0, 1, 2)
 
         self.refresh()
 
@@ -3326,12 +3331,16 @@ class StylesPanel(QWidget):
         return getattr(self._window.viewport.scene, "display_style", None)
 
     def _shown_color(self, attr: str):
-        """The colour a swatch shows for ``attr``. Back color may be unset
-        (automatic): show the tint that actually draws."""
+        """The colour a swatch shows for ``attr``. Optional colours use a
+        useful picker seed without changing their underlying unset state."""
         style = self._style()
         if attr == "back_color":
             from core.style import effective_back_color
             return effective_back_color(style, self._window.viewport.scene)
+        if attr == "horizon_color" and style.horizon_color is None:
+            # The legacy gradient hazes toward white. Merely showing that
+            # target must not opt the document into the new gradient.
+            return (1.0, 1.0, 1.0)
         return getattr(style, attr)
 
     def _swatch(self, title: str, attr: str) -> QPushButton:
@@ -3378,6 +3387,8 @@ class StylesPanel(QWidget):
             self._back_c.setStyleSheet(
                 self._css(self._shown_color("back_color")))
             self._sky_c.setStyleSheet(self._css(style.sky_color))
+            self._horizon_c.setStyleSheet(
+                self._css(self._shown_color("horizon_color")))
             self._ground_c.setStyleSheet(self._css(style.ground_color))
             self._bg_c.setStyleSheet(self._css(style.background))
             self._fill_c.setStyleSheet(self._css(style.section_fill_color))
@@ -3516,8 +3527,10 @@ class StylesPanel(QWidget):
                       "Shaded, Monochrome and X-ray modes.")
         if attr == "background" and style.sky:
             return tr("Background saved — it shows with the sky off.")
-        if attr in ("sky_color", "ground_color") and not style.sky:
-            return tr("Sky and ground colors show with the sky on.")
+        if (attr in ("sky_color", "horizon_color", "ground_color")
+                and not style.sky):
+            return tr(
+                "Sky, horizon and ground colors show with the sky on.")
         if attr == "edge_color" and not style.edges and mode != "wireframe":
             return tr("Edge color saved — this style has edges off.")
         if attr == "section_fill_color" and not style.section_fill:

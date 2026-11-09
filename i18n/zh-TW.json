@@ -3350,5 +3350,8 @@
  "The Bulgarian translation.": "保加利亞文翻譯。",
  "The Traditional Chinese translation.": "繁體中文翻譯。",
  "A .skp component 10 000 times too big, traced.": "追查出一個大了 10 000 倍的 .skp 元件。",
- "Thanks as well to all the authors of the extensions catalogue": "同樣感謝擴充功能目錄的所有作者"
+ "Thanks as well to all the authors of the extensions catalogue": "同樣感謝擴充功能目錄的所有作者",
+ "Horizon:": "地平線：",
+ "Horizon color": "地平線顏色",
+ "Sky, horizon and ground colors show with the sky on.": "啟用天空時顯示天空、地平線和地面的顏色。"
 }
