@@ -1130,6 +1130,16 @@ def _moller_trumbore(o, d, v0, e1, e2):
     p = np.cross(d, e2)
     det = np.einsum("ij,ij->i", e1, p)
     ok = np.abs(det) > 1e-6
+    small = ~ok & (det != 0.0)
+    if small.any():
+        # det is (e1 × e2)·d: it shrinks with the triangle's area, so a
+        # 1 mm square met head-on fell under the 1e-6 meant for grazing
+        # rays and could not be picked (#1294). Read those as the angle
+        # between the ray and the triangle's plane instead.
+        at = np.nonzero(small)[0]
+        scale = (np.linalg.norm(np.cross(e1[at], e2[at]), axis=1)
+                 * float(np.linalg.norm(d)))
+        ok[at] = np.abs(det[at]) > 1e-6 * scale
     inv = np.where(ok, 1.0 / np.where(ok, det, 1.0), 0.0)
     s = o - v0
     u = np.einsum("ij,ij->i", s, p) * inv
@@ -1513,7 +1523,10 @@ def _ray_triangle(
     e2 = v2 - v0
     h = QVector3D.crossProduct(direction, e2)
     a = QVector3D.dotProduct(e1, h)
-    if abs(a) < eps:
+    # The same reading as _moller_trumbore: a small det of a small triangle
+    # is measured against its own size, not against 1e-6 (#1294).
+    if abs(a) < eps and (a == 0.0 or abs(a) <= eps * QVector3D.crossProduct(
+            e1, e2).length() * direction.length()):
         return None
     f = 1.0 / a
     s = origin - v0
