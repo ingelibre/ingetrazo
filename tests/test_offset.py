@@ -196,6 +196,119 @@ def test_offset_viewport_measurement_text():
     assert vp._measurement_text() == fmt_len(0.25)
 
 
+def test_offset_drag_snaps_to_endpoint_and_midpoint():
+    """The drag distance aligns perpendicular to a snapped endpoint or
+    midpoint — the offset stays in the face's plane, it only takes its
+    distance from the point."""
+    from PySide6.QtCore import QPointF, Qt
+    from core.snap import SnapResult
+    from tools.base import ToolContext
+    from tools.offset import OffsetTool
+
+    class _MockVP:
+        def __init__(self, scene, history):
+            self.scene, self.history = scene, history
+        def set_hover(self, *a): pass
+        def update(self): pass
+        def flash_status(self, *a, **k): pass
+        def _pixel_to_ray(self, sx, sy):
+            return QVector3D(sx, sy, 10), QVector3D(0, 0, -1)
+
+    scene = Scene()
+    hist = History(scene)
+    face = scene.mesh.add_face([V(0, 0), V(4, 0), V(4, 4), V(0, 4)])
+    vp = _MockVP(scene, hist)
+    tool = OffsetTool()
+    tool.hovered_face = face
+    tool.on_click(ToolContext(viewport=vp, world=V(2, 0), screen=QPointF(2, 0),
+                              modifiers=Qt.NoModifier, snap=None))
+    assert tool.dragging
+    assert tool._ref_inward == V(0, 1, 0)      # bottom edge, inward +Y
+
+    snap = SnapResult(V(3, 2, 0), "endpoint")
+    tool.on_hover(ToolContext(viewport=vp, world=V(3, 2, 0), screen=QPointF(3, 2),
+                              modifiers=Qt.NoModifier, snap=snap))
+    assert abs(tool.distance - 2.0) < 1e-6     # perpendicular to the edge
+
+    snap = SnapResult(V(1, 0.5, 0), "midpoint")
+    tool.on_hover(ToolContext(viewport=vp, world=V(1, 0.5, 0), screen=QPointF(1, 0.5),
+                              modifiers=Qt.NoModifier, snap=snap))
+    assert abs(tool.distance - 0.5) < 1e-6
+
+    # Cursor-dependent snaps (on edge / on face) are not reliable: they do
+    # not move the distance — it keeps following the cursor ray.
+    for kind in ("on_edge", "on_face"):
+        snap = SnapResult(V(3, 5, 0), kind)      # off the ray: must be ignored
+        tool.on_hover(ToolContext(viewport=vp, world=V(3, 5, 0),
+                                  screen=QPointF(3, 1.5),
+                                  modifiers=Qt.NoModifier, snap=snap))
+        assert abs(tool.distance - 1.5) < 1e-6   # the raycast point, not the snap
+
+    # An off-plane endpoint still measures its in-plane projection: the
+    # offset never leaves the face's plane.
+    snap = SnapResult(V(3, 2, 5), "endpoint")
+    tool.on_hover(ToolContext(viewport=vp, world=V(3, 2, 5), screen=QPointF(3, 2),
+                              modifiers=Qt.NoModifier, snap=snap))
+    assert abs(tool.distance - 2.0) < 1e-6
+
+
+def test_offset_engine_refuses_on_edge_and_on_face():
+    """``allowed_snap_kinds`` makes the engine drop ``on_edge``/``on_face``
+    (they follow the cursor and are not reliable), so the Offset never hears
+    them — no distance change, no marker."""
+    from core import inference as _inference
+    from core.snap import SnapResult
+    from tools.offset import OffsetTool
+
+    engine = _inference.InferenceEngine.__new__(_inference.InferenceEngine)
+    tool = OffsetTool()
+
+    for kind in ("on_edge", "on_face"):
+        assert engine._limit_snap(SnapResult(V(0, 0, 0), kind), tool).kind == "none"
+    for kind in ("endpoint", "midpoint"):
+        assert engine._limit_snap(SnapResult(V(0, 0, 0), kind), tool).kind == kind
+    # A tool with no restriction (or none at all) is left untouched.
+    assert engine._limit_snap(SnapResult(V(0, 0, 0), "none"), tool).kind == "none"
+    assert engine._limit_snap(SnapResult(V(0, 0, 0), "on_face"), None).kind == "on_face"
+
+
+
+
+def test_offset_snaps_only_during_the_drag():
+    """Choosing the face stays as it was: no marker on the corners under the
+    cursor, and no Alt clause for inferences the tool does not take."""
+    import math
+
+    from PySide6.QtCore import QPointF, Qt
+    from views.status_hints import hint_for
+    from tools.offset import OffsetTool
+    from views.viewport import Viewport, _HoverEvent
+
+    vp = Viewport(None)
+    vp.resize(1000, 600)
+    vp.camera.set_aspect(1000, 600)
+    vp.flash_status = lambda *a, **k: None
+    vp.camera.yaw, vp.camera.pitch = math.radians(-40), math.radians(50)
+    vp.camera.target, vp.camera.distance = V(1, 1, 1), 10.0
+    vp.scene.mesh.add_face([V(0, 0, 1), V(2, 0, 1), V(2, 2, 1), V(0, 2, 1)])
+    vp.scene.mesh.add_edge(V(3, -1, 1), V(3, 3, 1))
+    tool = OffsetTool()
+    vp.active_tool = tool
+    tool.on_activate(vp)
+
+    def hover(p):
+        x, y = vp._world_to_pixel(p)
+        vp._process_hover(QPointF(x, y), Qt.NoModifier)
+        return vp.last_snap.kind
+
+    assert hover(V(2, 0, 1)) == "none"              # a corner of the face
+    assert hover(V(3, -1, 1)) == "none"
+    x, y = vp._world_to_pixel(V(1.9, 1, 1))
+    vp._process_hover(QPointF(x, y), Qt.NoModifier)
+    tool.on_click(vp._build_ctx(_HoverEvent(QPointF(x, y), Qt.NoModifier)))
+    assert tool.dragging
+    assert hover(V(3, -1, 1)) == "endpoint"
+    assert "Alt" not in hint_for("offset", tool, linear_mode="all")
 
 
 def test_a_refused_hot_retype_keeps_the_offset_already_made():

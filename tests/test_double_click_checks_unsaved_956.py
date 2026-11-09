@@ -5,7 +5,11 @@ double-click forwarded by the single instance, a macOS FileOpen event —
 replaced the current drawing without the unsaved-changes question that
 File ▸ Open and Open Recent ask first. The question now sits in
 ``main._open_document_in``, the seam every outside route shares (and a
-cold launch, which holds nothing to lose, never sees it)."""
+cold launch, which holds nothing to lose, never sees it).
+
+Since projects open in tabs (#1066) the main window replaces nothing: the
+document comes in a tab of its own and the question is left to windows
+without tabs (the stubs below)."""
 from __future__ import annotations
 
 import os
@@ -118,40 +122,34 @@ def _dirty_window():
     return win
 
 
-def test_cancelling_the_question_keeps_the_unsaved_drawing(
+def test_the_drawing_comes_in_a_tab_and_the_unsaved_one_stays(
         tmp_path, monkeypatch):
+    """Projects in tabs (#1066): the main window no longer replaces its
+    drawing, so a double-click opens a tab of its own, asks nothing and
+    leaves the unsaved drawing exactly as it was in its tab."""
     from main import _open_document_in
     doc = _donor_file(tmp_path)
     win = _dirty_window()
     try:
+        asked = []
         monkeypatch.setattr(QMessageBox, "exec",
-                            lambda box: QMessageBox.Cancel)
+                            lambda box: asked.append(box))
+        mine = win.active_document()
         _open_document_in(win, doc)
-        # Still the window's own unsaved face, still no file behind it.
-        assert win._current_path is None
-        faces = list(win.viewport.scene.mesh.faces)
-        assert len(faces) == 1
-        assert faces[0].vertices[0].z() == 9.0
-    finally:
-        win._saved_version = win.viewport.scene.version
-        win.close()
-
-
-def test_discarding_opens_the_double_clicked_drawing(
-        tmp_path, monkeypatch):
-    from main import _open_document_in
-    doc = _donor_file(tmp_path)
-    win = _dirty_window()
-    try:
-        monkeypatch.setattr(QMessageBox, "exec",
-                            lambda box: QMessageBox.Discard)
-        _open_document_in(win, doc)
+        _app.processEvents()
+        assert asked == []
+        assert len(win.documents()) == 2
         assert win._current_path == doc
         faces = list(win.viewport.scene.mesh.faces)
-        assert len(faces) == 1
-        assert faces[0].vertices[0].z() == 0.0    # the donor's face now
+        assert len(faces) == 1 and faces[0].vertices[0].z() == 0.0
+        # The unsaved drawing, untouched in its own tab.
+        assert mine.path is None
+        kept = list(mine.viewport.scene.mesh.faces)
+        assert len(kept) == 1 and kept[0].vertices[0].z() == 9.0
+        assert win._doc_is_dirty(mine)
     finally:
-        win._saved_version = win.viewport.scene.version
+        for d in win.documents():
+            d.saved_content = d.viewport.scene.content_version
         win.close()
 
 
@@ -165,8 +163,10 @@ def test_a_clean_window_is_never_asked(tmp_path, monkeypatch):
         monkeypatch.setattr(QMessageBox, "exec",
                             lambda box: asked.append(box))
         _open_document_in(win, doc)
+        _app.processEvents()
         assert asked == []
         assert win._current_path == doc
+        assert len(win.documents()) == 1          # the blank tab was reused
     finally:
         win._saved_version = win.viewport.scene.version
         win.close()

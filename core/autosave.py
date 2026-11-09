@@ -30,27 +30,45 @@ def autosave_dir() -> Path:
     return d
 
 
-def slot_for(path: Path | None) -> Path:
-    """The recovery slot for a document (``None`` = the unsaved document)."""
+def slot_for(path: Path | None, untitled: int = 1) -> Path:
+    """The recovery slot for a document (``None`` = an unsaved document).
+
+    With several projects open in tabs (#1066) each untitled one has its
+    own slot: ``untitled`` 1 is the classic ``untitled.igz``, the others
+    ``untitled-<n>.igz``."""
     if path is None:
-        return autosave_dir() / "untitled.igz"
+        n = max(1, int(untitled or 1))
+        return autosave_dir() / ("untitled.igz" if n == 1
+                                 else f"untitled-{n}.igz")
     p = Path(path).absolute()
     digest = hashlib.sha1(str(p).encode("utf-8")).hexdigest()[:8]
     return autosave_dir() / f"{p.stem}-{digest}.igz"
 
 
-def write(scene, path: Path | None) -> Path:
+def write(scene, path: Path | None, untitled: int = 1) -> Path:
     """Save ``scene`` into the document's slot; returns the slot path."""
     from formats import igz
-    slot = slot_for(path)
+    slot = slot_for(path, untitled)
     igz.save_scene(scene, slot)
     return slot
 
 
-def pending(path: Path | None) -> Path | None:
+def pending(path: Path | None, untitled: int = 1) -> Path | None:
     """The slot file, if an interrupted session left one."""
-    slot = slot_for(path)
+    slot = slot_for(path, untitled)
     return slot if slot.is_file() else None
+
+
+def pending_untitled() -> list:
+    """Every untitled slot an interrupted session left, as ``(n, slot)``
+    pairs in slot order."""
+    import re
+    found = []
+    for slot in autosave_dir().glob("untitled*.igz"):
+        m = re.fullmatch(r"untitled(?:-(\d+))?\.igz", slot.name)
+        if m:
+            found.append((int(m.group(1) or 1), slot))
+    return sorted(found)
 
 
 #: How many retired slots to keep in ``autosave_dir()/descartados``.
@@ -63,7 +81,7 @@ def discarded_dir() -> Path:
     return d
 
 
-def clear(path: Path | None) -> None:
+def clear(path: Path | None, untitled: int = 1) -> None:
     """Retire the document's slot (clean save / clean close / discarded).
 
     The slot is MOVED into ``descartados/`` with a timestamp, never deleted:
@@ -74,7 +92,7 @@ def clear(path: Path | None) -> None:
     copy waits in the folder Archivo ▸ Recover a discarded auto-save… opens.
     Only the newest :data:`KEEP_DISCARDED` are kept."""
     import datetime
-    slot = slot_for(path)
+    slot = slot_for(path, untitled)
     if not slot.is_file():
         return
     stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")

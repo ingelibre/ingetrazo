@@ -182,6 +182,9 @@ class RotateTool(ProtractorBase):
                     self._vp_preview = True
             self._gather_copy_entities(ctx)
             self.start_point = ctx.world
+            # The centre's plane, kept so a later arrow lock can be released
+            # back to it (same fix as the Protractor's shared on_key).
+            self._centre_plane = (self.start_point, QVector3D(self._axis()))
             self._axis_drag_armed = True   # a DRAG from here sets the axis
             return
         if self.ref_point is None:
@@ -554,7 +557,7 @@ class RotateTool(ProtractorBase):
                             for g in groups)
                 if positions:
                     cmds.append(RotateVerticesCommand(
-                        positions, start, axis, deg))
+                        positions, start, axis, deg, carry_textures=True))
                 if splanes:
                     from core.history import RotateSectionPlanesCommand
                     cmds.append(RotateSectionPlanesCommand(
