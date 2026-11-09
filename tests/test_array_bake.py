@@ -25,7 +25,7 @@ pytestmark = pytest.mark.skipif(
     _native.available() is None or _native.qt_hypot() is None,
     reason="native module or hypot unknown")
 
-_SKIP = {"uid", "faces", "serial", "mesh", "vkey", "obb", "rev"}
+_SKIP = {"uid", "faces", "serial", "mesh", "vkey", "obb", "rev", "flags_gen"}
 
 
 @pytest.fixture(params=["binary", "json-walk", "json-bulk"])

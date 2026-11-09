@@ -751,6 +751,9 @@ def save_scene(scene, path: Path) -> dict:
     # A camera holding a NaN is left out instead of refusing the save: it is
     # only the view, and the file opens framed on the model (#485). The
     # geometry keeps its own guard below.
+    views = getattr(scene, "views_home", None)
+    if isinstance(views, dict) and _non_finite_where(views) == "scene":
+        payload["views"] = dict(views)
     units = getattr(scene, "units", None)
     if isinstance(units, dict) and units != {"length": "m", "precision": 2}:
         payload["units"] = dict(units)     # only when not the metre default
@@ -1391,6 +1394,8 @@ def _load_into_inner(scene, path: Path, progress=None) -> None:
         {"ends": "tick", **(style if isinstance(style, dict) else {})})
     cam = payload.get("camera")
     scene.camera_home = dict(cam) if isinstance(cam, dict) else None
+    views = payload.get("views")
+    scene.views_home = dict(views) if isinstance(views, dict) else None
     from core.units import model_units_of
     scene.units = model_units_of(payload)   # validated; absent = metres
     pdata = payload.get("plugin_data")
