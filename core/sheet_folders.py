@@ -194,13 +194,38 @@ def capture(scene) -> dict:
 
 
 def restore(scene, snap: dict) -> None:
+    """Put the tree back as :func:`capture` saw it — but never add or take
+    away a SHEET: the composer makes and deletes sheets outside this undo
+    (the «+» tab, Delete sheet), and putting the old list back undid those
+    too, behind the composer's back — a deleted sheet came back, a new one
+    vanished while the composer still showed it. So the sheets that exist
+    now stay; those the snapshot knows get their folder, Print flag and
+    order back, a newer one keeps its place after the sheet it followed."""
     scene.sheet_folders[:] = snap["folders"]
     for f, (name, parent, expanded) in zip(snap["folders"],
                                            snap["folder_state"]):
         f.name, f.parent_id, f.expanded = name, parent, expanded
-    scene.compositions[:] = snap["sheets"]
-    for c, (fid, printed) in zip(snap["sheets"], snap["sheet_state"]):
-        c.folder_id, c.print_in_all = fid, printed
+    known = {id(c): state for c, state in zip(snap["sheets"],
+                                               snap["sheet_state"])}
+    now = list(scene.compositions)
+    present = {id(c) for c in now}
+    ordered = [c for c in snap["sheets"] if id(c) in present]
+    for i, c in enumerate(now):
+        if id(c) in known:
+            continue
+        # A sheet the snapshot never saw: after the one it follows now.
+        prev = next((p for p in reversed(now[:i]) if p in ordered), None)
+        ordered.insert(ordered.index(prev) + 1 if prev is not None else 0, c)
+    for c in ordered:
+        if id(c) in known:
+            c.folder_id, c.print_in_all = known[id(c)]
+    scene.compositions[:] = ordered
+    # A newer sheet may sit in a folder the snapshot does not have.
+    ids = {f.id for f in snap["folders"]}
+    for c in ordered:
+        if c.folder_id is not None and c.folder_id not in ids:
+            c.folder_id = None
+    sync_order(scene)
 
 
 # ---- Edits (called by the commands) -----------------------------------------

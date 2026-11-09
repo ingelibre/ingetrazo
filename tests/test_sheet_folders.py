@@ -173,6 +173,39 @@ def test_the_print_flag_is_one_undo_step_for_several_sheets():
     assert all(c.print_in_all for c in two)
 
 
+def test_undo_keeps_the_sheets_made_or_deleted_outside_it():
+    """The composer adds and deletes sheets without this undo: undoing a
+    tree change must not bring a deleted sheet back nor drop a new one."""
+    scene, plans, _roof, details = _doc()
+    hist = History(scene)
+    hist.execute(SetSheetPrintCommand([_sheet(scene, "A")], False))
+    hist.execute(MoveSheetItemsCommand([_sheet(scene, "A")], [], plans.id))
+    gone = _sheet(scene, "D")
+    scene.compositions.remove(gone)                       # the composer's
+    new = Composicion(name="N", folder_id=details.id)
+    scene.compositions.insert(0, new)                     # the composer's
+    hist.undo()                                           # the move
+    hist.undo()                                           # the print flag
+    assert gone not in scene.compositions
+    assert new in scene.compositions and new.folder_id == details.id
+    assert _sheet(scene, "A").folder_id is None
+    assert _sheet(scene, "A").print_in_all
+    assert scene.compositions == sf.tree_order(scene)
+    hist.redo()
+    assert not _sheet(scene, "A").print_in_all and new in scene.compositions
+
+
+def test_a_sheet_in_a_folder_an_undo_takes_away_moves_to_the_top():
+    scene = Scene()
+    hist = History(scene)
+    folder = SheetFolder("New")
+    hist.execute(AddSheetFolderCommand(folder))
+    sheet = Composicion(name="S", folder_id=folder.id)    # made in it
+    scene.compositions.append(sheet)
+    hist.undo()                                           # the folder goes
+    assert sheet in scene.compositions and sheet.folder_id is None
+
+
 def test_a_failing_import_leaves_no_folder_behind():
     scene = Scene()
     hist = History(scene)

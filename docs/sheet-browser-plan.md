@@ -1,10 +1,11 @@
 # Sheet browser — plan
 
-> A **Sheets** tab beside the main window's **Browser** tab, with two panels
-> stacked: the **Scenes** panel on top (the same one as in Properties) and a
-> new **sheet explorer** with nested folders below. The sheet composer shows
-> the very same two panels, so both windows look alike. Same widgets, same
-> data. Branch: `feature/sheet-browser`.
+> The sheet composer's **Sheets** page: the scenes as a plain list on top,
+> to drag onto sheets, and a **sheet explorer** with nested folders below.
+> Branch: `feature/sheet-browser`.
+>
+> First built as a tab in the main window as well; after the first review
+> the sheets live **only in the composer** (section 5).
 
 ## Where we start
 
@@ -26,7 +27,7 @@
 
 ## 1. Data model
 
-`core/composition.py`, `core/scene.py`
+`core/composition.py`, `core/scene.py`, `core/sheet_folders.py`
 
 - New `SheetFolder`: `id`, `name`, `parent_id` (`None` = top level),
   `expanded`. Stored in a new list `scene.sheet_folders`. Nesting is unlimited.
@@ -34,8 +35,9 @@
   - `folder_id`: `None` = top level.
   - `print_in_all`: included in Print all / Export all; default `True`.
 - **Order:** `scene.compositions` stays the single sheet order. After every
-  move it is re-sorted to match the tree from top to bottom, so the sheet tabs,
-  the PDF and `{hoja}` numbering always follow what the browser shows.
+  move it is re-sorted to match the tree from top to bottom — in each folder
+  its subfolders first, then its own sheets — so the sheet tabs, the PDF and
+  `{hoja}` numbering always follow what the explorer shows.
 - **Saving (.igz):** folders and the two fields are written only when they
   differ from the default. Old files open unchanged; files without folders
   save exactly as before. Details in the next section.
@@ -61,7 +63,7 @@ folders too:
   → top level;
 - two folders with the same id → the second gets a new id;
 - the sheet order is re-sorted to the tree, so tabs and numbering match what
-  the browser shows.
+  the explorer shows.
 
 ## 2. Undoable commands
 
@@ -78,82 +80,95 @@ folders too:
 New and deleted sheets reuse the existing paths (`AddSheetCommand`, the
 composer's `delete_sheet`, which asks first and keeps at least one sheet).
 
+**Undo never adds or removes a sheet.** The composer makes and deletes
+sheets outside this undo (the «+» tab, Delete sheet). Undoing a tree change
+puts back folders, each sheet's folder, its Print flag and the order — for
+the sheets that exist now. (Found in review: undoing a folder brought back
+a sheet deleted in the composer and dropped one made there, while the
+composer still showed it.)
+
 ## 3. The sheet explorer: `SheetExplorer`
 
-New file `views/sheet_browser.py`. One widget class, built once per window
-over the same data. Either one updates when the other changes something.
+`views/sheet_browser.py`.
 
-**Tree:** folders and sheets only. A sheet's view frames are not listed under
-it (a sheet can hold many).
+**Tree:** folders, sheets, and under each sheet the scenes placed on it
+(with their scale; a scene the model lost is flagged with a warning).
 
 **Columns:**
 
-| Name | 🖨 Print |
+| Name | 🖨 |
 |---|---|
-| folder or sheet name | checkbox: in Print all / Export all |
+| folder, sheet or scene | printer: in Print all / Export all. Click to switch; a folder's switches every sheet inside it and shows half-faded when only some print |
 
-**Buttons:** + Sheet · + Folder · Delete · Print all… · Export all (PDF)…
+**Bar:** a filter field (like the Browser's) and small icon buttons with
+tips: new sheet · new folder · rename · delete · print all · export all
+(PDF).
 
 - New sheets and folders go into the selected folder.
-- Print all and Export all take only the sheets with Print ticked, in tree
-  order.
+- Print all and Export all take only the marked sheets, in tree order.
+- The filter keeps matching rows, their folders open to show them, and all
+  of a matching folder or sheet.
 
 **Mouse:**
 
-- Double-click a sheet: opens it in the composer.
-- Single click: selects.
-- Drag & drop: sheets and folders move between folders, or between rows to
-  reorder. A folder cannot be dropped into itself or into a folder inside it.
-- A scene dragged onto a sheet (from the Scenes panel above it) is placed on
-  it, as today.
+- Double-click a sheet (or a scene on it): opens it in the composer.
+- Drag & drop: sheets and folders move into folders (drop on one), or
+  between rows to reorder (drop above/below). A folder never goes into
+  itself or a folder inside it. Dropped on a scene row, it means that row's
+  sheet; on empty space, the top.
+- A scene dragged from the list above: dropped on a sheet (or a scene row),
+  it is placed on that sheet in a free spot; on a folder or empty space, it
+  goes on a new sheet named after it, in that folder.
 
-**Keys:** Delete removes · F2 renames · Space toggles Print · Alt+↑/↓ moves.
+**Keys:** Delete removes · F2 renames · Space switches Print · Alt+↑/↓
+moves among the neighbours.
 
-**Right-click menu:** Open · Rename · Duplicate · Delete · New folder here ·
-Include in / Exclude from Print all · Print… · Export PDF… · Place a scene
-here.
+**Right-click menu:**
 
-## 4. The Scenes panel, shared
+- on a sheet: Open · Rename · Duplicate · Delete · Place a scene here ·
+  Include in / Exclude from Print all · Print… · Export PDF… · Move up /
+  down · New sheet here · New folder here;
+- on a folder: Rename · Delete folder · Include / Exclude all · Print… ·
+  Export PDF… · New sheet here · New folder here;
+- on empty space: New sheet · New folder · Print all… · Export all (PDF)….
 
-The existing `ScenesPanel` (Properties tray) is used as is in every place
-scenes appear — Properties, the new Sheets tab, the composer — instead of a
-second scene list. It gains what the sheets need:
+## 4. The scenes list above
 
-- **Drag & drop:** a scene can be dragged out of the list, onto a sheet in
-  the sheet explorer or onto the composer's page.
-- **Double-click in the composer** places the scene on the open sheet (as
-  today's composer panel does); everywhere else it shows the scene, as now.
-- **All copies stay in sync:** a scene added, renamed or deleted in one copy
-  shows in the others at once (today only the one copy is refreshed).
+The existing `ScenesPanel` in a **compact** form: just the list of scenes,
+to drag them onto sheets — no hint, no buttons, no renaming or deleting
+(scenes are made and changed in the main window's Scenes panel, which stays
+as it is).
+
+- **Drag:** scenes drag out by name, onto a sheet in the explorer or onto
+  the composer's page.
+- **Double-click** places the scene on the open sheet.
+- **Pictures:** each scene shows a small preview (the composer's scene
+  render), drawn one at a time while the list is on screen.
+- **Room for 7 scenes**; more scroll.
+- A scene and the views that show it **mark each other**: select a scene,
+  its views on the sheets light up; select a view, its scene does.
 
 ## 5. Where it appears
 
-**Main window:** a new dock tab **Sheets**, beside the **Browser** tab (the
-model browser stays as it is). It holds two panels, one above the other,
-split by a draggable divider:
+**Only in the sheet composer**, as its «Sheets» page (the old «Views and
+sheets» page's place, so a side the user gave it is kept):
 
 ```
-┌ Browser │ Sheets ┐
-│ Scenes            │   ← ScenesPanel, same as in Properties
-│  ▸ Plan           │
-│  ▸ Front          │
-│  [+ Scene] [Update] [−]
-├───────────────────┤   ← divider, drag to resize
-│ Sheets            │   ← SheetExplorer
-│  ▾ 📁 Ground floor │
-│     ☑ A101 Plan   │
-│  ▸ 📁 Details      │
-│  [+ Sheet] [+ Folder] [Delete] [Print all…] [Export all…]
-└───────────────────┘
+┌ Sheets ──────────────┐
+│ Scenes               │   ← the compact scenes list, room for 7
+│  ▸ Plan              │
+│  ▸ Front             │
+├──────────────────────┤   ← divider, drag to resize
+│ Sheets  [filter] ⊕⊕✎🗑🖨⇩ │   ← SheetExplorer
+│  ▾ 📁 Ground floor 🖨 │
+│     ▾ A101 Plan   🖨 │
+│         Plan · 1:100 │
+│  ▸ 📁 Details      🖨 │
+└──────────────────────┘
 ```
 
-**Sheet composer:** the combined «Views and sheets» panel is replaced by the
-same two panels, Scenes on top and Sheets below, so the composer looks like
-the main window's Sheets tab. The only difference: the sheet open in the
-composer is highlighted in the sheet explorer.
-
-The old combined `SheetsPanel` is removed. Each of its features lands in one
-of the two panels, and its tests move with them.
+The old combined `SheetsPanel` is removed; each of its features lives on in
+one of the two panels, and its tests moved with them.
 
 **Built for the later layout rework.** You want every panel to become movable
 between tabs later, so each user can build their own layout. To keep that
@@ -161,9 +176,10 @@ open, this work follows three rules:
 
 - each panel (`ScenesPanel`, `SheetExplorer`) is a self-contained widget that
   needs only the main window, never the tab or dock it sits in;
-- panels talk to each other only through the document (the scene model),
-  never directly — the drag of a scene onto a sheet travels as drag data;
-- the Sheets tab is a thin container that just stacks its panels, so a
+- panels talk to each other only through the document and drag data — the
+  drag of a scene onto a sheet travels as drag data; the Sheets page only
+  wires the scene/view marking between its two panels;
+- the Sheets page is a thin container that just stacks its panels, so a
   layout system can later take them out and put them elsewhere.
 
 The rework itself (moving panels between tabs, saving each user's layout) is
@@ -173,136 +189,70 @@ The rework itself (moving panels between tabs, saving each user's layout) is
 
 `views/composer.py`
 
-- **Print all:** a new `print_sheets(sheets)` shows the printer dialog once,
-  then prints each sheet as its own page at that sheet's paper size and
-  orientation. Without Qt's print module, the existing message appears and
-  offers Export PDF for the same sheets.
-- **Export all:** `export_all_pdf` takes the same set — sheets with Print
-  ticked, in tree order. The composer's existing «Export all sheets (PDF)»
-  menu entry changes with it, so every button and menu agrees.
-- Both are reachable from the main window and from the composer.
+- **Print all:** `print_sheets(sheets)` shows the printer dialog once, then
+  prints each sheet as its own page at that sheet's paper size and
+  orientation. Without Qt's print module, a message points at Export all,
+  which gives the same pages.
+- **Export all:** the marked sheets, in tree order. The composer's own
+  «Export all sheets (PDF)» menu entry takes the same set.
+- The PDF export and the printer share one painting loop (`_paint_atlas`),
+  so both give the same pages.
 
 ## 7. Translations
 
-Every new string goes into all 9 catalogs (`i18n/*.json`, `en.json` stays the
-identity map). Existing strings are reused wherever they fit: «Delete»,
-«Rename…», «Export PDF…», «New sheet».
+Every new string is in all 9 catalogs (`i18n/*.json`, `en.json` stays the
+identity map); existing strings are reused wherever they fit.
+
+Also on this branch: the texts a **new sheet item** starts with follow the
+interface's language — the title block's labels (were fixed Spanish:
+PROYECTO, LÁMINA…), the legend title, a label's text, the level mark, the
+scale label and the default sheet name («Lámina 1»). What a document was
+saved with stays as it is; filling the date, scale and sheet number finds
+its row in any of the languages.
 
 ## 8. Tests
 
-**Model and commands**
+`tests/test_sheet_folders.py` — model and commands:
 
-- folders, flags and the order sync
-- `.igz` round trip: nested folders, sheets in them, Print flags, expanded
-  state — all back after save and open
-- an old file without folders opens flat, all sheets printed; a document
-  without folders saves byte-for-byte as before
-- the repairs: missing folder, missing parent, a cycle, duplicate ids
-- New document clears the folders
-- autosave/recovery brings the folders back
-- importing a file with folders into a document that has its own: no id
-  clash, undo removes what came in
-- undo/redo of every command
-- deleting a folder moves its contents one level up
+- folders, flags and the order sync; undo/redo of every command; deleting a
+  folder moves its contents one level up;
+- `.igz` round trip, old files, the repairs, New document, autosave;
+- an import's guard covers folders.
 
-**Shared panel**
+`tests/test_sheet_browser.py` — the Sheets page:
 
-- the same tree in the main window and in the composer
-- a change in one shows in the other
-- drag & drop moves sheets and folders and reorders the sheet tabs
-- no folder into itself or its subfolders
-- the Print checkbox toggles, with undo
-- + Sheet and + Folder land in the selected folder
-- double-click opens the sheet
-- Delete removes it
+- the sheets live only in the composer; the scenes are a plain list with
+  room for 7;
+- the tree: folders, sheets, their scenes, a lost scene flagged; printers,
+  a folder's switching all inside it (and «some»); Space; the filter;
+- renaming; opening; new sheet / folder in the selected folder; deleting
+  folders (contents move up) and sheets;
+- undo never brings back or drops a sheet the composer made or deleted;
+- drag & drop of sheets and folders (into, above, below, never into itself),
+  the sheet tabs following; Alt+↑/↓ with undo;
+- scenes: the list drags them by name; dropped on a sheet, on a scene row,
+  on a folder or on empty space; double-click places on the open sheet;
+  «Place a scene here»; previews that leave the document untouched; a scene
+  and its views marking each other; Create plan shows its scene;
+- the right-click menus;
+- Print all / Export all: only marked sheets, in tree order, each at its own
+  paper size — checked through a PDF, so no real printer is needed; the
+  composer's own Export all takes the same set.
 
-**Scenes panel and the Sheets tab**
+`tests/test_sheet_item_texts_follow_the_language.py` — the default texts.
 
-- the main window has a Sheets tab beside Browser, with Scenes above and
-  Sheets below
-- the composer shows the same two panels
-- a scene dragged from the Scenes panel onto a sheet is placed on it
-- double-click in the composer's Scenes panel places the scene on the open
-  sheet; in the main window it shows the scene
-- a scene added or renamed in one Scenes panel shows in all the others
+## Steps
 
-**Print all / Export all**
-
-- only flagged sheets, in tree order, each at its own paper size — checked
-  through a PDF, so no real printer is needed
-
-Then the full fast suite (`python -m pytest -m "not slow"`), commit, push.
-
-## Decided: scene previews
-
-Every Scenes panel shows a small picture of each scene — in the main
-window's Sheets tab, in the composer and in Properties alike, since they are
-one and the same panel. The pictures are rendered in the background, one at
-a time, as today's composer panel already does, and rendered again when a
-scene changes.
-
-## Implementation steps
-
-Each step ends with a commit pushed to `feature/sheet-browser`, its tests
-passing. You can pull and try the branch after any step.
-
-### Step 1 — Data model, saving, commands (nothing visible yet)
-
-- `SheetFolder`, `scene.sheet_folders`, the two new sheet fields
-  (section 1).
-- Saving and loading with the repairs (section «Saving and loading»).
-- The undoable commands (section 2).
-- Tests: model, commands, `.igz` round trip, old files, repairs.
-
-### Step 2 — The UI skeleton ★ checkpoint for you
-
-What you see after this step:
-
-- the **Sheets** tab beside **Browser** in the main window, Scenes above,
-  Sheets below, with the divider;
-- the same two panels in the composer, replacing «Views and sheets»;
-- the sheet explorer tree with folders and sheets, the **Name** and
-  **🖨 Print** columns;
-- the buttons: **+ Sheet**, **+ Folder**, **Delete** and the Print
-  checkbox already work (with undo); **Print all…** and **Export all…** are
-  in place but still use today's behaviour (all sheets);
-- double-click a sheet opens it.
-
-Not yet: drag & drop, the right-click menu, keys, scene previews.
-
-**Here I stop and wait for your feedback** on the layout, the wording and
-how it feels. Changes to the look are cheap at this point; what follows
-builds on it.
-
-### Step 3 — Working with the tree
-
-- drag & drop of sheets and folders (into folders, reordering, no folder into
-  itself), with the sheet tabs following the new order;
-- rename (F2), Delete key, Space for Print, Alt+↑/↓;
-- the right-click menu (section 3);
-- the main window and the composer stay in sync.
-
-### Step 4 — The shared Scenes panel
-
-- dragging a scene onto a sheet in the explorer, or onto the composer's
-  page;
-- double-click in the composer places the scene on the open sheet;
-- all copies of the panel in sync;
-- scene previews in every copy.
-
-### Step 5 — Print all and Export all
-
-- `print_sheets` for the printer, one page per sheet at its own paper size;
-- Export all takes the same set: ticked sheets, in tree order;
-- both from the main window and from the composer, and the composer's
-  existing menu entry follows.
-
-### Step 6 — Clean-up and full check ★ second checkpoint
-
-- the old combined `SheetsPanel` removed, its tests moved;
-- all new strings in the 9 catalogs;
-- the full fast suite;
-- a last look from you before the branch goes to a pull request.
+| Step | What | State |
+|---|---|---|
+| 1 | Data model, saving, commands | done |
+| 2 | The Sheets page (UI skeleton) ★ checkpoint | done, reviewed |
+| — | Review: printers on folders, filter, icon bar, right-click menu, scenes under sheets; texts in the interface's language | done |
+| — | Review: sheets only in the composer, scenes list compact with room for 7, the undo bug | done |
+| 3 | Working with the tree: drag & drop, Alt+↑/↓ | done |
+| 4 | The scenes list: drag onto sheets, double-click, previews, marking | done |
+| 5 | Print all / Export all, the composer's menu entry | done |
+| 6 | Old panel removed, its tests ported, full suite ★ checkpoint | done — your look next |
 
 ## Later: sheet previews
 
@@ -315,6 +265,6 @@ picture of each sheet's page in the sheet explorer, as the scenes have.
   placeholders first, so it stays fast — rendered in the background, one at
   a time, like the scene previews.
 - **When it is redrawn:** when the sheet changes (a fingerprint of its
-  items, as the composer panel uses today), not on every refresh.
+  items), not on every refresh.
 - **Where it shows:** as the row's icon, or larger as a tooltip when the
   pointer rests on the row — to be decided when we get there.
