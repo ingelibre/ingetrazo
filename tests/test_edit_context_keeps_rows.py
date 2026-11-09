@@ -218,8 +218,9 @@ def test_the_materials_panel_keeps_its_scan_across_a_group_opened_and_closed():
 
         def colours():
             panel.refresh_in_model()
-            return sorted(tuple(round(c, 3) for c in k)
-                          for (k, _c, _n) in panel._swatch_sig[0])
+            return sorted(tuple(round(c, 3) for c in rgb)
+                          for ((rgb, _opacity), _c, _n)
+                          in panel._swatch_sig[0])
         read = []
         real = cm.face_attrs
 

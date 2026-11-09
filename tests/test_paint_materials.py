@@ -71,7 +71,10 @@ def _reset_paint_state():
     yield
     PaintTool.current_material = None
     PaintTool.current_texture = None
+    PaintTool.current_texture_plane = None
+    PaintTool.current_opacity = None
     PaintTool.current_color = (0.80, 0.45, 0.30)
+    PaintTool.current_is_default = False
 
 
 # ---- (a) + (e): painting with identity ------------------------------------
@@ -297,7 +300,6 @@ def test_the_color_row_recolours_a_plain_colour_material(monkeypatch):
     from PySide6.QtGui import QColor
     from core.history import SetGroupMaterialCommand, SetFaceMaterialTagCommand, CompoundCommand
     from views.main_window import MainWindow
-    import views.color_dialog as color_dialog
     import views.tray as T
     w = MainWindow()
     try:
@@ -315,8 +317,8 @@ def test_the_color_row_recolours_a_plain_colour_material(monkeypatch):
         vp.history.execute(CompoundCommand([
             SetFaceMaterialTagCommand([], mat.name, mat),
             SetGroupMaterialCommand(g, paint)]))
-        monkeypatch.setattr(color_dialog.QColorDialog, "getColor",
-                            staticmethod(lambda *a, **k: QColor(0, 255, 0)))
+        monkeypatch.setattr(T, "get_color",
+                            lambda *a, **k: QColor(0, 255, 0))
         panel._on_pick_tint()                       # choose → applies at once
         assert tuple(face.attrs["color"]) == (0.0, 1.0, 0.0)
         assert tuple(g.material["color"]) == (0.0, 1.0, 0.0)
@@ -325,3 +327,64 @@ def test_the_color_row_recolours_a_plain_colour_material(monkeypatch):
     finally:
         w._saved_version = w.viewport.scene.version
         w.close()
+
+
+def test_the_material_colour_picker_edits_its_transparency(monkeypatch):
+    """The alpha channel in the Materials panel is the recipe's opacity,
+    and restamps faces and whole groups just like an RGB edit."""
+    from PySide6.QtGui import QColor
+    from PySide6.QtWidgets import QColorDialog
+    from core.history import (CompoundCommand, SetFaceMaterialTagCommand,
+                              SetGroupMaterialCommand)
+    from views.main_window import MainWindow
+    import views.tray as T
+    w = MainWindow()
+    try:
+        vp = w.viewport
+        scene = vp.scene
+        panel = w.findChild(T.MaterialsPanel)
+        face = _quad(scene.mesh)
+        g = Group(Mesh(), name="Caja")
+        _quad(g.mesh, z=5.0)
+        scene.groups.append(g)
+        panel._apply_color((0.1, 0.4, 0.9), name="Azul")
+        paint = PaintTool._current_as_material()
+        face.attrs.update(paint)
+        mat = PaintTool.current_material
+        vp.history.execute(CompoundCommand([
+            SetFaceMaterialTagCommand([], mat.name, mat),
+            SetGroupMaterialCommand(g, paint)]))
+        seen = {}
+
+        def choose(*args, **kwargs):
+            seen["initial"] = args[0]
+            seen["options"] = kwargs["options"]
+            return QColor(0, 255, 0, 64)
+
+        monkeypatch.setattr(T, "get_color", choose)
+        panel._on_pick_active_color()
+        opacity = 64 / 255.0
+        assert seen["initial"].alphaF() == 1.0
+        assert seen["options"] & \
+            QColorDialog.ColorDialogOption.ShowAlphaChannel
+        assert tuple(face.attrs["color"]) == (0.0, 1.0, 0.0)
+        assert face.attrs["opacity"] == pytest.approx(opacity)
+        assert g.material["opacity"] == pytest.approx(opacity)
+        assert scene.materials["Azul"].opacity == pytest.approx(opacity)
+        assert PaintTool.current_opacity == pytest.approx(opacity)
+        assert vp.history.undo()
+        assert "opacity" not in face.attrs and "opacity" not in g.material
+    finally:
+        w._saved_version = w.viewport.scene.version
+        w.close()
+
+
+def test_a_translucent_material_colour_swatch_is_split_diagonally():
+    from views.tray import _color_pixmap
+
+    image = _color_pixmap((1.0, 0.0, 0.0), opacity=0.25).toImage()
+    translucent_half = image.pixelColor(5, 5)
+    opaque_half = image.pixelColor(38, 38)
+    assert translucent_half.green() > 20
+    assert opaque_half.red() > 240 and opaque_half.green() < 10
+    assert image.pixelColor(22, 22) != translucent_half
