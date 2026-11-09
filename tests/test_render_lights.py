@@ -322,3 +322,16 @@ def test_save_and_open_folder_live_in_the_image_window(window, tmp_path):
     assert mod.tr("Save image…") not in tray and mod.tr("Open folder") not in tray
     assert "href" in panel._status.text()            # a link back to it
     panel._viewer.close()
+
+
+def test_change_date_and_time_drops_the_shadows_panel(window, monkeypatch):
+    """The button under the day's sun opens the Shadows panel from its
+    toolbar button (its tooltip carries a line of help under the title)."""
+    from PySide6.QtWidgets import QToolButton
+    opened = []
+    monkeypatch.setattr(QToolButton, "showMenu",
+                        lambda self: opened.append(self.menu()))
+    _panel(window)._open_shadows()
+    assert len(opened) == 1
+    assert window.shadows_panel in [a.defaultWidget() for a in opened[0].actions()
+                                    if hasattr(a, "defaultWidget")]

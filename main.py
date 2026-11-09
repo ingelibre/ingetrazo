@@ -13,6 +13,10 @@ import os
 import sys
 from pathlib import Path
 
+# Before any thread allocates (see core.malloc_arenas).
+from core import malloc_arenas
+malloc_arenas.limit()
+
 # Black box: a native crash (GL driver, Qt) kills the process without a
 # Python traceback — faulthandler leaves the Python stacks of every thread
 # in this file so the next "it just closed" has an autopsy. It lives in the
@@ -34,7 +38,7 @@ elif sys.stderr is not None:
 # if the ghost bothers you: run with QT_QPA_PLATFORM=xcb. Re-test the ghost
 # when Mutter/Qt update; no app-side workaround cured it (see CLAUDE.md).
 
-from PySide6.QtCore import (QEvent, QLibraryInfo, QLocale, QSettings, Qt,
+from PySide6.QtCore import (QEvent, QLibraryInfo, QSettings, Qt,
                             QTranslator)
 from PySide6.QtGui import QSurfaceFormat
 from PySide6.QtWidgets import QApplication
@@ -43,25 +47,26 @@ from core import i18n
 
 
 def _init_language() -> None:
-    """Load the saved UI language, or default to the system locale.
+    """Load the saved UI language, or follow the system's.
 
-    Reads the persisted choice from :class:`QSettings`; on first run, falls back
-    to Spanish when the OS locale is Spanish, Brazilian Portuguese when it is
-    Portuguese, English otherwise.
+    Reads the persisted choice from :class:`QSettings`; with none yet, or
+    "Same as the system" chosen (#818), the OS display language picks the
+    closest catalog (see :func:`core.i18n.language_for_locales`).
     """
-    saved = QSettings().value("language")
-    if not saved:
-        system = QLocale.system()
-        if system.language() == QLocale.Spanish:
-            saved = "es"
-        elif system.language() == QLocale.Portuguese:
-            # The Brazilian Portuguese catalogue (PR #54, @dafrobozao)
-            # serves every Portuguese locale until a pt-PT one exists.
-            saved = "pt-BR"
-        else:
-            saved = "en"
-    i18n.set_language(str(saved))
-    _install_qt_translator(str(saved))
+    lang = i18n.resolve_language(QSettings().value("language"))
+    i18n.set_language(lang)
+    _install_qt_translator(lang)
+    # Arabic (#1067) and the other right-to-left languages mirror the
+    # interface. Qt would do it from its own catalogue's QT_LAYOUT_DIRECTION
+    # entry, which the buttons-only translator leaves out on purpose.
+    from views.rtl import apply_language_direction
+    app = QApplication.instance()
+    if app is not None:
+        apply_language_direction(app, lang)
+        # Lao (#850) on Windows: a font that holds the script, so its marks
+        # compose with their consonants.
+        from views.script_fonts import apply_script_font
+        apply_script_font(app, lang)
 
 
 class _ButtonsOnlyTranslator(QTranslator):
@@ -75,20 +80,59 @@ class _ButtonsOnlyTranslator(QTranslator):
     _CONTEXTS = frozenset({"QPlatformTheme", "QMessageBox",
                            "QDialogButtonBox"})
 
+    _BUILTIN = {
+        "vi": {
+            "&OK": "&Đồng ý",
+            "OK": "Đồng ý",
+            "&Cancel": "Hủy",
+            "Cancel": "Hủy",
+            "&Yes": "&Có",
+            "Yes": "Có",
+            "&No": "&Không",
+            "No": "Không",
+            "&Save": "&Lưu",
+            "Save": "Lưu",
+            "&Discard": "&Hủy thay đổi",
+            "Discard": "Hủy thay đổi",
+            "&Close": "&Đóng",
+            "Close": "Đóng",
+            "&Apply": "&Áp dụng",
+            "Apply": "Áp dụng",
+            "&Open": "&Mở",
+            "Open": "Mở",
+            "&Help": "&Trợ giúp",
+            "Help": "Trợ giúp",
+            "Don't Save": "Không lưu",
+            "&Don't Save": "&Không lưu",
+            "Reset": "Đặt lại",
+            "Restore Defaults": "Khôi phục mặc định",
+        }
+    }
+
     def __init__(self) -> None:
         super().__init__()
         self._qt = QTranslator()
+        self._lang = ""
 
     def load_qt(self, lang: str) -> bool:
+        self._lang = lang
+        if lang in self._BUILTIN:
+            return True
         folder = QLibraryInfo.path(QLibraryInfo.LibraryPath.TranslationsPath)
         return self._qt.load(f"qtbase_{lang.replace('-', '_')}", folder)
 
     def isEmpty(self) -> bool:
+        if self._lang in self._BUILTIN:
+            return False
         return self._qt.isEmpty()
 
     def translate(self, context, source, disambiguation=None, n=-1):
         if context not in self._CONTEXTS:
             return None                   # not ours: Qt keeps its text
+        if self._lang in self._BUILTIN:
+            trans = self._BUILTIN[self._lang].get(source)
+            if trans:
+                return trans
         return self._qt.translate(context, source, disambiguation, n)
 
 
@@ -144,7 +188,36 @@ def _open_document_in(window, doc: "Path") -> None:
     if hasattr(window, "load_extensions"):
         window.load_extensions()
     ext = doc.suffix.lower()
+    if hasattr(window, "documents") and (
+            ext in (".igz", ".skp", ".dae", ".dxf", ".dwg")
+            or ext in getattr(window, "file_openers", {})):
+        # Projects in tabs (#1066): the document comes in a tab of its own
+        # (or its tab comes to the front), so nothing is discarded and
+        # nothing needs asking. An .skp after the first paint, as below (a
+        # big one parses for seconds); the rest at once — a cold start
+        # queues the units question right after this call, and it must not
+        # come up in the middle of the load.
+        if ext == ".skp":
+            from PySide6.QtCore import QTimer
+            QTimer.singleShot(0, lambda: window.open_path(doc))
+        else:
+            window.open_path(doc)
+        return
     if ext == ".igz" or ext in getattr(window, "file_openers", {}):
+        # A document REPLACES the drawing this window holds. File ▸ Open
+        # and Open Recent ask about unsaved changes before they call
+        # open_path; a path arriving from outside — a double-click handed
+        # over by the single instance, a macOS FileOpen event — had nobody
+        # asking, so the running drawing went away silently (issue #956).
+        # Ask here, at the seam every outside route shares. A cold launch
+        # holds nothing to lose, so the question is a no-op there, and an
+        # import (the .skp branch below) only ADDS to the drawing and is
+        # not asked, like File ▸ Import.
+        from core.i18n import tr
+        confirm = getattr(window, "_confirm_discard", None)
+        if confirm is not None and not confirm(
+                tr("Discard current drawing and open another?")):
+            return
         window.open_path(doc)       # an extension's own type goes to its opener
     elif ext == ".skp":
         from PySide6.QtCore import QTimer
@@ -220,13 +293,34 @@ def _self_check() -> int:
         if not ok:
             problems.append(label)
 
-    # DWG import goes through LibreDWG's dwg2dxf (#101). Every package
-    # carries it now; a packaged build without it is a broken package.
+    # DWG import goes through LibreDWG's dwg2dxf (#101). Linux and Windows
+    # packages carry it and a package without it is broken. macOS gets it
+    # from release-macos.yml (built from the LibreDWG tarball), so a macOS
+    # build from a plain checkout legitimately has none: reported, not
+    # fatal. find_dwg2dxf ignores a binary built for another OS, so the
+    # Linux ELF kept in vendor/ is never mistaken for a working converter.
     from formats.dwg_bridge import find_dwg2dxf
     dwg = find_dwg2dxf()
     print(f"  DWG converter  : {'found' if dwg else 'MISSING'}  {dwg or ''}")
-    if dwg is None and is_frozen():
+    if dwg is None and is_frozen() and sys.platform != "darwin":
         problems.append("DWG converter")
+
+    # The optional native kernels (rust/ingetrazo_core): without them the
+    # Python code runs, so a missing module is not a fault — except in a
+    # build that promises them, which sets INGETRAZO_REQUIRE_RUST. The
+    # engine is off by default (Preferences), so the check asks whether
+    # the module is there and loads, not whether it is on.
+    from core._native import available, engine
+    mod = available()
+    print(f"  engine         : {engine()}"
+          + (f" (Rust {mod.__version__} available)" if mod else ""))
+    if mod is None and os.environ.get("INGETRAZO_REQUIRE_RUST") == "1":
+        problems.append("native engine")
+    if mod is not None:
+        # Which C++ library's QVector3D length the kernels copy bit for bit
+        # (none: those kernels stay in Python, e.g. Qt built another way).
+        from core._native import qt_hypot
+        print(f"  vector length  : {qt_hypot() or 'Python (no formula matches)'}")
 
     # ``ingetrazo --mcp`` runs scripts/ingetrazo_mcp.py by path, and that
     # server reads its recipe book from core.ai_recipes. The Flatpak of
@@ -319,6 +413,23 @@ def _self_check() -> int:
     except Exception as exc:  # noqa: BLE001
         where = f"({exc})"
     print(f"  Qt buttons (opt): {where}")
+
+    # Qt's HTTPS (extension manager, map tiles): the Windows package ships
+    # no OpenSSL backend, so Qt never picks up a foreign libssl left in
+    # System32 (#564). Read from the plugin folder: asking Qt which
+    # backends exist would itself load OpenSSL.
+    if sys.platform == "win32":
+        try:
+            from PySide6.QtCore import QLibraryInfo
+            tls = Path(QLibraryInfo.path(
+                QLibraryInfo.LibraryPath.PluginsPath)) / "tls"
+            have = sorted(p.stem for p in tls.glob("*.dll"))
+        except Exception as exc:  # noqa: BLE001
+            have, tls = [], f"({exc})"
+        print(f"  TLS (Qt)       : {', '.join(have) or 'none'}  {tls}")
+        if is_frozen() and ("qopensslbackend" in have
+                            or "qschannelbackend" not in have):
+            problems.append("Qt TLS backend")
 
     if problems:
         print(f"\nNOT OK — missing: {', '.join(problems)}")
@@ -427,6 +538,11 @@ def main() -> int:
     from views.tooltips import WrappingToolTips
     tooltips = WrappingToolTips(app)
     app.installEventFilter(tooltips)
+    # The Rust engine: if the last start with it on never
+    # drew its first frame, this one goes back to the normal engine (and
+    # says so below); --python-engine does it for one run.
+    from core import _native
+    engine_fell_back = _native.start_guard(sys.argv[1:])
     # The extensions' setup waits until the window is on screen (#440).
     window = MainWindow(defer_extensions=True)
     # From here on, a FileOpen Apple Event (macOS double-click / Open With,
@@ -447,7 +563,8 @@ def main() -> int:
     # NOT hand over to the running one like a double-click does, or the
     # new window never appears (issue #76).
     new_window = "--new-window" in sys.argv[1:]
-    args = [a for a in sys.argv[1:] if a != "--new-window"]
+    args = [a for a in sys.argv[1:]
+            if a not in ("--new-window", _native.FLAG)]
     arg = args[0] if args else ""
     if not arg and app.pending_open_path is not None:
         # A cold macOS launch by double-click: no argv, the path arrived as
@@ -466,7 +583,10 @@ def main() -> int:
         # the 'it does not open' failure). No ack in 1.5s → launch anyway.
         if probe.waitForReadyRead(1500) and bytes(probe.readAll()).startswith(b"ok"):
             probe.disconnectFromServer()
-            return 0                   # the running instance took over
+            # The running instance took over: this start ends here, with
+            # nothing wrong (the engine guard must not count it as failed).
+            _native.start_ok()
+            return 0
         probe.disconnectFromServer()
     # No responsive server — become one. A stale socket (crash / unresponsive
     # peer) is cleared by removeServer before listen; if even that fails we
@@ -484,10 +604,13 @@ def main() -> int:
         conn = server.nextPendingConnection()
         if conn is None:
             return
+        path = ""
         if conn.waitForReadyRead(300):
             path = bytes(conn.readAll()).decode("utf-8", "replace").strip()
-            if path:
-                _open_document_in(window, Path(path))
+        # ACK BEFORE opening: the launcher waits for it only 1.5 s and then
+        # starts a window of its own. Opening may ask about unsaved changes
+        # (#956) or take longer than that on a big model, and the file then
+        # came up twice, here and in a second window (round Windows 0.5.11).
         conn.write(b"ok\n")            # ACK so the caller knows we are alive
         conn.flush()
         conn.waitForBytesWritten(300)
@@ -495,6 +618,9 @@ def main() -> int:
         window.show()
         window.raise_()
         window.activateWindow()
+        if path:
+            from PySide6.QtCore import QTimer as _Timer
+            _Timer.singleShot(0, lambda: _open_document_in(window, Path(path)))
 
     if server is not None:
         server.newConnection.connect(_handle_second_launch)
@@ -506,6 +632,23 @@ def main() -> int:
     window.show()
     from PySide6.QtCore import QTimer
 
+    def _first_frame_drawn():
+        # This start reached the screen: the engine guard is satisfied.
+        try:
+            window.viewport.frameSwapped.disconnect(_first_frame_drawn)
+        except (RuntimeError, TypeError):
+            pass
+        _native.start_ok()
+    window.viewport.frameSwapped.connect(_first_frame_drawn)
+    if engine_fell_back:
+        from PySide6.QtWidgets import QMessageBox
+        from core.i18n import tr
+        QTimer.singleShot(0, lambda: QMessageBox.information(
+            window, tr("Rust engine"),
+            tr("IngeTrazo did not open the last time with the Rust engine "
+               "on, so it is back on the Python engine. You can turn it on "
+               "again in Preferences ▸ General.")))
+
     def _after_first_frame():
         # The plugins' setup, now that the window is up (#440) — and only
         # then the document passed on the command line (the OS file
@@ -516,11 +659,16 @@ def main() -> int:
             doc = Path(arg)
             if doc.exists():
                 _open_document_in(window, doc)
+        # Which units to work in, once the window is up and the document in
+        # (off for good with «Don't show this at startup»; Preferences ▸
+        # Units turns it back on). Offered after the opening, not beside
+        # it: the load lets events through to move its bar, the question
+        # came up in the middle of it, and the document stayed frozen at
+        # 5 % behind it, the view blank, until it was answered.
+        QTimer.singleShot(0, window.offer_units_at_start)
+        QTimer.singleShot(4000, window.check_updates_quietly)
 
     QTimer.singleShot(0, _after_first_frame)
-    # Which units to work in, once the window is up (off for good with
-    # «Don't show this at startup»; Preferences ▸ Units turns it back on).
-    QTimer.singleShot(0, window.offer_units_at_start)
     _offer_appimage_integration(window)
     return app.exec()
 
@@ -575,7 +723,31 @@ def _exit_now(code) -> None:
             stream.flush()
         except Exception:
             pass
-    os._exit(code if isinstance(code, int) else 0)
+    status = code if isinstance(code, int) else 0
+    if sys.platform == "win32":
+        _terminate_windows_process(status)
+    os._exit(status)
+
+
+def _terminate_windows_process(status: int) -> None:
+    """End the process without running the DLLs' exit code. On Windows
+    os._exit still unloads them, and the destructor of shiboken's binding
+    manager can then crash (0xC0000005) walking wrappers Qt has already
+    deleted. It happens after everything is saved, but the system logs a
+    crash. Returns only if the call fails, and the caller then exits the
+    usual way."""
+    import ctypes
+    try:
+        kernel32 = ctypes.WinDLL("kernel32")
+        kernel32.GetCurrentProcess.argtypes = []
+        kernel32.GetCurrentProcess.restype = ctypes.c_void_p
+        kernel32.TerminateProcess.argtypes = [ctypes.c_void_p, ctypes.c_uint]
+        kernel32.TerminateProcess.restype = ctypes.c_int
+        # A negative status keeps its 32 bits, as with os._exit.
+        kernel32.TerminateProcess(
+            kernel32.GetCurrentProcess(), status & 0xFFFFFFFF)
+    except (OSError, AttributeError, ValueError):
+        pass
 
 
 if __name__ == "__main__":

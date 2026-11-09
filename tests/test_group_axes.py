@@ -318,6 +318,34 @@ def test_change_axes_on_a_component_keeps_every_copy_in_place():
     assert _close(frame_axes(group_frame(a))[1], V(1, 0))
 
 
+def test_change_axes_on_a_component_that_kept_its_group_axes_484():
+    """A classic group with turned axes that became a component keeps
+    those axes on top of its placement; Change Axes left them there, so the
+    frame came out turned again — 180° on @jonson7777's chair, which read as
+    «nothing changed»."""
+    from core.history import ChangeAxesCommand
+    scene = Scene()
+    hist = History(scene)
+    proto = _slab().mesh
+    a = Group(proto, name="a")
+    a.xform = _frame_at(V(0, 0), 0.0)
+    a.axes = _frame_at(V(0, 0), 180.0)
+    b = Group(proto, name="b")
+    b.xform = _frame_at(V(10, 0), 90.0)
+    b.axes = QMatrix4x4(a.axes)
+    scene.groups += [a, b]
+    before_a, before_b = _world_pts(a), _world_pts(b)
+    old_a, old_b = group_frame(a), group_frame(b)
+    new = _frame_at(V(1, 0.5), 30.0)
+    hist.execute(ChangeAxesCommand(a, new))
+    assert _world_pts(a) == before_a and _world_pts(b) == before_b
+    for got, want in zip(frame_axes(group_frame(a)), frame_axes(new)):
+        assert _close(got, want)
+    hist.undo()
+    assert _world_pts(a) == before_a and _world_pts(b) == before_b
+    assert group_frame(a) == old_a and group_frame(b) == old_b
+
+
 def test_the_tool_takes_origin_red_and_green():
     from PySide6.QtCore import QPointF, Qt
     from tools.base import ToolContext

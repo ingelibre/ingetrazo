@@ -82,9 +82,16 @@ def _palette() -> dict:
 class PythonConsoleDialog(QDialog):
     """Interactive Python REPL over the live document."""
 
+    @property
+    def _viewport(self):
+        """The viewport of the project in front (projects in tabs, #1066):
+        the one handed in at setup may be a tab in the back, or closed."""
+        return self._live_viewport()
+
     def __init__(self, viewport, parent=None) -> None:
         super().__init__(parent or viewport.window())
-        self._viewport = viewport
+        from views.documents import live_viewport
+        self._live_viewport = live_viewport(viewport)
         self._history: list[str] = []
         self._history_idx = 0
         self._scope: dict = {"__name__": "__console__"}
@@ -302,10 +309,7 @@ class PythonConsoleDialog(QDialog):
         history.execute(cmd)
 
         if history.last_error is None:
-            unchanged = (cmd.before == cmd.after
-                         and not cmd.added_groups and not cmd.added_layers
-                         and not cmd.added_views and not cmd.added_dims
-                         and not cmd.added_texts)
+            unchanged = not cmd.changed
             if (unchanged and history.undo_stack
                     and history.undo_stack[-1] is cmd):
                 history.undo_stack.pop()

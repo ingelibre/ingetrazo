@@ -18,6 +18,7 @@ HINTS: dict = {
     "select": "Shift = add/remove, Ctrl = add. Double-click a group to edit it. F3 = search commands.",
     "change_axes": ("Click the new origin.",
                     "Click the red direction, then the green one."),
+    "scale_manager": "Type the X, Y, Z scale in the window; Enter or leaving the field applies it.",
     "outer_shell": ("Click a solid group or component (1).",
                     "Click another solid (2) — and more to add them."),
     "solid_union": ("Click a solid group or component (1).",
@@ -195,7 +196,8 @@ def _with_alt(text: str, key, tool, linear_mode) -> str:
     # eraser, Scale, Select, Position Texture — was being offered a toggle
     # that changes nothing for it, and the dead clause was what pushed
     # those lines past the end of the bar.
-    if not getattr(tool, "uses_snap", False):
+    if (not getattr(tool, "uses_snap", False)
+            or not getattr(tool, "allow_inferences", True)):
         return text
     clause = alt_inference_hint(linear_mode)
     return f"{text} | {clause}" if clause else text

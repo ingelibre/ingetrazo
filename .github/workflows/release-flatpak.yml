@@ -59,6 +59,12 @@ jobs:
           VER=$(grep -m1 '^runtime-version:' packaging/flatpak/com.ingetrazo.IngeTrazo.yml | tr -d "'\"" | awk '{print $2}')
           echo "runtime=$RUNTIME//$VER  sdk=$SDK//$VER"
           flatpak install --user --noninteractive flathub "$RUNTIME//$VER" "$SDK//$VER"
+          # …and the SDK extensions it lists (rust-stable since the Rust
+          # engine went into the Flatpak, #767; the v0.5.10 tag failed here).
+          for EXT in $(awk '/^sdk-extensions:/{f=1;next} f&&/^  - /{print $2;next} f{exit}' \
+                         packaging/flatpak/com.ingetrazo.IngeTrazo.yml); do
+            flatpak install --user --noninteractive flathub "$EXT//$VER"
+          done
 
       - name: The metainfo must name the version being shipped
         run: |

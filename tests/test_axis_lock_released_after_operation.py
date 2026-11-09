@@ -136,6 +136,34 @@ def test_a_typed_length_ends_the_operation_too():
         _close(win, vp)
 
 
+def test_a_typed_length_actually_drops_the_lock():
+    """The path that had the bug (Marco): the Line tool chains, so the
+    instant the typed value commits a segment the tool is STILL busy. The
+    old code called ``_release_axis_lock_after_operation()`` without the
+    committed flag, the busy-tool guard ate it, and the hard lock survived a
+    typed length while the second CLICK dropped it. Same commit signal as
+    the click path: did this input make geometry?"""
+    from PySide6.QtCore import QEvent
+    from PySide6.QtGui import QKeyEvent
+    win, vp = _viewport()
+    try:
+        win._activate_tool("line")
+        tool = vp.active_tool
+        tool.start_point = QVector3D(0.0, 0.0, 0.0)
+        tool.hover_point = QVector3D(1.0, 0.0, 0.0)     # pointing along X
+        vp.axis_lock = "x"
+        before = len(vp.history.undo_stack)
+        for ch in "1500":
+            vp._handle_value_key(
+                QKeyEvent(QEvent.KeyPress, Qt.Key_0, Qt.NoModifier, ch))
+        vp._handle_value_key(
+            QKeyEvent(QEvent.KeyPress, Qt.Key_Return, Qt.NoModifier, "\r"))
+        assert len(vp.history.undo_stack) == before + 1, "the segment exists"
+        assert vp.axis_lock is None
+    finally:
+        _close(win, vp)
+
+
 def test_the_down_arrow_reference_is_left_alone():
     """Not in the report and not the same gesture: it is bound to an edge
     the user went and picked, and Esc still drops it."""

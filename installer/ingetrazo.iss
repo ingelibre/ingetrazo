@@ -53,6 +53,11 @@ WizardStyle=modern
 ; The wizard speaks the language of Windows (English, Spanish, Brazilian
 ; Portuguese or Polish) and asks only when none of them matches (issue #135).
 ShowLanguageDialog=auto
+; Follow Windows on every install, upgrades included. Inno Setup reuses the
+; language of the previous install by default, and every install up to
+; 0.5.3 was Spanish-only: upgrading kept showing Spanish on an English
+; Windows (issue #591).
+UsePreviousLanguage=no
 DisableProgramGroupPage=yes
 ; We register file-type icons/associations — tells Explorer to refresh them.
 ChangesAssociations=yes
@@ -98,6 +103,16 @@ Name: "skpdefault"; Description: "{cm:SkpDefault}"; \
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; \
     GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
 
+[InstallDelete]
+; An update copies the new bundle over the old one, and [Files] only adds
+; and replaces: whatever the new version no longer ships stayed behind.
+; 83 files of earlier releases were found in one upgraded install, among
+; them Qt's OpenSSL TLS backend and libssl that 0.5.9 dropped (#564), so
+; the extension manager still failed its certificate check (#783). The
+; bundle's _internal folder is rebuilt whole by [Files]; nothing of the
+; user's lives there (settings, extensions and autosaves are per-user).
+Type: filesandordirs; Name: "{app}\_internal"
+
 [Files]
 ; The whole PyInstaller one-dir bundle.
 Source: "..\dist\ingetrazo\*"; DestDir: "{app}"; \
@@ -129,7 +144,7 @@ Root: HKCU; Subkey: "Software\Microsoft\DirectX\UserGpuPreferences"; \
 ; ── .igz — IngeTrazo's own format: full association + branded document icon ──
 ; Double-click opens the document in IngeTrazo and Explorer shows the .igz icon.
 Root: HKA; Subkey: "Software\Classes\.igz"; ValueType: string; \
-    ValueData: "IngeTrazo.Document"; Flags: uninsdeletevalue
+    ValueData: "IngeTrazo.Document"; Flags: uninsdeletevalue uninsdeletekeyifempty
 Root: HKA; Subkey: "Software\Classes\IngeTrazo.Document"; ValueType: string; \
     ValueData: "{cm:IgzDocument}"; Flags: uninsdeletekey
 Root: HKA; Subkey: "Software\Classes\IngeTrazo.Document\DefaultIcon"; \
@@ -144,6 +159,10 @@ Root: HKA; Subkey: "Software\Classes\IngeTrazo.Document\shell\open\command"; \
 ; each extension's OpenWithProgids list, so IngeTrazo appears in the right-click
 ; "Open with" menu. The ProgId carries the branded icon, which only takes visual
 ; effect if the user later chooses IngeTrazo as the default for these files.
+; Uninstalling undoes the entries last to first, so each extension's own key is
+; listed before what goes inside it, and goes only if nothing else is left there.
+Root: HKA; Subkey: "Software\Classes\.dae"; Flags: uninsdeletekeyifempty
+Root: HKA; Subkey: "Software\Classes\.skp"; Flags: uninsdeletekeyifempty
 Root: HKA; Subkey: "Software\Classes\IngeTrazo.dae"; ValueType: string; \
     ValueData: "{cm:DaeModel}"; Flags: uninsdeletekey
 Root: HKA; Subkey: "Software\Classes\IngeTrazo.dae\DefaultIcon"; \
@@ -152,7 +171,7 @@ Root: HKA; Subkey: "Software\Classes\IngeTrazo.dae\shell\open\command"; \
     ValueType: string; ValueData: """{app}\{#MyAppExeName}"" ""%1"""
 Root: HKA; Subkey: "Software\Classes\.dae\OpenWithProgids"; \
     ValueType: string; ValueName: "IngeTrazo.dae"; ValueData: ""; \
-    Flags: uninsdeletevalue
+    Flags: uninsdeletevalue uninsdeletekeyifempty
 
 Root: HKA; Subkey: "Software\Classes\IngeTrazo.skp"; ValueType: string; \
     ValueData: "{cm:SkpModel}"; Flags: uninsdeletekey
@@ -162,11 +181,12 @@ Root: HKA; Subkey: "Software\Classes\IngeTrazo.skp\shell\open\command"; \
     ValueType: string; ValueData: """{app}\{#MyAppExeName}"" ""%1"""
 Root: HKA; Subkey: "Software\Classes\.skp\OpenWithProgids"; \
     ValueType: string; ValueName: "IngeTrazo.skp"; ValueData: ""; \
-    Flags: uninsdeletevalue
+    Flags: uninsdeletevalue uninsdeletekeyifempty
 ; Optional task: make IngeTrazo the DEFAULT opener for .skp (double-click).
 ; Checked by default — .skp now opens natively (openskp backend). Users who
 ; prefer another program for .skp can untick it; uninstall removes the value
 ; and Windows falls back to the previous handler.
+; The [Code] section below copies the previous thumbnail handler to IngeTrazo.skp.
 Root: HKA; Subkey: "Software\Classes\.skp"; ValueType: string; \
     ValueData: "IngeTrazo.skp"; Tasks: skpdefault; Flags: uninsdeletevalue
 
@@ -174,3 +194,50 @@ Root: HKA; Subkey: "Software\Classes\.skp"; ValueType: string; \
 Filename: "{app}\{#MyAppExeName}"; \
     Description: "{cm:LaunchProgram,{#MyAppName}}"; \
     Flags: nowait postinstall skipifsilent
+
+[Code]
+// Explorer previews a file with the thumbnail handler of its ProgID, so making
+// IngeTrazo.skp the default for .skp hides the previews of the program that
+// owned the extension before (issue #804). IngeTrazo has no handler of its own,
+// so IngeTrazo.skp borrows the one Windows used until now.
+const
+  SkpProgId = 'IngeTrazo.skp';
+  ThumbnailHandlerKey = 'ShellEx\{E357FCCD-A995-4576-B01F-234630154E96}';
+
+var
+  PreviousSkpProgId: String;
+
+function ReadThumbnailHandler(const Owner: String; var Clsid: String): Boolean;
+begin
+  Result := False;
+  if Owner <> '' then
+    if RegQueryStringValue(HKCR, Owner + '\' + ThumbnailHandlerKey, '', Clsid) then
+      Result := Clsid <> '';
+end;
+
+procedure CurStepChanged(CurStep: TSetupStep);
+var
+  Clsid: String;
+  Found: Boolean;
+begin
+  if CurStep = ssInstall then
+  begin
+    // Before [Registry] replaces the default of .skp.
+    if not RegQueryStringValue(HKCR, '.skp', '', PreviousSkpProgId) then
+      PreviousSkpProgId := '';
+  end
+  else if CurStep = ssPostInstall then
+  begin
+    // An upgrade finds IngeTrazo.skp as the previous ProgID: it is not a source.
+    if CompareText(PreviousSkpProgId, SkpProgId) = 0 then
+      PreviousSkpProgId := '';
+    Found := ReadThumbnailHandler(PreviousSkpProgId, Clsid);
+    if not Found then
+      Found := ReadThumbnailHandler('.skp', Clsid);
+    if not Found then
+      Found := ReadThumbnailHandler('SystemFileAssociations\.skp', Clsid);
+    // The key is deleted with IngeTrazo.skp (uninsdeletekey) on uninstall.
+    if Found then
+      RegWriteStringValue(HKA, 'Software\Classes\' + SkpProgId + '\' + ThumbnailHandlerKey, '', Clsid);
+  end;
+end;

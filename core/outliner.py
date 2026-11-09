@@ -94,21 +94,169 @@ def layer_name(group) -> str:
     return layer_of(group)
 
 
-def matches(group, query: str, type_text: str = "") -> bool:
-    """Whether ``query`` (already casefolded) is in the group's name, its
-    type as the tree shows it, its BIM class or its layer."""
+def layer_rank(scene) -> dict:
+    """``{layer name: place}`` in the order the Layers tab lists them: the
+    default layer first, then each folder's layers together, in the order
+    the folders and the layers were made. A name no layer answers to (a
+    label left on an object after its layer went) sorts after every one of
+    them."""
+    from core.layers import ordered_names
+    return {name: i for i, name in enumerate(ordered_names(scene))}
+
+
+def natural_key(text: str) -> tuple:
+    """Sort key that reads the numbers in a name as numbers: «Capa 2»
+    before «Capa 10», «Planta 9» before «Planta 12»."""
+    import re
+    return tuple((0, int(part), "") if part.isdigit() else (1, 0, part)
+                 for part in re.split(r"(\d+)", (text or "").casefold())
+                 if part)
+
+
+def walk_by_name(groups) -> list:
+    """``(group, parent, depth)`` as :func:`walk`, each container's children
+    by name with the numbers read as numbers («Oct 26» before «Oct 28»,
+    «Muro 2» before «Muro 10»); equal names as the document holds them.
+    Siblings only: a group stays inside its parent. The model is not
+    touched — this is a way of reading it."""
+    def container(items, parent, depth):
+        out = []
+        for g in sorted(items, key=lambda g: natural_key(g.name or "")):
+            out.append((g, parent, depth))
+            out.extend(container(getattr(g, "children", None) or (),
+                                 g, depth + 1))
+        return out
+    return container(list(groups), None, 0)
+
+
+def layer_outline(scene) -> list:
+    """``(kind, name, depth)`` of the Layers tab's rows — ``kind``
+    ``"folder"`` or ``"layer"`` — as it lists them with «Sort by order
+    created», every folder unfolded: the default layer first, then the
+    folders and the layers out of one, each folder followed by what it
+    holds (its subfolders first). What the Browser's layer headings
+    follow when no Layers tab tells it its own order."""
+    from core import layers as L
+    layers = list(getattr(scene, "layers", None) or ())
+    folders = L.folders_of(scene)
+    held: dict = {}
+    for ly in layers:
+        if ly.name != L.DEFAULT_LAYER:
+            held.setdefault(ly.folder, []).append(ly.name)
+    below: dict = {}
+    for f in folders:
+        below.setdefault(L.folder_parent(scene, f), []).append(f)
+
+    out = []
+
+    def block(folder, depth) -> None:
+        for f in below.get(folder, ()):
+            out.append(("folder", f, depth))
+            block(f, depth + 1)
+        out.extend(("layer", n, depth) for n in held.get(folder, ()))
+
+    if any(ly.name == L.DEFAULT_LAYER for ly in layers):
+        out.append(("layer", L.DEFAULT_LAYER, 0))
+    block(None, 0)
+    return out
+
+
+def outline_rank(outline) -> dict:
+    """``{layer name: place}`` from a :func:`layer_outline`-like list."""
+    rank: dict = {}
+    for kind, name, _depth in outline:
+        if kind == "layer" and name not in rank:
+            rank[name] = len(rank)
+    return rank
+
+
+def layer_headings(outline, used) -> list:
+    """The headings the Browser shows ordering by layer: ``(kind, name,
+    parent)`` in ``outline``'s order — every layer in ``used`` and the
+    folders on the way to one, ``parent`` the heading's folder (``None`` at
+    the top). A layer in ``used`` the outline does not list (a label left
+    on an object after its layer went) comes last, at the top."""
+    used = set(used)
+    chain: list = []                 # the folders around the current row
+    rows = []
+    for kind, name, depth in outline:
+        del chain[depth:]
+        if kind == "folder":
+            rows.append(("folder", name, chain[-1] if chain else None,
+                         tuple(chain)))
+            chain.append(name)
+        else:
+            rows.append(("layer", name, chain[-1] if chain else None,
+                         tuple(chain)))
+    needed = set()
+    listed = set()
+    for kind, name, _parent, around in rows:
+        if kind == "layer" and name in used:
+            listed.add(name)
+            needed.add(("layer", name))
+            needed.update(("folder", f) for f in around)
+    out = [(kind, name, parent) for kind, name, parent, _a in rows
+           if (kind, name) in needed]
+    out.extend(("layer", n, None) for n in sorted(used - listed))
+    return out
+
+
+def walk_by_layer(groups, rank) -> list:
+    """``(group, parent, depth)`` as :func:`walk`, each container's children
+    in ``rank``'s order (``{layer name: place}``), and the rest as the
+    document holds them. Siblings only: a group stays inside its parent.
+    The model is not touched — this is a way of reading it."""
+    def container(items, parent, depth):
+        out = []
+        for g in sorted(items,
+                        key=lambda g: rank.get(layer_name(g), len(rank))):
+            out.append((g, parent, depth))
+            out.extend(container(getattr(g, "children", None) or (),
+                                 g, depth + 1))
+        return out
+    return container(list(groups), None, 0)
+
+
+def text_matches(text, query: str) -> bool:
+    """Whether ``text`` passes a filter ``query`` (already casefolded):
+    a plain query is looked for anywhere; with ``*`` or ``?`` it is a
+    pattern for the whole text (``A-*``, ``*MUR*``), as in the Layers tab."""
     if not query:
         return True
-    return any(query in str(text).casefold() for text in (
+    text = str(text).casefold()
+    if "*" in query or "?" in query:
+        import fnmatch
+        return fnmatch.fnmatchcase(text, query)
+    return query in text
+
+
+def matches(group, query: str, type_text: str = "") -> bool:
+    """Whether ``query`` (already casefolded) is in the group's name, its
+    type as the tree shows it, its BIM class or its layer — with ``*`` and
+    ``?`` as wildcards."""
+    if not query:
+        return True
+    return any(text_matches(text, query) for text in (
         group.name or "", type_text, ifc_class(group), layer_name(group)))
 
 
-def filter_keep(groups, query: str, type_of=lambda g: "") -> tuple:
+def filter_keep(groups, query: str, type_of=lambda g: "",
+                state_of=None, invert: bool = False) -> tuple:
     """``(keep, hit)``: the ids of the groups a filter by ``query`` shows —
     every match and the containers on the way down to it — and of the
-    matches themselves (their containers unfold to reveal them)."""
+    matches themselves (their containers unfold to reveal them).
+
+    ``state_of`` narrows the matches further (the funnel's quick filters);
+    ``invert`` shows the rows the filter leaves out instead. Both apply to
+    the same answer, so a text and a state filter combine."""
     nodes = list(walk(groups))
-    hit = {id(g) for g, _p, _d in nodes if matches(g, query, type_of(g))}
+
+    def keep_group(g) -> bool:
+        ok = matches(g, query, type_of(g)) and (
+            state_of is None or state_of(g))
+        return ok != invert
+
+    hit = {id(g) for g, _p, _d in nodes if keep_group(g)}
     keep = set(hit)
     for g, p, _d in reversed(nodes):        # children before their parents
         if id(g) in keep and p is not None:
@@ -250,6 +398,20 @@ def in_component(groups, group) -> bool:
             return True
         g = up.get(id(g))
     return False
+
+
+def editing_inside_component(scene) -> bool:
+    """Whether the open group is a component, or sits inside one: what is
+    made there would change a shared definition, so Make Group and Make
+    Component refuse there, as the Browser's drag and drop does. An open
+    component instance has lost its matrix for the session (it edits a
+    world copy), so the edit stack says it, not ``is_component``."""
+    stack = getattr(scene, "_edit_stack", None) or ()
+    if any(lvl.get("share") is not None or lvl.get("definition") is not None
+           for lvl in stack):
+        return True
+    ctx = getattr(scene, "edit_group", None)
+    return ctx is not None and in_component(scene.groups, ctx)
 
 
 def reparent_problem(groups, chosen, target) -> str | None:
@@ -465,3 +627,78 @@ def fit_scale(scene, view, w_mm: float, h_mm: float,
         if n >= need:
             return float(n)
     return float(STANDARD_SCALES[-1])
+
+
+def material_choices(scene, recent=()) -> list:
+    """``[(label, paint)]`` for the Browser's «Material ▸» menu (#565,
+    @fafecm: paint several rows from the Browser without going to the
+    Materials tab): the document's materials by name, then the recent
+    paints not already listed, newest first. ``paint`` is a container
+    material — the keys a face's attrs use, as the Paint tool hands one to
+    a group — so a texture travels as well as a colour."""
+    from tools.paint import recent_key
+    out: list = []
+    seen: set = set()
+    mats = getattr(scene, "materials", None) or {}
+    for name in sorted(mats, key=lambda n: n.casefold()):
+        m = mats[name]
+        if m.color is None and m.texture is None:
+            continue
+        paint: dict = {"mat": name}
+        if m.texture is not None:
+            paint["texture"] = dict(m.texture)
+        else:
+            paint["color"] = list(m.color)
+        if m.opacity is not None:
+            paint["opacity"] = float(m.opacity)
+        out.append((name, paint))
+        seen.add(recent_key(paint))
+    for entry in recent or ():
+        key = recent_key(entry)
+        if key in seen or not (entry.get("color") or entry.get("texture")):
+            continue
+        seen.add(key)
+        out.append((paint_label(entry), dict(entry)))
+    return out
+
+
+def paint_label(paint: dict) -> str:
+    """A name for a paint in a menu: its material's, the image's file name,
+    or the colour as ``#RRGGBB``."""
+    import os
+    if paint.get("mat"):
+        return str(paint["mat"])
+    tex = paint.get("texture")
+    if tex and tex.get("path"):
+        return os.path.basename(str(tex["path"]))
+    col = paint.get("color") or (0.0, 0.0, 0.0)
+    return "#" + "".join(f"{max(0, min(255, round(float(c) * 255))):02X}"
+                         for c in list(col)[:3])
+
+
+# ---- Renaming several rows at once (#565, #87) --------------------------------
+
+def numbered_names(count: int, base: str, start: int = 1,
+                   digits: int = 2) -> list:
+    """``count`` names: ``base`` and a number padded to ``digits`` —
+    ``W01, W02, W03…`` from ``start``."""
+    digits = max(1, int(digits))
+    return [f"{base}{n:0{digits}d}" for n in range(int(start),
+                                                    int(start) + count)]
+
+
+def replaced_names(names, find: str, replace: str,
+                   match_case: bool = False) -> list:
+    """Each name with every ``find`` swapped for ``replace`` — any case
+    unless ``match_case``. An empty ``find`` changes nothing."""
+    import re
+    if not find:
+        return list(names)
+    flags = 0 if match_case else re.IGNORECASE
+    pattern = re.compile(re.escape(find), flags)
+    return [pattern.sub(lambda _m: replace, n) for n in names]
+
+
+def affixed_names(names, prefix: str = "", suffix: str = "") -> list:
+    """Each name with ``prefix`` before it and ``suffix`` after it."""
+    return [f"{prefix}{n}{suffix}" for n in names]

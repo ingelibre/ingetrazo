@@ -14,7 +14,8 @@ reads the handful of cells around the cursor.
 Exact by construction: a segment within ``reach`` of the cursor has its
 bounding box within ``reach`` of it too, so it sits in one of the cells the
 query reads — or in the short list of segments too long to bin (spanning
-more than ``max_cells`` cells), which every query reads. Pure NumPy, no Qt.
+more than ``max_cells`` cells), which every query reads. NumPy, no Qt;
+a long distance pass may go to the native engine, bit for bit.
 """
 from __future__ import annotations
 
@@ -34,7 +35,7 @@ class EdgeGrid:
     queries up to ``reach`` pixels from a cursor inside the view."""
 
     __slots__ = ("reach", "cell", "cx0", "cy0", "ncx", "ncy",
-                 "keys", "ids", "long_ids", "width", "height")
+                 "keys", "ids", "long_ids", "width", "height", "n")
 
     def __init__(self, ax, ay, bx, by, ok, width: float, height: float,
                  reach: float, cell: float = CELL_PX,
@@ -60,6 +61,7 @@ class EdgeGrid:
         cx1 = int(np.floor((self.width + self.reach) / cell))
         cy1 = int(np.floor((self.height + self.reach) / cell))
         self.ncx, self.ncy = cx1 - self.cx0 + 1, cy1 - self.cy0 + 1
+        self.n = len(live)
         idx = np.flatnonzero(live)
         x0 = np.clip(np.floor(lox[idx] / cell), self.cx0, cx1).astype(np.int64)
         x1 = np.clip(np.floor(hix[idx] / cell), self.cx0, cx1).astype(np.int64)
@@ -105,12 +107,76 @@ class EdgeGrid:
             hi = np.searchsorted(self.keys, row * self.ncx + x1, "right")
             if hi > lo:
                 parts.append(self.ids[lo:hi])
-        return np.unique(np.concatenate(parts))
+        cand = np.concatenate(parts)
+        if len(cand) * 16 < self.n:
+            return np.unique(cand)
+        # Many candidates (a whole plant in view: thousands of edges a
+        # cell): the same sorted, repeat-free indices through a mask, in
+        # one linear pass instead of a sort (~180 ms a move on #158).
+        mark = np.zeros(self.n, dtype=bool)
+        mark[cand] = True
+        return np.flatnonzero(mark)
+
+
+#: Below this many segments NumPy's pass is as quick as a native call.
+NATIVE_MIN = 20_000
+
+#: Whether the native pass gives NumPy's very bits here (None: not checked).
+_NATIVE_SAME = None
+
+
+def _native_pass():
+    """core._native's ``segment_distances`` when it gives this NumPy's bits
+    — checked once on segments of every kind (zero-length, off screen, not
+    finite, the cursor on an end and past it): ``hypot`` is the C
+    library's, and another one may round the last bit its own way."""
+    global _NATIVE_SAME
+    from core import _native
+    mod = _native.native
+    if mod is None or not hasattr(mod, "segment_distances"):
+        return None
+    if _NATIVE_SAME is None:
+        rng = np.random.default_rng(158)
+        n = 4096
+        a = rng.normal(size=(4, n)) * 10.0 ** rng.uniform(-2, 4, (1, n))
+        a[:, :64] = np.round(a[:, :64])               # whole pixels
+        a[2:, 64:128] = a[:2, 64:128]                 # zero length
+        a[0, 128:136] = (np.nan, np.inf, -np.inf, 1e308, -1e308, 0.0, -0.0,
+                         5e-324)
+        ok = rng.random(n) < 0.9
+        _NATIVE_SAME = True
+        for px, py in ((0.0, 0.0), (12.5, -3.25), (float(a[0, 7]),
+                                                    float(a[1, 7]))):
+            with np.errstate(all="ignore"):
+                want = _numpy_distances(a[0], a[1], a[2], a[3], ok, px, py)
+            got = np.asarray(mod.segment_distances(a[0], a[1], a[2], a[3],
+                                                   ok, px, py))
+            same = (got == want) | (np.isnan(got) & np.isnan(want))
+            if not same.all():
+                _NATIVE_SAME = False
+    return mod if _NATIVE_SAME else None
 
 
 def segment_distances(ax, ay, bx, by, ok, px: float, py: float, which=None):
     """Pixel distance from ``(px, py)`` to each segment (``inf`` where
-    ``ok`` is False), for all of them or only the indices ``which``."""
+    ``ok`` is False), for all of them or only the indices ``which``. Many
+    of them go to the native engine, the same arithmetic in parallel
+    (zoomed out over the plant of #158, 475 000 within 8 px of the cursor
+    took ~11 ms of every pointer move)."""
+    n = len(ax) if which is None else len(which)
+    if n >= NATIVE_MIN:
+        mod = _native_pass()
+        if mod is not None:
+            f = np.ascontiguousarray
+            return np.asarray(mod.segment_distances(
+                f(ax, np.float64), f(ay, np.float64), f(bx, np.float64),
+                f(by, np.float64), f(ok, bool), float(px), float(py),
+                None if which is None else f(which, np.int64)))
+    return _numpy_distances(ax, ay, bx, by, ok, px, py, which)
+
+
+def _numpy_distances(ax, ay, bx, by, ok, px, py, which=None):
+    """``segment_distances`` in NumPy."""
     if which is not None:
         ax, ay, bx, by, ok = ax[which], ay[which], bx[which], by[which], ok[which]
     dx, dy = bx - ax, by - ay

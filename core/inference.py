@@ -27,12 +27,13 @@ viewport draws is what the engine decided, with no second pass.
 """
 from __future__ import annotations
 
+import os
 from typing import Optional
 
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QVector3D
 
-from core.snap import SnapResult, compute_snap
+from core.snap import COLOR_NONE, SnapResult, compute_snap
 
 
 def _no_snap_fast() -> bool:
@@ -40,6 +41,39 @@ def _no_snap_fast() -> bool:
     off, for A/B timing), read at call time to avoid a circular import."""
     from views import viewport as _viewport
     return bool(getattr(_viewport, "_NO_SNAP_FAST", False))
+
+
+#: The sticky axis (#1095) is held back: engaging at 3° and releasing at 20°
+#: silences «On edge» and «On face» inside that whole cone and leaves no way to
+#: draw a free line at 10° once the cursor has crossed the axis.
+#: ``INGETRAZO_STICKY_AXIS=1`` turns it on to try it by hand.
+_STICKY_AXIS = os.environ.get("INGETRAZO_STICKY_AXIS", "") == "1"
+#: An arrow pressed before the first click (#1095) is also held back: it says
+#: which way the line will run from the corner about to be clicked, and anchoring
+#: it on the last corner paused on takes that corner away.
+#: ``INGETRAZO_DWELL_ARROW=1`` turns it on to try it by hand.
+_DWELL_ARROW = os.environ.get("INGETRAZO_DWELL_ARROW", "") == "1"
+
+
+def _magnet_may_leave_plane(tool) -> bool:
+    """Whether ``tool``'s axis magnet may infer OFF its drawing plane.
+
+    Only the tools that carry a magnet have an opinion
+    (``tools.base.AxisMagnet.magnet_off_plane``: a shape that lives in one
+    plane says no, a Line and the free placements say yes); a tool with no
+    magnet never runs the detector, so the default leaves the rules exactly
+    as they were."""
+    rule = getattr(tool, "magnet_off_plane", None)
+    return bool(rule()) if callable(rule) else True
+
+
+def _tool_is_planar(tool) -> bool:
+    """Whether ``tool`` is a planar shape (``PlaneLock``): it draws in ONE
+    plane, so its 'from point' inference stays on the face the cursor is
+    over. The Line and the free placements are not, and read the reference
+    in 3D through the cursor ray (issue #1095)."""
+    from tools.base import PlaneLock
+    return isinstance(tool, PlaneLock)
 
 
 class InferenceEngine:
@@ -66,6 +100,14 @@ class InferenceEngine:
         # Sticky inference lock (Shift): (direction, color) captured from the
         # active inference, held until Shift is released.
         self._shift_lock: Optional[tuple] = None
+        # The magnetic axis held while a line is drawn (sticky hysteresis):
+        # once the magnet engaged an axis, it stays until the cursor breaks
+        # away, so a hand drifting in perspective keeps the line on axis.
+        self._sticky_axis: Optional[str] = None
+        # The (point, axis) of the 'from point' reference the Shift lock was
+        # captured from: kept so the dashed axis line through that point stays
+        # visible while the lock is held (issue #1095).
+        self._shift_lock_ref = None
         # Last edge under the cursor (candidate for capture) and the centre of
         # the last circle or arc the cursor visited (its edge, or a face it
         # bounds), kept as a reference until another circle takes its place or
@@ -140,6 +182,21 @@ class InferenceEngine:
                 self._acquired_face_normal = face_plane_world(
                     face, getattr(_g, "xform", None))[1]
 
+    def _hover_lock_plane(self, px: float, py: float):
+        """``(point, normal, ref)`` of the face under the cursor, or None:
+        what a direction lock meets as «constrained on plane». ``ref`` is the
+        cursor's own point on the face, where the dotted guide starts."""
+        vp = self.viewport
+        face, owner = vp.pick_face_placement(px, py)
+        if face is None:
+            return None
+        from core.snap import face_plane_world
+        p0, n = face_plane_world(face, getattr(owner, "xform", None))
+        ref = vp._world_from_pixel(px, py)
+        if ref is None or abs(QVector3D.dotProduct(ref - p0, n)) > 1e-3:
+            ref = p0
+        return (p0, n, ref)
+
     # ---- The snap search -----------------------------------------------------
     def snap(self, px_x: float, px_y: float,
              modifiers) -> Optional[SnapResult]:
@@ -164,11 +221,24 @@ class InferenceEngine:
         if tool is not None:
             chain_first = getattr(tool, "chain_first_point", None)
             start_pt = getattr(tool, "start_point", None)
+        # «Constrained on line / plane»: under a direction lock, the edge or
+        # face the cursor is over (an edge wins) hands the lock line its
+        # meeting point. Only paid for while a lock is actually holding.
+        lock_edge = lock_plane = None
+        locked = (self.axis_lock or self._shift_lock
+                  or (self.reference_edge is not None and self.reference_mode)
+                  or bool(modifiers & Qt.ShiftModifier))
+        if start_pt is not None and locked:
+            lock_edge = self._hover_edge
+            if lock_edge is None:
+                lock_plane = self._hover_lock_plane(px_x, px_y)
         snap = compute_snap(
             candidate_world=world_raw,
             candidate_pixel=(px_x, px_y),
             scene=vp._snap_scene(px_x, px_y),
-            world_to_pixel=vp._world_to_pixel,
+            world_to_pixel=(vp._pixel_projector()
+                            if hasattr(vp, "_pixel_projector")
+                            else vp._world_to_pixel),
             threshold_px=vp.snap_threshold_px,
             project_onto_line=lambda s, d: vp._project_to_lock_line(
                 s, d, px_x, px_y),
@@ -180,6 +250,8 @@ class InferenceEngine:
             reference_mode=self.reference_mode,
             inference_angle_deg=vp.inference_angle_deg,
             is_occluded=vp._is_occluded,
+            hover_lock_edge=lock_edge,
+            hover_lock_plane=lock_plane,
             are_occluded=None if _no_snap_fast() else vp._occluded_many,
             face_under_cursor=vp._still_face_under(px_x, px_y),
             edge_threshold_px=vp.edge_snap_threshold_px,
@@ -191,12 +263,38 @@ class InferenceEngine:
             acquired_points=self._encouraged,
             shift_lock_dir=self._shift_lock[0] if self._shift_lock else None,
             shift_lock_color=self._shift_lock[1] if self._shift_lock else None,
+            shift_lock_ref=self._shift_lock_ref,
             linear_mode=vp.linear_inference_mode,
+            diagonal_span=bool(getattr(tool, "diagonal_span", False)),
             work_plane_normal=vp._work_plane_normal(),
             radial_arm=bool(getattr(tool, "radial_arm", False)),
+            axis_in_plane=not _magnet_may_leave_plane(tool),
+            free_3d=(not _tool_is_planar(tool)
+                     and not getattr(tool, "prefers_vertical_drag", False)),
+            sticky_axis=self._sticky_axis if _STICKY_AXIS else None,
+            dwell_axis_lock=_DWELL_ARROW,
+            face_crossing=(lambda: vp._face_crossing_point(px_x, px_y))
+            if hasattr(vp, "_face_crossing_point") else None,
+            face_outline=(lambda: vp._face_outline_world(px_x, px_y))
+            if hasattr(vp, "_face_outline_world") else None,
         )
+        if snap is not None and snap.kind == "axis" and snap.axis:
+            self._sticky_axis = snap.axis
+        else:
+            self._sticky_axis = None
         snap = self._axis_source_cue(snap, px_x, px_y)
         snap = self._extension_snap(snap, px_x, px_y)
+        return self._limit_snap(snap, tool)
+
+    def _limit_snap(self, snap, tool):
+        """Enforce ``tool.allowed_snap_kinds``: a snap the tool does not
+        accept falls back to a plain point — no marker, nothing to snap to.
+        The Offset accepts only named model points, so the cursor-dependent
+        ``on_edge`` / ``on_face`` never reach it."""
+        allowed = getattr(tool, "allowed_snap_kinds", None)
+        if (allowed is not None and snap is not None
+                and snap.kind != "none" and snap.kind not in allowed):
+            return SnapResult(snap.point, "none", COLOR_NONE)
         return snap
 
     # ---- Post-processors (axis-source cue, extensions) ----------------------
@@ -205,7 +303,8 @@ class InferenceEngine:
     #: name is the user's target, and the snap engine already ranked it.
     _NAMED_SNAPS = frozenset((
         "endpoint", "midpoint", "arc_midpoint", "center", "origin",
-        "component_origin", "intersection", "close", "on_edge"))
+        "component_origin", "intersection", "intersection_edge",
+        "intersection_face", "close", "on_edge"))
 
     def _axis_source_cue(self, snap, px_x: float, px_y: float):
         """Before its first click, a tool that reads the model axes as a
@@ -220,9 +319,13 @@ class InferenceEngine:
         ``_snap_scene`` / ``pick_face_any``."""
         vp = self.viewport
         tool = vp.active_tool
+        empty_space_only = bool(
+            getattr(tool, "axis_source_empty_only", False))
+        allowed_kinds = (("none",) if empty_space_only
+                         else ("none", "on_face"))
         if (snap is None or not getattr(tool, "axis_source", False)
                 or getattr(tool, "start_point", None) is not None
-                or snap.kind not in ("none", "on_face")):
+                or snap.kind not in allowed_kinds):
             return snap
         name = vp.pick_axis(px_x, px_y)
         if name is None:
@@ -231,7 +334,13 @@ class InferenceEngine:
         from core import axes as _axes
         axis = _axes.axis(name)
         o = _axes.origin()
-        foot = o + axis * QVector3D.dotProduct(snap.point - o, axis)
+        if empty_space_only:
+            foot = vp._project_to_lock_line(o, axis, px_x, px_y)
+            if (not vp._axis_source_visible(name, foot)
+                    or vp._is_occluded(foot)):
+                return snap
+        else:
+            foot = o + axis * QVector3D.dotProduct(snap.point - o, axis)
         return SnapResult(foot, "on_axis", AXIS_COLORS[name], axis=name)
 
     def _extension_snap(self, snap, px_x: float, px_y: float):
@@ -291,3 +400,26 @@ class InferenceEngine:
         del self._encouraged[:-2]
         self._acquired_point = pt
         self.viewport.update()
+
+    def clear_references(self) -> None:
+        """Drop cursor-acquired and encouraged model references."""
+        self._sticky_axis = None
+        self._shift_lock_ref = None
+        self._dwell_timer.stop()
+        self._dwell_point = None
+        self._hover_edge = None
+        self._hover_center = None
+        self._center_ref = None
+        self._acquired_edge = None
+        self._acquired_face_normal = None
+        self._acquired_point = None
+        self._encouraged = []
+        self.last_snap = None
+
+    def reset(self) -> None:
+        """Forget every inference state tied to the current document."""
+        self.clear_references()
+        self.axis_lock = None
+        self.reference_edge = None
+        self.reference_mode = None
+        self._shift_lock = None

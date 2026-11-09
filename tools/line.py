@@ -49,6 +49,8 @@ class LineTool(Tool):
     #: changes. Drawing deliberately off-axis by a couple of degrees stays
     #: possible; the toggle Alt still switches it off entirely.
     magnetic_axis_deg = 3.0
+    axis_source = True
+    axis_source_empty_only = True
 
     #: …and the axes that the one above CANNOT reach, found in pixels.
     #:
@@ -102,8 +104,10 @@ class LineTool(Tool):
             # rollback.
             return
         cmd = self._commit_edge(ctx.viewport, self.start_point, clicked)
+        faces_before = len(ctx.viewport.scene.faces)
         ctx.viewport.history.execute(cmd)
-        if ctx.snap.kind == "close":
+        if (ctx.snap.kind == "close"
+                or len(ctx.viewport.scene.faces) > faces_before):
             self._reset()
         else:
             self.chain_vertices.append(clicked)
@@ -181,7 +185,12 @@ class LineTool(Tool):
             direction = delta.normalized()
             new_endpoint = self.start_point + direction * value
 
+        faces_before = len(viewport.scene.faces)
         viewport.history.execute(self._commit_edge(viewport, self.start_point, new_endpoint))
+        if len(viewport.scene.faces) > faces_before:
+            self._reset()
+            viewport.update()
+            return True
         self.chain_vertices.append(new_endpoint)
         self.start_point = new_endpoint
         self.hover_point = new_endpoint
@@ -199,6 +208,10 @@ class LineTool(Tool):
         eye = cam.eye() if cam is not None and hasattr(cam, "eye") else None
         return build_add_edge(viewport.scene, start, end, detect_faces=True,
                               eye=eye)
+
+    # A segment that makes a face — closing a loop, or cutting an existing
+    # face in two — finishes the chain: the next click starts a new line
+    # instead of leaving from the end of the one that just did its job (#496).
 
     def _reset(self) -> None:
         self.start_point = None

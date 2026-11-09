@@ -113,7 +113,9 @@ def thumbnail(definition, size: int = SIZE) -> QPixmap:
     if hit is not None and hit[0] == sig:
         return hit[1]
     pm = _draw(definition, size)
-    if len(_cache) > 256:                   # definitions long gone
+    # Past this, definitions long gone. (256 was below the 1 815 of a big
+    # plant, and scrolling its list drew every picture again, #158.)
+    if len(_cache) > 4096:
         _cache.clear()
     _cache[key] = (sig, pm)
     return pm

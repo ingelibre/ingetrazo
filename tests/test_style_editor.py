@@ -148,7 +148,7 @@ def test_every_swatch_stays_editable_and_hints_when_invisible(settings_file):
     for sw in (panel._edge_c, panel._front_c, panel._sky_c,
                panel._ground_c, panel._bg_c, panel._fill_c):
         assert sw.isEnabled()
-    assert panel._color_hint("front_color")        # textures: can't show
+    assert panel._color_hint("front_color") is None  # default faces (#776)
     assert panel._color_hint("background")         # sky covers it
     assert panel._color_hint("sky_color") is None  # sky is on: visible
     assert panel._color_hint("edge_color") is None
@@ -162,6 +162,9 @@ def test_every_swatch_stays_editable_and_hints_when_invisible(settings_file):
     assert panel._color_hint("sky_color")          # sky off now
     assert panel._color_hint("edge_color")         # edges off
     assert panel._color_hint("section_fill_color")
+    style.face_mode = "wireframe"
+    assert panel._color_hint("front_color")        # no faces drawn
+    style.face_mode = "hidden_line"
 
     style.face_mode = "wireframe"
     assert panel._color_hint("edge_color") is None  # wireframe always draws

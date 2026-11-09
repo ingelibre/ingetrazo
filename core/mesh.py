@@ -265,6 +265,32 @@ class Face:
             return 0.0
         return 0.5 * self._newell().length()
 
+    def net_area(self) -> float:
+        """``area()`` with the hole loops subtracted: the surface a
+        person measuring the face means — a wall's window opening is
+        not wall. ``area()`` itself stays gross on purpose (the engine
+        reads it: heal thresholds, the dominant normal), so the
+        user-facing numbers — Entity Info, quantities, labels — read
+        this one instead (#742)."""
+        if len(self.loop) < 3:
+            return 0.0
+        area = self.area()
+        for hole in self.hole_loops:
+            count = len(hole)
+            if count < 3:
+                continue
+            nx = ny = nz = 0.0
+            for i in range(count):
+                curr = hole[i].position
+                nxt = hole[(i + 1) % count].position
+                x0, y0, z0 = curr.x(), curr.y(), curr.z()
+                x1, y1, z1 = nxt.x(), nxt.y(), nxt.z()
+                nx += (y0 - y1) * (z0 + z1)
+                ny += (z0 - z1) * (x0 + x1)
+                nz += (x0 - x1) * (y0 + y1)
+            area -= 0.5 * QVector3D(nx, ny, nz).length()
+        return max(area, 0.0)
+
     def centroid(self) -> QVector3D:
         count = len(self.loop)
         if count == 0:
@@ -294,6 +320,9 @@ class Mesh:
 
     def __init__(self) -> None:
         self._registry: dict[tuple, Vertex] = {}
+        # Moved vertices waiting for a key another vertex still holds (see
+        # _rekey).
+        self._displaced: dict[tuple, list[Vertex]] = {}
         #: Set by every mutation primitive; the viewport's cached group chunk
         #: clears it after (re)validating — an O(1) dirty signal so render
         #: caches never content-hash a 131k-vertex mesh per scene change.
@@ -353,6 +382,24 @@ class Mesh:
     def vertex_at(self, position: QVector3D) -> Optional[Vertex]:
         """The existing vertex at ``position``, or ``None``."""
         return self._lookup(position)
+
+    def registers(self, v: Vertex) -> bool:
+        """Whether this mesh files ``v`` itself — by identity, not by what
+        stands at its position. A moved vertex that lands on another one
+        for a moment (a Move preview passing over a corner) waits in
+        ``_displaced`` while the other keeps the key: it is still this
+        mesh's vertex, and a dimension holding it must not let go (#563).
+        A vertex welded away or erased is filed nowhere."""
+        k = _key(v.position)
+        holder = self._registry.get(k)
+        if holder is v:
+            return True
+        waiting = self._displaced.get(k)
+        if waiting and any(w is v for w in waiting):
+            return True
+        if holder is None:
+            return self._probe_neighbours(k, v.position) is v
+        return False
 
     # ---- Edges --------------------------------------------------------------
     def find_edge(self, v0: Vertex, v1: Vertex) -> Optional[Edge]:
@@ -416,11 +463,14 @@ class Mesh:
     def resplit_curves(self) -> None:
         """Re-partition curve ids into contiguous contours.
 
-        A curve breaks at any vertex where other geometry attaches (a non-curve
-        edge is incident) or where its own connectivity isn't a simple chain
-        (curve-degree ≠ 2). Each resulting chain keeps/gets its own id — so a
-        circle crossed by a square's edges selects as two separate arcs ('two
-        contours'). A pristine circle stays one curve."""
+        A curve breaks where its own connectivity isn't a simple chain
+        (curve-degree ≠ 2), or where other geometry attaches IN ITS PLANE (a
+        line crossing or touching the circle). Each resulting chain
+        keeps/gets its own id — so a circle crossed by a square's edges
+        selects as two separate arcs ('two contours'). A pristine circle
+        stays one curve, and so does the rim of a cylinder: its side seams
+        leave the circle's plane, and counting them broke the rim into one
+        curve per segment on every copy, explode or solid operation."""
         self._chunk_dirty = True
         self._mut_serial += 1
         global _CURVE_COUNTER
@@ -432,8 +482,27 @@ class Mesh:
             eset = set(edges)
 
             def is_break(v) -> bool:
-                cdeg = sum(1 for e in v.edges if e in eset)
-                return cdeg != 2 or len(v.edges) != cdeg
+                mine = [e for e in v.edges if e in eset]
+                if len(mine) != 2:
+                    return True
+                if len(v.edges) == 2:
+                    return False
+                p = v.position
+                a = mine[0].other(v).position - p
+                b = mine[1].other(v).position - p
+                n = QVector3D.crossProduct(a, b)
+                if n.length() <= 1e-6 * a.length() * b.length():
+                    return True              # straight through: no plane
+                n.normalize()
+                for e in v.edges:
+                    if e in eset:
+                        continue
+                    u = e.other(v).position - p
+                    length = u.length()
+                    if (length <= 1e-12
+                            or abs(QVector3D.dotProduct(u, n)) < 0.05 * length):
+                        return True
+                return False
 
             # Walk chains between break vertices; a break-free component is a
             # closed loop (one chain).
@@ -508,14 +577,38 @@ class Mesh:
         out was deleted and the leftovers were all the document had, so
         zoom-to-extents had nothing to find and could not bring him back.
 
+        The full sweep — this one plus the registry entries that point at
+        vertices the mesh no longer owns — is :meth:`purge_debris`.
+        """
+        return self.purge_debris()[0]
+
+    def purge_debris(self) -> tuple[int, int]:
+        """Deep clean: drop the vertices nothing holds and the position
+        entries that would hand one back. Returns
+        ``(vertices dropped, ghost entries dropped)``.
+
+        ``remove_face`` and ``remove_edge`` are deliberately additive — an
+        edge may border another face, a corner may be left standing as a
+        line — so whoever removes geometry that nothing else wants has to
+        say so. Erasing does (``prune_orphan_vertices``); grouping did not:
+        it carves faces and edges out of the loose mesh into a new container
+        and the corners only they used stayed behind, invisible and
+        unreferenced — eight of them for a whole box turned into a
+        component. Nothing draws them, ``bounds()`` ignores them and the
+        file format only stores what a face or an edge holds, so they die on
+        save; but for the rest of the session they stay in the position
+        registry, and the next thing drawn there welds to a ``Vertex`` the
+        mesh no longer lists.
+
+        That is the "ghost point" of the report: nothing draws it, nothing
+        picks it, and yet a new face drawn at the spot ends up cut through
+        it. The registry is therefore swept by IDENTITY, never by position
+        key: an entry whose vertex is not in ``self.vertices`` goes, and so
+        does a moved vertex still waiting in ``_displaced``.
+
         A face holds real ``Vertex`` objects in its loops, so "has no edges"
         is not enough on its own: the corners of a face with no free edges
         would go with it. Both are checked.
-
-        The position registry is cleaned by IDENTITY, in one pass. A vertex
-        that has been moved no longer hashes to the key it was filed under,
-        and a stale entry is worse than a stray vertex — the next point drawn
-        there would weld to an object that is no longer in the mesh.
         """
         used = set()
         for f in self.faces:
@@ -524,15 +617,26 @@ class Mesh:
             for hole in f.hole_loops:
                 for v in hole:
                     used.add(id(v))
-        doomed = {id(v) for v in self.vertices if not v.edges and id(v) not in used}
-        if not doomed:
-            return 0
-        self.vertices[:] = [v for v in self.vertices if id(v) not in doomed]
-        for k in [k for k, v in self._registry.items() if id(v) in doomed]:
+        doomed = {id(v) for v in self.vertices
+                  if not v.edges and id(v) not in used}
+        live = {id(v) for v in self.vertices if id(v) not in doomed}
+        ghosts = [k for k, v in self._registry.items() if id(v) not in live]
+        for k in list(self._displaced):
+            waiting = [v for v in self._displaced[k] if id(v) in live]
+            if waiting:
+                self._displaced[k] = waiting
+            else:
+                del self._displaced[k]
+        if not doomed and not ghosts:
+            return 0, 0
+        if doomed:
+            self.vertices[:] = [v for v in self.vertices
+                                if id(v) not in doomed]
+        for k in ghosts:
             del self._registry[k]
         self._chunk_dirty = True
         self._mut_serial += 1
-        return len(doomed)
+        return len(doomed), len(ghosts)
 
     def relink_vertices(self, vertices) -> None:
         """Re-attach vertices a previous :meth:`drop_orphan_vertices` took
@@ -1010,12 +1114,16 @@ class Mesh:
         """Restore a :meth:`capture_state` snapshot. Objects created since are
         dropped; captured ones are re-listed with their fields reset."""
         self._chunk_dirty = True
+        # The faces' attrs come back too, and a repaint moves no vertex: a
+        # bake that took this for a move kept the old material on screen.
+        self._attrs_dirty = True
         self._mut_serial += 1
         self.vertices[:] = snap["vertices"]
         self.edges[:] = snap["edges"]
         self.faces[:] = snap["faces"]
         self._registry.clear()
         self._registry.update(snap["registry"])
+        self._displaced.clear()
         for v, p in snap["vpos"].items():
             v.position = QVector3D(p)
         for v, es in snap["vedges"].items():
@@ -1044,6 +1152,7 @@ class Mesh:
         self._chunk_dirty = True
         self._mut_serial += 1
         self._registry.clear()
+        self._displaced.clear()
         self.vertices.clear()
         self.edges.clear()
         self.faces.clear()
@@ -1072,9 +1181,12 @@ class Mesh:
         new = _key(v.position)
         if old == new:
             return
-        if self._registry.get(old) is v:
-            del self._registry[old]
-        self._registry.setdefault(new, v)
+        reg = self._registry
+        if not self._displaced and reg.get(old) is v and new not in reg:
+            del reg[old]               # the common case, kept inline
+            reg[new] = v
+            return
+        self._rekey(v, old, new)
 
     def place_vertex(self, v: Vertex, position: QVector3D) -> None:
         """Put a vertex AT ``position`` -- :meth:`move_vertex` with an
@@ -1088,9 +1200,40 @@ class Mesh:
         new = _key(v.position)
         if old == new:
             return
+        reg = self._registry
+        if not self._displaced and reg.get(old) is v and new not in reg:
+            del reg[old]               # the common case, kept inline
+            reg[new] = v
+            return
+        self._rekey(v, old, new)
+
+    def _rekey(self, v: Vertex, old: tuple, new: tuple) -> None:
+        """File a moved vertex under its new key.
+
+        A selection moved along itself -- two chained lines shifted one
+        length down their own axis -- moves each vertex onto the spot the
+        next one still holds. The newcomer cannot take that key yet, so it
+        waits in ``_displaced``; when the holder moves on, the first waiter
+        still standing there takes the key. Without the queue the moved
+        vertex was never filed again: Delete missed its edges and a new line
+        to it welded a duplicate."""
         if self._registry.get(old) is v:
             del self._registry[old]
-        self._registry.setdefault(new, v)
+            for w in self._displaced.pop(old, ()):
+                if w is not v and w.edges and _key(w.position) == old:
+                    self._registry[old] = w
+                    break
+        else:
+            waiting = self._displaced.get(old)
+            if waiting is not None:
+                waiting[:] = [w for w in waiting if w is not v]
+                if not waiting:
+                    del self._displaced[old]
+        holder = self._registry.get(new)
+        if holder is None:
+            self._registry[new] = v
+        elif holder is not v:
+            self._displaced.setdefault(new, []).append(v)
 
     def split_edge(self, edge: Edge, position: QVector3D) -> tuple[Edge, Edge]:
         """Split ``edge`` at ``position``, inserting a shared vertex, and return
@@ -1102,23 +1245,59 @@ class Mesh:
         special ``split_edge_in_faces`` pass plus the holes patch; here it falls
         straight out of shared connectivity. The new vertex lands collinearly,
         so faces stay flat until it is later moved (a gable ridge, a T-junction).
+
+        A face may walk the edge more than once: a slit (a line from its
+        outline to a hole, walked up and back) or a jamb two of its holes
+        share. The vertex goes into every use, and each half lists the face
+        once per use, as :meth:`add_face` lists it — the first use alone
+        left the others a segment with no edge.
         """
         v0, v1 = edge.v0, edge.v1
         mid = self.vertex(position)
         if mid is v0 or mid is v1:
             # position coincides with an endpoint → nothing to split
             return edge, edge
-        incident = list(edge.faces)
+        incident = list({id(f): f for f in edge.faces}.values())
         self.remove_edge(edge)
         e0 = self._link_edge(v0, mid)
         e1 = self._link_edge(mid, v1)
         for face in incident:
-            self._insert_into_face_loops(face, v0, v1, mid)
-            if face not in e0.faces:
-                e0.faces.append(face)
-            if face not in e1.faces:
-                e1.faces.append(face)
+            self._insert_at_every_use(face, v0, v1, mid)
+            for sub in (e0, e1):
+                missing = (self._uses(face, sub.v0, sub.v1)
+                           - sum(1 for f in sub.faces if f is face))
+                sub.faces.extend([face] * max(0, missing))
         return e0, e1
+
+    @staticmethod
+    def _insert_at_every_use(
+        face: Face, v0: Vertex, v1: Vertex, mid: Vertex
+    ) -> None:
+        """Insert ``mid`` into every ``v0``/``v1`` segment of the face: in the
+        outer loop and every hole, as many times as a loop walks it."""
+        for loop in (face.loop, *face.hole_loops):
+            i = 0
+            while i < len(loop):
+                j = (i + 1) % len(loop)
+                if (loop[i] is v0 and loop[j] is v1) or (
+                    loop[i] is v1 and loop[j] is v0
+                ):
+                    loop.insert(i + 1, mid)  # i+1 == len wraps to an append
+                    i += 2
+                else:
+                    i += 1
+
+    @staticmethod
+    def _uses(face: Face, a: Vertex, b: Vertex) -> int:
+        """How many segments of the face's loops run between ``a`` and ``b``."""
+        n = 0
+        for loop in (face.loop, *face.hole_loops):
+            m = len(loop)
+            for i in range(m):
+                p, q = loop[i], loop[(i + 1) % m]
+                if (p is a and q is b) or (p is b and q is a):
+                    n += 1
+        return n
 
     @staticmethod
     def _insert_into_face_loops(
@@ -1414,6 +1593,7 @@ class Mesh:
         loops_out.sort(key=lambda lp: _loop_area(lp), reverse=True)
         outer = loops_out[0]
         holes = loops_out[1:]
+        _orient_union_loops(outer, holes, face_a.normal())
         shared_edges = [self.find_edge(by_id[next(iter(k))],
                                        by_id[list(k)[-1]]) for k in shared]
         self.remove_face(face_a)
@@ -1476,6 +1656,7 @@ class Mesh:
             return faces[0]
         loops_out.sort(key=_loop_area, reverse=True)
         outer, holes = loops_out[0], loops_out[1:]
+        _orient_union_loops(outer, holes, n0)
         interior = [self.find_edge(by_id[tuple(k)[0]], by_id[tuple(k)[-1]])
                     for k, c in counts.items() if c >= 2]
         for f in faces:
@@ -1581,6 +1762,89 @@ class Mesh:
         merged_face = self.add_face(loop_positions, hole_positions or None)
         merged_face.attrs = dict(_dominant_attrs((face_a, face_b)))
         return merged_face
+
+
+
+def _deferred_state(name):
+    def get(self):
+        self._materialize()
+        return getattr(self, name)
+
+    def put(self, value):
+        self._materialize()
+        setattr(self, name, value)
+    return property(get, put)
+
+
+class DeferredMesh(Mesh):
+    """A mesh read from a document whose vertices, edges and faces are not
+    built yet (the experimental engine's lazy meshes): the first touch of
+    any of them builds them, with the very code an eager read runs, and
+    turns the object back into a plain :class:`Mesh`. A big model whose
+    groups are only looked at never pays for millions of Python objects.
+
+    :meth:`defer` only takes an EMPTY mesh, so the deferred build welds
+    against the same empty registry the eager one would."""
+
+    vertices = _deferred_state("vertices")
+    edges = _deferred_state("edges")
+    faces = _deferred_state("faces")
+    _registry = _deferred_state("_registry")
+    _displaced = _deferred_state("_displaced")
+
+    @staticmethod
+    def defer(mesh: Mesh, build, nfaces: int, source=None) -> bool:
+        """Turn ``mesh`` into a deferred one that runs ``build(mesh)`` on
+        first touch and makes exactly ``nfaces`` faces; ``source`` is what
+        it is built from, for :mod:`core.lazy_mesh` (kept until built).
+        False (nothing done) unless it is a plain empty mesh."""
+        d = mesh.__dict__
+        if (type(mesh) is not Mesh or d["vertices"] or d["edges"]
+                or d["faces"] or d["_registry"]):
+            return False
+        d["_deferred"] = build
+        d["_deferred_nfaces"] = nfaces
+        d["_deferred_source"] = source
+        mesh.__class__ = DeferredMesh
+        return True
+
+    def _materialize(self) -> None:
+        build = self.__dict__.pop("_deferred")
+        del self.__dict__["_deferred_nfaces"]
+        del self.__dict__["_deferred_source"]
+        self.__dict__.pop("_deferred_plan", None)
+        self.__class__ = Mesh
+        build(self)
+
+    def __reduce_ex__(self, protocol):
+        # deepcopy / pickle copy the built mesh, never the pending build.
+        self._materialize()
+        return self.__reduce_ex__(protocol)
+
+
+def face_count(mesh) -> int:
+    """``len(mesh.faces)``, without building a deferred mesh to learn it."""
+    if type(mesh) is DeferredMesh:
+        return mesh.__dict__["_deferred_nfaces"]
+    return len(mesh.faces)
+
+
+def face_attrs(mesh):
+    """Each face's own attrs, in face order — for a deferred mesh only the
+    first face of each distinct set (what a first-wins tally of materials
+    needs), read from the document without building the mesh."""
+    if type(mesh) is DeferredMesh:
+        import numpy as np
+        from formats.igz import _face_attrs_from_json
+        src = mesh.__dict__["_deferred_source"]
+        table = src["meta"].get("face_attrs") or []
+        fa = np.asarray(src["face_attr"], dtype=np.int64)
+        _u, first = np.unique(fa, return_index=True)
+        for k in fa[np.sort(first)].tolist():
+            yield (_face_attrs_from_json(table[k]) or {}) if k >= 0 else {}
+        return
+    for f in mesh.faces:
+        yield f.attrs
 
 
 def turn_face_over(face) -> None:
@@ -1700,6 +1964,22 @@ def _trace_loops(outline: list[tuple[Vertex, Vertex]]) -> Optional[list[list[Ver
             prev, cur = cur, nxt
         loops.append(loop)
     return loops
+
+
+def _orient_union_loops(
+    outer: list[Vertex], holes: list[list[Vertex]], normal: QVector3D
+) -> None:
+    """Restore face winding after tracing an undirected union boundary.
+
+    The tracer may choose either direction independently for each loop.
+    Keep the source face's front side and wind holes opposite to the outer
+    boundary, without swapping front/back paint.
+    """
+    if QVector3D.dotProduct(Face(outer).normal(), normal) < 0:
+        outer.reverse()
+    for hole in holes:
+        if QVector3D.dotProduct(Face(hole).normal(), normal) > 0:
+            hole.reverse()
 
 
 def _loop_area(loop: list[Vertex]) -> float:

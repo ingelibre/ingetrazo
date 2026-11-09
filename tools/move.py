@@ -35,11 +35,12 @@ from core.group import Group, copy_group, transformed_attrs
 from core.i18n import tr
 from core.mesh import Edge, Face, Mesh
 from core.dimension import Dimension
-from core.history import (AddEdgeCommand, AddFaceCommand, Command,
-                          CompoundCommand,
+from core.guide import Guide
+from core.history import (AddEdgeCommand, AddFaceCommand, AddGuideCommand,
+                          Command, CompoundCommand,
                           InsertGroupCommand, MoveGroupCommand,
-                          MoveDimensionsCommand, MoveTextLabelsCommand,
-                          MoveVerticesCommand)
+                          MoveDimensionsCommand, MoveGuidesCommand,
+                          MoveTextLabelsCommand, MoveVerticesCommand)
 from core.textlabel import TextLabel
 from core.topology import _key
 from tools.base import Tool, ToolContext
@@ -135,6 +136,52 @@ def gather_labels(ctx: ToolContext) -> list[TextLabel]:
     return labels
 
 
+def gather_guides(ctx: ToolContext) -> list[Guide]:
+    """Construction guides Move acts on (#627): the selected ones, or (with
+    nothing selected) the guide under the cursor. A loose edge under the
+    cursor wins over the guide — the edge is the finer target — while the
+    guide wins over the face or group behind it. To move something else
+    from a point on a guide, select it first."""
+    viewport = ctx.viewport
+    guides = [g for g in viewport.scene.selection if isinstance(g, Guide)]
+    if guides or viewport.scene.selection:
+        return guides
+    pick = getattr(viewport, "pick_guide", None)
+    guide = pick(ctx.screen.x(), ctx.screen.y()) if pick else None
+    if guide is None or not viewport.scene.entity_selectable(guide):
+        return []
+    if viewport.pick_edge(ctx.screen.x(), ctx.screen.y()) is not None:
+        return []
+    return [guide]
+
+
+def guide_ghost_segments(guides, reach: float) -> list:
+    """Wireframe of guides for a copy preview: a guide line as a segment
+    ``reach`` long each way (its 10 km span would end behind the camera),
+    a guide point as a small cross, plus its dashed segment's line."""
+    out = []
+    tick = reach * 0.02
+    for g in guides:
+        if g.direction is not None:
+            d = g.direction * reach
+            out.append((g.point - d, g.point + d))
+            continue
+        for ax in (QVector3D(tick, 0, 0), QVector3D(0, tick, 0),
+                   QVector3D(0, 0, tick)):
+            out.append((g.point - ax, g.point + ax))
+        if g.origin is not None:
+            out.append((QVector3D(g.origin), QVector3D(g.point)))
+    return out
+
+
+def copied_guide(guide, m: QMatrix4x4) -> Guide:
+    """A new guide: ``guide`` carried by the transform ``m``."""
+    return Guide(m.map(guide.point),
+                 None if guide.direction is None
+                 else m.mapVector(guide.direction),
+                 None if guide.origin is None else m.map(guide.origin))
+
+
 def gather_images(ctx: ToolContext):
     """Reference images a transform tool acts on: the selected ones, or (with
     nothing selected) the picture under the cursor. Locked images are already
@@ -157,6 +204,46 @@ GRIP_PX = 9.0
 #: from its centre, along each of its two directions.
 GRIP_SPREAD = 0.3
 _FLAT = 1e-6
+
+
+def _convex_hull(points) -> list:
+    """Andrew's monotone chain over (x, y) pairs: the hull, traversed
+    consistently, with no repeated last point."""
+    pts = sorted(set(points))
+    if len(pts) <= 2:
+        return pts
+
+    def cross(o, a, b):
+        return ((a[0] - o[0]) * (b[1] - o[1])
+                - (a[1] - o[1]) * (b[0] - o[0]))
+
+    lower: list = []
+    for p in pts:
+        while len(lower) >= 2 and cross(lower[-2], lower[-1], p) <= 0:
+            lower.pop()
+        lower.append(p)
+    upper: list = []
+    for p in reversed(pts):
+        while len(upper) >= 2 and cross(upper[-2], upper[-1], p) <= 0:
+            upper.pop()
+        upper.append(p)
+    return lower[:-1] + upper[:-1]
+
+
+def _within_hull(hull, x: float, y: float, margin: float) -> bool:
+    """(x, y) inside a convex hull, or within *margin* px of it: the
+    signed distance to every edge line stays above −margin."""
+    if len(hull) < 3:
+        return False
+    for i, a in enumerate(hull):
+        b = hull[(i + 1) % len(hull)]
+        ex, ey = b[0] - a[0], b[1] - a[1]
+        length = (ex * ex + ey * ey) ** 0.5
+        if length == 0.0:
+            continue
+        if (ex * (y - a[1]) - ey * (x - a[0])) / length < -margin:
+            return False
+    return True
 
 
 def rotation_grips(obb, eye: QVector3D) -> list:
@@ -189,22 +276,40 @@ def rotation_grips(obb, eye: QVector3D) -> list:
     return out
 
 
+def _loop_key(points) -> frozenset:
+    """A loop's corners, whatever its start and winding."""
+    return frozenset((round(p.x(), 6), round(p.y(), 6), round(p.z(), 6))
+                     for p in points)
+
+
 class _PlannedWhenRun(Command):
     """Drawn edges planned when the command RUNS, not when it is built:
     by then the copied faces before it in the same compound are in the
     model, so the Line tool's planner splits the faces the edges land on
     without laying another face over the copied ones (#379). Redo
-    replays the same plan."""
+    replays the same plan.
 
-    def __init__(self, segments) -> None:
+    ``open_loops`` are the copied faces' holes: the planner closes every
+    loop it traces, and a hole's rim is one, so a frame copied with its
+    opening came out with the opening faced over on both sides. A copy
+    keeps open what the original had open."""
+
+    def __init__(self, segments, open_loops=()) -> None:
         self._segments = list(segments)
+        self._open = set(open_loops)
         self._cmd = None
 
     def do(self, scene) -> None:
         if self._cmd is None:
             from core.edits import build_add_edges
+            from core.history import SnapshotCompound
             self._cmd = build_add_edges(scene, self._segments,
                                         detect_faces=True)
+            if self._open and isinstance(self._cmd, SnapshotCompound):
+                self._cmd.inner = [
+                    c for c in self._cmd.inner
+                    if not (isinstance(c, AddFaceCommand)
+                            and _loop_key(c.vertices) in self._open)]
         self._cmd.do(scene)
 
     def undo(self, scene) -> None:
@@ -253,6 +358,7 @@ class MoveTool(Tool):
         self._splanes: list = []               # section planes being moved
         self._images: list = []                # reference images being moved
         self._labels: list[TextLabel] = []     # leader texts whose label moves
+        self._moved_guides: list[Guide] = []         # construction guides being moved
         self._dims: dict = {}                  # dimension → "line" | "rigid"
         self._preview_delta = QVector3D(0.0, 0.0, 0.0)  # currently applied live
         self._copy = False                     # Ctrl: move a COPY
@@ -272,6 +378,8 @@ class MoveTool(Tool):
 
     # ---- Lifecycle ----------------------------------------------------------
     def on_activate(self, viewport) -> None:
+        self._grip_rot = self._grip_rot_done = None
+        self._clear_grips()
         self._reset()
         self._copy = False
         self._last = None
@@ -279,6 +387,8 @@ class MoveTool(Tool):
     def on_deactivate(self, viewport) -> None:
         if self._grip_rot is not None:
             self._grip_rot.on_cancel(viewport)
+        # A helper left here kept the next Move a Rotate (#480).
+        self._grip_rot = self._grip_rot_done = None
         self._clear_grips()
         self._end_freeze(viewport)
         self._revert_preview(viewport)
@@ -357,6 +467,7 @@ class MoveTool(Tool):
         if self.start_point is None:
             groups, positions = self._gather(ctx)
             labels = gather_labels(ctx)
+            guides = gather_guides(ctx)
             from core.section import SectionPlane
             splanes = [p for p in viewport.scene.selection
                        if isinstance(p, SectionPlane)]
@@ -368,12 +479,16 @@ class MoveTool(Tool):
                       if pick is not None else None)
                 if sp is not None:
                     splanes = [sp]
-                    groups, positions = [], []
+                    groups, positions, guides = [], [], []
             if labels and not viewport.scene.selection:
                 # A click on the glyphs grabs just the text, never the
                 # geometry that happens to sit behind it.
+                groups, positions, guides = [], [], []
+            hovered_guide = bool(guides) and not viewport.scene.selection
+            if hovered_guide:
+                # A click on a guide grabs the guide, not the face behind.
                 groups, positions = [], []
-            images = gather_images(ctx)
+            images = [] if hovered_guide else gather_images(ctx)
             mesh = viewport.scene.mesh
             verts = [v for v in (mesh.vertex_at(p) for p in positions)
                      if v is not None]
@@ -381,9 +496,9 @@ class MoveTool(Tool):
             if dims and not viewport.scene.selection:
                 # A click on a dimension's lines grabs the dimension, not
                 # the geometry behind it.
-                groups, positions, verts = [], [], []
+                groups, positions, verts, guides = [], [], [], []
             if not (groups or positions or labels or splanes or images
-                    or dims):
+                    or dims or guides):
                 return  # nothing under the cursor / selected to move
             self._last = None            # a new move ends the array window
             self.start_point = ctx.world
@@ -391,6 +506,7 @@ class MoveTool(Tool):
             self._groups = groups
             self._positions = positions
             self._labels = labels
+            self._moved_guides = guides
             self._dims = dims
             self._splanes = splanes
             self._images = images
@@ -454,6 +570,21 @@ class MoveTool(Tool):
             delta = direction.normalized() * value
         self._commit(viewport, delta)
         return True
+
+    def array_pending(self, viewport) -> bool:
+        """Whether a copy was just made, so «3x» / «/3» would lay an array:
+        the viewport then lets a bare «x» open the value box (#542) instead
+        of switching to Text. The same test ``on_array_value`` applies."""
+        last = self._last
+        if last is None or self.start_point is not None:
+            return False
+        stack = getattr(viewport.history, "undo_stack", None)
+        return bool(stack) and stack[-1] is last["cmd"]
+
+    def close_array_window(self) -> None:
+        """Esc right after a copy: «3x» / «/3» stop applying and a bare X
+        is the Text shortcut again (#542)."""
+        self._last = None
 
     def on_array_value(self, viewport, count: int, mode: str,
                        step: float | None = None) -> bool:
@@ -572,6 +703,14 @@ class MoveTool(Tool):
         return {id(f) for v in self._verts
                 for e in getattr(v, "edges", ()) for f in e.faces}
 
+    def moving_guide_ids(self) -> set:
+        """The guides the drag carries (#627). They pass through the
+        cursor all the way, so the viewport keeps them out of the snap
+        candidates — the cursor would otherwise lock onto its own guide."""
+        if self.grab is None or self._copy:
+            return set()
+        return {id(g) for g in self._moved_guides}
+
     # ---- Rotation grips (issue #115) ----------------------------------------
     @property
     def _drag(self):
@@ -609,6 +748,38 @@ class MoveTool(Tool):
             return None
         return g
 
+    def _grips_stay(self, viewport, obb_of, w2p, x: float, y: float) -> bool:
+        """Whether the grips on show may stay although the cursor is off
+        the group's geometry and off every grip: the selection must still
+        be this group (or nothing), and the cursor still inside the
+        group's box as projected on screen, GRIP_PX of margin around it.
+        On a thin, long object — a pipe, an elbow — the grips sit on the
+        box, far from the mesh, and the way from the mesh out to one of
+        them crosses a stretch where the pick finds nothing and no grip
+        is near yet: the grips vanished mid-journey and none could be
+        taken (issue #871). This only ever KEEPS grips that are already
+        on show; acquiring a group still takes the pick, as before."""
+        group = self._grip_group
+        if group is None or not self._grips:
+            return False
+        sel = viewport.scene.selection
+        if sel and set(sel) != {group}:
+            return False
+        frame, lo, hi = obb_of(group)
+        axes = [QVector3D(a) for a in frame]
+        pts = []
+        for i in (0, 1):
+            for j in (0, 1):
+                for k in (0, 1):
+                    corner = (axes[0] * (hi[0] if i else lo[0])
+                              + axes[1] * (hi[1] if j else lo[1])
+                              + axes[2] * (hi[2] if k else lo[2]))
+                    p = w2p(corner)
+                    if p is None:
+                        return False
+                    pts.append((p[0], p[1]))
+        return _within_hull(_convex_hull(pts), x, y, GRIP_PX)
+
     def _track_grips(self, ctx: ToolContext) -> None:
         viewport = ctx.viewport
         obb_of = getattr(viewport, "_group_obb", None)
@@ -623,6 +794,14 @@ class MoveTool(Tool):
         hot = self._grip_under(w2p, x, y)
         if g is None and hot is not None:
             self._hot_grip = hot
+            return
+        if g is None and self._grips_stay(viewport, obb_of, w2p, x, y):
+            # Off the mesh but still inside the shown group's box: the
+            # grips stay (issue #871). The camera may have moved: re-face
+            # them, exactly as when the group is picked again.
+            self._grips = rotation_grips(obb_of(self._grip_group),
+                                         cam.eye())
+            self._hot_grip = self._grip_under(w2p, x, y)
             return
         if g is not self._grip_group:
             self._grip_group = g
@@ -720,8 +899,11 @@ class MoveTool(Tool):
                     if xf is not None:
                         a, b = xf.map(a), xf.map(b)
                     self._base_segments.append((a, b))
+        cam = getattr(viewport, "camera", None)
+        reach = max(float(getattr(cam, "distance", 10.0)), 1e-3)
+        self._base_segments.extend(guide_ghost_segments(self._moved_guides, reach))
         sel = list(viewport.scene.selection)
-        if not sel and not self._groups:
+        if not sel and not self._groups and not self._moved_guides:
             # Nothing selected and no group hover-picked: the click grabbed
             # the loose entity under the cursor (mirror of gather_targets).
             edge = viewport.pick_edge(ctx.screen.x(), ctx.screen.y())
@@ -755,6 +937,7 @@ class MoveTool(Tool):
         groups = list(self._groups)
         faces = list(self._sel_faces)
         edges = list(self._sel_edges)
+        guides = list(self._moved_guides)
 
         # Edges that bound a copied face travel with it the old way: the
         # planner runs before the faces are stamped and would lay a second
@@ -776,12 +959,17 @@ class MoveTool(Tool):
             cmds: list = []
             plain: list = []
             bound: list = []
+            open_loops: set = set()
             for d in deltas:
                 m = QMatrix4x4()
                 m.translate(d)
                 for group in groups:
                     cmds.append(InsertGroupCommand(copy_group(group, d)))
+                for g in guides:
+                    cmds.append(AddGuideCommand(copied_guide(g, m)))
                 for f in faces:
+                    for h in f.holes:
+                        open_loops.add(_loop_key([v + d for v in h]))
                     cmds.append(AddFaceCommand(
                         [v + d for v in f.vertices],
                         holes=[[v + d for v in h] for h in f.holes] or None,
@@ -813,7 +1001,7 @@ class MoveTool(Tool):
                 # way they never split the face they land on — the edge of
                 # a piece copied 1 cm down left its neighbour's face whole
                 # (#379, after #177).
-                cmds.append(_PlannedWhenRun(bound))
+                cmds.append(_PlannedWhenRun(bound, open_loops))
             if not cmds:
                 return None
             return cmds[0] if len(cmds) == 1 else CompoundCommand(cmds)
@@ -838,6 +1026,8 @@ class MoveTool(Tool):
             viewport.scene.mesh.move_vertex(v, step)
         for lab in self._labels:
             lab.offset = lab.offset + step
+        for g in self._moved_guides:
+            MoveGuidesCommand.shift(g, step)
         for dim, mode in self._dims.items():
             MoveDimensionsCommand.shift(dim, mode, step)
         for sp in self._splanes:
@@ -858,6 +1048,8 @@ class MoveTool(Tool):
             # rebuilds. Labels/section planes ride along in Python (few).
             for lab in self._labels:
                 lab.offset = lab.offset + step
+            for g in self._moved_guides:
+                MoveGuidesCommand.shift(g, step)
             for dim, mode in self._dims.items():
                 MoveDimensionsCommand.shift(dim, mode, step)
             for sp in self._splanes:
@@ -879,6 +1071,8 @@ class MoveTool(Tool):
                 step = -self._preview_delta
                 for lab in self._labels:
                     lab.offset = lab.offset + step
+                for g in self._moved_guides:
+                    MoveGuidesCommand.shift(g, step)
                 for dim, mode in self._dims.items():
                     MoveDimensionsCommand.shift(dim, mode, step)
                 for sp in self._splanes:
@@ -919,9 +1113,12 @@ class MoveTool(Tool):
             commands = []
             commands.extend(MoveGroupCommand(g, delta) for g in self._groups)
             if self._positions:
-                commands.append(MoveVerticesCommand(self._positions, delta))
+                commands.append(MoveVerticesCommand(self._positions, delta,
+                                                     carry_textures=True))
             if self._labels:
                 commands.append(MoveTextLabelsCommand(self._labels, delta))
+            if self._moved_guides:
+                commands.append(MoveGuidesCommand(self._moved_guides, delta))
             if self._dims:
                 commands.append(MoveDimensionsCommand(self._dims, delta))
             if self._splanes:
@@ -962,6 +1159,7 @@ class MoveTool(Tool):
         self._verts = []
         self._groups = []
         self._labels = []
+        self._moved_guides = []
         self._dims = {}
         self._splanes = []
         self._images = []

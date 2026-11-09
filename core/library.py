@@ -80,9 +80,11 @@ def _get(rel: str) -> bytes | None:
         except OSError:
             return None
     url = base + "/" + urllib.parse.quote(rel)
+    from core.tls import https_context
     req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
     try:
-        with urllib.request.urlopen(req, timeout=TIMEOUT) as r:
+        with urllib.request.urlopen(req, timeout=TIMEOUT,
+                                    context=https_context()) as r:
             return r.read()
     except (urllib.error.URLError, OSError, ValueError):
         return None
@@ -211,7 +213,9 @@ def model_dir(ident: str) -> Path | None:
         return None
     try:
         out.mkdir(parents=True, exist_ok=True)
+        from core import zip_limits
         with zipfile.ZipFile(z) as zf:
+            zip_limits.check(zf, ident)
             for m in zf.namelist():
                 # Flat by construction, but never trust an archive's names.
                 name = Path(m).name

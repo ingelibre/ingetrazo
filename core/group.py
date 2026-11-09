@@ -27,19 +27,53 @@ def new_uid() -> str:
     return uuid.uuid4().hex[:16]
 
 
-def reserve_group_names(names) -> None:
-    """Move the automatic "Group N" counter past every N in ``names`` — a
-    document that comes back with its names must not hand a new group a
-    name it already uses."""
-    global _counter
+def _highest_group_number(names) -> int:
+    """The largest N among the automatic "Group N" entries in ``names``."""
     import re
     top = 0
     for n in names:
         m = re.match(r"^Group (\d+)$", n or "")
         if m:
             top = max(top, int(m.group(1)))
+    return top
+
+
+def reserve_group_names(names) -> None:
+    """Move the automatic "Group N" counter past every N in ``names`` — a
+    document that comes back with its names must not hand a new group a
+    name it already uses."""
+    global _counter
+    top = _highest_group_number(names)
     nxt = next(_counter)
     _counter = itertools.count(max(nxt, top + 1))
+
+
+import contextlib
+
+
+@contextlib.contextmanager
+def document_name_scope(names):
+    """Number auto-named groups from a document's own ``names`` while it
+    loads, not from the session's counter.
+
+    A file can carry groups with no name (everything saved before names
+    were written, some imports). Numbering those from the session counter
+    made the names a document saves back depend on whatever was opened
+    earlier in the session (issue #943). Inside the scope the counter
+    continues the document's own highest "Group N", in document order;
+    on exit the session counter moves past everything the document used,
+    so a group created by hand afterwards never reuses one of its
+    numbers either."""
+    global _counter
+    saved = _counter
+    local = itertools.count(_highest_group_number(names) + 1)
+    _counter = local
+    try:
+        yield
+    finally:
+        first_unused = next(local)
+        session_next = next(saved)
+        _counter = itertools.count(max(first_unused, session_next))
 
 
 class Group:
@@ -183,16 +217,27 @@ class Group:
         self.children = []
 
     def make_unique(self) -> None:
-        """Make Unique: this instance stops sharing with its
-        siblings. Without nested placements it bakes into a classic group
-        (``materialize``); WITH them it keeps its placement and its tree —
-        a private copy of its own mesh and of every subgroup below it — so
-        the subgroups stay subgroups instead of being fused into one mesh
-        (issue #90, @fafecm: «it explodes all the subgroups within it»)."""
+        """Make Unique: this instance stops sharing with its siblings.
+
+        A COMPONENT stays a component — a definition of its own with this
+        one copy, placed where it was: a private copy of its mesh and of
+        every subgroup below it, so editing it never reaches the others
+        and the subgroups stay subgroups (issue #90, @fafecm: «it explodes
+        all the subgroups within it»). It used to come out a group, which
+        is not what Make Unique says (#620: «the new component»).
+
+        A copied GROUP (the copy entering a group makes unique on the way
+        in) bakes into a classic group without nested placements
+        (``materialize``), or keeps its tree, privately, with them."""
+        from PySide6.QtGui import QMatrix4x4
+        if self.is_component():
+            self.mesh = transformed_mesh(self.mesh, QMatrix4x4())
+            self.children = [_independent_copy(c)
+                             for c in (self.children or ())]
+            return
         if not self.children:
             self.materialize()
             return
-        from PySide6.QtGui import QMatrix4x4
         self.mesh = transformed_mesh(self.mesh, QMatrix4x4())
         self.children = [_independent_copy(c) for c in self.children]
         # Nothing shared any more: what is left is a group of groups.
@@ -276,19 +321,61 @@ def make_billboard_group(image_path: str, height: float, name: str,
     return g
 
 
-def _remap_uvws(mesh, m) -> None:
+def _implicit_uvw(face, tex, minv):
+    """The world→UV map a textured face WITHOUT a fitted ``uvw`` is
+    rendering with, recovered at its PRE-transform positions: the planar
+    projection (:func:`core.texture.face_uv_axes`) is anchored to the
+    face's normal, so once the geometry turns, the projection turns with
+    the NEW normal and the texture slides — while the live preview keeps
+    the UVs it generated before the turn. Materialising the projection
+    the face is showing now (positions run back through ``minv``, the
+    inverse of the transform about to be accounted for) pins that look
+    into a ``uvw`` the remap below can carry. ``None`` for a degenerate
+    face, whose projection is meaningless either way."""
+    from PySide6.QtGui import QVector3D
+
+    from core.texture import face_uv_axes
+    pts = [minv.map(p) for p in face.vertices]
+    if len(pts) < 3:
+        return None
+    # Newell's normal, as ``Face.normal`` — the one the renderer projects
+    # with. The first corner's cross product picked another plane on a
+    # sliver or a slightly warped face (a tree's bark strip), and the image
+    # jumped to that projection as the face moved (#1034).
+    nx = ny = nz = 0.0
+    for i, a in enumerate(pts):
+        b = pts[(i + 1) % len(pts)]
+        nx += (a.y() - b.y()) * (a.z() + b.z())
+        ny += (a.z() - b.z()) * (a.x() + b.x())
+        nz += (a.x() - b.x()) * (a.y() + b.y())
+    normal = QVector3D(nx, ny, nz)
+    length = normal.length()
+    if length < 1e-9:
+        return None
+    gu, cu, gv, cv = face_uv_axes(tex, normal / length)
+    return [gu.x(), gu.y(), gu.z(), float(cu),
+            gv.x(), gv.y(), gv.z(), float(cv)]
+
+
+def _remap_uvws(mesh, m, faces=None) -> None:
     """Rewrite each face's world→UV affine map (``uvw``) so that evaluating
     it at the TRANSFORMED positions reproduces the prototype's UVs:
-    g' = L⁻ᵀ·g, c' = c − g'·t."""
+    g' = L⁻ᵀ·g, c' = c − g'·t. A face still on the implicit planar
+    projection gets that projection materialised first (at its
+    pre-transform pose), so it turns WITH the geometry instead of being
+    re-projected onto the turned face. ``faces`` limits it to those faces
+    of the mesh (loose geometry, where only part of the mesh moved)."""
     minv, ok = m.inverted()
     if not ok:
         return
     tx, ty, tz = m(0, 3), m(1, 3), m(2, 3)
-    for f in mesh.faces:
+    for f in (mesh.faces if faces is None else faces):
         t = f.attrs.get("texture") if f.attrs else None
         uvw = t.get("uvw") if t else None
         if not uvw or len(uvw) != 8:
-            continue
+            uvw = _implicit_uvw(f, t, minv) if t else None
+            if uvw is None:
+                continue
         new = list(uvw)
         for base in (0, 4):
             gx, gy, gz, c = uvw[base:base + 4]
@@ -414,6 +501,22 @@ def iter_placements(group, base=None):
     yield group, m
     for child in getattr(group, "children", None) or ():
         yield from iter_placements(child, m)
+
+
+def iter_painted_placements(group, base=None, paint=None):
+    """:func:`iter_placements` with the paint each placement's default faces
+    show: ``(group, world_matrix, paint)``. A placement with no paint of its
+    own wears the nearest painted container above it, at any depth — the
+    .skp rule the import already follows (#1101: a plain piece two levels
+    down showed the top-level object's paint, or none). ``paint`` is what
+    ``group`` itself sits in."""
+    m = getattr(group, "xform", None)
+    if base is not None:
+        m = base if m is None else base * m
+    paint = getattr(group, "material", None) or paint
+    yield group, m, paint
+    for child in getattr(group, "children", None) or ():
+        yield from iter_painted_placements(child, m, paint)
 
 
 def _copy_mesh(mesh) -> Mesh:
@@ -760,6 +863,32 @@ def frame_from_points(positions) -> tuple:
             QVector3D(0.0, 0.0, 1.0))
 
 
+def _local_points(mesh):
+    """The vertex positions of ``mesh`` as an ``(N, 3)`` float64 array, or
+    None when it has none. A mesh still deferred (a lazy mesh of a big
+    document) is NOT built for it: its points are the welded positions the
+    build would make, in the same order. A box drawn over the 590 groups of
+    a 5-million-face model built every one of them, past 12 GB."""
+    import numpy as np
+    from core import lazy_mesh
+    from core.mesh import DeferredMesh
+    if type(mesh) is DeferredMesh:
+        d = mesh.__dict__
+        hit = d.get("_deferred_plan")
+        if hit is not None:
+            pos = hit.pos
+        else:
+            s = d["_deferred_source"]
+            pos = lazy_mesh.weld(np.asarray(s["pos"], dtype=np.float64),
+                                 s.get("sequential", False))[0]
+        return np.array(pos, dtype=np.float64) if len(pos) else None
+    verts = mesh.vertices
+    if not verts:
+        return None
+    return np.array([[v.position.x(), v.position.y(), v.position.z()]
+                     for v in verts], dtype=np.float64)
+
+
 def placement_points(group, cache=None):
     """Every vertex position of ``group`` and its nested placements, in WORLD
     space, as an ``(N, 3)`` float64 array. ``cache`` (``{id(mesh): array}``)
@@ -778,14 +907,12 @@ def placement_points(group, cache=None):
     if cache is None:
         cache = {}
     for g, m in iter_placements(group):
-        verts = g.mesh.vertices
-        if not verts:
-            continue
         arr = cache.get(id(g.mesh))
         if arr is None:
-            arr = cache[id(g.mesh)] = np.array(
-                [[v.position.x(), v.position.y(), v.position.z()]
-                 for v in verts], dtype=np.float64)
+            arr = _local_points(g.mesh)
+            if arr is None:
+                continue
+            cache[id(g.mesh)] = arr
         if m is not None:
             d = m.data()                      # column-major
             rot = np.array([[d[0], d[4], d[8]],

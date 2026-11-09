@@ -134,6 +134,97 @@ def _box_loose_fast(viewport, rect, crossing):
     return edges, faces
 
 
+def _box_payload(viewport, pg):
+    """What the box test reads of one placement: the corners of its
+    triangles (``v0``, ``e1``, ``e2``) and its edges, in world space. A
+    component instance's full chunk transforms EVERY array of its
+    prototype's bake to world -- 1984 of them, 2.2 s of a box over a big
+    model, all of it thrown away: only the corners and the edges are
+    carried here, with the very maps the instance chunk uses. A chunk
+    already made for the instance is taken as it is."""
+    xf = getattr(pg, "xform", None)
+    if xf is None or getattr(pg, "mesh", None) is None:
+        return viewport._group_chunk(pg)
+    import numpy as np
+    from views.viewport import _paint_of, _placed_maps, _proto_wrapper
+    base = viewport._group_chunk(
+        _proto_wrapper(viewport, pg.mesh, _paint_of(viewport, pg)))
+    cur = (getattr(viewport, "_inst_chunks", None) or {}).get(id(pg))
+    if cur is not None and cur["ikey"] == (base["uid"], tuple(xf.data())):
+        return cur
+    _L, tv, tp = _placed_maps(xf)
+    a = np.frombuffer(base["edges"], np.float32).reshape(-1, 3)
+    out = {"v0": None, "e1": None, "e2": None,
+           "edges": tp(a.astype(np.float64)).astype(np.float32).tobytes()}
+    if base["v0"] is not None:
+        out["v0"] = tp(base["v0"])
+        out["e1"] = tv(base["e1"])
+        out["e2"] = tv(base["e2"])
+    return out
+
+
+def _local_bounds(ch):
+    """``(lo, hi)`` of everything the box test reads of chunk ``ch`` (the
+    triangle corners and the edges), cached on it; None when empty."""
+    import numpy as np
+    # Keyed on the very arrays: a moved chunk gets new ones (a shift
+    # rebuilds them), and stale bounds would answer for where it was.
+    hit = ch.get("_box_bounds")
+    if hit is not None and hit[0] is ch["v0"] and hit[1] is ch["edges"]:
+        return hit[2]
+    parts = []
+    if ch["v0"] is not None and len(ch["v0"]):
+        v0, e1, e2 = ch["v0"], ch["e1"], ch["e2"]
+        parts += [v0, v0 + e1, v0 + e2]
+    pair = np.frombuffer(ch["edges"], np.float32).reshape(-1, 3)
+    if len(pair):
+        parts.append(pair.astype(np.float64))
+    if parts:
+        pts = np.concatenate(parts, axis=0)
+        hit = (pts.min(axis=0), pts.max(axis=0))
+    else:
+        hit = None
+    ch["_box_bounds"] = (ch["v0"], ch["edges"], hit)
+    return hit
+
+
+def _placement_side(viewport, pg, rect):
+    """``"in"`` when everything the box test reads of placement ``pg``
+    projects inside ``rect``, ``"out"`` when all of it lies past one side
+    of it, ``"empty"`` when it has nothing, None when that takes the full
+    test. Decided on the eight
+    corners of its bounding box, all in front of the camera: a projection
+    keeps what is inside a box inside the hull of its corners."""
+    import numpy as np
+    xf = getattr(pg, "xform", None)
+    if xf is None or getattr(pg, "mesh", None) is None:
+        ch = viewport._group_chunk(pg)
+        tp = None
+    else:
+        from views.viewport import _paint_of, _placed_maps, _proto_wrapper
+        ch = viewport._group_chunk(
+            _proto_wrapper(viewport, pg.mesh, _paint_of(viewport, pg)))
+        tp = _placed_maps(xf)[2]
+    bb = _local_bounds(ch)
+    if bb is None:
+        return "empty"
+    lo, hi = bb
+    box = np.array([[x, y, z] for x in (lo[0], hi[0])
+                    for y in (lo[1], hi[1]) for z in (lo[2], hi[2])])
+    if tp is not None:
+        box = tp(box)
+    xs, ys, ok = viewport._project_px(box)
+    if not ok.all():
+        return None
+    x0, y0, x1, y1 = rect
+    if ((xs >= x0) & (xs <= x1) & (ys >= y0) & (ys <= y1)).all():
+        return "in"
+    if (xs < x0).all() or (xs > x1).all() or (ys < y0).all() \
+            or (ys > y1).all():
+        return "out"
+    return None
+
+
 def _box_group_fast(viewport, group, rect, crossing):
     """Vectorized box test for one (non-billboard) group via its chunk
     arrays. True/False, or None to fall back to the per-vertex walk."""
@@ -149,9 +240,26 @@ def _box_group_fast(viewport, group, rect, crossing):
     expand = getattr(viewport, "_expand_placements", None)
     places = expand(group) if expand is not None else [group]
     corners, edge_parts = [], []
+    seen = False
     try:
         for pg in places:
-            ch = viewport._group_chunk(pg)
+            # A placement whose box lands wholly inside the rectangle, or
+            # wholly past one of its sides, answers without its triangles:
+            # on a model of 2 000 instances the corners of every triangle
+            # carried to world and projected were most of a box's 5 s.
+            side = _placement_side(viewport, pg, rect)
+            if side == "empty":
+                continue
+            seen = True
+            if side == "out":
+                if not crossing:
+                    return False
+                continue
+            if side == "in":
+                if crossing:
+                    return True
+                continue
+            ch = _box_payload(viewport, pg)
             v0, e1, e2 = ch["v0"], ch["e1"], ch["e2"]
             if v0 is not None:
                 corners.extend((v0, v0 + e1, v0 + e2))
@@ -160,6 +268,12 @@ def _box_group_fast(viewport, group, rect, crossing):
                 edge_parts.append(pair.astype(np.float64))
     except Exception:  # noqa: BLE001
         return None
+    if not corners and not edge_parts:
+        if not seen:
+            return None
+        # Every placement answered on its box: in window mode none was
+        # out (that returned False), in crossing mode none was in.
+        return not crossing
     pairs = (np.concatenate(edge_parts, axis=0) if edge_parts
              else np.empty((0, 3)))
     if len(pairs):
@@ -180,6 +294,24 @@ def _box_group_fast(viewport, group, rect, crossing):
             return bool(m.any())
         return False
     return bool(ok.all() and inside.all())
+
+
+def _frame_projector(viewport):
+    """``viewport._world_to_pixel`` with this frame's projection*view built
+    once: the box walks every vertex of the groups it cannot test from
+    their chunks (face-me figures), and rebuilding the camera matrices for
+    each point cost ~1.6 s of a 3 s box on the villa of issue #1006. Same
+    math, same pixels."""
+    w2p = viewport._world_to_pixel
+    cam = getattr(viewport, "camera", None)
+    try:
+        import inspect
+        if "mvp" not in inspect.signature(w2p).parameters:
+            return w2p
+        mvp = cam.projection_matrix() * cam.view_matrix()
+    except (AttributeError, TypeError, ValueError):
+        return w2p                      # a stand-in viewport (tests)
+    return lambda point: w2p(point, mvp)
 
 
 def _pt_in_rect(p, rect) -> bool:
@@ -280,7 +412,10 @@ class SelectTool(Tool):
             return guide
         face = viewport.pick_face(screen_x, screen_y)
         if face is not None:
-            return face
+            # Unless a picture lies in front of it (#426).
+            in_front = getattr(viewport, "image_in_front_of", None)
+            image = in_front(face, screen_x, screen_y) if in_front else None
+            return image if image is not None else face
         # A reference image is the last candidate: it is an underlay, so
         # anything drawn on top of it must win the click. Only bare picture
         # selects the picture — which is how you then move or resize it.
@@ -305,10 +440,18 @@ class SelectTool(Tool):
         if entity is None:
             if viewport.scene.edit_group is not None and mode == "replace" \
                     and not viewport.scene.selection:
-                # Click outside: step out ONE level, so a click outside a
-                # nested group leaves you in its parent, not in the model.
-                viewport.end_one_group_edit()
-                return
+                # The dotted edit box, not the occupied faces, is the context
+                # boundary. Irregular geometry and the deliberate gutter
+                # around a cube leave empty pixels INSIDE that frame; those
+                # pixels must not throw the user out of the group. Beyond the
+                # projected box, step out ONE level so a nested edit leaves
+                # you in its parent, not directly in the model.
+                contains = getattr(viewport,
+                                   "edit_group_box_contains_pixel", None)
+                if not callable(contains) or not contains(
+                        ctx.screen.x(), ctx.screen.y()):
+                    viewport.end_one_group_edit()
+                    return
             if mode == "replace":
                 viewport.scene.clear_selection()
         else:
@@ -348,9 +491,9 @@ class SelectTool(Tool):
             return
         if isinstance(entity, TextLabel):
             # As usual, double-clicking a leader text edits its text.
-            from PySide6.QtWidgets import QInputDialog
             from core.i18n import tr
-            text, ok = QInputDialog.getMultiLineText(
+            from views.prompts import get_multiline_text
+            text, ok = get_multiline_text(
                 viewport.window(), tr("Text"), tr("Label text:"),
                 entity.text)
             if ok and text.strip() and text.strip() != entity.text:
@@ -419,11 +562,16 @@ class SelectTool(Tool):
 
     def on_hover(self, ctx: ToolContext) -> None:
         viewport = ctx.viewport
-        viewport.set_hover(self._pick(viewport, ctx.screen.x(), ctx.screen.y()))
+        entity = self._pick(viewport, ctx.screen.x(), ctx.screen.y())
+        # A face under the cursor is not marked, as in SketchUp (#832:
+        # «very visually distracting»); edges still light up, thin lines
+        # being hard to hit. Unmarked, a face is also never what Delete
+        # erases with nothing selected.
+        viewport.set_hover(None if isinstance(entity, Face) else entity)
 
     def on_box_select(self, viewport, rect, crossing: bool,
                       additive: bool = False, mode: str | None = None) -> None:
-        w2p = viewport._world_to_pixel
+        w2p = _frame_projector(viewport)
         picked = []
         fast = _box_loose_fast(viewport, rect, crossing)
         if fast is not None:

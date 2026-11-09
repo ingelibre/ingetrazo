@@ -26,6 +26,10 @@ out vec3 v_color;
 // World position for the shadow lookup (every buffer is world-space or
 // carries its instance matrix, so this is exact for both).
 out vec3 v_world;
+// The position BEFORE the instance matrix: the prototype's own frame. The
+// instanced pass re-shades from it (u_reshade, #482); everywhere else it
+// equals v_world.
+out vec3 v_local;
 // The vertex's clip position, un-interpolated: along a line every fragment
 // gets the PROVOKING vertex's, so the fragment shader can measure how far
 // along the line it is — the dash of Back Edges (u_stipple 4, issue #234).
@@ -40,6 +44,7 @@ void main() {
     // unchanged for both.
     vec4 world = mat4(a_inst0, a_inst1, a_inst2, a_inst3) * vec4(a_pos, 1.0);
     v_world = world.xyz;
+    v_local = a_pos;
     gl_ClipDistance[0] = (u_clip_enable == 1)
         ? dot(world, u_clip_plane)
         : 1.0;
