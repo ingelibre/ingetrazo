@@ -41,14 +41,19 @@ def test_fields_read_the_rows_the_user_edited():
     comp.cajetin = Cajetin(proyecto="Casa", autor="MS", lamina="L-01")
     comp.cajetin.set_field("PROYECTO", "Plaza nueva")
     comp.cajetin.set_field("LÁMINA", "A-03")
-    comp.cajetin.campos = [r for r in comp.cajetin.campos if r[0] != "AUTOR"]
+    # A new title block's rows are in the interface's language: drop a
+    # field's row by any of its labels.
+    def without(key):
+        labels = Cajetin.field_labels(key)
+        return [r for r in comp.cajetin.campos
+                if str(r[0]).strip().upper() not in labels]
+    comp.cajetin.campos = without("autor")
     comp.cajetin.campos.append(["Verfasser", "Ana"])
     set_field_context(comp=comp)
     try:
         assert expand_fields("{proyecto}|{autor}|{lamina}") == \
             "Plaza nueva|Ana|A-03"
-        comp.cajetin.campos = [r for r in comp.cajetin.campos
-                               if r[0] != "LÁMINA"]
+        comp.cajetin.campos = without("lamina")
         comp.cajetin.campos.append(["Lamina", ""])
         assert expand_fields("{lamina}") == "Planta baja"   # empty → name
     finally:
