@@ -178,6 +178,54 @@ def test_zoom_extents_frames_every_view_shown(win):
         assert vp.camera.target.x() > 30
 
 
+def test_zoom_selection_frames_every_view_shown(win):
+    """Zoom Selection, like Zoom Extents, frames the selection in every view
+    shown, not only in the Perspective one."""
+    scene = win.viewport.scene
+    scene.mesh.add_face(
+        [V(0, 0, 0), V(1, 0, 0), V(1, 1, 0), V(0, 1, 0)])
+    far = scene.mesh.add_face(
+        [V(100, 100, 0), V(110, 100, 0), V(110, 110, 0), V(100, 110, 0)])
+    scene.version += 1
+    win.set_view_layout("four")
+    scene.selection.clear()
+    scene.selection.add(far)
+    before = [V(vp.camera.target) for vp in _grid(win).extras()]
+    win._on_zoom_selection()
+    assert win.viewport.camera.target.x() > 90
+    for vp, old in zip(_grid(win).extras(), before):
+        assert old.x() < 20
+        assert vp.camera.target.x() > 90, "the selection, in this view too"
+
+
+def _enter(vp):
+    QApplication.sendEvent(vp, QEnterEvent(QPointF(5, 5), QPointF(5, 5),
+                                           QPointF(5, 5)))
+
+
+def test_an_extra_view_shows_the_nav_modes_pointer(win):
+    """Zoom Window (or Orbit, Pan) picked: the magnifier shows in every
+    view the pointer comes into, and the tool's pointer comes back after."""
+    from PySide6.QtCore import Qt
+    win.show()
+    win.set_view_layout("four")
+    QApplication.processEvents()
+    win._activate_tool("select")
+    for vp in _grid(win).extras():
+        _enter(vp)
+        assert vp.cursor().shape() != Qt.BitmapCursor   # the arrow
+    win._activate_nav("zoom_window")
+    for vp in _grid(win).extras():
+        _enter(vp)
+        assert vp.nav_mode == "zoom_window"
+        assert vp.cursor().shape() == Qt.BitmapCursor, "the magnifier"
+    win._activate_tool("select")
+    for vp in _grid(win).extras():
+        _enter(vp)
+        assert vp.nav_mode is None
+        assert vp.cursor().shape() != Qt.BitmapCursor, "the arrow again"
+
+
 def test_a_views_name_is_a_small_label_over_its_corner(win):
     win.show()
     win.set_view_layout("four")
@@ -517,6 +565,36 @@ def test_nothing_moves_until_the_square_is_released(win):
     assert len(grid.divider_guide.lines) == 3, "the three lines of the block"
     _send(grid.cross, QEvent.MouseButtonRelease,
           grid.mapToGlobal(at) + QPoint(70, -50))
+
+
+def _guides_meet(grid):
+    """The row guides end at the column guide: no stub left over from where
+    the crossing was."""
+    column, *rows = [line for line, _stuck in grid.divider_guide.lines]
+    x = column.x1()
+    for row in rows:
+        end = min((row.x1(), row.x2()), key=lambda e: abs(e - x))
+        assert abs(end - x) <= grid.columns.handle(1).thickness(), (
+            f"row guide ends at {end}, the column guide is at {x}")
+    return rows
+
+
+@pytest.mark.parametrize("layout", ["four", "three", "three_mirror"])
+def test_the_squares_guide_draws_the_views_as_they_will_be(win, layout):
+    from PySide6.QtCore import QEvent, QPoint
+    grid = _four(win)
+    win.set_view_layout(layout)
+    QApplication.processEvents()
+    at = grid.crossings()[0]
+    _cross_drag(grid, QPoint(60, 30), release=False)
+    rows = _guides_meet(grid)
+    assert len(rows) == (2 if layout == "four" else 1)
+    _send(grid.cross, QEvent.MouseButtonRelease,
+          grid.mapToGlobal(at) + QPoint(60, 30))
+    _cross_drag(grid, QPoint(-90, -20), release=False)
+    _guides_meet(grid)
+    _send(grid.cross, QEvent.MouseButtonRelease,
+          grid.mapToGlobal(grid.cross.centre()))
 
 
 def test_the_square_lines_up_two_halves_that_had_parted(win):

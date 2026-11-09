@@ -244,10 +244,21 @@ class _FollowWindow(QObject):
     def eventFilter(self, obj, ev) -> bool:  # noqa: N802 — Qt override
         if ev.type() in self._EVENTS:
             main = self._grid.main
+            changed = False
             if obj.active_tool is not main.active_tool:
                 obj.active_tool = main.active_tool
+                changed = True
             if obj.nav_mode != main.nav_mode:
                 obj.nav_mode = main.nav_mode
+                changed = True
+            # The pointer comes along too: the magnifier, the orbit or pan
+            # hand, or the tool's icon — not the one the view had before.
+            if changed:
+                if obj.nav_mode is not None:
+                    obj._apply_nav_cursor()
+                else:
+                    obj.unsetCursor()
+                    obj._apply_tool_cursor()
         return False
 
 
@@ -619,8 +630,22 @@ class _CrossHandle(QWidget):
         self._landing = (x, y)
         grid.divider_guide.show_lines(
             [(column.line_at(x), x_stuck)]
-            + [(r.line_at(y), y_stuck) for r in rows])
+            + [(self._row_guide(r, x, y), y_stuck) for r in rows])
         self.place(QPoint(column.line_at(x).x1(), first.line_at(y).y1()))
+
+    def _row_guide(self, row, x: int, y: int) -> QLine:
+        """``row``'s guide at ``y``, reaching the column line at ``x`` (where
+        it will be, not where it is): the guide draws the views as they will
+        be, with no stub left over from the old crossing."""
+        grid = self._grid
+        line = row.line_at(y)
+        left = grid.columns.mapTo(grid, QPoint(x, 0)).x()
+        right = left + grid.columns.handle(1).thickness()
+        if row.splitter() is grid.columns.widget(0):
+            line.setP2(QPoint(left, line.y2()))
+        else:
+            line.setP1(QPoint(right, line.y1()))
+        return line
 
     def cancel(self) -> None:
         self._drag_offset = None

@@ -5734,6 +5734,9 @@ class MainWindow(QMainWindow):
             return
         self.viewport.camera.fit_box(lo, hi)
         self.viewport.update()
+        grid = self._doc.view_grid
+        if grid is not None:                 # every view shown frames it,
+            grid.fit_box(lo, hi)             # as Zoom Extents does
 
     def _figure_bounds(self):
         """World box of the visible face-me figures, or None."""
