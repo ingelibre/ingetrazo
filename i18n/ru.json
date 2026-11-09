@@ -3377,7 +3377,6 @@
  "This build of IngeTrazo has no printing support (Qt's print module is missing), so the sheets cannot be printed from here.\n\nExport all (PDF) gives you the same sheets, each at its exact paper size, ready to print.": "В этой сборке IngeTrazo нет поддержки печати (нет модуля печати Qt), поэтому листы отсюда напечатать нельзя.\n\n«Экспортировать все (PDF)» даёт те же листы, каждый точного формата, готовые к печати.",
  "Delete folder (its sheets move one level up)": "Удалить папку (её листы поднимутся на уровень выше)",
  "Delete the selected sheets and folders (Delete) — a deleted folder moves what it holds one level up": "Удалить выбранные листы и папки (Delete) — содержимое удалённой папки поднимается на уровень выше",
- "Double-click a sheet to open it. The printer marks the sheets Print all and Export all take. Right-click for more.": "Двойной щелчок открывает лист. Принтер отмечает листы, которые берут «Печатать все» и «Экспортировать все». Правый щелчок — ещё.",
  "Exclude all from Print all": "Исключить все из «Печатать все»",
  "Exclude from Print all": "Исключить из «Печатать все»",
  "Export all (PDF): the sheets marked for printing into one PDF, each page at its own paper size": "Экспортировать все (PDF): отмеченные для печати листы в один PDF, каждая страница своего формата",
@@ -3400,5 +3399,8 @@
  "SHEET": "ЛИСТ",
  "LEGEND": "УСЛОВНЫЕ ОБОЗНАЧЕНИЯ",
  "FFL {z}": "УЧП {z}",
- "SCALE {escala}": "М {escala}"
+ "SCALE {escala}": "М {escala}",
+ "Drag a scene onto a sheet. Double-click shows it.": "Перетащите сцену на лист. Двойной щелчок показывает её.",
+ "Double-click a sheet to open it; drag sheets and folders to order them, and a scene onto a sheet to place it. The printer marks the sheets Print all and Export all take. Right-click for more.": "Двойной щелчок открывает лист; перетаскивайте листы и папки, чтобы упорядочить их, а сцену — на лист, чтобы разместить её. Принтер отмечает листы, которые берут «Печатать все» и «Экспортировать все». Правый щелчок — ещё.",
+ "Drag a scene onto a sheet. Double-click places it on the open sheet.": "Перетащите сцену на лист. Двойной щелчок помещает её на открытый лист."
 }

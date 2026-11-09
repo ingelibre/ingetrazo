@@ -12826,12 +12826,21 @@ class ComposerWindow(QMainWindow):
         self._rebuild_canvas()
 
     def _on_export_all(self) -> None:
+        """Export all: the sheets marked for printing in the sheet
+        explorer, in its order — the same set its Export all and Print all
+        take."""
+        from core.sheet_folders import printed_sheets
+        sheets = printed_sheets(self._scene())
+        if not sheets:
+            self.statusBar().showMessage(
+                tr("No sheet is marked for printing"), 4000)
+            return
         path, _ = file_dialogs.getSaveFileName(
-            self, tr("Export all sheets (PDF)…"), "laminas.pdf",
+            self, tr("Export all sheets (PDF)…"), "sheets.pdf",
             "PDF (*.pdf)")
         if not path:
             return
-        troubled = self.export_all_pdf(path)
+        troubled = self.export_all_pdf(path, sheets)
         if troubled:
             self.statusBar().showMessage(
                 tr("Exported {name} — but a view would not render on {sheets}",

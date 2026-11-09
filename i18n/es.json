@@ -3377,7 +3377,6 @@
  "This build of IngeTrazo has no printing support (Qt's print module is missing), so the sheets cannot be printed from here.\n\nExport all (PDF) gives you the same sheets, each at its exact paper size, ready to print.": "Esta versión de IngeTrazo no tiene soporte de impresión (falta el módulo de impresión de Qt), así que las láminas no se pueden imprimir desde aquí.\n\nExportar todo (PDF) le da las mismas láminas, cada una a su tamaño de papel exacto, listas para imprimir.",
  "Delete folder (its sheets move one level up)": "Eliminar carpeta (sus láminas suben un nivel)",
  "Delete the selected sheets and folders (Delete) — a deleted folder moves what it holds one level up": "Eliminar las láminas y carpetas seleccionadas (Supr) — una carpeta eliminada sube lo que contiene un nivel",
- "Double-click a sheet to open it. The printer marks the sheets Print all and Export all take. Right-click for more.": "Doble clic en una lámina para abrirla. La impresora marca las láminas que toman Imprimir todo y Exportar todo. Clic derecho para más.",
  "Exclude all from Print all": "Quitar todas de Imprimir todo",
  "Exclude from Print all": "Quitar de Imprimir todo",
  "Export all (PDF): the sheets marked for printing into one PDF, each page at its own paper size": "Exportar todo (PDF): las láminas marcadas para imprimir en un solo PDF, cada página a su propio tamaño de papel",
@@ -3400,5 +3399,8 @@
  "SHEET": "LÁMINA",
  "LEGEND": "LEYENDA",
  "FFL {z}": "N.P.T. {z}",
- "SCALE {escala}": "ESC. {escala}"
+ "SCALE {escala}": "ESC. {escala}",
+ "Drag a scene onto a sheet. Double-click shows it.": "Arrastre una escena a una lámina. Doble clic la muestra.",
+ "Double-click a sheet to open it; drag sheets and folders to order them, and a scene onto a sheet to place it. The printer marks the sheets Print all and Export all take. Right-click for more.": "Doble clic en una lámina para abrirla; arrastre láminas y carpetas para ordenarlas, y una escena a una lámina para colocarla. La impresora marca las láminas que toman Imprimir todo y Exportar todo. Clic derecho para más.",
+ "Drag a scene onto a sheet. Double-click places it on the open sheet.": "Arrastre una escena a una lámina. Doble clic la coloca en la lámina abierta."
 }

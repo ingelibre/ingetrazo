@@ -634,20 +634,6 @@ def test_the_composers_view_sources_follow_rename_order_and_undo(
     comp.close()
 
 
-def test_the_composers_panel_renames_in_one_undo_step(win):
-    from views.outliner import SheetsPanel
-    _scene(win, "A")
-    panel = SheetsPanel.__new__(SheetsPanel)
-    panel._window = win
-    panel._shape = None
-    panel._scene = lambda: win.viewport.scene
-    panel.refresh = lambda: None
-    SheetsPanel.rename_scene(panel, win.viewport.scene.saved_views[0], "B")
-    assert _in_step(win) == ["B"]
-    win._on_undo()
-    assert _in_step(win) == ["A"]
-
-
 # ---- the Scenes panel: its menu, ↑ ↓ ------------------------------------------
 
 def test_the_panels_own_editor_renames_in_one_undo_step(win):

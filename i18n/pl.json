@@ -3385,7 +3385,6 @@
  "This build of IngeTrazo has no printing support (Qt's print module is missing), so the sheets cannot be printed from here.\n\nExport all (PDF) gives you the same sheets, each at its exact paper size, ready to print.": "Ta wersja IngeTrazo nie obsługuje drukowania (brak modułu drukowania Qt), więc arkuszy nie można stąd wydrukować.\n\nEksportuj wszystko (PDF) daje te same arkusze, każdy w dokładnym formacie papieru, gotowe do druku.",
  "Delete folder (its sheets move one level up)": "Usuń folder (jego arkusze przechodzą poziom wyżej)",
  "Delete the selected sheets and folders (Delete) — a deleted folder moves what it holds one level up": "Usuń zaznaczone arkusze i foldery (Delete) — usunięty folder przenosi zawartość poziom wyżej",
- "Double-click a sheet to open it. The printer marks the sheets Print all and Export all take. Right-click for more.": "Kliknij dwukrotnie arkusz, aby go otworzyć. Drukarka oznacza arkusze, które biorą Drukuj wszystko i Eksportuj wszystko. Prawy klik — więcej.",
  "Exclude all from Print all": "Wyłącz wszystkie z Drukuj wszystko",
  "Exclude from Print all": "Wyłącz z Drukuj wszystko",
  "Export all (PDF): the sheets marked for printing into one PDF, each page at its own paper size": "Eksportuj wszystko (PDF): arkusze oznaczone do druku w jednym PDF, każda strona we własnym formacie",
@@ -3408,5 +3407,8 @@
  "SHEET": "ARKUSZ",
  "LEGEND": "LEGENDA",
  "FFL {z}": "PPW {z}",
- "SCALE {escala}": "SKALA {escala}"
+ "SCALE {escala}": "SKALA {escala}",
+ "Drag a scene onto a sheet. Double-click shows it.": "Przeciągnij scenę na arkusz. Dwuklik ją pokazuje.",
+ "Double-click a sheet to open it; drag sheets and folders to order them, and a scene onto a sheet to place it. The printer marks the sheets Print all and Export all take. Right-click for more.": "Kliknij dwukrotnie arkusz, aby go otworzyć; przeciągaj arkusze i foldery, aby je uporządkować, a scenę na arkusz, aby ją umieścić. Drukarka oznacza arkusze, które biorą Drukuj wszystko i Eksportuj wszystko. Prawy klik — więcej.",
+ "Drag a scene onto a sheet. Double-click places it on the open sheet.": "Przeciągnij scenę na arkusz. Dwuklik umieszcza ją na otwartym arkuszu."
 }

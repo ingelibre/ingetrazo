@@ -1,15 +1,15 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2026 Marco Sumari Tellez and IngeTrazo contributors.
-"""The Sheets tab (views/sheet_browser.py): Scenes above, the sheet
-explorer below — beside the Browser in the main window and as the
-composer's Sheets page, the same panels in both.
+"""The sheet composer's Sheets page (views/sheet_browser.py): the scenes as
+a plain list above, the sheet explorer below.
 
 The explorer lists the sheets in their folders, each with the scenes placed
 on it and a printer that says whether Print all takes it (a folder's
 printer switches every sheet inside). A filter field and small icon buttons
 sit above the tree; the right-click menu offers the same actions plus
-rename and delete. A double-click opens a sheet; new sheets and folders go
-into the selected folder; deleting a folder moves what it holds one level
+rename and delete. Sheets and folders drag to reorder and re-file, Alt+↑/↓
+moves them; a scene dragged from the list onto a sheet is placed on it. A
+double-click opens a sheet; deleting a folder moves what it holds one level
 up; Print all and Export all take the marked sheets, in the order shown."""
 from __future__ import annotations
 
@@ -17,24 +17,33 @@ import os
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtCore import Qt  # noqa: E402
+from PySide6.QtCore import QMimeData, Qt  # noqa: E402
 from PySide6.QtTest import QTest  # noqa: E402
-from PySide6.QtWidgets import QApplication, QMessageBox  # noqa: E402
+from PySide6.QtWidgets import (  # noqa: E402
+    QAbstractItemView, QApplication, QMessageBox,
+)
 
+from core import outliner  # noqa: E402
 from core import sheet_folders as sf  # noqa: E402
 from core.composition import Composicion, MarcoVista  # noqa: E402
+from core.group import Group  # noqa: E402
+from core.mesh import Mesh  # noqa: E402
 from core.sheet_folders import SheetFolder  # noqa: E402
 from views.outliner import node_icon  # noqa: E402
 from views.sheet_browser import (  # noqa: E402
-    COL_NAME, COL_PRINT, SheetExplorer, SheetsTab,
+    COL_NAME, COL_PRINT, SCENE_ROWS, TREE_MIME, SheetExplorer, SheetsTab,
 )
 
 _app = QApplication.instance() or QApplication([])
 
+_ON, _BELOW, _ABOVE = (QAbstractItemView.OnItem,
+                       QAbstractItemView.BelowItem,
+                       QAbstractItemView.AboveItem)
+
 
 def _window():
     """A window whose document has Plans ▸ (G) with Details ▸ (D) inside
-    it, and A at the top."""
+    it, and A at the top — and the composer's Sheets page on it."""
     from views.main_window import MainWindow
     win = MainWindow()
     scene = win.viewport.scene
@@ -47,9 +56,39 @@ def _window():
         Composicion(name="D", folder_id=details.id)]
     sf.sync_order(scene)
     scene.version += 1
-    explorer = win.sheets_tray.tab.sheets
+    explorer = win._ensure_composer().views_panel.sheets
     explorer.refresh(force=True)
     return win, scene, explorer, plans, details
+
+
+def _sheets_model(win):
+    """Scenes «Plan L1» and «North elevation»; A101 (A3) shows Plan L1 and
+    a scene the model lost (Section A), A102 shows Plan L1 and the front."""
+    from core.saved_views import SavedView
+    scene = win.viewport.scene
+    cam = win.viewport.camera
+    scene.saved_views[:] = [SavedView.capture("Plan L1", scene, cam),
+                            SavedView.capture("North elevation", scene, cam)]
+    a101 = Composicion(name="A101 Plans", paper="A3")
+    a101.frames = [MarcoVista(view_key="scene:Plan L1", scale_n=100.0),
+                   MarcoVista(view_key="scene:Section A", scale_n=50.0)]
+    a102 = Composicion(name="A102 Elevations")
+    a102.frames = [MarcoVista(view_key="scene:Plan L1", scale_n=200.0),
+                   MarcoVista(view_key="std:front", scale_n=100.0)]
+    scene.compositions[:] = [a101, a102]
+    scene.version += 1
+    return a101, a102
+
+
+def _model_window():
+    from views.main_window import MainWindow
+    win = MainWindow()
+    a101, a102 = _sheets_model(win)
+    comp = win._ensure_composer()
+    page = comp.views_panel
+    page.on_scene_changed()
+    page.sheets.refresh(force=True)
+    return win, win.viewport.scene, page, a101, a102
 
 
 def _close(win):
@@ -83,6 +122,7 @@ def _rows(explorer, item=None, depth=0, shown_only=False):
 
 
 def _pick(explorer, *objs):
+    explorer.tree.clearSelection()
     explorer.tree.setCurrentItem(explorer.items[id(objs[-1])])
     for obj in objs:
         explorer.items[id(obj)].setSelected(True)
@@ -94,6 +134,25 @@ def _click_printer(explorer, obj):
     QTest.qWait(20)                       # the tree is rebuilt next turn
 
 
+def _drag(explorer, *objs, onto=None, where=_ON):
+    """Drag the rows of ``objs`` and drop them on ``onto``'s row (``None``:
+    empty space) at ``where``, as the tree would."""
+    rows = [explorer.items[id(o)] for o in objs]
+    mime = explorer.tree.mimeData(rows)
+    target = explorer.items[id(onto)] if onto is not None else None
+    explorer.drop(target, where, mime)
+    QTest.qWait(20)
+
+
+def _drop_scenes(explorer, names, onto=None):
+    from views.composer import SCENE_MIME
+    mime = QMimeData()
+    mime.setData(SCENE_MIME, "\n".join(names).encode("utf-8"))
+    target = explorer.items[id(onto)] if onto is not None else None
+    explorer.drop(target, _ON, mime)
+    QTest.qWait(20)
+
+
 def _sheet(scene, name):
     return next(c for c in scene.compositions if c.name == name)
 
@@ -102,64 +161,50 @@ def _texts(menu):
     return [a.text() for a in menu.actions() if not a.isSeparator()]
 
 
+def _names(scene):
+    return [c.name for c in scene.compositions]
+
+
 # ---- Where it lives ---------------------------------------------------------
 
-def test_the_sheets_tab_sits_beside_the_browser():
+def test_the_sheets_live_only_in_the_composer():
+    from views.sheet_browser import SceneList
     win, *_ = _window()
-    dock = win.sheets_tray
-    assert dock.objectName() == "tray_sheets"
-    assert dock.windowTitle() == "Sheets"
-    order = win._default_tray_order()
-    assert order.index(dock) == order.index(win.project_browser) + 1
-    assert dock in win.tabifiedDockWidgets(win.tray)
-    win.show()
-    _app.processEvents()
-    rows = [[tb.tabText(i) for i in range(tb.count())]
-            for tb in win._dock_tab_bars()]
-    row = next(r for r in rows if "Browser" in r)
-    assert row[row.index("Browser") + 1] == "Sheets"
+    assert not hasattr(win, "sheets_tray")
+    assert all(d.windowTitle() != "Sheets" for d in win._sidebar_docks())
+    page = win._composer.views_panel
+    assert isinstance(page, SheetsTab)
+    assert isinstance(page.scenes, SceneList)
+    assert isinstance(page.sheets, SheetExplorer)
+    split = page.splitter
+    assert split.orientation() == Qt.Vertical
+    assert split.widget(0).isAncestorOf(page.scenes)
+    assert split.widget(1).isAncestorOf(page.sheets)
+    assert page.sheets._composer_win is win._composer
     _close(win)
 
 
-def test_a_layout_saved_before_the_sheets_tab_takes_it_beside_the_browser():
-    """A profile whose saved layout predates the tab (it does not name it):
-    the tab lands right after the Browser the first time, not outside the
-    tabs."""
-    from PySide6.QtCore import QSettings
-    from views.main_window import MainWindow
-    win = MainWindow()
-    st = QSettings()
-    known = [k for k in (st.value("ui/known_trays", []) or [])
-             if k != "tray_sheets"]
-    st.setValue("ui/known_trays", known)
-    win.removeDockWidget(win.sheets_tray)          # as Qt leaves it
-    win.sheets_tray.show()
-    win._place_new_trays(st)
-    win.show()
-    _app.processEvents()
-    assert win.sheets_tray in win.tabifiedDockWidgets(win.project_browser)
-    row = next([tb.tabText(i) for i in range(tb.count())]
-               for tb in win._dock_tab_bars()
-               if "Browser" in [tb.tabText(i) for i in range(tb.count())])
-    assert row[row.index("Browser") + 1] == "Sheets"
-    _close(win)
-
-
-def test_scenes_above_sheets_in_the_tab_and_in_the_composer():
-    from views.tray import ScenesPanel
-    win, *_ = _window()
-    tab = win.sheets_tray.tab
-    comp = win._ensure_composer().views_panel
-    for page in (tab, comp):
-        assert isinstance(page, SheetsTab)
-        assert isinstance(page.scenes, ScenesPanel)
-        assert isinstance(page.sheets, SheetExplorer)
-        split = page.splitter
-        assert split.orientation() == Qt.Vertical
-        assert split.widget(0).isAncestorOf(page.scenes)
-        assert split.widget(1).isAncestorOf(page.sheets)
-    assert tab.sheets._composer_win is None
-    assert comp.sheets._composer_win is win._composer
+def test_the_scenes_are_just_a_list_with_room_for_seven():
+    """Above the sheets the scenes are there to drag onto them: no buttons,
+    no hint, no renaming or deleting (that is the Scenes tab's), and
+    room for seven before the list scrolls."""
+    from PySide6.QtWidgets import QAbstractButton, QLabel
+    win, scene, page, *_ = _model_window()
+    panel = page.scenes
+    assert not panel.findChildren(QAbstractButton)
+    assert not panel.findChildren(QLabel)
+    item = panel.list.item(0)
+    assert item.text() == "Plan L1"
+    assert not item.flags() & Qt.ItemIsEditable
+    panel.list.setCurrentItem(item)
+    QTest.keyClick(panel.list, Qt.Key_Delete)
+    assert [v.name for v in scene.saved_views] == ["Plan L1",
+                                                   "North elevation"]
+    lst = panel.list
+    row = max(lst.fontMetrics().height(), lst.iconSize().height()) + 6
+    assert lst.maximumHeight() == SCENE_ROWS * row + 2 * lst.frameWidth()
+    assert SCENE_ROWS == 7
+    assert win.tray.scenes.findChildren(QAbstractButton)  # Scenes tab: all
     _close(win)
 
 
@@ -190,22 +235,49 @@ def test_the_tree_shows_folders_sheets_and_their_printers():
     _close(win)
 
 
-def test_each_sheet_lists_the_scenes_placed_on_it():
-    win, scene, explorer, *_ = _window()
-    g = _sheet(scene, "G")
-    g.frames = [MarcoVista(view_key="scene:Plan", scale_n=100.0),
-                MarcoVista(view_key="std:top", scale_n=50.0)]
-    scene.version += 1
-    explorer.refresh(force=True)
-    item = explorer.items[id(g)]
+def test_each_sheet_lists_its_scenes_and_flags_a_lost_one():
+    win, scene, page, a101, a102 = _model_window()
+    explorer = page.sheets
+    item = explorer.items[id(a101)]
     assert item.isExpanded()
-    names = [item.child(i).text(COL_NAME) for i in range(item.childCount())]
-    assert names[0].startswith("Plan") and "1:100" in names[0]
-    assert "1:50" in names[1]
-    # A scene row has no printer and opens its sheet.
-    assert item.child(0).icon(COL_PRINT).isNull()
-    explorer.activate(item.child(0))
-    assert win._composer.comp is g
+    assert [item.child(i).text(COL_NAME) for i in range(item.childCount())] \
+        == ["Plan L1 · 1:100", "Section A · 1:50"]
+    lost = item.child(1)
+    assert "Section A" in lost.toolTip(COL_NAME)
+    assert lost.icon(COL_NAME).cacheKey() == node_icon("warning").cacheKey()
+    assert item.child(0).icon(COL_PRINT).isNull()      # no printer of its own
+    _close(win)
+
+
+def test_deleting_a_scene_flags_its_frames_instead_of_breaking():
+    win, scene, page, a101, _a102 = _model_window()
+    explorer = page.sheets
+    first = explorer.items[id(a101.frames[0])]
+    assert first.icon(COL_NAME).cacheKey() == node_icon("scene").cacheKey()
+    del scene.saved_views[0]                           # «Plan L1» goes
+    explorer.refresh(force=True)
+    first = explorer.items[id(a101.frames[0])]
+    assert first.icon(COL_NAME).cacheKey() == node_icon("warning").cacheKey()
+    assert a101.frames[0].view_key == "scene:Plan L1"  # untouched
+    _close(win)
+
+
+def test_a_scene_marks_its_views_and_a_view_marks_its_scene():
+    win, scene, page, a101, a102 = _model_window()
+    explorer = page.sheets
+    page.scenes.list.setCurrentRow(0)                  # «Plan L1»
+    marked = explorer.related()
+    assert sorted(it.text(COL_NAME) for it in marked) == [
+        "Plan L1 · 1:100", "Plan L1 · 1:200"]
+    assert all(it.data(COL_NAME, Qt.UserRole + 1) for it in marked)
+    explorer.tree.setCurrentItem(explorer.items[id(a102.frames[0])])
+    assert page.scenes.list.item(0).data(Qt.UserRole + 1)
+    assert not page.scenes.list.item(1).data(Qt.UserRole + 1)
+    explorer.tree.setCurrentItem(explorer.items[id(a101.frames[1])])
+    assert not page.scenes.list.item(0).data(Qt.UserRole + 1)  # lost: none
+    page.scenes.list.setCurrentRow(1)                  # on no sheet
+    assert explorer.related() == []
+    assert not marked[0].data(COL_NAME, Qt.UserRole + 1)       # cleared
     _close(win)
 
 
@@ -219,6 +291,37 @@ def test_a_folder_opens_the_way_it_was_left():
     assert details.expanded
     _close(win)
 
+
+def test_a_sheet_added_in_the_composer_reaches_the_explorer():
+    win, scene, page, *_ = _model_window()
+    explorer = page.sheets
+    win._composer.show()
+    win._composer._show_page("views")              # on screen: it follows
+    _app.processEvents()
+    scene.compositions.append(Composicion(name="A103 Details"))
+    win._refresh_sheet_tabs()          # what the composer calls on add
+    assert [r[1] for r in _rows(explorer) if r[0] == 0][-1] == "A103 Details"
+    scene.compositions[2].name = "A103 Joints"
+    explorer._poll.timeout.emit()      # the composer's in-place edits
+    assert explorer.items[id(scene.compositions[2])].text(COL_NAME) == \
+        "A103 Joints"
+    _close(win)
+
+
+def test_the_filter_keeps_matches_with_their_folders():
+    win, scene, explorer, *_ = _window()
+    explorer.search.setText("d")              # Details and D
+    assert _rows(explorer, shown_only=True) == [
+        (0, "Plans", "on"), (1, "Details", "on"), (2, "D", "on")]
+    explorer.search.setText("plans")          # a folder: all of it shows
+    assert [r[1] for r in _rows(explorer, shown_only=True)] == [
+        "Plans", "Details", "D", "G"]
+    explorer.search.setText("")
+    assert len(_rows(explorer, shown_only=True)) == 5
+    _close(win)
+
+
+# ---- The printer -------------------------------------------------------------------
 
 def test_the_printer_is_one_undo_step():
     win, scene, explorer, *_ = _window()
@@ -256,18 +359,7 @@ def test_space_flips_the_printer_of_the_selection():
     _close(win)
 
 
-def test_the_filter_keeps_matches_with_their_folders():
-    win, scene, explorer, *_ = _window()
-    explorer.search.setText("d")              # Details and D
-    assert _rows(explorer, shown_only=True) == [
-        (0, "Plans", "on"), (1, "Details", "on"), (2, "D", "on")]
-    explorer.search.setText("plans")          # a folder: all of it shows
-    assert [r[1] for r in _rows(explorer, shown_only=True)] == [
-        "Plans", "Details", "D", "G"]
-    explorer.search.setText("")
-    assert len(_rows(explorer, shown_only=True)) == 5
-    _close(win)
-
+# ---- Renaming ----------------------------------------------------------------------
 
 def test_renaming_a_folder_is_one_undo_step():
     win, scene, explorer, plans, _details = _window()
@@ -278,7 +370,46 @@ def test_renaming_a_folder_is_one_undo_step():
     _close(win)
 
 
-# ---- Actions ----------------------------------------------------------------------
+def test_renaming_a_sheet_and_a_rename_to_the_same_name_does_nothing():
+    win, scene, page, a101, _a102 = _model_window()
+    explorer = page.sheets
+    explorer.items[id(a101)].setText(COL_NAME, "A-101")
+    assert a101.name == "A-101"
+    QTest.qWait(20)
+    assert explorer.items[id(a101)].text(COL_NAME) == "A-101"
+    assert win._composer.comp_combo.findText("A-101") >= 0
+    version = scene.version
+    explorer.items[id(a101)].setText(COL_NAME, "A-101")  # to itself
+    assert scene.version == version
+    _close(win)
+
+
+# ---- Opening -------------------------------------------------------------------------
+
+def test_a_double_click_opens_the_sheet_and_marks_it():
+    win, scene, explorer, *_ = _window()
+    g = _sheet(scene, "G")
+    explorer.activate(explorer.items[id(g)])
+    assert win._composer.comp is g
+    assert explorer.items[id(g)].font(COL_NAME).bold()
+    assert not explorer.items[id(_sheet(scene, "A"))].font(COL_NAME).bold()
+    _close(win)
+
+
+def test_a_scene_row_opens_its_sheet_and_a_folder_opens_nothing():
+    win, scene, page, a101, a102 = _model_window()
+    explorer = page.sheets
+    explorer.activate(explorer.items[id(a102.frames[1])])
+    assert win._composer.comp is a102
+    plans = SheetFolder("Plans")
+    scene.sheet_folders.append(plans)
+    explorer.refresh(force=True)
+    explorer.activate(explorer.items[id(plans)])
+    assert win._composer.comp is a102
+    _close(win)
+
+
+# ---- New, delete -------------------------------------------------------------------
 
 def test_a_new_folder_goes_into_the_selected_one():
     win, scene, explorer, plans, _details = _window()
@@ -336,40 +467,233 @@ def test_delete_takes_a_sheet_after_asking(monkeypatch):
                         lambda *a, **k: QMessageBox.Yes)
     _pick(explorer, _sheet(scene, "A"))
     QTest.keyClick(explorer.tree, Qt.Key_Delete)
-    assert [c.name for c in scene.compositions] == ["D", "G"]
+    assert _names(scene) == ["D", "G"]
     _close(win)
 
 
-def test_a_double_click_opens_the_sheet_in_the_composer():
-    win, scene, explorer, *_ = _window()
-    g = _sheet(scene, "G")
-    explorer.activate(explorer.items[id(g)])
-    assert win._composer.comp is g
-    # The composer's own copy marks the sheet open beside it.
-    page = win._composer.views_panel.sheets
-    page.refresh(force=True)
-    assert page.items[id(g)].font(COL_NAME).bold()
-    assert not page.items[id(_sheet(scene, "A"))].font(COL_NAME).bold()
-    _close(win)
-
-
-def test_a_double_click_on_a_folder_opens_nothing():
+def test_undoing_a_folder_never_brings_back_or_drops_a_sheet(monkeypatch):
+    """The composer makes and deletes sheets outside the tree's undo: a
+    sheet deleted there came back on undoing a folder, and one made there
+    vanished — while the composer still showed it."""
+    monkeypatch.setattr(QMessageBox, "question",
+                        lambda *a, **k: QMessageBox.Yes)
     win, scene, explorer, plans, _details = _window()
-    explorer.activate(explorer.items[id(plans)])
-    assert getattr(win, "_composer", None) is None or \
-        not win._composer.isVisible()
+    explorer.tree.clearSelection()
+    explorer.add_folder()                          # an undoable step
+    folder = scene.sheet_folders[-1]
+    _pick(explorer, folder)
+    explorer.add_sheet()                           # the composer's own
+    new = win._composer.comp
+    _pick(explorer, _sheet(scene, "A"))
+    explorer.delete_selected()                     # the composer's own
+    win.viewport.history.undo()                    # the folder goes
+    assert new in scene.compositions and new.folder_id is None
+    assert "A" not in _names(scene)
+    assert win._composer.comp in scene.compositions
+    explorer.refresh(force=True)
+    assert id(new) in explorer.items
     _close(win)
 
 
-def test_the_main_window_and_the_composer_list_the_same_tree():
+# ---- Moving: drag & drop and Alt+↑/↓ ----------------------------------------------
+
+def test_a_sheet_dropped_on_a_folder_goes_into_it():
+    win, scene, explorer, plans, details = _window()
+    _drag(explorer, _sheet(scene, "A"), onto=details)
+    assert _sheet(scene, "A").folder_id == details.id
+    assert _names(scene) == ["D", "A", "G"]           # the tabs follow
+    assert [win._composer.comp_combo.itemText(i)
+            for i in range(win._composer.comp_combo.count())] == \
+        ["D", "A", "G"]
+    win.viewport.history.undo()
+    assert _sheet(scene, "A").folder_id is None
+    assert _names(scene) == ["D", "G", "A"]
+    _close(win)
+
+
+def test_a_sheet_dropped_above_or_below_another_takes_that_place():
+    win, scene, explorer, plans, details = _window()
+    _drag(explorer, _sheet(scene, "A"), onto=_sheet(scene, "G"),
+          where=_ABOVE)
+    assert _sheet(scene, "A").folder_id == plans.id
+    assert _names(scene) == ["D", "A", "G"]
+    _drag(explorer, _sheet(scene, "A"), onto=_sheet(scene, "G"),
+          where=_BELOW)
+    assert _names(scene) == ["D", "G", "A"]
+    _close(win)
+
+
+def test_a_folder_moves_with_everything_inside_but_never_into_itself():
+    win, scene, explorer, plans, details = _window()
+    _drag(explorer, details, onto=None)               # empty space: the top
+    assert details.parent_id is None
+    assert _names(scene) == ["G", "D", "A"]
+    _drag(explorer, plans, onto=details)              # Plans into Details
+    assert plans.parent_id == details.id
+    _drag(explorer, details, onto=plans)              # into its own child
+    assert details.parent_id is None and plans.parent_id == details.id
+    _drag(explorer, details, onto=details)            # into itself
+    assert details.parent_id is None
+    _close(win)
+
+
+def test_a_scene_row_dropped_on_means_its_sheet():
+    win, scene, page, a101, a102 = _model_window()
+    explorer = page.sheets
+    folder = SheetFolder("Elevations")
+    scene.sheet_folders.append(folder)
+    explorer.refresh(force=True)
+    _drag(explorer, folder, onto=a101.frames[0])      # beside A101
+    assert folder.parent_id is None
+    _close(win)
+
+
+def test_alt_arrows_move_a_sheet_among_its_neighbours():
+    win, scene, page, a101, a102 = _model_window()
+    explorer = page.sheets
+    explorer.tree.setCurrentItem(explorer.items[id(a101)])
+    QTest.keyClick(explorer.tree, Qt.Key_Down, Qt.AltModifier)
+    assert scene.compositions == [a102, a101]
+    assert explorer.current_sheet() is a101
+    win.viewport.history.undo()
+    assert scene.compositions == [a101, a102]
+    _close(win)
+
+
+# ---- Scenes onto sheets ---------------------------------------------------------------
+
+def test_the_scene_list_drags_scenes_by_name():
+    from views.composer import SCENE_MIME
+    win, scene, page, *_ = _model_window()
+    lst = page.scenes.list
+    data = lst.mimeData([lst.item(0), lst.item(1)])
+    assert bytes(data.data(SCENE_MIME)).decode() == \
+        "Plan L1\nNorth elevation"
+    _close(win)
+
+
+def test_a_scene_dropped_on_a_sheet_is_placed_in_a_free_spot():
+    win, scene, page, a101, a102 = _model_window()
+    explorer = page.sheets
+    north = scene.saved_views[1]                      # on no sheet yet
+    assert outliner.unplaced_scenes(scene) == [north]
+    frames0 = list(a102.frames)
+    _drop_scenes(explorer, ["North elevation"], onto=a102)
+    new = [f for f in a102.frames if f not in frames0]
+    assert len(new) == 1 and new[0].view_key == "scene:North elevation"
+    for other in frames0:                             # nothing covered
+        f = new[0]
+        assert (f.x_mm >= other.x_mm + other.w_mm
+                or f.x_mm + f.w_mm <= other.x_mm
+                or f.y_mm >= other.y_mm + other.h_mm
+                or f.y_mm + f.h_mm <= other.y_mm)
+    assert outliner.unplaced_scenes(scene) == []
+    win._composer.history.undo()                      # the composer's undo
+    assert new[0] not in a102.frames
+    _close(win)
+
+
+def test_a_scene_dropped_on_a_scene_row_goes_onto_its_sheet():
+    win, scene, page, a101, a102 = _model_window()
+    _drop_scenes(page.sheets, ["North elevation"], onto=a101.frames[0])
+    assert any(f.view_key == "scene:North elevation" for f in a101.frames)
+    _close(win)
+
+
+def test_a_scene_dropped_on_no_sheet_makes_one_in_one_undo_step():
+    win, scene, page, a101, a102 = _model_window()
+    explorer = page.sheets
+    _drop_scenes(explorer, ["North elevation"], onto=None)
+    new = scene.compositions[-1]
+    assert new.name == "North elevation" and len(new.frames) == 1
+    win.viewport.history.undo()                       # sheet and view go
+    assert new not in scene.compositions
+    _close(win)
+
+
+def test_a_scene_dropped_on_a_folder_makes_a_sheet_in_it():
     win, scene, explorer, plans, _details = _window()
-    page = win._ensure_composer().views_panel.sheets
-    page.refresh(force=True)
-    assert _rows(page) == _rows(explorer)
-    _pick(explorer, plans)
-    explorer.add_folder()                          # made in the main window
-    page.refresh()
-    assert _rows(page) == _rows(explorer)
+    from core.saved_views import SavedView
+    scene.saved_views.append(SavedView.capture(
+        "Plan", scene, win.viewport.camera))
+    _drop_scenes(explorer, ["Plan"], onto=plans)
+    new = next(c for c in scene.compositions if c.name == "Plan")
+    assert new.folder_id == plans.id and len(new.frames) == 1
+    _close(win)
+
+
+def test_double_click_on_a_scene_places_it_on_the_open_sheet():
+    win, scene, page, a101, a102 = _model_window()
+    win._composer.show_sheet(1)                       # A102 open
+    frames0 = list(a102.frames)
+    page.scenes._on_activate(page.scenes.list.item(1))   # «North elevation»
+    new = [f for f in a102.frames if f not in frames0]
+    assert len(new) == 1
+    for other in frames0:
+        f = new[0]
+        assert (f.x_mm >= other.x_mm + other.w_mm
+                or f.x_mm + f.w_mm <= other.x_mm
+                or f.y_mm >= other.y_mm + other.h_mm
+                or f.y_mm + f.h_mm <= other.y_mm)
+    _close(win)
+
+
+def test_the_place_a_scene_menu_puts_it_on_that_sheet():
+    win, scene, page, a101, a102 = _model_window()
+    explorer = page.sheets
+    _pick(explorer, a101)
+    menu = explorer.build_menu(("sheet", a101))
+    sub = next(a.menu() for a in menu.actions()
+               if a.text() == "Place a scene here")
+    assert [a.text() for a in sub.actions()][0] == "North elevation"  # free
+    sub.actions()[0].trigger()
+    assert any(f.view_key == "scene:North elevation" for f in a101.frames)
+    _close(win)
+
+
+def test_the_scene_pictures_do_not_rebuild_the_list_nor_touch_the_document():
+    """A new icon is an item change to Qt: it used to go through the rename
+    path, touch the document and rebuild the list, which queued the
+    pictures again — the scenes flickered and the file read as modified."""
+    from PySide6.QtGui import QIcon, QPixmap
+    win, scene, page, *_ = _model_window()
+    pm = QPixmap(8, 8)
+    pm.fill(Qt.red)
+    panel = page.scenes
+    panel._icon_for = lambda name: QIcon(pm)
+    win._composer.show()
+    win._composer._show_page("views")
+    fills = []
+    real = panel.refresh
+    panel.refresh = lambda: (fills.append(1), real())
+    panel._shape = None                               # as if new scenes
+    panel.refresh()                                   # one fill, pictures queued
+    version = scene.version
+    for _ in range(40):
+        _app.processEvents()
+    assert len(fills) == 1
+    assert scene.version == version                   # nothing «modified»
+    assert not panel.list.item(0).icon().isNull()
+    _close(win)
+
+
+def test_creating_a_plan_shows_its_scene_in_the_composer():
+    def box(name, at):
+        mesh = Mesh()
+        x, y = at
+        mesh.add_face([__import__("PySide6.QtGui", fromlist=["QVector3D"])
+                       .QVector3D(x + dx, y + dy, 0.0)
+                       for dx, dy in ((0, 0), (1, 0), (1, 1), (0, 1))])
+        return Group(mesh, name=name)
+    win, scene, page, *_ = _model_window()
+    level1, level2 = box("Level 1", (0, 0)), box("Level 2", (3, 0))
+    scene.groups[:] = [level1, level2]
+    scene.version += 1
+    panel = win.project_browser.outliner
+    panel.refresh()
+    panel.create_plan(level2, 1.2, sheet=False)
+    current = page.scenes.list.currentItem()          # its scene, marked
+    assert current is not None and current.text() == "Plan Level 2"
     _close(win)
 
 
@@ -382,6 +706,7 @@ def test_the_sheet_menu_has_the_bar_s_actions_rename_and_delete():
     texts = _texts(explorer.build_menu(("sheet", g)))
     for want in ("Open sheet", "Rename… (F2)", "Duplicate sheet", "Delete",
                  "Exclude from Print all", "Print…", "Export PDF…",
+                 "Move up (Alt+↑)", "Move down (Alt+↓)",
                  "New sheet here", "New folder here"):
         assert want in texts, want
     _close(win)
@@ -435,6 +760,28 @@ def test_export_all_takes_the_marked_sheets_in_tree_order(tmp_path):
     _close(win)
 
 
+def test_the_composer_s_own_export_all_takes_the_same_sheets(tmp_path,
+                                                             monkeypatch):
+    from views.filedialogs import file_dialogs
+    win, scene, explorer, *_ = _window()
+    _sheet(scene, "G").print_in_all = False
+    monkeypatch.setattr(file_dialogs, "getSaveFileName",
+                        lambda *a, **k: (str(tmp_path / "c.pdf"), ""))
+    win._composer._on_export_all()
+    assert len(_pdf_pages(tmp_path / "c.pdf")) == 2      # D and A
+    _close(win)
+
+
+def test_the_selected_sheets_export_to_one_pdf(tmp_path):
+    win, scene, page, a101, a102 = _model_window()
+    asked = []
+    win._composer.export_all_pdf = lambda path, chosen=None: asked.append(
+        (path, chosen)) or []
+    page.sheets.export_sheets([a102], path=str(tmp_path / "out.pdf"))
+    assert asked == [(str(tmp_path / "out.pdf"), [a102])]
+    _close(win)
+
+
 def test_print_all_prints_the_marked_sheets_each_at_its_paper(tmp_path):
     from PySide6.QtPrintSupport import QPrinter
     win, scene, explorer, *_ = _window()
@@ -444,8 +791,8 @@ def test_print_all_prints_the_marked_sheets_each_at_its_paper(tmp_path):
     printer.setOutputFormat(QPrinter.PdfFormat)
     printer.setOutputFileName(str(tmp_path / "print.pdf"))
     printer.setFullPage(True)
-    comp = win._ensure_composer()
-    assert comp.print_sheets(sf.printed_sheets(scene), printer=printer)
+    assert win._composer.print_sheets(sf.printed_sheets(scene),
+                                      printer=printer)
     pages = _pdf_pages(tmp_path / "print.pdf")
     # D (A4 landscape), then G (A4 portrait).
     assert pages == [(842, 595), (595, 842)]
@@ -457,12 +804,13 @@ def test_nothing_marked_prints_nothing(monkeypatch):
     for c in scene.compositions:
         c.print_in_all = False
     called = []
-    comp = win._ensure_composer()
+    comp = win._composer
     monkeypatch.setattr(comp, "print_sheets",
                         lambda *a, **k: called.append(a))
     monkeypatch.setattr(comp, "export_all_pdf",
                         lambda *a, **k: called.append(a) or [])
     explorer.print_all()
     explorer.export_all("never.pdf")
+    comp._on_export_all()
     assert not called
     _close(win)

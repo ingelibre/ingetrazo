@@ -394,26 +394,18 @@ def test_a_row_dragged_reorders_the_scenes_in_one_undo_step(win):
     assert _rows(panel) == ["C", "A", "B"]
 
 
-def _sheet_list_scenes(panel):
-    """The scene rows of a «Views and sheets» list, top to bottom."""
-    from PySide6.QtWidgets import QTreeWidgetItemIterator
-    panel.refresh()
-    out = []
-    it = QTreeWidgetItemIterator(panel.tree)
-    while it.value() is not None:
-        data = it.value().data(0, Qt.UserRole)
-        if data and data[0] == "scene":
-            out.append(data[1].name)
-        it += 1
-    return out
+def _sheet_list_scenes(lst):
+    """The scenes of the composer's Sheets page list, top to bottom."""
+    lst.refresh()
+    return [lst.list.item(i).text() for i in range(lst.list.count())]
 
 
-def test_views_and_sheets_lists_the_scenes_in_the_new_order(win):
-    from views.outliner import SheetsPanel
+def test_the_sheets_page_lists_the_scenes_in_the_new_order(win):
+    from views.sheet_browser import SceneList
     panel = _scenes(win, "A", "B", "C")
     panel.drop_rows(("before", _view(win, "A")),
                     [panel.row_for(_view(win, "C"))])
-    assert _sheet_list_scenes(SheetsPanel(win)) == ["C", "A", "B"]
+    assert _sheet_list_scenes(SceneList(win)) == ["C", "A", "B"]
 
 
 # ---- 5. Undo for everything -------------------------------------------------
@@ -519,16 +511,6 @@ def test_a_name_another_scene_has_is_refused_and_nothing_to_undo(win):
     assert "already called" in win.statusBar().currentMessage()
 
 
-def test_rename_from_views_and_sheets_is_undoable_too(win):
-    from views.outliner import SheetsPanel
-    _scenes(win, "A")
-    view = _view(win, "A")
-    assert SheetsPanel(win).rename_scene(view, "Section")
-    assert view.name == "Section"
-    win.viewport.history.undo()
-    assert view.name == "A"
-
-
 def test_delete_is_still_undoable(win):
     panel = _scenes(win, "A", "B")
     panel.select_view(_view(win, "A"))
@@ -562,11 +544,12 @@ def test_the_mark_goes_with_its_scene_when_it_is_deleted(win):
     assert not any(_bold(panel))
 
 
-def test_a_scene_shown_from_views_and_sheets_is_marked_here(win):
-    from views.outliner import SheetsPanel
+def test_a_scene_shown_from_the_sheets_page_is_marked_here(win):
+    from views.sheet_browser import SceneList
     panel = _scenes(win, "A", "B")
     view = _view(win, "B")
-    SheetsPanel(win)._show_scene(view)
+    lst = SceneList(win)                     # no on_activate: shows it
+    lst._on_activate(lst.list.item(1))
     assert panel.shown is view
     assert panel.row_for(view).font(0).bold()
 

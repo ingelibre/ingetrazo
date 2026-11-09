@@ -3377,7 +3377,6 @@
  "This build of IngeTrazo has no printing support (Qt's print module is missing), so the sheets cannot be printed from here.\n\nExport all (PDF) gives you the same sheets, each at its exact paper size, ready to print.": "Cette version d’IngeTrazo n’a pas de prise en charge de l’impression (le module d’impression de Qt manque) : les planches ne peuvent pas être imprimées d’ici.\n\nTout exporter (PDF) vous donne les mêmes planches, chacune à son format exact, prêtes à imprimer.",
  "Delete folder (its sheets move one level up)": "Supprimer le dossier (ses planches remontent d’un niveau)",
  "Delete the selected sheets and folders (Delete) — a deleted folder moves what it holds one level up": "Supprimer les planches et dossiers sélectionnés (Suppr) — un dossier supprimé remonte son contenu d’un niveau",
- "Double-click a sheet to open it. The printer marks the sheets Print all and Export all take. Right-click for more.": "Double-cliquez sur une planche pour l’ouvrir. L’imprimante marque les planches que prennent Tout imprimer et Tout exporter. Clic droit pour plus.",
  "Exclude all from Print all": "Retirer toutes de Tout imprimer",
  "Exclude from Print all": "Retirer de Tout imprimer",
  "Export all (PDF): the sheets marked for printing into one PDF, each page at its own paper size": "Tout exporter (PDF) : les planches marquées pour l’impression dans un seul PDF, chaque page à son propre format",
@@ -3400,5 +3399,8 @@
  "SHEET": "PLANCHE",
  "LEGEND": "LÉGENDE",
  "FFL {z}": "NPF {z}",
- "SCALE {escala}": "ÉCH. {escala}"
+ "SCALE {escala}": "ÉCH. {escala}",
+ "Drag a scene onto a sheet. Double-click shows it.": "Glissez une scène sur une planche. Double-clic l’affiche.",
+ "Double-click a sheet to open it; drag sheets and folders to order them, and a scene onto a sheet to place it. The printer marks the sheets Print all and Export all take. Right-click for more.": "Double-cliquez sur une planche pour l’ouvrir ; glissez planches et dossiers pour les ordonner, et une scène sur une planche pour l’y placer. L’imprimante marque les planches que prennent Tout imprimer et Tout exporter. Clic droit pour plus.",
+ "Drag a scene onto a sheet. Double-click places it on the open sheet.": "Glissez une scène sur une planche. Double-clic la place sur la planche ouverte."
 }
