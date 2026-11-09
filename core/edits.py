@@ -48,6 +48,10 @@ from core.topology import (
 Segment = tuple[QVector3D, QVector3D]
 
 
+def _finite(p) -> bool:
+    return all(math.isfinite(c) for c in (p.x(), p.y(), p.z()))
+
+
 def plan_edge_commands(
     scene,
     segments: Sequence[Segment],
@@ -69,6 +73,11 @@ def plan_edge_commands(
     near.key = KeyMemo()            # nothing moves while a plan is made
 
     for a, b in segments:
+        if not (_finite(a) and _finite(b)):
+            # A NaN or infinite end is no place in the model; planned, it
+            # failed the commit deep inside (#466 «cannot convert float NaN
+            # to integer»). The segment is simply not drawn.
+            continue
         # The searches only look at what can touch the segment (a box test
         # far wider than the welding tolerance); the plan's own edits still
         # go to the full lists. Inside the Plaza's 25 797-face group every

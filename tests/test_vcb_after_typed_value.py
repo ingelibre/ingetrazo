@@ -93,3 +93,35 @@ def test_a_bare_number_reads_in_the_document_unit_as_on_the_canvas(win):
     _enter(vp, "400;300")
     _flush(win)
     assert win._vcb_value.text() == units.typed_value_text("400;300") == "400;300 mm"
+
+
+def test_a_hot_retype_shows_its_value_not_the_one_it_replaced(win):
+    # Seen in a tutorial (#859): a push committed at 4.04 m, then «15» +
+    # Enter with the tool idle redid it at 15 m, and the box went back to
+    # «4.04 m». The retype undoes and re-commits, so the stack keeps its
+    # length — "did something get drawn?" must see the new top command.
+    from PySide6.QtCore import QPointF
+    from tools.base import ToolContext
+    vp = win.viewport
+    vp.scene.units = {"length": "m", "precision": 2}
+    units.bind_scene(vp.scene)
+    V = QVector3D
+    vp.scene.mesh.add_face([V(0, 0, 0), V(4, 0, 0), V(4, 3, 0), V(0, 3, 0)])
+    vp.scene.version += 1
+    win._activate_tool("pushpull")
+    tool = vp.active_tool
+    tool.hovered_face = vp.scene.mesh.faces[0]
+    tool.on_click(ToolContext(viewport=vp, world=V(), screen=QPointF(0, 0),
+                              modifiers=Qt.NoModifier, snap=None))
+    assert tool.dragging
+    _enter(vp, "2")                       # typed mid-drag: commits 2 m
+    _flush(win)
+    assert not tool.dragging
+    assert win._vcb_value.text() == units.typed_value_text("2")
+    depth = len(vp.history.undo_stack)
+    _enter(vp, "3")                       # idle: the hot retype
+    _flush(win)
+    assert len(vp.history.undo_stack) == depth         # replaced, not stacked
+    assert max(v.z() for f in vp.scene.mesh.faces for v in f.vertices) \
+        == pytest.approx(3.0)
+    assert win._vcb_value.text() == units.typed_value_text("3")

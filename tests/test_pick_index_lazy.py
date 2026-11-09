@@ -66,6 +66,7 @@ def _lazy(v, on, cap=None):
     v._pick_lazy_memo = None
     v._pick_near_memo = None
     v._pick_live = None
+    v._pick_foot_keep = None
     getattr(v, "_inst_chunks", {}).clear()
     v._hover_hits_cache = None
 
@@ -102,7 +103,16 @@ def test_lazy_answers_equal_the_full_index(vp):
     assert lazy == full
 
 
-def test_only_the_placements_near_the_cursor_are_baked(vp):
+def _baking(monkeypatch):
+    # What the index bakes for a ray: with the experimental engine a ray
+    # bakes nothing (it answers for the lazy placements itself), so these
+    # watch the path that runs without it.
+    import views.viewport as vpm
+    monkeypatch.setattr(vpm, "_LAZY_NATIVE", False)
+
+
+def test_only_the_placements_near_the_cursor_are_baked(vp, monkeypatch):
+    _baking(monkeypatch)
     _lazy(vp, True)
     x, y = vp._world_to_pixel(_centre(vp, "C10"))
     vp.pick_face_any(x, y)
@@ -133,7 +143,8 @@ def test_a_ray_bakes_what_it_crosses(vp):
     assert d == pytest.approx(9.0, abs=1e-5)                 # top of C21
 
 
-def test_a_bounded_ray_bakes_only_what_it_can_reach(vp):
+def test_a_bounded_ray_bakes_only_what_it_can_reach(vp, monkeypatch):
+    _baking(monkeypatch)
     # Along the row j = 0 at mid-height: C00 (mirrored, x in [-1, 0]) is
     # 2 m from the origin, C10 6 m, … C50 18 m. The walkthrough's wall
     # feelers ask half a metre ahead; an unbounded ray baked every one of
@@ -260,3 +271,166 @@ def test_the_hovered_group_edge_comes_from_the_index_it_was_measured_on(vp):
         if e is not None and getattr(e, "group", None) is not None:
             assert _owner_holds(e)
         vp.pick_group(x, y)                             # must not raise
+
+
+
+def _live(v):
+    return set(getattr(v, "_pick_live", None) or ())
+
+
+def _far(v):
+    """Zoomed out: the cursor's footprint takes in several cubes."""
+    v.camera.fit_to(V(-60, -60, 0), V(80, 70, 1))
+    return v._world_to_pixel(V(7.5, 4.5, 1.0))
+
+
+def test_the_footprint_queries_of_one_event_share_the_cap(vp):
+    # The snap and the cursor's own query of one pointer move each brought
+    # in their own lot over the same spot (#158): now the lot is the
+    # event's, and the next event brings the next one.
+    _lazy(vp, True)
+    x, y = _far(vp)
+    vp._input_serial = None
+    vp._pick_materialize(("snap", x, y))
+    assert len(_live(vp)) >= 4               # what the spot takes in
+    _lazy(vp, True)
+    vp._PICK_NEW_PER_QUERY = 2
+    vp._input_serial = 1
+    vp._pick_materialize(("snap", x, y))
+    first = _live(vp)
+    assert len(first) == 2
+    vp._pick_materialize(("snap", x, y))
+    assert _live(vp) == first
+    vp._input_serial = 2
+    vp._pick_materialize(("snap", x, y))
+    assert len(_live(vp)) == 4 and first <= _live(vp)
+
+
+def test_without_an_input_event_each_query_has_its_own_cap(vp):
+    _lazy(vp, True)
+    vp._PICK_NEW_PER_QUERY = 2
+    vp._input_serial = None
+    x, y = _far(vp)
+    vp._pick_materialize(("snap", x, y))
+    vp._pick_materialize(("snap", x, y))
+    assert len(_live(vp)) == 4
+
+
+def test_a_ray_pick_is_not_held_back_by_the_footprint_lot(vp):
+    _lazy(vp, True)
+    vp._PICK_NEW_PER_QUERY = 1
+    vp._input_serial = 7
+    x, y = _far(vp)
+    vp._pick_materialize(("snap", x, y))           # the lot is spent
+    before = _live(vp)
+    assert len(before) == 1
+    g = next(g for g in vp.scene.groups if g.name == "C52")
+    cx, cy = vp._world_to_pixel(_centre(vp, "C52"))
+    vp._pick_materialize(("px", cx, cy))
+    assert id(g) in _live(vp) and len(_live(vp)) == 2
+
+
+def test_room_is_made_once_per_event(vp):
+    # The ray picks after the snap let go of what it had just brought in,
+    # and each change rebuilt the index: one clean-up per event (up to
+    # twice the cap meanwhile).
+    _lazy(vp, True, cap=12)                              # two cubes
+    vp._input_serial = 1
+    pts = [vp._world_to_pixel(_centre(vp, n)) for n in ("C00", "C11", "C22",
+                                                         "C33", "C52")]
+    for x, y in pts[:3]:
+        vp._pick_materialize(("px", x, y))
+    assert len(_live(vp)) == 2           # the first over the cap made room
+    vp._pick_materialize(("px", *pts[3]))
+    assert len(_live(vp)) == 3           # not again in the same event
+    vp._pick_materialize(("px", *pts[4]))
+    assert len(_live(vp)) == 4           # nor while within twice the cap
+    vp._input_serial = 2
+    vp._pick_materialize(("px", *pts[4]))
+    assert len(_live(vp)) == 2           # the next event makes room
+
+
+def test_the_kept_edge_projection_is_the_full_one(vp):
+    # Each lazy chunk's screen projection is kept while the view stays:
+    # the index rebuilt with new placements must read the same pixels
+    # as projecting every edge again.
+    import numpy as np
+    _lazy(vp, True, cap=6 * 12)
+    for name in ("C00", "C31", "C52", "C13", "C00", "C43"):
+        x, y = vp._world_to_pixel(_centre(vp, name))[:2]
+        vp._pick_index(near=("snap", x, y))
+        idx = vp._pick_index(near="skip")
+        got = vp._gedge_screen()
+        ax, ay, oka = vp._project_px(idx.gedge_a)
+        bx, by, okb = vp._project_px(idx.gedge_b)
+        for g, w in zip(got, (ax, ay, bx, by, oka & okb)):
+            assert np.array_equal(g, w)
+
+
+def test_a_footprint_that_cannot_all_fit_keeps_its_nearest_and_stops_changing(vp):
+    # Zoomed out over the plant of #158 the footprint met far more than the
+    # cap holds: each pointer move the first ray let go of what the last
+    # footprint brought in, and the footprint brought it in again — two
+    # rebuilds a move for the same set. Now it takes the nearest that fit
+    # in most of the cap, and those stay.
+    _lazy(vp, True, cap=18)                  # three cubes; the spot meets more
+    x, y = _far(vp)
+    vp._input_serial = 1
+    vp._pick_materialize(("snap", x, y))
+    foot = _live(vp)
+    assert 0 < len(foot) <= 2                # 0.8 of the cap: two cubes
+    import numpy as np
+    groups, lo, hi = vp._pick_lazy_table()[:3]
+    e = vp.camera.eye()
+    e = np.array([e.x(), e.y(), e.z()])
+    dist = {id(groups[int(i)]): float(np.linalg.norm(
+        np.clip(e, lo[int(i)], hi[int(i)]) - e))
+        for i in vp._pick_near_memo[1]}
+    assert len(dist) > len(foot)              # more than fit...
+    assert max(dist[k] for k in foot) <= min(
+        d for k, d in dist.items() if k not in foot)   # ...the nearest kept
+    others = [g for g in vp.scene.groups if id(g) not in foot]
+    for serial in range(2, 8):
+        vp._input_serial = serial
+        before = _live(vp)
+        vp._pick_materialize(("snap", x, y))
+        assert _live(vp) <= before, serial        # nothing brought in again
+        assert foot <= _live(vp)
+        for g in others[2 * serial:2 * serial + 2]:      # rays elsewhere
+            cx, cy = vp._world_to_pixel(_centre(vp, g.name))
+            vp._pick_materialize(("px", cx, cy))
+            assert id(g) in _live(vp)
+        assert foot <= _live(vp)
+
+
+def test_a_change_of_the_lazy_set_keeps_the_static_triangles_and_the_loose_part(vp):
+    # Each change of the lazy set rebuilds the index (#158): it joined the
+    # static triangles again (~100 MB on the plant) and walked the loose
+    # faces again. Kept while they are the same; the answers do not move.
+    from core.group import Group
+    vp.scene.mesh.add_face([V(-1, -1, 0), V(-0.5, -1, 0), V(-0.5, -0.5, 0),
+                            V(-1, -0.5, 0)])
+    big = Group(_cube(), name="fijo")                 # a group: static
+    vp.scene.groups.append(big)
+    vp.scene.version += 1
+    pts = [_centre(vp, f"C{i}{j}") for i in range(6) for j in range(4)]
+    pts += [V(-0.75, -0.75, 0.0), V(0.5, 0.5, 1.0)]
+    _lazy(vp, False)
+    full = _answers(vp, pts)
+    _lazy(vp, True)
+    x, y = vp._world_to_pixel(_centre(vp, "C00"))
+    a = vp._pick_index(near=("px", x, y))
+    x, y = vp._world_to_pixel(_centre(vp, "C53"))
+    b = vp._pick_index(near=("px", x, y))
+    assert a is not b and b.own_spans != a.own_spans  # the lazy set changed
+    assert b.tri_v0 is a.tri_v0 and b.tri_ent is a.tri_ent
+    assert b.entities[:1] == a.entities[:1]
+    assert _answers(vp, pts) == full
+    vp.scene.mesh.add_face([V(-3, -3, 0), V(-2.5, -3, 0), V(-2.5, -2.5, 0)])
+    vp.scene.version += 1                              # the loose part changed
+    c = vp._pick_index(near=("px", x, y))
+    assert c.tri_v0 is not b.tri_v0
+    assert len(c.tri_v0) == len(b.tri_v0) + 1
+    lazy_after = _answers(vp, pts)
+    _lazy(vp, False)
+    assert lazy_after == _answers(vp, pts)            # offsets moved along

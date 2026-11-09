@@ -13,7 +13,8 @@ into the VCB.
 """
 from __future__ import annotations
 
-from PySide6.QtGui import QVector3D
+from PySide6.QtCore import QPointF, QRectF, Qt
+from PySide6.QtGui import QColor, QPainter, QPen, QVector3D
 
 from core.edits import build_add_edges
 from core.history import (
@@ -44,10 +45,29 @@ class OffsetTool(Tool):
     description = (
         "Draw a copy of a face's outline at an even distance inside "
         "or outside it — walls with thickness.")
-    uses_snap = False  # picks a face; no snap markers
+    allow_inferences = False  # no «from point» / «level with» lines while dragging
     vcb_label = "Offset"
     wireframe_color = (0.13, 0.17, 0.23, 1.0)
     wireframe_depth_tested = True
+
+    #: The snap kinds the Offset accepts (and the engine is restricted to,
+    #: ``Tool.allowed_snap_kinds``): named points of the model — a vertex
+    #: (endpoint), a midpoint, a centre, an intersection, the origin. The
+    #: offset is measured from the reference edge, so an edge's body
+    #: (``on_edge``), a face (``on_face``) and the engine's own directional
+    #: inferences neither set the distance nor show a marker: they follow the
+    #: cursor and are not reliable snaps.
+    allowed_snap_kinds = frozenset((
+        "endpoint", "midpoint", "arc_midpoint", "center", "origin",
+        "component_origin", "intersection", "intersection_edge",
+        "intersection_face",
+    ))
+
+    @property
+    def uses_snap(self) -> bool:
+        """Only during the drag, whose distance snaps to named model points.
+        Before it the click picks a face or a run of edges, not a point."""
+        return self.dragging
 
     def __init__(self) -> None:
         self.hovered_face: Face | None = None
@@ -69,6 +89,7 @@ class OffsetTool(Tool):
         #: starts the offset instead of picking.
         self._armed: bool = False
         self._last: dict | None = None      # hot retype of the last offset
+        self._offset_reference: tuple[QVector3D, QVector3D, QVector3D] | None = None
 
     # ---- Lifecycle ----------------------------------------------------------
     def on_activate(self, viewport) -> None:
@@ -87,6 +108,8 @@ class OffsetTool(Tool):
         viewport = ctx.viewport
         if not self.dragging:
             if self._armed:
+                self._update_hover_reference(viewport, ctx.screen.x(), ctx.screen.y())
+                viewport.update()
                 return                       # the run is chosen; click starts
             self.hovered_face = viewport.pick_face(ctx.screen.x(), ctx.screen.y())
             self.hovered_edge = None
@@ -96,8 +119,10 @@ class OffsetTool(Tool):
                 self.hovered_edge = (pick_edge(ctx.screen.x(), ctx.screen.y())
                                      if pick_edge is not None else None)
             viewport.set_hover(self.hovered_face or self.hovered_edge)
+            self._update_hover_reference(viewport, ctx.screen.x(), ctx.screen.y())
+            viewport.update()
             return
-        cursor = self._cursor_on_plane(viewport, ctx.screen.x(), ctx.screen.y())
+        cursor = self._drag_cursor(ctx)
         if cursor is not None and self._ref_point is not None:
             self.distance = QVector3D.dotProduct(cursor - self._ref_point, self._ref_inward)
         viewport.update()
@@ -127,6 +152,9 @@ class OffsetTool(Tool):
             viewport.set_hover(None)
             viewport.update()
             return
+        cursor = self._drag_cursor(ctx)
+        if cursor is not None and self._ref_point is not None:
+            self.distance = QVector3D.dotProduct(cursor - self._ref_point, self._ref_inward)
         if abs(self.distance) < 1e-6:
             return
         self._commit(viewport)
@@ -181,10 +209,58 @@ class OffsetTool(Tool):
         if not self.dragging or self._ref_point is None:
             return None
         inward = self._ref_inward if self._ref_inward is not None else QVector3D(0, 0, 0)
-        mid = self._ref_point + inward * (self.distance * 0.5)
+        start = (self._offset_reference[2] if self._offset_reference is not None
+                 else self._ref_point)
+        mid = start + inward * (self.distance * 0.5)
         return (fmt_len(abs(self.distance)), mid)
 
     # ---- Visual preview -----------------------------------------------------
+    def draw_overlay(self, viewport, painter: QPainter) -> None:
+        """Show the boundary and the clicked start of the offset distance."""
+        if self._offset_reference is None:
+            return
+        a, b, start = self._offset_reference
+        hidden = getattr(viewport, "_occluded_on_screen", lambda _point: False)
+        if hidden(start):
+            return
+        pixel = viewport._world_to_pixel(start)
+        if pixel is None:
+            return
+        red = QColor(195, 28, 44)
+        painter.save()
+        try:
+            # A white under-stroke separates the reference from both the
+            # model outline and a stippled face highlight.
+            if not hidden((a + b) * 0.5):
+                segment = viewport._segment_to_pixels(a, b)
+                if segment is not None:
+                    p0, p1 = (QPointF(*xy) for xy in segment)
+                    painter.setPen(QPen(QColor(255, 255, 255, 235), 4.0))
+                    painter.drawLine(p0, p1)
+                    painter.setPen(QPen(QColor(0, 1, 255), 2.0))
+                    painter.drawLine(p0, p1)
+            if self.dragging and self._ref_inward is not None:
+                end = start + self._ref_inward * self.distance
+                segment = viewport._segment_to_pixels(start, end)
+                if segment is not None:
+                    pen = QPen(red, 1.25, Qt.DashLine)
+                    pen.setDashPattern([4.0, 3.0])
+                    painter.setPen(pen)
+                    painter.drawLine(*(QPointF(*xy) for xy in segment))
+                    target = viewport._world_to_pixel(end)
+                    if target is not None:
+                        painter.setBrush(QColor(255, 255, 255))
+                        painter.drawEllipse(QPointF(*target), 2.5, 2.5)
+            px, py = pixel
+            square = QRectF(px - 4.0, py - 4.0, 8.0, 8.0)
+            painter.setPen(QPen(QColor(255, 255, 255), 3.5))
+            painter.setBrush(red)
+            painter.drawRect(square)
+            painter.setPen(QPen(red, 1.2))
+            painter.drawRect(square)
+        finally:
+            painter.restore()
+
     def rubber_band_lines(self):
         if not self.dragging or not self._loop or abs(self.distance) < 1e-6:
             return []
@@ -200,6 +276,15 @@ class OffsetTool(Tool):
         return offset_chain(self._loop, self._normal, self.distance)
 
     # ---- Internals ----------------------------------------------------------
+    def _drag_cursor(self, ctx) -> QVector3D | None:
+        """The world point the drag distance is measured from: the cursor's
+        snapped point when it names a model point (an endpoint, a midpoint,
+        …), else the ray cast onto the face's plane."""
+        snap = getattr(ctx, "snap", None)
+        if snap is not None and snap.kind in self.allowed_snap_kinds:
+            return QVector3D(snap.point)
+        return self._cursor_on_plane(ctx.viewport, ctx.screen.x(), ctx.screen.y())
+
     def _pick_reference(self, viewport, sx, sy) -> None:
         """Lock onto the boundary edge nearest the click; offset is measured as
         the cursor's perpendicular distance from it (so dragging across that edge
@@ -215,6 +300,49 @@ class OffsetTool(Tool):
         e = (b - a).normalized()
         self._ref_point = QVector3D(a)
         self._ref_inward = QVector3D.crossProduct(self._normal.normalized(), e).normalized()
+        self._show_reference(a, b, cursor)
+
+    def _show_reference(self, a, b, cursor) -> None:
+        """Keep a display anchor on the edge, without moving the math anchor."""
+        if cursor is None:
+            self._offset_reference = None
+            return
+        delta = b - a
+        length_sq = QVector3D.dotProduct(delta, delta)
+        t = (max(0.0, min(1.0, QVector3D.dotProduct(cursor - a, delta) / length_sq))
+             if length_sq >= 1e-12 else 0.0)
+        self._offset_reference = (QVector3D(a), QVector3D(b), a + delta * t)
+
+    def _update_hover_reference(self, viewport, sx, sy) -> None:
+        """Preview the same nearest boundary that the first click will use."""
+        self._offset_reference = None
+        if self._armed and self._loop:
+            points, closed, normal = self._loop, self._closed, self._normal
+        elif self.hovered_face is not None:
+            points, closed = self.hovered_face.vertices, True
+            normal = self.hovered_face.normal()
+        elif self.hovered_edge is not None:
+            run = _run_from_edge(self.hovered_edge)
+            if run is None:
+                return
+            points, closed = run
+            normal = _newell(points)
+        else:
+            return
+        if normal is None or not points:
+            return
+        origin, direction = viewport._pixel_to_ray(sx, sy)
+        if origin is None or direction is None:
+            return
+        denom = QVector3D.dotProduct(direction, normal)
+        if abs(denom) < 1e-9:
+            return
+        t = QVector3D.dotProduct(points[0] - origin, normal) / denom
+        cursor = origin + direction * t
+        segments = _segments(points, closed)
+        if segments:
+            a, b = min(segments, key=lambda seg: _point_segment_distance(cursor, *seg))
+            self._show_reference(a, b, cursor)
 
     def _cursor_on_plane(self, viewport, sx, sy):
         """Cast the cursor ray onto the base face's plane."""
@@ -449,6 +577,7 @@ class OffsetTool(Tool):
         self._chain = False
         self._closed = True
         self._armed = False
+        self._offset_reference = None
 
 
 def _segments(points: list, closed: bool) -> list:

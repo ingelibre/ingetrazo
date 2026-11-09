@@ -21,6 +21,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+from functools import lru_cache
 
 #: Fallback site when the model has no geographic datum yet: Arequipa.
 DEFAULT_LAT = -16.409
@@ -129,6 +130,7 @@ def default_utc_offset(lon: float) -> int:
     return int(round(lon / 15.0))
 
 
+@lru_cache(maxsize=64)      # 288 sun positions, asked at every panel refresh
 def daylight_minutes(lat: float, lon: float, month: int, day: int,
                      utc_offset: int | None = None, year: int = 2026,
                      step: int = 5) -> tuple[int, int] | None:

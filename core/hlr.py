@@ -63,18 +63,26 @@ def _to_cam(points: np.ndarray, eye, right, up, fwd) -> np.ndarray:
 
 # ── Scene collection ────────────────────────────────────────────────────────
 
-def collect_geometry(scene):
+def collect_geometry(scene, layers: bool = False):
     """World-space triangles (T,3,3) and edge segments (E,2,3) of every
     visible, non-billboard entity; instance groups are baked through their
     transform. Soft edges come back separately with their two face normals
-    (silhouette test happens per view)."""
+    (silhouette test happens per view).
+
+    ``layers=True`` also returns, for every hard and soft edge, the layer
+    its line is inked with on a sheet — its own, else its object's (the
+    insides of an object follow the object): ``(tris, hard, soft,
+    hard_layers, soft_layers)``."""
     from core.group import world_mesh
+    from core.layers import DEFAULT_LAYER, layer_of
 
     tris: list = []
     hard: list = []
     soft: list = []          # (p0, p1, n_a, n_b) — n_b None for boundaries
+    hard_l: list = []
+    soft_l: list = []
 
-    def eat_mesh(mesh, visible=lambda _e: True):
+    def eat_mesh(mesh, visible=lambda _e: True, owner=DEFAULT_LAYER):
         for face in mesh.faces:
             if not visible(face):
                 continue
@@ -89,6 +97,8 @@ def collect_geometry(scene):
             p1 = (e.v1.position.x(), e.v1.position.y(), e.v1.position.z())
             if getattr(e, "hidden", False):
                 continue
+            own = layer_of(e)
+            tag = own if own != DEFAULT_LAYER else owner
             if getattr(e, "soft", False):
                 fs = [f for f in e.faces if visible(f)]
                 if not fs:
@@ -99,8 +109,10 @@ def collect_geometry(scene):
                              (na.x(), na.y(), na.z()),
                              None if nb is None
                              else (nb.x(), nb.y(), nb.z())))
+                soft_l.append(tag)
             else:
                 hard.append((p0, p1))
+                hard_l.append(tag)
 
     eat_mesh(scene.loose_mesh, visible=scene.entity_visible)
     for g in scene.groups:
@@ -108,7 +120,9 @@ def collect_geometry(scene):
             continue
         mesh = (world_mesh(g) if g.xform is not None or g.children
                 else g.mesh)
-        eat_mesh(mesh)
+        eat_mesh(mesh, owner=layer_of(g))
+    if layers:
+        return tris, hard, soft, hard_l, soft_l
     return tris, hard, soft
 
 
@@ -563,15 +577,21 @@ class HlrDrawing:
     plane (``segs`` (N,4)), their world endpoints (``world`` (N,2,3)),
     a class per segment (``kinds`` (N,) int8 — KIND_EDGE / KIND_PROFILE /
     KIND_CUT) and the closed section-cut rings to fill (``loops``, a list
-    of (M,2) arrays in the camera plane)."""
+    of (M,2) arrays in the camera plane). ``layers`` — only when asked
+    for — is the layer each segment is inked with ((N,) object array of
+    names; ``None`` for a section-cut chord, which keeps the cut's pen)."""
 
-    __slots__ = ("segs", "world", "kinds", "loops")
+    __slots__ = ("segs", "world", "kinds", "loops", "layers", "styles")
 
-    def __init__(self, segs, world, kinds, loops):
+    def __init__(self, segs, world, kinds, loops, layers=None):
         self.segs = segs
         self.world = world
         self.kinds = kinds
         self.loops = loops
+        self.layers = layers
+        #: ``{layer: (rgb, linetype, weight)}`` a sheet fills in for the
+        #: exporters (core.layers.line_styles); ``None`` until it does.
+        self.styles = None
 
     def __len__(self) -> int:
         return len(self.segs)
@@ -602,16 +622,19 @@ def _surface_at(p, depth, tv2, tvz, tol) -> bool:
     return bool(np.any(inside & (z <= depth + tol)))
 
 
-def _drop_hidden_under_visible(segs, world, kinds, tol: float):
+def _drop_hidden_under_visible(segs, world, kinds, tol: float, tags=None):
     """A hidden line that falls on a visible one is not drawn — the
     visible line wins (the back edges of a wall seen from the front lie
     exactly under its front outline). Segments are grouped by their line
     (direction and offset, rounded), so this stays linear in the drawing
     and each hidden piece is only compared with the visible pieces on its
     own line."""
+    def done(*arrays):
+        return arrays if tags is not None else arrays[:3]
+
     hid = np.nonzero(kinds == KIND_HIDDEN)[0]
     if not len(hid):
-        return segs, world, kinds
+        return done(segs, world, kinds, tags)
     atol = 1e-6                                   # radians
     inv_d = 1.0 / max(tol, 1e-12)
 
@@ -636,12 +659,13 @@ def _drop_hidden_under_visible(segs, world, kinds, tol: float):
         if ks is not None:
             lines.setdefault(ks[0], []).append(ks[1])
     if not lines:
-        return segs, world, kinds
-    keep_s, keep_w, keep_k = [], [], []
+        return done(segs, world, kinds, tags)
+    keep_s, keep_w, keep_k, keep_t = [], [], [], []
     for i in range(len(segs)):
+        tag = tags[i] if tags is not None else None
         if kinds[i] != KIND_HIDDEN:
             keep_s.append(segs[i]); keep_w.append(world[i])
-            keep_k.append(kinds[i])
+            keep_k.append(kinds[i]); keep_t.append(tag)
             continue
         ks = key_and_span(segs[i])
         if ks is None:
@@ -656,7 +680,7 @@ def _drop_hidden_under_visible(segs, world, kinds, tol: float):
                 cover.extend(lines.get((ka + da, ko + do), ()))
         if not cover:
             keep_s.append(segs[i]); keep_w.append(world[i])
-            keep_k.append(kinds[i])
+            keep_k.append(kinds[i]); keep_t.append(tag)
             lines_here.setdefault((ka, ko), []).append((lo, hi))
             continue
         span = hi - lo
@@ -682,15 +706,16 @@ def _drop_hidden_under_visible(segs, world, kinds, tol: float):
             keep_s.append((x0 + a * (x1 - x0), y0 + a * (y1 - y0),
                            x0 + b * (x1 - x0), y0 + b * (y1 - y0)))
             keep_w.append((w0 + a * (w1 - w0), w0 + b * (w1 - w0)))
-            keep_k.append(KIND_HIDDEN)
+            keep_k.append(KIND_HIDDEN); keep_t.append(tag)
             lines_here.setdefault((ka, ko), []).append(
                 (lo + t0 * span, lo + t1 * span))
-    return (np.asarray(keep_s, dtype=float).reshape(-1, 4),
-            np.asarray(keep_w, dtype=float).reshape(-1, 2, 3),
-            np.asarray(keep_k, dtype=np.int8))
+    return done(np.asarray(keep_s, dtype=float).reshape(-1, 4),
+                np.asarray(keep_w, dtype=float).reshape(-1, 2, 3),
+                np.asarray(keep_k, dtype=np.int8),
+                np.asarray(keep_t, dtype=object))
 
 
-def _merge_collinear(segs, world, kinds, tol: float):
+def _merge_collinear(segs, world, kinds, tol: float, tags=None):
     """Join runs of segments of one class that meet end to end and run
     collinear in 3D — the chords of a section through a triangulated face
     meet at the triangle's diagonal, an edge comes back from the
@@ -698,7 +723,7 @@ def _merge_collinear(segs, world, kinds, tol: float):
     round-cap seams), fewer DXF lines, honest anchor points."""
     n = len(segs)
     if n < 2:
-        return segs, world, kinds
+        return (segs, world, kinds) + ((tags,) if tags is not None else ())
     inv = 1.0 / tol
     cells: dict = {}
     for i in range(n):
@@ -715,7 +740,7 @@ def _merge_collinear(segs, world, kinds, tol: float):
                     yield i, end
 
     used = np.zeros(n, dtype=bool)
-    out_s, out_w, out_k = [], [], []
+    out_s, out_w, out_k, out_t = [], [], [], []
 
     def follow(i, end, wdir):
         """From segment i's endpoint ``end`` walk over collinear
@@ -727,6 +752,8 @@ def _merge_collinear(segs, world, kinds, tol: float):
             for j, jend in at(p2[0], p2[1]):
                 if j == i or used[j] or kinds[j] != kinds[i]:
                     continue
+                if tags is not None and tags[j] != tags[i]:
+                    continue            # one layer's line never joins another's
                 q2 = segs[j, 2 * jend:2 * jend + 2]
                 if abs(q2[0] - p2[0]) > tol or abs(q2[1] - p2[1]) > tol:
                     continue
@@ -754,8 +781,10 @@ def _merge_collinear(segs, world, kinds, tol: float):
         used[i] = True
         d = world[i, 1] - world[i, 0]
         ln = float(np.linalg.norm(d))
+        tag = tags[i] if tags is not None else None
         if ln < 1e-15:
             out_s.append(segs[i]); out_w.append(world[i]); out_k.append(kinds[i])
+            out_t.append(tag)
             continue
         wdir = d / ln
         b2, bw = follow(i, 1, wdir)
@@ -763,14 +792,17 @@ def _merge_collinear(segs, world, kinds, tol: float):
         out_s.append((a2[0], a2[1], b2[0], b2[1]))
         out_w.append((aw, bw))
         out_k.append(kinds[i])
-    return (np.asarray(out_s, dtype=np.float64).reshape(-1, 4),
-            np.asarray(out_w, dtype=np.float64).reshape(-1, 2, 3),
-            np.asarray(out_k, dtype=np.int8))
+        out_t.append(tag)
+    out = (np.asarray(out_s, dtype=np.float64).reshape(-1, 4),
+           np.asarray(out_w, dtype=np.float64).reshape(-1, 2, 3),
+           np.asarray(out_k, dtype=np.int8))
+    return out + ((np.asarray(out_t, dtype=object),) if tags is not None
+                  else ())
 
 
 def hlr_drawing(scene, camera, geometry=None, profiles: bool = True,
                 fills: bool = True, caps: bool = True,
-                hidden: bool = False) -> HlrDrawing:
+                hidden: bool = False, layers: bool = False) -> HlrDrawing:
     """The full line drawing of *scene* under *camera* (parallel): visible
     segments classified as edge / profile / cut, plus the section-cut
     rings to fill. :func:`hlr_view` is the segments-only view of this.
@@ -804,9 +836,18 @@ def hlr_drawing(scene, camera, geometry=None, profiles: bool = True,
     tris (T,3,3), hard (E,2,3), soft (S,2,3), soft_n (S,2,3) with NaN for
     an open boundary's missing second normal). Skips the per-face Python
     walk of :func:`collect_geometry` — 5 s on a 106k-triangle fountain —
-    and runs the silhouette rule vectorised."""
+    and runs the silhouette rule vectorised.
+
+    `layers=True` tags every segment with the layer it is inked with
+    (`HlrDrawing.layers`) — what a sheet needs to draw each layer with its
+    own colour, line type and weight. It walks the model itself (the fast
+    `geometry` carries no layers), so it is asked for only when a layer
+    has a line of its own."""
     soft_n = None
-    if geometry is None:
+    htags = stags = None
+    if layers:
+        tris, hard, soft, htags, stags = collect_geometry(scene, layers=True)
+    elif geometry is None:
         tris, hard, soft = collect_geometry(scene)
     else:
         tris, hard, soft, soft_n = geometry
@@ -820,8 +861,15 @@ def hlr_drawing(scene, camera, geometry=None, profiles: bool = True,
         if soft_n is not None:          # the clipper walks tuple lists
             tris, hard, soft = _geometry_as_lists(tris, hard, soft, soft_n)
             soft_n = None
-        tris, hard, soft, cut_edges = clip_to_section(
-            tris, hard, soft, sp, split_cuts=True)
+        if htags is None:
+            tris, hard, soft, cut_edges = clip_to_section(
+                tris, hard, soft, sp, split_cuts=True)
+        else:
+            # Clipped layer by layer, so each piece keeps its tag.
+            tris, _h, _s, cut_edges = clip_to_section(tris, [], [], sp,
+                                                      split_cuts=True)
+            hard, htags = _clip_tagged(hard, htags, sp, soft=False)
+            soft, stags = _clip_tagged(soft, stags, sp, soft=True)
     _e, _r, _u, fwd = camera_basis(camera)
 
     def empty_drawing():
@@ -843,14 +891,17 @@ def hlr_drawing(scene, camera, geometry=None, profiles: bool = True,
             return empty_drawing()
     else:
         # silhouette rule for soft edges
-        for p0, p1, na, nb in soft:
+        for si, (p0, p1, na, nb) in enumerate(soft):
             fa = float(np.dot(np.asarray(na), fwd))
             if nb is None:
                 hard.append((p0, p1))   # open boundary: always a profile
             else:
                 fb = float(np.dot(np.asarray(nb), fwd))
-                if (fa < 0.0) != (fb < 0.0):
-                    hard.append((p0, p1))
+                if (fa < 0.0) == (fb < 0.0):
+                    continue
+                hard.append((p0, p1))
+            if htags is not None:
+                htags.append(stags[si])
         if not hard and not cut_edges:
             return empty_drawing()
     # Row layout of E: [hard edges | soft silhouettes | cut chords] — the
@@ -917,6 +968,9 @@ def hlr_drawing(scene, camera, geometry=None, profiles: bool = True,
         occ = native.HlrOccluders(np.ascontiguousarray(TC))
         n_off, n_spans = occ.visible_spans(
             np.ascontiguousarray(A), np.ascontiguousarray(B), float(eps))
+    out_t: list = []
+    row_tags = (list(htags) + [None] * len(cut_edges)
+                if htags is not None else None)
     for i in range(len(A)):
         a2, b2 = A[i, :2], B[i, :2]
         az, bz = A[i, 2], B[i, 2]
@@ -966,6 +1020,7 @@ def hlr_drawing(scene, camera, geometry=None, profiles: bool = True,
                 continue
             out.append((p[0], p[1], q[0], q[1]))
             out_k.append(KIND_HIDDEN)
+            out_t.append(row_tags[i] if row_tags is not None else None)
             w0, w1 = E[i, 0, :], E[i, 1, :]
             out_w.append((w0 + t0 * (w1 - w0), w0 + t1 * (w1 - w0)))
         for t0, t1 in spans:
@@ -1005,6 +1060,7 @@ def hlr_drawing(scene, camera, geometry=None, profiles: bool = True,
                         kind = KIND_PROFILE
             out.append((p[0], p[1], q[0], q[1]))
             out_k.append(kind)
+            out_t.append(row_tags[i] if row_tags is not None else None)
             w0, w1 = E[i, 0, :], E[i, 1, :]
             out_w.append((w0 + t0 * (w1 - w0), w0 + t1 * (w1 - w0)))
     if probes:
@@ -1020,13 +1076,34 @@ def hlr_drawing(scene, camera, geometry=None, profiles: bool = True,
     world = np.asarray(out_w) if out_w else np.empty((0, 2, 3))
     kinds = (np.asarray(out_k, dtype=np.int8) if out_k
              else np.empty((0,), dtype=np.int8))
+    tags = np.asarray(out_t, dtype=object) if row_tags is not None else None
     if len(segs) > 1:
-        segs, world, kinds = _merge_collinear(segs, world, kinds,
-                                              ext_e * 1e-9)
+        merged = _merge_collinear(segs, world, kinds, ext_e * 1e-9, tags)
+        segs, world, kinds = merged[:3]
+        tags = merged[3] if tags is not None else None
     if hidden and len(segs):
-        segs, world, kinds = _drop_hidden_under_visible(
-            segs, world, kinds, max(ext_e * 1e-6, 1e-9))
-    return HlrDrawing(segs, world, kinds, loops if fills else [])
+        kept = _drop_hidden_under_visible(
+            segs, world, kinds, max(ext_e * 1e-6, 1e-9), tags)
+        segs, world, kinds = kept[:3]
+        tags = kept[3] if tags is not None else None
+    return HlrDrawing(segs, world, kinds, loops if fills else [], tags)
+
+
+def _clip_tagged(items, tags, plane, soft: bool):
+    """`clip_to_section` for edges that carry a layer tag each: clipped
+    one tag at a time, so every surviving piece keeps its own."""
+    by_tag: dict = {}
+    for item, tag in zip(items, tags):
+        by_tag.setdefault(tag, []).append(item)
+    out, out_tags = [], []
+    for tag, group in by_tag.items():
+        if soft:
+            _t, _h, kept, _c = clip_to_section([], [], group, plane, True)
+        else:
+            _t, kept, _s, _c = clip_to_section([], group, [], plane, True)
+        out.extend(kept)
+        out_tags.extend([tag] * len(kept))
+    return out, out_tags
 
 
 def hlr_view(scene, camera, return_world: bool = False, geometry=None):

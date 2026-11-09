@@ -51,3 +51,48 @@ def test_every_language_has_every_message(path):
     data = json.loads(path.read_text(encoding="utf-8"))
     missing = [k for k in source if k not in data]
     assert not missing, f"{len(missing)} messages missing: {missing[:3]}"
+
+
+def test_traditional_chinese_is_offered_under_its_own_name():
+    """The file name is the language code, with a hyphen like ``zh-CN``: with
+    an underscore the system's language would not find it (#1010)."""
+    assert "zh-TW" in available_languages()
+    assert LANGUAGE_NAMES["zh-TW"] == "正體中文"
+
+
+def test_bulgarian_is_offered_under_its_own_name():
+    """Bulgarian (#1185) only needs its file and its name."""
+    assert "bg" in available_languages()
+    assert LANGUAGE_NAMES["bg"] == "Български"
+
+
+def test_traditional_chinese_keeps_the_composer_tab_generic():
+    """Its source used a product's name for the sheet layout tab."""
+    data = json.loads((_I18N_DIR / "zh-TW.json").read_text(encoding="utf-8"))
+    assert data["Layout"] == "版面配置"
+
+
+def test_lao_is_offered_again():
+    """Lao (#850) is offered again since its marks compose on Windows
+    (Windows round 0.6.0, views/script_fonts.py)."""
+    assert (_I18N_DIR / "lo.json").is_file()
+    assert {"lo", "th", "ja", "ko", "vi"} <= set(available_languages())
+
+
+#: Scripts written without spaces between words: a suffix there attaches
+#: straight to the number or word before it.
+_NO_SPACE_SCRIPTS = {"ja", "ko", "zh-CN", "zh-TW"}
+
+
+@pytest.mark.parametrize("path", [p for p in _FILES
+                                  if p.stem not in _NO_SPACE_SCRIPTS],
+                         ids=lambda p: p.stem)
+def test_leading_and_trailing_spaces_are_kept(path):
+    """A message that starts or ends with a space is glued to something
+    else (« decimals» after the number of a spin box): its translation
+    keeps the space, or the Windows round 0.6.0 reads «2الكسور العشرية»."""
+    data = json.loads(path.read_text(encoding="utf-8"))
+    lost = [k for k, v in data.items() if v and (
+        (k.startswith(" ") and not v[:1].isspace())
+        or (k.endswith(" ") and not v[-1:].isspace()))]
+    assert not lost, f"{len(lost)} lost their space: {lost[:3]}"

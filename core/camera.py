@@ -17,8 +17,28 @@ from PySide6.QtGui import QMatrix4x4, QVector3D
 #: How close the camera may get to what it is looking at. A component is
 #: centimetres, not metres: half a metre away is as close as you can stand
 #: to a wall, and it left the face of a figure or the rim of a wheel
-#: impossible to look at. Two centimetres is close enough for any of it.
-MIN_DISTANCE = 0.02
+#: impossible to look at. A part for a 3D printer is millimetres: at 2 cm a
+#: 10 mm cube never filled the screen (#653, #692), so near the origin the
+#: camera comes to 5 mm. Not closer: the engine welds vertices to a 0.1 mm
+#: grid, and nearer than this that grid is what you would see.
+MIN_DISTANCE = 0.005
+
+#: Farther from the origin the floor rises (:meth:`OrbitCamera.min_distance`)
+#: back to the 2 cm it always was: float32 positions lose about 0.06 mm at
+#: 1 km, and a closer look there would show the model trembling. Five
+#: millimetres hold up to ~40 m from the origin; past ~160 m it is 2 cm.
+MIN_DISTANCE_FAR = 0.02
+_MIN_PER_METRE = MIN_DISTANCE / 40.0
+
+#: The near clipping plane never comes closer than this — what it was at
+#: the old 2 cm floor (2 % of it), so the depth buffer is never coarser
+#: than it was: things far behind do not start to flicker while you look
+#: at a small part up close.
+NEAR_FLOOR = 4e-4
+
+#: A scene with nothing in it has no size to frame: it is framed as if it
+#: were this big, as it always was.
+_EMPTY_SIZE = 0.02
 
 #: Ceiling: past this the model is a dot and the depth buffer is noise.
 MAX_DISTANCE = 10000.0
@@ -29,6 +49,11 @@ MAX_DISTANCE = 10000.0
 #: in (#340). Framing a model puts the target on it at about its size, so
 #: four distances is the whole model behind the target with room to spare.
 FAR_PER_DISTANCE = 4.0
+
+#: A parallel view's depth range, in multiples of the farthest reach of
+#: what it holds from the eye (``OrbitCamera.parallel_depth``): the axes
+#: and guides run past the model, and a dragged object may too.
+PARALLEL_REACH_MARGIN = 4.0
 
 
 class OrbitCamera:
@@ -49,6 +74,10 @@ class OrbitCamera:
         #: (José Castro Basso, FADU–UDELAR, for teaching architectural
         #: drawing). Only in perspective; see ``_level_forward``.
         self.two_point = False
+        #: What the view holds, as a bounding sphere ``(centre, radius)``
+        #: the viewport keeps up to date, or ``None`` (unknown). Parallel
+        #: projection fits its depth range to it (``parallel_depth``).
+        self.depth_reach = None
 
     # ---- Derived state ------------------------------------------------------
     def eye(self) -> QVector3D:
@@ -159,7 +188,7 @@ class OrbitCamera:
             # distance it is the usual 0.1 m, and only when you come right up
             # to something does it step back out of the way — otherwise the
             # near plane itself is what stops you.
-            near = min(self.znear, max(self.distance * 0.02, 1e-4))
+            near = self.near_plane()
             level = self._level_forward()
             if level is not None:
                 # A view camera's rise: the frustum slides up or down by the
@@ -179,9 +208,47 @@ class OrbitCamera:
             # framing matches what the user sees in perspective.
             half_h = self.distance * math.tan(math.radians(self.fov_deg) / 2.0)
             half_w = half_h * self.aspect
-            far = self.far_plane()
-            m.ortho(-half_w, half_w, -half_h, half_h, -far, far)
+            depth = self.parallel_depth()
+            m.ortho(-half_w, half_w, -half_h, half_h, -depth, depth)
         return m
+
+    def parallel_depth(self) -> float:
+        """How far in front of and behind the eye a parallel view reaches.
+
+        The depth buffer splits this range evenly, so ±``far_plane()`` —
+        ±10 km — left 1.2 mm steps: a smooth surface and the lines over it
+        traded places in a zigzag that perspective, with its 0.1 m near
+        plane, never showed (issue #874). With what the view holds known
+        (``depth_reach``), the range is a few times its reach from the eye
+        — room for the axes, guides and a drag past it — and never more
+        than before."""
+        far = self.far_plane()
+        reach = self.depth_reach
+        if reach is None:
+            return far
+        centre, radius = reach
+        held = (self.eye() - centre).length() + float(radius)
+        if not math.isfinite(held):
+            return far
+        return min(far, max(self.distance * FAR_PER_DISTANCE,
+                            held * PARALLEL_REACH_MARGIN, 1.0))
+
+    def near_plane(self) -> float:
+        """The near clipping distance in perspective: the usual ``znear``
+        at any working distance, stepping back with the camera when you come
+        right up to something — otherwise the near plane itself is what
+        stops you — but never closer than :data:`NEAR_FLOOR`."""
+        return min(self.znear, max(self.distance * 0.02, NEAR_FLOOR))
+
+    def min_distance(self, at: QVector3D | None = None) -> float:
+        """How close the camera may come to ``at`` (the target when not
+        given): :data:`MIN_DISTANCE` near the origin, rising with the
+        distance from it up to :data:`MIN_DISTANCE_FAR`."""
+        p = self.target if at is None else at
+        far = math.sqrt(p.x() * p.x() + p.y() * p.y() + p.z() * p.z())
+        if not math.isfinite(far):
+            return MIN_DISTANCE_FAR
+        return min(MIN_DISTANCE_FAR, max(MIN_DISTANCE, far * _MIN_PER_METRE))
 
     def far_plane(self) -> float:
         """The far clipping distance: ``zfar`` at any working distance,
@@ -295,7 +362,7 @@ class OrbitCamera:
 
     def zoom(self, steps: float) -> None:
         factor = 0.9 ** steps
-        self.distance = max(MIN_DISTANCE,
+        self.distance = max(self.min_distance(),
                             min(self.distance * factor, MAX_DISTANCE))
 
     def zoom_to(self, steps: float, focus: QVector3D,
@@ -305,7 +372,7 @@ class OrbitCamera:
         the distance and the target move by the same factor.
 
         Two escapes from the "stuck" close-up (the orbit distance pinned at
-        MIN_DISTANCE, 2 cm): zooming IN keeps sliding the target toward the
+        :meth:`min_distance`): zooming IN keeps sliding the target toward the
         focus even when the distance cannot shrink any more, and zooming OUT
         retreats the eye by at least ``min_step`` (the viewport passes ~1 %
         of the model's size) — at 2 cm a plain 10 % step was 2 mm per
@@ -323,7 +390,7 @@ class OrbitCamera:
             self.zoom(steps)
             return
         factor = 0.9 ** steps
-        new_distance = max(MIN_DISTANCE,
+        new_distance = max(self.min_distance(focus),
                            min(self.distance * factor, MAX_DISTANCE))
         if steps < 0 and self.distance > 0.0:
             # the frame grows only as much as the distance could
@@ -334,9 +401,15 @@ class OrbitCamera:
         if steps < 0 and min_step > 0.0 and new_distance < MAX_DISTANCE:
             moved = (self.eye() - eye_before).length()
             if moved < min_step:
-                back = self.eye() - self.target
-                if back.length() > 1e-9:
-                    self.target += back.normalized() * (min_step - moved)
+                # The eye backs off along the view by growing the DISTANCE,
+                # the target staying on what you look at — the same eye as
+                # pushing the target back, but the distance keeps meaning
+                # how far the model is. Pushing the target left a 2 cm
+                # distance tens of metres out after a deep zoom-in, and the
+                # near plane derived from it (0.4 mm) made every surface
+                # less than a metre from another flicker (#579).
+                self.distance = min(MAX_DISTANCE,
+                                    self.distance + (min_step - moved))
         if not self.is_finite():
             self.target, self.distance = before
 
@@ -388,12 +461,14 @@ class OrbitCamera:
             (min_pt.z() + max_pt.z()) * 0.5,
         )
         diag = (max_pt - min_pt).length()
-        if diag < MIN_DISTANCE:
-            diag = MIN_DISTANCE      # an empty scene still needs a distance
+        floor = self.min_distance(center)
+        if diag < 1e-9:
+            diag = _EMPTY_SIZE       # an empty scene still needs a distance
+        diag = max(diag, floor)
         self.target = center
         fov_rad = math.radians(self.fov_deg)
         self.distance = max(diag * margin / (2.0 * math.tan(fov_rad / 2.0)),
-                            MIN_DISTANCE)
+                            floor)
 
     def fit_box(self, min_pt: QVector3D, max_pt: QVector3D,
                 margin: float = 1.1) -> None:
@@ -428,14 +503,15 @@ class OrbitCamera:
         half_h = (max(pu) - min(pu)) * 0.5
         t = math.tan(math.radians(self.fov_deg) / 2.0)
         aspect = self.aspect if self.aspect > 1e-6 else 1.0
-        half = max(half_h, half_w / aspect, MIN_DISTANCE) * margin
+        floor = self.min_distance(target)
+        half = max(half_h, half_w / aspect, floor) * margin
         distance = half / t
         if self.perspective:
             toward = max(-QVector3D.dotProduct(c - target, f)
                          for c in corners)
             distance += max(toward, 0.0)
         self.target = target
-        self.distance = min(max(distance, MIN_DISTANCE), MAX_DISTANCE)
+        self.distance = min(max(distance, floor), MAX_DISTANCE)
         if self.perspective:
             self._settle_perspective_fit(corners, margin)
 
@@ -476,7 +552,7 @@ class OrbitCamera:
                           for c in corners)
             gap = self.distance - nearest       # eye to the nearest corner
             self.distance = min(max(nearest + gap * reach / goal,
-                                    MIN_DISTANCE), MAX_DISTANCE)
+                                    self.min_distance()), MAX_DISTANCE)
 
     # Yaw / pitch presets for standard architectural views (Z-up convention).
     # Top and Bottom are EXACTLY vertical: at 89° the parallel projection
@@ -494,8 +570,42 @@ class OrbitCamera:
         "iso":    (math.radians(-45.0), math.radians(30.0)),
     }
 
+    #: The four diagonal yaws of the eight isometric views (four above,
+    #: four below). -45° comes first so it wins the ties — the classic corner.
+    _ISO_YAWS = (-45.0, 45.0, 135.0, 225.0)
+    _ISO_PITCH_DEG = 30.0
+
     def set_view(self, name: str) -> None:
         preset = self._STANDARD_VIEWS.get(name)
         if preset is None:
             return
         self.yaw, self.pitch = preset
+
+    def snap_iso(self) -> None:
+        """Snap to the isometric orientation nearest the current camera pose.
+
+        The static ``"iso"`` preset is one fixed corner, so the command
+        always swung the camera there no matter where it was. The eight
+        isometric views (four diagonal yaws, seen from above or below)
+        are the same picture from different corners; the command now
+        lands on whichever one the camera already points nearest to, so
+        the swing is the shortest available. ``set_view("iso")`` stays
+        the deterministic corner for sheets and scripts.
+        """
+        f = self.forward()
+        best_yaw = math.radians(self._ISO_YAWS[0])
+        best_pitch = math.radians(self._ISO_PITCH_DEG)
+        best_dot = -2.0
+        for sign in (1.0, -1.0):
+            pitch = sign * math.radians(self._ISO_PITCH_DEG)
+            cp = math.cos(pitch)
+            sp = math.sin(pitch)
+            for yaw_deg in self._ISO_YAWS:
+                yaw = math.radians(yaw_deg)
+                # The direction the camera looks from that corner.
+                d = QVector3D(-cp * math.cos(yaw), -cp * math.sin(yaw), -sp)
+                dot = QVector3D.dotProduct(f, d)
+                if dot > best_dot:
+                    best_dot = dot
+                    best_yaw, best_pitch = yaw, pitch
+        self.yaw, self.pitch = best_yaw, best_pitch

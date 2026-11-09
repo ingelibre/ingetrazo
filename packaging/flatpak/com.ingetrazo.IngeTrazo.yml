@@ -6,6 +6,10 @@ app-id: com.ingetrazo.IngeTrazo
 runtime: org.freedesktop.Platform
 runtime-version: '25.08'
 sdk: org.freedesktop.Sdk
+# The Rust engine (rust/ingetrazo_core, #767) is compiled at build time;
+# only the SDK carries cargo, the finished module needs nothing at run time.
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.rust-stable
 command: ingetrazo
 
 finish-args:
@@ -64,10 +68,20 @@ modules:
     build-options:
       build-args:
         - --share=network        # pip downloads the wheels (self-dist only)
+      append-path: /usr/lib/sdk/rust-stable/bin
+      env:
+        CARGO_HOME: /run/build/ingetrazo/cargo
     build-commands:
       # 1. Python dependencies into /app's prefix. pytest is a test tool.
       - grep -vE '^\s*pytest\b' requirements.txt > reqs.txt
       - pip3 install --prefix=${FLATPAK_DEST} --no-warn-script-location -r reqs.txt
+      # 1b. The Rust engine, the same wheel the other builds make (cargo
+      #     fetches the crates: network, as for pip). maturin is a build
+      #     tool and stays out of /app.
+      - pip3 install --prefix=/run/build/ingetrazo/tools --no-warn-script-location maturin
+      - PYTHONPATH=$(echo /run/build/ingetrazo/tools/lib/python3*/site-packages) /run/build/ingetrazo/tools/bin/maturin build --release -m rust/ingetrazo_core/Cargo.toml -o wheels
+      - pip3 install --prefix=${FLATPAK_DEST} --no-deps --no-warn-script-location wheels/ingetrazo_core-*.whl
+      - python3 -c "import sys; sys.path.insert(0, [p for p in __import__('glob').glob('${FLATPAK_DEST}/lib/python3*/site-packages')][0]); import ingetrazo_core"
       # openskp's blank writer template is not distributed (no .skp export).
       - rm -rf ${FLATPAK_DEST}/lib/python3*/site-packages/openskp/_scaffold
       # 2. The application, as source — GPL code hides from nobody.
@@ -159,5 +173,6 @@ modules:
           - capturas
           - analysis
           - tests
+          - rust/ingetrazo_core/target
           - packaging/flatpak/.staging
           - packaging/flatpak/.flatpak-builder

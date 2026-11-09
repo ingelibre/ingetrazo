@@ -137,3 +137,37 @@ def test_the_shortcut_and_the_button_run_the_action():
     assert win.viewport.camera.target.x() == pytest.approx(501, abs=2.0)
     win._saved_version = scene.version
     win.close()
+
+
+def test_a_guide_line_counts_by_its_point_not_its_10_km_segment():
+    """Ctrl+A takes the guides (#627); an infinite guide line must not make
+    Zoom Selection frame ±10 km around the model."""
+    from core.guide import Guide
+    scene = Scene()
+    face = _square(scene.mesh, 0)
+    scene.guides.append(Guide(V(5, 0), V(1, 0)))
+    scene.guides.append(Guide(V(0, 3)))               # guide point
+    scene.select([face, *scene.guides])
+    assert _corners(scene) == ((0, 0, 0), (5, 3, 0))
+
+
+def test_only_guides_selected_frames_their_points():
+    from core.guide import Guide
+    scene = Scene()
+    _square(scene.mesh, 0)
+    g = Guide(V(2, 4), V(0, 1))
+    scene.guides.append(g)
+    scene.select([g])
+    assert _corners(scene) == ((2, 4, 0), (2, 4, 0))
+
+
+def test_select_all_with_a_guide_then_zoom_selection_stays_close():
+    from core.guide import Guide
+    win = _window()
+    scene = win.viewport.scene
+    scene.guides.append(Guide(V(0, 0), V(1, 0)))
+    win._on_select_all()
+    win._on_zoom_selection()
+    assert win.viewport.camera.distance < 40          # not 10 km
+    win._saved_version = scene.version
+    win.close()

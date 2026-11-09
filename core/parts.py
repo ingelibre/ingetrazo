@@ -93,18 +93,19 @@ def _material_label(attrs) -> str | None:
 
 def part_material(part) -> str:
     """The material covering most of ``part``'s surface ('' when none).
-    A default face shows its container's paint, as it draws."""
-    from core.group import iter_placements
+    A default face shows its nearest painted container's paint, as it
+    draws."""
+    from core.group import iter_painted_placements
     from core.materials import has_own_material
     area: dict = {}
-    for g, _m in iter_placements(part):
-        inherited = getattr(g, "material", None) or getattr(
-            part, "material", None)
+    for g, _m, inherited in iter_painted_placements(part):
         for f in g.mesh.faces:
             attrs = f.attrs if has_own_material(f.attrs) else inherited
             label = _material_label(attrs)
             if label:
-                area[label] = area.get(label, 0.0) + f.area()
+                # Net: a face's opening covers nothing, so it must not
+                # vote for the material either (#742).
+                area[label] = area.get(label, 0.0) + f.net_area()
     if not area:
         return ""
     return max(area.items(), key=lambda kv: kv[1])[0]

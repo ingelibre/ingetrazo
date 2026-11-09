@@ -301,6 +301,92 @@ def test_an_arrow_lock_holds_the_plane_against_the_face_under_the_cursor():
         win.close()
 
 
+@pytest.mark.parametrize("tool_name", [
+    "rectangle", "rotated_rect", "circle", "polygon",
+    "arc", "arc3", "center_arc", "pie",
+])
+def test_an_arrow_locked_planar_tool_starts_on_the_face_under_the_cursor(
+        tool_name):
+    """The arrow chooses the orientation only: with On face the first point
+    is the one on the face, and the locked plane passes through it."""
+    win, vp = _scene()
+    try:
+        win._activate_tool(tool_name)
+        _app.processEvents()
+        tool = vp.active_tool
+        assert tool.on_key(vp, int(Qt.Key_Left), Qt.NoModifier)
+
+        # Off the face's middle: the exact centre is the «Face center»
+        # snap, a named point, and this asks about plain On face. Closer
+        # in, so the spot is clear of that centre and of the edges too.
+        vp.camera.distance = 6.0
+        vp.scene.version += 1
+        _app.processEvents()
+        spot = V(1.5, 0.5, 2.0)
+        face_plane = (spot, V(0.0, 0.0, 1.0))
+        px, py = _pixel(vp, spot)
+        snap = vp.inference.snap(px, py, Qt.NoModifier)
+        assert snap is not None and snap.kind == "on_face"
+        assert _off_plane(QVector3D(snap.point), face_plane) < 1e-3
+
+        _press(vp, px, py)
+        _app.processEvents()
+        assert tool.start_point is not None
+        assert _off_plane(QVector3D(tool.start_point), face_plane) < 1e-3
+        drawn = tool.drawing_plane()
+        assert abs(QVector3D.dotProduct(
+            QVector3D(drawn[1]).normalized(), V(0.0, 1.0, 0.0))) > 0.999
+        assert (QVector3D(drawn[0]) - QVector3D(tool.start_point)).length() < 1e-6
+    finally:
+        win._saved_version = vp.scene.version
+        win.close()
+
+
+def test_an_arrow_locked_planar_tool_anchors_to_an_explicit_point_snap():
+    """An endpoint snap chooses the plane's offset, but never its normal."""
+    win, vp = _scene()
+    try:
+        win._activate_tool("circle")
+        _app.processEvents()
+        tool = vp.active_tool
+        assert tool.on_key(vp, int(Qt.Key_Left), Qt.NoModifier)
+
+        vertex = V(2.0, 0.0, 2.0)
+        px, py = _pixel(vp, vertex)
+        snap = vp.inference.snap(px, py, Qt.NoModifier)
+        assert snap is not None and snap.kind == "endpoint"
+        assert (QVector3D(snap.point) - vertex).length() < 1e-3
+
+        _press(vp, px, py)
+        _app.processEvents()
+        assert (QVector3D(tool.start_point) - vertex).length() < 1e-3
+        drawn = tool.drawing_plane()
+        assert abs(QVector3D.dotProduct(
+            QVector3D(drawn[1]).normalized(), V(0.0, 1.0, 0.0))) > 0.999
+        assert abs(drawn[0].y() - vertex.y()) < 1e-3
+    finally:
+        win._saved_version = vp.scene.version
+        win.close()
+
+
+def test_an_arrow_locked_planar_tool_off_any_face_uses_the_world_plane():
+    """With no face and no point snap, the arrow's plane is the world's XZ."""
+    win, vp = _scene()
+    try:
+        win._activate_tool("circle")
+        _app.processEvents()
+        tool = vp.active_tool
+        assert tool.on_key(vp, int(Qt.Key_Left), Qt.NoModifier)
+        px, py = _pixel(vp, V(-3.0, 0.0, 1.0))
+        assert vp.pick_face_any(px, py)[0] is None
+        snap = vp.inference.snap(px, py, Qt.NoModifier)
+        assert snap is not None
+        assert abs(snap.point.y()) < 1e-3
+    finally:
+        win._saved_version = vp.scene.version
+        win.close()
+
+
 def test_shift_marks_the_plane_the_shape_is_on_and_gives_it_back():
     """Marco's gesture: «marca o plano que está a ser considerado, por
     exemplo uma face num cubo». Shift is Down HELD: the plane the shape is

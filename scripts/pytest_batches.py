@@ -46,8 +46,11 @@ def main() -> int:
         cmd = [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider"]
         if args.marker:
             cmd += ["-m", args.marker]
+        # pytest writes UTF-8; text=True alone decodes with the locale's
+        # codepage (cp1252 on Windows), which died on the first byte it
+        # has no character for and left stdout None (ronda Windows 0.5.9).
         proc = subprocess.run(cmd + chunk, env=env, capture_output=True,
-                              text=True)
+                              text=True, encoding="utf-8", errors="replace")
         lines = [ln for ln in proc.stdout.splitlines() if ln.strip()]
         last = lines[-1] if lines else ""
         for num, kind in _COUNT.findall(last):

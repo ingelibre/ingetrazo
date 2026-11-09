@@ -179,3 +179,45 @@ def test_near_answers_exactly_what_unique_did(n, spread):
         want = _unique_reference(grid, px, py)
         assert got.dtype == want.dtype
         np.testing.assert_array_equal(got, want)
+
+
+@pytest.mark.parametrize("seed", range(4))
+def test_the_native_pass_gives_numpys_bits(seed):
+    """Past ``NATIVE_MIN`` segments the distances come from the native
+    engine: bit for bit NumPy's, for all of them and for some, over
+    segments of every length, off screen and degenerate."""
+    import sys
+
+    from core import _native
+    from core import edge_grid as eg
+    if not hasattr(_native.native, "segment_distances"):
+        pytest.skip("no native engine")
+    if eg._native_pass() is None:
+        # Another C library may round hypot its own way: NumPy is kept.
+        # Here, with glibc, the native pass must be the one in use.
+        assert not sys.platform.startswith("linux")
+        pytest.skip("the native pass rounds otherwise here")
+    rng = np.random.default_rng(seed)
+    n = eg.NATIVE_MIN * 3
+    a = rng.uniform(-300, 1500, (4, n))
+    a[2:, : n // 10] = a[:2, : n // 10]            # zero length
+    a[:, n // 10: n // 5] = np.round(a[:, n // 10: n // 5])
+    ok = rng.random(n) < 0.85
+    which = np.sort(rng.choice(n, eg.NATIVE_MIN + 7, replace=False))
+    for px, py in ((400.5, 300.25), (float(a[0, 3]), float(a[1, 3])),
+                   (-20.0, 2000.0)):
+        for w in (None, which):
+            got = eg.segment_distances(*a, ok, px, py, w)
+            want = eg._numpy_distances(*a, ok, px, py, w)
+            assert got.dtype == want.dtype and got.shape == want.shape
+            assert np.array_equal(got, want)
+
+
+def test_few_segments_stay_in_numpy(monkeypatch):
+    from core import edge_grid as eg
+    called = []
+    monkeypatch.setattr(eg, "_native_pass",
+                        lambda: called.append(1) or None)
+    a = np.random.default_rng(0).uniform(0, 100, (4, 50))
+    eg.segment_distances(*a, np.ones(50, bool), 10.0, 10.0)
+    assert not called

@@ -1,10 +1,11 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2026 Marco Sumari Tellez and IngeTrazo contributors.
-"""The experimental Rust engine (``rust/ingetrazo_core``, built with maturin).
+"""The Rust engine (``rust/ingetrazo_core``, built with maturin).
 
 ``native`` is the compiled module when the engine is on and loads, else
-``None``. It is OFF unless Preferences ▸ General ▸ «Rust engine
-(experimental)» turns it on (read once, so it applies at the next start);
+``None``. It is ON unless Preferences ▸ General ▸ «Rust engine» turns it
+off (read once, so it applies at the next start; on by default since
+0.5.10 — a build without the module simply runs on Python);
 ``INGETRAZO_RUST=1`` / ``=0`` overrides the setting, for tests and benches.
 Every caller keeps its Python code and uses it whenever ``native`` is
 ``None``: the kernels make things faster, never different.
@@ -20,6 +21,8 @@ log = logging.getLogger(__name__)
 
 #: The General setting that turns the engine on ("1") or off ("0").
 SETTING = "rust_engine"
+#: Its value when the user never chose: on.
+DEFAULT = "1"
 
 _UNSET = object()
 _module = _UNSET          # the compiled module, None, or not looked at yet
@@ -43,13 +46,13 @@ def available():
 
 def wanted() -> bool:
     """Whether the engine is asked for: the environment first, then the
-    saved preference (off by default)."""
+    saved preference (on by default)."""
     env = os.environ.get("INGETRAZO_RUST")
     if env is not None:
         return env != "0"
     try:
         from core import general_settings
-        return str(general_settings.value(SETTING, "0")) == "1"
+        return str(general_settings.value(SETTING, DEFAULT)) == "1"
     except Exception:  # noqa: BLE001 — no Qt settings yet: stay on Python
         return False
 
@@ -70,7 +73,7 @@ def engine() -> str:
 
 #: The ``std::hypot(x, y, z)`` formulas the module knows (QVector3D's
 #: length() is that call, and C++ standard libraries differ in it).
-_HYPOTS = ("libstdc++",)
+_HYPOTS = ("libstdc++", "msvc")
 _hypot = _UNSET
 
 
@@ -133,7 +136,7 @@ def start_guard(argv) -> bool:
         from PySide6.QtCore import QSettings
         from core import general_settings
         st = QSettings()
-        on = str(general_settings.value(SETTING, "0", st)) == "1"
+        on = str(general_settings.value(SETTING, DEFAULT, st)) == "1"
         pending = str(general_settings.value(STARTING, "0", st)) == "1"
         if on and pending:
             general_settings.set_value(SETTING, "0", st)

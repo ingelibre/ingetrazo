@@ -79,6 +79,50 @@ def test_holed_profile_sweeps_a_tube():
     assert len(caps) == 2                          # both caps keep the hole
 
 
+def _curve_sizes(mesh):
+    sizes: dict = {}
+    for e in mesh.edges:
+        if e.curve is not None:
+            sizes[e.curve] = sizes.get(e.curve, 0) + 1
+    return sorted(sizes.values())
+
+
+def test_a_circle_profile_ends_in_a_circle_curve():
+    """The far cap of a pipe is one curve again, like the circle it came
+    from — not 24 loose segments."""
+    import core.edits  # noqa: F401  (Mesh helpers)
+    m = Mesh()
+    n = 24
+    circ = [V(0, 0.3 * math.cos(2 * math.pi * k / n),
+              1 + 0.3 * math.sin(2 * math.pi * k / n)) for k in range(n)]
+    face = m.add_face(circ)
+    m.tag_curve(circ)
+    r = 3.0
+    arc = [V(r * math.sin(t), r - r * math.cos(t), 1)
+           for t in [i * math.pi / 24 for i in range(13)]]
+    for a, b in zip(arc, arc[1:]):
+        m.add_edge(a, b)
+    m.tag_curve(arc, closed=False)
+    assert sweep_profile(m, face, arc, False)
+    assert _curve_sizes(m) == [12, 24, 24]     # the path, both caps
+
+
+def test_rails_along_a_circle_path_are_curves():
+    """A rectangle around a circle: each corner draws a circle, one curve."""
+    from core.sweep import orient_closed_path
+    import core.edits  # noqa: F401
+    m = Mesh()
+    n = 24
+    face = m.add_face([V(2, 0, 0), V(2.3, 0, 0), V(2.3, 0, 0.5), V(2, 0, 0.5)])
+    path = [V(2 * math.cos(2 * math.pi * k / n), 2 * math.sin(2 * math.pi * k / n))
+            for k in range(n)]
+    for k in range(n):
+        m.add_edge(path[k], path[(k + 1) % n])
+    m.tag_curve(path)
+    assert sweep_profile(m, face, orient_closed_path(path, face), True)
+    assert _curve_sizes(m) == [24, 24, 24, 24]
+
+
 def test_order_path_edges_chains_and_rejects_branches():
     m = Mesh()
     m.add_edge(V(0, 0, 0), V(1, 0, 0))

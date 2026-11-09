@@ -48,7 +48,7 @@ def _composer():
     host.viewport.scene.mesh.add_face(
         [V(0, 0, 0), V(6, 0, 0), V(6, 0, 3), V(0, 0, 3)])
     # the GL render the raster path asks for, GL-free
-    host.viewport.render_image = lambda w, h, overlays=True: None
+    host.viewport.render_image = lambda w, h, overlays=True, sharp_shadows=False: None
     composer = ComposerWindow(host)
     return composer, host
 

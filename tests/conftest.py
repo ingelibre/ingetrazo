@@ -23,6 +23,10 @@ _data_dir = tempfile.mkdtemp(prefix="ingetrazo-tests-data-")
 os.environ["XDG_DATA_HOME"] = _data_dir
 if sys.platform == "win32":
     os.environ["APPDATA"] = _data_dir
+    # core.paths.user_log_dir reads it: without this every test that rolls
+    # a command back wrote its traceback into the developer's real
+    # %LOCALAPPDATA%\IngeTrazo\ingetrazo-errors.log (ronda Windows 0.5.9).
+    os.environ["LOCALAPPDATA"] = _data_dir
 
 # Windows: the offscreen platform has NO font database there (fontconfig
 # finds the fonts on Linux; on Windows nothing looks), so every glyph drew

@@ -61,11 +61,28 @@ uniform float u_dash_px;
 in vec2 v_uv;
 in vec3 v_color;
 in vec3 v_world;
+in vec3 v_local;
+// Instanced component pass (#482): face colours and texture shades were
+// baked from the PROTOTYPE's normals against the fixed world light, so a
+// rotated copy kept the light of the unrotated one. With this on, the
+// baked tone is scaled by the light of the face as placed over the light
+// of the face as baked — the same 0.62..1.0 matte law as the bake
+// (Viewport._shade_factor), unquantised so neighbouring pixels agree.
+uniform int u_reshade;
+uniform vec3 u_light_fixed;
+// 1 while drawing the default backs of the shaded modes: the back colour
+// takes the same matte light as the fronts' baked shade, so the inside of
+// a sphere reads round instead of a flat disc (issue #873). Per pixel,
+// from the face's plane — the back pass carries positions only.
+uniform int u_back_shade;
 
 out vec4 fragColor;
 
 // Fraction of light reaching this fragment (0..1): 3x3 PCF over the
-// packed-depth shadow map. Outside the map = fully lit.
+// packed-depth shadow map, each tap bilinearly weighted between the four
+// texels around it — so the edge is a smooth ramp instead of the map's
+// staircase (each texel is centimetres of ground, 30 cm on a 280 m plant).
+// Outside the map = fully lit.
 float shadow_light() {
     vec4 lp = u_light_vp * vec4(v_world, 1.0);
     vec3 uvz = lp.xyz / lp.w * 0.5 + 0.5;
@@ -102,13 +119,29 @@ float shadow_light() {
     // Margin: constant term + 1.5 texels of slope along the gradient
     // (covers the within-texel offset of both receiver and caster raster).
     float bias = u_shadow_bias + glen * texel.x * 1.5;
-    float lit = 0.0;
-    for (int dx = -1; dx <= 1; dx++) {
-        for (int dy = -1; dy <= 1; dy++) {
-            vec2 off = vec2(dx, dy) * texel;
-            vec3 e = texture(u_shadow_map, uvz.xy + off).rgb;
+    // The 4x4 texels under the kernel, each compared once against the
+    // receiver plane at its own centre...
+    vec2 size = vec2(textureSize(u_shadow_map, 0));
+    vec2 st = uvz.xy * size - 0.5;
+    vec2 cell = floor(st);
+    vec2 f = st - cell;
+    float t[16];
+    for (int j = 0; j < 4; j++) {
+        for (int i = 0; i < 4; i++) {
+            vec2 uv = (cell + vec2(i - 1, j - 1) + 0.5) * texel;
+            vec2 off = uv - uvz.xy;
+            vec3 e = texture(u_shadow_map, uv).rgb;
             float d = dot(e, vec3(1.0, 1.0 / 255.0, 1.0 / 65025.0));
-            lit += (uvz.z + dot(grad, off) - bias <= d) ? 1.0 : 0.0;
+            t[j * 4 + i] = (uvz.z + dot(grad, off) - bias <= d) ? 1.0 : 0.0;
+        }
+    }
+    // ...then the nine taps, each the bilinear blend of its 2x2.
+    float lit = 0.0;
+    for (int j = 0; j < 3; j++) {
+        for (int i = 0; i < 3; i++) {
+            float a = mix(t[j * 4 + i], t[j * 4 + i + 1], f.x);
+            float b = mix(t[(j + 1) * 4 + i], t[(j + 1) * 4 + i + 1], f.x);
+            lit += mix(a, b, f.y);
         }
     }
     return lit / 9.0;
@@ -122,7 +155,14 @@ const float BAYER[16] = float[16](
      3.5/16.0, 11.5/16.0,  1.5/16.0,  9.5/16.0,
     15.5/16.0,  7.5/16.0, 13.5/16.0,  5.5/16.0);
 
+float matte(vec3 n) {
+    return 0.62 + 0.38 * abs(dot(n, u_light_fixed));
+}
+
 void main() {
+    // Taken before any discard, while the whole pixel quad is alive.
+    vec3 n_local = cross(dFdx(v_local), dFdy(v_local));
+    vec3 n_world = cross(dFdx(v_world), dFdy(v_world));
     if (u_stipple == 1) {
         if (mod(gl_FragCoord.x, 4.0) >= 1.0 && mod(gl_FragCoord.y, 4.0) >= 1.0)
             discard;
@@ -170,6 +210,18 @@ void main() {
         // path), where it is honest "you are looking at the inside" feedback.
         vec4 front = (u_use_vcolor == 1) ? vec4(v_color, u_opacity) : u_color;
         c = (gl_FrontFacing || u_use_vcolor == 1) ? front : u_back_color;
+        if (u_back_shade == 1 && !gl_FrontFacing && u_use_vcolor == 0) {
+            float lb = length(n_world);
+            if (lb > 1e-20) c.rgb *= matte(n_world / lb);
+        }
+    }
+    if (u_reshade == 1 && (u_use_texture == 1 || u_use_vcolor == 1)) {
+        float ll = length(n_local);
+        float lw = length(n_world);
+        if (ll > 1e-20 && lw > 1e-20) {
+            c.rgb = min(c.rgb * (matte(n_world / lw) / matte(n_local / ll)),
+                        vec3(1.0));
+        }
     }
     if (u_shadow_enable == 1) {
         if (u_shadow_overlay == 1) {

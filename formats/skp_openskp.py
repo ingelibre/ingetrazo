@@ -95,11 +95,17 @@ def _ring_raw(defn, loop):
 
 def _matrix(m) -> QMatrix4x4:
     """An OpenSKP instance ``matrix`` (row-major 3×3 + translation, in inches)
-    as a ``QMatrix4x4`` whose translation is already in metres."""
+    as a ``QMatrix4x4`` whose translation is already in metres.
+
+    Element 12 is a uniform scale the reader has already worked out: a
+    placement stored with w = 100 reaches us as 0.01, with the 3×3 and the
+    translation as stored, so both are multiplied by it. Ignoring it brought
+    such a component in 100x large (#865); dividing by it, 10000x (#1196)."""
+    s = float(m[12]) if len(m) > 12 and m[12] else 1.0
     return QMatrix4x4(
-        m[0], m[1], m[2], m[9] * _INCH,
-        m[3], m[4], m[5], m[10] * _INCH,
-        m[6], m[7], m[8], m[11] * _INCH,
+        m[0] * s, m[1] * s, m[2] * s, m[9] * s * _INCH,
+        m[3] * s, m[4] * s, m[5] * s, m[10] * s * _INCH,
+        m[6] * s, m[7] * s, m[8] * s, m[11] * s * _INCH,
         0.0, 0.0, 0.0, 1.0)
 
 
@@ -433,7 +439,7 @@ def _world_points(pos_m, xform):
 
 
 def _face_entry(face, wl, raw_l, s0, s1, holes_sl, attr_map,
-                inherited=None, layer=None):
+                inherited=None, layer=None, mirrored=False):
     """One payload face ``(outer, holes, attrs)`` for ``face``, its corners
     already transformed in ``wl`` (see :func:`_world_points`; ``raw_l`` keeps
     the same corners in local inches for the UV math). Bakes a positioned /
@@ -444,9 +450,17 @@ def _face_entry(face, wl, raw_l, s0, s1, holes_sl, attr_map,
 
     ``layer`` is the .skp layer (tag) of the nearest enclosing tagged
     instance — a face with no tag of its own carries it, so hiding the tag's
-    layer in IngeTrazo hides what the file marks as hidden."""
+    layer in IngeTrazo hides what the file marks as hidden.
+
+    ``mirrored`` says the corners in ``wl`` went through a placement with a
+    negative determinant (a component scaled by -1, #1045): that reverses the
+    winding, so the rings are walked backwards to keep the front where the
+    file has it."""
     raw = raw_l[s0:s1]
     outer = wl[s0:s1]
+    if mirrored:
+        raw = raw[::-1]
+        outer = outer[::-1]
     # Material precedence (the .skp rule): the face's OWN material wins —
     # front side first, then back side (flipping the face so the painted
     # side fronts, what "Reverse Faces + paint" produces) — and only a face
@@ -471,7 +485,7 @@ def _face_entry(face, wl, raw_l, s0, s1, holes_sl, attr_map,
     holes = []
     for ha, hb in holes_sl:
         h = wl[ha:hb]
-        if flipped:
+        if flipped != mirrored:
             h = h[::-1]
         holes.append(h)
     def _bake_uvs(entry, uv_matrix, projected=False):
@@ -584,6 +598,117 @@ def _image_quad_faces(child, placed, attr_map, inherited):
     return faces
 
 
+# How close an image may lie to a face and still count as stuck on it: the
+# logos of #429 sit 0–1.5 mm off their faces, the plaza's free-standing bull
+# and statue 8 m and 19 cm from anything parallel.
+_GLUE_TOL = 0.01
+
+
+def _face_boxes(defn):
+    """Per-face local bounding boxes of ``defn`` (metres), cached: ``(lo,
+    hi)`` arrays of shape ``(F, 3)`` in the order of ``_defn_geom``'s
+    metadata. Holes lie inside their outer ring, so a face's corners — holes
+    included — are one contiguous run and one ``reduceat`` boxes them all."""
+    boxes = getattr(defn, "_face_boxes", None)
+    if boxes is not None:
+        return boxes
+    import numpy as np
+    pos_m, _raw, meta = _defn_geom(defn)
+    if not meta:
+        boxes = (np.empty((0, 3)), np.empty((0, 3)))
+    else:
+        starts = np.fromiter((m[1] for m in meta), dtype=np.intp,
+                             count=len(meta))
+        boxes = (np.minimum.reduceat(pos_m, starts, axis=0),
+                 np.maximum.reduceat(pos_m, starts, axis=0))
+    try:
+        defn._face_boxes = boxes
+    except AttributeError:
+        pass
+    return boxes
+
+
+def _rests_on_a_face(roots, by_id, quad) -> bool:
+    """Whether the image quad ``quad`` (world ``QVector3D`` corners) lies ON
+    a face of the model: parallel to it, within ``_GLUE_TOL``, with its
+    centre over the face. That is a logo or a sign stuck to a surface, which
+    must stay put (#429); a cut-out standing free — the plaza's bull and
+    statue — is the one turned to face the camera.
+
+    Walks the placement tree in NumPy: each definition's face boxes are
+    tested against the image centre in that definition's own frame, and only
+    the few faces whose box holds it get the exact plane test."""
+    import numpy as np
+    q = np.array([[p.x(), p.y(), p.z()] for p in quad], dtype=np.float64)
+    if len(q) < 3:
+        return False
+    centre = q.mean(axis=0)
+    n = np.zeros(3)
+    for i in range(len(q)):
+        n += np.cross(q[i], q[(i + 1) % len(q)])
+    if np.linalg.norm(n) < 1e-12:
+        return False
+    n /= np.linalg.norm(n)
+
+    def on_face(world):
+        fn = np.zeros(3)
+        for i in range(len(world)):
+            fn += np.cross(world[i], world[(i + 1) % len(world)])
+        ln = np.linalg.norm(fn)
+        if ln < 1e-12:
+            return False
+        fn /= ln
+        if abs(abs(fn @ n) - 1.0) > 1e-3:
+            return False
+        if abs((centre - world[0]) @ fn) > _GLUE_TOL:
+            return False
+        # The centre over the face: even-odd in the face's own plane.
+        a = np.cross(fn, [1.0, 0.0, 0.0] if abs(fn[0]) < 0.9
+                     else [0.0, 1.0, 0.0])
+        a /= np.linalg.norm(a)
+        b = np.cross(fn, a)
+        uv = np.stack([(world - centre) @ a, (world - centre) @ b], axis=1)
+        inside = False
+        for i in range(len(uv)):
+            (x0, y0), (x1, y1) = uv[i], uv[i - 1]
+            if (y0 > 0) != (y1 > 0) and 0 < x0 + (x1 - x0) * (-y0) / (y1 - y0):
+                inside = not inside
+        return inside
+
+    def walk(defn, m, depth, stack):
+        if depth > _MAX_DEPTH or id(defn) in stack:
+            return False
+        stack = stack | {id(defn)}
+        lo, hi = _face_boxes(defn)
+        if len(lo):
+            inv = np.linalg.inv(m)
+            c = inv[:3, :3] @ centre + inv[:3, 3]
+            # The tolerance in this frame: a scaled-down copy needs more.
+            s = min(np.linalg.norm(m[:3, :3], axis=0).min(), 1.0) or 1.0
+            tol = _GLUE_TOL / s
+            hit = np.nonzero(np.all((lo - tol <= c) & (c <= hi + tol),
+                                    axis=1))[0]
+            if len(hit):
+                pos_m, _raw, meta = _defn_geom(defn)
+                for k in hit:
+                    _f, s0, s1, _hs = meta[k]
+                    world = pos_m[s0:s1] @ m[:3, :3].T + m[:3, 3]
+                    if on_face(world):
+                        return True
+        for ins in getattr(defn, "instances", []):
+            child = by_id.get(getattr(ins, "ref_idx", None))
+            if child is None or getattr(child, "is_image", False) or \
+                    getattr(child, "always_faces_camera", False):
+                continue
+            cm = np.array(_matrix(ins.matrix).data(),
+                          dtype=np.float64).reshape(4, 4, order="F")
+            if walk(child, m @ cm, depth + 1, stack):
+                return True
+        return False
+
+    return any(walk(r, np.eye(4), 0, frozenset()) for r in roots)
+
+
 def _soft_edge_segments(defn, xform, out) -> None:
     """Append the transformed endpoint pairs of ``defn``'s soft/smooth/
     hidden edges to ``out`` — the file's own edge-display flags, used by
@@ -621,10 +746,58 @@ def _soft_edge_segments(defn, xform, out) -> None:
         out.append(((a[0], a[1], a[2]), (b[0], b[1], b[2])))
 
 
+#: The tags the file being adapted hides, by name AND by id (an edge's
+#: ``layer`` is the tag's id in a 2021+ file): see _loose_edge_segments.
+_hidden_tags: frozenset = frozenset()
+
+
+def _loose_edge_segments(defn, xform, out) -> None:
+    """Append the transformed endpoint pairs of ``defn``'s LOOSE edges —
+    lines that bound no face — to ``out``. Only face rings were read, so a
+    group holding nothing but lines arrived empty and was dropped. Hidden
+    edges stay out (the file does not draw them), and so do the lines on a
+    tag the file hides (``_hidden_tags``, set by :func:`_adapt`): the
+    contour lines of a survey drawing kept on a hidden tag would otherwise
+    cover the plaza, and a line inside a group does not hide with its tag
+    here. Cached on the definition like the soft edges."""
+    import numpy as np
+    arr = getattr(defn, "_loose_arr", None)
+    if arr is None:
+        hidden_tags = _hidden_tags
+        used = set()
+        for face in getattr(defn, "faces", {}).values():
+            for loop in getattr(face, "loops", None) or ():
+                used.update(eid for eid, _sense in loop)
+        pairs = []
+        for eid, e in getattr(defn, "edges", {}).items():
+            if eid in used or getattr(e, "hidden", False):
+                continue
+            if hidden_tags and getattr(e, "layer", None) in hidden_tags:
+                continue
+            va = defn.vertices.get(e.v1_id)
+            vb = defn.vertices.get(e.v2_id)
+            if va is None or vb is None:
+                continue
+            pairs.append((va.x, va.y, va.z))
+            pairs.append((vb.x, vb.y, vb.z))
+        arr = np.asarray(pairs, dtype=np.float64).reshape(-1, 3) * _INCH
+        try:
+            defn._loose_arr = arr
+        except AttributeError:      # __slots__ definition: just skip the cache
+            pass
+    if not len(arr):
+        return
+    wl = _world_points(arr, xform)
+    for i in range(0, len(wl), 2):
+        a = wl[i]
+        b = wl[i + 1]
+        out.append(((a[0], a[1], a[2]), (b[0], b[1], b[2])))
+
+
 def _collect(defn, xform, by_id, attr_map, out, depth, stack,
              proto_ids=frozenset(), proto_uses=None, inherited=None,
              image_uses=None, edges_out=None, layer=None,
-             layer_uses=None, group_layer=None) -> None:
+             layer_uses=None, group_layer=None, loose_out=None) -> None:
     """Append ``(outer, holes, attrs)`` faces for ``defn`` (transformed by
     ``xform``) and, recursively, for every definition its instances place.
 
@@ -647,20 +820,26 @@ def _collect(defn, xform, by_id, attr_map, out, depth, stack,
     NOT flattened here — the composed placement matrix is recorded in
     ``proto_uses[(def_id, inherited)]`` instead, so the shared prototype is
     built once per inherited material and every copy becomes an O(1) instance
-    (``Group.xform``)."""
+    (``Group.xform``); the entry is ``(matrix, layer, instance name)``.
+
+    ``loose_out`` collects the loose edges (lines on no face), like
+    ``edges_out`` the soft ones."""
     if depth > _MAX_DEPTH or id(defn) in stack:
         return
     stack = stack | {id(defn)}
     pos_m, raw_l, meta = _defn_geom(defn)
     if meta:
         wl = _world_points(pos_m, xform)
+        mirrored = xform.determinant() < 0.0
         for face, s0, s1, hs in meta:
             entry = _face_entry(face, wl, raw_l, s0, s1, hs, attr_map,
-                                inherited, layer)
+                                inherited, layer, mirrored)
             if entry is not None:
                 out.append(entry)
     if edges_out is not None:
         _soft_edge_segments(defn, xform, edges_out)
+    if loose_out is not None:
+        _loose_edge_segments(defn, xform, loose_out)
     for ins in getattr(defn, "instances", []):
         rid = getattr(ins, "ref_idx", None)
         child = by_id.get(rid)
@@ -694,7 +873,7 @@ def _collect(defn, xform, by_id, attr_map, out, depth, stack,
             continue
         if proto_uses is not None and cid in proto_ids:
             proto_uses.setdefault((cid, child_inherited), []).append(
-                (placed, out_layer))
+                (placed, out_layer, getattr(ins, "name", "") or None))
             continue
         if layer_uses is not None and getattr(ins, "layer", ""):
             # Tagged nested instance → its own group carrying the layer.
@@ -702,7 +881,7 @@ def _collect(defn, xform, by_id, attr_map, out, depth, stack,
             continue
         _collect(child, placed, by_id, attr_map, out, depth + 1, stack,
                  proto_ids, proto_uses, child_inherited, image_uses,
-                 edges_out, child_layer, layer_uses, group_layer)
+                 edges_out, child_layer, layer_uses, group_layer, loose_out)
 
 
 def _subtree_polys(defn, by_id, memo, stack) -> int:
@@ -828,7 +1007,8 @@ def _merge_equal_protos(protos):
             seen: dict = {}
             for i in bucket:
                 e = protos[i]
-                sig = repr((e["faces"], e["soft_edges"], e["children"]))
+                sig = repr((e["faces"], e["soft_edges"], e["children"],
+                            e.get("loose_edges"), e.get("component", True)))
                 first = seen.setdefault(sig, i)
                 if first != i:
                     remap[i] = first
@@ -839,11 +1019,10 @@ def _merge_equal_protos(protos):
             src, dst = protos[i], protos[keep]
             if not src["instances"]:
                 continue
-            if "instance_layers" in src or "instance_layers" in dst:
-                dst.setdefault("instance_layers",
-                               [None] * len(dst["instances"])).extend(
-                    src.get("instance_layers")
-                    or [None] * len(src["instances"]))
+            for key in ("instance_layers", "instance_names"):
+                if key in src or key in dst:
+                    dst.setdefault(key, [None] * len(dst["instances"])).extend(
+                        src.get(key) or [None] * len(src["instances"]))
             dst["instances"].extend(src["instances"])
         keep_ix = [i for i in range(len(protos)) if i not in remap]
         new_of = {old_i: new_i for new_i, old_i in enumerate(keep_ix)}
@@ -911,8 +1090,9 @@ def _is_empty_model(model, skp_path, legacy_era: bool) -> bool:
         start = data.find(b"PK\x03\x04")
         if start < 0:
             return False
+        from core import zip_limits
         with zipfile.ZipFile(io.BytesIO(data[start:])) as zf:
-            png = zf.read("meta/model_thumbnail.png")
+            png = zip_limits.read(zf, "meta/model_thumbnail.png")
     except (OSError, KeyError, zipfile.BadZipFile):
         return False
     img = QImage.fromData(png)
@@ -946,6 +1126,10 @@ def _adapt(model, name: str, skp_path=None):
 
     defs = getattr(model, "definitions", {}) or {}
     attr_map, materials = _material_attrs(model, skp_path or name)
+    global _hidden_tags
+    from formats import openskp_compat
+    _hidden_tags = openskp_compat.hidden_tags(
+        r["name"] for r in file_layer_records(model) if not r["visible"])
     # openskp ≥ 0.4 exposes the implicit root as its own field; older
     # releases keep it inside ``definitions`` under the name ROOT_MODEL.
     root = getattr(model, "root", None)
@@ -1028,23 +1212,37 @@ def _adapt(model, name: str, skp_path=None):
     # selection box has real ones to draw instead of derived), and Move,
     # Rotate and copy take the O(1) instance paths.
     #
-    # Only where the definition is placed at the TOP level: a ``cnt == 1``
-    # definition is placed exactly once, so this can never pull a nested part
-    # out into a group of its own — which is what would happen if every
-    # definition became a prototype, since ``_collect`` extracts proto
-    # references instead of flattening them.
-    def _subtree_uses(d, wanted, stack=frozenset()):
-        """Whether ``d``'s subtree places any definition in ``wanted``."""
+    # Starting where the definition is placed at the TOP level, and going
+    # down from there through every definition placed ONCE: a prototype
+    # keeps the prototypes it places as ``children`` (see ``_build_proto``),
+    # so the file's own nesting — «geometries» holding «closed» holding a
+    # circle and a rectangle — arrives as nested groups instead of flattened
+    # into the outermost one. A ``cnt == 1`` definition is placed exactly
+    # once, so promoting it can only keep it inside its parent, never pull it
+    # out next to it. Shared definitions below the sharing thresholds still
+    # flatten into what holds them, as before.
+    #
+    # Tagged placements inside are no reason to flatten any more: a
+    # prototype's children carry their own tag, so hiding it hides them
+    # whole. They only must not be flattened into the parent's mesh, where
+    # a tag survives as a per-face one the renderer does not filter — so a
+    # tagged placement, and a shared definition with tagged placements
+    # inside, becomes a prototype too. «01_EG» (walls, doors and furniture
+    # in subgroups on their own tags) arrived as one flat mesh.
+    def _promote_nested(d, stack=frozenset()):
         if id(d) in stack:
-            return False
+            return
         for ins in getattr(d, "instances", []):
-            cid = getattr(ins, "ref_idx", None)
-            if cid in wanted:
-                return True
-            c = by_id.get(cid)
-            if c is not None and _subtree_uses(c, wanted, stack | {id(d)}):
-                return True
-        return False
+            c = by_id.get(getattr(ins, "ref_idx", None))
+            if c is None or getattr(c, "is_image", False) or \
+                    getattr(c, "always_faces_camera", False):
+                continue
+            if uses.get(getattr(c, "id", None)) == 1:
+                proto_ids.add(c.id)
+            elif ((getattr(ins, "layer", "") or _subtree_has_tagged(c))
+                    and not _subtree_has_faceme(c)):
+                proto_ids.add(c.id)
+            _promote_nested(c, stack | {id(d)})
 
     for r in roots:
         for ins in getattr(r, "instances", []):
@@ -1054,17 +1252,40 @@ def _adapt(model, name: str, skp_path=None):
             if getattr(child, "is_image", False) or \
                     getattr(child, "always_faces_camera", False):
                 continue
-            if not _shareable(child):
-                continue
-            # A prototype flattens its subtree (no proto-in-proto), so a
-            # container whose children are themselves shared would swallow
-            # them: they would stop being separately selectable and their
-            # sharing would be lost. Promote only what costs nothing —
-            # measured on the corpus, where the unguarded version quietly
-            # merged 47 groups of one file into their parents.
-            if _subtree_uses(child, proto_ids):
-                continue
             proto_ids.add(child.id)
+            _promote_nested(child)
+    # Which definitions the file places as GROUPS, not components (see
+    # openskp_compat): they import as groups.
+    from formats import openskp_compat
+    single_groups = {did for did in openskp_compat.group_definitions()
+                     if uses.get(did) == 1}
+    # A COMPONENT copied side by side at the top level is a component however
+    # small (#1029: six 6-face shelves of one definition arrived as six
+    # loose groups, so the file's components read as groups). The sharing
+    # thresholds above guard against a tiny part repeated inside a parent
+    # turning into hundreds of child objects; at the top level every copy is
+    # its own object either way, so sharing its mesh adds none. Only when
+    # the parse told groups from components, and only definitions placed
+    # nowhere else — a nested copy would be pulled out of its parent.
+    if openskp_compat.kinds_known(legacy_era):
+        group_ids = openskp_compat.group_definitions()
+        top_uses: dict = {}
+        for r in roots:
+            for ins in getattr(r, "instances", []):
+                cid = getattr(by_id.get(getattr(ins, "ref_idx", None)),
+                              "id", None)
+                if cid is not None:
+                    top_uses[cid] = top_uses.get(cid, 0) + 1
+        for cid, n in top_uses.items():
+            if n < 2 or uses.get(cid) != n or cid in group_ids \
+                    or cid in proto_ids:
+                continue
+            child = by_id[cid]
+            if getattr(child, "is_image", False) or \
+                    getattr(child, "always_faces_camera", False) \
+                    or not _shareable(child):
+                continue
+            proto_ids.add(cid)
 
     groups: list = []
     proto_uses: dict = {}
@@ -1081,11 +1302,13 @@ def _adapt(model, name: str, skp_path=None):
                 entry = _face_entry(face, wl, raw_l, s0, s1, hs, attr_map)
                 if entry is not None:
                     loose.append(entry)
-        if loose:
+        lines: list = []
+        _loose_edge_segments(r, ident, lines)
+        if loose or lines:
             loose_edges: list = []
             _soft_edge_segments(r, ident, loose_edges)
             groups.append({"name": name, "faces": loose,
-                           "soft_edges": loose_edges})
+                           "soft_edges": loose_edges, "loose_edges": lines})
         # Each top-level instance → its own group (or a shared-proto use).
         # The instance's layer (tag) rides on the whole group; nested tagged
         # instances land as per-face layers inside it.
@@ -1100,18 +1323,24 @@ def _adapt(model, name: str, skp_path=None):
                     getattr(child, "always_faces_camera", False):
                 image_uses.append((child, placed, inh, lay))
                 continue
+            ins_name = getattr(ins, "name", "") or None
             if getattr(child, "id", None) in proto_ids:
                 proto_uses.setdefault((child.id, inh), []).append(
-                    (placed, lay))
+                    (placed, lay, ins_name))
                 continue
             sub: list = []
             sub_edges: list = []
+            sub_lines: list = []
             _collect(child, placed, by_id, attr_map, sub, 0, set(),
                      proto_ids, proto_uses, inh, image_uses, sub_edges,
-                     layer_uses=layer_uses, group_layer=lay)
-            if sub:
-                gp = {"name": getattr(child, "name", None) or name,
+                     layer_uses=layer_uses, group_layer=lay,
+                     loose_out=sub_lines)
+            if sub or sub_lines:
+                # The name the user gave the group or copy, else its
+                # definition's («Group#3» is all a .skp names a group).
+                gp = {"name": ins_name or getattr(child, "name", None) or name,
                       "faces": sub, "soft_edges": sub_edges,
+                      "loose_edges": sub_lines,
                       # The instance's own axes (issue #44): flattened into
                       # world coordinates, it still faces the way it did.
                       "axes": [float(x) for x in placed.data()]}
@@ -1137,31 +1366,6 @@ def _adapt(model, name: str, skp_path=None):
                            "faces": sub, "soft_edges": sub_edges,
                            "layer": lay,
                            "axes": [float(x) for x in placed.data()]})
-
-    # Image entities → their own groups; cutout images (real alpha) become
-    # face-me billboards that turn toward the camera, opaque photos stay
-    # static panels — same rule as the DAE face-me import. An image quad
-    # always shows the WHOLE picture once (see _image_quad_faces). An
-    # "always faces camera" component (Susan) flattens its whole subtree
-    # into one billboard group — the flag decides, no heuristic needed.
-    for child, placed, inh, lay in image_uses:
-        if getattr(child, "is_image", False):
-            faces = _image_quad_faces(child, placed, attr_map, inh)
-            tex = next((a["texture"]["path"] for _o, _h, a in faces
-                        if a and "texture" in a), None)
-            billboard = bool(tex and _image_has_cutout(tex))
-        else:
-            faces = []
-            _collect(child, placed, by_id, attr_map, faces, 0, set(),
-                     inherited=inh)
-            billboard = True
-        if not faces:
-            continue
-        gp = {"name": getattr(child, "name", None) or name,
-              "faces": faces, "billboard": billboard}
-        if lay:
-            gp["layer"] = lay
-        groups.append(gp)
 
     # Build each shared prototype ONCE, in local coordinates — per inherited
     # material, so a component painted red and green as a whole yields two
@@ -1190,22 +1394,36 @@ def _adapt(model, name: str, skp_path=None):
         protos.append(None)
         local: list = []
         local_edges: list = []
+        local_lines: list = []
+        local_images: list = []
         child_uses: dict = {}
         _collect(d, QMatrix4x4(), by_id, attr_map, local, 0, set(),
-                 proto_ids, child_uses, inh, edges_out=local_edges)
+                 proto_ids, child_uses, inh, local_images,
+                 edges_out=local_edges, loose_out=local_lines)
         children: list = []
         for (cid, cinh), places in child_uses.items():
             ci = _build_proto(cid, cinh)
             if ci is None:
                 continue
-            for xf, ly in places:
+            for xf, ly, nm in places:
                 kid = {"proto": ci, "xform": xf}
                 if ly:
                     kid["layer"] = ly
+                if nm:
+                    kid["name"] = nm
                 children.append(kid)
         protos[idx] = {"name": getattr(d, "name", None) or name,
                        "faces": local, "soft_edges": local_edges,
-                       "children": children, "instances": []}
+                       "loose_edges": local_lines,
+                       # A GROUP placed once is a group. Copies of a group
+                       # share its definition in the file; they stay
+                       # components here, so editing one cannot reach into
+                       # the mesh the others share.
+                       "component": did not in single_groups,
+                       "children": children, "instances": [],
+                       # face-me pieces inside, in local coordinates: they
+                       # leave as billboards once the placements are known
+                       "_images": local_images}
         return idx
 
     for (did, inh), uses in list(proto_uses.items()):
@@ -1214,11 +1432,64 @@ def _adapt(model, name: str, skp_path=None):
         idx = _build_proto(did, inh)
         if idx is None:
             continue
-        protos[idx]["instances"] = [xf for xf, _ly in uses]
-        if any(ly for _xf, ly in uses):
+        protos[idx]["instances"] = [xf for xf, _ly, _nm in uses]
+        if any(ly for _xf, ly, _nm in uses):
             # Layer (tag) per PLACEMENT — copies of one component can sit on
             # different layers.
-            protos[idx]["instance_layers"] = [ly for _xf, ly in uses]
+            protos[idx]["instance_layers"] = [ly for _xf, ly, _nm in uses]
+        if any(nm for _xf, _ly, nm in uses):
+            # Name per PLACEMENT too: each copy can carry its own.
+            protos[idx]["instance_names"] = [nm for _xf, _ly, nm in uses]
+
+    # The face-me pieces a prototype holds turn toward the camera from
+    # their own WORLD spot, so they leave it like the ones outside any
+    # prototype: one per placement, its matrix composed down the tree, its
+    # tag the nearest one above it.
+    def _expand_images(idx, world, tag, depth=0):
+        pr = protos[idx]
+        for child, placed, inh, lay in pr["_images"]:
+            image_uses.append((child, world * placed, inh, lay or tag))
+        if depth < 32:      # a malformed file must not spin
+            for kid in pr["children"]:
+                _expand_images(kid["proto"], world * kid["xform"],
+                               kid.get("layer") or tag, depth + 1)
+
+    for idx, pr in enumerate(protos):
+        lays = pr.get("instance_layers") or []
+        for i, xf in enumerate(pr["instances"]):
+            _expand_images(idx, xf, lays[i] if i < len(lays) else None)
+    for pr in protos:
+        del pr["_images"]
+
+    # Image entities → their own groups; cutout images (real alpha) become
+    # face-me billboards that turn toward the camera, opaque photos stay
+    # static panels — same rule as the DAE face-me import. An image quad
+    # always shows the WHOLE picture once (see _image_quad_faces). An
+    # "always faces camera" component (Susan) flattens its whole subtree
+    # into one billboard group — the flag decides, no heuristic needed.
+    for child, placed, inh, lay in image_uses:
+        if getattr(child, "is_image", False):
+            faces = _image_quad_faces(child, placed, attr_map, inh)
+            tex = next((a["texture"]["path"] for _o, _h, a in faces
+                        if a and "texture" in a), None)
+            # A cut-out turns to face the camera — unless it is stuck on a
+            # face, like a logo on a device (#429): the file has no face-me
+            # flag for images, SketchUp never turns one.
+            billboard = bool(tex and _image_has_cutout(tex)
+                             and not _rests_on_a_face(roots, by_id,
+                                                      faces[0][0]))
+        else:
+            faces = []
+            _collect(child, placed, by_id, attr_map, faces, 0, set(),
+                     inherited=inh)
+            billboard = True
+        if not faces:
+            continue
+        gp = {"name": getattr(child, "name", None) or name,
+              "faces": faces, "billboard": billboard}
+        if lay:
+            gp["layer"] = lay
+        groups.append(gp)
     # NOT filtered: ``children`` reference prototypes by INDEX, so dropping
     # an entry would silently repoint every reference after it. A container
     # with no faces of its own is real anyway — the hedge's top definition
@@ -1227,7 +1498,8 @@ def _adapt(model, name: str, skp_path=None):
     protos = _merge_equal_protos(protos)
 
     payload = {"backend": "openskp", "groups": groups, "protos": protos}
-    if not groups and not any(e["faces"] or e["children"] for e in protos):
+    if not groups and not any(e["faces"] or e["children"]
+                              or e.get("loose_edges") for e in protos):
         # Nothing to draw. Either the parser missed the geometry (→ None,
         # the caller reports it as unreadable) or the file really is empty
         # — a template, #103: reporting THAT as unreadable would be wrong,
@@ -1313,6 +1585,7 @@ def parse(path, progress=None):
     import openskp
     from formats import openskp_compat
     openskp_compat.apply()          # fixes still waiting upstream
+    openskp_compat.reset_group_definitions()
     if progress is not None:
         progress(0.1, "Parsing .skp (OpenSKP)…")
     model = openskp.SkpFile.open(str(path)).parse()

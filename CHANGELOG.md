@@ -4,9 +4,749 @@ All notable changes to IngeTrazo are documented here.
 Format inspired by [Keep a Changelog](https://keepachangelog.com); versions
 follow [SemVer](https://semver.org).
 
-## [Sin publicar]
+## [Unreleased]
+
+## [0.6.1] — 2026-11-08
+
+**Vistas en la misma pestaña: una, dos, tres o cuatro, con líneas que se
+arrastran y escenas en su propia fila; aviso cuando sale una versión nueva;
+PNG con fondo transparente y vidrio translúcido en Monocromo; búlgaro y chino
+tradicional, ya son 19 idiomas; Empujar/Tirar y las herramientas de ángulo más
+fiables, y decenas de arreglos de importación, pintura y grupos.**
 
 ### Añadido
+
+- **Distribuciones de vistas** (#1127, @canalsecuario-blip): la zona del
+  modelo se divide en una, dos, tres o cuatro vistas, cada una con su cámara.
+  Cada línea entre vistas se arrastra sola y un cuadrado mueve el bloque;
+  Maximizar y Restaurar están en el menú de la etiqueta de cada vista. Lo que
+  dibujas en una se ve en las demás, y la distribución se guarda en el `.igz`
+  si usas más de una vista. *Cómo probarlo:* el botón de los cuatro cuadrados, a
+  la izquierda de las pestañas; Ctrl+Espacio maximiza la vista bajo el cursor.
+- **Escenas como pestañas** (#1127): una fila de pestañas bajo el visor, que
+  solo aparece si el proyecto tiene escenas. Se crean, renombran, reordenan y
+  eliminan desde la fila o desde el panel; crear una es un paso de Deshacer.
+  Alt+E oculta la fila.
+- **Área vacía** (#1127): al cerrar la última pestaña queda un área vacía con
+  un «+» que abre un documento nuevo.
+- **Aviso de versión nueva**: una vez al día, al abrir, IngeTrazo pregunta a
+  GitHub cuál es la última versión y, si hay una más reciente, muestra sus
+  novedades sin interrumpir. También en Ayuda ▸ Buscar actualizaciones…; se
+  apaga en Preferencias. No aparece en Flatpak ni Snap, que se actualizan
+  solos.
+- **PNG con fondo transparente**: una casilla en Exportar imagen deja sin
+  cielo ni suelo el fondo del PNG. *Cómo probarlo:* Archivo ▸ Exportar imagen,
+  formato PNG, marca «Fondo transparente». En JPG aparece desactivada.
+- **Búlgaro** (#1185, @davidsmavrov-debug) y **chino tradicional de Taiwán**
+  (#1010, #1099, @KuoYaMu).
+- **Campo `{sheet_name}`** (#1168, @BastelBaus): siempre el nombre de la
+  lámina, como aparece en la lista de láminas — a diferencia de
+  `{lamina}`/`{sheet}`, que leen la fila LÁMINA del cajetín (el número de
+  plano). Es otro nombre de `{nombre}`/`{name}`. *Cómo probarlo:* escribe un
+  texto «{sheet} — {sheet_name}» en una lámina con cajetín y renombra la
+  lámina.
+- **Enganche donde una arista o guía atraviesa una cara** (#1169, @pacaeiro).
+- **Atajos de teclado**: cada comando muestra su menú y se puede buscar por él
+  (#1157, @canalsecuario-blip).
+
+### Cambiado
+
+- **Doble clic de la rueda: recentra en el punto** (#1154,
+  @canalsecuario-blip): el punto bajo el cursor pasa al centro de la vista,
+  sobre el modelo o sobre el vacío, sin cambiar el zoom ni encuadrar nada.
+  Antes encuadraba todo el modelo (eso sigue en «Zoom a extensión»). *Cómo
+  probarlo:* con la herramienta que sea, doble clic de la rueda sobre una
+  esquina del modelo.
+- **Equidistancia** (#1084, @pacaeiro): engancha solo a puntos finales y
+  medios, y solo durante el arrastre, no a aristas, caras ni inferencias.
+- **Punto de referencia en 3D** (#1097, @pacaeiro): pausar sobre un punto da
+  su referencia también en 3D al dibujar, y Shift la bloquea.
+- **Niveles** (#1075, @consumr): las alturas van en las unidades del documento,
+  las flechas avanzan 10 cm o 4 pulgadas, y cada nivel nuevo repite la altura
+  del anterior.
+- **Pestañas de láminas**: ocupan el ancho libre de la barra de estado y solo
+  muestran flechas si hace falta; un nombre muy largo se corta en la pestaña y
+  se lee entero en su globo (#1184).
+- **Abrir una pestaña nueva** tarda la mitad (@canalsecuario-blip).
+
+### Corregido
+
+- **El programa ya no se cierra de golpe en las láminas**: tras un clic derecho
+  en una fila de la lista de elementos del compositor, ocultarla o cambiar la
+  lista podía tumbar IngeTrazo, y se perdía lo que no estuviera guardado.
+- **Importar `.skp`**: un componente escalado de cierta forma entraba 10 000
+  veces más grande (#1196, @DarkBiscuits).
+- **Una importación que falla o no trae nada lo dice y no deja una pestaña
+  vacía**: DXF, DWG, DAE, GLB, OBJ y SKP (#1176, #1172).
+- **DXF** (#1160, @nicolasmarc): cada parte POLYFACE o MESH se une por su
+  cuenta, los bloques de ensamblaje dan un componente con nombre por parte y
+  una cara repetida por las entidades de malla queda una sola vez.
+- **Importar GLB**: las imágenes ya no llegan al revés (#1159,
+  @canalsecuario-blip).
+- **Exportar GLB**: una cara pintada solo por el reverso sale con esa pintura.
+- **Guardar escribe el documento del proyecto activo** (#1106).
+- **Extensiones**: una que no se puede leer o cargar ya no impide cargar las
+  demás ni abrir el gestor, e instalar como administrador ya no la deja sin
+  permisos para los demás usuarios (#1152).
+- **Empujar/Tirar**: una distancia tecleada o un clic ya no se ignoran en
+  silencio en una cara desviada, y una puerta desviada 1 mm se abre al empujar
+  el grueso del muro (#1094).
+- **Transportador y Rotar**: el disco ya no cambia de tamaño al mover el cursor
+  en vistas rasantes (#1200, #1208, @pacaeiro), y cambiar el plano con
+  una flecha después de colocar el centro también mueve el plano de trabajo,
+  así que el eje Z engancha (#1220, @pacaeiro).
+- **Formas planas con flecha**: se anclan en la cara bajo el cursor, en lugar
+  de en el plano del origen (#1171, @pacaeiro).
+- **Hacer componente sobre un grupo** ya no lo hace desaparecer de la vista
+  (#1150, @canalsecuario-blip).
+- **Puente**: dos arcos opuestos ya no se cruzan en un reloj de arena (#1164,
+  @canalsecuario-blip).
+- **Grupos anidados**: una pieza sin pintar lleva la pintura de su contenedor
+  pintado más cercano, y la conserva al moverla (#1156, #1101, @alteralto).
+- **Lo que cambias dentro de un grupo anidado se ve al momento**: en un grupo
+  abierto dentro de otro, o en un contenedor con caras propias, pintar, dibujar
+  o mover no aparecía en pantalla hasta salir del grupo. Tampoco se veía
+  Deshacer tras salir del grupo ni editar un material usado dentro de un
+  componente cerrado. *Cómo probarlo:* entra en un grupo dentro de otro y pinta
+  una cara; Deshacer y Rehacer también deben verse.
+- **Pintar**: lo pintado dentro de un grupo ya no vuelve a su color anterior al
+  salir; cada repintado de una definición compartida ve la edición (#1129); el
+  aviso al pintar un contenedor dura diez segundos, y al salir de un componente
+  anidado cuenta bien sus copias.
+- **Vidrio**: en Monocromo es translúcido y gris, en lugar de opaco y blanco, y
+  las imágenes exportadas salen opacas detrás del vidrio: el fondo ya no queda
+  semitransparente en los PNG.
+- **Seleccionar**: entre objetos sobre un mismo plano gana el más pequeño
+  (#982). **Pegar**: lo pegado queda seleccionado, también caras y aristas
+  sueltas.
+- **`{proyecto}`, `{autor}` y `{lamina}` leen la tabla del cajetín** (#1168,
+  @BastelBaus): los campos de los textos de la lámina tomaban los valores con
+  los que nació el cajetín, no los que uno escribe después en su tabla —
+  cambiabas el nombre del proyecto y el texto seguía diciendo el viejo. Ahora
+  leen la fila con ese nombre (PROYECTO, AUTOR, LÁMINA; también en inglés o
+  alemán, con o sin tilde), y el texto se repinta al editar la fila. *Cómo
+  probarlo:* en una lámina con cajetín, escribe un texto «{proyecto} —
+  {lamina}» y cambia la fila PROYECTO en el panel.
+- **Compositor**: los campos del panel lateral responden a la rueda solo si
+  tienen el foco (#1163).
+- **Tabla BIM**: conserva las ramas que plegaste (#1117).
+- **Panel de capas**: las marcas de cada fila se repintan al cambiar de tema
+  (#1128, @alteralto).
+- **macOS**: la release deja el ejecutor `macos-14`, que se retira (#1123).
+
+## [0.6.0] — 2026-11-01
+
+**Varios proyectos en pestañas en la misma ventana; IngeTrazo ya habla 17
+idiomas, los últimos el árabe (con la interfaz de derecha a izquierda) y el
+ucraniano; Empujar/Tirar que abre puertas y ventanas en muros reales, los .skp con sus grupos y componentes como en el
+archivo, superficies curvas que se ven redondas, oclusión ambiental más
+natural y más de cuarenta aportes de la comunidad.**
+
+### Añadido
+
+- **Proyectos en pestañas** (#1066): se abren varios proyectos en la misma
+  ventana, cada uno con su deshacer, sus láminas y su autoguardado.
+  Archivo ▸ Nuevo (Ctrl+N) o el «+» de la barra de pestañas abre una
+  pestaña nueva; un .igz abierto con doble clic desde el explorador de
+  archivos o arrastrado a la ventana llega como pestaña nueva (un .skp, en
+  cuanto la ventana termina de pintarse). Al pasar el ratón por una pestaña
+  de atrás se ve una vista previa. Al cerrar una pestaña su memoria vuelve
+  al sistema: cerrar el modelo SPR con plaza abierta en otra pestaña baja
+  a ~1 GB. Las extensiones siguen con la API 2 y las que cambian el
+  widget central siguen funcionando. *Cómo probarlo:* con un proyecto
+  abierto, Archivo ▸ Abrir otro .igz (o haz doble clic en uno desde el
+  explorador): llega como pestaña nueva; cambia con Ctrl+RePág/AvPág,
+  cierra con Ctrl+W.
+- **Árabe** (@Alhlhli, #1067) con la **interfaz de derecha a izquierda**:
+  menús, paneles, barras y diálogos se reflejan; la vista 3D, las láminas
+  y los campos de números siguen de izquierda a derecha. Los demás idiomas
+  no cambian. *Cómo probarlo:* Ventana ▸ Preferencias… ▸ Idioma ▸ العربية
+  y reinicia IngeTrazo.
+- **Ucraniano** (@bolotov, #1054). Con el árabe, el ucraniano y el lao, que vuelve a ofrecerse, IngeTrazo habla 17 idiomas. *Cómo probarlo:* Ventana ▸ Preferencias… ▸
+  Idioma, y reinicia.
+- **«Idioma del sistema»** como opción propia en Preferencias ▸ Idioma
+  (#818, @francisreboucas en #875): sigue al sistema también después de
+  haber elegido otro idioma. *Dónde:* Ventana ▸ Preferencias… ▸ Idioma ▸
+  «Igual que el sistema», la primera opción.
+- **El compositor de láminas en su propia ventana** (#1068,
+  @canalsecuario-blip en #1069): se saca de la barra de tareas y vuelve; ya
+  no queda un recuadro fijo tapando las pestañas al minimizarlo. *Cómo
+  probarlo:* Archivo ▸ Compositor de láminas…: se abre en una ventana
+  aparte, con su propio botón en la barra de tareas.
+- **Navegador que ordena, pliega y filtra** (#734, @canalsecuario-blip en
+  #1002): por capa con encabezados plegables o por nombre, y un embudo
+  para filtrar. *Dónde:* el panel Navegador, en la barra lateral: arriba
+  están el orden (por capa o por nombre) y el embudo.
+- **Bloquear y desbloquear grupos con clic derecho** sobre el modelo (#782,
+  @canalsecuario-blip en #1047). *Cómo probarlo:* clic derecho sobre un
+  grupo ▸ Bloquear; ya no se puede mover ni editar hasta Desbloquear.
+- **Restaurar valores predeterminados** en Preferencias
+  (@canalsecuario-blip, #1052), también los ejes del ratón 3D y la
+  intensidad del atenuado. *Dónde:* Ventana ▸ Preferencias…, botón
+  «Restablecer valores predeterminados» abajo; el idioma y la clave de
+  IA no se tocan.
+- **Ratón 3D (SpaceMouse) con ejes y perfiles configurables** (@deedend,
+  #581); el perfil por defecto mueve la vista como antes. *Dónde:*
+  Ventana ▸ Preferencias… ▸ pestaña Ratón 3D.
+- **Explotar imagen** (#687): clic derecho sobre una imagen importada la
+  convierte en un grupo con la foto como textura, en un solo deshacer; el
+  cuentagotas toma el color de la imagen. *Cómo probarlo:* Archivo ▸
+  Importar ▸ Imagen (PNG / JPG)…, colócala, clic derecho sobre ella ▸
+  Explotar imagen.
+- **Asistente de IA**: proveedor OpenCode Go y un chat legible con
+  burbujas, fotos, barra de «pensando» y botón Detener (@changastyle,
+  #814); la clave se puede leer de una variable de entorno cuando el campo
+  está vacío (#998, @ultracat en #1014; OpenCode Go lee también
+  `OPENCODE_API_KEY`). *Dónde:* Extensiones ▸ Asistente IA (Ctrl+Mayús+A);
+  el proveedor y la clave, en Ventana ▸ Preferencias… ▸ Asistente IA.
+- **Iso** salta a la vista isométrica más cercana (@pacaeiro, #995).
+  *Cómo probarlo:* gira la cámara hacia cualquier esquina del modelo y
+  pulsa Cámara ▸ Vistas estándar ▸ Isométrica (Ctrl+4): va a la
+  isométrica de esa esquina, no siempre a la misma.
+- **BIM**: el metrado encuentra etiquetas dentro de grupos y el panel
+  lista los objetos en los grupos que los contienen (@BastelBaus, #1035).
+  *Cómo probarlo:* etiqueta como muro algo que está dentro de un grupo y
+  mira el panel BIM.
+- **Ayuda ▸ Documentación** abre el manual en línea (@BastelBaus, #1036).
+- La capa activa muestra su lápiz con el color de acento (@APBureauEtude,
+  #1018), y al editar un grupo o componente se ve mejor dónde se está y
+  cómo salir (@APBureauEtude, #947). *Dónde:* el lápiz, en el panel Capas;
+  para lo segundo, doble clic en un grupo.
+
+### Cambiado
+
+- **Oclusión ambiental más suave y natural** (@canalsecuario-blip, #1060
+  en #1061): los rincones interiores ya no salen como barras casi negras.
+  El pase mide los horizontes de cada punto e integra el cielo visible con
+  peso coseno, la luz que rebotan las paredes aclara los rincones claros y
+  el peso de cada superficie baja con la distancia; un segundo desenfoque
+  deja el degradado liso. La Intensidad es lineal (1 es el valor físico) y
+  la Distancia tiene un deslizador de 1 cm a 50 m. *Cómo activarla:* en
+  el panel Estilos de la barra lateral, marca la casilla «Oclusión
+  ambiental» y mueve Distancia e Intensidad; se ve en los rincones, al pie
+  de los muros y bajo los muebles. Viene apagada en todos los estilos, y
+  se guarda con el estilo del documento.
+- **Las superficies curvas se ven redondas** y no facetadas (#131,
+  @canalsecuario-blip en #809): el sombreado se suaviza a través de las
+  aristas suaves. *Cómo probarlo:* no hay que activar nada; abre un
+  modelo con superficies curvas, o dibuja un círculo y empújalo hasta
+  hacer un cilindro: se ve liso, sin franjas.
+- **Importar .skp conserva la estructura del archivo**: grupos como grupos
+  y componentes como componentes (#1029), anidados y con sus nombres
+  (@BastelBaus en #922; cierra #866), las anotaciones con su ancla
+  (@BastelBaus en #960) y las líneas sueltas de una etiqueta oculta se
+  quedan fuera. Al abrir un .skp el Navegador puede mostrar muchos menos
+  objetos arriba: es la estructura que trae el archivo. *Cómo probarlo:*
+  Archivo ▸ Abrir un .skp y despliega el Navegador.
+- **Exportar COLLADA conserva grupos, componentes y etiquetas**
+  (@vicc3d, #966). *Dónde:* Archivo ▸ Exportar ▸ COLLADA (.dae)….
+
+### Arreglado
+
+- **Empujar/Tirar con puertas y ventanas en muros** (#1076, #1083): una
+  puerta empujada dentro del muro o a través de él deja el hueco limpio,
+  también si está un poco torcida o es un anillo. Los casos reales que
+  mandaron los usuarios quedan como pruebas de regresión.
+- **Explotar** un grupo cuyas caras caen sobre caras que ya estaban las
+  une, sin caras duplicadas (#721).
+- **Puente**: las caras nuevas quedan orientadas como las que une (#1043).
+- **Las cotas siguen a su vértice** cuando un movimiento pasa por encima
+  de otro vértice (#563).
+- **Empujar/Tirar se engancha al punto medio de las aristas** (#863 #964,
+  @hamzah1985 en #863), también las del sólido que se está empujando.
+- **Selección**: un círculo dibujado sobre la cara de un grupo se
+  selecciona con un clic y se empuja directo (#982); las esquinas, puntos
+  medios y caras de un grupo cerrado se enganchan desde fuera (#997); un
+  clic ya no reconstruye las figuras que miran a la cámara y la selección
+  en modelos con muchas de ellas es inmediata (#1006).
+- **Modelos enormes**: la caja de selección sobre un modelo de 5 millones
+  de caras ya no agota la memoria (más de 12 GB antes; ahora unos 4,7 s);
+  los puntos medios de arcos y la referencia de centro no construyen las
+  mallas diferidas (#942).
+- **Estilos**: el color frontal pinta las caras sin material en todos los
+  modos (#776); los dorsos toman la luz mate de los frentes (#873).
+- **Proyección paralela** sin zigzag en superficies lisas (#874); las
+  cotas y anotaciones tapadas por otras caras se cortan en la silueta sin
+  parpadear (#918).
+- **Compositor**: una cota arrastrada fuera del modelo se vuelve a anclar
+  al traerla a un vértice (#1053); un clic sobre un elemento agrupado
+  mantiene el grupo seleccionado (#1042).
+- **Texturas**: una cara suelta con textura que se mueve o gira entera se
+  lleva su imagen (#1034).
+- **Texto 3D** que ya no se hunde en las caras al colocarlo o editarlo
+  (@pacaeiro, #1057).
+- **Copiar con Mover** deja abierto el agujero de la cara copiada
+  (@vicc3d, #1027); deshacer una importación devuelve lo que se había
+  quitado (@vicc3d, #1073); importar DAE/glTF con un nodo repetido ya no
+  multiplica el recorrido (@vicc3d, #1001).
+- **.skp**: abren los archivos de 2019 con el registro de capa largo
+  (#157); las piezas de un componente con escala −1 conservan el frente
+  (#1045, @alteralto en #1065).
+- **DWG**: la conversión ya no congela la ventana y tiene botón Cancelar
+  (#401, @pkoska en #904); los planos con una presentación mal registrada
+  («'OF-01'») ya importan.
+- **Círculo**: vuelve a engancharse a los ejes (#962, @pacaeiro en #992).
+- **Puente de IA**: un diálogo abierto por el código del agente se cancela
+  en vez de bloquear la app (#694); probar la conexión con OpenAI usa
+  `max_completion_tokens` (#1032).
+- **Traducciones**: vietnamita revisado (@vandang890615, #1019 y
+  anteriores), tailandés con los nombres de la consola en inglés
+  (@PRIDA-TAKON, #1023); en árabe y vietnamita vuelve el espacio
+  entre un número y su unidad («2 decimales»).
+- **La oclusión ambiental ya no pinta bandas verticales** en caras planas
+  vistas de lado (#989, @canalsecuario-blip en #991).
+- **Lao en Windows** (#850): la interfaz usa una fuente con lao
+  (Leelawadee UI) y las vocales y tonos quedan sobre su consonante; el
+  lao vuelve a ofrecerse en Preferencias ▸ Idioma.
+
+### Gracias
+
+- A **Aashish** y su canal **IngeTrazo Tutorials** en YouTube
+  (@aashishzharbade-arch), que enseña el programa, sus extensiones y sus
+  flujos de trabajo, y que ha creado nueve extensiones del catálogo:
+  MultiView, Phasing Animator, Kitchen Maker, Display Scale, Taper, Bevel,
+  Curve Tools, Texture Library y Make Stair. Un ecosistema que le da vida
+  a IngeTrazo.
+- A todos los que aportaron código, traducciones, reportes y archivos de
+  prueba a esta versión, y en especial a Gabriel, Pedro, Rafael y Ahsan,
+  los pilares que dieron estructura al proyecto.
+
+### Problemas conocidos
+
+- Modelos de 5 millones de caras: abrir (~16 s), el primer movimiento con
+  Línea, algunos tirones y guardar siguen lentos (#1092).
+- Empujar/Tirar: una puerta torcida 1 mm empujada exactamente el grosor
+  del muro deja la tapa en la cara de atrás (#1094).
+- Copiar con Ctrl sobre una malla compleja grande no es exacto (#1087).
+
+## [0.5.11] — 2026-10-27
+
+**Capas 2.0, la oclusión ambiental deja de ser experimental, sombras
+nítidas al exportar y en la vista quieta, cuatro idiomas nuevos, el gestor
+de extensiones que vuelve a conectar en Windows y más de treinta aportes
+de la comunidad.**
+
+**Si viene de la 0.5.10, esta versión trae también lo de la 0.5.10.1:** el
+arreglo de la textura que se perdía al guardar dos veces (#877), las
+sombras del sol sin escalones y los diálogos de archivos que ya no se
+traban con una carpeta de red en Windows (#948). El detalle está en la
+sección 0.5.10.1, más abajo.
+
+### Añadido
+
+- **Capas 2.0** (#652, @canalsecuario-blip en #728): las capas tienen
+  pestaña propia junto al Navegador, con ojo, candado, aislar, capa activa,
+  color, tipo y grosor de línea, transparencia e impresión por capa,
+  carpetas, filtros y menú contextual completo. Una **barra Capas** cambia
+  la capa activa o mueve la selección a otra. Lo nuevo (grupos, cotas,
+  textos, guías) va a la capa activa; sin capa activa, las guías, cotas y
+  textos van a sus capas automáticas «Guías», «Dimensiones» y «Textos».
+  «Color por capa» en el estilo. En las láminas, cada capa con su tipo y
+  grosor de línea, «No imprimir» y leyenda; el DXF lleva una capa DXF por
+  capa del modelo, con su color y tipo de línea. Los .igz guardados abren
+  igual en la 0.5.10.
+- **La oclusión ambiental deja de ser experimental** (#954): la casilla de
+  Estilos se llama ahora «Oclusión ambiental» y sigue apagada en todos los
+  estilos. Se afinaron los defectos de la ronda Windows: el halo oscuro
+  y dentado junto al borde de pilares y tablas (el cielo junto a un objeto
+  ya no se oscurece nunca) y el moteado en «nubes» de las caras grandes y
+  lisas. Además, un error gráfico pasajero al abrir un archivo grande ya no
+  la apaga para toda la sesión. Apagada, la imagen es idéntica a la de
+  antes; encendida cuesta lo mismo que en la 0.5.10.1.
+- **Sombras nítidas en las imágenes exportadas y en las láminas**: la vista
+  reparte el mapa de sombras sobre todo el modelo, así que en una plaza de
+  100 m cada punto cubre 5 cm y la sombra sale suave. Al exportar imagen
+  (PNG/JPG) o al dibujar una lámina, el mapa se calcula solo para esa imagen
+  cuatro veces más fino (1,2 cm en la plaza): la sombra de las tablas de una
+  pérgola sale rayada como es.
+- **Sombras nítidas también en pantalla con la vista quieta** (#958): en un
+  modelo grande la sombra se veía pixelada de cerca. Cuando la cámara se
+  queda quieta un quinto de segundo, el mapa de sombras se rehace solo para
+  lo que se ve (en la plaza, unos 33 m en lugar de todo el modelo): las
+  tablas de una banca proyectan su sombra una por una. Al orbitar, mover o
+  editar vuelve al mapa de siempre, así que la órbita no se hace más lenta;
+  al quedarse quieta hay un solo cuadro de unos 40 ms en el modelo SPR.
+- **Cuatro idiomas nuevos:** japonés (@nonasige-ui, #597), coreano
+  (@ultracat, #785), vietnamita (@vandang890615, #936) y tailandés
+  (@PRIDA-TAKON, #824). IngeTrazo arranca en ese idioma la primera vez si
+  el sistema lo usa; se cambia en Preferencias ▸ Idioma. La traducción al
+  lao (@bounkirdni-2025, #850) ya viene en el programa, pero todavía no se
+  ofrece: en Windows las vocales y los tonos salían separados de su
+  consonante, y vuelve en la próxima versión cuando eso esté resuelto.
+- **Línea bloqueada que encuentra aristas y caras** (#245, @pacaeiro en
+  #876): con una dirección bloqueada (flechas, Mayús o la referencia), el cursor sobre
+  una arista ofrece el punto donde la línea bloqueada corta la recta de esa
+  arista («Intersección con arista», con su prolongación punteada), y sobre
+  una cara, donde atraviesa su plano («Intersección con cara»). Sirve en
+  Línea, Medir, Escalar y Rectángulo girado.
+- **Medir empieza desde la línea bajo el cursor** (#846, @hamzah1985): si al
+  tomar la herramienta el cursor está sobre una arista, una guía o un eje,
+  la guía paralela sale de inmediato; basta un clic o escribir la distancia.
+  El punto medio de una arista vuelve a servir como origen de una guía.
+- **Equidistancia muestra su referencia** (#843 y #844, @hamzah1985): la
+  arista desde la que se mide se resalta en azul, un cuadrito rojo marca el
+  punto de partida y una guía discontinua lo une a la vista previa. El
+  cursor es ahora una flecha con el icono al lado, y el clic cae en la
+  punta.
+- **Puente** (#614, @canalsecuario-blip en #683): con dos caras, una cara
+  y una línea, o dos líneas seleccionadas, construye las caras laterales
+  entre ellas. Está en la barra Modificar y en el menú Herramientas.
+- **Escala… para grupos y componentes** (@pacaeiro, #771): clic derecho
+  sobre un grupo o componente ▸ Escala… abre un cuadro con X, Y y Z, sobre
+  los ejes propios del objeto, con «Restablecer escala» y deshacer.
+- **Cambiar los lados de un círculo o polígono, o los segmentos de un arco,
+  ya dibujado** (@canalsecuario-blip, #813): en Propiedades ▸ Info de
+  entidad, el campo «Lados:» o «Segmentos:» rehace la figura en su sitio.
+- **Cotas sin unidad** (#374, #637, @canalsecuario-blip en #741): la casilla
+  «Mostrar unidad» del Estilo de cota deja solo el número (1.30 en lugar de
+  1.30 m), para láminas que indican la unidad una sola vez. Por defecto la
+  unidad sigue visible.
+- **Materiales: renombrar y cambiar el color del material activo**
+  (@canalsecuario-blip, #806); un color RAL editado pasa a ser un material
+  nuevo y el original queda intacto.
+- **Un «+» tras las pestañas de la barra lateral** para añadir o quitar
+  paneles (@canalsecuario-blip, #797), la misma lista de Ventana ▸ Paneles.
+- **Campos de lámina en inglés y alemán** (@pkoska, #899): `{project}`,
+  `{projekt}`… además de los nombres en español de siempre.
+- **Elegir el cursor de las herramientas** (@Booshdag-io en #858): en
+  Preferencias, «Cursor de herramienta» ofrece el icono de la herramienta
+  (como siempre, por defecto), la cruz clásica o la flecha.
+- **Agua de piscina**, un segundo material de agua en la biblioteca (#941,
+  @hamzah1985).
+
+### Arreglado
+
+- **Windows: el gestor de extensiones y la biblioteca vuelven a descargar**
+  (#783, @pkoska en #903): en una instalación nueva de Windows faltaba el
+  certificado raíz y la descarga fallaba con un error de certificado; ahora
+  se verifica con el propio Windows, que lo obtiene como lo hace el
+  navegador. La verificación sigue siempre encendida.
+- **Windows: actualizar ya no deja archivos de versiones viejas**: el
+  instalador copiaba la versión nueva encima de la anterior sin quitar lo
+  que ya no venía, y en una instalación actualizada desde la 0.5.8 quedaban
+  83 archivos viejos, entre ellos las bibliotecas OpenSSL que la 0.5.9 dejó
+  de usar (#564), causa probable también de #783. Ahora la carpeta del
+  programa se renueva entera; los ajustes, extensiones y autoguardados no se
+  tocan, porque viven en la carpeta del usuario.
+- **Un rectángulo largo y delgado ya no se convierte en una línea** (#389,
+  @pkoska en #909): la segunda esquina caía sobre la fila de la primera
+  (la perpendicular al muro, «desde el punto») y el rectángulo no se
+  dibujaba. Igual para el Rectángulo girado y las imágenes.
+- **Abrir un archivo desde fuera pregunta por los cambios sin guardar**
+  (#956, @tony1233200 en #977): el doble clic en un `.igz` con un dibujo
+  modificado abierto lo reemplazaba sin preguntar.
+- **Los grupos sin nombre se numeran igual cada vez que se abre el
+  archivo** (#943, @tony1233200 en #971): antes dependía de lo abierto
+  antes en la misma sesión.
+- **Las unidades elegidas ya no vuelven al valor anterior al reiniciar**
+  (@hamzah1985, #883).
+- **Un .skp importado queda encuadrado** (@hamzah1985, #867): la vista se
+  quedaba donde estaba y el modelo parecía no haber cargado.
+- **.skp: componentes escalados por la matriz ya no llegan 100 veces más
+  grandes** (#865, @tony1233200 en #970).
+- **Las circunferencias siguen enteras** tras copiar, explotar, las
+  herramientas de sólidos y Sígueme (@canalsecuario-blip, #812): un clic en
+  el borde de un cilindro vuelve a seleccionar todo el círculo.
+- **Al editar un grupo, las figuras que miran a la cámara y las imágenes de
+  referencia también se atenúan** (@canalsecuario-blip, #805).
+- **Mover: los asideros de giro no desaparecen** mientras el cursor está
+  dentro de la caja del grupo (#871, @tony1233200 en #978), útil en tubos y
+  perfiles largos.
+- **Rendimiento del visor** (@tony1233200): las cotas cuestan mucho menos
+  por cuadro (#439, en #976), la vista quieta se guarda una vez y no en cada
+  cuadro de la órbita (#944, en #973), y una caja sin límites conocidos ya no
+  se descarta por error (#952, en #972).
+- **Una ventana dibujada contra la esquina de una caja corta solo su muro**
+  (#895, @konevenkatesh).
+- **Una línea suelta que va en parte sobre otra arista conserva el resto de
+  su largo** (#896, @konevenkatesh).
+- **Sígueme: un barrido que falla ya no deshace el paso anterior** (#897,
+  @konevenkatesh).
+- **Dividir una arista llega a todas las caras que la usan** (#898,
+  @konevenkatesh): en modelos reales quedaban tramos sin partir (220 en
+  nuestra batería de 48 modelos).
+- **Una importación por script que falla devuelve lo que había borrado**
+  (#893, @clinta).
+- **DXF: las mallas POLYFACE, las polilíneas de malla y las entidades MESH
+  se importan como caras** (#878, @nicolasmarc en #879).
+- **DAE: la importación conserva los grupos del archivo**, anidados como en
+  el archivo (#919, @BastelBaus).
+- **OpenGL anterior a 3.3: un aviso claro** en lugar de una vista en blanco
+  (#751, @pkoska en #910).
+- **Windows: las miniaturas de los .skp se conservan** al hacer de
+  IngeTrazo el programa predeterminado (#804, @pkoska en #905).
+- **.skp que no abre: el registro dice por qué** (#497, @pkoska en #907).
+- **Agrupar o borrar un grupo ya no deja geometría fantasma** (#987,
+  @canalsecuario-blip en #988): los vértices y aristas sin uso que quedaban
+  partían la cara que se dibujaba encima y ofrecían esquinas invisibles a la
+  inferencia. Y una arista oculta, o en una capa oculta, ya no atrae al
+  cursor.
+- **El borde de una imagen bloqueada ya no cruza la vista**: un ortomosaico
+  bloqueado dibujaba su rectángulo a trazos sobre el cielo, porque la foto
+  no llena sus esquinas transparentes. Ahora el borde aparece solo cuando la
+  imagen está seleccionada; las imágenes sin bloquear lo siguen mostrando,
+  para encontrarlas en el suelo.
+
+## [0.5.10.1] — 2026-10-27
+
+**Arreglo de una pérdida de datos y, como función experimental, la oclusión
+ambiental.**
+
+**Si viene de la 0.5.9, esta versión trae también todo lo de la 0.5.10:**
+- **Motor Rust encendido por defecto** (también en el Flatpak), con el de
+  Python de reserva en Preferencias: si el módulo no carga, IngeTrazo vuelve
+  solo a Python.
+- **Modelos enormes sin tirones** (planta de 14 M de caras): el cursor de
+  Línea y Rectángulo pasa de segundos a ~40 ms por movimiento; un clic de
+  selección, de 1,2 a 0,2 s; mover, deshacer, borrar, pegar y entrar o salir
+  de un grupo tocan solo lo que cambió; en Windows también.
+- **Nuevo:** Cámara ▸ Ejes (Alt+A), Cámara ▸ Campo de visión (10°–120°),
+  enganche «Intersección» donde se cruzan dos caras, y mover, copiar y rotar
+  guías.
+- **Unos sesenta arreglos:** Empujar/Tirar, inferencias, cotas que ya no se
+  duplican al reabrir (y las duplicadas se reparan), deshacer y rehacer,
+  importar y exportar (materiales, curvas, coordenadas topográficas),
+  extensiones, y protección contra archivos comprimidos maliciosos.
+- **Rendimiento:** las guías ya no ralentizan cada cuadro, y en Linux la
+  memoria ya no crece al reabrir documentos grandes.
+
+El detalle completo está en la sección 0.5.10, más abajo.
+
+### Añadido
+
+- **Oclusión ambiental (experimental)** en el panel Estilos (#954):
+  oscurece suavemente donde se juntan las superficies (rincones, el pie de
+  un muro, bajo una banca), con **Distancia** e **Intensidad** ajustables.
+  Viene apagada en todos los estilos y se guarda con el estilo, en el
+  archivo y en las escenas; un archivo guardado con ella abre en la 0.5.10,
+  que la ignora. Cuesta ~1 ms por cuadro incluso en una planta de 14
+  millones de caras. **Probada a fondo en Linux** (gráfica integrada AMD
+  Radeon 780M, Wayland). En Windows y Mac aún no la hemos visto funcionar:
+  si en su tarjeta gráfica se ve mal, apáguela y avísenos. Si el
+  controlador no puede dibujarla, la casilla se desactiva sola y dice por
+  qué.
+
+### Arreglado
+
+- **Un grupo o componente pintado entero con una textura ya no la pierde al
+  guardar dos veces** (#877, análisis de @alanmirandaj): el primer guardado
+  de la sesión borraba sin querer la ruta de la imagen en el modelo abierto,
+  y el siguiente (un autoguardado basta) escribía el archivo sin ella. Al
+  reabrirlo, el grupo salía sin textura. Venía desde la 0.5.0.
+- **Windows: los diálogos de Abrir, Guardar, Importar y Exportar vuelven a
+  abrirse** cuando la última carpeta usada estaba en una unidad de red que
+  ya no responde (#948): ahora empiezan en la carpeta del documento o en
+  Documentos.
+- **Las sombras del sol ya no se ven pixeladas** en el borde: cada muestra
+  se suaviza entre los puntos del mapa de sombras, y la orilla queda lisa en
+  vez de en escalones (de 4 cm en una plaza, de 30 cm en una planta de
+  280 m). **Probado en Linux** (Radeon 780M); en Windows y Mac aún no lo
+  hemos visto: si las sombras se ven mal o la vista va más lenta con ellas
+  encendidas, avísenos. El detalle fino de cerca en modelos grandes llega en
+  la 0.6 (#958).
+
+## [0.5.10] — 2026-10-26
+
+**Motor Rust encendido por defecto y modelos enormes sin tirones.** El motor
+nativo de la 0.5.9 deja de ser experimental: viene activado (el motor de
+Python sigue de reserva y se elige en Preferencias), también en el Flatpak.
+Sobre la planta de 14 millones de caras de #158, pasar el cursor con Línea o
+Rectángulo baja de varios segundos por movimiento a unos 40 ms, y un clic de
+selección de 1,2 s a 0,2 s. Mover, deshacer, borrar, pegar y entrar o salir
+de un grupo tocan solo lo que cambió, no el modelo entero. Llegan el
+enganche donde se cruzan dos caras, Cámara ▸ Ejes y Cámara ▸ Campo de
+visión, y unos sesenta arreglos.
+
+### Añadido
+- **Cámara ▸ Ejes (Alt+A)** (#398, #557, Gabriel Rodríguez,
+  @canalsecuario-blip): muestra u oculta los ejes rojo, verde y azul del
+  mundo. Solo se deja de dibujarlos: las inferencias sobre ellos y los
+  bloqueos con flechas siguen, y un grupo abierto muestra sus propios ejes.
+  Se guarda en el documento.
+- **Cámara ▸ Campo de visión…** (#826): el ángulo de la lente de la vista
+  3D, de 10° a 120° (antes fijo en 45°). Se guarda con la cámara y con las
+  escenas; en vista paralela no aplica y la barra de estado lo dice.
+- **Enganche «Intersección» donde se cruzan dos caras** sin arista entre
+  ellas (#819, @xcd-droid): se puede empezar o terminar una línea justo en
+  esa recta. Las aristas reales y los puntos con nombre siguen ganando.
+- **Mover, copiar y Rotar guías** como el resto del modelo; Seleccionar
+  todo las incluye (#627, @canalsecuario-blip).
+- **Ctrl+Intro acepta el diálogo de texto con directriz** (Alexis).
+
+### Cambiado
+- **Motor Rust activado por defecto** con Python de reserva: quien no lo
+  eligió nunca recibe Rust; quien lo apagó lo sigue teniendo apagado; si el
+  módulo no carga, o un arranque no llega a dibujar, IngeTrazo vuelve al
+  motor de Python. Los textos dejan de decir «experimental» en los diez
+  idiomas.
+- **El Flatpak lleva el motor Rust** (#767).
+- **Windows: el motor Rust acelera también ahí el cursor sobre modelos
+  enormes.** Los rayos de oclusión y los cálculos de caras en Rust solo se
+  usan si reproducen bit a bit la longitud de vector de Qt, y solo conocían
+  la fórmula de Linux (libstdc++); el Qt de Windows está compilado con MSVC,
+  que redondea distinto, y todo iba por el camino lento (los saltos de
+  hasta 1,2 s con Línea sobre el SPR en la ronda de Windows). Ahora también
+  conocen la de MSVC, comprobada contra su código fuente en 3,3 millones de
+  vectores; `--check` dice cuál se usa.
+- **Modelos enormes (#158)**, con el motor Rust:
+  - pasar el cursor con las herramientas de dibujo sobre la planta de 14 M
+    caras: de segundos por movimiento a ~40 ms. Las copias ligeras ya no se
+    convierten en malla para responder al cursor: esquinas, aristas, caras
+    y oclusión se calculan en Rust sobre las copias tal como están; lo que
+    tapa el modelo se descarta con la profundidad del cuadro; mientras solo
+    se mueve el cursor, se redibuja el cursor sobre la imagen guardada del
+    modelo (GPU 40 → 3 ms por cuadro). El resultado es el mismo punto por
+    punto que antes, comprobado con A/B de inferencias en cuatro modelos;
+  - un clic de selección: 1,2 s → 0,2 s;
+  - mover, soltar y deshacer: actualizan solo las copias que se movieron
+    (antes ~3 s cada uno);
+  - borrar, pegar, entrar y salir de un grupo: se conserva todo lo que no
+    cambió (entrar a un grupo en la planta: 821 → 331 ms de sincronización);
+  - orbitar: no se dibujan las copias de menos de un píxel (70 % de las
+    caras vistas de lejos) y se reutilizan los lotes mientras la vista no
+    sale de ellos.
+- **Las guías ya no ralentizan cada cuadro** (#816): 40 guías en la plaza
+  subían el cuadro de 18 a 112 ms; ahora 29 ms.
+- **La toma de medidas BIM no vuelve a medir al seleccionar**; una edición
+  mide solo lo que tocó (#857, modelo de @buildsmart888).
+- **Linux: la memoria ya no crece al reabrir** documentos grandes (límite de
+  dos zonas de malloc; la plaza reabierta 15 veces se queda en ~795 MB).
+- **Zoom: acercarse hasta 5 mm** de una pieza pequeña, en vez de 2 cm (#653,
+  #692, @canalsecuario-blip).
+- **Paint explica** por qué no cambia un componente con todas sus caras ya
+  pintadas (#807).
+- **El asistente de IA responde en el idioma del usuario** (#790).
+
+### Corregido
+- **Selección**: sin marcado de la cara bajo el cursor con la herramienta
+  Seleccionar (#832, @GitHuhl); Paint no marca caras sobre un grupo o
+  componente cerrado (@canalsecuario-blip); el botón derecho sobre
+  geometría suelta seleccionada pegada a un grupo la conserva (#744).
+- **Inferencias**: una arista bajo el cursor gana al bloqueo perpendicular
+  desde una esquina (#544, @pkoska); Línea empieza de cero cuando un tramo
+  corta una cara (#496, @pkoska); sin «En arista» justo pasado el extremo de
+  una arista suelta (#587); un bloqueo de eje ignora la posición lateral del
+  cursor (#769); un punto en una línea de bloqueo conserva su color (#711);
+  ningún NaN llega a una herramienta o a la malla (#466, #754).
+- **Empujar/Tirar**: una línea entre dos pinturas sobrevive a un aterrizaje
+  a ras (#649, Francis Rebouças); una esquina empujada a través de un
+  tablero delgado lo corta (#710, Francis Rebouças); una lámina que la
+  reconstrucción devuelve igual sigue siendo del usuario (#552); las
+  propias paredes de la cara empujada no son un nivel al que llegar (#839,
+  mediciones de @hamzah1985).
+- **Geometría**: un lazo que rodea o cruza un hueco no queda dentro de la
+  cara (#519); un pliegue que muere dentro de un plano no delimita nada
+  (#570); Intersecar con el modelo corta la selección también contra sí
+  misma (#541); un rectángulo contra el borde de un vano agranda el vano
+  (#489); un bloque levantado de una lámina junto a otra queda hacia fuera
+  (#550); borrar la línea bajo una ventana conserva el frente del muro
+  (#356); dibujar sobre un plano DWG explotado sin congelarse ni perder la
+  línea (#491); un círculo plano inclinado lejos del origen vuelve a ser
+  plano (#571, @canalsecuario-blip).
+- **Cotas**: ya no se duplican en cada reapertura (#765, @tony1233200) y al
+  abrir se reparan las ya duplicadas; se quedan en su sitio al entrar a un
+  componente, siguen al objeto en que se dibujaron y acompañan la vista
+  previa de Mover/Rotar (#621, Francis Rebouças); Mayús y flechas bloquean
+  también el paso de colocación (#770, #810, @pacaeiro); una cota sobre una
+  arista colapsada vuelve con ella al deshacer (#254); una cota anclada del
+  compositor sigue a su vértice (#854).
+- **Deshacer/Rehacer**: rehacer Crear grupo devuelve el mismo grupo, así no
+  se pierde el rehacer de Explotar (#737, @canalsecuario-blip); deshacer
+  Cambiar ejes devuelve las copias exactas, y un componente que conservaba
+  los ejes de grupo toma el nuevo marco (#484).
+- **Herramientas**: la Cinta deja el tramo discontinuo del punto guía
+  (#693, Francis Rebouças); el Rectángulo en reposo muestra su vista previa
+  desde la esquina del lápiz (#848, @hamzah1985); los tiradores delanteros
+  de Escalar se dibujan y eligen antes que los traseros (#833); el cuadro
+  de medidas muestra el valor al reescribir en caliente (#859); Ampliar
+  selección cuenta una guía por su punto, no por su segmento de 10 km
+  (#627).
+- **Áreas y capas**: Info. de entidad y la toma de acabados restan los
+  huecos de la cara; Piezas y la etiqueta de Texto leen el área neta (#742,
+  @tony1233200); el contenido sin capa de un grupo abierto sigue la capa
+  del grupo (#366).
+- **Dibujo en pantalla**: una copia rotada de un componente se ilumina como
+  está colocada (#482); una guía lejana conserva sus trazos (#481);
+  alejarse tras un zoom profundo devuelve la precisión de profundidad
+  (#579); una imagen de referencia delante de una cara recibe el clic
+  (#426); una imagen de .skp pegada a una cara se queda en ella (#429);
+  rotar un grupo conserva la textura de las caras sin mapa UV (#847,
+  @tony1233200); Render ▸ «Cambiar fecha y hora…» vuelve a abrir el panel
+  de Sombras (Victor Crespo).
+- **Nuevo y Abrir** vacían los materiales y la lectura UTM del documento
+  anterior (#759, @tony1233200).
+- **Importar y exportar**: cada material conserva su nombre y la pintura de
+  un grupo llega a GLB, DAE y OBJ (#794); las superficies curvas salen
+  suaves (#131); los archivos en coordenadas topográficas llegan cerca del
+  origen y sin deformarse en OBJ, STL, glTF y DAE (#798) (los tres de
+  @canalsecuario-blip); las líneas sueltas de un COLLADA entran como
+  aristas (#633); importar un .skp grande mantiene viva la ventana (#787).
+- **Extensiones**: se listan las gestionadas que salieron del catálogo y se
+  apartan al reemplazarlas (#611, @pkoska); se reconocen las copias
+  instaladas a mano con finales de línea CRLF (#764, @tony1233200); una
+  extensión del botón derecho que falla o tarda se omite en la sesión
+  (#588); las barras de las extensiones vuelven a su sitio tras el
+  arranque asíncrono (#845, @hamzah1985).
+- **Seguridad**: un archivo comprimido de fuera (.igz, KMZ, portapapeles,
+  biblioteca) no puede desempaquetarse hasta llenar la memoria («bomba
+  zip»), y un documento real de más de 4 GB sigue abriendo (Victor Crespo).
+- **Plataformas**: Windows: el registro de errores descarta al arrancar los
+  errores COM manejados de la sesión anterior (#763), y reacomodar las barras no deja pequeña una ventana
+  maximizada (#800); algunos controladores gráficos de Windows con
+  respuestas falsas ya no hacen saltar el repintado grabado; AppImage: las
+  carpetas y enlaces se abren con el entorno del sistema (#456); motor
+  Rust: los colores con transparencia (RGBA) ya no impiden dibujar el
+  modelo.
+
+### Créditos
+- Código: Gabriel Rodríguez (@canalsecuario-blip), Pedro Caeiro
+  (@pacaeiro), Francis Rebouças, @pkoska, @tony1233200, @hamzah1985,
+  Victor Crespo y Alexis. Reportes y modelos: @xcd-droid, @GitHuhl,
+  @buildsmart888 y todos los que abrieron issues.
+- Difusión: gracias a los canales de YouTube que mostraron IngeTrazo —
+  Blender 3D Architect, IngeTrazo Tutorials, JRobredo3D, Rafael 3D, Allan
+  Brito, Savoirpourtous, BuildSmart Learning y todos los que le dedicaron un
+  vídeo.
+
+### Para desarrolladores
+- **Una prueba falla si `INGETRAZO_RUST=1` corre sin el módulo o con uno
+  desactualizado** (huella de las fuentes Rust).
+- `scripts/profile_window_open.py`: abrir un documento en la ventana fase
+  por fase (segundos, memoria residente y pico), en Linux y Windows (#760).
+- Las pruebas que muestran una ventana para GL la cierran antes de
+  saltarse.
+
+## [0.5.9] — 2026-10-19
+
+**Motor Rust experimental, modelos enormes mucho más fluidos y una semana
+de pedidos atendidos.** Un motor nativo nuevo, apagado por defecto, hace en
+segundos lo que tardaba minutos (líneas ocultas, Intersecar, Orientar) y
+abre la planta de 14 millones de caras en 16 s en vez de 110. Con los dos
+motores, orbitar, mover y deshacer en modelos grandes va dos o tres veces
+más rápido. Llegan «En el eje» en el primer punto, órbita y desplazamiento
+sin soltar la rueda, Unir segmentos, Explotar curva, una figura de escala a
+elegir, el ruso, y unos cincuenta arreglos; en Windows, el gestor de
+extensiones ya no se cae con un OpenSSL ajeno (#564).
+
+### Añadido
+- **IngeTrazo con tu color: acento de los iconos y las barras** (#393,
+  pedido de Peter Mican). El naranja no le queda a todos los escritorios,
+  así que ahora eliges el color que acompaña a todo el programa: los
+  puntos y tiradores de cada icono (los clics que definen una forma, el
+  pivote de Rotar, el punto donde empieza un arrastre), el fondo de los
+  botones bajo el ratón y las marcas que aparecen al acoplar barras y
+  paneles. En Ventana ▸ Preferencias ▸ General ▸ «Color de acento»:
+  - **naranja IngeTrazo** (el de siempre, por defecto), **azul**,
+    **verde**, **rojo**, **morado** o **amarillo**;
+  - **«Igual que el sistema»**: toma el color de acento que elegiste en tu
+    escritorio (si el sistema lo comparte con las aplicaciones), así
+    IngeTrazo se ve como una aplicación más de tu equipo.
+
+  Funciona con el tema claro y el oscuro, se aplica al instante sin
+  reiniciar —todos los iconos de IngeTrazo se vuelven a pintar en ese
+  momento— y se recuerda para la próxima vez. La
+  selección en el visor 3D sigue en naranja, para que lo elegido se
+  distinga siempre del modelo. En los nueve idiomas.
 - **«En el eje» al empezar Línea, Rectángulo, Círculo y Arco** (#546, #718,
   @pacaeiro): en espacio vacío, el primer punto se engancha a los ejes rojo,
   verde y azul, como ya hacía la Cinta. Solo cuando no hay nada mejor bajo
@@ -15,8 +755,67 @@ follow [SemVer](https://semver.org).
 - **Cambiar entre órbita y desplazamiento sin soltar la rueda** (#231, #720,
   @pacaeiro): durante el arrastre con el botón central, pulsar o soltar
   Mayús pasa de orbitar a desplazar y al revés.
+- **Unir segmentos**, lo contrario de Dividir (Gabriel Rodríguez,
+  @canalsecuario-blip): los tramos en línea recta de una línea dibujada en
+  varios clics, dividida o que quedó con el punto de un cruce borrado
+  vuelven a ser una sola línea. Botón derecho sobre dos o más aristas, o
+  Edición ▸ Unir segmentos (sin selección, limpia todo lo que se edita).
+  Antes de hacerlo marca en color cada punto: verde se quita; rojo, esquina
+  real de menos de 1°; naranja, llega otra arista; morado, distinto
+  suavizado, oculto o capa; azul, parte de una curva.
+- **Explotar curva**: botón derecho sobre un círculo o un arco lo deja en
+  segmentos sueltos que se eligen uno a uno; la geometría no se mueve y
+  Deshacer lo vuelve a juntar.
+- **Figura de escala a elegir** (#655): en Preferencias ▸ General, una de
+  las personas incluidas (con su altura real) o «Mi propia imagen…», un PNG
+  recortado con su altura y su nombre. La figura del Elon sale de la
+  biblioteca de personas (#680); los modelos que ya la usan la conservan.
+- **«Ns» justo después de un círculo o un polígono lo rehace en el sitio**
+  con ese número de lados (#305), como ya hacía el arco.
+- **Barras de herramientas flotantes con aspecto de ventana**: una franja
+  con su nombre y un botón para cerrar, que también sirve para arrastrarla
+  y volver a acoplarla. **Ventana ▸ Restaurar barras de herramientas**
+  (también con el botón derecho sobre una barra) las devuelve a su sitio de
+  fábrica. Las pistas de los botones muestran el nombre en negrita, la
+  tecla y debajo qué hace (Gabriel Rodríguez).
+- **Ayuda ▸ Acerca de ▸ «Copiar al portapapeles»** con la versión, el
+  sistema, Qt, OpenGL, pantalla e idioma, en inglés y sin datos personales,
+  listo para pegar en una issue (#476, Gabriel Rodríguez).
+- **Navegador**: crear grupo, crear componente y explotar desde el botón
+  derecho, también dentro de un grupo abierto (#561, #490); Hacer único y
+  Seleccionar instancias en los componentes; material desde la propia fila
+  (#565); renombrar varias filas a la vez con número, buscar y reemplazar,
+  prefijo y sufijo (#565, #87); el ojo y el candado actúan sobre toda la
+  selección; un botón para aislar y otro para desplegar (Gabriel
+  Rodríguez).
+- **Información de entidad suma** el área y la longitud de una selección
+  múltiple de caras y aristas (#274).
+- **Escenas: borrar varias a la vez**, en un solo paso de deshacer (#280).
+- **BIM: barra de refuerzo** (`IfcReinforcingBar`) con longitud, diámetro
+  nominal y peso en acero; el metrado la cuenta en kg (#495).
+- **Asistente IA: «Local / compatible con OpenAI»** acepta servicios
+  alojados cuya dirección ya trae la versión (vLLM, LiteLLM, OpenCode…)
+  (#650).
+- **Ventana ▸ Barra lateral izquierda (Ctrl+F6)**, junto a Barra lateral
+  (Ctrl+F5): la tecla ya existía pero no estaba en ningún menú (#575,
+  Gabriel Rodríguez).
+- **Equidistancia muestra la distancia en vivo** en la casilla de medidas
+  y deja reescribirla después (#604, #665, Luis Romo); si la nueva distancia
+  no cabe, se conserva la equidistancia ya hecha.
+- **Empujar/Tirar se engancha al origen** de los ejes a media operación
+  (#407).
 
 ### Cambiado
+- **Los menús de las extensiones se ordenan solos cuando hay muchas.** Con
+  el catálogo entero instalado, el menú del botón derecho era más alto que
+  la pantalla (Qt lo partía en dos columnas) y el menú Extensiones tenía
+  62 líneas. Ahora las entradas sueltas de una misma extensión van en un
+  submenú con su nombre; en el botón derecho, con más de 8 extensiones,
+  todas van bajo «Extensiones ▸»; y en el menú Extensiones, con más de 15,
+  cada una va en su categoría del catálogo (Arquitectura, Dibujo,
+  Render…). Con pocas extensiones casi nada cambia. Preferencias ▸ General
+  ▸ «Menús de las extensiones» permite agruparlas siempre o dejarlas como
+  antes.
 - **Elegir otra vez el mismo componente de la biblioteca pone una copia
   del mismo componente.** Cada vez se volvía a leer el archivo del modelo
   y se añadía una pieza nueva e independiente: cuatro veces el mismo
@@ -77,14 +876,46 @@ follow [SemVer](https://semver.org).
   Componentes se dibujan solo para las filas visibles y el panel de
   Materiales ya no relee las texturas del disco tras cada cambio. La
   imagen es la misma, comprobada píxel a píxel.
-- **Color de acento de los iconos y las barras** (#393): en Ventana ▸
-  Preferencias ▸ General se elige el color de los detalles de los iconos y
-  del fondo de los botones bajo el ratón: naranja IngeTrazo (el de siempre,
-  por defecto), azul, verde, rojo, morado, amarillo o «Igual que el sistema»,
-  que toma el color de acento del escritorio. Se aplica al instante; la
-  selección en el visor 3D sigue en naranja.
+- **Instalar una extensión no revisada pregunta antes** (Victor Crespo):
+  la tarjeta decía «no revisada», pero un clic ejecutaba el código de su
+  autor con tus permisos. Instalar, actualizar o reemplazarla pide ahora
+  confirmación nombrando al autor, con «No» por defecto; las revisadas y
+  las que trae IngeTrazo se instalan como antes.
+- **El gestor de extensiones vuelve a pedir una captura que no se pudo
+  descargar**, hasta tres veces y alternando GitHub con la copia de
+  ingetrazo.com, en vez de dejar «Vista previa no disponible».
+- **Las flechas y Mayús fijan el plano de dibujo durante toda la forma**
+  en Círculo, Polígono, Rectángulo y los arcos (#545, #543, @pacaeiro):
+  antes solo respondían antes del primer clic. Derecha = YZ, Izquierda =
+  XZ, Arriba = XY; la misma tecla suelta el plano.
+- **Una longitud tecleada suelta el bloqueo de eje**, igual que el clic que
+  termina el tramo (@pacaeiro).
+- **Empujar/Tirar mide el arrastre desde el punto donde hiciste clic**, no
+  desde el centro de la cara: en una losa grande clicada cerca de una
+  esquina, subir 0,3 m se leía 1,8 m, y en un anillo 1 m de cursor daba
+  0,44 m de muro.
+- **Un contorno de menos de 1 cm² ya se cierra en cara**: un círculo de
+  menos de 5,7 mm de radio quedaba en aristas sueltas, así que no se podían
+  dibujar avellanados ni cabezas de tornillo a su tamaño.
 
 ### Corregido
+- **La ventana no se dejaba encoger con muchas extensiones.** Sus barras
+  de herramientas se sumaban a la misma fila de arriba (34 barras con el
+  catálogo entero) y la ventana no podía ser más estrecha que 2205 px en
+  una pantalla de 1477. Ahora una fila que no cabe en la pantalla sigue
+  en otra fila; las que caben no se mueven.
+- **La ventana no se maximizaba con paneles de extensiones muy altos.** Un
+  panel de 652 px de alto mínimo hacía que la ventana necesitara 902 px en
+  una pantalla con 890: GNOME no la maximizaba (o quedaba más grande que
+  la pantalla). Ahora, solo cuando la ventana no cabe, los paneles
+  laterales más altos ganan una barra de desplazamiento.
+- **Ocultar la barra lateral dejaba un panel suelto.** Una extensión que
+  crea su panel por su cuenta («Escenas» de igz_tb_scenes) se quedaba sola
+  a la derecha al plegar la barra, y al moverla mostrar dejaba de responder
+  como se esperaba. Plegar y desplegar (Ctrl+F5, Ctrl+F6 y las manijas)
+  se llevan ahora cualquier panel acoplado en ese lado.
+- **«Crear componente…» salía dos veces** en el menú del botón derecho con
+  geometría suelta y grupos seleccionados a la vez.
 - **Pasar el cursor con Línea sobre un modelo muy grande ya no da error**
   (#158): en modelos con más de un millón de caras en componentes, las
   aristas de los grupos cercanas al cursor se medían en una versión del
@@ -206,6 +1037,89 @@ follow [SemVer](https://semver.org).
   antes de entrar en la tarjeta, y en Windows eso lo convertía un instante en
   una ventana propia; eran 43 ventanitas que aparecían y desaparecían al
   abrir el gestor, unos 0,8 s de los 0,9 s que tardaba.
+- **Windows: el gestor de extensiones ya no se cae con un OpenSSL de otro
+  programa** (#564): en equipos con otra versión de OpenSSL en System32,
+  abrir el gestor (o cualquier descarga de Qt) fallaba con «No se encuentra
+  el punto de entrada CRYPTO_calloc». Qt usa ahora el TLS del propio
+  Windows. Comprobado en Windows con ese OpenSSL instalado.
+- **Windows: los archivos publicados ya no llevan la firma de prueba**
+  (#566): la 0.5.8 se volvió a subir con una firma de prueba que Windows no
+  reconoce y que Smart App Control podía bloquear.
+- **Cambiar el color de acento ya no rompe la ventana** (#654): el
+  siguiente Abrir fallaba con «already deleted» en los paneles Estilos y
+  Sombras, o F3 cerraba el programa.
+- **Una tecla asignada a una extensión sobrevive al reinicio** (#595,
+  @tomlai-git): desde la 0.5.8 se perdía, porque las extensiones cargan
+  después de abrir la ventana.
+- **No se podía dibujar tras «Ver todo» en piezas muy pequeñas** (#583,
+  @andku85): con la cámara a 2 cm de una pieza de 10 mm, el rayo del cursor
+  salía inválido y cada clic fallaba con «cannot convert float NaN to
+  integer».
+- **Equidistancia conserva los huecos de la cara** (#537): un anillo sobre
+  cuatro muros volvía como un cuadrado lleno; hacia dentro, una
+  equidistancia que entraría en un hueco se rechaza con un mensaje.
+- **Un rectángulo dibujado sobre una cara con hueco en un modelo 3D**
+  rellena el hueco en vez de apilar una cara encima (#538); y dibujar en el
+  plano de un agujero pasante ya no lo tapa.
+- **El aro superior de un cilindro empujado vuelve a ser una curva**
+  (#626): un clic tomaba un solo segmento de 24.
+- **Intersecar ignora los cruces más cortos que la tolerancia de
+  soldadura** (una esfera de Sígueme atravesando un cubo) y, si aun así se
+  rechaza, lo dice en vez de anunciar las aristas añadidas.
+- **La casilla de medidas muestra lo tecleado tras Intro** (#607): un
+  rectángulo de «1 3/8";1 9/16"» se dibujaba bien, pero la casilla seguía
+  enseñando la medida del ratón y parecía que se había ignorado.
+- **Una coma tras un decimal pasa al valor siguiente** (#598, @pkoska):
+  «0.9,2.1» se leía 0,921.
+- **Cambiar de herramienta a media rotación con Mover ya no deja Rotar
+  activo** en el siguiente M (#480, @pkoska).
+- **El mapa para elegir ubicación ya no descarga teselas mientras se
+  pinta** (#327, @pkoska), lo que cerraba el programa en Windows al pulsar
+  «Ir a la ubicación».
+- **Un componente clicado en «En el modelo» se queda resaltado** (#636).
+- **Navegador**: los componentes anidados aparecen en «En el modelo»
+  (#599); un grupo bloqueado ya no se puede seleccionar, mover ni abrir;
+  Hacer único da un nombre propio («Silla #2», #620); al editar un grupo el
+  resto se atenúa a gris; un archivo abierto al arrancar ya no se queda en
+  5 % detrás de la pregunta de unidades (Gabriel Rodríguez).
+- **Flatpak: el Navegador ya no cierra el programa al arrancar** en
+  algunos equipos (#658): sus botones usaban caracteres que pocas fuentes
+  tienen; ahora son iconos dibujados.
+- **OBJ/MTL en UTF-8 en todas las plataformas** (APBureauEtude): en Windows
+  «Mármol» salía con caracteres rotos y algunos archivos no se podían
+  importar.
+- **Texto 3D: el texto entero y sus letras coinciden en Windows y macOS**:
+  la escala del bloque salía de otra forma de colocar los glifos. En Linux
+  no cambia nada.
+- **Mensajes del importador GLB traducidos** («Recolectando geometría…»,
+  «Suavizando aristas…» salían en inglés).
+- **Reabrir un `.igz` con identificadores de curva en texto** ya no falla
+  (borborborja).
+- **macOS: el paquete no lleva el `dwg2dxf` de Linux** y `--check` ya no
+  dice que lo encontró (SebWell).
+- **El instalador de Windows sigue el idioma de Windows también al
+  actualizar** (#591): las instalaciones anteriores a la 0.5.3 dejaban el
+  asistente en español.
+- **El texto copiado desde Acerca de** ya no mezcla palabras del idioma del
+  sistema y dice si es Flatpak o AppImage.
+- **macOS: elegir Blender.app para renderizar funciona** desde cualquier
+  carpeta (#328).
+
+### Traducciones
+- **Ruso** (#399, @RomanErshow): 2252 frases de su traducción y las 705
+  nuevas con su terminología.
+- Alemán al día (Alex Joedt, @Aaron1992); todos los idiomas llevan todas
+  las frases nuevas.
+
+### Créditos
+- AUTHORS, Ayuda ▸ Acerca de y el README nombran a las 24 personas que han
+  aportado desde el 05-10, con una estrella para quienes más dieron.
+
+### Para desarrolladores
+- **La suite pasa en Windows sin `PYTHONUTF8`** y ya no escribe en el
+  `ingetrazo-errors.log` real del usuario (ronda Windows 0.5.9).
+- `scripts/bench_engine.py`: dónde gasta el tiempo el motor del modelo,
+  con perfiles.
 
 ## [0.5.8] — 2026-10-12
 

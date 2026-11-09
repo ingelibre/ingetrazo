@@ -67,7 +67,43 @@ def open_crash_log(name: str = "ingetrazo-crash.log"):
     """An append handle for the faulthandler black box, or None when no
     location is writable at all — callers must then leave faulthandler on
     its default only if ``sys.stderr`` exists."""
+    path = user_log_dir() / name
+    prune_handled_com_errors(path)
     try:
-        return open(user_log_dir() / name, "a", encoding="utf-8")
+        return open(path, "a", encoding="utf-8")
     except OSError:
         return None
+
+
+_CRASH_HEADERS = ("Windows fatal exception:", "Fatal Python error:")
+
+
+def prune_handled_com_errors(path) -> None:
+    """Drop from the crash log the entries of COM errors that were raised
+    and handled, with the app still running: on Windows faulthandler logs
+    every SEH exception with the error bit set, and UI Automation (screen
+    readers, test tools) raises RPC errors such as 0x8001010d by the
+    dozen — the log filled with «fatal» entries that were not crashes and
+    hid the one that was (#763). Only codes of the RPC facility
+    (0x8001xxxx) go; an access violation or any other code stays."""
+    try:
+        text = Path(path).read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return
+    if "code 0x8001" not in text:
+        return
+    kept, block, drop = [], [], False
+    for line in text.splitlines(keepends=True):
+        if line.startswith(_CRASH_HEADERS):
+            if not drop:
+                kept.extend(block)
+            block = []
+            drop = line.lower().startswith(
+                "windows fatal exception: code 0x8001")
+        block.append(line)
+    if not drop:
+        kept.extend(block)
+    try:
+        Path(path).write_text("".join(kept), encoding="utf-8")
+    except OSError:
+        pass

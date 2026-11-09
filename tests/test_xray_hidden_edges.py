@@ -30,6 +30,8 @@ def _viewport():
     _app.processEvents()
     vp = win.viewport
     if getattr(vp, "_gl", None) is None or not vp.isValid():
+        win._saved_version = vp.scene.version   # not left shown (see
+        win.close()                             # test_guides_behind_geometry)
         pytest.skip("no OpenGL context on this platform")
     return win, vp
 

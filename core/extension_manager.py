@@ -7,15 +7,16 @@ import hashlib
 import io
 import json
 import logging
+import os
 import re
 import shutil
 import stat
-import tempfile
 import urllib.error
 import urllib.parse
 import urllib.request
 import uuid
 import zipfile
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
@@ -71,9 +72,11 @@ class CatalogSnapshot:
 
 
 def _get(url: str, limit: int) -> bytes:
+    from core.tls import https_context
     request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
     try:
-        with urllib.request.urlopen(request, timeout=TIMEOUT) as response:
+        with urllib.request.urlopen(request, timeout=TIMEOUT,
+                                    context=https_context()) as response:
             if not response.geturl().startswith("https://"):
                 raise ExtensionManagerError(
                     "The download redirected to a non-HTTPS address.")
@@ -265,31 +268,33 @@ def is_reviewed(extension: Extension, reviewed: dict[str, dict]) -> bool:
             and str(entry.get("sha256", "")).lower() == extension.sha256)
 
 
+# ``os.path`` below, not ``Path.exists``/``is_file``: up to Python 3.13 those
+# RAISE on what cannot be read, and one unreadable extension folder kept the
+# whole manager from opening (#1152).
+
 def _managed_target(ident: str) -> tuple[Path, bool]:
     root = user_plugins_dir()
     folder = root / ident
     flat = root / f"{ident}.py"
-    if folder.exists():
+    if os.path.lexists(folder):
         if folder.is_symlink():
             return folder, False
         metadata = folder / "extension.json"
-        if not folder.is_dir() or not metadata.is_file():
+        if not os.path.isdir(folder) or not os.path.isfile(metadata):
             return folder, False
         try:
             data = json.loads(metadata.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             return folder, False
         return folder, isinstance(data, dict) and data.get("id") == ident
-    if flat.exists():
-        if flat.is_symlink():
-            return flat, False
+    if os.path.lexists(flat):
         return flat, False
     return folder, True
 
 
 def installed_info(ident: str) -> dict | None:
     target, managed = _managed_target(ident)
-    if not target.exists() or not managed or target.is_file():
+    if not managed or not os.path.isdir(target):
         return None
     try:
         data = json.loads((target / "extension.json").read_text(
@@ -350,7 +355,7 @@ def restart_required(ident: str, startup_state: dict[str, dict]) -> bool:
 
 def installation_conflict(ident: str) -> bool:
     target, managed = _managed_target(ident)
-    return target.exists() and not managed
+    return os.path.lexists(target) and not managed
 
 
 def uninstall_extension(ident: str) -> None:
@@ -364,13 +369,22 @@ def uninstall_extension(ident: str) -> None:
 
 def _python_fingerprint(path: Path) -> tuple[str | None, frozenset[str]]:
     """``(sha256 of the entry module, the package's module paths)`` of an
-    installed plugin — a loose ``x.py`` or a package folder."""
+    installed plugin — a loose ``x.py`` or a package folder. The hash is
+    taken over the entry module with line endings normalized to ``\\n``
+    and a leading UTF-8 BOM stripped, so a hand-installed copy whose
+    endings were converted (``\\n`` -> ``\\r\\n`` by a Windows editor, a
+    zip tool, or ``Path.write_text`` on Windows) still counts as the
+    same extension (#764)."""
     def digest(file: Path) -> str | None:
         try:
-            return hashlib.sha256(file.read_bytes()).hexdigest()
+            data = file.read_bytes()
         except OSError:
             return None
-    if path.is_file():
+        if data.startswith(b"\xef\xbb\xbf"):
+            data = data[len(b"\xef\xbb\xbf"):]
+        data = data.replace(b"\r\n", b"\n").replace(b"\r", b"\n")
+        return hashlib.sha256(data).hexdigest()
+    if os.path.isfile(path):
         return digest(path), frozenset()
     modules = frozenset(
         p.relative_to(path).as_posix() for p in path.rglob("*.py")
@@ -378,25 +392,45 @@ def _python_fingerprint(path: Path) -> tuple[str | None, frozenset[str]]:
     return digest(path / "__init__.py"), modules
 
 
-def manual_copies(ident: str, package: Path) -> list[Path]:
+def retired_extensions(catalog_ids: Iterable[str]) -> list[Path]:
+    """Folders the manager installed whose id the catalog no longer lists —
+    renamed or withdrawn since. The catalog has no card for them, so the
+    manager lists them on their own to disable or uninstall."""
+    known = set(catalog_ids)
+    try:
+        candidates = sorted(user_plugins_dir().iterdir())
+    except OSError:
+        return []
+    return [path for path in candidates
+            if path.name not in known and not path.name.startswith(("_", "."))
+            and _ID_RE.fullmatch(path.name) and installed_info(path.name)]
+
+
+def manual_copies(ident: str, package: Path,
+                  catalog_ids: Iterable[str] | None = None) -> list[Path]:
     """Plugins installed by hand that look like ``package`` under another
     name — OpenTrace used to be unpacked as ``arquitetura_parametrica``,
     and installing it from the catalog as ``opentrace_bim`` then loaded it
     twice. The same entry module, or most of the same module files (an
-    older or newer version of it), counts as a copy."""
+    older or newer version of it), counts as a copy. With ``catalog_ids``,
+    a folder the manager installed under an id the catalog no longer lists
+    counts too: it is the same extension under its old name."""
     entry, modules = _python_fingerprint(package)
     found = []
     try:
         candidates = sorted(user_plugins_dir().iterdir())
     except OSError:
         return []
+    retired_paths = (set() if catalog_ids is None
+                     else set(retired_extensions(catalog_ids)))
     for path in candidates:
         if (path.name.startswith(("_", ".")) or path.is_symlink()
                 or path.name in (ident, f"{ident}.py")):
             continue
-        if path.is_dir():
-            if ((path / "extension.json").is_file()
-                    or not (path / "__init__.py").is_file()):
+        if os.path.isdir(path):
+            managed = os.path.isfile(path / "extension.json")
+            if ((managed and path not in retired_paths)
+                    or not os.path.isfile(path / "__init__.py")):
                 continue
         elif path.suffix != ".py":
             continue
@@ -437,11 +471,14 @@ def _example_entries() -> list[tuple[Path, str, str, str]]:
     out = []
     # A single ``x.py`` or a package ``x/__init__.py`` — a bigger
     # extension (CAM, PR #132) is a folder, and the loader takes both.
-    entries = sorted(folder.iterdir()) if folder.is_dir() else []
+    try:
+        entries = sorted(folder.iterdir())
+    except OSError:
+        entries = []
     for path in entries:
-        if path.suffix == ".py" and path.is_file():
+        if path.suffix == ".py" and os.path.isfile(path):
             src = path
-        elif path.is_dir() and (path / "__init__.py").is_file():
+        elif os.path.isfile(path / "__init__.py"):
             src = path / "__init__.py"
         else:
             continue
@@ -511,11 +548,22 @@ def bundled_extensions() -> list[Extension]:
     return out
 
 
+def _unreadable(path: Path) -> bool:
+    try:
+        os.listdir(path)
+    except OSError:
+        return True
+    return False
+
+
 def hand_installed_plugins() -> list[Path]:
     """Plugins in the user folder that the manager did not install: a
     package folder without ``extension.json`` or a loose ``x.py``. Until
     0.5.8 copying the folder by hand was the only way to install one, so
-    every extension a user had then shows up here."""
+    every extension a user had then shows up here. A folder this user cannot
+    read counts too, whoever put it there: nothing else can be said about
+    it, and setting it aside is a rename in the user's own folder, which
+    works and is the way out without administrator rights (#1152)."""
     try:
         candidates = sorted(user_plugins_dir().iterdir())
     except OSError:
@@ -524,9 +572,10 @@ def hand_installed_plugins() -> list[Path]:
     for path in candidates:
         if path.name.startswith(("_", ".")):
             continue                      # __pycache__, set-aside copies
-        if path.is_dir():
-            if ((path / "extension.json").is_file()
-                    or not (path / "__init__.py").is_file()):
+        if os.path.isdir(path):
+            if not _unreadable(path) and (
+                    os.path.isfile(path / "extension.json")
+                    or not os.path.isfile(path / "__init__.py")):
                 continue
         elif path.suffix != ".py":
             continue
@@ -552,7 +601,9 @@ def remove_hand_installed(path: Path) -> Path:
 
 
 def replace_hand_installed(extension: Extension,
-                           confirm_manual_copies=None) -> list[Path]:
+                           confirm_manual_copies=None,
+                           catalog_ids: Iterable[str] | None = None
+                           ) -> list[Path]:
     """Install ``extension`` from the catalog over a copy installed by
     hand under the same name: the copy is set aside first, then the
     catalog version installs as a managed one. If the install fails, the
@@ -562,7 +613,7 @@ def replace_hand_installed(extension: Extension,
            if hand_installed_ident(p) == extension.id and p.parent == root]
     moved = [(p, _set_aside(p)) for p in own]
     try:
-        install_extension(extension, confirm_manual_copies)
+        install_extension(extension, confirm_manual_copies, catalog_ids)
     except Exception:
         for original, aside in reversed(moved):
             try:
@@ -576,13 +627,15 @@ def replace_hand_installed(extension: Extension,
 
 
 def install_extension(extension: Extension,
-                      confirm_manual_copies=None) -> None:
+                      confirm_manual_copies=None,
+                      catalog_ids: Iterable[str] | None = None) -> None:
     """Download, verify and atomically install an extension or its update.
 
     If the same extension is already installed by hand under another name,
     ``confirm_manual_copies(paths)`` decides: True sets those copies aside
     (renamed, not deleted) and installs; False — or no callback — installs
-    nothing, so the extension never loads twice."""
+    nothing, so the extension never loads twice. ``catalog_ids`` lets a
+    managed copy under an id the catalog dropped count as such a copy."""
     if not compatible_with_current(extension):
         raise ExtensionManagerError(
             f"{extension.id!r} requires IngeTrazo "
@@ -610,7 +663,14 @@ def install_extension(extension: Extension,
     root.mkdir(parents=True, exist_ok=True)
     keep_disabled = (target.is_dir()
                      and (target / ".disabled").is_file())
-    stage = Path(tempfile.mkdtemp(prefix=f".{extension.id}-", dir=root))
+    # Not tempfile.mkdtemp: its 0o700 becomes, on Windows since Python 3.12.4,
+    # a private ACL that admits only SYSTEM, the Administrators and the
+    # owner — and this folder IS the installed extension. From a run as
+    # administrator the owner is the Administrators group, so the same user
+    # running normally later could not read it (#1152). A plain mkdir
+    # inherits the permissions of the user's plugin folder.
+    stage = root / f".{extension.id}-{uuid.uuid4().hex}"
+    stage.mkdir()
     backup = root / f".{extension.id}-backup-{uuid.uuid4().hex}"
     try:
         if archive_data is None:            # a bundled package folder
@@ -631,7 +691,7 @@ def install_extension(extension: Extension,
                 raise ExtensionManagerError(
                     f"{extension.id!r} is not a Python extension file.")
             (stage / "__init__.py").write_bytes(archive_data)
-        copies = manual_copies(extension.id, stage)
+        copies = manual_copies(extension.id, stage, catalog_ids)
         if copies:
             if (confirm_manual_copies is None
                     or not confirm_manual_copies(copies)):

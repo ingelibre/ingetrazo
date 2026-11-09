@@ -283,6 +283,32 @@ def _union_outline(solid_regions_xy, keep_segs=None) -> list:
         if net > 0:
             survivors[(ka, kb)] += net
 
+    # A crease that ends inside the union bounds nothing: the trace would run
+    # out along it and back, a spur that splits no face and triangulates into
+    # slivers facing the wrong way. It happens where a perpendicular face only
+    # touches the plane along a dead-end line — a pocket corner meeting the
+    # outer wall of a step pushed up beside it (#570). The edge stays in the
+    # mesh for the faces that stand on it; it just isn't part of this outline.
+    links: dict = defaultdict(set)
+    for (ka, kb), c in survivors.items():
+        if c > 0:
+            links[ka].add(kb)
+            links[kb].add(ka)
+    stack = [k for k, ns in links.items() if len(ns) == 1]
+    while stack:
+        k = stack.pop()
+        if len(links[k]) != 1:
+            continue
+        other = next(iter(links[k]))
+        if not _is_crease(k, other):
+            continue
+        survivors[(k, other)] = 0
+        survivors[(other, k)] = 0
+        links[k].discard(other)
+        links[other].discard(k)
+        if len(links[other]) == 1:
+            stack.append(other)
+
     # Trace the surviving directed edges into closed loops, choosing at each
     # junction the next edge *clockwise* from the arrival direction — the same
     # DCEL rule as ``core.arrangement._trace_faces``. An arbitrary choice can
@@ -622,6 +648,14 @@ def rebuild_plane(mesh, origin: QVector3D, normal: QVector3D,
         return any(_on_seg2(ea, a, b) and _on_seg2(eb, a, b)
                    for a, b in op_rim_segs)
 
+    def _parts_paint(e) -> bool:
+        """The edge parts two faces painted differently: the line between
+        two coloured quadrants, even where the push's rim runs along it.
+        Dissolved, one paint took the whole plane (#649: a quadrant pulled
+        up and pushed back level turned the four of them green)."""
+        attrs = [f.attrs or {} for f in e.faces]
+        return any(a != attrs[0] for a in attrs[1:])
+
     keep_segs: list = []
     for e in scope_edges:
         if not (_on_plane(e.a, origin, normal) and _on_plane(e.b, origin, normal)):
@@ -629,7 +663,8 @@ def rebuild_plane(mesh, origin: QVector3D, normal: QVector3D,
         if any(abs(QVector3D.dotProduct(_fnormal(f), normal)) < 0.999
                for f in e.faces):
             keep_segs.append((to2d(e.a), to2d(e.b)))
-        elif op is not None and e.faces and not _on_op_rim(e):
+        elif op is not None and e.faces and (not _on_op_rim(e)
+                                             or _parts_paint(e)):
             keep_segs.append((to2d(e.a), to2d(e.b)))
 
     result = []
@@ -853,6 +888,34 @@ def edges_along(mesh, segments) -> list:
             if any(on(e.a, a, b) and on(e.b, a, b) for a, b in segments)]
 
 
+# cos²(1e-4 rad): the most two normals may differ to be read as ONE plane
+# drawn a hair out of true (#1076: a door 0.2 mm off over 2 m, 7.5e-5).
+# An imported panel leaning 5e-4 next to an exact new face is two planes:
+# correcting it changed which pushes a broken bench model refused.
+_HAIR_COS2 = math.cos(1e-4) ** 2
+
+
+def _off_plane(face, origin, normal) -> float:
+    """The farthest any of ``face``'s vertices sits from the plane."""
+    return max(abs(QVector3D.dotProduct(v.position - origin, normal))
+               for lp in (face.loop, *face.hole_loops) for v in lp)
+
+
+def _drops_its_neighbour(f, nf, g) -> bool:
+    """Whether the plane read off the op's face ``f`` would leave part of
+    its bigger coplanar neighbour ``g`` off the plane, while ``g``'s own
+    normal through ``f`` keeps both on it: one plane drawn a hair out of
+    true, not two planes (#1076)."""
+    half = _ON_PLANE / 2
+    gn = g.normal().normalized()
+    if QVector3D.dotProduct(nf, gn) ** 2 < _HAIR_COS2:
+        return False                    # two planes, not one out of true
+    oc = f.centroid()
+    if _off_plane(g, oc, nf) <= half:
+        return False                    # the op's plane already holds it
+    return _off_plane(g, oc, gn) <= half and _off_plane(f, oc, gn) <= half
+
+
 def seam_planes(mesh, new_faces) -> list:
     """Representative ``(origin, normal)`` for each plane where one of this
     operation's ``new_faces`` ended up coplanar-edge-adjacent to another face —
@@ -861,7 +924,17 @@ def seam_planes(mesh, new_faces) -> list:
     flush with an old roof, or two fresh quads split at a T-junction. These are
     exactly the planes :func:`apply_rebuild` must recompute so the deterministic
     union dissolves them (the replacement for the winding-tolerant coplanar
-    merge of ``run_stitch`` phase 3)."""
+    merge of ``run_stitch`` phase 3).
+
+    The plane is read off the op's face unless that would leave part of
+    its bigger coplanar neighbour off the plane while the neighbour's own
+    normal holds both; then that normal is used (the origin stays on the
+    op's face). A push's new faces are small and inherit any tilt of the
+    pushed face (a door drawn 1 mm out of plumb sweeps a pocket floor that
+    leans 2e-5): read off that floor, the room's plane drifted past the
+    on-plane tolerance a few metres away, the far half of its outline fell
+    out of the arrangement, and the whole floor went as «not traced» --
+    the push refused, more often the bigger the model (#1076)."""
     seen: dict = {}
     for f in new_faces:
         if f not in mesh.faces:
@@ -879,6 +952,14 @@ def seam_planes(mesh, new_faces) -> list:
                     if abs(QVector3D.dotProduct(
                             nf, g.normal().normalized())) > 0.999:
                         key, origin, cn = plane_key(f.centroid(), nf)
-                        if key not in seen:
-                            seen[key] = (origin, cn)
-    return list(seen.values())
+                        if key in seen and seen[key][0]:
+                            continue        # already corrected from a big face
+                        if g.area() > f.area() and _drops_its_neighbour(
+                                f, nf, g):
+                            # Its normal, through the op's own face.
+                            _, origin, cn = plane_key(f.centroid(),
+                                                      g.normal())
+                            seen[key] = (True, origin, cn)
+                        elif key not in seen:
+                            seen[key] = (False, origin, cn)
+    return [(o, n) for _a, o, n in seen.values()]

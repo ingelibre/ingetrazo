@@ -218,18 +218,29 @@ Developed on **Python 3.14** (3.11+ should work). Run the tests with
 Contributors from anywhere are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md)
 and [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md). All code, comments and commit
 messages are in **English**; the UI speaks Spanish, English, Brazilian
-Portuguese, Simplified Chinese and Italian (translations are one JSON file
-each under `i18n/`).
+Portuguese, Simplified Chinese, Italian, Indonesian, French, German, Polish,
+Russian, Vietnamese, Lao, Thai, Japanese and Korean (translations are one
+JSON file each under `i18n/`).
 
 ## Acknowledgements
 
-- **[Pedro Caeiro](https://github.com/pacaeiro)** — architectural and
+Everyone who has contributed is named in [AUTHORS](AUTHORS) and in
+Help ▸ About; those who have given the most are marked with a ★ there.
+
+- **★ [Pedro Caeiro](https://github.com/pacaeiro)** — architectural and
   mechanical draftsman, and IngeTrazo's most persistent outside contributor:
-  five merged pull requests and fifteen issues filed from real drafting work.
+  some twenty merged pull requests and over a hundred issues filed from real
+  drafting work.
   He draws with IngeTrazo every day and writes down every gesture that does
   not answer the way a draftsman expects, which is how much of its everyday
   behaviour got polished. See [AUTHORS](AUTHORS).
-- **Rafael García Rodríguez** — [Rafael 3D](https://www.youtube.com/@Rafa3D),
+- **★ [Gabriel Rodríguez Arregin](https://github.com/canalsecuario-blip)** —
+  architect, with some thirty merged pull requests: the units system, the
+  Browser, the Solid Inspector, Fillet 3D bevels, Join Segments and many of
+  the everyday editing tools.
+- **★ [Félix Riestra](https://github.com/felixriestra)** — IngeTrazo for Mac,
+  components that come apart into parts, and the Extension API 2.
+- **★ Rafael García Rodríguez** — [Rafael 3D](https://www.youtube.com/@Rafa3D),
   draftsman and reviewer.
   His filmed reviews put the program through a professional's hands and
   drove the sheet composer; his tutorial on drafting standards, with a
@@ -237,7 +248,7 @@ each under `i18n/`).
   dimensions are being built to. A CAD program that does not meet the
   drafting norms is not a technical tool, and that is knowledge we did not
   have.
-- **[OpenSKP](https://github.com/iamahsanmehmood/openskp)** (MIT) by Ahsan
+- **★ [OpenSKP](https://github.com/iamahsanmehmood/openskp)** (MIT) by Ahsan
   Mehmood — the clean-room, pure-Python `.skp` reader that powers
   IngeTrazo's native import.
   IngeTrazo contributes back upstream: material and texture fidelity, per-face
@@ -249,7 +260,17 @@ each under `i18n/`).
 - **[liuandy](https://github.com/liujvnes)** — the Simplified Chinese
   translation of the interface (#123), IngeTrazo's fourth language.
 - **[deedend](https://github.com/deedend)** — the Italian translation of the
-  interface (#182), IngeTrazo's fifth language.
+  interface (#182), IngeTrazo's fifth language; and after it Indonesian
+  ([Rainjalin](https://github.com/Rainjalin)), French
+  ([Yann Steffan](https://github.com/YannFR81)), German
+  ([PESI3D](https://github.com/PESI3D)), Polish
+  ([Piotr Szmitkowski](https://github.com/jackalski)), Russian
+  ([RomanErshow](https://github.com/RomanErshow)), Vietnamese
+  ([vandang890615](https://github.com/vandang890615)), Lao
+  ([BoneNI](https://github.com/bounkirdni-2025)), Thai
+  ([Prida Takon](https://github.com/PRIDA-TAKON)), Japanese
+  ([nonasige-ui](https://github.com/nonasige-ui)) and Korean
+  ([ChangWoo Lee](https://github.com/ultracat)).
 
 ## License
 
