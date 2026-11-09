@@ -35,6 +35,9 @@ def _make_shadows():
 class Scene:
     mesh: Mesh = field(default_factory=Mesh)
     selection: set = field(default_factory=set)
+    # Locked groups can be inspected without entering the editable selection.
+    locked_selection: set = field(default_factory=set, init=False, repr=False)
+    _locked_selection_base: frozenset = field(default_factory=frozenset, init=False, repr=False)
     version: int = 0
     #: How many of ``version``'s bumps changed only what is SHOWN -- the
     #: selection -- and not the document. The GL caches key on ``version``
@@ -367,6 +370,12 @@ class Scene:
                 return True
         return False
 
+    def entity_inspectable(self, entity) -> bool:
+        """Selectable normally, or a visible locked object inspected read-only."""
+        return (self.entity_selectable(entity)
+                or (self.entity_locked(entity) and self.entity_visible(entity)
+                    and not self._layer_state(entity)[1]))
+
     def groups_by_uid(self) -> dict:
         """``uid → group`` over the whole tree (nested placements too)."""
         from core.purge import iter_groups
@@ -452,6 +461,8 @@ class Scene:
         self.edit_group = group
         self._refresh_dimension_holds()
         self.selection.clear()
+        self.locked_selection.clear()
+        self._locked_selection_base = frozenset()
         self.version += 1
 
     def _refresh_dimension_holds(self) -> None:
@@ -529,6 +540,8 @@ class Scene:
             self._loose_mesh = None
         self._refresh_dimension_holds()
         self.selection.clear()
+        self.locked_selection.clear()
+        self._locked_selection_base = frozenset()
         self.version += 1
 
     def take_edit_share(self):
@@ -638,30 +651,38 @@ class Scene:
         ``"add"`` (Ctrl), ``"toggle"`` (Shift: what is in goes out, what is
         out comes in) and ``"remove"`` (Shift+Ctrl). ``additive=True`` is
         the old spelling of ``"add"`` and still works; an explicit *mode*
-        wins over it."""
+        wins over it. Locked groups are remembered separately for inspection;
+        editing tools continue to read only ``selection``."""
         mode = mode or ("add" if additive else "replace")
-        if mode == "replace":
-            self.selection.clear()
-        if mode == "toggle":
-            for ent in edges:
-                if ent in self.selection:
-                    self.selection.discard(ent)
-                else:
-                    self.selection.add(ent)
-        elif mode == "remove":
-            self.selection.difference_update(edges)
-        else:
-            self.selection.update(edges)
+        edges = list(edges)
+        locked = {ent for ent in edges if self.entity_locked(ent)}
+        for selection, entities in ((self.selection, set(edges) - locked),
+                                    (self.locked_selection, locked)):
+            if mode == "replace":
+                selection.clear()
+            if mode == "toggle":
+                selection.symmetric_difference_update(entities)
+            elif mode == "remove":
+                selection.difference_update(entities)
+            else:
+                selection.update(entities)
+        self._locked_selection_base = (frozenset(self.selection) if self.locked_selection
+                                       else frozenset())
         self.bump_view()
 
     def clear_selection(self) -> None:
-        if self.selection:
+        if self.selection or self.locked_selection:
             self.selection.clear()
+            self.locked_selection.clear()
             self.bump_view()
 
     def bump_view(self) -> None:
         """A change of what is shown, not of the document (the selection):
         the caches keyed on ``version`` refresh, the document stays clean."""
+        if self.locked_selection and self.selection != self._locked_selection_base:
+            self.locked_selection.clear()
+        self._locked_selection_base = (frozenset(self.selection) if self.locked_selection
+                                       else frozenset())
         self.version += 1
         self.view_version += 1
 
@@ -693,6 +714,7 @@ class Scene:
             universe += [g for g in self.guides if self.entity_selectable(g)]
         new = [ent for ent in universe if ent not in self.selection]
         self.selection.clear()
+        self.locked_selection.clear()
         self.selection.update(new)
         self.bump_view()             # the GL colour caches are keyed on it
         return len(new)
@@ -706,10 +728,14 @@ class Scene:
             elif isinstance(ent, Face):
                 self.mesh.remove_face(ent)
         self.selection.clear()
+        self.locked_selection.clear()
+        self._locked_selection_base = frozenset()
         self.version += 1
 
     def clear(self) -> None:
         self.end_group_edit()
+        self.locked_selection.clear()
+        self._locked_selection_base = frozenset()
         if (self.mesh.edges or self.mesh.faces or self.selection
                 or self.groups or self.dimensions or self.georef
                 or self.tile_layer or self.geo_paths or self.terrain

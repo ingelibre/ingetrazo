@@ -4268,7 +4268,7 @@ class ReparentGroupsCommand(Command):
 
 class LockCommand(Command):
     """Lock (or unlock) groups and components: a locked object stays drawn
-    but cannot be picked, selected or opened. Previous flags are kept, so a
+    and can be inspected, but cannot be edited or opened. Previous flags are kept, so a
     mixed set undoes exactly."""
 
     def __init__(self, groups, locked: bool = True) -> None:

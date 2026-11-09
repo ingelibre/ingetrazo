@@ -355,7 +355,7 @@ class SelectTool(Tool):
     def on_deactivate(self, viewport) -> None:
         viewport.set_hover(None)
 
-    def _pick(self, viewport, screen_x: float, screen_y: float):
+    def _pick(self, viewport, screen_x: float, screen_y: float, *, inspect_locked=False):
         """A group (picked as a unit) takes priority; then the edge under the
         cursor (screen-space priority), then a dimension annotation, then the
         front face."""
@@ -368,6 +368,11 @@ class SelectTool(Tool):
             if label is not None:
                 return label
         group = viewport.pick_group(screen_x, screen_y)
+        if inspect_locked:
+            pick_locked = getattr(viewport, "pick_locked_group", None)
+            locked = pick_locked(screen_x, screen_y) if pick_locked else None
+            if locked is not None:
+                group = locked
         # Only an edge the user can SEE takes the click (issue #71): the
         # hidden seams of a smooth surface, or edges behind the model, left
         # a cylinder's side all but unclickable.
@@ -436,7 +441,7 @@ class SelectTool(Tool):
             return
         if getattr(viewport, "extension_pick", None) is not None:
             viewport.clear_extension_pick()
-        entity = self._pick(viewport, ctx.screen.x(), ctx.screen.y())
+        entity = self._pick(viewport, ctx.screen.x(), ctx.screen.y(), inspect_locked=True)
         if entity is None:
             if viewport.scene.edit_group is not None and mode == "replace" \
                     and not viewport.scene.selection:
@@ -620,7 +625,7 @@ class SelectTool(Tool):
                       else (getattr(ctx, "children", None) or []))
         if candidates:
             for group in candidates:
-                if not viewport.scene.entity_selectable(group):
+                if not viewport.scene.entity_inspectable(group):
                     continue
                 verdict = _box_group_fast(viewport, group, rect, crossing)
                 if verdict is not None:
@@ -795,6 +800,8 @@ def delete_selection_or_hover(viewport) -> bool:
     selection = list(viewport.scene.selection)
     if selection:
         return erase_entities(viewport, selection)
+    if getattr(viewport.scene, "locked_selection", None):
+        return False  # An inspected locked object is not an empty selection.
     hovered = getattr(viewport, "_hover_entity", None)
     if hovered is None:
         return False
