@@ -1261,6 +1261,13 @@ class MainWindow(QMainWindow):
         layers = getattr(getattr(self, "layers_dock", None), "panel", None)
         if layers is not None:
             layers.refresh_icons()
+        browser = getattr(getattr(self, "project_browser", None),
+                          "outliner", None)
+        if browser is not None:
+            browser.refresh_icons()
+        bar = getattr(self, "layers_toolbar", None)
+        if bar is not None:
+            bar.refresh_icons()
 
     def changeEvent(self, event) -> None:
         # Qt posts these when the OS/Qt theme (palette) flips at runtime.
