@@ -1,35 +1,37 @@
-# AI Bridge — modelar con Claude (MCP)
+# AI Bridge — modelling with Claude (MCP)
 
-IngeTrazo puede ser dirigido por un agente de IA (Claude Code, Claude
-Desktop) mediante el [Model Context Protocol](https://modelcontextprotocol.io):
-el agente dibuja, consulta y **ve** el modelo en vivo — y cada acción suya
-es un paso de undo transaccional (si su código falla, el documento se
-revierte entero; el guard de hermeticidad valida sus recetas).
+*English · [Español](ai-bridge.es.md)*
 
-## Uso
+IngeTrazo can be driven by an AI agent (Claude Code, Claude
+Desktop) through the [Model Context Protocol](https://modelcontextprotocol.io):
+the agent draws, queries and **sees** the model live — and every action it
+takes is one transactional undo step (if its code fails, the whole document
+is rolled back; the watertightness guard validates its recipes).
 
-1. En IngeTrazo: pestaña **IA** de la barra lateral ▸ sección **Puente IA
-   (MCP)** ▸ **Encender puente** (o **Extensiones ▸ Puente IA (MCP)**, que
-   abre esa sección y lo enciende) — arranca un servidor local (solo
-   127.0.0.1, puerto 4763; `INGETRAZO_AI_PORT` lo cambia). **Detener
-   puente** lo apaga.
-2. Al encenderlo, la sección muestra, con un botón Copiar, las líneas exactas para
-   tu sistema (botón **Copiar**). No hace falta tener Python instalado: el
-   paquete lleva el servidor MCP.
+## Usage
 
-   | Instalación | Comando del servidor MCP |
+1. In IngeTrazo: the sidebar's **AI** tab ▸ **AI bridge (MCP)** section ▸
+   **Start bridge** (or **Extensions ▸ AI bridge (MCP)**, which
+   opens that section and starts it) — this launches a local server (only
+   127.0.0.1, port 4763; `INGETRAZO_AI_PORT` changes it). **Stop
+   bridge** shuts it down.
+2. Once it is running, the section shows the exact lines for
+   your system, with a **Copy** button. You do not need Python installed: the
+   package ships the MCP server.
+
+   | Installation | MCP server command |
    |---|---|
-   | Windows (instalador o zip) | `C:\Program Files\IngeTrazo\ingetrazo-mcp.exe` |
-   | Linux AppImage / tarball / Flatpak / snap | `<ejecutable de IngeTrazo> --mcp` |
-   | Desde el repositorio | `python3 /ruta/a/app/scripts/ingetrazo_mcp.py` |
+   | Windows (installer or zip) | `C:\Program Files\IngeTrazo\ingetrazo-mcp.exe` |
+   | Linux AppImage / tarball / Flatpak / snap | `<IngeTrazo executable> --mcp` |
+   | From the repository | `python3 /path/to/app/scripts/ingetrazo_mcp.py` |
 
-   **Claude Code** (en una terminal):
+   **Claude Code** (in a terminal):
 
        claude mcp add ingetrazo -- "C:\Program Files\IngeTrazo\ingetrazo-mcp.exe"
 
-   **Claude Desktop**: pega esto en su archivo de configuración
-   (`%APPDATA%\Claude\claude_desktop_config.json` en Windows,
-   `~/.config/Claude/claude_desktop_config.json` en Linux) y reinicia
+   **Claude Desktop**: paste this into its configuration file
+   (`%APPDATA%\Claude\claude_desktop_config.json` on Windows,
+   `~/.config/Claude/claude_desktop_config.json` on Linux) and restart
    Claude Desktop:
 
        {
@@ -41,82 +43,82 @@ revierte entero; el guard de hermeticidad valida sus recetas).
          }
        }
 
-   Si Claude no responde: comprueba que IngeTrazo sigue abierto con el
-   puente encendido (la sección Puente IA (MCP) dice «Escuchando en…»),
-   que la ruta del comando existe, y en Claude Desktop que el servidor
-   aparece en Configuración ▸ Desarrollador ▸ MCP sin error.
-3. Pídele cosas: *"dibuja una casita de 6×4 m con techo a dos aguas,
-   agrúpala y píntala de ladrillo; muéstrame cómo quedó"*.
+   If Claude does not respond: check that IngeTrazo is still open with the
+   bridge running (the AI bridge (MCP) section says "Listening on…"),
+   that the command path exists, and, in Claude Desktop, that the server
+   shows up under Settings ▸ Developer ▸ MCP without an error.
+3. Ask it for things: *"draw a 6×4 m little house with a gable roof,
+   group it and paint it brick; show me how it turned out"*.
 
-### El agente dentro de un contenedor (Docker, WSL2)
+### The agent inside a container (Docker, WSL2)
 
-El puente escucha **solo en `127.0.0.1`** de la máquina donde corre
-IngeTrazo, y así se queda: no tiene contraseña y `run_python` ejecuta
-código dentro de la aplicación, de modo que abrirlo a la red dejaría el
-modelo (y el equipo) a merced de cualquiera en ella.
+The bridge listens **only on `127.0.0.1`** of the machine where IngeTrazo
+runs, and it stays that way: it has no password and `run_python` executes
+code inside the application, so opening it to the network would leave the
+model (and the computer) at the mercy of anyone on it.
 
-Escuchar en local no basta frente al navegador del mismo equipo: una página
-web puede mandar un `POST` a `http://127.0.0.1:4763` sin que el navegador
-pida permiso (`fetch` con `mode: "no-cors"` y cuerpo de texto). Por eso el
-puente corta la conexión en la primera línea que no es una petición JSON —
-la primera línea de cualquier petición HTTP es `POST / HTTP/1.1` — y el
-cuerpo nunca llega a leerse. Aun así, **detén el puente cuando no lo uses**.
+Listening locally is not enough against a browser on the same machine: a web
+page can send a `POST` to `http://127.0.0.1:4763` without the browser
+asking for permission (`fetch` with `mode: "no-cors"` and a text body). That is
+why the bridge drops the connection on the first line that is not a JSON
+request — the first line of any HTTP request is `POST / HTTP/1.1` — and the
+body is never read. Even so, **stop the bridge when you are not using it**.
 
-- **IngeTrazo dentro de WSL2** (AppImage o `.tar.gz` con WSLg) y el
-  contenedor con `--network host`: funciona tal cual, porque comparten
+- **IngeTrazo inside WSL2** (AppImage or `.tar.gz` with WSLg) and the
+  container with `--network host`: works as is, because they share
   `127.0.0.1`.
-- **En cualquier otro caso**, lleva el puerto hasta el agente con un túnel
-  que tú controlas (`ssh -L 4763:127.0.0.1:4763 usuario@equipo`, `socat`…)
-  y dile al cliente MCP dónde está el otro extremo:
+- **In any other case**, bring the port to the agent through a tunnel
+  you control (`ssh -L 4763:127.0.0.1:4763 user@host`, `socat`…)
+  and tell the MCP client where the other end is:
 
       INGETRAZO_AI_HOST=host.docker.internal INGETRAZO_AI_PORT=4763 \
-          python3 /ruta/a/app/scripts/ingetrazo_mcp.py
+          python3 /path/to/app/scripts/ingetrazo_mcp.py
 
-  `INGETRAZO_AI_HOST` (por defecto `127.0.0.1`) solo cambia a dónde se
-  conecta el cliente; el puente no deja de escuchar únicamente en local.
+  `INGETRAZO_AI_HOST` (default `127.0.0.1`) only changes where the client
+  connects to; the bridge still listens on localhost only.
 
-## Herramientas expuestas
+## Exposed tools
 
-| Tool | Qué hace |
+| Tool | What it does |
 |---|---|
-| `run_python` | Ejecuta Python sobre el documento vivo (scope: `scene`, `mesh`, `selection`, `groups`, `bim`, `QVector3D`… y los constructores `revolve(perfil)` / `extrude(contorno, z0, z1)`: una línea → un grupo sólido, suave y orientado). Un undo por llamada; rollback total si falla. |
-| `query_model` | Conteos, nombres de grupos/componentes, materiales, capas, bounds. |
-| `screenshot` | Renderiza el viewport real — el agente mira e itera. |
-| `undo` / `redo` | La historia de siempre. |
+| `run_python` | Runs Python against the live document (scope: `scene`, `mesh`, `selection`, `groups`, `bim`, `QVector3D`… and the builders `revolve(profile)` / `extrude(outline, z0, z1)`: one line → one solid, smooth, correctly oriented group). One undo per call; full rollback on failure. |
+| `query_model` | Counts, group/component names, materials, layers, bounds. |
+| `screenshot` | Renders the real viewport — the agent looks and iterates. |
+| `undo` / `redo` | The usual history. |
 
-Sin el puente encendido, las tools responden con el aviso de cómo
-encenderlo. El servidor acepta un cliente a la vez y nunca escucha fuera
-de localhost.
+Without the bridge running, the tools reply with a notice explaining how to
+start it. The server accepts one client at a time and never listens outside
+localhost.
 
-## Asistente IA (dentro de la app)
+## AI assistant (inside the app)
 
-Para el usuario que no usa Claude Code: la pestaña **IA** de la barra
-lateral (Ctrl+Shift+A la trae al frente, aunque esté oculta) es un chat
-DENTRO de IngeTrazo. Pega tu clave API — el
-proveedor se detecta solo por el prefijo, la convención de IngePresupuestos:
+For users who do not use Claude Code: the sidebar's **AI** tab
+(Ctrl+Shift+A brings it to the front, even when hidden) is a chat
+INSIDE IngeTrazo. Paste your API key — the
+provider is detected from the prefix alone, following the IngePresupuestos convention:
 
-| Prefijo | Proveedor | Modelo por defecto |
+| Prefix | Provider | Default model |
 |---|---|---|
 | `sk-ant-` | Anthropic | claude-sonnet-5 |
-| `gsk_` | Groq (gratis) | llama-3.3-70b-versatile |
+| `gsk_` | Groq (free) | llama-3.3-70b-versatile |
 | `sk-or-` | OpenRouter | anthropic/claude-sonnet-5 |
 | `AIza` | Gemini | gemini-2.5-flash |
 | `sk-` | OpenAI | gpt-4o |
-| *(vacía)* | Ollama local | qwen2.5-coder:7b |
+| *(empty)* | Local Ollama | qwen2.5-coder:7b |
 
-Escribe qué quieres ("dibuja una casa de 6×4 con techo a dos aguas") y el
-asistente actúa por recetas de Python transaccionales — cada acción es un
-paso de undo, y con proveedores con visión recibe capturas del viewport
-para VER lo que construyó e iterar. El modelo es editable, y la clave se
-guarda en la configuración local.
+Type what you want ("draw a 6×4 house with a gable roof") and the
+assistant acts through transactional Python recipes — each action is one
+undo step, and with vision-capable providers it receives viewport screenshots
+to SEE what it built and iterate. The model is editable, and the key is
+stored in the local configuration.
 
-### Modelar desde una foto
+### Modelling from a photo
 
-Con el botón **Foto…** adjuntas la imagen de un objeto (una fuente, un
-mueble, una fachada) y el asistente la interpreta y lo recrea por partes,
-cada una como grupo con nombre, comparando sus capturas contra la foto.
-Dale las medidas reales en el mensaje ("la taza mide 4 m de diámetro, el
-alto total 2,30") — una foto no trae dimensiones, y lo que el asistente
-estime del ojo lo declara como supuesto para que lo corrijas. La foto se
-reescala a 1280 px y viaja como JPEG solo en ese mensaje. Necesita un
-proveedor con visión (Anthropic, OpenAI, Gemini, OpenRouter).
+With the **Photo…** button you attach a picture of an object (a fountain, a
+piece of furniture, a facade) and the assistant interprets it and recreates it piece by piece,
+each piece as a named group, comparing its screenshots against the photo.
+Give it the real measurements in the message ("the basin is 4 m in diameter, the
+total height 2.30") — a photo carries no dimensions, and whatever the assistant
+estimates by eye it states as an assumption so you can correct it. The photo is
+rescaled to 1280 px and travels as a JPEG in that message only. It needs a
+vision-capable provider (Anthropic, OpenAI, Gemini, OpenRouter).
