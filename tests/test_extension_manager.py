@@ -1278,25 +1278,230 @@ def test_the_scaled_screenshot_is_kept_on_disk_until_the_screenshot_changes(
     assert colour_after_restart() == "#008000"
 
 
-def test_the_background_rounds_download_nothing(tmp_path, monkeypatch):
-    """Only the screenshots already on disk are scaled ahead; a missing one
-    is still asked for when its card is seen."""
+def test_the_background_rounds_fetch_the_missing_pictures_a_few_at_a_time(
+        tmp_path, monkeypatch):
+    """#1296: once the visible cards are in, the pictures not on disk are
+    fetched in the background, a few at a time, so scrolling finds them
+    ready (before, each waited for its card to be seen)."""
     app = QApplication.instance() or QApplication([])
     dialog_module, extensions, shots = _shots_setup(tmp_path, monkeypatch, 20)
-    missing = extensions[-1]
-    (shots / missing.screenshot).unlink()
-    requests = []
+    missing = extensions[-6:]
+    for extension in missing:
+        (shots / extension.screenshot).unlink()
+    png = (shots / extensions[0].screenshot).read_bytes()
+    network = _HeldNetwork(lambda url: (png, True), delay_ms=40)
     dialog = dialog_module.ExtensionManagerDialog()
-    monkeypatch.setattr(dialog._network, "get",
-                        lambda request: requests.append(request) or None)
+    dialog._network = network
     try:
         _wait_for_catalog(dialog, app)
         dialog.resize(1180, 800)
         dialog.show()
         app.processEvents()
-        _wait_ms(1500)
-        assert set(dialog._screenshots) == {
-            e.id for e in extensions if e is not missing}
-        assert requests == []
+        _wait_ms(2500)
+        assert set(dialog._screenshots) == {e.id for e in extensions}
+        assert sorted(network.urls) == sorted(
+            dialog_module._SCREENSHOT_BASE + e.screenshot for e in missing)
+        assert max(network.in_flight) <= dialog_module._PREFETCH_DOWNLOADS
+    finally:
+        _close(dialog, app)
+
+
+class _HeldReply(_FakeReply):
+    def __init__(self, data, ok, delay_ms, network):
+        QObject.__init__(self)
+        self._data, self._ok = data, ok
+        network.open += 1
+        self.finished.connect(lambda: setattr(network, "open",
+                                              network.open - 1))
+        QTimer.singleShot(delay_ms, self.finished.emit)
+
+
+class _HeldNetwork:
+    """Answers each URL as ``answer(url)`` says, a moment later; keeps the
+    URLs asked and how many were on their way at each request."""
+
+    def __init__(self, answer, delay_ms=0):
+        self.answer, self.delay_ms = answer, delay_ms
+        self.urls, self.in_flight, self.open = [], [], 0
+
+    def get(self, request):
+        url = request.url().toString()
+        self.urls.append(url)
+        data, ok = self.answer(url)
+        reply = _HeldReply(data, ok, self.delay_ms, self)
+        self.in_flight.append(self.open)
+        return reply
+
+
+def _png(colour="red", size=(64, 40)) -> bytes:
+    from PySide6.QtCore import QByteArray
+    pixmap = QPixmap(*size)
+    pixmap.fill(QColor(colour))
+    raw = QByteArray()
+    buf = QBuffer(raw)
+    buf.open(QIODevice.WriteOnly)
+    pixmap.save(buf, "PNG")
+    return bytes(raw)
+
+
+_SHA_A = "0123456789abcdef"
+_SHA_B = "fedcba9876543210"
+
+
+def _one_card(tmp_path, monkeypatch, **fields):
+    from views import extension_manager_dialog as dialog_module
+    extension = manager.Extension(**{
+        **_extension(b"one", "with_shot").__dict__,
+        "screenshot": "with_shot.png", **fields})
+    _stub_catalog(monkeypatch, dialog_module, [extension])
+    monkeypatch.setattr(manager, "user_plugins_dir", lambda: tmp_path)
+    monkeypatch.setattr(dialog_module.QStandardPaths, "writableLocation",
+                        lambda _location: str(tmp_path / "data"))
+    monkeypatch.setattr(dialog_module, "_SCREENSHOT_RETRY_MS", 10)
+    dialog_module._SCALED_SHOTS.clear()
+    return dialog_module, extension
+
+
+def _show_with(dialog_module, network, app, ms=500):
+    dialog = dialog_module.ExtensionManagerDialog()
+    dialog._network = network
+    _wait_for_catalog(dialog, app)
+    dialog.resize(1180, 800)
+    dialog.show()
+    _wait_ms(ms)
+    return dialog
+
+
+def test_a_catalog_thumb_is_fetched_instead_of_the_screenshot(
+        tmp_path, monkeypatch):
+    """#1296: the card shows the catalog's 512 × 320 copy, not the full
+    screenshot of up to 600 KB."""
+    app = QApplication.instance() or QApplication([])
+    dialog_module, _ext = _one_card(tmp_path, monkeypatch,
+                                    thumb="with_shot.webp",
+                                    screenshot_sha=_SHA_A)
+    network = _HeldNetwork(lambda url: (_png(), True))
+    dialog = _show_with(dialog_module, network, app)
+    try:
+        assert "with_shot" in dialog._screenshots
+        assert network.urls == [
+            "https://raw.githubusercontent.com/ingelibre/"
+            "ingetrazo-extensions/main/thumbs/with_shot.webp"]
+        assert (tmp_path / "data" / "extension-screenshots"
+                / "catalog-thumbs" / f"with_shot-{_SHA_A}.webp").is_file()
+    finally:
+        _close(dialog, app)
+
+
+def test_without_a_thumb_the_screenshot_is_fetched_under_its_print(
+        tmp_path, monkeypatch):
+    app = QApplication.instance() or QApplication([])
+    dialog_module, _ext = _one_card(tmp_path, monkeypatch,
+                                    screenshot_sha=_SHA_A)
+    network = _HeldNetwork(lambda url: (_png(), True))
+    dialog = _show_with(dialog_module, network, app)
+    try:
+        assert "with_shot" in dialog._screenshots
+        assert network.urls == [
+            dialog_module._SCREENSHOT_BASE + "with_shot.png"]
+        assert (tmp_path / "data" / "extension-screenshots"
+                / f"with_shot-{_SHA_A}.png").is_file()
+    finally:
+        _close(dialog, app)
+
+
+def test_a_new_print_under_the_same_name_is_fetched_again(
+        tmp_path, monkeypatch):
+    """#1296: the cache went by name only, so a screenshot changed in the
+    catalog under the same name was never fetched again."""
+    app = QApplication.instance() or QApplication([])
+    dialog_module, _ext = _one_card(tmp_path, monkeypatch,
+                                    thumb="with_shot.webp",
+                                    screenshot_sha=_SHA_B)
+    folder = tmp_path / "data" / "extension-screenshots" / "catalog-thumbs"
+    folder.mkdir(parents=True)
+    old = folder / f"with_shot-{_SHA_A}.webp"
+    old.write_bytes(_png("blue"))
+    unprinted = folder / "with_shot.webp"
+    unprinted.write_bytes(_png("blue"))
+    other = folder / f"another-{_SHA_A}.webp"
+    other.write_bytes(_png("blue"))
+    old_scaled = dialog_module.ExtensionManagerDialog._thumb_path(old)
+    old_scaled.parent.mkdir(parents=True)
+    old_scaled.write_bytes(_png("blue", (256, 160)))
+    network = _HeldNetwork(lambda url: (_png("green"), True))
+    dialog = _show_with(dialog_module, network, app)
+    try:
+        assert network.urls == [dialog_module._THUMB_BASE + "with_shot.webp"]
+        assert (folder / f"with_shot-{_SHA_B}.webp").is_file()
+        assert not old.exists() and not unprinted.exists()
+        assert not old_scaled.exists()
+        assert other.is_file()                     # another extension's
+        label = dialog._pages["browse"]["image_labels"]["with_shot"]
+        assert label.pixmap().toImage().pixelColor(5, 5).name() == "#008000"
+    finally:
+        _close(dialog, app)
+
+
+def test_a_thumb_github_failed_to_send_is_asked_from_the_website(
+        tmp_path, monkeypatch):
+    app = QApplication.instance() or QApplication([])
+    dialog_module, _ext = _one_card(tmp_path, monkeypatch,
+                                    thumb="with_shot.webp",
+                                    screenshot_sha=_SHA_A)
+    network = _HeldNetwork(lambda url: (_png(), "ingetrazo.com" in url))
+    dialog = _show_with(dialog_module, network, app)
+    try:
+        assert "with_shot" in dialog._screenshots
+        assert network.urls[:2] == [
+            dialog_module._THUMB_BASE + "with_shot.webp",
+            "https://ingetrazo.com/extensiones-img/thumbs/with_shot.webp"]
+    finally:
+        _close(dialog, app)
+
+
+def test_a_bad_thumb_or_print_is_ignored_and_the_extension_kept():
+    base = {
+        "id": "sample", "version": "1.0", "author": "A", "license": "MIT",
+        "repository": "https://github.com/example/sample",
+        "download": "https://example.org/sample.py", "sha256": "a" * 64,
+        "ingetrazo": "0.1.0", "name": {"en": "S"}, "summary": {"en": "S"},
+        "screenshot": "sample.png"}
+    good = manager._parse_extension(
+        {**base, "thumb": "sample.webp", "screenshot_sha": _SHA_A})
+    assert (good.thumb, good.screenshot_sha) == ("sample.webp", _SHA_A)
+    for thumb, sha in (("../sample.webp", "0123456789ABCDEF"),
+                       ("a/b.webp", "0123"), ("a\\b.webp", 12345),
+                       ("sample.exe", "g" * 16), (7, None), ("", "")):
+        parsed = manager._parse_extension(
+            {**base, "thumb": thumb, "screenshot_sha": sha})
+        assert parsed.id == "sample" and parsed.screenshot == "sample.png"
+        assert parsed.thumb is None and parsed.screenshot_sha is None
+    old = manager._parse_extension(base)              # an older catalog
+    assert old.thumb is None and old.screenshot_sha is None
+
+
+def test_a_downloaded_picture_is_decoded_once(tmp_path, monkeypatch):
+    """#1296: it was decoded to check it and again to scale it, both on
+    the UI thread."""
+    app = QApplication.instance() or QApplication([])
+    dialog_module, _ext = _one_card(tmp_path, monkeypatch,
+                                    thumb="with_shot.webp",
+                                    screenshot_sha=_SHA_A)
+    data = _png()
+    decodes = []
+    for cls in (dialog_module.QImage, dialog_module.QPixmap):
+        for name in ("loadFromData", "load"):
+            real = getattr(cls, name)
+            monkeypatch.setattr(
+                cls, name,
+                lambda self, *a, _real=real, _n=f"{cls.__name__}.{name}":
+                decodes.append(_n) or _real(self, *a))
+    network = _HeldNetwork(lambda url: (data, True))
+    dialog = _show_with(dialog_module, network, app)
+    try:
+        assert "with_shot" in dialog._screenshots
+        assert len(network.urls) == 1
+        assert decodes == ["QImage.loadFromData"]
     finally:
         _close(dialog, app)
