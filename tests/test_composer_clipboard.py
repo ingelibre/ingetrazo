@@ -177,3 +177,29 @@ def test_the_title_block_copies_to_another_sheet_and_replaces_its_own():
     assert (second.cajetin.x_mm, second.cajetin.y_mm) == (100.0, 150.0)
     assert composer.history.undo() and second.cajetin is None
     assert dict(first.cajetin.campos)["PROYECTO"] == "Plaza Yanque"   # untouched
+
+
+def test_ctrl_c_reaches_the_sheet_while_a_model_window_is_active(monkeypatch):
+    """A model window shown and active owns a Copy shortcut: the sheet
+    claimed nothing, so Ctrl+C went to that window and the sheet never
+    copied (seen in the full suite after a test left a window shown)."""
+    from PySide6.QtWidgets import QApplication
+    from views.composer import ComposerCanvasView, ComposerWindow
+    from views.main_window import MainWindow
+    other = MainWindow()
+    other.show()
+    other.activateWindow()
+    QApplication.processEvents()
+    win, comp = _composer(monkeypatch)
+    try:
+        t = TextoItem(x_mm=40.0, y_mm=50.0, w_mm=30.0, text="Planta")
+        comp.history.execute(AddItemCommand(comp.comp, t))
+        comp._rebuild_canvas()
+        view = comp.findChildren(ComposerCanvasView)[0]
+        comp._item_for(t).setSelected(True)
+        QTest.keyClick(view, Qt.Key_C, Qt.ControlModifier)
+        assert [m.text for m in ComposerWindow._clipboard] == ["Planta"]
+    finally:
+        _close(win, comp)
+        other._saved_version = other.viewport.scene.version
+        other.close()

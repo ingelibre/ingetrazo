@@ -5424,6 +5424,25 @@ class ComposerCanvasView(QGraphicsView):
             self._shift_changed(False)
         super().keyReleaseEvent(event)
 
+    _CLIPBOARD_KEYS = ((QKeySequence.Copy, "copy_selected"),
+                       (QKeySequence.Cut, "cut_selected"),
+                       (QKeySequence.Paste, "paste_clipboard"))
+
+    def event(self, event) -> bool:
+        # Claim Ctrl+C/X/V before any window shortcut: a model window's Copy
+        # action (the active window, or the composer's host) took the keys
+        # and the sheet never saw them. Inline editing keeps its own keys.
+        if event.type() == QEvent.ShortcutOverride:
+            scene = self.scene()
+            editing = scene is not None and isinstance(scene.focusItem(),
+                                                       InlineTextEditor)
+            if not editing and any(
+                    event.matches(seq) and hasattr(self.composer, slot)
+                    for seq, slot in self._CLIPBOARD_KEYS):
+                event.accept()
+                return True
+        return super().event(event)
+
     def keyPressEvent(self, event) -> None:
         if event.key() == Qt.Key_Shift and not event.isAutoRepeat():
             self._shift_changed(True)
