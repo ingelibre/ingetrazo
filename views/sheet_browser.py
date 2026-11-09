@@ -7,9 +7,9 @@ The sheet explorer shows the sheets in the nested folders of
 :mod:`core.sheet_folders`, each with the scenes placed on it and its Print
 flag — what Print all and Export all take. Sheets and folders are dragged
 to reorder or re-file them; a scene dragged from the list above onto a
-sheet is placed on it. The scenes list is just that — a list to pick scenes
-up from (:class:`SceneList`); they are made, filed in folders and changed
-in the main window's Scenes tab.
+sheet is placed on it. The scenes above (:class:`SceneList`) sit in the
+folders of the main window's Scenes tab, only to be picked up from; they
+are made, filed and changed in that tab.
 
 Each panel needs only the main window, never the page or dock it sits in,
 and the panels speak to each other only through the document and the drag
@@ -22,8 +22,7 @@ from PySide6.QtCore import QItemSelectionModel, QMimeData, QSize, Qt, QTimer
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
     QAbstractItemView, QHBoxLayout, QHeaderView, QLabel, QLineEdit,
-    QListWidget, QListWidgetItem, QSplitter, QTreeWidget, QTreeWidgetItem,
-    QVBoxLayout, QWidget,
+    QSplitter, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget,
 )
 
 from core import sheet_folders as sf
@@ -1029,9 +1028,10 @@ def mark_row(item, on: bool, column: int = 0) -> None:
         item.setData(Qt.UserRole + 1, bool(on))
 
 
-class _SceneListWidget(QListWidget):
-    """Scenes that drag out by name — what a sheet in the explorer and the
-    composer's page take."""
+class _SceneTree(QTreeWidget):
+    """The scenes in their folders; scene rows drag out by name — what a
+    sheet in the explorer and the composer's page take. Folders only hold
+    them: they do not drag."""
 
     def __init__(self) -> None:
         super().__init__()
@@ -1045,23 +1045,26 @@ class _SceneListWidget(QListWidget):
 
     def mimeData(self, items):
         from views.composer import SCENE_MIME
+        names = [it.text(0) for it in items
+                 if (it.data(0, Qt.UserRole) or ("",))[0] == "scene"]
         data = QMimeData()
-        data.setData(SCENE_MIME,
-                     "\n".join(it.text() for it in items).encode("utf-8"))
+        data.setData(SCENE_MIME, "\n".join(names).encode("utf-8"))
         return data
 
 
 class SceneList(QWidget):
-    """The scenes above the sheets: just a flat list to pick them up from —
-    no hint, no buttons, no renaming or deleting, no folders. Scenes are
-    made, filed and changed in the main window's Scenes tab
-    (:class:`views.tray.ScenesPanel`); here they only drag onto sheets, and
-    the list scrolls in the space it is given.
+    """The scenes above the sheets, filed in the folders of the main
+    window's Scenes tab (:mod:`core.scene_folders`) — but only to pick them
+    up from: no hint, no buttons, no renaming, deleting or re-filing. Scenes
+    and folders are made and changed in the Scenes tab
+    (:class:`views.tray.ScenesPanel`); here the scenes only drag onto
+    sheets, and the tree scrolls in the space it is given. A folder folded
+    here stays folded while the window is open.
 
-    ``on_activate(view)`` is what a double-click does (the composer places
-    the scene on the open sheet; without it the scene is shown, as the
-    Scenes tab would). ``icon_for(name)`` gives each scene a picture, drawn
-    one at a time while the list is on screen."""
+    ``on_activate(view)`` is what a double-click on a scene does (the
+    composer places the scene on the open sheet; without it the scene is
+    shown, as the Scenes tab would). ``icon_for(name)`` gives each scene a
+    picture, drawn one at a time while the list is on screen."""
 
     def __init__(self, window, on_activate=None, icon_for=None) -> None:
         super().__init__()
@@ -1070,37 +1073,185 @@ class SceneList(QWidget):
         self._icon_for = icon_for
         self._icon_queue: list = []
         self._shape = None
+        self._collapsed: set = set()
+        #: Each scene with its picture (only with ``icon_for``), or a list.
+        self.thumbnails = icon_for is not None and self._saved_thumbnails()
         lay = QVBoxLayout(self)
-        lay.setContentsMargins(8, 6, 8, 8)
-        self.list = _SceneListWidget()
-        if icon_for is not None:
-            self.list.setIconSize(QSize(48, 32))
-        self.list.setSelectionMode(QAbstractItemView.ExtendedSelection)
-        self.list.itemDoubleClicked.connect(self._on_activate)
-        lay.addWidget(self.list, 1)
-        self.list.setToolTip(tr(
+        lay.setContentsMargins(8, 2, 8, 8)
+        #: The list-or-thumbnails button (only with ``icon_for``) — not laid
+        #: out here: the page puts it in the heading above the list, where
+        #: it takes no line of its own.
+        self.view_btn = self._view_button() if icon_for is not None else None
+        self.tree = _SceneTree()
+        self.tree.setHeaderHidden(True)
+        self.tree.setColumnCount(1)
+        self.tree.setUniformRowHeights(True)
+        self.tree.setSelectionMode(QAbstractItemView.ExtendedSelection)
+        self.tree.itemDoubleClicked.connect(self._on_activate)
+        self.tree.itemCollapsed.connect(lambda it: self._on_folded(it, False))
+        self.tree.itemExpanded.connect(lambda it: self._on_folded(it, True))
+        lay.addWidget(self.tree, 1)
+        self.tree.setToolTip(tr(
             "Drag a scene onto a sheet. Double-click places it on the "
             "open sheet.") if on_activate is not None else tr(
             "Drag a scene onto a sheet. Double-click shows it."))
+        self._show_view_mode()
         self.refresh()
 
     def _scene(self):
         return self._window.viewport.scene
 
+    # ---- The list or the thumbnails --------------------------------------------------
+    #: Where the choice is kept — the composer's own, apart from the
+    #: Scenes tab's (``scenes/thumbnails``).
+    THUMBS_KEY = "composer/scene_thumbnails"
+
+    @classmethod
+    def _saved_thumbnails(cls) -> bool:
+        from PySide6.QtCore import QSettings
+        raw = QSettings().value(cls.THUMBS_KEY, True)
+        return raw not in (False, "false", "0", 0)
+
+    def _view_button(self):
+        """The list-or-thumbnails button, as in the Scenes tab: a menu of
+        the two, the icon saying which is shown."""
+        from PySide6.QtGui import QActionGroup
+        from PySide6.QtWidgets import QMenu, QToolButton
+        from views.icons import tool_icon
+        btn = QToolButton()
+        btn.setAutoRaise(True)
+        btn.setPopupMode(QToolButton.InstantPopup)
+        # No menu arrow: the icon alone, as small as the heading's text.
+        btn.setStyleSheet("QToolButton::menu-indicator { image: none; }")
+        btn.setToolTip(tr(
+            "Show the scenes as a list or with a picture of each"))
+        menu = QMenu(btn)
+        group = QActionGroup(self)
+        self.list_action = menu.addAction(tool_icon("scenes_list"), tr("List"))
+        self.thumbs_action = menu.addAction(tool_icon("scenes_thumbs"),
+                                            tr("Thumbnails"))
+        for act in (self.list_action, self.thumbs_action):
+            act.setCheckable(True)
+            group.addAction(act)
+        self.list_action.triggered.connect(
+            lambda: self.set_thumbnails(False))
+        self.thumbs_action.triggered.connect(
+            lambda: self.set_thumbnails(True))
+        btn.setMenu(menu)
+        return btn
+
+    def set_thumbnails(self, on: bool) -> None:
+        """Show each scene with its picture (``True``) or as a plain list,
+        and remember the choice."""
+        from PySide6.QtCore import QSettings
+        if self._icon_for is None:
+            return
+        self.thumbnails = bool(on)
+        QSettings().setValue(self.THUMBS_KEY, self.thumbnails)
+        self._show_view_mode()
+        self._shape = None
+        self.refresh()
+
+    def _show_view_mode(self) -> None:
+        if self.view_btn is not None:
+            from views.icons import tool_icon
+            self.thumbs_action.setChecked(self.thumbnails)
+            self.list_action.setChecked(not self.thumbnails)
+            self.view_btn.setIcon(tool_icon(
+                "scenes_thumbs" if self.thumbnails else "scenes_list"))
+        self.tree.setIconSize(QSize(48, 32) if self.thumbnails
+                              else QSize(16, 16))
+        self.fit_rows()
+
+    def fit_rows(self) -> None:
+        """Room for :data:`SCENE_ROWS` rows at the rows' height now (the
+        pictures make them taller); more scroll."""
+        tree = self.tree
+        row = max(tree.fontMetrics().height(), tree.iconSize().height()) + 6
+        frame = 2 * tree.frameWidth()
+        tree.setMaximumHeight(SCENE_ROWS * row + frame)
+        tree.setMinimumHeight(2 * row + frame)
+
+    # ---- Rows --------------------------------------------------------------------
+    def _rows(self) -> list:
+        """Every row, folders and scenes, top to bottom."""
+        out: list = []
+
+        def walk(item) -> None:
+            for i in range(item.childCount()):
+                child = item.child(i)
+                out.append(child)
+                walk(child)
+        walk(self.tree.invisibleRootItem())
+        return out
+
+    def scene_rows(self) -> list:
+        """The scene rows, top to bottom (folders left out)."""
+        return [it for it in self._rows()
+                if it.data(0, Qt.UserRole)[0] == "scene"]
+
+    def row_for(self, name: str):
+        """The row of the scene called ``name``, or ``None``."""
+        return next((it for it in self.scene_rows() if it.text(0) == name),
+                    None)
+
+    def _on_folded(self, item, opened: bool) -> None:
+        kind, name = item.data(0, Qt.UserRole)
+        if kind != "folder":
+            return
+        if opened:
+            self._collapsed.discard(name)
+        else:
+            self._collapsed.add(name)
+
     # ---- Model → view ------------------------------------------------------------
     def refresh(self) -> None:
-        views = list(self._scene().saved_views)
-        # Rebuilt only when the scenes changed: every edit of the model
-        # calls here, and a rebuild throws the pictures away.
-        shape = tuple((id(v), v.name) for v in views)
+        from core import scene_folders as SF
+        from views.outliner import node_icon
+        scene = self._scene()
+        views = list(scene.saved_views)
+        folders = SF.folders_of(scene)
+        # Rebuilt only when the scenes or their folders changed: every edit
+        # of the model calls here, and a rebuild throws the pictures away.
+        shape = (tuple((id(v), v.name, SF.folder_of(scene, v))
+                       for v in views),
+                 tuple((f, SF.folder_parent(scene, f)) for f in folders))
         if shape == self._shape:
             return
         self._shape = shape
-        self.list.clear()
-        for view in views:
-            item = QListWidgetItem(view.name)
-            item.setData(Qt.UserRole, view)
-            self.list.addItem(item)
+        current = self.tree.currentItem()
+        current = current.text(0) if current is not None and \
+            current.data(0, Qt.UserRole)[0] == "scene" else None
+        self.tree.blockSignals(True)
+        try:
+            self.tree.clear()
+            folder_icon = node_icon("folder")
+            scene_icon = node_icon("scene")
+            ro =Qt.ItemIsEnabled | Qt.ItemIsSelectable
+
+            def level(parent, name) -> None:
+                for f in SF.subfolders(scene, name):
+                    item = QTreeWidgetItem([f])
+                    item.setData(0, Qt.UserRole, ("folder", f))
+                    item.setIcon(0, folder_icon)
+                    item.setFlags(ro)
+                    parent.addChild(item)
+                    level(item, f)
+                    item.setExpanded(f not in self._collapsed)
+                for view in SF.scenes_in(scene, name):
+                    item = QTreeWidgetItem([view.name])
+                    item.setData(0, Qt.UserRole, ("scene", view))
+                    item.setFlags(ro | Qt.ItemIsDragEnabled)
+                    if not self.thumbnails:        # pictures come queued
+                        item.setIcon(0, scene_icon)
+                    parent.addChild(item)
+            level(self.tree.invisibleRootItem(), None)
+            if current is not None:
+                row = self.row_for(current)
+                if row is not None:
+                    self.tree.setCurrentItem(row)
+        finally:
+            self.tree.blockSignals(False)
         self._queue_icons()
 
     # ---- Pictures (icon_for) -------------------------------------------------------
@@ -1113,12 +1264,12 @@ class SceneList(QWidget):
         render each, so the list shows at once and fills in. Queued by NAME:
         a render can refresh the list, and the row is then another one.
         Only while on screen: a hidden list renders nothing."""
-        if self._icon_for is None or not self.isVisible():
+        if (self._icon_for is None or not self.thumbnails
+                or not self.isVisible()):
             return
         # Only the scenes still without a picture.
-        self._icon_queue = [self.list.item(i).text()
-                            for i in range(self.list.count())
-                            if self.list.item(i).icon().isNull()]
+        self._icon_queue = [it.text(0) for it in self.scene_rows()
+                            if it.icon(0).isNull()]
         if self._icon_queue:
             QTimer.singleShot(0, self, self._next_icon)
 
@@ -1126,17 +1277,16 @@ class SceneList(QWidget):
         from shiboken6 import isValid
         if not self._icon_queue or not isValid(self):
             return
-        if not self.isVisible():
+        if not self.isVisible() or not self.thumbnails:
             # Off screen since it was queued (its window closing): a render
             # now would go through a view that may be on its way out.
             self._icon_queue = []
             return
         name = self._icon_queue.pop(0)
         icon = self._icon_for(name)
-        item = next((self.list.item(i) for i in range(self.list.count())
-                     if self.list.item(i).text() == name), None)
+        item = self.row_for(name)
         if icon is not None and item is not None:
-            item.setIcon(icon)
+            item.setIcon(0, icon)
         if self._icon_queue:
             QTimer.singleShot(20, self, self._next_icon)
 
@@ -1145,19 +1295,33 @@ class SceneList(QWidget):
         is the current row of the sheet explorer. Returns the marked
         rows."""
         out = []
-        for i in range(self.list.count()):
-            item = self.list.item(i)
-            on = name is not None and item.text() == name
+        for item in self.scene_rows():
+            on = name is not None and item.text(0) == name
             mark_row(item, on)
             if on:
                 out.append(item)
         return out
 
+    def show_scene(self, name: str) -> bool:
+        """Make the scene called ``name`` the current row, its folders
+        unfolded. Whether it is in the list."""
+        self.refresh()
+        item = self.row_for(name)
+        if item is None:
+            return False
+        parent = item.parent()
+        while parent is not None:
+            parent.setExpanded(True)
+            parent = parent.parent()
+        self.tree.setCurrentItem(item)
+        self.tree.scrollToItem(item)
+        return True
+
     # ---- View → model ------------------------------------------------------------
-    def _on_activate(self, item) -> None:
-        view = item.data(Qt.UserRole)
-        if view is None:
-            return
+    def _on_activate(self, item, _column=0) -> None:
+        kind, view = item.data(0, Qt.UserRole)
+        if kind != "scene":
+            return                         # a folder: Qt folds it
         if self._activate_hook is not None:
             self._activate_hook(view)
         else:
@@ -1167,7 +1331,7 @@ class SceneList(QWidget):
 class SheetsTab(QWidget):
     """Scenes above, sheets below, with a divider between them to drag —
     the composer's Sheets page. The scenes list shows :data:`SCENE_ROWS`
-    scenes and scrolls past them; the sheets take the rest."""
+    rows and scrolls past them; the sheets take the rest."""
 
     def __init__(self, window, composer=None) -> None:
         super().__init__()
@@ -1175,9 +1339,9 @@ class SheetsTab(QWidget):
         self._composer_win = composer
         lay = QVBoxLayout(self)
         lay.setContentsMargins(0, 0, 0, 0)
-        # Just the list, to drag scenes onto sheets — they are made and
-        # changed in the main window's Scenes tab. In the composer a
-        # double-click places the scene on the open sheet, and each scene
+        # Just the scenes in their folders, to drag onto sheets — they are
+        # made and changed in the main window's Scenes tab. In the composer
+        # a double-click places the scene on the open sheet, and each scene
         # shows its picture (the composer keeps them, by name).
         self.scenes = SceneList(
             window,
@@ -1188,27 +1352,21 @@ class SheetsTab(QWidget):
         self.sheets = SheetExplorer(window, composer=composer)
         split = QSplitter(Qt.Vertical)
         split.setChildrenCollapsible(False)
-        split.addWidget(_titled(tr("Scenes"), self.scenes))
+        split.addWidget(_titled(tr("Scenes"), self.scenes,
+                                tail=self.scenes.view_btn))
         split.addWidget(_titled(tr("Sheets"), self.sheets))
         split.setStretchFactor(0, 0)
         split.setStretchFactor(1, 1)
         self.splitter = split
         lay.addWidget(split)
-        self._fit_scenes()
-        # A scene and the views that show it mark each other.
-        self.scenes.list.currentItemChanged.connect(
+        # A scene and the views that show it mark each other (a folder
+        # row marks nothing).
+        self.scenes.tree.currentItemChanged.connect(
             lambda item, _prev: self.sheets.mark_scene(
-                item.text() if item is not None else None))
+                item.text(0) if item is not None
+                and item.data(0, Qt.UserRole)[0] == "scene" else None))
         self.sheets.tree.currentItemChanged.connect(
             lambda item, _prev: self._mark_from_sheets(item))
-
-    def _fit_scenes(self) -> None:
-        """Room for :data:`SCENE_ROWS` scenes; more scroll."""
-        lst = self.scenes.list
-        row = max(lst.fontMetrics().height(), lst.iconSize().height()) + 6
-        frame = 2 * lst.frameWidth()
-        lst.setMaximumHeight(SCENE_ROWS * row + frame)
-        lst.setMinimumHeight(2 * row + frame)
 
     def _mark_from_sheets(self, item) -> None:
         from core import outliner
@@ -1225,15 +1383,7 @@ class SheetsTab(QWidget):
     def show_scene_row(self, name: str) -> None:
         """Make the scene called ``name`` the current row (a plan just
         made: the user sees where it went)."""
-        self.scenes.refresh()
-        lst = self.scenes.list
-        for i in range(lst.count()):
-            item = lst.item(i)
-            view = item.data(Qt.UserRole)
-            if view is not None and view.name == name:
-                lst.setCurrentItem(item)
-                lst.scrollToItem(item)
-                return
+        self.scenes.show_scene(name)
 
 
 def sync_composer(window) -> None:
@@ -1272,8 +1422,9 @@ def sync_composer(window) -> None:
         QTimer.singleShot(0, comp_win._auto_render_stale)
 
 
-def _titled(title: str, panel) -> QWidget:
-    """A panel under a small bold heading."""
+def _titled(title: str, panel, tail=None) -> QWidget:
+    """A panel under a small bold heading; ``tail`` (a small button) at
+    the heading's right end, on the same line."""
     box = QWidget()
     lay = QVBoxLayout(box)
     lay.setContentsMargins(0, 4, 0, 0)
@@ -1283,6 +1434,18 @@ def _titled(title: str, panel) -> QWidget:
     font.setBold(True)
     head.setFont(font)
     head.setContentsMargins(8, 0, 8, 0)
-    lay.addWidget(head)
+    if tail is None:
+        lay.addWidget(head)
+    else:
+        row = QHBoxLayout()
+        row.setContentsMargins(0, 0, 8, 0)
+        row.setSpacing(0)
+        row.addWidget(head)
+        row.addStretch(1)
+        side = head.sizeHint().height() + 4
+        tail.setIconSize(QSize(side - 6, side - 6))
+        tail.setFixedSize(side, side)
+        row.addWidget(tail)
+        lay.addLayout(row)
     lay.addWidget(panel, 1)
     return box
