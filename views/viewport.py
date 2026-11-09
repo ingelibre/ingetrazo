@@ -681,11 +681,12 @@ def _scene_blend(gl) -> None:
 _BY_LAYER_MODES = ("textures", "shaded", "xray")
 
 
-def _layer_look_sig(scene) -> tuple:
+def _layer_look_sig(scene, style=None) -> tuple:
     """What of the layers changes the paint objects are drawn in: Colour by
     layer, and each layer's colour and transparency — and the style's Front
-    color, which dresses the faces that wear no material."""
-    style = getattr(scene, "display_style", None)
+    color, which dresses the faces that wear no material. ``style``: the
+    view's own (one of several views), else the document's."""
+    style = style or getattr(scene, "display_style", None)
     by_layer = bool(getattr(style, "color_by_layer", False))
     return (by_layer, getattr(style, "face_mode", None) if by_layer else None,
             tuple((ly.name, ly.color, ly.opacity)
@@ -746,6 +747,7 @@ def _paint_of(vp, group):
     if scene is None or getattr(vp, "plano_style", None) is not None:
         return worn                            # a sheet's technical look
     style = (getattr(vp, "style_override", None)
+             or getattr(vp, "view_style", None)
              or getattr(scene, "display_style", None))
     by_layer = bool(getattr(style, "color_by_layer", False)
                     and style.face_mode in _BY_LAYER_MODES)
@@ -2046,6 +2048,11 @@ class Viewport(QOpenGLWidget):
         # over the scene's display style for that render; axes are skipped
         # (a frame is a document, not the workspace). Never persists.
         self.style_override = None
+        # One of several views given a style of its own (Camera ▸ Style
+        # with it active, views/multi_view.py): wins over the document's
+        # style in this view only. None: the document's. Unlike
+        # ``style_override`` the view stays the workspace (axes, guides).
+        self.view_style = None
         self._fbo_size = (0, 0)
 
         # Camera navigation state (middle button)
@@ -3828,7 +3835,7 @@ class Viewport(QOpenGLWidget):
                  bool(getattr(sc, "show_hidden_objects", False)),
                  bool(getattr(sc, "show_hidden_geometry", False)),
                  tuple((ly.name, ly.visible, ly.locked) for ly in sc.layers),
-                 _layer_look_sig(sc),
+                 _layer_look_sig(sc, self.view_style),
                  len(sc.groups))
         live = getattr(self, "_frozen_cache_version", None) is None
         same = getattr(self, "_epoch_same", None)
@@ -3854,7 +3861,7 @@ class Viewport(QOpenGLWidget):
                        tuple((ly.name, ly.visible, ly.locked) for ly in sc.layers),
                        # Colour by layer and each layer's colour and
                        # transparency change the paint a placement draws in.
-                       _layer_look_sig(sc)]
+                       _layer_look_sig(sc, self.view_style)]
 
         loose = sc.mesh
 
@@ -4872,8 +4879,7 @@ class Viewport(QOpenGLWidget):
         # pace hid it, and a flush here — which does not wait for the GPU —
         # makes every frame the same as that loop's.
         gl.glFlush()
-        back_rgb = effective_back_color(
-            getattr(self.scene, "display_style", None), self.scene)
+        back_rgb = effective_back_color(self.document_style(), self.scene)
         key = (mode, tuple(back_rgb), id(getattr(self, "_tex_cache", None)),
                id(self._program), self.edit_rest_fade)
         rec = getattr(self, "_lean_faces_rec", None)
@@ -5624,16 +5630,14 @@ class Viewport(QOpenGLWidget):
             col = back_attr.get("color")
             back = tuple(col) if col is not None else None
         else:
-            back = effective_back_color(
-                getattr(self.scene, "display_style", None), self.scene)
+            back = effective_back_color(self.document_style(), self.scene)
         return selection_dot_color(front), selection_dot_color(back)
 
     def _set_back_face_color(self) -> None:
         # The style's Back color wins; else the scene's adopted tint (from
         # an imported .skp's style, so unpainted faces read like they did
         # for the author); else the default blue-grey.
-        r, g, b = effective_back_color(
-            getattr(self.scene, "display_style", None), self.scene)
+        r, g, b = effective_back_color(self.document_style(), self.scene)
         self._program.setUniformValue(self._loc_back_color,
                                       QVector4D(r, g, b, 1.0))
 
@@ -7355,8 +7359,7 @@ class Viewport(QOpenGLWidget):
         # placements epoch (``_layer_look_sig``).
         tint = (None if getattr(self, "plano_style", None) is not None
                 else _front_tint(getattr(self, "style_override", None)
-                                 or getattr(self.scene, "display_style",
-                                            None)))
+                                 or self.document_style()))
         if _cache_ver(self) == self._edges_version \
                 and tint == getattr(self, "_edges_front_tint", None):
             return
@@ -16063,7 +16066,13 @@ class Viewport(QOpenGLWidget):
                          background=(1.0, 1.0, 1.0))
         if self.style_override is not None:
             return self.style_override
-        return getattr(self.scene, "display_style", None) or Style()
+        return self.document_style() or Style()
+
+    def document_style(self):
+        """The style this view shows when no sheet or composer frame dresses
+        it: its own, as one of several views that was given one
+        (``view_style``), else the document's."""
+        return self.view_style or getattr(self.scene, "display_style", None)
 
     # ---- Screen-depth occlusion for the overlay's annotations ---------------
     def _annotations_need_depth(self) -> bool:

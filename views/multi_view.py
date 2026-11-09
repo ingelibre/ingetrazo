@@ -679,6 +679,9 @@ class ViewGrid(QWidget):
     that only change order and visibility: no cell changes parent after
     the grid is made, so no viewport loses its OpenGL context again."""
 
+    #: Another cell is the one worked in (its :class:`ViewCell`, or None).
+    activeViewChanged = Signal(object)
+
     def __init__(self, main_viewport, parent=None) -> None:
         super().__init__(parent)
         self.main = main_viewport
@@ -751,9 +754,13 @@ class ViewGrid(QWidget):
         self.set_layout("four" if on else "single")
 
     def set_active_cell(self, cell) -> None:
-        """The view being worked in: its label in the accent colour."""
+        """The view being worked in: its label in the accent colour. The
+        Camera menu and the Views bar act on it (``MainWindow.work_view``)."""
+        was = self.active_cell()
         for c in self.cells:
             c.header.set_active(c is cell)
+        if cell is not was:
+            self.activeViewChanged.emit(cell)
 
     def active_cell(self):
         return next((c for c in self.cells
@@ -1001,6 +1008,8 @@ class ViewGrid(QWidget):
         for vp in self.extras():
             if vp.scene is not main.scene or vp.history is not main.history:
                 vp.set_document(main.scene, main.history)
+                # Another file: its own style, in every view.
+                vp.view_style = None
             else:
                 vp.reset_document_caches()
                 vp._edges_version = -1
@@ -1029,11 +1038,13 @@ class ViewGrid(QWidget):
             self._apply()
 
     def state(self):
-        """What each extra view shows — its view key and camera — for the
-        project going to the back (None before the views exist)."""
+        """What each extra view shows — its view key, camera and own style
+        (None: the document's) — for the project going to the back (None
+        before the views exist)."""
         if not self.extras():
             return None
-        return [(c.view, _camera_state(c.viewport.camera))
+        return [(c.view, _camera_state(c.viewport.camera),
+                 c.viewport.view_style)
                 for c in self.cells if c.viewport is not self.main]
 
     def restore(self, state) -> None:
@@ -1049,12 +1060,14 @@ class ViewGrid(QWidget):
                 cam = cell.viewport.camera
                 cam.target = type(main.target)(main.target)
                 cam.distance = max(main.distance, 15.0)
+                cell.viewport.view_style = None
                 cell.show_view(cell.view)
             return
-        for cell, (view, cam) in zip(cells, state):
+        for cell, (view, cam, *style) in zip(cells, state):
             cell.view = view
             cell._label()
             _apply_camera_state(cell.viewport.camera, cam)
+            cell.viewport.view_style = style[0] if style else None
             cell.viewport.update()
 
     def fit_box(self, lo, hi) -> None:

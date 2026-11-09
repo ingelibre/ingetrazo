@@ -1241,7 +1241,7 @@ class MainWindow(QMainWindow):
             act.setStatusTip(tr(tip))
             set_tooltip(act, tr(label))     # names the keys, if given any
             act.triggered.connect(
-                lambda _c, m=mode: self.viewport.set_projection(m))
+                lambda _c, m=mode: self._set_projection(m))
             self._projection_group.addAction(act)
             views_tb.addAction(act)
             self._icon_actions.append((act, icon))
@@ -1564,8 +1564,7 @@ class MainWindow(QMainWindow):
         # the same "the tool that yields keeps Shift+key" rule as the
         # Protractor and the centre arc.
         action_proj.setShortcut(QKeySequence("Shift+P"))
-        action_proj.triggered.connect(
-            lambda _c=False: self.viewport.toggle_projection())
+        action_proj.triggered.connect(self._toggle_projection)
         camera_menu.addAction(action_proj)
 
         # The Camera menu: Parallel Projection / Perspective /
@@ -1605,7 +1604,7 @@ class MainWindow(QMainWindow):
             self._style_actions[preset.name] = act
         # X-ray on and off with one key: a glance at what hides behind a
         # face, then back to the style you were in.
-        self._style_before_xray = (None, None)
+        self._style_before_xray = (None, None, None)
         self._act_xray_toggle = QAction(tr("Toggle X-ray"), self)
         self._act_xray_toggle.setShortcut(QKeySequence("Alt+X"))
         self._act_xray_toggle.setStatusTip(tr(
@@ -4508,11 +4507,78 @@ class MainWindow(QMainWindow):
         self.viewport.update()
 
     # ---- Display styles ----------------------------------------------------
+    # ---- the view being worked in (one of several, views/multi_view.py) -----
+    def work_view(self):
+        """The view the Camera menu and the Views bar act on: of several,
+        the one last clicked (its label in the accent colour); else the
+        window's own viewport."""
+        doc = getattr(self, "_doc", None)
+        grid = getattr(doc, "view_grid", None)
+        if grid is not None and grid.is_enabled():
+            cell = grid.active_cell()
+            if (cell is not None and cell.viewport is not None
+                    and not cell.isHidden()):
+                return cell.viewport
+        return self.viewport
+
+    def _views_shown(self) -> list:
+        """Every view of the project in front on screen: the window's own
+        and the extra ones of several."""
+        grid = getattr(getattr(self, "_doc", None), "view_grid", None)
+        extras = grid.visible_extras() if grid is not None else []
+        return [self.viewport] + [vp for vp in extras if vp is not self.viewport]
+
+    def update_views(self) -> None:
+        """Repaint every view shown. A style or a camera change is not an
+        edit of the document, so nothing else tells the other views."""
+        for vp in self._views_shown():
+            vp.update()
+
+    def _keep_other_views_style(self) -> None:
+        """The window's own view is about to take another style, which is
+        the document's: the other views that followed it keep what they
+        show, as their own."""
+        grid = getattr(getattr(self, "_doc", None), "view_grid", None)
+        if grid is None or not grid.is_enabled():
+            return
+        current = getattr(self.viewport.scene, "display_style", None)
+        if current is None:
+            return
+        for vp in grid.extras():
+            if vp.view_style is None:
+                vp.view_style = current.copy()
+
+    def style_to_edit(self):
+        """The style an edit of the Camera menu or the Styles panel
+        changes: the view being worked in's own, made from the document's
+        the first time; the document's for the window's view. Editing one
+        view's style never changes what another shows."""
+        vp = self.work_view()
+        if vp is not self.viewport:
+            if vp.view_style is None:
+                base = getattr(vp.scene, "display_style", None)
+                if base is None:
+                    return None
+                vp.view_style = base.copy()
+            return vp.view_style
+        self._keep_other_views_style()
+        return getattr(self.viewport.scene, "display_style", None)
+
+    def shown_style(self):
+        """The style the view being worked in draws with."""
+        return self.work_view().document_style()
+
     def _apply_display_style(self, preset) -> None:
-        """Activate a built-in style (a COPY — presets stay pristine)."""
-        self.viewport.scene.display_style = preset.copy()
+        """Activate a built-in style (a COPY — presets stay pristine) in the
+        view being worked in."""
+        vp = self.work_view()
+        if vp is self.viewport:
+            self._keep_other_views_style()
+            self.viewport.scene.display_style = preset.copy()
+        else:
+            vp.view_style = preset.copy()
         self._sync_style_menu()
-        self.viewport.update()
+        self.update_views()
         self.statusBar().showMessage(
             tr("Style: {name}", name=tr(preset.name)), 2000)
 
@@ -4521,32 +4587,53 @@ class MainWindow(QMainWindow):
         back to that style — or to Default when there is none to go back to
         (X-ray picked from the menu, or another document since)."""
         from core.style import style_by_name
-        scene = self.viewport.scene
-        style = getattr(scene, "display_style", None)
+        vp = self.work_view()
+        scene = vp.scene
+        style = vp.document_style()
         if style is not None and style.face_mode == "xray":
-            prev_scene, prev = self._style_before_xray
-            self._style_before_xray = (None, None)
-            if prev_scene is not scene or prev is None:
+            prev_view, prev_scene, prev = self._style_before_xray
+            self._style_before_xray = (None, None, None)
+            if prev_scene is not scene or prev_view is not vp or prev is None:
                 prev = style_by_name("Default")
             self._apply_display_style(prev)
         else:
             self._style_before_xray = (
-                scene, style.copy() if style is not None else None)
+                vp, scene, style.copy() if style is not None else None)
             self._apply_display_style(style_by_name("X-ray"))
 
     def _set_style_field(self, name: str, value: bool) -> None:
-        style = getattr(self.viewport.scene, "display_style", None)
-        if style is None or getattr(style, name) == bool(value):
+        shown = self.shown_style()
+        if shown is None or getattr(shown, name) == bool(value):
             return
-        setattr(style, name, bool(value))
-        self.viewport.update()
+        setattr(self.style_to_edit(), name, bool(value))
+        self.update_views()
         browser = getattr(self, "project_browser", None)
         if browser is not None and name == "section_fill":
             browser.outliner.on_scene_changed()
 
+    def _on_active_view_changed(self, _vp=None) -> None:
+        """Another of several views is worked in: the menu, the Styles
+        panel and the projection buttons say what that one shows."""
+        self._sync_style_menu()
+        self._sync_projection_buttons(
+            self.work_view().camera.projection_mode())
+
+    def _toggle_projection(self, _checked=False) -> None:
+        """Shift+P: the view being worked in only."""
+        vp = self.work_view()
+        vp.toggle_projection()
+        self._sync_projection_buttons(vp.camera.projection_mode())
+
+    def _set_projection(self, mode: str) -> None:
+        """A projection button: the view being worked in only."""
+        vp = self.work_view()
+        vp.set_projection(mode)
+        self._sync_projection_buttons(vp.camera.projection_mode())
+
     def _sync_style_menu(self) -> None:
-        """Reflect the scene's active style in the menu (loads, scene recall)."""
-        style = getattr(self.viewport.scene, "display_style", None)
+        """Reflect the active view's style in the menu (loads, scene recall,
+        another of several views clicked)."""
+        style = self.shown_style()
         if style is None:
             return
         for name, act in self._style_actions.items():
@@ -5744,8 +5831,9 @@ class MainWindow(QMainWindow):
         if lo is None:
             self.statusBar().showMessage(tr("Nothing selected"), 2500)
             return
-        self.viewport.camera.fit_box(lo, hi)
-        self.viewport.update()
+        vp = self.work_view()                # of several, the one clicked
+        vp.camera.fit_box(lo, hi)
+        vp.update()
 
     def _figure_bounds(self):
         """World box of the visible face-me figures, or None."""
@@ -5879,6 +5967,15 @@ class MainWindow(QMainWindow):
         self._refresh_sheet_tabs()
 
     def _on_standard_view(self, key: str) -> None:
+        """A standard view (Views bar, Ctrl+1…7) in the view being worked
+        in; one of several extra views takes it as its cell's view."""
+        vp = self.work_view()
+        if vp is not self.viewport:
+            grid = self._doc.view_grid
+            cell = next(c for c in grid.cells if c.viewport is vp)
+            cell.pick_view(key)
+            self._sync_projection_buttons(vp.camera.projection_mode())
+            return
         if key == "iso":
             self.viewport.camera.snap_iso()
         else:
@@ -6730,6 +6827,7 @@ class MainWindow(QMainWindow):
         self._before_viewport_moves(doc.viewport)
         grid = ViewGrid(doc.viewport)
         grid.setObjectName("view_grid")
+        grid.activeViewChanged.connect(self._on_active_view_changed)
         doc.view_grid = grid
         self._put_in_slot(doc, None, grid)
         return grid
