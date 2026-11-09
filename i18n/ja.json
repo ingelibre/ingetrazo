@@ -3349,5 +3349,10 @@
  "The Bulgarian translation.": "ブルガリア語翻訳。",
  "The Traditional Chinese translation.": "繁体字中国語翻訳。",
  "A .skp component 10 000 times too big, traced.": "10 000 倍大きすぎる .skp コンポーネントの原因究明。",
- "Thanks as well to all the authors of the extensions catalogue": "拡張機能カタログのすべての作者にも感謝します"
+ "Thanks as well to all the authors of the extensions catalogue": "拡張機能カタログのすべての作者にも感謝します",
+ "Group photos separately from model geometry": "写真はモデルのジオメトリとは別にグループ化してください",
+ "Image corner placed — move the pointer and click to set its size, or type a width and press Enter (Esc cancels)": "画像の角を配置しました — ポインターを移動してクリックするとサイズを設定できます。幅を入力して Enter を押すこともできます（Esc でキャンセル）",
+ "Image placed at its natural display size — use Image size… for an exact model width": "画像を本来の表示サイズで配置しました — モデル内の正確な幅を指定するには「画像サイズ…」を使用してください",
+ "Make a component from photos separately from model geometry": "写真からコンポーネントを作成する場合はモデルのジオメトリと分けてください",
+ "This group contains a photo, not editable geometry — explode it to edit the image": "このグループには編集可能なジオメトリではなく写真が含まれています — 画像を編集するにはグループを分解してください"
 }

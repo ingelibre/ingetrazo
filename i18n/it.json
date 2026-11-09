@@ -3350,5 +3350,10 @@
  "The Bulgarian translation.": "La traduzione bulgara.",
  "The Traditional Chinese translation.": "La traduzione in cinese tradizionale.",
  "A .skp component 10 000 times too big, traced.": "Un componente .skp 10 000 volte troppo grande, rintracciato.",
- "Thanks as well to all the authors of the extensions catalogue": "Grazie anche a tutti gli autori del catalogo delle estensioni"
+ "Thanks as well to all the authors of the extensions catalogue": "Grazie anche a tutti gli autori del catalogo delle estensioni",
+ "Group photos separately from model geometry": "Raggruppa le foto separatamente dalla geometria del modello",
+ "Make a component from photos separately from model geometry": "Crea un componente dalle foto separatamente dalla geometria del modello",
+ "This group contains a photo, not editable geometry — explode it to edit the image": "Questo gruppo contiene una foto, non geometria modificabile — esplodilo per modificare l’immagine",
+ "Image corner placed — move the pointer and click to set its size, or type a width and press Enter (Esc cancels)": "Angolo dell’immagine posizionato — sposta il puntatore e fai clic per impostarne le dimensioni, oppure digita una larghezza e premi Invio (Esc annulla)",
+ "Image placed at its natural display size — use Image size… for an exact model width": "Immagine posizionata alla sua dimensione di visualizzazione naturale — usa Dimensioni immagine… per una larghezza esatta nel modello"
 }

@@ -4160,6 +4160,7 @@ class Viewport(QOpenGLWidget):
                 # left its own children on screen.
                 proxy.layer = forced or child.layer or inherited or node.layer
                 proxy.billboard = child.billboard
+                proxy.images = child.images
                 # Hide on an object takes its whole subtree along, and a
                 # hidden child stays hidden inside a visible parent.
                 proxy.hidden = hidden or bool(child.hidden)
@@ -5250,8 +5251,8 @@ class Viewport(QOpenGLWidget):
         Shading is pinned to 1.0: a reference scan has to read at its true
         tones, not dimmed by the face lighting.
         """
-        images = getattr(self.scene, "image_planes", None)
-        if not images:
+        placed = list(self._placed_image_planes())
+        if not placed:
             return
         import struct
         vao = getattr(self, "_img_vao", None)
@@ -5259,20 +5260,15 @@ class Viewport(QOpenGLWidget):
             self._img_vao, self._img_vbo = self._create_dynamic_uv()
             vao = self._img_vao
         drawn = []
-        for im in images:
-            if not self.scene.entity_visible(im):
-                continue
+        for im, matrix, _owner in placed:
             tex = self._get_texture(im.path)
             if tex is None:
                 continue
-            drawn.append((im, tex))
-        # An image is never part of a group: inside one it is always the
-        # surroundings, and greys (or hides) with the rest of the model —
-        # it stayed in full colour on top of a grey model.
-        rest = self._edit_rest_fade(None)
-        if not drawn or rest is None:
+            rest = self._edit_rest_fade(_owner if _owner is not im else None)
+            if rest is not None:
+                drawn.append((im, tex, matrix, rest))
+        if not drawn:
             return
-        self._program.setUniformValue1f(self._loc_fade, rest)
         self._program.setUniformValue(self._loc_use_tex, 1)
         self._program.setUniformValue(self._loc_use_vcolor, 0)
         self._program.setUniformValue1f(self._loc_shade, 1.0)
@@ -5292,8 +5288,11 @@ class Viewport(QOpenGLWidget):
         # every edit (Marco, 2026-09-14: «puse sombras con el tif y orbité»).
         self._gl.glEnable(GL_BLEND)
         _scene_blend(self._gl)
-        for im, tex in drawn:
+        for im, tex, matrix, rest in drawn:
+            self._program.setUniformValue1f(self._loc_fade, rest)
             c = im.corners()
+            if matrix is not None:
+                c = [matrix.map(point) for point in c]
             # Two triangles, UV (0,0) at ``origin``: _get_texture uploads the
             # image mirrored (bottom-up V), so v grows with the plane's "up"
             # axis and the picture stands upright.
@@ -5330,6 +5329,25 @@ class Viewport(QOpenGLWidget):
         self._gl.glDepthMask(GL_TRUE)
         self._program.setUniformValue(self._loc_use_tex, 0)
 
+    def _placed_image_planes(self):
+        """Yield ``(image, matrix, owner)`` for every visible photo.
+
+        Loose reference images have no matrix.  Images held by groups and
+        components remain the same first-class entity, placed through the
+        container just like its local mesh.  This list is deliberately
+        independent of ``Style.face_mode``: a photo is not a face texture.
+        """
+        for image in getattr(self.scene, "image_planes", None) or ():
+            if self.scene.entity_visible(image):
+                yield image, None, image
+        for group in self._placements():
+            images = getattr(group, "images", None) or ()
+            if not images or not self.scene.entity_visible(group):
+                continue
+            for image in images:
+                if self.scene.entity_visible(image):
+                    yield (image, getattr(group, "xform", None),
+                           self._owner_of(group))
     def _edit_rest_fade(self, group):
         """How a reference image (``group=None``) or a face-me figure is
         drawn while a group is open: the fade to apply, or ``None`` to skip
@@ -5356,29 +5374,35 @@ class Viewport(QOpenGLWidget):
         scan is exactly the one you have finished aligning and now want to
         draw on, so it must keep offering its plane while refusing clicks.
         """
-        images = getattr(self.scene, "image_planes", None)
+        images = [(image, None) for image in
+                  (getattr(self.scene, "image_planes", None) or ())]
+        if not selectable_only:
+            images.extend((image, matrix)
+                          for image, matrix, owner in self._placed_image_planes()
+                          if owner is not image)
         if not images:
             return None
         origin, direction = self._pixel_to_ray(screen_x, screen_y)
         if origin is None or direction is None:
             return None
         best, best_t = None, float("inf")
-        for im in images:
+        for im, matrix in images:
             if not self.scene.entity_visible(im):
                 continue
             if selectable_only and (getattr(im, "locked", False)
                                     or not self.scene.entity_selectable(im)):
                 continue
-            n = im.normal()
+            placed = im.transformed(matrix) if matrix is not None else im
+            n = placed.normal()
             denom = QVector3D.dotProduct(n, direction)
             if abs(denom) < 1e-9:
                 continue
-            t = QVector3D.dotProduct(n, im.center() - origin) / denom
+            t = QVector3D.dotProduct(n, placed.center() - origin) / denom
             if t < 0.0 or t > best_t:
                 continue
-            fu, fv = im.project(origin + direction * t)
-            if im.contains_uv(fu, fv):
-                best, best_t = im, t
+            fu, fv = placed.project(origin + direction * t)
+            if placed.contains_uv(fu, fv):
+                best, best_t = placed, t
         return best
 
     def pick_image_plane(self, screen_x: float, screen_y: float):
@@ -15280,10 +15304,24 @@ class Viewport(QOpenGLWidget):
                 lines.append(_SnapEdge(QVector3D(g.point), QVector3D(g.point)))
         # Reference-image borders snap like guides: aligning a scan against
         # real geometry (or drawing to its edge) is what tracing needs.
-        for im in getattr(self.scene, "image_planes", None) or []:
-            if getattr(im, "locked", False) or not self.scene.entity_selectable(im):
+        placed_images = getattr(self, "_placed_image_planes", None)
+        if callable(placed_images):
+            placed_images = placed_images()
+        else:
+            # A few focused tests borrow this method on a lightweight
+            # viewport double.  It still needs the top-level image borders,
+            # even though it has no group-placement collector.
+            placed_images = ((im, None, im)
+                             for im in getattr(self.scene, "image_planes", ()))
+        for im, matrix, owner in placed_images:
+            target = owner if owner is not im else im
+            if (getattr(im, "locked", False)
+                    or not self.scene.entity_selectable(target)):
                 continue
-            for a, b in im.border_edges():
+            edges = im.border_edges()
+            if matrix is not None:
+                edges = [(matrix.map(a), matrix.map(b)) for a, b in edges]
+            for a, b in edges:
                 seg = self._clip_segment_front(a, b)
                 if seg is not None:
                     lines.append(_SnapEdge(*seg))
@@ -15371,7 +15409,7 @@ class Viewport(QOpenGLWidget):
         change, and ``placement_points`` makes that one matrix multiply
         per placement."""
         kids = getattr(group, "children", None)
-        if kids:
+        if kids or getattr(group, "images", None):
             cache = getattr(self, "_container_obb", None)
             if cache is None:
                 cache = self._container_obb = {}
@@ -16701,6 +16739,23 @@ class Viewport(QOpenGLWidget):
                             None if hits.loose[front].any()
                             else hits.ent(int(front[0]))[1])
             faces_answer = best
+            # A grouped photo has no topology face to enter the pick index.
+            # Hit its real rectangle and return the container, preserving
+            # photo semantics without an invisible helper mesh.
+            for g in self._context_placements():
+                images = getattr(g, "images", None) or ()
+                if not images or not self.scene.entity_selectable(g):
+                    continue
+                matrix = getattr(g, "xform", None)
+                for image in images:
+                    corners = image.corners()
+                    if matrix is not None:
+                        corners = [matrix.map(point) for point in corners]
+                    for tri in ((corners[0], corners[1], corners[2]),
+                                (corners[0], corners[2], corners[3])):
+                        t = _ray_triangle(origin, direction, *tri)
+                        if t is not None and (best is None or t < best[0]):
+                            best = (t, self._owner_of(g))
             for g in self._context_placements():
                 # The figure test first: it is an attribute, the layer test
                 # walks tags — asked of every placement on every hover it
@@ -17044,6 +17099,12 @@ class Viewport(QOpenGLWidget):
         from core.outliner import locked_on_path
         if locked_on_path(self.scene.groups, group):
             self.flash_status(tr("Unlock it first"), 3000)
+            return
+        if (getattr(group, "images", None) and not group.mesh.vertices
+                and not getattr(group, "children", None)):
+            self.flash_status(tr(
+                "This group contains a photo, not editable geometry — "
+                "explode it to edit the image"), 4000)
             return
         parent = self.scene.edit_group
         in_definition = (parent is not None
@@ -17513,10 +17574,20 @@ class Viewport(QOpenGLWidget):
         if self._dock_drag(ev):
             ev.acceptProposedAction()
             return
+        win = self.window()
+        image_path = getattr(win, "image_path_from_mime", None)
+        if callable(image_path) and image_path(ev.mimeData()) is not None:
+            ev.acceptProposedAction()
+            return
         super().dragEnterEvent(ev)
 
     def dragMoveEvent(self, ev) -> None:
         if self._dock_drag(ev):
+            ev.acceptProposedAction()
+            return
+        win = self.window()
+        image_path = getattr(win, "image_path_from_mime", None)
+        if callable(image_path) and image_path(ev.mimeData()) is not None:
             ev.acceptProposedAction()
             return
         super().dragMoveEvent(ev)
@@ -17524,6 +17595,15 @@ class Viewport(QOpenGLWidget):
     def dropEvent(self, ev) -> None:
         if self._dock_drag(ev):
             self.window().drop_dock_on_viewport(ev)
+            return
+        win = self.window()
+        image_path = getattr(win, "image_path_from_mime", None)
+        path = image_path(ev.mimeData()) if callable(image_path) else None
+        start = getattr(win, "_start_image_import", None)
+        if path is not None and callable(start):
+            pos = ev.position()
+            if start(path, (pos.x(), pos.y())):
+                ev.acceptProposedAction()
             return
         super().dropEvent(ev)
 

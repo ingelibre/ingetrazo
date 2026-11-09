@@ -3352,5 +3352,10 @@
  "The Bulgarian translation.": "คำแปลภาษาบัลแกเรีย",
  "The Traditional Chinese translation.": "คำแปลภาษาจีนตัวเต็ม",
  "A .skp component 10 000 times too big, traced.": "การตามหาคอมโพเนนต์ .skp ที่ใหญ่เกินไป 10 000 เท่า",
- "Thanks as well to all the authors of the extensions catalogue": "ขอบคุณผู้สร้างทุกท่านในแคตตาล็อกส่วนขยายด้วย"
+ "Thanks as well to all the authors of the extensions catalogue": "ขอบคุณผู้สร้างทุกท่านในแคตตาล็อกส่วนขยายด้วย",
+ "Group photos separately from model geometry": "จัดกลุ่มภาพถ่ายแยกจากเรขาคณิตของโมเดล",
+ "Image corner placed — move the pointer and click to set its size, or type a width and press Enter (Esc cancels)": "วางมุมภาพแล้ว — เลื่อนตัวชี้แล้วคลิกเพื่อกำหนดขนาด หรือพิมพ์ความกว้างแล้วกด Enter (Esc เพื่อยกเลิก)",
+ "Image placed at its natural display size — use Image size… for an exact model width": "วางภาพตามขนาดแสดงผลปกติแล้ว — ใช้ ขนาดภาพ… เพื่อกำหนดความกว้างในโมเดลอย่างแม่นยำ",
+ "Make a component from photos separately from model geometry": "สร้างคอมโพเนนต์จากภาพถ่ายแยกจากเรขาคณิตของโมเดล",
+ "This group contains a photo, not editable geometry — explode it to edit the image": "กลุ่มนี้มีภาพถ่าย ไม่ใช่เรขาคณิตที่แก้ไขได้ — แยกกลุ่มเพื่อแก้ไขภาพ"
 }

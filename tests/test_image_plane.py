@@ -7,12 +7,14 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
 from PySide6.QtGui import QColor, QImage, QVector3D
 
 from core.history import (
     AddImagePlaneCommand,
     DeleteImagePlanesCommand,
     History,
+    MakeImageGroupCommand,
     TransformImagePlaneCommand,
 )
 from core.image_plane import IMAGE_LAYER, ImagePlane, image_aspect
@@ -137,6 +139,125 @@ def test_delete_restores_stacking_order_on_undo():
     assert scene.image_planes == [a, b, c]       # b is back in the middle
 
 
+def test_make_group_keeps_a_photo_entity_and_is_one_undo_step():
+    scene = Scene()
+    hist = History(scene)
+    image = _image("facade.png")
+    scene.image_planes.append(image)
+    scene.select([image])
+
+    hist.execute(MakeImageGroupCommand([image]))
+
+    assert scene.image_planes == []
+    assert len(scene.groups) == 1
+    group = scene.groups[0]
+    assert group.images == [image]
+    assert group.mesh.faces == []                # not a textured face
+    assert not group.is_component()
+    assert scene.selection == {group}
+
+    hist.undo()
+    assert scene.groups == []
+    assert scene.image_planes == [image]
+    assert scene.selection == {image}
+    hist.redo()
+    assert scene.groups[0] is group
+
+
+def test_make_component_keeps_the_photo_in_its_shared_definition():
+    from core.group import copy_group
+
+    scene = Scene()
+    hist = History(scene)
+    image = _image("facade.png")
+    scene.image_planes.append(image)
+    hist.execute(MakeImageGroupCommand(
+        [image], component=True, name="Facade photo"))
+    component = scene.groups[0]
+    sibling = copy_group(component, V(10, 0, 0))
+
+    assert component.is_component()
+    assert component.name == "Facade photo"
+    assert sibling.is_component()
+    assert sibling.images[0] is component.images[0]
+
+
+def test_materializing_a_photo_container_keeps_its_world_placement():
+    from PySide6.QtGui import QMatrix4x4
+    from core.group import Group
+
+    image = ImagePlane("scan.png", V(1, 2, 0), V(3, 0, 0), V(0, 2, 0),
+                       1.5, "Scan")
+    group = Group(name="Photo")
+    group.images = [image]
+    group.xform = QMatrix4x4()
+    group.xform.translate(10, -4, 2)
+
+    expected = [group.xform.map(point) for point in image.corners()]
+    group.materialize()
+
+    assert group.xform is None
+    assert len(group.images) == 1
+    assert all((got - want).length() < 1e-6 for got, want in
+               zip(group.images[0].corners(), expected))
+
+
+def test_explode_turns_a_photo_group_back_into_a_placed_image():
+    from core.history import ExplodeGroupCommand, MoveGroupCommand
+
+    scene = Scene()
+    hist = History(scene)
+    image = _image("facade.png")
+    scene.image_planes.append(image)
+    hist.execute(MakeImageGroupCommand([image]))
+    group = scene.groups[0]
+    hist.execute(MoveGroupCommand(group, V(10, 2, 1)))
+    hist.execute(ExplodeGroupCommand(group))
+
+    assert scene.groups == [] and len(scene.image_planes) == 1
+    loose = scene.image_planes[0]
+    assert loose.origin == V(10, 2, 1)
+    assert scene.selection == {loose}
+    hist.undo()
+    assert scene.groups == [group] and scene.image_planes == []
+
+
+def test_photo_group_bounds_come_from_the_image_not_a_helper_mesh():
+    from core.group import placement_points
+
+    scene = Scene()
+    hist = History(scene)
+    image = ImagePlane("x.png", V(2, 3, 4), V(4, 0), V(0, 3))
+    scene.image_planes.append(image)
+    hist.execute(MakeImageGroupCommand([image]))
+    points = placement_points(scene.groups[0])
+    assert tuple(points.min(axis=0)) == (2.0, 3.0, 4.0)
+    assert tuple(points.max(axis=0)) == (6.0, 6.0, 4.0)
+
+
+def test_grouped_photo_stays_in_the_photo_pass_for_every_style():
+    from types import SimpleNamespace
+    from core.style import Style
+    from views.viewport import Viewport
+
+    scene = Scene()
+    hist = History(scene)
+    image = _image("facade.png")
+    scene.image_planes.append(image)
+    hist.execute(MakeImageGroupCommand([image]))
+    group = scene.groups[0]
+    fake = SimpleNamespace(
+        scene=scene,
+        _placements=lambda: scene.groups,
+        _owner_of=lambda item: item,
+    )
+    for mode in ("textures", "shaded", "hidden_line", "monochrome",
+                 "wireframe", "xray"):
+        scene.display_style = Style(name=mode, face_mode=mode)
+        placed = list(Viewport._placed_image_planes(fake))
+        assert placed == [(image, group.xform, group)]
+
+
 def test_an_image_never_reaches_the_topology_mesh():
     """Invariant #4: reference is not geometry."""
     scene = Scene()
@@ -190,6 +311,28 @@ def test_document_carries_the_picture_inside_it(tmp_path):
     assert not QImage(im.path).isNull()
 
 
+def test_document_carries_a_grouped_photo_inside_it(tmp_path):
+    from formats.igz import load_into, save_scene
+
+    src = _png(tmp_path)
+    scene = Scene()
+    image = ImagePlane(str(src), V(1, 2), V(8, 0), V(0, 4), name="plan")
+    scene.image_planes.append(image)
+    History(scene).execute(MakeImageGroupCommand(
+        [image], component=True, name="Plan photo"))
+    doc = tmp_path / "grouped-photo.igz"
+    save_scene(scene, doc)
+    src.unlink()
+
+    loaded = Scene()
+    load_into(loaded, doc)
+    group = loaded.groups[0]
+    assert group.name == "Plan photo" and group.is_component()
+    assert len(group.images) == 1 and group.mesh.faces == []
+    assert Path(group.images[0].path).exists()
+    assert not QImage(group.images[0].path).isNull()
+
+
 def test_a_document_without_images_loads_clean(tmp_path):
     from formats.igz import load_into, save_scene
 
@@ -233,6 +376,24 @@ def test_the_preview_is_the_four_sides_of_the_picture():
     assert "×" in tool.value_label()[0]
 
 
+def test_native_drop_size_uses_pixels_and_fits_large_photos_to_the_view():
+    from tools.image import ImageTool
+
+    tool = ImageTool()
+    tool.load("scan.png", aspect=0.5)
+
+    class _Viewport:
+        def width(self): return 1000
+        def height(self): return 800
+        def _world_to_pixel(self, point):
+            return point.x() * 100.0, point.y() * 100.0
+
+    # 2000 px would exceed the viewport: fitted to 650 px (65% of 1000).
+    u, v = tool.frame_for_native_size(_Viewport(), V(0, 0), 2000, 1000)
+    assert u.length() == pytest.approx(6.5)
+    assert v.length() == pytest.approx(3.25)
+
+
 def test_an_unarmed_tool_places_nothing():
     from tools.image import ImageTool
 
@@ -240,6 +401,65 @@ def test_an_unarmed_tool_places_nothing():
     assert not tool.armed
     assert tool.rubber_band_lines() == []
     assert tool.value_label() is None
+
+
+def test_dragging_an_image_file_into_the_view_starts_placement_at_the_drop(
+        tmp_path, monkeypatch):
+    import os
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtCore import QMimeData, QPointF, QUrl, Qt
+    from PySide6.QtGui import QDropEvent
+    from PySide6.QtWidgets import QApplication
+    from tools.image import ImageTool
+    from views.main_window import MainWindow
+    import core.texture as texture
+
+    if QApplication.instance() is None:
+        QApplication([])
+    src = _png(tmp_path)
+    monkeypatch.setattr(texture, "cache_image",
+                        lambda data, name, bucket: src)
+    win = MainWindow()
+    try:
+        vp = win.viewport
+        plane = (V(1, 2, 3), V(0, 0, 1))
+
+        def world_from_pixel(x, y):
+            assert (x, y) == (37, 49)
+            vp._last_work_plane = plane
+            return V(1, 2, 3)
+
+        monkeypatch.setattr(vp, "_world_from_pixel", world_from_pixel)
+        monkeypatch.setattr(
+            ImageTool, "frame_for_native_size",
+            lambda self, viewport, origin, pw, ph: (V(2, 0), V(0, 1)))
+        mime = QMimeData()
+        mime.setUrls([QUrl.fromLocalFile(str(src))])
+        event = QDropEvent(QPointF(37, 49), Qt.CopyAction, mime,
+                           Qt.LeftButton, Qt.NoModifier)
+        vp.dropEvent(event)
+
+        assert event.isAccepted()
+        assert len(vp.scene.image_planes) == 1
+        image = vp.scene.image_planes[0]
+        assert image.origin == V(1, 2, 3)
+        assert image.u == V(2, 0) and image.v == V(0, 1)
+        assert vp.active_tool is win._tools["select"]
+    finally:
+        win._saved_version = win.viewport.scene.version
+        win.close()
+
+
+def test_drag_drop_ignores_non_images_and_remote_urls(tmp_path):
+    from PySide6.QtCore import QMimeData, QUrl
+    from views.main_window import MainWindow
+
+    text = tmp_path / "notes.txt"
+    text.write_text("not an image", encoding="utf-8")
+    mime = QMimeData()
+    mime.setUrls([QUrl("https://example.com/photo.png"),
+                  QUrl.fromLocalFile(str(text))])
+    assert MainWindow.image_path_from_mime(mime) is None
 
 
 # ---- Move / Rotate / Scale --------------------------------------------------
@@ -467,6 +687,37 @@ def test_context_menu_offers_unlock_and_delete_for_a_locked_image_underneath(mon
         win.show_viewport_context_menu(QPoint(0, 0), locked_image=im)
         texts = [a.text() for a in _Menu.opened[-1].actions()]
         assert "Unlock image “orto”" not in texts
+        assert "Make Group" in texts and "Make Component…" in texts
+    finally:
+        win._saved_version = win.viewport.scene.version
+        win.close()
+
+
+def test_make_group_and_component_actions_accept_a_selected_photo(monkeypatch):
+    import os
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+    from views.main_window import MainWindow
+    import views.main_window as mw
+
+    if QApplication.instance() is None:
+        QApplication([])
+    win = MainWindow()
+    try:
+        scene = win.viewport.scene
+        image = _image("facade.png")
+        scene.image_planes.append(image)
+        scene.select([image])
+        win._on_make_group()
+        group = next(g for g in scene.groups if g.images)
+        assert not group.is_component() and group.images == [image]
+
+        assert win.viewport.history.undo()
+        monkeypatch.setattr(mw._prompts, "get_text",
+                            lambda *a, **k: ("Facade", True))
+        win._on_make_component()
+        component = next(g for g in scene.groups if g.images)
+        assert component.is_component() and component.name == "Facade"
     finally:
         win._saved_version = win.viewport.scene.version
         win.close()

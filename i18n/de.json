@@ -3349,5 +3349,10 @@
  "The Bulgarian translation.": "Die bulgarische Übersetzung.",
  "The Traditional Chinese translation.": "Die traditionell-chinesische Übersetzung.",
  "A .skp component 10 000 times too big, traced.": "Eine 10 000-mal zu große .skp-Komponente, aufgespürt.",
- "Thanks as well to all the authors of the extensions catalogue": "Danke auch allen Autoren des Erweiterungskatalogs"
+ "Thanks as well to all the authors of the extensions catalogue": "Danke auch allen Autoren des Erweiterungskatalogs",
+ "Group photos separately from model geometry": "Fotos getrennt von der Modellgeometrie gruppieren",
+ "Make a component from photos separately from model geometry": "Eine Komponente aus Fotos getrennt von der Modellgeometrie erstellen",
+ "This group contains a photo, not editable geometry — explode it to edit the image": "Diese Gruppe enthält ein Foto und keine bearbeitbare Geometrie – lösen Sie die Gruppe auf, um das Bild zu bearbeiten",
+ "Image corner placed — move the pointer and click to set its size, or type a width and press Enter (Esc cancels)": "Bildecke platziert – bewegen Sie den Zeiger und klicken Sie, um die Größe festzulegen, oder geben Sie eine Breite ein und drücken Sie die Eingabetaste (Esc bricht ab)",
+ "Image placed at its natural display size — use Image size… for an exact model width": "Bild in seiner natürlichen Anzeigegröße platziert – verwenden Sie Bildgröße…, um eine genaue Modellbreite festzulegen"
 }

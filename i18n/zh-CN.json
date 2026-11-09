@@ -3350,5 +3350,10 @@
  "The Bulgarian translation.": "保加利亚语翻译。",
  "The Traditional Chinese translation.": "繁体中文翻译。",
  "A .skp component 10 000 times too big, traced.": "追查出一个大了 10 000 倍的 .skp 组件。",
- "Thanks as well to all the authors of the extensions catalogue": "同样感谢扩展目录的所有作者"
+ "Thanks as well to all the authors of the extensions catalogue": "同样感谢扩展目录的所有作者",
+ "Group photos separately from model geometry": "将照片与模型几何体分开编组",
+ "Make a component from photos separately from model geometry": "将照片与模型几何体分开创建为组件",
+ "This group contains a photo, not editable geometry — explode it to edit the image": "此组包含照片，而非可编辑的几何体——请炸开该组以编辑图像",
+ "Image corner placed — move the pointer and click to set its size, or type a width and press Enter (Esc cancels)": "已放置图像角点——移动指针并单击以设置大小，或输入宽度后按 Enter（Esc 取消）",
+ "Image placed at its natural display size — use Image size… for an exact model width": "图像已按自然显示大小放置——使用图像大小…可设置精确的模型宽度"
 }
