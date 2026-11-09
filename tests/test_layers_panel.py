@@ -1221,6 +1221,40 @@ def test_active_pencil_follows_the_chosen_accent(win):
         theme.apply_accent(_app)
 
 
+def test_row_icons_follow_a_live_theme_switch(win):
+    # #1086: after switching the theme with the app open, the eye, padlock,
+    # isolate and print marks stayed in the previous theme's ink
+    from views import theme
+
+    panel = win.layers_dock.panel
+    win.viewport.scene.layers.append(Layer("A"))     # has an isolate target
+    panel.refresh()
+
+    def lightness(icon):
+        image = icon.pixmap(18, 18).toImage()
+        return [image.pixelColor(x, y).lightness()
+                for y in range(image.height()) for x in range(image.width())
+                if image.pixelColor(x, y).alpha() > 100]
+
+    columns = (2, 3, 6, 10)               # COL_EYE, COL_LOCK, COL_ISOLATE, COL_PRINT
+    try:
+        for mode, other in ((theme.LIGHT, theme.dark_palette()),
+                            (theme.DARK, theme.light_palette())):
+            theme.apply_theme(_app, mode)
+            _app.processEvents()
+            ink = _app.palette().text().color().lightness()
+            old = other.text().color().lightness()
+            row, head = panel.item_for("A"), panel.tree.headerItem()
+            for col in columns:
+                for icon in (row.icon(col), head.icon(col)):
+                    seen = lightness(icon)
+                    # drawn, and every visible pixel in this theme's ink
+                    assert seen, (mode, col)
+                    assert all(abs(v - ink) < abs(v - old) for v in seen), (mode, col)
+    finally:
+        theme.apply_theme(_app, theme.DARK)
+
+
 def test_colour_by_layer_button_sets_the_style(win):
     panel = win.layers_dock.panel
     scene = win.viewport.scene
