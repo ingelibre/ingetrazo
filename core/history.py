@@ -367,6 +367,10 @@ class History:
         if target is None or target is self.scene.mesh:
             fn()
             return
+        # A closed mesh changes: an attrs swap (a paint undone after leaving
+        # its group) bumps no serial by itself, and the viewport's placement
+        # caches would keep drawing the old bake.
+        target._mut_serial += 1
         current = self.scene.mesh
         self.scene.mesh = target
         try:
@@ -1291,6 +1295,7 @@ class RestampMaterialCommand(Command):
         self._old_faces: Optional[list] = None   # (face, {key: old value})
         self._old_groups: Optional[list] = None  # (container, old material)
         self._old_target = None   # a renamed-onto entry, put back by undo
+        self._meshes: Optional[list] = None      # the ones restamped
 
     _KEYS = ("mat", "color", "texture", "opacity")
 
@@ -1314,6 +1319,24 @@ class RestampMaterialCommand(Command):
             for f in mesh.faces:
                 if f.attrs.get("mat") == self._name:
                     yield f
+
+    def _count_meshes(self, scene) -> None:
+        """Bump the serial of the meshes whose faces were restamped: an
+        attrs swap bumps none by itself, and the viewport's placement caches
+        would keep drawing every closed component in the old recipe."""
+        if self._meshes is None:
+            from core.group import iter_placements
+            worn = {id(f) for f, _old in self._old_faces or []}
+            found: dict = {}
+            meshes = [scene.loose_mesh] + [pg.mesh for g in scene.groups
+                                           for pg, _m in iter_placements(g)]
+            for mesh in meshes:
+                if (mesh is not None and id(mesh) not in found
+                        and any(id(f) in worn for f in mesh.faces)):
+                    found[id(mesh)] = mesh
+            self._meshes = list(found.values())
+        for mesh in self._meshes:
+            mesh._mut_serial += 1
 
     def _painted_groups(self, scene):
         """Every placement painted as a whole with this material, nested
@@ -1350,6 +1373,7 @@ class RestampMaterialCommand(Command):
                     f.attrs.pop(k, None)
         for g, _old in self._old_groups or []:
             g.material = dict(stamp)
+        self._count_meshes(scene)
         _dirty_group_chunks(scene)
         scene.version += 1
 
@@ -1371,6 +1395,7 @@ class RestampMaterialCommand(Command):
                     f.attrs[k] = old[k]
         for g, old in self._old_groups or []:
             g.material = old
+        self._count_meshes(scene)
         _dirty_group_chunks(scene)
         scene.version += 1
 
@@ -1983,6 +2008,21 @@ class ExplodeCurvesCommand(Command):
             e.curve = cid
         scene.mesh._chunk_dirty = True
         scene.mesh._mut_serial += 1
+        scene.version += 1
+
+
+class AddSceneCommand(Command):
+    """A new saved scene at the end of the list; undo takes it away again."""
+
+    def __init__(self, view) -> None:
+        self.view = view
+
+    def do(self, scene) -> None:
+        scene.saved_views.append(self.view)
+        scene.version += 1
+
+    def undo(self, scene) -> None:
+        scene.saved_views.remove(self.view)
         scene.version += 1
 
 

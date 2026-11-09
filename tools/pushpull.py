@@ -1237,6 +1237,19 @@ class PushPullTool(Tool):
             # On a level: valid at exactly this distance, nothing to slide.
             self._stage_lo = self._stage_hi = d
         else:
+            # No movers is right for a through punch (no cap, the same result
+            # at any depth). But a base out of true by more than the tolerance
+            # has a cap whose corners all miss the plane: nothing would slide,
+            # and every distance would commit this frame's, the value typed
+            # silently ignored. New vertices within the base's own spread of
+            # the plane tell that cap from a punch.
+            if not movers:
+                spread = max((abs(QVector3D.dotProduct(p - anchor, n))
+                              for p in self._cap_positions), default=0.0)
+                if any(abs(QVector3D.dotProduct(v.position - anchor, n) - d)
+                       <= spread + _STITCH_TOL
+                       for v in mesh.vertices if v not in snap["vpos"]):
+                    return False
             rates = [self._slide_rate(anchored[v], n) for v in movers]
             if any(r is None for r in rates):
                 return False              # a face it drags would bend
@@ -2724,7 +2737,13 @@ class PushPullTool(Tool):
             # thickness, it stopped at the centroid's 1e-4 and left its cap
             # on the far wall (#1076). Within _OUT_OF_TRUE the push meets
             # the face as soon as any corner does.
-            reach = [QVector3D.dotProduct(g.centroid() - v, push)
+            # Measured to the far PLANE along the push: projected on the
+            # push, the way to the far face's centroid also counted how far
+            # to the side it lies, tenths of a millimetre on a door 1 mm out
+            # of true, and the face read as beyond the push (#1094).
+            toward = QVector3D.dotProduct(push, g.normal().normalized())
+            reach = [QVector3D.dotProduct(g.centroid() - v,
+                                          g.normal().normalized()) / toward
                      for v in face.vertices]
             lo, hi = min(reach), max(reach)
             if hi - lo > _OUT_OF_TRUE:

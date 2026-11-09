@@ -3,6 +3,8 @@
 """Paste tool: stamp copied geometry at the cursor, as one undoable step."""
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 from PySide6.QtCore import QPointF, Qt
 from PySide6.QtGui import QVector3D
 
@@ -505,3 +507,85 @@ def test_undoing_a_paste_shrinks_the_group_back_and_redo_restores_it():
     assert len(g.mesh.faces) == 2 and len(g.mesh.edges) == 8
     # a stamp can still weld onto the restored vertices
     assert PasteTool.in_place(vp)
+
+
+def _loose_and_group(scene):
+    """A loose square with its edges, and a group beside it, all selected."""
+    face = scene.mesh.add_face([V(0, 0), V(2, 0), V(2, 2), V(0, 2)])
+    edges = [e for e in scene.mesh.edges if face in e.faces]
+    g = _make_group(scene, 3.0)
+    scene.selection.update([face, *edges, g])
+    return face, edges, g
+
+
+def _move_targets(vp):
+    from tools.move import gather_targets
+    return gather_targets(SimpleNamespace(viewport=vp))
+
+
+def test_a_mixed_paste_leaves_everything_it_pasted_selected():
+    """Only the groups stayed selected, so the Move right after a paste
+    carried them off and left the loose part behind."""
+    scene = Scene()
+    vp = _PreviewVP(scene, History(scene), None)
+    face, edges, g = _loose_and_group(scene)
+    assert _copy(vp)
+    _paste_at(vp, 10, 10)
+    assert face not in scene.selection and g not in scene.selection
+    kinds = sorted(type(x).__name__ for x in scene.selection)
+    assert kinds == ["Edge"] * 4 + ["Face", "Group"]
+    groups, points = _move_targets(vp)
+    assert len(groups) == 1 and groups[0] is not g
+    assert len(points) == 4
+    assert {round(p.x()) for p in points} == {10, 12}, "the original's corners"
+
+
+def test_a_loose_paste_does_not_leave_the_originals_selected():
+    """With no group in the clipboard the selection was not touched: the
+    next Move or Delete acted on what was copied, not on the copy."""
+    scene = Scene()
+    vp = _PreviewVP(scene, History(scene), None)
+    face = scene.mesh.add_face([V(0, 0), V(2, 0), V(2, 2), V(0, 2)])
+    scene.selection.add(face)
+    assert _copy(vp)
+    _paste_at(vp, 10, 10)
+    assert face not in scene.selection
+    assert len(scene.selection) == 1
+    _groups, points = _move_targets(vp)
+    assert {round(p.x()) for p in points} == {10, 12}
+
+
+def test_undoing_a_paste_leaves_nothing_dead_selected():
+    scene = Scene()
+    hist = History(scene)
+    vp = _PreviewVP(scene, hist, None)
+    face, edges, g = _loose_and_group(scene)
+    assert _copy(vp)
+    _paste_at(vp, 10, 10)
+    assert hist.undo() is True
+    live = {id(x) for x in (*scene.mesh.faces, *scene.mesh.edges,
+                            *scene.groups)}
+    assert all(id(x) in live for x in scene.selection)
+
+
+def test_undoing_a_paste_in_place_leaves_nothing_dead_selected():
+    scene = Scene()
+    hist = History(scene)
+    clip = {"faces": [([V(0, 0), V(2, 0), V(2, 2), V(0, 2)], [])],
+            "edges": [], "ref": V(0, 0, 0)}
+    assert PasteTool.in_place(_VP(scene, hist, clip)) is True
+    assert len(scene.selection) == 1
+    assert hist.undo() is True
+    assert not scene.selection
+
+
+def test_a_paste_merged_into_a_face_selects_no_original():
+    """Over a face on the same plane the pasted one is split (#73): the
+    pieces are not the paste's own, but the original must not stay selected."""
+    scene = Scene()
+    vp = _PreviewVP(scene, History(scene), None)
+    face = scene.mesh.add_face([V(0, 0), V(2, 0), V(2, 2), V(0, 2)])
+    scene.selection.add(face)
+    assert _copy(vp)
+    _paste_at(vp, 1, 1)
+    assert face not in scene.selection
