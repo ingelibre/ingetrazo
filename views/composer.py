@@ -3009,7 +3009,9 @@ class _SheetItem(QGraphicsItem):
             return None
         best = None
         for cx, cy in ((x, y), (x + w, y), (x, y + h), (x + w, y + h)):
-            hit = near(cx, cy, _SNAP_MM)
+            # A drawn point, not any point along a line: a text dragged past
+            # an edge must not stick to it the whole way.
+            hit = near(cx, cy, _SNAP_MM, edges=False)
             if hit is None:
                 continue
             d2 = (hit[0] - cx) ** 2 + (hit[1] - cy) ** 2
@@ -4298,7 +4300,8 @@ class ComposerCanvasView(QGraphicsView):
         if hit is None:
             self._clear_snap_marker()
             return pos, False
-        self._show_snap_marker(hit[0], hit[1])
+        self._show_snap_marker(hit[0], hit[1],
+                               on_edge=getattr(hit, "on_edge", False))
         return QPointF(hit[0], hit[1]), True
 
     #: The snap dot's radius ON SCREEN — it must not grow with the zoom
@@ -4306,13 +4309,15 @@ class ComposerCanvasView(QGraphicsView):
     #: círculo verde es enorme, cuando estaba lejos estaba bien»).
     _SNAP_DOT_PX = 4.5
 
-    def _show_snap_marker(self, x, y):
+    def _show_snap_marker(self, x, y, on_edge: bool = False):
         from PySide6.QtGui import QBrush
         if self._snap_marker is None:
             pen = QPen(QColor(255, 255, 255), 0.0)   # cosmetic: 1 px always
-            self._snap_marker = self.scene().addEllipse(
-                QRectF(), pen, QBrush(QColor(41, 158, 92)))  # Lime/green
+            self._snap_marker = self.scene().addEllipse(QRectF(), pen)
             self._snap_marker.setZValue(100001)
+        # Green on a point; along an edge, the red «on edge» of the 3D view.
+        self._snap_marker.setBrush(QBrush(
+            QColor(219, 56, 69) if on_edge else QColor(41, 158, 92)))
         r = self._SNAP_DOT_PX / max(self.transform().m11(), 1e-6)
         self._snap_marker.setRect(QRectF(x - r, y - r, 2 * r, 2 * r))
 
@@ -5646,6 +5651,116 @@ def bring_to_front(window) -> None:
     window.activateWindow()
 
 
+class _EdgeSnapHit(tuple):
+    """A snap hit along an edge: the ``(x, y, world_xyz, frame)`` of any hit,
+    which tells the marker apart."""
+    on_edge = True
+
+
+def _clip_snap_edges(frame, page, world, depth):
+    """The edges whose page box touches *frame*: far fewer to search on every
+    move of the mouse."""
+    import numpy as np
+    x0, y0, x1, y1 = page[:, 0], page[:, 1], page[:, 2], page[:, 3]
+    keep = (np.maximum(x0, x1) >= frame.x_mm - 0.5) \
+        & (np.minimum(x0, x1) <= frame.x_mm + frame.w_mm + 0.5) \
+        & (np.maximum(y0, y1) >= frame.y_mm - 0.5) \
+        & (np.minimum(y0, y1) <= frame.y_mm + frame.h_mm + 0.5)
+    return (page[keep], world[keep], None if depth is None else depth[keep])
+
+
+def _closest_on_snap_edges(edges, frame, x_mm, y_mm):
+    """``(squared distance, page x, page y, world_xyz)`` of the closest point
+    to the cursor along *edges* and inside *frame*, or None. The world point
+    is taken along the edge in the model: with a depth, one step on the page
+    is not one step along the edge."""
+    import numpy as np
+    page, world, depth = edges
+    if not len(page):
+        return None
+    ax, ay = page[:, 0], page[:, 1]
+    dx, dy = page[:, 2] - ax, page[:, 3] - ay
+    length2 = dx * dx + dy * dy
+    with np.errstate(divide="ignore", invalid="ignore"):
+        t = ((x_mm - ax) * dx + (y_mm - ay) * dy) / length2
+    t = np.where(length2 > 1e-12, np.clip(t, 0.0, 1.0), 0.0)
+    fx, fy = ax + t * dx, ay + t * dy
+    inside = ((fx >= frame.x_mm - 0.5) & (fx <= frame.x_mm + frame.w_mm + 0.5)
+              & (fy >= frame.y_mm - 0.5)
+              & (fy <= frame.y_mm + frame.h_mm + 0.5))
+    if not inside.any():
+        return None
+    d2 = np.where(inside, (fx - x_mm) ** 2 + (fy - y_mm) ** 2, np.inf)
+    i = int(np.argmin(d2))
+    s = float(t[i])
+    if depth is not None:
+        z0, z1 = float(depth[i, 0]), float(depth[i, 1])
+        s = s * z0 / ((1.0 - s) * z1 + s * z0)
+    w = world[i, 0] + s * (world[i, 1] - world[i, 0])
+    return (float(d2[i]), float(fx[i]), float(fy[i]),
+            (float(w[0]), float(w[1]), float(w[2])))
+
+
+#: A point this close to an edge in metres (the registry's weld resolution)
+#: already sits on it.
+_ON_EDGE_TOL_M = 1e-4
+
+
+def _resnap_anchor(memo, item, attr, wpts, tol, edges):
+    """Where ``item.<attr>``, an anchored world point, goes when the model may
+    have moved under it, as a list. A point on a corner goes with the nearest
+    point within *tol*, as ever. One placed along an edge stays there while
+    that edge passes through it, even with a corner in reach: re-attached to
+    the nearest point, a cota on an edge near a corner would jump to the
+    corner (#1219). Failing both, the nearest spot along an edge within *tol*.
+
+    Which of the two a point is gets decided the first time it is seen, and
+    *memo* keeps it: later, a corner left behind by a stretched wall sits on
+    that wall too, and has to follow the corner. *edges* is called only if
+    needed: a sheet with its cotas on corners never builds them."""
+    import numpy as np
+    w = np.asarray(getattr(item, attr), dtype=np.float64)
+    tol_on = _ON_EDGE_TOL_M * _ON_EDGE_TOL_M
+    point = None
+    if len(wpts):
+        d2 = ((wpts - w) ** 2).sum(axis=1)
+        i = int(np.argmin(d2))
+        if d2[i] <= tol_on:
+            memo[(id(item), attr)] = (item, [float(v) for v in wpts[i]], False)
+            return [float(v) for v in wpts[i]]
+        if d2[i] <= tol * tol:
+            point = wpts[i]
+    foot = None
+    on_edge = False
+    found = edges()
+    if found is not None and len(found[1]):
+        a, b = found[1][:, 0], found[1][:, 1]
+        ab = b - a
+        length2 = (ab * ab).sum(axis=1)
+        with np.errstate(divide="ignore", invalid="ignore"):
+            t = ((w - a) * ab).sum(axis=1) / length2
+        t = np.where(length2 > 1e-18, np.clip(t, 0.0, 1.0), 0.0)
+        feet = a + t[:, None] * ab
+        dist2 = ((feet - w) ** 2).sum(axis=1)
+        j = int(np.argmin(dist2))
+        on_edge = bool(dist2[j] <= tol_on)
+        if dist2[j] <= tol * tol:
+            foot = feet[j]
+    held = memo.get((id(item), attr))
+    cur = [float(v) for v in w]
+    placed_on_edge = (held[2] if held is not None and held[0] is item
+                      and held[1] == cur else on_edge)
+    if on_edge and placed_on_edge:
+        memo[(id(item), attr)] = (item, cur, True)
+        return cur
+    now = point if point is not None else foot
+    if now is None:
+        return cur
+    out = [float(v) for v in now]
+    memo[(id(item), attr)] = (item, out, point is None)
+    return out
+
+
 class ComposerWindow(QMainWindow):
     """Page canvas on the left, composition manager + properties on the
     right. Compositions live in ``scene.compositions`` and persist in the
@@ -5714,6 +5829,7 @@ class ComposerWindow(QMainWindow):
         self.hlr_kinds: dict[int, object] = {}     # line class per segment
         self.hlr_fills: dict[int, object] = {}     # section-cut rings, mm
         self.hlr_styles: dict[int, object] = {}    # layer pens per segment
+        self.edge_snap_cache: dict[int, object] = {}  # frame → (stamp, edges)
         self.snap_cache: dict[int, object] = {}   # frame → (page stamp, snap pts)
         self.circle_cache: dict[int, list] = {}   # frame → page-mm circles
         self.annot_cache: dict[int, list] = {}    # frame → model annotations
@@ -8939,6 +9055,7 @@ class ComposerWindow(QMainWindow):
     def _frame_caches(self) -> tuple:
         return (self.render_cache, self.hlr_cache, self.hlr_kinds,
                 self.hlr_fills, self.hlr_styles, self.snap_cache,
+                self.edge_snap_cache,
                 self.circle_cache, self.annot_cache)
 
     def _forget_frame(self, frame) -> None:
@@ -10433,6 +10550,7 @@ class ComposerWindow(QMainWindow):
 
     def _on_history_change(self) -> None:
         self._mark_dirty()
+        self._note_anchor_kinds()
         # Commands mutate the models; a rebuild keeps canvas and panel
         # honest. DEFERRED: the change may arrive mid mouse-release, and a
         # synchronous clear would destroy the item still handling the event.
@@ -12195,6 +12313,7 @@ class ComposerWindow(QMainWindow):
         self._geom_cache = None
         self._circles_cache = None
         self.snap_cache.clear()
+        self.edge_snap_cache.clear()
         self.circle_cache.clear()
 
     def frame_circles(self, frame: MarcoVista) -> list:
@@ -12318,11 +12437,15 @@ class ComposerWindow(QMainWindow):
             to_page = page_mapper()
             pts = []
             wpts = []
+            page_segs = []
             for (x0, y0, x1, y1), (w0, w1) in zip(segs, world):
                 pts.append(to_page(x0, y0))
                 pts.append(to_page(x1, y1))
                 pts.append(to_page((x0 + x1) / 2, (y0 + y1) / 2))
                 wpts.extend((w0, w1, (w0 + w1) / 2))
+                page_segs.append((*pts[-3], *pts[-2]))
+            self.edge_snap_cache[id(frame)] = (stamp, _clip_snap_edges(
+                frame, np.array(page_segs), np.array(world), None))
             return clip(np.array(pts), np.array(wpts))
 
         def run_fast():
@@ -12351,6 +12474,65 @@ class ComposerWindow(QMainWindow):
         self.snap_cache[id(frame)] = (stamp, pair)
 
         return pair
+
+    def frame_snap_edges(self, frame: MarcoVista):
+        """The edges of *frame*'s view a point along them can snap to:
+        ``(page (E, 4), world (E, 2, 3), depth (E, 2) or None)``, the same
+        edges ``frame_snap_points`` takes its points from. The depth comes
+        with a perspective frame, where the middle of an edge on the page is
+        not its middle in the model. Built on the first look, not with the
+        points: a sheet whose cotas all land on corners never pays for it."""
+        import numpy as np
+        stamp = self._frame_page_stamp(frame)
+        cached = self.edge_snap_cache.get(id(frame))
+        if cached is not None and cached[0] == stamp:
+            return cached[1]
+
+        from core.composition import frame_page_projector
+        from core.hlr import _to_cam, camera_basis, hlr_view
+
+        geometry = self._scene_geometry()
+        _tris, hard, soft, _soft_n = geometry
+        empty = (np.empty((0, 4)), np.empty((0, 2, 3)), None)
+        perspective = self.frame_is_perspective(frame)
+
+        def run():
+            vp = self._window.viewport
+            local = frame_page_projector(frame, vp.camera)
+            if (len(hard) + len(soft) <= self._EXACT_SNAP_EDGE_BUDGET
+                    and not perspective):
+                segs, world = hlr_view(vp.scene, vp.camera, return_world=True,
+                                       geometry=geometry)
+                if not len(segs):
+                    return empty
+                segs = np.asarray(segs, dtype=np.float64)
+                x0, y0 = local(segs[:, 0], segs[:, 1])
+                x1, y1 = local(segs[:, 2], segs[:, 3])
+                world = np.asarray(world, dtype=np.float64)
+                depth = None
+            else:
+                world = np.concatenate([np.asarray(hard, dtype=np.float64),
+                                        np.asarray(soft, dtype=np.float64)])
+                if not len(world):
+                    return empty
+                eye, right, up, fwd = camera_basis(vp.camera)
+                a = _to_cam(world[:, 0, :], eye, right, up, fwd)
+                b = _to_cam(world[:, 1, :], eye, right, up, fwd)
+                depth = None
+                if perspective:
+                    # An edge reaching behind the eye has no line on the page.
+                    front = (a[:, 2] > 1e-3) & (b[:, 2] > 1e-3)
+                    a, b, world = a[front], b[front], world[front]
+                    depth = np.stack([a[:, 2], b[:, 2]], axis=1)
+                x0, y0 = local(a[:, 0], a[:, 1], a[:, 2])
+                x1, y1 = local(b[:, 0], b[:, 1], b[:, 2])
+            page = np.stack([x0 + frame.x_mm, y0 + frame.y_mm,
+                             x1 + frame.x_mm, y1 + frame.y_mm], axis=1)
+            return _clip_snap_edges(frame, page, world, depth)
+
+        edges = self._with_frame_camera(frame, run)
+        self.edge_snap_cache[id(frame)] = (stamp, edges)
+        return edges
 
     def _frame_world_to_page(self, frame: MarcoVista, world_pts):
         """Project points in WORLD metres to PAGE millimetres through
@@ -12411,6 +12593,30 @@ class ComposerWindow(QMainWindow):
             holds[key] = (item, now, hold)
         return True
 
+    def _note_anchor_kinds(self) -> None:
+        """Whether each new anchored point sits on a corner or along an edge,
+        decided now, while the model is the one it was placed on: the rebuild
+        that would see it is deferred, and an edit may come first."""
+        memo = self.__dict__.setdefault("_edge_anchor_kinds", {})
+        frames = {f.uid: f for f in self.comp.frames if f.uid}
+        points = [(ct, a) for ct in self.comp.cotas if ct.anchored
+                  for a in ("a_world", "b_world")]
+        points += [(it, "a_world")
+                   for it in (*(getattr(self.comp, "etiquetas", None) or []),
+                              *(getattr(self.comp, "niveles", None) or []))
+                   if it.anchored]
+        for item, attr in points:
+            frame = frames.get(item.anchor_uid)
+            held = memo.get((id(item), attr))
+            if frame is None or (held is not None and held[0] is item):
+                continue
+            try:
+                _pts, wpts = self.frame_snap_points(frame)
+                _resnap_anchor(memo, item, attr, wpts, 0.0,
+                               lambda f=frame: self.frame_snap_edges(f))
+            except Exception:  # noqa: BLE001 — never in the way of an edit
+                pass
+
     def _reproject_anchored_cotas(self) -> None:
         """Anchored cotas follow the model: re-attach each 3D anchor to the
         nearest CURRENT snap point within a small paper tolerance (the
@@ -12422,6 +12628,9 @@ class ComposerWindow(QMainWindow):
         frames = {f.uid: f for f in self.comp.frames if f.uid}
         # The fake reprojector of the tests has no model to follow.
         follow = getattr(self, "_follow_anchor", None) or (lambda *_: False)
+        # Nor does it have edges: its anchors can only sit on points.
+        edges_of = getattr(self, "frame_snap_edges", None) or (lambda _: None)
+        memo = self.__dict__.setdefault("_edge_anchor_kinds", {})
         for ct in self.comp.cotas:
             if not ct.anchored:
                 continue
@@ -12449,12 +12658,8 @@ class ComposerWindow(QMainWindow):
                               <= frame.y_mm + frame.h_mm + 0.5)
                     if not inside:
                         continue
-                    w = np.asarray(getattr(ct, attr), dtype=np.float64)
-                    if len(wpts):
-                        d2 = ((wpts - w) ** 2).sum(axis=1)
-                        i = int(np.argmin(d2))
-                        if d2[i] <= tol * tol:
-                            setattr(ct, attr, [float(v) for v in wpts[i]])
+                    setattr(ct, attr, _resnap_anchor(
+                        memo, ct, attr, wpts, tol, lambda: edges_of(frame)))
                 (ax, ay), (bx, by) = self._frame_world_to_page(
                     frame, [ct.a_world, ct.b_world])
                 ct.x_mm, ct.y_mm = ax, ay
@@ -12478,12 +12683,10 @@ class ComposerWindow(QMainWindow):
                           <= frame.y_mm + frame.h_mm + 0.5)
                 if follow(et, "a_world"):
                     inside = False
-                if inside and len(wpts):
-                    w = np.asarray(et.a_world, dtype=np.float64)
-                    d2 = ((wpts - w) ** 2).sum(axis=1)
-                    i = int(np.argmin(d2))
-                    if d2[i] <= tol * tol:
-                        et.a_world = [float(v) for v in wpts[i]]
+                if inside:
+                    et.a_world = _resnap_anchor(
+                        memo, et, "a_world", wpts, tol,
+                        lambda: edges_of(frame))
                 (px, py), = self._frame_world_to_page(frame, [et.a_world])
                 et.ax_mm, et.ay_mm = px - et.x_mm, py - et.y_mm
             except Exception:  # noqa: BLE001
@@ -12516,23 +12719,26 @@ class ComposerWindow(QMainWindow):
                           <= frame.y_mm + frame.h_mm + 0.5)
                 if follow(nv, "a_world"):
                     inside = False
-                if inside and len(wpts):
-                    w = np.asarray(nv.a_world, dtype=np.float64)
-                    d2 = ((wpts - w) ** 2).sum(axis=1)
-                    i = int(np.argmin(d2))
-                    if d2[i] <= tol * tol:
-                        nv.a_world = [float(v) for v in wpts[i]]
+                if inside:
+                    nv.a_world = _resnap_anchor(
+                        memo, nv, "a_world", wpts, tol,
+                        lambda: edges_of(frame))
                 (px, py), = self._frame_world_to_page(frame, [nv.a_world])
                 nv.x_mm, nv.y_mm = px - nv.ax_mm, py - nv.ay_mm
             except Exception:  # noqa: BLE001
                 pass
 
-    def nearest_snap_point(self, x_mm: float, y_mm: float, thr_mm: float):
+    def nearest_snap_point(self, x_mm: float, y_mm: float, thr_mm: float,
+                           edges: bool = True):
         """Nearest frame snap point to (x_mm, y_mm) within *thr_mm*, or
         None. Returns ``(x, y, world_xyz, frame)`` — the page position, the
         matching model point in world metres, and the frame it belongs to.
         Searches every frame whose rectangle contains the cursor first, then
-        all frames (so an edge just past a frame border still catches)."""
+        all frames (so an edge just past a frame border still catches).
+
+        Endpoints and midpoints win, so a corner keeps catching as it always
+        has; with none in reach and *edges* on, the closest point along an
+        edge the view shows answers (#1219), flagged ``on_edge``."""
         import numpy as np
         best = None
         best_d2 = thr_mm * thr_mm
@@ -12549,6 +12755,23 @@ class ComposerWindow(QMainWindow):
                 best = (float(pts[i, 0]), float(pts[i, 1]),
                         (float(wpts[i, 0]), float(wpts[i, 1]),
                          float(wpts[i, 2])), frame)
+        if best is None and edges:
+            best = self._nearest_snap_on_edge(x_mm, y_mm, thr_mm)
+        return best
+
+    def _nearest_snap_on_edge(self, x_mm: float, y_mm: float, thr_mm: float):
+        """The closest point along a shown edge within *thr_mm*, as a
+        :class:`_EdgeSnapHit`, or None."""
+        best = None
+        best_d2 = thr_mm * thr_mm
+        for frame in self.comp.frames:
+            if getattr(frame, "hidden", False):
+                continue
+            hit = _closest_on_snap_edges(
+                self.frame_snap_edges(frame), frame, x_mm, y_mm)
+            if hit is not None and hit[0] < best_d2:
+                best_d2 = hit[0]
+                best = _EdgeSnapHit((hit[1], hit[2], hit[3], frame))
         return best
 
     def compute_hlr(self, frame: MarcoVista):
