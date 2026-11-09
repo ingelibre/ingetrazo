@@ -9,6 +9,7 @@ coordinates (``yaw``, ``pitch``, ``distance``). Both perspective and parallel
 """
 from __future__ import annotations
 
+import copy
 import math
 
 from PySide6.QtGui import QMatrix4x4, QVector3D
@@ -78,6 +79,11 @@ class OrbitCamera:
         #: the viewport keeps up to date, or ``None`` (unknown). Parallel
         #: projection fits its depth range to it (``parallel_depth``).
         self.depth_reach = None
+        #: One eye of a stereo pair (``eye_camera`` sets them): metres along
+        #: the camera's right, negative for the left eye, and the depth along
+        #: the line of sight shown at screen level. 0 is an ordinary view.
+        self.eye_offset = 0.0
+        self.zero_parallax = 0.0
 
     # ---- Derived state ------------------------------------------------------
     def eye(self) -> QVector3D:
@@ -169,6 +175,48 @@ class OrbitCamera:
             return None
         return h / h.length()
 
+    # ---- Stereo: one world, two cameras ------------------------------------
+    def right_vector(self) -> QVector3D:
+        """The camera's own right on screen, as ``view_matrix`` has it."""
+        level = self._level_forward()
+        forward = level if level is not None else self.forward()
+        up = QVector3D(0.0, 0.0, 1.0) if level is not None else self.up_vector()
+        r = QVector3D.crossProduct(forward, up)
+        return r.normalized() if r.lengthSquared() > 1e-18 else QVector3D(1, 0, 0)
+
+    def target_depth(self) -> float:
+        """The depth of the orbit target along the line of sight."""
+        level = self._level_forward()
+        if level is None:
+            return self.distance
+        return max(QVector3D.dotProduct(self.target - self.eye(), level), 1e-9)
+
+    def eye_camera(self, offset: float,
+                   zero_parallax: float | None = None) -> "OrbitCamera":
+        """A copy of this camera as one eye of a stereo pair, ``offset``
+        metres along its right (negative for the left eye); this camera is
+        not touched.
+
+        The axes stay parallel (never toe-in, which makes keystone and
+        vertical disparity) and the frustum shifts so the plane
+        ``zero_parallax`` metres along the line of sight, by default the
+        orbit target's, stays at screen depth: nearer things come out of the
+        screen, farther ones go in. In perspective, two-point included, the
+        eye moves and a point at depth ``Z`` lands ``offset * (1 - C / Z)``
+        metres, measured on that plane at depth ``C``, from where this
+        camera shows it. A parallel view does not change when its eye moves,
+        so it is sheared about that plane instead, with the same disparity
+        per metre of depth as the perspective at the plane."""
+        eye = copy.copy(self)
+        eye.up = QVector3D(self.up)
+        eye.target = QVector3D(self.target)
+        eye.eye_offset = float(offset)
+        eye.zero_parallax = float(self.target_depth() if zero_parallax is None
+                                  else zero_parallax)
+        if self.perspective:
+            eye.target = eye.target + self.right_vector() * eye.eye_offset
+        return eye
+
     def view_matrix(self) -> QMatrix4x4:
         m = QMatrix4x4()
         level = self._level_forward()
@@ -190,16 +238,23 @@ class OrbitCamera:
             # near plane itself is what stops you.
             near = self.near_plane()
             level = self._level_forward()
-            if level is not None:
-                # A view camera's rise: the frustum slides up or down by the
-                # target's height over the level sight line, so what you
-                # orbit around stays in the middle of the screen.
+            if level is not None or self.eye_offset:
                 half_h = near * math.tan(math.radians(self.fov_deg) / 2.0)
                 half_w = half_h * self.aspect
-                rel = self.target - self.eye()
-                depth = QVector3D.dotProduct(rel, level)
-                shift = rel.z() * near / depth
-                m.frustum(-half_w, half_w, -half_h + shift, half_h + shift,
+                shift_x = shift_y = 0.0
+                if self.eye_offset and self.zero_parallax > 0.0:
+                    # One eye of a pair: the window on the near plane slides
+                    # so the zero-parallax plane stays where it was.
+                    shift_x = -self.eye_offset * near / self.zero_parallax
+                if level is not None:
+                    # A view camera's rise: the frustum slides up or down by
+                    # the target's height over the level sight line, so what
+                    # you orbit around stays in the middle of the screen.
+                    rel = self.target - self.eye()
+                    depth = QVector3D.dotProduct(rel, level)
+                    shift_y = rel.z() * near / depth
+                m.frustum(-half_w + shift_x, half_w + shift_x,
+                          -half_h + shift_y, half_h + shift_y,
                           near, self.far_plane())
                 return m
             m.perspective(self.fov_deg, self.aspect, near, self.far_plane())
@@ -210,6 +265,14 @@ class OrbitCamera:
             half_w = half_h * self.aspect
             depth = self.parallel_depth()
             m.ortho(-half_w, half_w, -half_h, half_h, -depth, depth)
+            if self.eye_offset and self.zero_parallax > 0.0:
+                # One eye of a pair: x' = x + (offset / C) * (Z - C), with
+                # Z = -z in eye space, a shear about the plane at depth C.
+                k = self.eye_offset / self.zero_parallax
+                m = m * QMatrix4x4(1.0, 0.0, -k, -self.eye_offset,
+                                   0.0, 1.0, 0.0, 0.0,
+                                   0.0, 0.0, 1.0, 0.0,
+                                   0.0, 0.0, 0.0, 1.0)
         return m
 
     def parallel_depth(self) -> float:
