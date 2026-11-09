@@ -802,14 +802,29 @@ class LayersPanel(QWidget):
             self._told_outline = outline
             self.orderChanged.emit()
 
-    def refresh_pencil_icons(self) -> None:
-        """Repaint the active marks after the theme or accent changes."""
-        self.tree.headerItem().setIcon(COL_ACTIVE, _pencil_icon(True))
-        active = L.active_layer(self._scene())
+    def refresh_icons(self) -> None:
+        """Repaint the marks drawn in the palette's ink and accent after the
+        theme or accent changes: the header's and every row's (#1086)."""
+        from views.layers_toolbar import isolate_icon
+        hi = self.tree.headerItem()
+        hi.setIcon(COL_ACTIVE, _pencil_icon(True))
+        hi.setIcon(COL_EYE, node_icon("eye"))
+        hi.setIcon(COL_LOCK, node_icon("lock"))
+        hi.setIcon(COL_ISOLATE, isolate_icon(False))
+        hi.setIcon(COL_PRINT, printer_icon(True))
+        scene = self._scene()
+        active = L.active_layer(scene)
+        was = self._updating
+        self._updating = True
         for item in self._all_items():
             kind, name = self._key(item)
             if kind == KIND_LAYER:
-                item.setIcon(COL_ACTIVE, _pencil_icon(name == active))
+                ly = scene.layer(name)
+                if ly is not None:
+                    self._paint_layer_row(item, ly, name == active)
+            else:
+                self._paint_folder_row(item)
+        self._updating = was
 
     #: Column order on screen (logical columns), and the indent per level —
     #: the Browser's.
