@@ -25,8 +25,12 @@ class SavedView:
                  fov_deg: float = 45.0, perspective: bool = True,
                  two_point: bool = False, hidden_layers=None, style=None, section=None,
                  georef=None, shadows=None, hidden_objects=None,
-                 hidden_shown=None) -> None:
+                 hidden_shown=None, folder=None) -> None:
         self.name = name
+        #: The folder of the Scenes tab the scene is filed under, or
+        #: ``None`` at the top (core.scene_folders, #1158). Only organises
+        #: the list: nothing of the view depends on it.
+        self.folder = folder or None
         self.target = tuple(target)
         self.distance = float(distance)
         self.yaw = float(yaw)
@@ -112,8 +116,10 @@ class SavedView:
                                                 False))})
 
     def recapture(self, scene, camera) -> None:
-        """Update this view in place from the live state (keeps the name)."""
+        """Update this view in place from the live state (keeps the name
+        and the folder)."""
         fresh = SavedView.capture(self.name, scene, camera)
+        fresh.folder = self.folder
         self.__dict__.update(fresh.__dict__)
 
     def apply(self, scene, camera) -> None:
@@ -188,6 +194,8 @@ class SavedView:
             entry["hidden_objects"] = list(self.hidden_objects)
         if self.hidden_shown is not None:
             entry["hidden_shown"] = dict(self.hidden_shown)
+        if self.folder:
+            entry["folder"] = self.folder
         return entry
 
     @classmethod
@@ -207,7 +215,9 @@ class SavedView:
                    georef=raw.get("georef"),
                    shadows=raw.get("shadows"),
                    hidden_objects=raw.get("hidden_objects"),
-                   hidden_shown=raw.get("hidden_shown"))
+                   hidden_shown=raw.get("hidden_shown"),
+                   folder=(raw.get("folder")
+                           if isinstance(raw.get("folder"), str) else None))
 
 
 def apply_shadow_state(scene, raw: dict) -> None:

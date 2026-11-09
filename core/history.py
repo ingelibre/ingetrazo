@@ -1940,6 +1940,114 @@ class MoveSheetCommand(Command):
         scene.version += 1
 
 
+class _SheetTreeCommand(Command):
+    """A change to the sheet explorer's tree (core.sheet_folders), undone by
+    putting the whole tree back as it was: folders, their names and
+    parents, each sheet's folder and Print flag, the sheet order. The tree
+    is small, so the snapshot is cheap — and it is exact, however the
+    change moved things around."""
+
+    def __init__(self) -> None:
+        self._before: Optional[dict] = None
+        self._after: Optional[dict] = None
+
+    def _apply(self, scene) -> None:  # pragma: no cover - interface
+        raise NotImplementedError
+
+    def do(self, scene) -> None:
+        from core import sheet_folders as sf
+        if self._after is not None:             # redo: the same result
+            sf.restore(scene, self._after)
+        else:
+            self._before = sf.capture(scene)
+            try:
+                self._apply(scene)
+            except BaseException:
+                # History restores the mesh only: the tree goes back here.
+                sf.restore(scene, self._before)
+                raise
+            self._after = sf.capture(scene)
+        scene.version += 1
+
+    def undo(self, scene) -> None:
+        from core import sheet_folders as sf
+        if self._before is not None:
+            sf.restore(scene, self._before)
+        scene.version += 1
+
+
+class AddSheetFolderCommand(_SheetTreeCommand):
+    """A new folder in the sheet explorer, inside ``folder.parent_id``
+    (``None``: the top), after the folders already there."""
+
+    def __init__(self, folder) -> None:
+        super().__init__()
+        self.folder = folder
+
+    def _apply(self, scene) -> None:
+        from core import sheet_folders as sf
+        scene.sheet_folders.append(self.folder)
+        sf.sync_order(scene)
+
+
+class RenameSheetFolderCommand(_SheetTreeCommand):
+    def __init__(self, folder, name: str) -> None:
+        super().__init__()
+        self.folder = folder
+        self.name = name
+
+    def _apply(self, scene) -> None:
+        self.folder.name = self.name
+
+
+class DeleteSheetFoldersCommand(_SheetTreeCommand):
+    """Remove folders; the sheets and folders they hold move one level up.
+    No sheet is ever deleted with its folder."""
+
+    def __init__(self, folders) -> None:
+        super().__init__()
+        self.folders = list(folders)
+
+    def _apply(self, scene) -> None:
+        from core import sheet_folders as sf
+        sf.delete_folders(scene, self.folders)
+
+
+class MoveSheetItemsCommand(_SheetTreeCommand):
+    """Sheets and/or folders into folder ``target_id`` (``None``: the top),
+    in front of ``before`` (a sheet or folder) or at the end — what a drag
+    and drop in the sheet explorer does. A folder is never put inside
+    itself."""
+
+    def __init__(self, sheets, folders, target_id, before=None) -> None:
+        super().__init__()
+        self.sheets = list(sheets)
+        self.folders = list(folders)
+        self.target_id = target_id
+        self.before = before
+
+    def _apply(self, scene) -> None:
+        from core import sheet_folders as sf
+        sf.move_items(scene, self.sheets, self.folders, self.target_id,
+                      self.before)
+
+
+class SetSheetPrintCommand(_SheetTreeCommand):
+    """The Print switch of these sheets and folders — whether Print all and
+    Export all take them (a folder switched off leaves out what it holds,
+    whatever their own switches say)."""
+
+    def __init__(self, sheets, printed: bool, folders=()) -> None:
+        super().__init__()
+        self.sheets = list(sheets)
+        self.folders = list(folders)
+        self.printed = bool(printed)
+
+    def _apply(self, scene) -> None:
+        for c in self.sheets + self.folders:
+            c.print_in_all = self.printed
+
+
 class CreatePlanCommand(Command):
     """A floor plan from a group, in one undo step: a horizontal section
     plane at the cut height (made the active cut), a scene looking down on
@@ -2012,17 +2120,27 @@ class ExplodeCurvesCommand(Command):
 
 
 class AddSceneCommand(Command):
-    """A new saved scene at the end of the list; undo takes it away again."""
+    """A saved scene into the list — a new one, or a copy (Duplicate) —
+    at ``index`` (``None``: at the end), with the rest of its folder;
+    undo takes it away again. Renamed in
+    :class:`core.saved_views.RenameSceneCommand`."""
 
-    def __init__(self, view) -> None:
+    def __init__(self, view, index: Optional[int] = None) -> None:
         self.view = view
+        self.index = index
 
     def do(self, scene) -> None:
-        scene.saved_views.append(self.view)
+        views = scene.saved_views
+        at = len(views) if self.index is None else self.index
+        views.insert(max(0, min(at, len(views))), self.view)
+        # Filed in a folder, it goes with the rest of that folder.
+        from core.scene_folders import sync_order
+        sync_order(scene)
         scene.version += 1
 
     def undo(self, scene) -> None:
-        scene.saved_views.remove(self.view)
+        if self.view in scene.saved_views:
+            scene.saved_views.remove(self.view)
         scene.version += 1
 
 
@@ -2044,6 +2162,61 @@ class DeleteScenesCommand(Command):
     def undo(self, scene) -> None:
         for i, v in sorted(self._at, key=lambda t: t[0]):
             scene.saved_views.insert(i, v)
+        scene.version += 1
+
+
+class UpdateSceneCommand(Command):
+    """Update a scene from the live view, keeping its name; undo gives it
+    back what it remembered before (#1158)."""
+
+    def __init__(self, view, camera) -> None:
+        self.view = view
+        self.camera = camera
+        self._before: dict = {}
+        self._after: Optional[dict] = None
+
+    def do(self, scene) -> None:
+        self._before = dict(self.view.__dict__)
+        if self._after is None:          # redo puts back the same capture
+            self.view.recapture(scene, self.camera)
+            self._after = dict(self.view.__dict__)
+        else:
+            self.view.__dict__.update(self._after)
+        scene.version += 1
+
+    def undo(self, scene) -> None:
+        self.view.__dict__.update(self._before)
+        scene.version += 1
+
+
+class SceneTreeCommand(Command):
+    """A change to the Scenes tab's tree — a folder made, renamed or taken
+    away, rows dragged into a folder or to another place (#1158). ``change``
+    does it with the helpers of :mod:`core.scene_folders` and returns
+    whether anything changed (False: rejected, nothing to undo). Undo puts
+    back the order of the scenes, their folders and the folder tree; redo
+    puts back what the change left, without running it again."""
+
+    def __init__(self, change) -> None:
+        self.change = change
+        self._before: Optional[tuple] = None
+        self._after: Optional[tuple] = None
+
+    def do(self, scene) -> None:
+        from core import scene_folders as SF
+        if self._after is not None:
+            SF.restore(scene, self._after)
+        else:
+            self._before = SF.state(scene)
+            if not self.change(scene):
+                SF.restore(scene, self._before)
+                raise CommandRejected("Nothing to change")
+            self._after = SF.state(scene)
+        scene.version += 1
+
+    def undo(self, scene) -> None:
+        from core import scene_folders as SF
+        SF.restore(scene, self._before)
         scene.version += 1
 
 
@@ -3454,6 +3627,8 @@ class SnapshotImport(Command):
         ("dimensions", "added_dims", "removed_dims"),
         ("text_labels", "added_texts", "removed_texts"),
         ("compositions", "added_sheets", "removed_sheets"),
+        # the sheet browser's folders (core.sheet_folders)
+        ("sheet_folders", "added_sheet_folders", "removed_sheet_folders"),
     )
 
     def __init__(self, mutate) -> None:

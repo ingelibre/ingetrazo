@@ -175,7 +175,7 @@ def test_a_perspective_frame_prints_no_scale():
 def test_a_parallel_frame_keeps_saying_its_scale():
     frame = MarcoVista(view_key="std:iso", scale_n=125.0)
     assert frame_title_text(frame).endswith("1:125")
-    assert view_title_texts(frame)["scale"] == "ESC. 1:125"
+    assert view_title_texts(frame)["scale"] == "SCALE 1:125"
     assert frame.scale_label() == "ESC. 1:125"
 
 

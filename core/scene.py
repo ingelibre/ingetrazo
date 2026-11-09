@@ -82,8 +82,16 @@ class Scene:
     # Saved views ("Scenes"): named camera + layer-visibility
     # snapshots (core.saved_views.SavedView). Presentation state, no geometry.
     saved_views: list = field(default_factory=list)
+    # Folder names of the Scenes tab, in order — empty folders included (a
+    # scene names its own folder in ``SavedView.folder``), and folder → the
+    # folder it sits in (absent: at the top). See core.scene_folders.
+    scene_folders: list = field(default_factory=list)
+    scene_folder_parents: dict = field(default_factory=dict)
     # Sheet compositions (core.composition.Composicion) — the print layouts.
     compositions: list = field(default_factory=list)
+    # The folders the sheet explorer orders them in
+    # (core.sheet_folders.SheetFolder); each sheet names its own.
+    sheet_folders: list = field(default_factory=list)
     # Scales (1:N) typed by the user in the composer beyond the common
     # presets — kept with the document so every frame of the file offers
     # them again (Marco, 2026-09-02).
@@ -715,6 +723,7 @@ class Scene:
                 or self.tile_layer or self.geo_paths or self.terrain
                 or self.guides or self.geo_points or self.text_labels
                 or self.saved_views or self.compositions
+                or self.scene_folders or self.sheet_folders
                 or self.image_planes or self.plugin_data
                 or self.kept_components or self.section_planes
                 or self.materials
@@ -733,7 +742,10 @@ class Scene:
             self.guides.clear()
             self.image_planes.clear()
             self.saved_views.clear()
+            self.scene_folders = []
+            self.scene_folder_parents = {}
             self.compositions.clear()
+            self.sheet_folders.clear()
             self.custom_scales.clear()
             self.kept_components.clear()
             self.materials.clear()

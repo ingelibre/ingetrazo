@@ -886,13 +886,19 @@ class MainWindow(QMainWindow):
         # The Browser ordering by layer lists them as the Layers tab does.
         self.layers_dock.panel.orderChanged.connect(
             self.project_browser.outliner.on_layer_order_changed)
+        # Scenes: a tab of its own beside Layers (#1158), no longer a
+        # section of Properties.
+        from views.tray import ScenesDock
+        self.scenes_dock = ScenesDock(self)
+        self.tray.scenes = self.scenes_dock.panel
         self._lay_out_trays()
         # The trays are tabbed: the tab bar already names the active panel,
         # so each dock's own title bar would say the same thing right above
         # it. An empty title-bar widget removes the duplicate (a clean tray
         # look); panels are toggled from the View menu, not dragged around.
         for dock in (self.tray, self.bim_tray, self.georef_tray,
-                     self.project_browser, self.layers_dock):
+                     self.project_browser, self.layers_dock,
+                     self.scenes_dock):
             dock.setTitleBarWidget(QWidget(dock))
         self.tray.raise_()
         self._build_sidebar_handle()
@@ -1541,6 +1547,38 @@ class MainWindow(QMainWindow):
         camera_menu.addAction(self._act_zoom_extents)   # la MISMA del botón
         camera_menu.addAction(self._act_zoom_selection)
 
+        # Scenes as window actions, so they can take keys of one's own in
+        # Preferences ▸ Shortcuts (#695, discussions #639 and #640): the
+        # Scenes panel's buttons were the only way in. No factory keys —
+        # the known interface stays as it was. Each runs what its button
+        # runs; the others act on the scene selected in the panel. Show,
+        # Rename and Duplicate are here too, so the panel, the scene tabs
+        # and the Browser can all run the same actions (#1158, point 7).
+        scenes_menu = camera_menu.addMenu(tr("Scenes"))
+        self._scene_actions = {}
+        for key, text, tip, slot in (
+                ("scene_show", "Show Scene",
+                 "Show the selected scene", self._on_scene_show),
+                ("scene_add", "Add Scene",
+                 "Save the current view and layer visibility",
+                 self._on_scene_add),
+                ("scene_update", "Update Scene",
+                 "Update the selected scene from the current view",
+                 self._on_scene_update),
+                ("scene_rename", "Rename Scene…",
+                 "Rename the selected scene", self._on_scene_rename),
+                ("scene_duplicate", "Duplicate Scene",
+                 "Make a copy of the selected scene",
+                 self._on_scene_duplicate),
+                ("scene_delete", "Delete Scene",
+                 "Delete the selected scenes", self._on_scene_delete)):
+            act = QAction(tr(text), self)
+            act.setObjectName(key)            # the same key in every language
+            act.setStatusTip(tr(tip))
+            act.triggered.connect(slot)
+            scenes_menu.addAction(act)
+            self._scene_actions[key] = act
+
         camera_menu.addSeparator()
 
         action_proj = QAction(tr("Toggle Perspective / Parallel"), self)
@@ -2028,32 +2066,76 @@ class MainWindow(QMainWindow):
         if menu is not None:
             self._fill_panels_menu(menu)
 
+    #: The tabs younger than some saved layouts, each with the tabs it
+    #: follows on a first run, nearest first: Layers after the Browser,
+    #: Scenes after Layers (#1158).
+    _NEW_TRAYS = (("layers_dock", ("project_browser",)),
+                  ("scenes_dock", ("layers_dock", "project_browser")))
+
     def _seat_new_trays(self) -> None:
-        """The Layers tab goes beside the Browser, as on a first run, when
-        the saved layout does not know it (saved before it existed) or left
-        it in a block of its own on the same side as the other tabs —
-        ``restoreState`` puts a dock it does not know apart from the tabs,
-        and closing the window then saved it there. Moved to the other side
-        on purpose (Window tabs ▸ Move to the left side), it stays."""
-        dock = getattr(self, "layers_dock", None)
-        if dock is None:
-            return
-        if self.restoreDockWidget(dock):
+        """A tab younger than the saved layout (Layers, Scenes) goes in its
+        place of a first run when that layout does not know it (saved
+        before it existed) or left it in a block of its own on the same
+        side as the other tabs — ``restoreState`` puts a dock it does not
+        know apart from the tabs, and closing the window then saved it
+        there. Moved to the other side on purpose (Window tabs ▸ Move to
+        the left side), it stays.
+
+        A tab seated goes to the end of the row, so the ones that follow
+        it go again after it: on a first run Layers went behind Scenes."""
+        moved = set()
+        for name, after in self._NEW_TRAYS:
+            dock = getattr(self, name, None)
+            if dock is None:
+                continue
+            after = [d for d in (getattr(self, a, None) for a in after)
+                     if d is not None]
+            follow = any(d in moved and self.dockWidgetArea(d)
+                         == self.dockWidgetArea(dock) for d in after)
+            if self._seat_new_tray(dock, after, follow):
+                moved.add(dock)
+
+    def _seat_new_tray(self, dock, after, follow: bool = False) -> bool:
+        """Seat one tab; ``follow``: a tab it follows was just seated.
+        Whether it was moved."""
+        if not follow and self.restoreDockWidget(dock):
             area = self.dockWidgetArea(dock)
-            mates = [d for d in (self.tray,
-                                 getattr(self, "project_browser", None))
-                     if d is not None and self.dockWidgetArea(d) == area]
+            mates = [d for d in (self.tray, *after)
+                     if self.dockWidgetArea(d) == area]
             tabbed = self.tabifiedDockWidgets(dock)
             if not mates or any(d in tabbed for d in mates):
-                return
-        anchor = getattr(self, "project_browser", None)
-        if anchor is None or self.dockWidgetArea(anchor) == Qt.NoDockWidgetArea:
-            anchor = self.tray
+                return False
+        anchor = next((d for d in after
+                       if self.dockWidgetArea(d) != Qt.NoDockWidgetArea),
+                      self.tray)
         area = self.dockWidgetArea(anchor)
         if area == Qt.NoDockWidgetArea:
             area = Qt.RightDockWidgetArea
+        # Qt adds a tab at the end of the row; the ones the saved layout
+        # had after the anchor (an extension's panels…) go again after it,
+        # so it lands right behind the anchor, not behind them.
+        tail = self._tabs_after(anchor, dock)
         self.addDockWidget(area, dock)
         self.tabifyDockWidget(anchor, dock)
+        last = dock
+        for d in tail:
+            self.tabifyDockWidget(last, d)
+            last = d
+        return True
+
+    def _tabs_after(self, anchor, dock) -> list:
+        """The tabs in ``anchor``'s row that come after it, ``dock`` aside,
+        in their order. ``tabifiedDockWidgets`` gives the row in tab order
+        without ``anchor`` itself (and without the closed tabs, which stay
+        where they are): what follows the built-in tabs that go before
+        ``anchor`` follows ``anchor``."""
+        built = self._default_tray_order()
+        before = built[:built.index(anchor)] if anchor in built else []
+        others = [d for d in self.tabifiedDockWidgets(anchor)
+                  if d is not dock]
+        cut = max((i for i, d in enumerate(others) if d in before),
+                  default=-1)
+        return others[cut + 1:]
 
     def _keep_docked(self, dock) -> None:
         """The trays stay in the sidebar, as Blender's side panel does
@@ -2111,7 +2193,7 @@ class MainWindow(QMainWindow):
     #: Properties first, the model's tree next, then the workspaces.
     def _default_tray_order(self) -> list:
         return [self.tray, self.project_browser, self.layers_dock,
-                self.bim_tray, self.georef_tray]
+                self.scenes_dock, self.bim_tray, self.georef_tray]
 
     def _lay_out_trays(self) -> None:
         """The trays in their factory place: every one on the right, tabbed
@@ -2245,6 +2327,7 @@ class MainWindow(QMainWindow):
                             getattr(self, "georef_tray", None),
                             getattr(self, "project_browser", None),
                             getattr(self, "layers_dock", None),
+                            getattr(self, "scenes_dock", None),
                             *getattr(self, "_extension_docks", ()))
                 if d is not None]
 
@@ -5789,6 +5872,81 @@ class MainWindow(QMainWindow):
         self._ensure_composer().sheet_tab_menu(index, global_pos, self)
         self._refresh_sheet_tabs()
 
+    # ---- Scenes (Camera ▸ Scenes, #695) -------------------------------------
+    def _on_scene_add(self) -> None:
+        """«+ Scene», from a menu or a key. The new scene becomes the
+        panel's current one, so Update Scene right after updates it."""
+        view = self.tray.scenes._on_add()
+        self.statusBar().showMessage(
+            tr("Scene '{name}' added", name=view.name), 2000)
+
+    def _selected_scene(self):
+        """The scene of the panel's current row, or None after saying why."""
+        view = self.tray.scenes.current_view()
+        if view is None:
+            self._no_scene_selected()
+        return view
+
+    def _on_scene_show(self) -> None:
+        view = self._selected_scene()
+        if view is not None:
+            self.tray.scenes.show_view(view)
+
+    def _on_scene_update(self) -> None:
+        view = self._selected_scene()
+        if view is not None:
+            self.tray.scenes.update_view(view)
+
+    def _on_scene_rename(self) -> None:
+        """In its row when the Scenes tab is in sight, else in the name
+        prompt — the panel's ``ask_rename``, as from a scene tab. The
+        Browser's rule: the sheet views that show the scene follow the new
+        name, and a name another scene has is refused."""
+        view = self._selected_scene()
+        if view is not None:
+            self.tray.scenes.ask_rename(view, in_row=True)
+
+    def _on_scene_duplicate(self) -> None:
+        """A copy right after the scene, made current, so Update or Rename
+        right after acts on the copy."""
+        view = self._selected_scene()
+        if view is None:
+            return
+        from core.saved_views import SavedView
+        views = self.viewport.scene.saved_views
+        taken = {v.name for v in views}
+        base = view.name + tr(" (copy)")
+        name, n = base, 2
+        while name in taken:
+            name, n = f"{base} {n}", n + 1
+        copy = SavedView.from_dict(view.to_dict())
+        copy.name = name
+        from core.history import AddSceneCommand          # undoable (#1158)
+        self.tray.scenes._begin_own()        # the other pictures stay
+        self.viewport.history.execute(
+            AddSceneCommand(copy, views.index(view) + 1))
+        self._scene_changed_in_list(copy)
+        self.statusBar().showMessage(
+            tr("Scene '{name}' added", name=name), 2000)
+
+    def _scene_changed_in_list(self, current) -> None:
+        """Refresh the panel keeping ``current`` the current row."""
+        panel = self.tray.scenes
+        panel.select_view(current)
+        panel._touch()
+
+    def _on_scene_delete(self) -> None:
+        panel = self.tray.scenes
+        if not panel.selected_views() and panel.current_view() is None:
+            self._no_scene_selected()
+            return
+        panel._on_delete()
+
+    def _no_scene_selected(self) -> None:
+        # From a key the panel may be closed: say why nothing happened.
+        self.statusBar().showMessage(
+            tr("Select a scene in the Scenes panel first"), 3000)
+
     def _on_open_composer(self) -> None:
         """Open (or raise) the sheet composer — see docs/composer-plan.md.
         Minimised, it comes back out of the taskbar."""
@@ -6301,7 +6459,8 @@ class MainWindow(QMainWindow):
             return lambda *a: fn(*a) if vp is self.viewport else None
         vp.projectionChanged.connect(live(self._sync_projection_buttons))
         for name in ("tray", "bim_tray", "georef_tray", "project_browser",
-                     "layers_dock", "layers_toolbar", "profile_dock"):
+                     "layers_dock", "scenes_dock", "layers_toolbar",
+                     "profile_dock"):
             panel = getattr(self, name, None)
             if panel is not None:
                 vp.sceneVersionChanged.connect(
@@ -6880,8 +7039,8 @@ class MainWindow(QMainWindow):
         return menu
 
     def _add_scene_from_tabs(self) -> None:
+        # The panel marks its tab: in a folder it is not the last one.
         self.tray.scenes.add_scene()
-        self._scene_tabs.mark(self._scene_tabs.tabs.count() - 1)
 
     def _project_tab_menu(self, doc, global_pos) -> None:
         # The project right-clicked comes to the front: Save and Save As
