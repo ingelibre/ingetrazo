@@ -173,7 +173,41 @@ def test_every_swatch_stays_editable_and_hints_when_invisible(settings_file):
     assert panel._color_hint("edge_color") is None  # wireframe always draws
 
 
-def test_sky_gradient_stays_anchored_when_the_camera_pitches_down():
+def test_unset_horizon_keeps_the_historical_gradient():
+    """A new or old document without a picked horizon keeps the pre-feature
+    backdrop pixel-for-pixel, including its longer sky ramp."""
+    from pytest import approx
+    from views.viewport import Viewport
+
+    sky = Viewport._SKY_RGB
+    gnd = Viewport._GROUND_RGB
+    s0, s1, g0, g1, line = Viewport._sky_gradient(sky, None, gnd, 0.0)
+    assert s0 == approx((0.96625, 0.97075, 0.97525))
+    assert s1 == approx((0.9367857142857143,
+                         0.9452142857142858,
+                         0.9536428571428571))
+    assert g0 == approx((0.8705, 0.874, 0.8705))
+    assert g1 == approx(gnd)
+    assert line == approx((0.80817, 0.81169, 0.81213))
+
+    # Pitching down used a 1.4-NDC sky span. Keep that behaviour too, rather
+    # than silently switching defaults to the new, stronger 1.0-NDC ramp.
+    _s0, s1, _g0, _g1, _line = Viewport._sky_gradient(
+        sky, None, gnd, 0.5)
+    t = 0.5 / 1.4
+    assert s1 == approx(tuple(a + (b - a) * t
+                              for a, b in zip((0.96625, 0.97075, 0.97525),
+                                              sky)))
+
+    # Existing documents may already have custom sky/ground colours. An
+    # absent horizon keeps their former white-haze targets as well.
+    custom = Viewport._sky_gradient(
+        (0.2, 0.4, 0.9), None, (0.4, 0.3, 0.2), 0.0)
+    assert custom[0] == approx((0.64, 0.73, 0.955))
+    assert custom[2] == approx((0.58, 0.51, 0.44))
+
+
+def test_explicit_sky_gradient_stays_anchored_when_camera_pitches_down():
     """The ramp has a fixed height above the horizon. A level view shows its
     full range; when the horizon rises, the upper-sky end leaves the screen
     instead of being squeezed back into the remaining strip."""
@@ -232,14 +266,22 @@ def test_sky_horizon_and_ground_colors_are_style_data(settings_file):
     assert got.sky_color == (0.9, 0.7, 0.5)
     assert got.horizon_color == (1.0, 0.5, 0.2)
     assert got.ground_color == (0.4, 0.3, 0.2)
-    # An old style dict without the fields gets the historical defaults —
-    # which are the viewport's former constants, so old documents render
-    # identically.
+    # An old style dict gets the former sky and ground constants plus an unset
+    # horizon sentinel. Its absent key selects the exact legacy renderer.
     from views.viewport import Viewport
     legacy = Style.from_dict({"name": "vieja"})
     assert legacy.sky_color == Viewport._SKY_RGB
-    assert legacy.horizon_color == Viewport._HORIZON_RGB
+    assert legacy.horizon_color is None
     assert legacy.ground_color == Viewport._GROUND_RGB
+    assert "horizon_color" not in legacy.to_dict()
+    assert Style.from_dict({"horizon_color": None}).horizon_color is None
+    assert Style.from_dict({"horizon_color": "white"}).horizon_color is None
+
+    # Explicit white is deliberately different from unset: it opts into the
+    # new anchored gradient and therefore must survive serialisation.
+    white = Style(horizon_color=(1.0, 1.0, 1.0))
+    assert white.to_dict()["horizon_color"] == [1.0, 1.0, 1.0]
+    assert Style.from_dict(white.to_dict()).horizon_color == (1.0, 1.0, 1.0)
 
 
 def test_panel_horizon_swatch_edits_the_live_gradient(settings_file,
@@ -248,6 +290,7 @@ def test_panel_horizon_swatch_edits_the_live_gradient(settings_file,
     from views.tray import StylesPanel
     win = _Win()
     panel = StylesPanel(win)
+    assert win.viewport.scene.display_style.horizon_color is None
     assert "rgb(255,255,255)" in panel._horizon_c.styleSheet()
 
     import views.color_dialog as color_dialog

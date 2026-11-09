@@ -218,7 +218,10 @@ def test_environment_fogs_like_sketchup_and_clears_at_farthest_stop():
     assert clear == pytest.approx(far.background)
     expected_far = (far.sky_color, far.horizon_color, far.ground_color)
     for got, expected in zip(fog_sky_colors(far), expected_far):
-        assert got == pytest.approx(expected)
+        if expected is None:
+            assert got is None
+        else:
+            assert got == pytest.approx(expected)
 
     from views.viewport import Viewport
     gradient = Viewport._sky_gradient(

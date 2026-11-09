@@ -653,3 +653,102 @@ def test_a_rim_corner_on_a_slope_slides_down_the_slope():
     # down without bending that face: it runs down the slope's edge. That
     # case used to fall back to the overlay until the push left the slope.
     _assert_frames_match(_ramp_notch_top, [-0.5, -1.5, -1.0])
+
+
+# ---- A base out of true: no corner on the cap plane --------------------------
+
+_OUT_OF_TRUE = [5e-4, 1e-3, 2e-3, 5e-3]
+
+
+def _door(door, tilt):
+    from tests.test_pushpull_cases import _plan
+    return lambda: _plan(door, tilt=tilt)
+
+
+def _solid(scene, v0):
+    from core.orient import is_closed, signed_volume
+    mesh = scene.mesh
+    assert is_closed(mesh) and not any(len(e.faces) > 2 for e in mesh.edges)
+    return signed_volume(mesh) - v0
+
+
+@pytest.mark.parametrize("door", "AB")
+@pytest.mark.parametrize("tilt,mouse,typed,want", [
+    # Into the wall, from either side of it (a minus turns it round)…
+    *((t, -0.05, 0.1, -0.1) for t in _OUT_OF_TRUE),
+    *((t, 0.15, -0.1, -0.1) for t in _OUT_OF_TRUE),
+    # …and out of it: from 2 mm on, the guard refuses that push on any route.
+    *((t, -0.05, -0.1, 0.1) for t in _OUT_OF_TRUE[:2]),
+    *((t, 0.15, 0.1, 0.1) for t in _OUT_OF_TRUE[:2]),
+])
+def test_a_typed_distance_counts_on_a_door_out_of_true(door, tilt, mouse,
+                                                       typed, want):
+    # Its corners are off the plane by more than the weld tolerance, so a
+    # stage finds none to slide. Held anyway, the door stayed where the
+    # first frame put it, whatever was typed: no word, one undo step.
+    from core.orient import signed_volume
+    build = _door(door, tilt)
+    scene, vp, tool = _start(build)
+    v0, area = signed_volume(scene.mesh), tool.base_face.area()
+    _frame(tool, vp, mouse)
+    assert tool.on_value(vp, typed) is True
+    assert not tool.dragging
+    assert _solid(scene, v0) == pytest.approx(area * want, abs=2e-3)
+    assert _canon(scene, 4) == _canon(_direct(build, want), 4)
+
+
+@pytest.mark.parametrize("door", "AB")
+@pytest.mark.parametrize("tilt", _OUT_OF_TRUE)
+def test_a_click_commits_where_the_mouse_is_on_a_door_out_of_true(door, tilt):
+    from core.orient import signed_volume
+    build = _door(door, tilt)
+    scene, vp, tool = _start(build)
+    v0, area = signed_volume(scene.mesh), tool.base_face.area()
+    _frame(tool, vp, -0.02)
+    _frame(tool, vp, -0.07)                  # the frame that used to be lost
+    tool._commit(vp)
+    assert _solid(scene, v0) == pytest.approx(-area * 0.07, abs=2e-3)
+    assert _canon(scene, 4) == _canon(_direct(build, -0.07), 4)
+
+
+def test_a_door_out_of_true_previews_the_sweep_and_undoes_clean():
+    # Nothing to stretch, so the overlay shows the moving distance instead of
+    # a real result frozen at the first frame; the model itself stays clean.
+    scene, vp, tool = _start(_door("A", 1e-3))
+    before = _canon(scene)
+    for d in (-0.05, -0.12):
+        _frame(tool, vp, d)
+        assert tool._stage_d is None and tool.preview_faces()
+        assert _canon(scene) == before
+    tool._commit(vp)
+    assert _canon(scene) != before
+    vp.history.undo()
+    assert _canon(scene) == before
+
+
+def test_a_door_in_true_still_stages_and_commits_without_a_pipeline_run(
+        monkeypatch):
+    # The other side of the guard: corners found, so nothing changes.
+    scene, vp, tool = _start(_door("A", 0.0))
+    calls = _spy_mutate(monkeypatch, tool)
+    _frame(tool, vp, -0.05)
+    assert tool._stage_d is not None and len(tool._stage_verts) == 4
+    _frame(tool, vp, -0.07)
+    tool._commit(vp)
+    assert calls == [-0.05]
+    assert _canon(scene) == _canon(_direct(_door("A", 0.0), -0.07))
+
+
+@pytest.mark.parametrize("door", "AB")
+@pytest.mark.parametrize("tilt", [0.0, 1e-3])
+def test_a_through_door_still_stages_past_the_far_face(door, tilt):
+    # No cap in a tunnel, so no movers, and that is fine: the same punch at
+    # any depth past the wall, typed or not.
+    from core.orient import signed_volume
+    build = _door(door, tilt)
+    scene, vp, tool = _start(build)
+    v0, area = signed_volume(scene.mesh), tool.base_face.area()
+    _frame(tool, vp, -0.6)
+    assert tool._stage_d is not None and tool._stage_verts == []
+    assert tool.on_value(vp, 0.3) is True
+    assert _solid(scene, v0) == pytest.approx(-area * 0.2, abs=2e-3)

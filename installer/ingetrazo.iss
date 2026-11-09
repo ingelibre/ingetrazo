@@ -144,7 +144,7 @@ Root: HKCU; Subkey: "Software\Microsoft\DirectX\UserGpuPreferences"; \
 ; ── .igz — IngeTrazo's own format: full association + branded document icon ──
 ; Double-click opens the document in IngeTrazo and Explorer shows the .igz icon.
 Root: HKA; Subkey: "Software\Classes\.igz"; ValueType: string; \
-    ValueData: "IngeTrazo.Document"; Flags: uninsdeletevalue
+    ValueData: "IngeTrazo.Document"; Flags: uninsdeletevalue uninsdeletekeyifempty
 Root: HKA; Subkey: "Software\Classes\IngeTrazo.Document"; ValueType: string; \
     ValueData: "{cm:IgzDocument}"; Flags: uninsdeletekey
 Root: HKA; Subkey: "Software\Classes\IngeTrazo.Document\DefaultIcon"; \
@@ -159,6 +159,10 @@ Root: HKA; Subkey: "Software\Classes\IngeTrazo.Document\shell\open\command"; \
 ; each extension's OpenWithProgids list, so IngeTrazo appears in the right-click
 ; "Open with" menu. The ProgId carries the branded icon, which only takes visual
 ; effect if the user later chooses IngeTrazo as the default for these files.
+; Uninstalling undoes the entries last to first, so each extension's own key is
+; listed before what goes inside it, and goes only if nothing else is left there.
+Root: HKA; Subkey: "Software\Classes\.dae"; Flags: uninsdeletekeyifempty
+Root: HKA; Subkey: "Software\Classes\.skp"; Flags: uninsdeletekeyifempty
 Root: HKA; Subkey: "Software\Classes\IngeTrazo.dae"; ValueType: string; \
     ValueData: "{cm:DaeModel}"; Flags: uninsdeletekey
 Root: HKA; Subkey: "Software\Classes\IngeTrazo.dae\DefaultIcon"; \
@@ -167,7 +171,7 @@ Root: HKA; Subkey: "Software\Classes\IngeTrazo.dae\shell\open\command"; \
     ValueType: string; ValueData: """{app}\{#MyAppExeName}"" ""%1"""
 Root: HKA; Subkey: "Software\Classes\.dae\OpenWithProgids"; \
     ValueType: string; ValueName: "IngeTrazo.dae"; ValueData: ""; \
-    Flags: uninsdeletevalue
+    Flags: uninsdeletevalue uninsdeletekeyifempty
 
 Root: HKA; Subkey: "Software\Classes\IngeTrazo.skp"; ValueType: string; \
     ValueData: "{cm:SkpModel}"; Flags: uninsdeletekey
@@ -177,7 +181,7 @@ Root: HKA; Subkey: "Software\Classes\IngeTrazo.skp\shell\open\command"; \
     ValueType: string; ValueData: """{app}\{#MyAppExeName}"" ""%1"""
 Root: HKA; Subkey: "Software\Classes\.skp\OpenWithProgids"; \
     ValueType: string; ValueName: "IngeTrazo.skp"; ValueData: ""; \
-    Flags: uninsdeletevalue
+    Flags: uninsdeletevalue uninsdeletekeyifempty
 ; Optional task: make IngeTrazo the DEFAULT opener for .skp (double-click).
 ; Checked by default — .skp now opens natively (openskp backend). Users who
 ; prefer another program for .skp can untick it; uninstall removes the value

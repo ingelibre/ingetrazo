@@ -81,6 +81,18 @@ def _restore_button(dlg):
                 if box.buttonRole(b) == QDialogButtonBox.ResetRole)
 
 
+def test_the_tab_picture_option_is_saved_and_restored(settings_file):
+    dlg = PreferencesDialog(_Win())
+    assert dlg._hover_picture.isChecked(), "on in a fresh profile"
+    dlg._hover_picture.setChecked(False)
+    dlg.accept()
+    assert _fresh(settings_file).value("tabs/hover_picture") == "0"
+    dlg = PreferencesDialog(_Win())
+    assert not dlg._hover_picture.isChecked()
+    dlg.restore_defaults()
+    assert dlg._hover_picture.isChecked()
+
+
 def test_the_dialog_has_a_restore_defaults_button(settings_file):
     dlg = PreferencesDialog(_Win())
     assert _restore_button(dlg) is dlg._defaults_btn

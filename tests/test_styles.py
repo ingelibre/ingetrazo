@@ -17,6 +17,8 @@ if QApplication.instance() is None:
 def test_style_roundtrip_and_defaults():
     s = Style()
     assert s.face_mode == "textures" and s.edges and s.profiles and s.sky
+    assert s.horizon_color is None
+    assert "horizon_color" not in s.to_dict()
     again = Style.from_dict(s.to_dict())
     assert again.to_dict() == s.to_dict()
     assert Style.from_dict({"face_mode": "no_such_mode"}).face_mode == "textures"
