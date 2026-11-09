@@ -13208,7 +13208,7 @@ class Viewport(QOpenGLWidget):
         ordered = [g for _p, g in sorted(cmemo[3].values(),
                                          key=lambda pg: pg[0])]
         snap = np.fromiter((row[id(g)] for g in ordered
-                            if scene.entity_selectable(g)), np.int64)
+                            if scene.group_snappable(g)), np.int64)
         vis = np.fromiter((row[id(g)] for g in ordered
                            if scene.entity_visible(g)), np.int64)
         out = (iset, snap, vis)
@@ -13601,10 +13601,10 @@ class Viewport(QOpenGLWidget):
             if getattr(g, "billboard", False):
                 continue          # per-frame quad; picked separately
             gvis = scene.entity_visible(g)
-            # The layer says whether it can be snapped to; the context
-            # says whether it can be picked.
-            gsnap = scene.entity_selectable(g)
-            gsel = gsnap and id(g) in tocables
+            # Locked objects remain inference references, but cannot be
+            # edited. The context further limits what a pick may touch.
+            gsnap = scene.group_snappable(g)
+            gsel = scene.entity_selectable(g) and id(g) in tocables
             if not (gvis or gsnap):
                 continue
             chunk = self._group_chunk(g)
@@ -14335,7 +14335,8 @@ class Viewport(QOpenGLWidget):
         toc = self._pick_cands_memo[1]
         groups = self._pick_lazy_table()[0]
         snap = nat[1]
-        sel = np.fromiter((i for i in snap.tolist() if id(groups[i]) in toc),
+        sel = np.fromiter((i for i in snap.tolist() if id(groups[i]) in toc
+                          and self.scene.entity_selectable(groups[i])),
                           np.int64)
         self._lazy_sel_memo = (nat, sel)
         return sel
@@ -15240,7 +15241,7 @@ class Viewport(QOpenGLWidget):
         for g in self._billboard_placements():
             if g is moving:
                 continue
-            if not self.scene.entity_selectable(g):
+            if not self.scene.group_snappable(g):
                 continue
             quad = self._billboard_quad(g)
             if quad is None:
