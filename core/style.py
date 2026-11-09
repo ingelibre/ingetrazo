@@ -24,6 +24,7 @@ endpoints, jitter, watermarks, per-material edge colour.
 """
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 
 FACE_MODES = ("textures", "shaded", "hidden_line", "monochrome",
@@ -60,10 +61,12 @@ class Style:
     back_color: tuple | None = None
     background: tuple = (0.90, 0.91, 0.92)
     sky: bool = True
-    # The sky/ground backdrop tones (drawn when ``sky`` is on; with it off
-    # the flat ``background`` shows instead). Defaults match the viewport's
-    # historical constants, so old documents look identical.
+    # The sky/horizon/ground backdrop tones (drawn when ``sky`` is on; with it
+    # off the flat ``background`` shows instead). ``None`` keeps the exact
+    # historical two-haze gradient; picking a horizon colour opts into the new
+    # horizon-anchored gradient.
     sky_color: tuple = (0.925, 0.935, 0.945)
+    horizon_color: tuple | None = None
     ground_color: tuple = (0.815, 0.820, 0.815)
     # Section Fill: paint the cut-through areas of solids.
     # Lives in the STYLE, with the other modeling settings.
@@ -75,6 +78,14 @@ class Style:
     ambient_occlusion: bool = False
     ao_distance: float = 0.5
     ao_intensity: float = 1.0
+    # Fog: a depth fade measured along the camera's view direction. Distance
+    # and thickness are absolute model distances (metres internally), so the
+    # fog volume follows the camera instead of sticking to the model's box.
+    fog_enabled: bool = False
+    fog_distance: float = 10.0
+    fog_thickness: float = 10.0
+    fog_color: tuple = (0.74, 0.76, 0.78)
+    fog_use_background: bool = False
     # Colour by layer: faces draw in their layer's colour (core.layers
     # .layer_color) instead of their material — the shaded, textured and
     # X-ray modes. Off in every preset; a scene remembers it with the style.
@@ -100,9 +111,19 @@ class Style:
             "ambient_occlusion": self.ambient_occlusion,
             "ao_distance": self.ao_distance,
             "ao_intensity": self.ao_intensity,
+            "fog_enabled": self.fog_enabled,
+            "fog_distance": self.fog_distance,
+            "fog_thickness": self.fog_thickness,
+            "fog_color": list(self.fog_color),
+            "fog_use_background": self.fog_use_background,
         }
         if self.color_by_layer:
             out["color_by_layer"] = True
+        # Missing means the legacy gradient. Keeping that state implicit makes
+        # new/default documents and styles saved by older versions render
+        # exactly as before; an explicitly picked white remains distinguishable.
+        if self.horizon_color is not None:
+            out["horizon_color"] = list(self.horizon_color)
         return out
 
     @classmethod
@@ -123,6 +144,7 @@ class Style:
             background=tuple(raw.get("background", d.background)),
             sky=bool(raw.get("sky", d.sky)),
             sky_color=tuple(raw.get("sky_color", d.sky_color)),
+            horizon_color=_opt_rgb(raw.get("horizon_color")),
             ground_color=tuple(raw.get("ground_color", d.ground_color)),
             section_fill=bool(raw.get("section_fill", d.section_fill)),
             section_fill_color=tuple(raw.get("section_fill_color",
@@ -133,6 +155,14 @@ class Style:
                                  AO_DISTANCE_RANGE),
             ao_intensity=_clamped(raw.get("ao_intensity"), d.ao_intensity,
                                   AO_INTENSITY_RANGE),
+            fog_enabled=bool(raw.get("fog_enabled", d.fog_enabled)),
+            fog_distance=_clamped(raw.get("fog_distance"), d.fog_distance,
+                                  FOG_DISTANCE_RANGE),
+            fog_thickness=_clamped(raw.get("fog_thickness"), d.fog_thickness,
+                                   FOG_THICKNESS_RANGE),
+            fog_color=_rgb(raw.get("fog_color"), d.fog_color),
+            fog_use_background=bool(raw.get("fog_use_background",
+                                            d.fog_use_background)),
             color_by_layer=bool(raw.get("color_by_layer", False)),
         )
 
@@ -143,6 +173,11 @@ class Style:
 #: The ambient occlusion controls' ranges (metres; plain factor).
 AO_DISTANCE_RANGE = (0.01, 50.0)
 AO_INTENSITY_RANGE = (0.0, 2.0)
+
+#: Fog controls in metres from the camera. 40 km covers the camera's maximum
+#: working reach without tying the effect to its clipping-plane safety margin.
+FOG_DISTANCE_RANGE = (0.0, 40000.0)
+FOG_THICKNESS_RANGE = (0.01, 40000.0)
 
 
 def _clamped(raw, default: float, bounds: tuple) -> float:
@@ -160,7 +195,7 @@ def _clamped(raw, default: float, bounds: tuple) -> float:
 def _opt_rgb(raw) -> tuple | None:
     """An optional RGB from a dict: ``None`` (or anything malformed — an
     old or hand-edited document must never break the style) stays
-    ``None``, i.e. automatic."""
+    ``None``, i.e. automatic/legacy behaviour."""
     if raw is None:
         return None
     try:
@@ -168,6 +203,18 @@ def _opt_rgb(raw) -> tuple | None:
     except (TypeError, ValueError):
         return None
     return rgb[:3] if len(rgb) >= 3 else None
+
+
+def _rgb(raw, default: tuple) -> tuple:
+    """A finite RGB triplet clamped to 0..1, or ``default`` when a
+    hand-edited style contains malformed colour data."""
+    try:
+        rgb = tuple(float(c) for c in raw)
+    except (TypeError, ValueError):
+        return default
+    if len(rgb) < 3 or any(not math.isfinite(c) for c in rgb[:3]):
+        return default
+    return tuple(min(max(c, 0.0), 1.0) for c in rgb[:3])
 
 
 def effective_back_color(style, scene=None) -> tuple:

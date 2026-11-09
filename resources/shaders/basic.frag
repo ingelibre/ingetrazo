@@ -24,6 +24,15 @@ uniform float u_shade;
 // 0 = untouched.
 uniform float u_fade;
 uniform vec3 u_fade_color;
+// Linear distance fog along the camera's viewing axis. Start/end are absolute
+// model distances measured from the eye, so the fog follows the camera and
+// never depends on the scene bounds or the clipping-plane safety margin.
+uniform int u_fog_enable;
+uniform vec3 u_fog_eye;
+uniform vec3 u_fog_forward;
+uniform vec3 u_fog_color;
+uniform float u_fog_start;
+uniform float u_fog_end;
 // Sun shadows: the light's view-projection, its packed-depth map (unit 1),
 // how dark a shadowed fragment goes, and the depth-compare bias. Enabled
 // only around the geometry passes — sky, overlays and previews stay unlit.
@@ -159,6 +168,11 @@ float matte(vec3 n) {
     return 0.62 + 0.38 * abs(dot(n, u_light_fixed));
 }
 
+float fog_amount() {
+    float depth = dot(v_world - u_fog_eye, u_fog_forward);
+    return smoothstep(u_fog_start, u_fog_end, depth);
+}
+
 void main() {
     // Taken before any discard, while the whole pixel quad is alive.
     vec3 n_local = cross(dFdx(v_local), dFdy(v_local));
@@ -226,9 +240,9 @@ void main() {
     if (u_shadow_enable == 1) {
         if (u_shadow_overlay == 1) {
             // Ground catcher: the shadow and nothing else.
-            fragColor = vec4(0.0, 0.0, 0.0,
-                             (1.0 - u_shadow_dark)
-                             * (1.0 - shadow_light()));
+            float alpha = (1.0 - u_shadow_dark) * (1.0 - shadow_light());
+            if (u_fog_enable == 1) alpha *= 1.0 - fog_amount();
+            fragColor = vec4(0.0, 0.0, 0.0, alpha);
             return;
         }
         // Sun shading + cast shadows, composed the classic way: the sun
@@ -243,4 +257,7 @@ void main() {
                      clamp(ndl * 1.5, 0.0, 1.0) * lit);
     }
     fragColor = vec4(mix(c.rgb, u_fade_color, u_fade), c.a);
+    if (u_fog_enable == 1) {
+        fragColor.rgb = mix(fragColor.rgb, u_fog_color, fog_amount());
+    }
 }

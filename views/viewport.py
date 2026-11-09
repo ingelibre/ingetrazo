@@ -127,6 +127,7 @@ from core.history import EraseSelectionCommand, History
 from core.scene import Scene
 from core.style import (DEFAULT_BACK_COLOR, DEFAULT_FACE_COLOR,
                         MONOCHROME_GLASS_RGB,
+                        FOG_DISTANCE_RANGE, FOG_THICKNESS_RANGE,
                         effective_back_color)
 from core.materials import material_sig as _material_sig
 from core.snap import SnapResult, _AXIS_VECTORS
@@ -1172,6 +1173,118 @@ def edit_fade_color(background) -> tuple:
     being edited keeps its colours."""
     return tuple(0.5 * float(c) + 0.5 * 0.55 for c in list(background)[:3])
 
+
+def fog_depth_range(distance: float, thickness: float) -> tuple[float, float]:
+    """Absolute axial fog start/end distances, in model units (metres).
+
+    They deliberately depend on neither the camera orbit distance nor scene
+    bounds: moving the camera changes which surfaces cross these fixed depths,
+    but never silently rescales the user's settings.
+    """
+    def finite_clamped(value, default: float, bounds: tuple,
+                       floor: float = 0.0) -> float:
+        try:
+            value = float(value)
+        except (TypeError, ValueError):
+            return default
+        if not math.isfinite(value):
+            return default
+        lo, hi = float(bounds[0]), float(bounds[1])
+        return min(hi, max(max(lo, floor), value))
+
+    start = finite_clamped(
+        distance, 10.0, FOG_DISTANCE_RANGE)
+    minimum = max(float(FOG_THICKNESS_RANGE[0]), 1e-6)
+    width = finite_clamped(
+        thickness, 10.0, FOG_THICKNESS_RANGE, minimum)
+    return start, start + width
+
+
+def _safe_rgb(raw, fallback) -> tuple[float, float, float]:
+    """A finite RGB triple clamped to the range accepted by OpenGL."""
+    try:
+        rgb = tuple(float(c) for c in raw)
+    except (TypeError, ValueError):
+        return tuple(fallback)
+    if len(rgb) < 3 or not all(math.isfinite(c) for c in rgb[:3]):
+        return tuple(fallback)
+    return tuple(min(1.0, max(0.0, c)) for c in rgb[:3])
+
+
+def effective_fog_color(style) -> tuple[float, float, float]:
+    """The finite, clamped RGB used by geometry and backdrop fog."""
+    use_background = bool(getattr(style, "fog_use_background", False))
+    fallback = ((0.9, 0.91, 0.92) if use_background
+                else (0.74, 0.76, 0.78))
+    raw = (getattr(style, "background", fallback) if use_background
+           else getattr(style, "fog_color", fallback))
+    return _safe_rgb(raw, fallback)
+
+
+def fog_backdrop_strength(style) -> float:
+    """Fog strength for the environment at the back of the scene.
+
+    Like SketchUp, the environment represents zero visibility beyond the
+    right handle, so normal fog ranges make it the fog colour. The final ten
+    percent of the logarithmic range progressively restores the styled sky;
+    with the right handle at its farthest stop the environment is untouched.
+    """
+    if not bool(getattr(style, "fog_enabled", False)):
+        return 0.0
+    _start, end = fog_depth_range(
+        getattr(style, "fog_distance", 10.0),
+        getattr(style, "fog_thickness", 10.0))
+    lo, hi = (float(v) for v in FOG_DISTANCE_RANGE)
+    scale = 0.01  # Same useful near-camera resolution as the range widget.
+    end = min(hi, max(lo, end))
+    position = (math.log1p((end - lo) / scale)
+                / math.log1p((hi - lo) / scale)) if hi > lo else 1.0
+    clear = min(1.0, max(0.0, (position - 0.90) / 0.10))
+    clear = clear * clear * (3.0 - 2.0 * clear)
+    return 1.0 - clear
+
+
+def _toward_fog(rgb, fog, strength: float) -> tuple[float, float, float]:
+    """Mix one safe RGB triple toward fog without changing its alpha."""
+    return tuple(a + (b - a) * strength for a, b in zip(rgb, fog))
+
+
+def fog_backdrop(style) -> tuple[tuple[float, float, float], bool]:
+    """Return ``(clear_colour, draw_sky)`` for a display style.
+
+    Both a flat background and the styled environment use the same far-depth
+    strength, preventing a clear sky behind fogged geometry.
+    """
+    base = _safe_rgb(getattr(style, "background", (0.9, 0.91, 0.92)),
+                     (0.9, 0.91, 0.92))
+    strength = fog_backdrop_strength(style)
+    color = _toward_fog(base, effective_fog_color(style), strength)
+    return color, bool(getattr(style, "sky", False))
+
+
+def fog_sky_colors(style) -> tuple[tuple[float, float, float], ...]:
+    """SketchUp-like fogged ``(sky, horizon, ground)`` colours.
+
+    Sky and horizon reach the fog colour at zero visibility. The ground keeps
+    most of its foreground tone; :meth:`Viewport._sky_gradient` then fades it
+    to the fog-coloured horizon, producing depth instead of a flat grey card.
+    """
+    colors = (
+        _safe_rgb(getattr(style, "sky_color", (0.925, 0.935, 0.945)),
+                  (0.925, 0.935, 0.945)),
+        _safe_rgb(getattr(style, "horizon_color", (1.0, 1.0, 1.0)),
+                  (1.0, 1.0, 1.0)),
+        _safe_rgb(getattr(style, "ground_color", (0.815, 0.820, 0.815)),
+                  (0.815, 0.820, 0.815)),
+    )
+    strength = fog_backdrop_strength(style)
+    fog = effective_fog_color(style)
+    horizon = (_toward_fog(colors[1], fog, strength)
+               if strength > 0.0 or getattr(style, "horizon_color", None) is not None
+               else None)
+    return (_toward_fog(colors[0], fog, strength), horizon,
+            _toward_fog(colors[2], fog, strength * 0.15))
+
 #: X-ray: how opaque each translucent face layer is. Layers stack, so a face
 #: seen through another reads darker and an opening (no face) stays clear.
 XRAY_FACE_OPACITY = 0.6
@@ -2158,6 +2271,12 @@ class Viewport(QOpenGLWidget):
         self._loc_back_color = self._program.uniformLocation("u_back_color")
         self._loc_fade = self._program.uniformLocation("u_fade")
         self._loc_fade_color = self._program.uniformLocation("u_fade_color")
+        self._loc_fog_enable = self._program.uniformLocation("u_fog_enable")
+        self._loc_fog_eye = self._program.uniformLocation("u_fog_eye")
+        self._loc_fog_forward = self._program.uniformLocation("u_fog_forward")
+        self._loc_fog_color = self._program.uniformLocation("u_fog_color")
+        self._loc_fog_start = self._program.uniformLocation("u_fog_start")
+        self._loc_fog_end = self._program.uniformLocation("u_fog_end")
         self._loc_pos = self._program.attributeLocation("a_pos")
         self._loc_uv = self._program.attributeLocation("a_uv")
         self._loc_use_tex = self._program.uniformLocation("u_use_texture")
@@ -2488,11 +2607,10 @@ class Viewport(QOpenGLWidget):
                 -n.x(), -n.y(), -n.z(), QVector3D.dotProduct(n, o))
 
         self._gl.glClearDepthf(1.0)
-        bg = style.background
+        # The environment follows the far-depth fog, except the transparent
+        # export's empty pixels, which must remain premultiplied transparent.
+        bg, draw_sky = fog_backdrop(style)
         if self._export_transparent:
-            # Black, not the background's colour: the picture is
-            # premultiplied, and an edge's antialiased pixels would otherwise
-            # carry that colour out as a halo.
             self._gl.glClearColor(0.0, 0.0, 0.0, 0.0)
         else:
             self._gl.glClearColor(bg[0], bg[1], bg[2], 1.0)
@@ -2544,18 +2662,23 @@ class Viewport(QOpenGLWidget):
         self._program.setUniformValue1f(self._loc_shade, 1.0)
         self._program.setUniformValue(self._loc_hard_cutout, 0)
         self._program.setUniformValue1f(self._loc_fade, 0.0)
+        # The backdrop is at infinity and has no world-space depth.  Fog is
+        # armed only after it has drawn, for the actual 3D scene below.
+        self._program.setUniformValue(self._loc_fog_enable, 0)
 
         # Sky / ground backdrop with a horizon anchored to the camera pitch —
         # premium modeller feel. Fixed on zoom (it's the point at infinity),
         # moves only on orbit. Skipped over the base map / terrain (which supply
-        # their own ground).
-        if (self.plano_style is None and style.sky
+        # their own ground). Fog is armed for geometry afterward.
+        if (draw_sky and self.plano_style is None
                 and not self._export_transparent
                 and not self._base_map_showing()
                 and not self._terrain_showing()
                 and not self._photo_showing()):
-            self._draw_sky(mvp)
+            self._draw_sky(mvp, fog_sky_colors(style),
+                           fog_backdrop_strength(style))
             self._program.setUniformValue(self._loc_mvp, mvp)
+        self._apply_fog_uniforms(style)
 
         # Base-map tiles (Track G) — the ground image, drawn before the grid so
         # the grid lines read on top of the imagery. Depth-write OFF: it's a
@@ -3596,6 +3719,26 @@ class Viewport(QOpenGLWidget):
                 self._ao_warned = True
                 print(f"[ambient occlusion] off: {self._ao.broken}")
         self._program.bind()
+
+    def _apply_fog_uniforms(self, style) -> None:
+        """Arm distance fog for subsequent world-space draws in this frame."""
+        if not bool(getattr(style, "fog_enabled", False)):
+            self._program.setUniformValue(self._loc_fog_enable, 0)
+            return
+
+        start, end = fog_depth_range(
+            getattr(style, "fog_distance", 10.0),
+            getattr(style, "fog_thickness", 10.0))
+        color = effective_fog_color(style)
+
+        self._program.setUniformValue(self._loc_fog_eye, self.camera.eye())
+        self._program.setUniformValue(self._loc_fog_forward,
+                                      self.camera.forward())
+        self._program.setUniformValue(self._loc_fog_color,
+                                      QVector3D(*color))
+        self._program.setUniformValue1f(self._loc_fog_start, float(start))
+        self._program.setUniformValue1f(self._loc_fog_end, float(end))
+        self._program.setUniformValue(self._loc_fog_enable, 1)
 
     # ---- Setup helpers ------------------------------------------------------
     def _compile_program(self) -> QOpenGLShaderProgram:
@@ -6193,8 +6336,9 @@ class Viewport(QOpenGLWidget):
         self._tile_geom = (key, runs)
         return runs
 
-    # Sky (top) and ground (bottom) backdrop colours — subtle two-tone.
+    # Sky, horizon haze and ground backdrop colours — a subtle three-tone.
     _SKY_RGB = (0.925, 0.935, 0.945)
+    _HORIZON_RGB = (1.0, 1.0, 1.0)
     _GROUND_RGB = (0.815, 0.820, 0.815)
 
     def _horizon_ndc_y(self, mvp) -> float:
@@ -6217,31 +6361,42 @@ class Viewport(QOpenGLWidget):
             return 2.0 if fwd.z() < 0 else -2.0
         return clip.y() / clip.w()
 
-    #: NDC span over which each half of the backdrop completes its ramp.
-    _SKY_GRAD_SPAN = 1.4
+    #: Fixed NDC spans over which the backdrop ramps complete. The sky span
+    #: must NOT shrink with the visible strip of sky: when the camera pitches
+    #: down and the horizon rises, the blue end leaves the screen and the
+    #: remaining strip becomes increasingly horizon-coloured.
+    _LEGACY_SKY_GRAD_SPAN = 1.4
+    _SKY_GRAD_SPAN = 1.0
     _GROUND_GRAD_SPAN = 0.9
 
     @staticmethod
-    def _sky_gradient(sky_rgb, ground_rgb, hy):
-        """Corner colours of the backdrop gradient: the style's sky tone at
-        the zenith and ground tone underfoot, both hazed toward white at the
-        horizon (atmosphere — the one-colour input stays the one the user
-        picked). Computed against the UNCLAMPED horizon ``hy``, so a pitched
-        camera sees the right slice of the ramp (all zenith when looking up,
-        all ground when looking down). Returns ``(sky_bottom, sky_top,
-        ground_top, ground_bottom, horizon_line)``; the ramps are linear in
-        NDC y, so colouring only the quad corners is exact."""
+    def _sky_gradient(sky_rgb, horizon_rgb, ground_rgb, hy, fog_strength=0.0):
+        """Corner colours of the backdrop gradient.
+
+        ``horizon_rgb is None`` is the compatibility path: use the exact
+        white-haze formula and span from before configurable horizons. With an
+        explicit colour, the sky starts at that tone and reaches the sky tone
+        one fixed NDC unit above it. The ramp stays anchored there while the
+        camera pitches. Returns ``(sky_bottom, sky_top, ground_top,
+        ground_bottom, horizon_line)``.
+        """
         def mix(a, b, t):
             return (a[0] + (b[0] - a[0]) * t,
                     a[1] + (b[1] - a[1]) * t,
                     a[2] + (b[2] - a[2]) * t)
 
-        white = (1.0, 1.0, 1.0)
-        sky_h = mix(sky_rgb, white, 0.55)
-        gnd_h = mix(ground_rgb, white, 0.30)
+        if horizon_rgb is None:
+            white = (1.0, 1.0, 1.0)
+            sky_h = mix(sky_rgb, white, 0.55)
+            gnd_h = mix(ground_rgb, white, 0.30)
+            sky_span = Viewport._LEGACY_SKY_GRAD_SPAN
+        else:
+            sky_h = horizon_rgb
+            gnd_h = mix(ground_rgb, horizon_rgb, 0.30 + 0.70 * min(1.0, max(0.0, fog_strength)))
+            sky_span = Viewport._SKY_GRAD_SPAN
 
         def sky_at(y):
-            t = min(1.0, max(0.0, (y - hy) / Viewport._SKY_GRAD_SPAN))
+            t = min(1.0, max(0.0, (y - hy) / sky_span))
             return mix(sky_h, sky_rgb, t)
 
         def gnd_at(y):
@@ -6250,23 +6405,31 @@ class Viewport(QOpenGLWidget):
 
         y0 = max(-1.0, min(1.0, hy))
         line = mix(mix(sky_h, gnd_h, 0.5), (0.0, 0.0, 0.0), 0.12)
+        line = mix(line, sky_h, min(1.0, max(0.0, fog_strength)))
         return sky_at(y0), sky_at(1.0), gnd_at(y0), gnd_at(-1.0), line
 
-    def _draw_sky(self, mvp) -> None:
+    def _draw_sky(self, mvp, colors=None, fog_strength=0.0) -> None:
         """Sky above the horizon and ground below, each a vertical gradient
-        (style tones hazed toward the horizon — see ``_sky_gradient``), with
-        a subtle horizon line where they meet. Per-vertex colours; GL
-        interpolates per pixel. The class constants ``_SKY_RGB`` /
-        ``_GROUND_RGB`` are the historical defaults, kept as fallbacks."""
-        style = getattr(self, "_frame_style", None)
-        sky_rgb = tuple(getattr(style, "sky_color", None)
-                        or self._SKY_RGB)[:3]
-        ground_rgb = tuple(getattr(style, "ground_color", None)
-                           or self._GROUND_RGB)[:3]
+        (style tones hazed toward the chosen horizon colour — see
+        ``_sky_gradient``), with a subtle horizon line where they meet.
+        Per-vertex colours; GL interpolates per pixel. The class constants
+        ``_SKY_RGB`` / ``_HORIZON_RGB`` / ``_GROUND_RGB`` are the historical
+        defaults, kept as fallbacks."""
+        if colors is None:
+            style = getattr(self, "_frame_style", None)
+            sky_rgb = tuple(getattr(style, "sky_color", None)
+                            or self._SKY_RGB)[:3]
+            picked_horizon = getattr(style, "horizon_color", None)
+            horizon_rgb = (tuple(picked_horizon)[:3]
+                           if picked_horizon is not None else None)
+            ground_rgb = tuple(getattr(style, "ground_color", None)
+                               or self._GROUND_RGB)[:3]
+        else:
+            sky_rgb, horizon_rgb, ground_rgb = colors
         hy_raw = self._horizon_ndc_y(mvp)
         hy = max(-1.0, min(1.0, hy_raw))
         c_sky0, c_sky1, c_gnd0, c_gnd1, c_line = self._sky_gradient(
-            sky_rgb, ground_rgb, hy_raw)
+            sky_rgb, horizon_rgb, ground_rgb, hy_raw, fog_strength)
         self._program.setUniformValue(self._loc_mvp, QMatrix4x4())  # identity/NDC
         self._gl.glDisable(GL_DEPTH_TEST)
         self._gl.glDepthMask(GL_FALSE)

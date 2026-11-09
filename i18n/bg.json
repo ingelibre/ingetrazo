@@ -3350,5 +3350,15 @@
   "The Bulgarian translation.": "Българският превод.",
   "The Traditional Chinese translation.": "Преводът на традиционен китайски.",
   "A .skp component 10 000 times too big, traced.": "Открит компонент от .skp, 10 000 пъти по-голям.",
-  "Thanks as well to all the authors of the extensions catalogue": "Благодарим също на всички автори от каталога с разширения"
+  "Thanks as well to all the authors of the extensions catalogue": "Благодарим също на всички автори от каталога с разширения",
+  "Horizon:": "Хоризонт:",
+  "Horizon color": "Цвят на хоризонта",
+  "Sky, horizon and ground colors show with the sky on.": "Цветовете на небето, хоризонта и земята се показват, когато небето е включено.",
+  "Fog": "Мъгла",
+  "Fade distant geometry into a chosen color.": "Преливане на далечната геометрия към избран цвят.",
+  "Show fog": "Показване на мъгла",
+  "Thickness:": "Плътност:",
+  "Fog color:": "Цвят на мъглата:",
+  "Fog color": "Цвят на мъглата",
+  "Use background color": "Използване на цвета на фона"
 }
