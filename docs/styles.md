@@ -112,8 +112,9 @@ retains the selected mode, edge settings and any edits made while it was active.
 Front and back colors and ambient occlusion keep their existing behavior.
 
 **Material transparency** displays material opacity and texture transparency. Turning it off
-draws model materials as opaque without changing their saved paint. Hidden line and Monochrome
-draw translucent material faces as solid surfaces too.
+draws model materials as opaque without changing their saved paint. Hidden line keeps faces
+solid. Since IngeTrazo 0.6.1, Monochrome retains translucent glass in grey when material
+transparency is enabled; turning it off restores solid front/back style colors.
 
 **Transparency quality** offers Faster (material batches) and Nicer (transparent triangles
 ordered by depth across materials). Nicer trades additional draws for more accurate layering;

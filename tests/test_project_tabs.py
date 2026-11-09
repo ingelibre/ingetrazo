@@ -587,6 +587,77 @@ def test_copy_in_one_project_paste_in_another(win):
     assert b.clipboard is clip
 
 
+def test_leaving_a_tab_draws_no_picture_until_its_tab_is_hovered(win,
+                                                                  monkeypatch):
+    """Drawing a frame again on the way out made every «+» and every switch
+    pay for it, heavy models most of all (#1132): the hover pays, once, with
+    the units of that tab, and the one in front gets its own back."""
+    from PySide6.QtGui import QColor, QHelpEvent, QImage
+    from core import units
+    _edit(win)
+    win.show()
+    _settle(50)
+    a = win.active_document()
+    drawn = []
+    img = QImage(280, 160, QImage.Format_RGB32)     # no GL here to draw it
+    img.fill(QColor(200, 30, 30))
+
+    def draw(vp):
+        drawn.append(units._SCENE)
+        return img
+    monkeypatch.setattr(win, "_tab_thumbnail", draw)
+    b = win._new_document()
+    _settle(50)
+    assert not drawn and a.thumbnail is None and a.picture_due
+    bar = win._project_tabs
+    tabs = bar.tabs
+    centre = tabs.tabRect(bar.index_of(a)).center()
+    for _ in range(2):
+        QApplication.sendEvent(tabs, QHelpEvent(QHelpEvent.ToolTip, centre,
+                                                tabs.mapToGlobal(centre)))
+    assert drawn == [a.viewport.scene], "one frame, with that tab's units"
+    assert units._SCENE is b.viewport.scene
+    assert a.thumbnail is img
+    assert bar._preview.isVisible()
+    assert bar._preview._name.text() == a.display_name()
+    bar._hide_preview()
+    win.hide()
+
+
+def test_the_picture_off_in_preferences_draws_nothing(win, monkeypatch):
+    """Off, from the next hover and with no restart: no frame is drawn, the
+    plain tooltip shows; on again, the picture is there."""
+    from PySide6.QtCore import QSettings
+    from PySide6.QtGui import QColor, QHelpEvent, QImage
+    _edit(win)
+    win.show()
+    _settle(50)
+    a = win.active_document()
+    drawn = []
+    img = QImage(280, 160, QImage.Format_RGB32)
+    img.fill(QColor(200, 30, 30))
+    monkeypatch.setattr(win, "_tab_thumbnail",
+                        lambda vp: drawn.append(vp) or img)
+    win._new_document()
+    _settle(50)
+    bar = win._project_tabs
+    tabs = bar.tabs
+    centre = tabs.tabRect(bar.index_of(a)).center()
+
+    def hover():
+        QApplication.sendEvent(tabs, QHelpEvent(QHelpEvent.ToolTip, centre,
+                                                tabs.mapToGlobal(centre)))
+        return bar._preview is not None and bar._preview.isVisible()
+    QSettings().setValue("tabs/hover_picture", "0")
+    try:
+        assert not hover() and not drawn
+    finally:
+        QSettings().remove("tabs/hover_picture")
+    assert hover() and len(drawn) == 1
+    bar._hide_preview()
+    win.hide()
+
+
 def test_hovering_a_tab_behind_shows_its_picture(win):
     from PySide6.QtCore import QPoint
     from PySide6.QtGui import QColor, QHelpEvent, QImage

@@ -329,6 +329,12 @@ def style_by_name(name: str) -> Style | None:
     return None
 
 
+#: The colour glass wears in Monochrome, at the opacity of its material: a
+#: neutral grey, since the style has no colours. ``None``: its real colour or
+#: texture instead, as in Shaded — the one place to change that decision.
+MONOCHROME_GLASS_RGB: tuple | None = (0.5, 0.5, 0.5)
+
+
 BUILTIN_STYLES: list[Style] = [
     Style(name="Default"),
     Style(name="Architectural", background=(1.0, 1.0, 1.0), sky=False),

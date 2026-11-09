@@ -352,6 +352,10 @@ def test_live_frame_updates_when_xray_opacity_changes(cube_viewport):
 def test_flat_modes_draw_glass_faces_as_solid(cube_viewport, mode, back):
     vp = cube_viewport
     style = _setup(vp, mode)
+    # 0.6.1 keeps glass translucent in Monochrome; Styles can opt out.
+    style.material_transparency = False
+    # 0.6.1 keeps glass translucent in Monochrome; Styles can opt out.
+    style.material_transparency = False
     style.front_color = (0.2, 0.5, 0.2)
     face = _plane(vp, 0, (1, 0, 0), 0.2)
     if back:
@@ -363,4 +367,26 @@ def test_flat_modes_draw_glass_faces_as_solid(cube_viewport, mode, back):
         assert color.blue() > color.red() + 20
     else:
         assert color.green() > color.red() + 50 and color.red() < 80
+    assert color.alpha() == 255
+
+
+
+
+@pytest.mark.parametrize("back", [False, True])
+def test_monochrome_keeps_release_glass_translucent_and_grey(cube_viewport, back):
+    from core.style import MONOCHROME_GLASS_RGB
+
+    vp = cube_viewport
+    style = _setup(vp, "monochrome")
+    style.front_color = (0.2, 0.5, 0.2)
+    face = _plane(vp, 0, (1, 0, 0), 0.2)
+    if back:
+        face.attrs["back"] = {"color": (1, 0, 0)}
+        vp.camera.set_view("back")
+        vp.scene.version += 1
+    color = _image(vp).pixelColor(450, 375)
+    expected = round(255 * (0.8 + 0.2 * MONOCHROME_GLASS_RGB[0]))
+    assert abs(color.red() - expected) <= 2
+    assert abs(color.green() - color.red()) <= 1
+    assert abs(color.blue() - color.red()) <= 1
     assert color.alpha() == 255

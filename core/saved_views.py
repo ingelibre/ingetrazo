@@ -14,6 +14,8 @@ that carry eye/target/up cameras (e.g. .skp) convert once at import time.
 """
 from __future__ import annotations
 
+from core.history import Command, CommandRejected
+
 
 class SavedView:
     """A named camera + layer-visibility snapshot."""
@@ -292,3 +294,57 @@ def from_lookat(name: str, eye, target, up, fov_deg: float = 45.0,
     return SavedView(name, target=tuple(target), distance=distance, yaw=yaw,
                      pitch=pitch, fov_deg=fov_deg, perspective=perspective,
                      hidden_layers=hidden_layers)
+
+
+class RenameSceneCommand(Command):
+    """A scene's new name, and the sheet views that show it along with it
+    (``core.outliner.rename_scene``). A name refused there is no step."""
+
+    keeps_paint = True
+
+    def __init__(self, view, name: str) -> None:
+        self.view = view
+        self.name = name
+        self._prev = None
+        self._frames: list = []
+
+    def do(self, scene) -> None:
+        from core.outliner import frames_showing, rename_scene
+        prev = self.view.name
+        frames = [frame for _comp, frame in frames_showing(scene, prev)]
+        if not rename_scene(scene, self.view, self.name):
+            raise CommandRejected(self.name)
+        self._prev, self._frames = prev, frames
+        scene.version += 1
+
+    def undo(self, scene) -> None:
+        self.view.name = self._prev
+        for frame in self._frames:
+            frame.view_key = f"scene:{self._prev}"
+        scene.version += 1
+
+
+class MoveSceneCommand(Command):
+    """A scene to another place in the list: the order of the list is the
+    order of the scene tabs and the panel, and what the document saves."""
+
+    keeps_paint = True
+
+    def __init__(self, view, index: int) -> None:
+        self.view = view
+        self.index = int(index)
+        self._from = None
+
+    def do(self, scene) -> None:
+        views = scene.saved_views
+        if self.view not in views or self.index == views.index(self.view):
+            raise CommandRejected(self.view.name)
+        self._from = views.index(self.view)
+        views.remove(self.view)
+        views.insert(self.index, self.view)
+        scene.version += 1
+
+    def undo(self, scene) -> None:
+        scene.saved_views.remove(self.view)
+        scene.saved_views.insert(self._from, self.view)
+        scene.version += 1

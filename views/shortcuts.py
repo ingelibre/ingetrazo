@@ -345,12 +345,16 @@ class ShortcutsPanel(QWidget):
         self._filter.textChanged.connect(self._apply_filter)
         lay.addWidget(self._filter)
         self._tree = QTreeWidget()
-        self._tree.setColumnCount(2)
-        self._tree.setHeaderLabels([tr("Action"), tr("Shortcut")])
+        self._tree.setColumnCount(3)
+        self._tree.setHeaderLabels([tr("Action"), tr("Menu"), tr("Shortcut")])
         self._tree.setRootIsDecorated(False)
-        self._tree.header().setSectionResizeMode(0, QHeaderView.Stretch)
+        # Name and menu share the width: sized to its contents, one long
+        # path would leave no room for the names.
+        for column in (0, 1):
+            self._tree.header().setSectionResizeMode(
+                column, QHeaderView.Stretch)
         self._tree.header().setSectionResizeMode(
-            1, QHeaderView.ResizeToContents)
+            2, QHeaderView.ResizeToContents)
         self._tree.currentItemChanged.connect(self._on_row)
         lay.addWidget(self._tree, 1)
         edit_row = QHBoxLayout()
@@ -385,6 +389,11 @@ class ShortcutsPanel(QWidget):
         foot.addWidget(reset_all)
         lay.addLayout(foot)
         self._actions = collect_actions(window)
+        # «Selected», «Last» and «All» say little alone: each row also says
+        # where its command lives (#1107). Imported here because
+        # views/command_search.py imports this module.
+        from views.command_search import menu_paths
+        self._paths = menu_paths(window)
         self._fill()
 
     # ---- list -----------------------------------------------------------------
@@ -392,8 +401,10 @@ class ShortcutsPanel(QWidget):
         self._tree.clear()
         for act in self._actions:
             row = QTreeWidgetItem([_plain(act.text()),
+                                   self._paths.get(action_key(act), ""),
                                    _to_text(act.shortcuts())])
             row.setData(0, Qt.UserRole, act)
+            row.setToolTip(1, row.text(1))
             self._tree.addTopLevelItem(row)
         self._apply_filter(self._filter.text())
 
@@ -402,8 +413,8 @@ class ShortcutsPanel(QWidget):
         first = None
         for i in range(self._tree.topLevelItemCount()):
             row = self._tree.topLevelItem(i)
-            row.setHidden(bool(t) and t not in row.text(0).lower()
-                          and t not in row.text(1).lower())
+            row.setHidden(bool(t) and not any(
+                t in row.text(column).lower() for column in range(3)))
             if first is None and not row.isHidden():
                 first = row
         cur = self._tree.currentItem()

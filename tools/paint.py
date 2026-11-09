@@ -390,7 +390,7 @@ class PaintTool(Tool):
                     # material — the SketchUp rule, as in #408).
                     flash(tr("{name}: every face has its own material, so "
                              "nothing changed — open it and paint the "
-                             "faces", name=name))
+                             "faces", name=name), 10000)
                 else:
                     flash(tr("{name} painted as a whole; a face that "
                              "already had its own material keeps it",

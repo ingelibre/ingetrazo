@@ -49,6 +49,7 @@ GL_ZERO = 0
 GL_SRC_COLOR = 0x0300
 GL_SRC_ALPHA = 0x0302
 GL_ONE_MINUS_SRC_ALPHA = 0x0303
+GL_ONE = 1
 GL_TRIANGLES = 0x0004
 GL_NO_ERROR = 0
 GL_STENCIL_TEST = 0x0B90
@@ -314,7 +315,9 @@ class AmbientOcclusion:
         gl.glActiveTexture(GL_TEXTURE0 + _UNIT_DEPTH)
         gl.glBindTexture(GL_TEXTURE_2D, 0)
         gl.glActiveTexture(GL_TEXTURE0)
-        gl.glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
+        # (the scene's blending: see viewport._scene_blend)
+        gl.glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA,
+                               GL_ONE, GL_ONE_MINUS_SRC_ALPHA)
         gl.glEnable(GL_DEPTH_TEST)
         gl.glDepthMask(True)
         return True
