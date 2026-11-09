@@ -3350,5 +3350,7 @@
  "The Bulgarian translation.": "保加利亞文翻譯。",
  "The Traditional Chinese translation.": "繁體中文翻譯。",
  "A .skp component 10 000 times too big, traced.": "追查出一個大了 10 000 倍的 .skp 元件。",
- "Thanks as well to all the authors of the extensions catalogue": "同樣感謝擴充功能目錄的所有作者"
+ "Thanks as well to all the authors of the extensions catalogue": "同樣感謝擴充功能目錄的所有作者",
+ "{n} faces selected — push or pull one of them to move them all": "已選擇 {n} 個面 — 推拉其中一個即可移動全部",
+ "Pushed {done} of {total} faces — the others would break the solid": "已推拉 {total} 個面中的 {done} 個 — 其餘的會破壞實體"
 }

@@ -3356,5 +3356,7 @@
  "The Bulgarian translation.": "A tradução para o búlgaro.",
  "The Traditional Chinese translation.": "A tradução para o chinês tradicional.",
  "A .skp component 10 000 times too big, traced.": "Um componente .skp 10 000 vezes grande demais, rastreado.",
- "Thanks as well to all the authors of the extensions catalogue": "Agradecemos também a todos os autores do catálogo de extensões"
+ "Thanks as well to all the authors of the extensions catalogue": "Agradecemos também a todos os autores do catálogo de extensões",
+ "{n} faces selected — push or pull one of them to move them all": "{n} faces selecionadas — empurre ou puxe uma delas para mover todas",
+ "Pushed {done} of {total} faces — the others would break the solid": "{done} de {total} faces empurradas — as demais quebrariam o sólido"
 }

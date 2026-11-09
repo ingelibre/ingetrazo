@@ -3352,5 +3352,7 @@
  "The Bulgarian translation.": "ການແປເປັນພາສາບັນແກເຣຍ.",
  "The Traditional Chinese translation.": "ການແປເປັນພາສາຈີນຕົວເຕັມ.",
  "A .skp component 10 000 times too big, traced.": "ການຕິດຕາມຫາອົງປະກອບ .skp ທີ່ໃຫຍ່ເກີນໄປ 10 000 ເທົ່າ.",
- "Thanks as well to all the authors of the extensions catalogue": "ຂອບໃຈຜູ້ຂຽນທຸກທ່ານໃນແຄັດຕາລັອກສ່ວນຂະຫຍາຍນຳອີກ"
+ "Thanks as well to all the authors of the extensions catalogue": "ຂອບໃຈຜູ້ຂຽນທຸກທ່ານໃນແຄັດຕາລັອກສ່ວນຂະຫຍາຍນຳອີກ",
+ "{n} faces selected — push or pull one of them to move them all": "ເລືອກ {n} ໜ້າ — ຍູ້ ຫຼື ດຶງໜ້າໃດໜຶ່ງເພື່ອຍ້າຍທັງໝົດ",
+ "Pushed {done} of {total} faces — the others would break the solid": "ຍູ້ແລ້ວ {done} ຈາກ {total} ໜ້າ — ໜ້າອື່ນຈະເຮັດໃຫ້ຮູບຊົງຕັນເສຍຫາຍ"
 }

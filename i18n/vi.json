@@ -3376,5 +3376,7 @@
  "The Bulgarian translation.": "Bản dịch tiếng Bulgaria.",
  "The Traditional Chinese translation.": "Bản dịch tiếng Trung phồn thể.",
  "A .skp component 10 000 times too big, traced.": "Truy ra một thành phần .skp lớn gấp 10 000 lần.",
- "Thanks as well to all the authors of the extensions catalogue": "Xin cảm ơn tất cả tác giả trong danh mục tiện ích mở rộng"
+ "Thanks as well to all the authors of the extensions catalogue": "Xin cảm ơn tất cả tác giả trong danh mục tiện ích mở rộng",
+ "{n} faces selected — push or pull one of them to move them all": "Đã chọn {n} mặt — đẩy hoặc kéo một mặt để di chuyển tất cả",
+ "Pushed {done} of {total} faces — the others would break the solid": "Đã đẩy {done} trên {total} mặt — các mặt còn lại sẽ làm hỏng khối rắn"
 }

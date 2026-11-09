@@ -14,5 +14,7 @@
   "Could not check for updates. Check your internet connection and try again.": "Could not check for updates. Check your internet connection and try again.",
   "You have the latest version ({version}).": "You have the latest version ({version}).",
  "Transparent background": "Transparent background",
- "Only PNG images keep transparency.": "Only PNG images keep transparency."
+ "Only PNG images keep transparency.": "Only PNG images keep transparency.",
+  "{n} faces selected — push or pull one of them to move them all": "{n} faces selected — push or pull one of them to move them all",
+  "Pushed {done} of {total} faces — the others would break the solid": "Pushed {done} of {total} faces — the others would break the solid"
 }
