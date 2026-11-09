@@ -2039,6 +2039,10 @@ class Viewport(QOpenGLWidget):
         self._last_pos = None
         self._pan_mode = False
         self._middle_drag_active = False
+        # The left button pressed during a wheel-drag pans: the drag's
+        # mode before it (True = it was already a Shift pan), else None.
+        # Its release never reaches the tool, even after the wheel's.
+        self._left_pan_restore = None
         #: where the current orbit gesture turns (#164); None = the target
         self._orbit_pivot = None
         # A mouse-look drag for a tool with ``on_look`` (First Person):
@@ -17429,7 +17433,7 @@ class Viewport(QOpenGLWidget):
         """Switch an active MMB drag between orbit and pan."""
         if not self._middle_drag_active or self.nav_mode is not None:
             return
-        pan = bool(pan)
+        pan = bool(pan) or self._left_pan_restore is not None
         if self._pan_mode == pan:
             return
         self._pan_mode = pan
@@ -17560,6 +17564,17 @@ class Viewport(QOpenGLWidget):
         self._release_linear_mode()
         self._input_t = _time_mod.monotonic()   # P0: input→paint latency
         self._input_serial = getattr(self, "_input_serial", 0) + 1
+        # Wheel held, then left pressed: the orbit turns into a pan for as
+        # long as both are held (an alternative to Shift+wheel-drag).
+        if (ev.button() == Qt.LeftButton and self._last_pos is not None
+                and ev.buttons() & Qt.MiddleButton):
+            self._left_pan_restore = self._pan_mode
+            self._pan_mode = True
+            from views.icons import tool_cursor
+            cur = tool_cursor("pan")
+            if cur is not None:
+                self.setCursor(cur)
+            return
         if (ev.button() in (Qt.LeftButton, Qt.RightButton)
                 and self.nav_mode is None and self._look_drag is None
                 and callable(getattr(self.active_tool, "on_look", None))):
@@ -17735,8 +17750,8 @@ class Viewport(QOpenGLWidget):
             self._recentre_on(ev.position().x(), ev.position().y())
             return
         if ev.button() != Qt.LeftButton or self.active_tool is None \
-                or self.nav_mode is not None:
-            self.mousePressEvent(ev)
+                or self.nav_mode is not None or self._last_pos is not None:
+            self.mousePressEvent(ev)       # (a wheel+left pan included)
             return
         self._last_double = (ev.timestamp(), ev.position())
         if self.active_tool.box_select:
@@ -18089,6 +18104,17 @@ class Viewport(QOpenGLWidget):
                 self._apply_nav_cursor()
             else:
                 self._apply_tool_cursor()
+            return
+        if ev.button() == Qt.LeftButton and self._left_pan_restore is not None:
+            # The left button of a wheel+left pan: still on the wheel, the
+            # drag goes back to what it was; the tool never sees this release.
+            restore, self._left_pan_restore = self._left_pan_restore, None
+            if self._last_pos is not None and ev.buttons() & Qt.MiddleButton:
+                self._pan_mode = restore
+                from views.icons import tool_cursor
+                cur = tool_cursor("pan" if restore else "orbit")
+                if cur is not None:
+                    self.setCursor(cur)
             return
 
         if ev.button() == Qt.LeftButton and self._zoom_box_active:
