@@ -3625,5 +3625,12 @@
   "Make a copy of the selected scene": "إنشاء نسخة من المشهد المحدد",
   "Tabs on top": "علامات التبويب في الأعلى",
   "Tabs on the right, vertical": "علامات التبويب على اليمين، عموديًا",
-  "Panel options": "خيارات اللوحات"
+  "Panel options": "خيارات اللوحات",
+  "Set where north lies: click a centre, then click toward north. The sun's shadows turn with it.": "حدّد مكان الشمال: انقر مركزًا ثم انقر باتجاه الشمال. تدور ظلال الشمس معه.",
+  "North: {a}": "الشمال: {a}",
+  "Click the centre of the compass.": "انقر مركز البوصلة.",
+  "Click toward north, or type the degrees from the green axis.": "انقر باتجاه الشمال، أو اكتب الدرجات من المحور الأخضر.",
+  "Where true north lies, in degrees clockwise from the green (Y) axis. The shadows turn with it; the model does not move.": "مكان الشمال الحقيقي، بالدرجات باتجاه عقارب الساعة من المحور الأخضر (Y). تدور الظلال معه؛ ولا يتحرك النموذج.",
+  "On screen": "على الشاشة",
+  "Tools ▸ North: click a centre, then click toward north.": "أدوات ▸ الشمال: انقر مركزًا ثم انقر باتجاه الشمال."
 }

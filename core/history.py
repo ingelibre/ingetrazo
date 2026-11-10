@@ -5557,3 +5557,49 @@ class ChangeAxesCommand(Command):
     def _copy(m):
         from PySide6.QtGui import QMatrix4x4
         return QMatrix4x4(m)
+
+
+class SetNorthCommand(Command):
+    """Tools ▸ North: where true north lies, in degrees clockwise from the
+    green (Y) axis — one undo step.
+
+    With a location the datum gets the new north angle (a NEW datum object:
+    the map geometry is cached by datum identity, and the terrain is
+    rebuilt from it — dropped here like :class:`StraightenModelCommand`
+    does, the window builds it again). Without one, ``scene.north_deg``
+    holds it and only the sun turns. The model never moves."""
+
+    def __init__(self, degrees: float) -> None:
+        from core.sun import wrap_north_deg
+        self.degrees = wrap_north_deg(degrees)
+        self._old_datum = None
+        self._new_datum = None
+        self._old_deg = 0.0
+        self._terrain = None
+
+    def do(self, scene) -> None:
+        datum = getattr(scene, "georef", None)
+        if datum is None:
+            self._old_deg = float(getattr(scene, "north_deg", 0.0) or 0.0)
+            scene.north_deg = self.degrees
+        else:
+            from georef.datum import SceneDatum
+            self._old_datum = datum
+            if self._new_datum is None:
+                self._new_datum = SceneDatum(datum.lat, datum.lon,
+                                             alt=datum.alt,
+                                             north=self.degrees)
+            scene.georef = self._new_datum
+            self._terrain = getattr(scene, "terrain", None)
+            if self._terrain is not None:
+                scene.terrain = None     # display-only; rebuilt from the datum
+        scene.version += 1
+
+    def undo(self, scene) -> None:
+        if self._old_datum is None:
+            scene.north_deg = self._old_deg
+        else:
+            scene.georef = self._old_datum
+            if self._terrain is not None:
+                scene.terrain = self._terrain
+        scene.version += 1

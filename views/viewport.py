@@ -6440,14 +6440,11 @@ class Viewport(QOpenGLWidget):
             when = sh.when_utc(lon, year=_dt.date.today().year)
         except ValueError:
             return None
-        d = sun.sun_direction(lat, lon, when)
-        if d is None or datum is None or not getattr(datum, "north", 0.0):
-            return d
         # The sun comes in grid axes (east, north); the model's frame may be
-        # turned by the datum's north angle — a shadow must fall the same way
-        # on the site whichever way the axes were drawn.
-        x, y = datum.grid_to_local_xy(d[0], d[1])
-        return (x, y, d[2])
+        # turned by the north angle — the datum's, or Tools ▸ North's when
+        # there is no location yet.
+        return sun.turn_sun_to_model(self.scene,
+                                     sun.sun_direction(lat, lon, when))
 
     @staticmethod
     def _light_vp(d, lo, hi, fit=None):

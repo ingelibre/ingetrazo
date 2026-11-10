@@ -3593,5 +3593,12 @@
  "Make a copy of the selected scene": "Buat salinan adegan yang dipilih",
  "Tabs on top": "Tab di atas",
  "Tabs on the right, vertical": "Tab di kanan, vertikal",
- "Panel options": "Opsi panel"
+ "Panel options": "Opsi panel",
+ "Set where north lies: click a centre, then click toward north. The sun's shadows turn with it.": "Tentukan letak utara: klik sebuah pusat, lalu klik ke arah utara. Bayangan matahari ikut berputar.",
+ "North: {a}": "Utara: {a}",
+ "Click the centre of the compass.": "Klik pusat kompas.",
+ "Click toward north, or type the degrees from the green axis.": "Klik ke arah utara, atau ketik derajat dari sumbu hijau.",
+ "Where true north lies, in degrees clockwise from the green (Y) axis. The shadows turn with it; the model does not move.": "Letak utara sejati, dalam derajat searah jarum jam dari sumbu hijau (Y). Bayangan ikut berputar; model tidak bergerak.",
+ "On screen": "Di layar",
+ "Tools ▸ North: click a centre, then click toward north.": "Alat ▸ Utara: klik sebuah pusat, lalu klik ke arah utara."
 }

@@ -3590,5 +3590,12 @@
  "Make a copy of the selected scene": "Створити копію вибраної сцени",
  "Tabs on top": "Вкладки вгорі",
  "Tabs on the right, vertical": "Вкладки праворуч, вертикально",
- "Panel options": "Параметри панелей"
+ "Panel options": "Параметри панелей",
+ "Set where north lies: click a centre, then click toward north. The sun's shadows turn with it.": "Укажіть, де північ: клацніть центр, потім у бік півночі. Тіні від сонця повертаються разом із нею.",
+ "North: {a}": "Північ: {a}",
+ "Click the centre of the compass.": "Клацніть центр компаса.",
+ "Click toward north, or type the degrees from the green axis.": "Клацніть у бік півночі або введіть градуси від зеленої осі.",
+ "Where true north lies, in degrees clockwise from the green (Y) axis. The shadows turn with it; the model does not move.": "Де розташована справжня північ, у градусах за годинниковою стрілкою від зеленої осі (Y). Тіні повертаються разом із нею; модель не зсувається.",
+ "On screen": "На екрані",
+ "Tools ▸ North: click a centre, then click toward north.": "Інструменти ▸ Північ: клацніть центр, потім у бік півночі."
 }

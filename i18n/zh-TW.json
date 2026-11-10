@@ -3591,5 +3591,12 @@
  "Make a copy of the selected scene": "建立選取場景的副本",
  "Tabs on top": "頁籤在上方",
  "Tabs on the right, vertical": "頁籤在右側，直式",
- "Panel options": "面板選項"
+ "Panel options": "面板選項",
+ "Set where north lies: click a centre, then click toward north. The sun's shadows turn with it.": "設定北方：按一下中心點，再朝北按一下。太陽陰影隨之旋轉。",
+ "North: {a}": "北: {a}",
+ "Click the centre of the compass.": "按一下指北針的中心。",
+ "Click toward north, or type the degrees from the green axis.": "朝北按一下，或輸入相對綠色軸的度數。",
+ "Where true north lies, in degrees clockwise from the green (Y) axis. The shadows turn with it; the model does not move.": "真北的方向，以綠色 (Y) 軸為起點順時針計算的度數。陰影隨之旋轉，模型不移動。",
+ "On screen": "在螢幕上",
+ "Tools ▸ North: click a centre, then click toward north.": "工具 ▸ 北: 按一下中心點，再朝北按一下。"
 }

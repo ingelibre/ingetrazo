@@ -3590,5 +3590,12 @@
  "Make a copy of the selected scene": "선택한 장면의 사본 만들기",
  "Tabs on top": "탭을 위에 표시",
  "Tabs on the right, vertical": "탭을 오른쪽에 세로로 표시",
- "Panel options": "패널 옵션"
+ "Panel options": "패널 옵션",
+ "Set where north lies: click a centre, then click toward north. The sun's shadows turn with it.": "북쪽 방향 설정: 중심을 클릭한 다음 북쪽을 향해 클릭합니다. 태양 그림자도 함께 회전합니다.",
+ "North: {a}": "북쪽: {a}",
+ "Click the centre of the compass.": "나침반의 중심을 클릭하세요.",
+ "Click toward north, or type the degrees from the green axis.": "북쪽을 향해 클릭하거나 녹색 축으로부터의 각도를 입력하세요.",
+ "Where true north lies, in degrees clockwise from the green (Y) axis. The shadows turn with it; the model does not move.": "진북의 방향으로, 녹색(Y) 축에서 시계 방향 각도입니다. 그림자도 함께 회전하며 모델은 움직이지 않습니다.",
+ "On screen": "화면에서",
+ "Tools ▸ North: click a centre, then click toward north.": "도구 ▸ 북쪽: 중심을 클릭한 다음 북쪽을 향해 클릭합니다."
 }

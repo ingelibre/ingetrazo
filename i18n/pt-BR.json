@@ -3597,5 +3597,12 @@
  "Make a copy of the selected scene": "Fazer uma cópia da cena selecionada",
  "Tabs on top": "Abas no topo",
  "Tabs on the right, vertical": "Abas à direita, na vertical",
- "Panel options": "Opções dos painéis"
+ "Panel options": "Opções dos painéis",
+ "Set where north lies: click a centre, then click toward north. The sun's shadows turn with it.": "Defina onde fica o norte: clique em um centro e depois na direção do norte. As sombras do sol giram com ele.",
+ "North: {a}": "Norte: {a}",
+ "Click the centre of the compass.": "Clique no centro da bússola.",
+ "Click toward north, or type the degrees from the green axis.": "Clique na direção do norte, ou digite os graus a partir do eixo verde.",
+ "Where true north lies, in degrees clockwise from the green (Y) axis. The shadows turn with it; the model does not move.": "Onde fica o norte verdadeiro, em graus no sentido horário a partir do eixo verde (Y). As sombras giram com ele; o modelo não se move.",
+ "On screen": "Na tela",
+ "Tools ▸ North: click a centre, then click toward north.": "Ferramentas ▸ Norte: clique em um centro e depois na direção do norte."
 }

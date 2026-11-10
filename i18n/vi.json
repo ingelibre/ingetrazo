@@ -3617,5 +3617,12 @@
  "Make a copy of the selected scene": "Tạo bản sao của cảnh đã chọn",
  "Tabs on top": "Thẻ ở trên",
  "Tabs on the right, vertical": "Thẻ bên phải, dọc",
- "Panel options": "Tùy chọn bảng"
+ "Panel options": "Tùy chọn bảng",
+ "Set where north lies: click a centre, then click toward north. The sun's shadows turn with it.": "Đặt hướng bắc: nhấp vào một tâm, rồi nhấp về phía bắc. Bóng đổ của mặt trời xoay theo.",
+ "North: {a}": "Phía bắc: {a}",
+ "Click the centre of the compass.": "Nhấp vào tâm la bàn.",
+ "Click toward north, or type the degrees from the green axis.": "Nhấp về phía bắc, hoặc gõ số độ tính từ trục xanh lá.",
+ "Where true north lies, in degrees clockwise from the green (Y) axis. The shadows turn with it; the model does not move.": "Vị trí hướng bắc thật, tính bằng độ theo chiều kim đồng hồ từ trục xanh lá (Y). Bóng đổ xoay theo; mô hình không di chuyển.",
+ "On screen": "Trên màn hình",
+ "Tools ▸ North: click a centre, then click toward north.": "Công cụ ▸ Phía bắc: nhấp vào một tâm, rồi nhấp về phía bắc."
 }

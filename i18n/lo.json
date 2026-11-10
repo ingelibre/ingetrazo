@@ -3593,5 +3593,12 @@
  "Make a copy of the selected scene": "ສ້າງສຳເນົາຂອງສາກທີ່ເລືອກ",
  "Tabs on top": "ແຖບຢູ່ດ້ານເທິງ",
  "Tabs on the right, vertical": "ແຖບຢູ່ດ້ານຂວາ, ແນວຕັ້ງ",
- "Panel options": "ຕົວເລືອກແຜງ"
+ "Panel options": "ຕົວເລືອກແຜງ",
+ "Set where north lies: click a centre, then click toward north. The sun's shadows turn with it.": "ກຳນົດທິດເໜືອ: ຄລິກຈຸດສູນກາງ ແລ້ວຄລິກໄປທາງທິດເໜືອ. ເງົາຂອງຕາເວັນຈະໝຸນຕາມ.",
+ "North: {a}": "ທິດເໜືອ: {a}",
+ "Click the centre of the compass.": "ຄລິກຈຸດສູນກາງຂອງເຂັມທິດ.",
+ "Click toward north, or type the degrees from the green axis.": "ຄລິກໄປທາງທິດເໜືອ, ຫຼື ພິມອົງສາຈາກແກນສີຂຽວ.",
+ "Where true north lies, in degrees clockwise from the green (Y) axis. The shadows turn with it; the model does not move.": "ຕຳແໜ່ງທິດເໜືອແທ້, ເປັນອົງສາຕາມເຂັມໂມງຈາກແກນສີຂຽວ (Y). ເງົາຈະໝຸນຕາມ; ໂມເດວບໍ່ເຄື່ອນ.",
+ "On screen": "ເທິງໜ້າຈໍ",
+ "Tools ▸ North: click a centre, then click toward north.": "ເຄື່ອງມືຕ່າງໆ ▸ ທິດເໜືອ: ຄລິກຈຸດສູນກາງ ແລ້ວຄລິກໄປທາງທິດເໜືອ."
 }
