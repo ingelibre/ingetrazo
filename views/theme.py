@@ -2,11 +2,11 @@
 
 Window ▸ Preferences ▸ Theme stores the General setting ``theme``: ``dark`` (the
 default — IngeTrazo's look, Marco 2026-09-22: the user opts into the rest),
-``light``, or ``system``, which follows the OS colour scheme and flips live
-when the user switches it — GNOME/KDE portals, Windows 10/11 and macOS all
-report it to Qt through ``QStyleHints.colorScheme``. Only the
-chrome changes: the 3D viewport keeps the model's display style, and the
-composer's paper stays paper.
+``light``, ``slate`` (see below), or ``system``, which follows the OS colour
+scheme and flips live when the user switches it — GNOME/KDE portals, Windows
+10/11 and macOS all report it to Qt through ``QStyleHints.colorScheme``.
+Only the chrome changes: the 3D viewport keeps the model's display style,
+and the composer's paper stays paper.
 
 The palettes are complete on purpose (Light/Midlight/Mid/Dark/Shadow too):
 stylesheets reference ``palette(mid)`` and ``palette(midlight)``, and a role
@@ -16,15 +16,28 @@ a dark window ends up with light hover strips.
 Secondary text in stylesheets is written with ``{muted}`` through
 :func:`style`, which re-applies the rule on every theme change — a literal
 grey is always too dark on one of the two backgrounds.
+
+Dark is a blue-grey near black, Light a soft light grey. Slate is an
+opt-in neutral mid-dark grey with one application-wide stylesheet
+(:data:`SLATE_SHEET`) for the chrome Qt draws on its own — toolbars, menus,
+docks, the status bar, buttons, fields and scroll bars; being app-wide, the
+panels, toolbars and docks added later or by extensions get the same look.
+Tabs keep IngeTrazo's own. Dark and Light keep no app stylesheet at all: on
+Windows any one makes Qt paint the checked tool in the desktop's accent.
+
+What every theme shares is drawn by :class:`ChromeStyle`: the toolbars' grip
+and separators as one thin grey line, and the active tool as a thin outline
+with nothing inside. The icons' grey and stroke live in views/icons.py.
 """
 
 from __future__ import annotations
 
-from PySide6.QtCore import QObject, Qt
-from PySide6.QtGui import QColor, QGuiApplication, QPalette
+from PySide6.QtCore import QObject, QRect, QRectF, Qt
+from PySide6.QtGui import QColor, QGuiApplication, QPainter, QPalette, QPen
+from PySide6.QtWidgets import QProxyStyle, QStyle
 
-SYSTEM, LIGHT, DARK = "system", "light", "dark"
-THEMES = (SYSTEM, LIGHT, DARK)
+SYSTEM, LIGHT, DARK, SLATE = "system", "light", "dark", "slate"
+THEMES = (SYSTEM, LIGHT, DARK, SLATE)
 _KEY = "theme"          # a General setting: core.general_settings (#266)
 
 # The one accent both themes share — selection and the IngeTrazo blue.
@@ -45,6 +58,9 @@ ACCENTS = (
     ("red", "Red", (224, 27, 36)),
     ("purple", "Purple", (145, 65, 172)),
     ("yellow", "Yellow", (229, 165, 10)),
+    # Neutral accents, for a sober chrome (the user's request, 0.6.1).
+    ("white", "White", (245, 245, 245)),
+    ("light_grey", "Light grey", (184, 188, 194)),
     (SYSTEM_ACCENT, "Same as the system", None),
 )
 _ACCENT_KEY = "accent"  # a General setting, like the theme
@@ -102,37 +118,40 @@ def is_dark(mode: str, system_scheme: Qt.ColorScheme) -> bool:
     desktop, a bare X session) keeps the dark chrome IngeTrazo always had."""
     if mode == LIGHT:
         return False
-    if mode == DARK:
+    if mode in (DARK, SLATE):
         return True
     return system_scheme != Qt.ColorScheme.Light
 
 
 def dark_palette() -> QPalette:
-    window = QColor(45, 45, 48)
-    text = QColor(224, 224, 224)
-    disabled = QColor(128, 128, 128)
+    # Blue-grey, near black: the first Slate's shades, moved here when Slate
+    # took the neutral grey of the user's reference (0.6.1). Dark stays the
+    # darkest theme.
+    window = QColor(0x22, 0x29, 0x33)
+    text = QColor(0xdd, 0xe2, 0xe8)
+    disabled = QColor(0x6c, 0x75, 0x81)
     p = QPalette()
     p.setColor(QPalette.Window, window)
     p.setColor(QPalette.WindowText, text)
-    p.setColor(QPalette.Base, QColor(37, 37, 40))
+    p.setColor(QPalette.Base, QColor(0x1b, 0x20, 0x28))
     p.setColor(QPalette.AlternateBase, window)
     p.setColor(QPalette.Text, text)
     p.setColor(QPalette.PlaceholderText, disabled)
-    p.setColor(QPalette.Button, window)
+    p.setColor(QPalette.Button, QColor(0x29, 0x30, 0x3a))
     p.setColor(QPalette.ButtonText, text)
-    p.setColor(QPalette.BrightText, QColor(255, 96, 96))
-    p.setColor(QPalette.ToolTipBase, QColor(58, 58, 61))
-    p.setColor(QPalette.ToolTipText, text)
+    p.setColor(QPalette.BrightText, QColor(255, 104, 104))
+    p.setColor(QPalette.ToolTipBase, QColor(0x33, 0x3a, 0x45))
+    p.setColor(QPalette.ToolTipText, QColor(0xf0, 0xf3, 0xf7))
     p.setColor(QPalette.Highlight, _HIGHLIGHT)
     p.setColor(QPalette.HighlightedText, QColor(255, 255, 255))
-    p.setColor(QPalette.Link, QColor(74, 163, 224))
-    # The shades Fusion derived here when the scheme was forced dark —
-    # pinned so the dark look does not move with the platform theme.
-    p.setColor(QPalette.Light, QColor(0x34, 0x34, 0x34))
-    p.setColor(QPalette.Midlight, QColor(0x2F, 0x2F, 0x2F))
-    p.setColor(QPalette.Mid, QColor(0x2F, 0x2F, 0x2F))
-    p.setColor(QPalette.Dark, QColor(0x25, 0x25, 0x25))
-    p.setColor(QPalette.Shadow, QColor(0x02, 0x02, 0x02))
+    p.setColor(QPalette.Link, QColor(96, 166, 226))
+    # The shades Fusion draws bevels and frames with — pinned so the look
+    # does not move with the platform theme.
+    p.setColor(QPalette.Light, QColor(0x34, 0x3a, 0x44))
+    p.setColor(QPalette.Midlight, QColor(0x29, 0x30, 0x3a))
+    p.setColor(QPalette.Mid, QColor(0x29, 0x30, 0x3a))
+    p.setColor(QPalette.Dark, QColor(0x1b, 0x20, 0x28))
+    p.setColor(QPalette.Shadow, QColor(0x0a, 0x0c, 0x0f))
     for role in (QPalette.WindowText, QPalette.Text, QPalette.ButtonText,
                  QPalette.HighlightedText):
         p.setColor(QPalette.Disabled, role, disabled)
@@ -140,34 +159,255 @@ def dark_palette() -> QPalette:
 
 
 def light_palette() -> QPalette:
-    # Fusion's own light shades, with IngeTrazo's accent.
-    window = QColor(239, 239, 239)
+    # A bright, faintly cool light grey instead of Fusion's white and grey:
+    # fields almost white, frames and lines a quiet light grey, text a very
+    # dark grey (0.6.1, after a light ribbon the user showed).
+    window = QColor(0xed, 0xee, 0xf0)
+    # The text keeps IngeTrazo's own near black: the rows' eye, padlock and
+    # target are drawn in it, and a lighter grey washed them out at 16 px
+    # (the Browser, the Layers drop-down).
     text = QColor(20, 22, 26)
-    disabled = QColor(160, 160, 160)
+    disabled = QColor(0xa0, 0xa3, 0xa8)
     p = QPalette()
     p.setColor(QPalette.Window, window)
     p.setColor(QPalette.WindowText, text)
-    p.setColor(QPalette.Base, QColor(255, 255, 255))
-    p.setColor(QPalette.AlternateBase, QColor(247, 247, 247))
+    p.setColor(QPalette.Base, QColor(0xfb, 0xfb, 0xfc))
+    p.setColor(QPalette.AlternateBase, QColor(0xf4, 0xf5, 0xf6))
     p.setColor(QPalette.Text, text)
-    p.setColor(QPalette.PlaceholderText, QColor(120, 124, 130))
-    p.setColor(QPalette.Button, window)
+    p.setColor(QPalette.PlaceholderText, QColor(0x80, 0x84, 0x8a))
+    p.setColor(QPalette.Button, QColor(0xe5, 0xe7, 0xea))
     p.setColor(QPalette.ButtonText, text)
     p.setColor(QPalette.BrightText, QColor(200, 30, 30))
-    p.setColor(QPalette.ToolTipBase, QColor(255, 255, 225))
+    p.setColor(QPalette.ToolTipBase, QColor(0xf8, 0xf8, 0xf9))
     p.setColor(QPalette.ToolTipText, text)
     p.setColor(QPalette.Highlight, _HIGHLIGHT)
     p.setColor(QPalette.HighlightedText, QColor(255, 255, 255))
     p.setColor(QPalette.Link, QColor(26, 110, 190))
-    p.setColor(QPalette.Light, QColor(255, 255, 255))
-    p.setColor(QPalette.Midlight, QColor(0xCA, 0xCA, 0xCA))
-    p.setColor(QPalette.Mid, QColor(0xB8, 0xB8, 0xB8))
-    p.setColor(QPalette.Dark, QColor(0x9F, 0x9F, 0x9F))
-    p.setColor(QPalette.Shadow, QColor(0x76, 0x76, 0x76))
+    p.setColor(QPalette.Light, QColor(0xf8, 0xf8, 0xf9))
+    p.setColor(QPalette.Midlight, QColor(0xda, 0xdc, 0xe0))
+    p.setColor(QPalette.Mid, QColor(0xcc, 0xcf, 0xd4))
+    p.setColor(QPalette.Dark, QColor(0xb2, 0xb6, 0xbc))
+    p.setColor(QPalette.Shadow, QColor(0x7a, 0x7e, 0x85))
     for role in (QPalette.WindowText, QPalette.Text, QPalette.ButtonText,
                  QPalette.HighlightedText):
         p.setColor(QPalette.Disabled, role, disabled)
     return p
+
+
+# ---- Slate ------------------------------------------------------------------
+# One set of shades, used by both the palette and the stylesheet so the two
+# never drift apart: a neutral mid-dark grey with the faintest cool cast,
+# hairlines darker than the panels (as in image editors' tool columns), and
+# a muted steel blue for the active tool only.
+SLATE_COLOURS = {
+    "deep": "#2a2b2d",      # fields, lists, the status and menu bars
+    "window": "#323335",    # the window and the panels
+    "raised": "#38393b",    # toolbars, menus, dock titles
+    "button": "#444548",    # push buttons
+    "border": "#262728",    # hairlines between areas: darker, not lighter
+    "edge": "#4d4f53",      # the outline of buttons and fields
+    "thumb": "#55575b",     # scroll-bar handles
+    "grip": "#5a5c60",      # the toolbars' grip line: grey, never bright
+    "active": "#6a6e76",    # the active tool's thin outline
+    "text": "#d6d7d9",
+    "bright": "#eeeff1",    # the brightest text
+    "muted": "#9a9ca1",
+    "disabled": "#707276",
+}
+
+
+def slate_palette() -> QPalette:
+    c = {k: QColor(v) for k, v in SLATE_COLOURS.items()}
+    p = QPalette()
+    p.setColor(QPalette.Window, c["window"])
+    p.setColor(QPalette.WindowText, c["text"])
+    p.setColor(QPalette.Base, c["deep"])
+    p.setColor(QPalette.AlternateBase, c["window"])
+    p.setColor(QPalette.Text, c["text"])
+    p.setColor(QPalette.PlaceholderText, c["disabled"])
+    p.setColor(QPalette.Button, c["raised"])
+    p.setColor(QPalette.ButtonText, c["text"])
+    p.setColor(QPalette.BrightText, QColor(255, 104, 104))
+    p.setColor(QPalette.ToolTipBase, c["button"])
+    p.setColor(QPalette.ToolTipText, c["bright"])
+    p.setColor(QPalette.Highlight, _HIGHLIGHT)
+    p.setColor(QPalette.HighlightedText, QColor(255, 255, 255))
+    p.setColor(QPalette.Link, QColor(96, 166, 226))
+    p.setColor(QPalette.Light, c["border"])
+    p.setColor(QPalette.Midlight, c["border"])
+    p.setColor(QPalette.Mid, c["raised"])
+    p.setColor(QPalette.Dark, c["deep"])
+    p.setColor(QPalette.Shadow, QColor(0x0a, 0x0c, 0x0f))
+    for role in (QPalette.WindowText, QPalette.Text, QPalette.ButtonText,
+                 QPalette.HighlightedText):
+        p.setColor(QPalette.Disabled, role, c["disabled"])
+    return p
+
+
+#: The Slate chrome. Only type selectors and sub-controls: a widget that
+#: sets its own stylesheet (the colour swatches, the measurements box…)
+#: still wins. The grip is not here: :class:`ChromeStyle` draws it.
+#: ``{accent_rgb}`` is Preferences ▸ Accent colour; the doubled braces are
+#: literal ones for :meth:`str.format`.
+SLATE_SHEET = """
+QMainWindow::separator {{ background: {deep}; width: 3px; height: 3px; }}
+QMenuBar {{ background: {deep}; }}
+QMenuBar::item {{ background: transparent; padding: 3px 8px 2px 8px;
+    border-radius: 3px; }}
+QMenuBar::item:selected {{ background: rgba({accent_rgb}, 46); }}
+QMenu {{ background: {raised}; border: 1px solid {edge}; }}
+QMenu::separator {{ height: 1px; background: {border}; margin: 4px 8px; }}
+QToolBar {{ background: {raised}; border: none; padding: 4px;
+    spacing: 0; }}
+QToolBar::separator {{ background: {border}; width: 1px; height: 1px;
+    margin: 5px 4px; }}
+QToolBar QToolButton {{ background: transparent;
+    border: 1px solid transparent; border-radius: 4px;
+    padding: 1px 1px 1px 2px; }}
+QToolBar QToolButton:hover {{ background: rgba({accent_rgb}, 38);
+    border-color: rgba({accent_rgb}, 110); }}
+QToolBar QToolButton:checked, QToolBar QToolButton:pressed {{
+    background: transparent; border-color: {active}; border-radius: 3px; }}
+QToolBar QToolButton[popupMode="1"] {{ padding-right: 13px; }}
+QToolBar QToolButton::menu-button {{ border: none; width: 12px; }}
+QToolBar QToolButton#qt_toolbar_ext_button {{ padding: 0; border: none;
+    border-radius: 3px; }}
+QDockWidget::title {{ background: {raised}; padding: 5px 8px;
+    border-bottom: 1px solid {border}; }}
+QStatusBar {{ background: {deep}; border-top: 1px solid {border}; }}
+QStatusBar::item {{ border: none; }}
+QPushButton {{ background: {button}; border: 1px solid {edge};
+    border-radius: 4px; padding: 4px 12px; }}
+QPushButton:hover {{ border-color: rgba({accent_rgb}, 190); }}
+QPushButton:pressed, QPushButton:checked {{
+    background: rgba({accent_rgb}, 70); }}
+QPushButton:disabled {{ color: {disabled}; border-color: {border}; }}
+QLineEdit {{ background: {deep}; border: 1px solid {edge};
+    border-radius: 4px; padding: 3px 6px; }}
+QLineEdit:focus {{ border-color: rgb({accent_rgb}); }}
+QToolTip {{ background: {button}; color: {bright};
+    border: 1px solid {edge}; padding: 4px 6px; }}
+QScrollBar:vertical {{ background: transparent; width: 11px; margin: 0; }}
+QScrollBar:horizontal {{ background: transparent; height: 11px; margin: 0; }}
+QScrollBar::handle {{ background: {thumb}; border-radius: 4px; margin: 2px; }}
+QScrollBar::handle:vertical {{ min-height: 28px; }}
+QScrollBar::handle:horizontal {{ min-width: 28px; }}
+QScrollBar::handle:hover {{ background: {edge}; }}
+QScrollBar::add-line, QScrollBar::sub-line {{ width: 0; height: 0; }}
+QScrollBar::add-page, QScrollBar::sub-page {{ background: none; }}
+"""
+
+
+#: The grip's grey on each theme's toolbar: a step off the background,
+#: like the dots it replaces.
+GRIP_COLOURS = {DARK: "#485462", LIGHT: "#c8cbd0",
+                SLATE: SLATE_COLOURS["grip"]}
+
+
+def slate_sheet() -> str:
+    """:data:`SLATE_SHEET` with the shades and the accent in force."""
+    accent = accent_color()
+    return SLATE_SHEET.format(
+        accent_rgb=f"{accent.red()}, {accent.green()}, {accent.blue()}",
+        **SLATE_COLOURS)
+
+
+def app_sheet(mode: str) -> str:
+    """The app-wide stylesheet for a theme: Slate's chrome, and nothing at
+    all for the others. Any app sheet, even one rule, makes Qt paint the
+    checked tool buttons in the desktop's accent on Windows (light blue in
+    Dark, blue in Light), so Dark and Light must keep none."""
+    return slate_sheet() if mode == SLATE else ""
+
+
+#: The active tool's outline on each theme: a thin, quiet grey border and
+#: nothing inside, as IngeTrazo always had it — Fusion's bright edge read
+#: too heavy, a fill too loud (the user, 0.6.1).
+ACTIVE_COLOURS = {DARK: "#5b6676", LIGHT: "#a7aeb8",
+                  SLATE: SLATE_COLOURS["active"]}
+
+
+def active_tool_colour() -> QColor:
+    """The active tool's outline for the theme in force."""
+    return QColor(ACTIVE_COLOURS.get(_grip_key, ACTIVE_COLOURS[DARK]))
+
+
+#: The icons' ink on each theme: a very light or very dark grey, softer
+#: than the text — pure white or black lines glared (the user, 0.6.1).
+ICON_INKS = {DARK: "#d9dce1", LIGHT: "#55595f", SLATE: "#c3c4c7"}
+
+
+def icon_ink() -> QColor:
+    """The icons' ink for the theme in force."""
+    return QColor(ICON_INKS.get(_grip_key, ICON_INKS[DARK]))
+
+
+def grip_colour() -> QColor:
+    """The grip's grey for the theme in force."""
+    return QColor(GRIP_COLOURS.get(_grip_key, GRIP_COLOURS[DARK]))
+
+
+def _in_toolbar(widget) -> bool:
+    from PySide6.QtWidgets import QToolBar, QToolButton
+    return (isinstance(widget, QToolButton)
+            and isinstance(widget.parentWidget(), QToolBar))
+
+
+class ChromeStyle(QProxyStyle):
+    """Fusion, with the toolbars' grip drawn as one thin grey line instead
+    of two columns of dots — narrower and quieter, in every theme (the
+    user's choice). Drawn by the style, not a stylesheet: see
+    :func:`app_sheet`. views/floating_toolbar.py builds on it."""
+
+    #: Room the grip takes along the bar (Fusion's dots take 9 px).
+    GRIP_EXTENT = 7
+    #: Gap between the line's ends and the bar's edges.
+    GRIP_INSET = 6
+
+    def pixelMetric(self, metric, option=None, widget=None):
+        if metric == QStyle.PM_ToolBarHandleExtent:
+            return self.GRIP_EXTENT
+        return super().pixelMetric(metric, option, widget)
+
+    #: Corner radius of the active tool's outline.
+    ACTIVE_RADIUS = 3
+
+    def drawPrimitive(self, element, option, painter, widget=None):
+        if (element == QStyle.PE_PanelButtonTool
+                and option.state & QStyle.State_On
+                and _in_toolbar(widget)):
+            # The active (checked) tool: a thin outline, nothing inside.
+            painter.save()
+            painter.setRenderHint(QPainter.Antialiasing, True)
+            painter.setPen(QPen(active_tool_colour(), 1.0))
+            painter.setBrush(Qt.NoBrush)
+            painter.drawRoundedRect(QRectF(option.rect).adjusted(
+                0.5, 0.5, -0.5, -0.5), self.ACTIVE_RADIUS, self.ACTIVE_RADIUS)
+            painter.restore()
+            return
+        if element == QStyle.PE_IndicatorToolBarSeparator:
+            # Between groups of tools: the grip's thin grey line, so every
+            # line on a bar is one and the same.
+            r, inset = option.rect, self.GRIP_INSET
+            if option.state & QStyle.State_Horizontal:
+                line = QRect(r.center().x(), r.top() + inset,
+                             1, max(1, r.height() - 2 * inset))
+            else:
+                line = QRect(r.left() + inset, r.center().y(),
+                             max(1, r.width() - 2 * inset), 1)
+            painter.fillRect(line, grip_colour())
+            return
+        if element != QStyle.PE_IndicatorToolBarHandle:
+            super().drawPrimitive(element, option, painter, widget)
+            return
+        r, inset = option.rect, self.GRIP_INSET
+        if option.state & QStyle.State_Horizontal:   # a horizontal bar
+            line = QRect(r.center().x(), r.top() + inset,
+                         1, max(1, r.height() - 2 * inset))
+        else:
+            line = QRect(r.left() + inset, r.center().y(),
+                         max(1, r.width() - 2 * inset), 1)
+        painter.fillRect(line, grip_colour())
 
 
 def tokens() -> dict[str, str]:
@@ -222,6 +462,28 @@ def _repolish(app) -> None:
                 w.setStyleSheet(sheet)
 
 
+def _reinherit_palettes(app) -> None:
+    """Make every widget take the palette in force again. Once Slate's sheet
+    had come and gone, Qt left hundreds of widgets — the Properties and
+    Layers tabs among them — holding the palette of that moment and deaf
+    to every later theme change: Slate → Dark → Light kept Dark's panels
+    (and at times the menu bar) in Light. Parents before children, so each
+    inherits the corrected one; a widget with a palette or a stylesheet of
+    its own (a colour swatch, the search list) is left as it is."""
+    from PySide6.QtWidgets import QWidget
+    blank = QPalette()
+
+    def walk(w) -> None:
+        if (not w.testAttribute(Qt.WA_SetPalette) and not w.styleSheet()):
+            w.setPalette(blank)
+        for child in w.children():
+            if isinstance(child, QWidget):
+                walk(child)
+
+    for top in app.topLevelWidgets():
+        walk(top)
+
+
 def _redraw_icons(app) -> None:
     """The programmatic icons are painted in the palette's ink when built;
     anything tagged with an ``icon_key`` property gets repainted. (The main
@@ -261,6 +523,8 @@ def apply_accent(app) -> None:
     """Repaint what wears the accent after Preferences changed it."""
     from views import icons
     icons.clear_cursor_cache()
+    if _applied == SLATE:               # its hovers wear the accent
+        _set_app_sheet(app, app_sheet(SLATE))
     _restyle()
     _redraw_icons(app)
     for top in app.topLevelWidgets():
@@ -268,6 +532,23 @@ def apply_accent(app) -> None:
         if callable(refresh):
             refresh()
         top.update()
+
+
+# The app-wide sheet this module last set. Another one (an extension's) is
+# never replaced or cleared: only ours is ours to change.
+_app_sheet = ""
+_app_style = None                       # the app's ChromeStyle, kept alive
+_applied = ""                           # the mode apply_theme last set
+_grip_key = DARK                        # whose grip grey is in force
+
+
+def _set_app_sheet(app, sheet: str) -> None:
+    global _app_sheet
+    current = app.styleSheet()
+    if current not in ("", _app_sheet) or current == sheet:
+        return
+    app.setStyleSheet(sheet)
+    _app_sheet = sheet
 
 
 def _system_scheme(app) -> Qt.ColorScheme:
@@ -291,9 +572,18 @@ def apply_theme(app, mode: str | None = None) -> bool:
     if mode != SYSTEM:
         hints.setColorScheme(Qt.ColorScheme.Dark if dark
                              else Qt.ColorScheme.Light)
-    if app.style().name().lower() != "fusion":
-        app.setStyle("Fusion")
-    app.setPalette(dark_palette() if dark else light_palette())
+    global _app_style, _grip_key
+    _grip_key = mode if mode == SLATE else (DARK if dark else LIGHT)
+    if not isinstance(app.style(), ChromeStyle):
+        _app_style = ChromeStyle("Fusion")
+        app.setStyle(_app_style)
+    slate = mode == SLATE
+    app.setPalette(slate_palette() if slate
+                   else dark_palette() if dark else light_palette())
+    _set_app_sheet(app, app_sheet(mode))
+    _reinherit_palettes(app)
+    global _applied
+    _applied = mode
     _restyle()
     _repolish(app)
     _redraw_icons(app)

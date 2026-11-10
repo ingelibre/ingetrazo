@@ -89,9 +89,10 @@ class PreferencesDialog(QDialog):
         self._lang.setCurrentIndex(max(0, self._lang.findData(pending)))
         form.addRow(tr("Language:"), self._lang)
 
-        from views.theme import DARK, LIGHT, SYSTEM, saved_theme
+        from views.theme import DARK, LIGHT, SLATE, SYSTEM, saved_theme
         self._theme = QComboBox()
-        for key, label in ((DARK, tr("Dark")), (LIGHT, tr("Light")),
+        for key, label in ((DARK, tr("Dark")), (SLATE, tr("Slate")),
+                           (LIGHT, tr("Light")),
                            (SYSTEM, tr("Same as the system"))):
             self._theme.addItem(label, key)
         self._theme.setCurrentIndex(max(0, self._theme.findData(
