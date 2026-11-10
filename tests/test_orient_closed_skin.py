@@ -148,6 +148,9 @@ def test_a_skin_closed_only_on_paper_is_asked_face_by_face(monkeypatch):
             mesh.add_face(loop)
     comp = orient._face_components(mesh)
     assert orient._coherent_shells(mesh.faces, comp) == set(comp.values())
+    # Two faces asked, neither of them the top: nothing in what they say
+    # gives the skin away.
+    monkeypatch.setattr(orient, "_SHELL_SAMPLES", 2)
     asked = _count_questions(monkeypatch)
     orient_outward(mesh)
     assert len(set(asked)) == len(mesh.faces)
