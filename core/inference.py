@@ -277,6 +277,7 @@ class InferenceEngine:
             if hasattr(vp, "_face_crossing_point") else None,
             face_outline=(lambda: vp._face_outline_world(px_x, px_y))
             if hasattr(vp, "_face_outline_world") else None,
+            face_centers=self._face_centers(px_x, px_y),
         )
         if snap is not None and snap.kind == "axis" and snap.axis:
             self._sticky_axis = snap.axis
@@ -297,6 +298,13 @@ class InferenceEngine:
             return SnapResult(snap.point, "none", COLOR_NONE)
         return snap
 
+    def _face_centers(self, px_x: float, px_y: float):
+        """The «Face center» points near the cursor — the face under it and
+        the selected faces — as the viewport sees them (``None`` from a
+        stand-in viewport without the method)."""
+        near = getattr(self.viewport, "_face_centers_near", None)
+        return near(px_x, px_y) if callable(near) else None
+
     # ---- Post-processors (axis-source cue, extensions) ----------------------
 
     #: Built-in inferences an extension's may not override: a point with a
@@ -304,7 +312,7 @@ class InferenceEngine:
     _NAMED_SNAPS = frozenset((
         "endpoint", "midpoint", "arc_midpoint", "center", "origin",
         "component_origin", "intersection", "intersection_edge",
-        "intersection_face", "close", "on_edge"))
+        "intersection_face", "close", "on_edge", "face_center"))
 
     def _axis_source_cue(self, snap, px_x: float, px_y: float):
         """Before its first click, a tool that reads the model axes as a
