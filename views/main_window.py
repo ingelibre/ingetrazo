@@ -1410,7 +1410,7 @@ class MainWindow(QMainWindow):
             act.setStatusTip(tr(tip))
             set_tooltip(act, tr(label))     # names the keys, if given any
             act.triggered.connect(
-                lambda _c, m=mode: self.viewport.set_projection(m))
+                lambda _c, m=mode: self._set_projection(m))
             self._projection_group.addAction(act)
             views_tb.addAction(act)
             self._icon_actions.append((act, icon))
@@ -1432,6 +1432,26 @@ class MainWindow(QMainWindow):
         act = self._projection_actions.get(mode)
         if act is not None and not act.isChecked():
             act.setChecked(True)
+
+    def _set_projection(self, mode: str) -> None:
+        """Parallel, perspective or two-point, in the active view only."""
+        vp = self._active_view()
+        vp.set_projection(mode)
+        self._sync_projection_buttons(vp.camera.projection_mode())
+
+    def _toggle_projection(self) -> None:
+        """Shift+P, in the active view only."""
+        vp = self._active_view()
+        vp.toggle_projection()
+        self._sync_projection_buttons(vp.camera.projection_mode())
+
+    def on_active_view_changed(self) -> None:
+        """Another of several views is worked in (or back to one view): the
+        Styles and the projection buttons show what that view shows."""
+        self._sync_style_menu()
+        if self.__dict__.get("_projection_actions"):
+            self._sync_projection_buttons(
+                self._active_view().camera.projection_mode())
 
     def _refresh_toolbar_icons(self) -> None:
         """Re-draw the programmatic toolbar icons for the current palette so a
@@ -1786,7 +1806,7 @@ class MainWindow(QMainWindow):
         # Protractor and the centre arc.
         action_proj.setShortcut(QKeySequence("Shift+P"))
         action_proj.triggered.connect(
-            lambda _c=False: self.viewport.toggle_projection())
+            lambda _c=False: self._toggle_projection())
         camera_menu.addAction(action_proj)
 
         # The Camera menu: Parallel Projection / Perspective /
@@ -5058,11 +5078,74 @@ class MainWindow(QMainWindow):
         self.viewport.update()
 
     # ---- Display styles ----------------------------------------------------
+    def _active_view(self):
+        """The view the Styles and the projection act on: with several views,
+        the one worked in (its label in the accent colour); else the
+        window's own."""
+        doc = self.__dict__.get("_doc")
+        grid = getattr(doc, "view_grid", None) if doc is not None else None
+        if grid is not None and grid.is_enabled():
+            cell = grid.active_cell()
+            vp = cell.viewport if cell is not None else None
+            if vp is not None and not cell.isHidden():
+                return vp
+        return self.viewport
+
+    def active_style(self):
+        """The style the active view shows (to read: menu, Styles panel)."""
+        vp = self._active_view()
+        if vp is self.viewport:
+            return getattr(vp.scene, "display_style", None)
+        return vp._view_style()
+
+    def own_style(self):
+        """The style to change in place, the active view's own: a view of
+        several that still showed the window's style gets a copy first, so
+        what is changed there stays there."""
+        vp = self._active_view()
+        style = getattr(vp.scene, "display_style", None)
+        if vp is self.viewport:
+            self.keep_other_views_style()
+            return style
+        if vp.view_style is None and style is not None:
+            vp.view_style = style.copy()
+        return vp.view_style
+
+    def set_active_style(self, style) -> None:
+        """Give the active view ``style``: the window's view keeps it in the
+        scene (saved with the file); another of several views, its own."""
+        vp = self._active_view()
+        if vp is self.viewport:
+            self.keep_other_views_style()
+            vp.scene.display_style = style
+        else:
+            vp.view_style = style
+        self.repaint_styled()
+
+    def keep_other_views_style(self) -> None:
+        """The window's view is about to change its style (a style, a
+        switch, a scene): the other views shown keep the one they show, so
+        a change in one view never reaches the others."""
+        doc = self.__dict__.get("_doc")
+        grid = getattr(doc, "view_grid", None) if doc is not None else None
+        if grid is None or not grid.is_enabled():
+            return
+        style = getattr(self.viewport.scene, "display_style", None)
+        if style is None:
+            return
+        for vp in grid.extras():
+            if vp.view_style is None:
+                vp.view_style = style.copy()
+
+    def repaint_styled(self) -> None:
+        """Redraw the active view after a style change."""
+        self._active_view().update()
+
     def _apply_display_style(self, preset) -> None:
-        """Activate a built-in style (a COPY — presets stay pristine)."""
-        self.viewport.scene.display_style = preset.copy()
+        """Activate a built-in style (a COPY — presets stay pristine) in the
+        active view."""
+        self.set_active_style(preset.copy())
         self._sync_style_menu()
-        self.viewport.update()
         self.statusBar().showMessage(
             tr("Style: {name}", name=tr(preset.name)), 2000)
 
@@ -5071,32 +5154,44 @@ class MainWindow(QMainWindow):
         back to that style — or to Default when there is none to go back to
         (X-ray picked from the menu, or another document since)."""
         from core.style import style_by_name
-        scene = self.viewport.scene
-        style = getattr(scene, "display_style", None)
+        vp = self._active_view()
+        style = self.active_style()
+        # Each view of several goes in and out on its own: the window's view
+        # remembers in ``_style_before_xray``, the others on themselves.
+        mine = vp is self.viewport
         if style is not None and style.face_mode == "xray":
-            prev_scene, prev = self._style_before_xray
-            self._style_before_xray = (None, None)
-            if prev_scene is not scene or prev is None:
+            if mine:
+                prev_scene, prev = self._style_before_xray
+                self._style_before_xray = (None, None)
+            else:
+                prev_scene, prev = getattr(vp, "_style_before_xray",
+                                           (None, None))
+                vp._style_before_xray = (None, None)
+            if prev_scene is not vp.scene or prev is None:
                 prev = style_by_name("Default")
             self._apply_display_style(prev)
         else:
-            self._style_before_xray = (
-                scene, style.copy() if style is not None else None)
+            kept = (vp.scene, style.copy() if style is not None else None)
+            if mine:
+                self._style_before_xray = kept
+            else:
+                vp._style_before_xray = kept
             self._apply_display_style(style_by_name("X-ray"))
 
     def _set_style_field(self, name: str, value: bool) -> None:
-        style = getattr(self.viewport.scene, "display_style", None)
+        style = self.active_style()
         if style is None or getattr(style, name) == bool(value):
             return
-        setattr(style, name, bool(value))
-        self.viewport.update()
+        setattr(self.own_style(), name, bool(value))
+        self.repaint_styled()
         browser = getattr(self, "project_browser", None)
         if browser is not None and name == "section_fill":
             browser.outliner.on_scene_changed()
 
     def _sync_style_menu(self) -> None:
-        """Reflect the scene's active style in the menu (loads, scene recall)."""
-        style = getattr(self.viewport.scene, "display_style", None)
+        """Reflect the active view's style in the menu (loads, scene recall,
+        another of several views clicked)."""
+        style = self.active_style()
         if style is None:
             return
         for name, act in self._style_actions.items():
@@ -6345,6 +6440,9 @@ class MainWindow(QMainWindow):
             return
         self.viewport.camera.fit_box(lo, hi)
         self.viewport.update()
+        grid = self._doc.view_grid
+        if grid is not None:                 # every view shown frames it,
+            grid.fit_box(lo, hi)             # as Zoom Extents does
 
     def _figure_bounds(self):
         """World box of the visible face-me figures, or None."""
@@ -6865,7 +6963,8 @@ class MainWindow(QMainWindow):
         where it is, so a wider angle takes more in around the same point.
         A parallel view has no angle — there it would only zoom — so it is
         refused with a word in the status bar."""
-        cam = self.viewport.camera
+        vp = self._active_view()         # with several views, the active one
+        cam = vp.camera
         if not cam.perspective:
             self.statusBar().showMessage(tr(
                 "Field of view applies to perspective; switch to "
@@ -6873,11 +6972,11 @@ class MainWindow(QMainWindow):
             return False
         lo, hi = self.FOV_RANGE
         cam.fov_deg = float(min(hi, max(lo, degrees)))
-        self.viewport.update()
+        vp.update()
         return True
 
     def _ask_field_of_view(self) -> None:
-        cam = self.viewport.camera
+        cam = self._active_view().camera
         if not cam.perspective:
             self.set_field_of_view(cam.fov_deg)     # says why, changes nothing
             return

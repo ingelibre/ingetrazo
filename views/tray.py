@@ -3332,7 +3332,25 @@ class StylesPanel(QWidget):
 
     # ---- Plumbing -----------------------------------------------------------
     def _style(self):
+        """The active view's style, to show (with several views, the one
+        worked in)."""
+        active = getattr(self._window, "active_style", None)
+        if active is not None:
+            return active()
         return getattr(self._window.viewport.scene, "display_style", None)
+
+    def _own_style(self):
+        """The active view's style, to change: its own copy first when it is
+        one of several views still showing the window's."""
+        own = getattr(self._window, "own_style", None)
+        return own() if own is not None else self._style()
+
+    def _repaint(self) -> None:
+        again = getattr(self._window, "repaint_styled", None)
+        if again is not None:
+            again()
+        else:
+            self._window.viewport.update()
 
     def _shown_color(self, attr: str):
         """The colour a swatch shows for ``attr``. Back color may be unset
@@ -3407,14 +3425,18 @@ class StylesPanel(QWidget):
         picked = style_by_name(self._combo.itemData(index))
         if picked is None:
             return
-        self._window.viewport.scene.display_style = picked
+        put = getattr(self._window, "set_active_style", None)
+        if put is not None:
+            put(picked)
+        else:
+            self._window.viewport.scene.display_style = picked
         self._window._sync_style_menu()          # menu + this panel
-        self._window.viewport.update()
+        self._repaint()
 
     def _apply_edits(self, *_a) -> None:
-        style = self._style()
-        if style is None or self._updating:
+        if self._style() is None or self._updating:
             return
+        style = self._own_style()
         style.face_mode = self._mode.currentData()
         style.edges = self._edges.isChecked()
         style.profiles = self._profiles.isChecked()
@@ -3425,7 +3447,7 @@ class StylesPanel(QWidget):
         style.ao_intensity = self._ao_int.value() / 10.0
         self._sync_ao_controls()
         self._window._sync_style_menu()
-        self._window.viewport.update()
+        self._repaint()
 
     _AO_DIST_STEPS = 200
 
@@ -3451,9 +3473,9 @@ class StylesPanel(QWidget):
     def _on_ao_dist_slider(self, pos: int) -> None:
         # Only a drag writes the distance: a value from a file that sits
         # between two slider steps is kept as it is until then.
-        style = self._style()
-        if style is None or self._updating:
+        if self._style() is None or self._updating:
             return
+        style = self._own_style()
         style.ao_distance = self._ao_dist_at(pos)
         self._apply_edits()
 
@@ -3499,9 +3521,10 @@ class StylesPanel(QWidget):
             QColor.fromRgbF(*(float(v) for v in c[:3])), _dialog_parent(self), title)
         if not chosen.isValid():
             return
+        style = self._own_style()
         setattr(style, attr, (chosen.redF(), chosen.greenF(), chosen.blueF()))
         self.refresh()
-        self._window.viewport.update()
+        self._repaint()
         # Every colour is editable in every mode (build the look, save it) —
         # but an edit that can't show RIGHT NOW says so, or it reads as
         # "styles don't work" (it did, live, 2026-08-31).
@@ -3552,6 +3575,7 @@ class StylesPanel(QWidget):
                 tr("'{name}' is a built-in style — pick another name.",
                    name=name))
             return
+        style = self._own_style()
         style.name = name        # the active style takes the saved identity
         save_user_style(style)
         self._window._sync_style_menu()
@@ -4961,14 +4985,30 @@ class ScenesPanel(QWidget):
         self._begin_own()
         from core.saved_views import shown_state
         before = shown_state(scene)
-        view.apply(scene, self._window.viewport.camera)
+        # With several views, the scene goes to the one worked in: its
+        # camera, and its style as that view's own.
+        w = self._window
+        pick = getattr(w, "_active_view", None)
+        vp = pick() if pick is not None else w.viewport
+        if vp is w.viewport:
+            keep = getattr(w, "keep_other_views_style", None)
+            if keep is not None:          # the others keep their style
+                keep()
+            view.apply(scene, vp.camera)
+        else:
+            def own(style, vp=vp):
+                vp.view_style = style
+            view.apply(scene, vp.camera, own)
+            vp.update()
         # A scene that only moves the camera changes nothing the caches
         # keyed on ``scene.version`` hold: bumping it re-synced every edge
         # and profile of the model (120 ms on a 1 M-face building) and
         # marked the document modified for a look around.
         changed = _SCENE_ALWAYS_BUMP or shown_state(scene) != before
-        # The view may carry a style snapshot — keep the menu in step.
-        sync = getattr(self._window, "_sync_style_menu", None)
+        # The view may carry a style snapshot and a projection — keep the
+        # menu and the projection buttons in step.
+        sync = (getattr(self._window, "on_active_view_changed", None)
+                or getattr(self._window, "_sync_style_menu", None))
         if sync is not None:
             sync()
         # Entities that just went invisible/unpickable leave the selection,
@@ -5124,6 +5164,15 @@ class ScenesPanel(QWidget):
 
     _CONTEXT = object()          # _on_add: the folder picked in the tree
 
+    def _live_view(self):
+        """The camera and style a new or updated scene takes: with several
+        views, the active one's (its own camera, projection and style)."""
+        w = self._window
+        pick = getattr(w, "_active_view", None)
+        vp = pick() if pick is not None else w.viewport
+        active = getattr(w, "active_style", None)
+        return vp.camera, (active() if active is not None else None)
+
     def _on_add(self, folder=_CONTEXT):
         """A scene from the current view, in the folder picked (or
         ``folder``); it becomes the current row. The new scene."""
@@ -5137,8 +5186,8 @@ class ScenesPanel(QWidget):
         taken = {v.name for v in scene.saved_views}
         while f"{base} {n}" in taken:
             n += 1
-        view = SavedView.capture(f"{base} {n}", scene,
-                                 self._window.viewport.camera)
+        camera, style = self._live_view()
+        view = SavedView.capture(f"{base} {n}", scene, camera, style)
         view.folder = folder
         self._begin_own()
         self._history().execute(AddSceneCommand(view))
@@ -5157,7 +5206,7 @@ class ScenesPanel(QWidget):
         from core.history import UpdateSceneCommand
         self._begin_own()
         self._history().execute(
-            UpdateSceneCommand(view, self._window.viewport.camera))
+            UpdateSceneCommand(view, *self._live_view()))
         self._touch()
         self.refresh()                     # its picture is drawn again
         self._window.statusBar().showMessage(
