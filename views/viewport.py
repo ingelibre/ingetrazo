@@ -656,6 +656,13 @@ def _proto_wrapper(vp, mesh, paint=None):
     return w
 
 
+def _fp_winding(fp) -> int:
+    """The flip count a chunk fingerprint was taken at, 0 when it has no such
+    term (see ``_mesh_fingerprint``). Module-level for the same reason as
+    :func:`_proto_wrapper`."""
+    return fp[7][1] if len(fp) > 7 and fp[7][0] == "winding" else 0
+
+
 def _flags_read(mesh, entry: dict) -> None:
     """``entry`` has answered for what the mesh's dirty flags announced: they
     clear, and any other bake of this mesh is left behind (``flags_gen``)."""
@@ -12350,6 +12357,12 @@ class Viewport(QOpenGLWidget):
                 cache[id(group)] = entry
             entry["vkey"] = vkey
             return entry
+        # Reversed faces show in nothing the checks below read, and the dirty
+        # marks that say so are cleared by the first chunk rebuilt: a painted
+        # copy, with a chunk of its own, then took itself for current.
+        if (entry is not None and _fp_winding(entry["fp"])
+                != getattr(mesh, "_winding_rev", 0)):
+            entry = None
         if entry is not None:
             if entry.get("vkey") == vkey:
                 return entry
@@ -12717,10 +12730,17 @@ class Viewport(QOpenGLWidget):
         import hashlib
         h = hashlib.sha1()
         h.update(repr((fp[0], fp[1], fp[2], fp[3], fp[5])).encode())
-        if len(fp) > 7 and fp[7][0] == "winding":
-            # Flipped this session (#197): never the digest of the same
-            # mesh before the flip, which would serve its old winding.
-            h.update(repr(fp[7]).encode())
+        # The winding (#197): the same mesh with a face reversed must never
+        # find the chunk stored before. Read from the loops, not from the
+        # session's flip count: a saved file reopens with none, and two
+        # sessions with one flip each may have reversed different faces. A
+        # ring's first two corners are enough, reversing one changes them.
+        corners = array("d")
+        for f in mesh.faces:
+            for v in f.loop[:2]:
+                p = v.position
+                corners.extend((p.x(), p.y(), p.z()))
+        h.update(corners.tobytes())
         if fp[5]:
             # Soft edges shade smooth since #131: a chunk stored before
             # bakes the curved surface flat. Only meshes with soft edges

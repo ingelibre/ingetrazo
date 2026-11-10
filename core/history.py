@@ -3795,6 +3795,7 @@ class ReshareInstanceCommand(Command):
 
     def undo(self, scene) -> None:
         self.proto.restore_state(self._before)
+        self.proto.note_rewound()
         self.group.mesh = self.proto
         self.group.xform = self.xform
         scene.version += 1
