@@ -614,9 +614,13 @@ def dxf_groups_by_layer(drawing, view_layer: str, hidden_lines: bool) -> list:
         suffix = "-PERFIL" if k[i] == KIND_PROFILE else ""
         by_tag.setdefault((tags[i] or view_layer, suffix), []).append(i)
     for (tag, suffix), ids in by_tag.items():
-        rgb, linetype, _w = styles.get(tag, (None, "continuous", None))
+        rgb, linetype, weight = styles.get(tag, (None, "continuous", None))
+        # The fifth element, the layer's own pen in mm, is the SVG
+        # export's (R12 DXF leaves weights to the CAD's pen table); its
+        # profiles keep the profile pen.
         groups.append((tag + suffix, drawing.segs[ids],
-                       DXF_LINETYPES.get(linetype, "CONTINUOUS"), rgb))
+                       DXF_LINETYPES.get(linetype, "CONTINUOUS"), rgb,
+                       None if suffix else weight))
     return groups
 
 
@@ -7121,6 +7125,13 @@ class ComposerWindow(QMainWindow):
             "(metres) — open it in IngeCAD."))
         dxf_btn.clicked.connect(self._on_export_dxf)
         form.addRow(dxf_btn)
+        svg_btn = QPushButton(tr("Export view as SVG…"))
+        svg_btn.setToolTip(tr(
+            "Write the view as an SVG vector drawing at the frame's scale: "
+            "the faces in their colours and textures under the lines, one "
+            "layer per model layer — to edit in an illustration program."))
+        svg_btn.clicked.connect(self._on_export_svg)
+        form.addRow(svg_btn)
         return w
 
     def _page_text(self) -> QWidget:
@@ -12834,6 +12845,29 @@ class ComposerWindow(QMainWindow):
             self.statusBar().showMessage(tr("Exported {name}", name=path),
                                          4000)
 
+    def frame_line_groups(self, frame: MarcoVista) -> list:
+        """The frame's hidden-line view as the line groups the DXF and SVG
+        exports write (formats.dxf_out.save_dxf_layers), in metres."""
+        drawing = self.model_view_drawing(frame, for_dxf=True)
+        from core.hlr import KIND_CUT, KIND_EDGE, KIND_HIDDEN, KIND_PROFILE
+        layer = frame_title_text(frame).split(" — ")[0]
+        hidden = getattr(frame, "hidden_lines", False)
+        if drawing.layers is not None:
+            # Each model layer as a layer of its own, with its colour
+            # and line type; the cut and the hidden lines keep theirs.
+            return dxf_groups_by_layer(drawing, layer, hidden)
+        # One layer per line class — IngeCAD's pen table does the weights;
+        # the hidden lines go on their own layer, dashed (#81).
+        k = drawing.kinds
+        groups = [
+            (layer, drawing.segs[k == KIND_EDGE]),
+            (f"{layer}-PERFIL", drawing.segs[k == KIND_PROFILE]),
+            (f"{layer}-CORTE", drawing.segs[k == KIND_CUT])]
+        if hidden:
+            groups.append((f"{layer}-OCULTAS", drawing.segs[k == KIND_HIDDEN],
+                           "DASHED"))
+        return groups
+
     def _on_export_dxf(self) -> None:
         item = self._selected_item()
         if not isinstance(item, FrameItem):
@@ -12842,33 +12876,113 @@ class ComposerWindow(QMainWindow):
             self, tr("Export view as DXF…"), "vista.dxf", "DXF (*.dxf)")
         if not path:
             return
-        drawing = self.model_view_drawing(item.model, for_dxf=True)
-        from core.hlr import KIND_CUT, KIND_EDGE, KIND_HIDDEN, KIND_PROFILE
         from formats.dxf_out import save_dxf_layers
-        layer = frame_title_text(item.model).split(" — ")[0]
-        k = drawing.kinds
-        if drawing.layers is not None:
-            # Each model layer as a DXF layer of its own, with its colour
-            # and line type; the cut and the hidden lines keep theirs.
-            groups = dxf_groups_by_layer(drawing, layer,
-                                         getattr(item.model, "hidden_lines",
-                                                 False))
-            n = save_dxf_layers(path, groups)
-            self.statusBar().showMessage(
-                tr("Exported {n} lines to {name}", n=n, name=path), 5000)
-            return
-        # One layer per line class — IngeCAD's pen table does the weights;
-        # the hidden lines go on their own layer, dashed (#81).
-        groups = [
-            (layer, drawing.segs[k == KIND_EDGE]),
-            (f"{layer}-PERFIL", drawing.segs[k == KIND_PROFILE]),
-            (f"{layer}-CORTE", drawing.segs[k == KIND_CUT])]
-        if getattr(item.model, "hidden_lines", False):
-            groups.append((f"{layer}-OCULTAS", drawing.segs[k == KIND_HIDDEN],
-                           "DASHED"))
-        n = save_dxf_layers(path, groups)
+        n = save_dxf_layers(path, self.frame_line_groups(item.model))
         self.statusBar().showMessage(
             tr("Exported {n} lines to {name}", n=n, name=path), 5000)
+
+    def _on_export_svg(self) -> None:
+        """The selected frame as an SVG at its own scale and pens, or
+        fitted on a sheet — the dialog previews it."""
+        item = self._selected_item()
+        if not isinstance(item, FrameItem):
+            return
+        path, _ = file_dialogs.getSaveFileName(
+            self, tr("Export view as SVG…"), "vista.svg", "SVG (*.svg)")
+        if not path:
+            return
+        if not path.lower().endswith(".svg"):
+            path += ".svg"
+        from PySide6.QtWidgets import QApplication
+        from core.sun import scene_sun_direction
+        from views.export_svg_dialog import ask_svg_options
+        frame = item.model
+        builder = self.frame_svg_builder(frame)
+        ok, opts, paper = ask_svg_options(
+            self, builder.build,
+            tr("Frame scale ({scale})",
+               scale=format_scale(getattr(frame, "scale_n", 100.0))),
+            scene_sun_direction(self._window.viewport.scene) is not None,
+            tr("In the frame"),
+            bool(getattr(self._window.viewport.scene, "show_axes", True)),
+            builder.screen_mm, tr("The frame"))
+        if not ok:
+            return
+        QApplication.setOverrideCursor(Qt.WaitCursor)
+        try:
+            self.export_frame_svg(frame, path, faces=opts, paper=paper,
+                                  builder=builder)
+        finally:
+            QApplication.restoreOverrideCursor()
+
+    def frame_faces(self, frame: MarcoVista, **options) -> list:
+        """The frame's visible faces (core.vista_caras.view_faces, with its
+        ``options``) under its own camera, scene and style — in the plane
+        of its line drawing."""
+        from core.vista_caras import view_faces
+        vp = self._window.viewport
+        return self._with_frame_camera(
+            frame, lambda: view_faces(vp.scene, vp.camera, **options))
+
+    def frame_view_image(self, frame: MarcoVista, _width_px: int = 0,
+                         axes: bool = True):
+        """The frame's picture as the sheet shows it and the window it
+        covers in the plane of its line drawing — the SVG export's
+        «Picture of the view»; ``axes`` off, drawn without the axes (and
+        the sheet's picture drawn again after, as it was)."""
+        from core.vista_caras import view_rect
+        vp = self._window.viewport
+        shown = getattr(vp.scene, "show_axes", True)
+        if axes or not shown:
+            image = self.render_frame(frame)
+        else:
+            vp.scene.show_axes = False
+            try:
+                image = self.render_frame(frame)
+            finally:
+                vp.scene.show_axes = True
+            self.render_frame(frame)        # the sheet's own, axes and all
+        rect = self._with_frame_camera(frame, lambda: view_rect(vp.camera))
+        return image, rect
+
+    def frame_svg_builder(self, frame: MarcoVista):
+        """The SVG builder (views.svg_export) of ``frame``: its lines,
+        faces and picture, at its scale and with its pens."""
+        from core.hlr import KIND_CUT, KIND_EDGE, KIND_PROFILE
+        from views.svg_export import SvgBuilder
+        widths = {kind: pen.widthF()
+                  for kind, pen in vector_pens(frame).items()}
+        from core.vista_caras import view_rect
+        vp = self._window.viewport
+        return SvgBuilder(
+            lambda: self.frame_line_groups(frame),
+            lambda **o: self.frame_faces(frame, **o),
+            lambda w, axes=True: self.frame_view_image(frame, w, axes),
+            scale_n=float(getattr(frame, "scale_n", 100.0) or 100.0),
+            pens={"cut": widths[KIND_CUT], "profile": widths[KIND_PROFILE],
+                  "edge": widths[KIND_EDGE]},
+            # «In the frame»: the frame as the sheet shows it.
+            window=lambda: self._with_frame_camera(
+                frame, lambda: view_rect(vp.camera)),
+            screen_mm=(float(frame.w_mm), float(frame.h_mm)))
+
+    def export_frame_svg(self, frame: MarcoVista, path: str,
+                         faces: dict | None = None, paper=None,
+                         builder=None) -> int:
+        """Write ``frame``'s view to ``path`` as SVG at 1:``scale_n`` with
+        the frame's cut / profile / edge pens — or fitted on ``paper``
+        (``(width_mm, height_mm)``). ``faces`` — the face options of the
+        export dialog (``materials``, ``textures``, ``as_view``,
+        ``shadows``; ``{"image": True}`` for the picture of the view) to
+        put under the lines, ``None`` for the lines alone. Returns the
+        segments."""
+        from pathlib import Path as _Path
+        builder = builder or self.frame_svg_builder(frame)
+        text, n = builder.build(faces, paper)
+        _Path(path).write_text(text, encoding="utf-8")
+        self.statusBar().showMessage(
+            tr("Exported {n} lines to {name}", n=n, name=path), 5000)
+        return n
 
     # ---- export --------------------------------------------------------------
     def _on_export_pdf(self) -> None:

@@ -6330,28 +6330,8 @@ class Viewport(QOpenGLWidget):
             return None
         if self.plano_style is not None:
             return None
-        sh = getattr(self.scene, "shadows", None)
-        if sh is None or not getattr(sh, "enabled", False):
-            return None
-        import datetime as _dt
-        from core import sun
-        datum = getattr(self.scene, "georef", None)
-        lat = getattr(datum, "lat", None)
-        lon = getattr(datum, "lon", None)
-        if lat is None or lon is None:
-            lat, lon = sun.DEFAULT_LAT, sun.DEFAULT_LON
-        try:
-            when = sh.when_utc(lon, year=_dt.date.today().year)
-        except ValueError:
-            return None
-        d = sun.sun_direction(lat, lon, when)
-        if d is None or datum is None or not getattr(datum, "north", 0.0):
-            return d
-        # The sun comes in grid axes (east, north); the model's frame may be
-        # turned by the datum's north angle — a shadow must fall the same way
-        # on the site whichever way the axes were drawn.
-        x, y = datum.grid_to_local_xy(d[0], d[1])
-        return (x, y, d[2])
+        from core.sun import scene_sun_direction
+        return scene_sun_direction(self.scene)
 
     @staticmethod
     def _light_vp(d, lo, hi, fit=None):
