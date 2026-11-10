@@ -106,7 +106,7 @@ HINTS: dict = {
 NAV_HINTS: dict = {
     "orbit": "Drag to orbit. Shift = pan. Wheel = zoom. The middle button orbits from any tool.",
     "pan": "Drag to pan. Wheel = zoom.",
-    "zoom": "Drag up to zoom in, down to zoom out. Wheel zooms at the cursor.",
+    "zoom": "Drag up or down to zoom; the wheel zooms at the cursor. Type 35mm or 60deg for the lens.",
     "zoom_window": "Drag a box to zoom into it.",
 }
 

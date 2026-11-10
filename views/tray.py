@@ -4430,6 +4430,10 @@ class ScenesPanel(QWidget):
             row.mark_view(view)
         self._window.statusBar().showMessage(
             tr("Scene '{name}'", name=view.name), 2000)
+        # The keyboard goes back to the model, as after a click on it: the
+        # list kept the letters for its own search, so Z (Zoom), L (Line)…
+        # pressed next did nothing, and «35mm» typed for Zoom was lost.
+        self._window.viewport.setFocus(Qt.OtherFocusReason)
 
     def _on_item_changed(self, item) -> None:
         if self._updating:

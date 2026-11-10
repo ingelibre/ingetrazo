@@ -1891,7 +1891,6 @@
   "Click where the component goes.": "انقر حيث يذهب المكون.",
   "Drag to orbit. Shift = pan. Wheel = zoom. Middle button orbits from any tool.": "اسحب لتدوير المنظر (Orbit). مفتاح Shift = إزاحة المنظر (Pan). العجلة = تقريب/تبعيد. الزر الأوسط يدور المنظر من أي أداة.",
   "Drag to pan. Wheel = zoom.": "اسحب لإزاحة المنظر (Pan). عجلة الفأرة = تقريب/تبعيد.",
-  "Drag up to zoom in, down to zoom out. Wheel zooms at the cursor.": "اسحب لأعلى للتكبير، لأسفل للتصغير. عجلة التكبير في المؤشر.",
   "Drag a box to zoom into it.": "اسحب مربعًا لتكبيره.",
   "{name}: Esc cancels.": "{name}: إلغاء Esc.",
   "Select objects. Shift = add/remove, Ctrl = add. Double-click a group to edit it.": "حدد الكائنات. Shift = إضافة/إزالة، Ctrl = إضافة. انقر نقرًا مزدوجًا فوق المجموعة لتحريرها.",
@@ -3010,7 +3009,6 @@
   "The extension «{name}» failed in the right-click menu and is left out of it until IngeTrazo restarts. Update it or turn it off in the Extension manager.": "فشل الامتداد «{name}» في قائمة النقر بزر الماوس الأيمن ويتم تركه خارجها حتى تتم إعادة تشغيل IngeTrazo. قم بتحديثه أو قم بإيقاف تشغيله في مدير الامتداد.",
   "Field of View…": "مجال الرؤية...",
   "Change the camera's angle of view, like a lens: wider takes more in, narrower keeps the lines calm.": "قم بتغيير زاوية رؤية الكاميرا، مثل العدسة: الأوسع يأخذ المزيد من الصورة، والأضيق يحافظ على هدوء الخطوط.",
-  "Field of view in degrees (10–120):": "مجال الرؤية بالدرجات (10-120):",
   "Field of view applies to perspective; switch to Perspective first.": "ينطبق مجال الرؤية على المنظور؛ قم بالتبديل إلى المنظور أولاً.",
   "{name}: every face has its own material, so nothing changed — open it and paint the faces": "{name}: كل وجه يحمل مادة خاصة به بالفعل، لذا لم يتغير شيء — افتح العنصر وطبق المواد على الأوجه مباشرة",
   "This picture has no transparent background, so it will show as a rectangle with a white background.": "هذه الصورة ليس لها خلفية شفافة، لذلك ستظهر كمستطيل بخلفية بيضاء.",
@@ -3391,7 +3389,6 @@
   "Looks at (X, Y, Z):": "تنظر إلى (X، Y، Z):",
   "{mm} mm": "{mm} مم",
   "Lens:": "العدسة:",
-  "Focal length (35 mm):": "البعد البؤري (35 مم):",
   "Field of view (vertical):": "مجال الرؤية (عمودي):",
   "Roll:": "الدوران:",
   "Slides the picture sideways without turning the camera.": "يزيح الصورة جانبًا دون تدوير الكاميرا.",
@@ -3416,5 +3413,13 @@
   "Scene «{name}»: the changes made here are kept in the scene.": "المشهد «{name}»: تُحفظ التغييرات التي تُجرى هنا في المشهد.",
   "Show this scene and set its camera: lens, shift, frame and more. The changes are kept in the scene.": "يعرض هذا المشهد ويضبط كاميرته: العدسة والإزاحة والإطار والمزيد. تُحفظ التغييرات في المشهد.",
   "Angle, roll and shift": "الزاوية والدوران والإزاحة",
-  "Show every setting: the eye and target by coordinates, the angle in degrees, roll, horizontal shift and clipping.": "يعرض كل الإعدادات: العين والهدف بالإحداثيات، والزاوية بالدرجات، والدوران، والإزاحة الأفقية، والقص."
+  "Show every setting: the eye and target by coordinates, the angle in degrees, roll, horizontal shift and clipping.": "يعرض كل الإعدادات: العين والهدف بالإحداثيات، والزاوية بالدرجات، والدوران، والإزاحة الأفقية، والقص.",
+  "Focal length:": "البعد البؤري:",
+  "Sensor:": "المستشعر:",
+  "Sensor size:": "حجم المستشعر:",
+  "The camera's sensor: a focal length gives the picture it gives on that sensor. A smaller sensor sees narrower with the same lens.": "مستشعر الكاميرا: يعطي البعد البؤري الصورة التي يعطيها على هذا المستشعر. بالعدسة نفسها، يرى المستشعر الأصغر أضيق.",
+  "Type a focal length like 35mm, or an angle like 60deg.": "اكتب بعدًا بؤريًا مثل 35mm، أو زاوية مثل 60deg.",
+  "Lens {mm} mm, field of view {deg}°": "العدسة {mm} مم، مجال الرؤية {deg}°",
+  "Drag up or down to zoom; the wheel zooms at the cursor. Type 35mm or 60deg for the lens.": "اسحب لأعلى أو لأسفل للتكبير؛ العجلة عند المؤشر. اكتب 35mm أو 60deg للعدسة.",
+  "Field of view in degrees (1–120):": "مجال الرؤية بالدرجات (1-120):"
 }

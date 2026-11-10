@@ -587,3 +587,281 @@ def test_looks_like_the_other_panels():
     finally:
         win._saved_version = win.viewport.scene.version
         win.close()
+
+
+# ---- The sensor ---------------------------------------------------------------------
+
+def test_a_picture_uses_the_largest_part_of_the_sensor_of_its_shape():
+    from core.camera import FULL_FRAME, sensor_picture_height
+    # Narrower than 3:2 (the usual view): the whole height.
+    assert sensor_picture_height(FULL_FRAME, 1.4) == 24.0
+    # 16:9 on a 3:2 sensor: the whole width, less height — as a camera films.
+    assert sensor_picture_height(FULL_FRAME, 16 / 9) == pytest.approx(20.25)
+    assert sensor_picture_height(None, None) == 24.0
+
+
+def test_the_same_lens_sees_narrower_on_a_smaller_sensor():
+    from core.camera import SENSORS
+    cam = OrbitCamera()
+    cam.set_aspect(1400, 1000)                     # narrower than 3:2
+    ff = cam.fov_for_focal(50.0)
+    cam.set_sensor(SENSORS["aps_c"])
+    aps = cam.fov_for_focal(50.0)
+    assert aps < ff
+    # 50 mm on APS-C is what about 77 mm is on full frame (×1.54).
+    cam.fov_deg = aps
+    cam.set_sensor(None)
+    assert cam.focal_mm == pytest.approx(50.0 * 24.0 / 15.6, rel=1e-6)
+    # Changing the sensor keeps the picture: only the reading changes.
+    cam.fov_deg = 40.0
+    for size in SENSORS.values():
+        cam.set_sensor(size)
+        assert cam.fov_deg == 40.0
+        assert cam.fov_for_focal(cam.focal_mm) == pytest.approx(40.0)
+
+
+def test_the_sensor_is_kept_with_the_lens():
+    from core.camera import SENSORS
+    cam = OrbitCamera()
+    assert "sensor" not in cam.lens_dict()           # full frame: nothing
+    cam.set_sensor(SENSORS["micro_four_thirds"])
+    assert cam.lens_dict()["sensor"] == [17.3, 13.0]
+    other = OrbitCamera()
+    other.apply_lens(cam.lens_dict())
+    assert other.sensor_size() == (17.3, 13.0)
+    # A scene keeps it, and an old scene goes back to full frame.
+    from core.scene import Scene
+    raw = SavedView.capture("V", Scene(), cam).to_dict()
+    assert raw["lens"]["sensor"] == [17.3, 13.0]
+    SavedView.from_dict(raw).apply(Scene(), other)
+    assert other.sensor_size() == (17.3, 13.0)
+    del raw["lens"]
+    SavedView.from_dict(raw).apply(Scene(), other)
+    assert other.sensor_size() == (36.0, 24.0)
+    # Nonsense is not taken; Reset Lens keeps the sensor.
+    other.apply_lens({"sensor": [0, 5]})
+    assert other.sensor is None
+    other.apply_lens({"sensor": "x", "roll_deg": 5})
+    assert other.sensor is None and other.roll_deg == 5
+    cam.roll_deg = 10.0
+    cam.reset_lens()
+    assert cam.roll_deg == 0.0 and cam.sensor_size() == (17.3, 13.0)
+
+
+def test_the_window_picks_the_sensor():
+    from views.main_window import MainWindow
+    win = MainWindow()
+    try:
+        dlg = win._show_camera_settings()
+        cam = win.viewport.camera
+        cam.set_projection("perspective")
+        cam.fov_deg = 40.0
+        dlg.refresh()
+        assert dlg.sensor.currentData() == "full_frame"
+        assert not dlg.sensor_w.isVisibleTo(dlg)        # custom size hidden
+        ff_mm = dlg.focal.value()
+        dlg.sensor.setCurrentIndex(dlg.sensor.findData("aps_c"))
+        assert cam.sensor_size() == (23.6, 15.6)
+        assert cam.fov_deg == 40.0                       # the picture stays
+        assert dlg.focal.value() < ff_mm                 # the reading changes
+        # A 50 mm lens on that sensor.
+        dlg.preset.setCurrentIndex(dlg.preset.findData(50.0))
+        assert cam.focal_mm == pytest.approx(50.0, abs=0.01)
+        # Custom: the size row shows, and stays picked even at a named size.
+        dlg.sensor.setCurrentIndex(dlg.sensor.findData("custom"))
+        assert dlg.sensor_w.isVisibleTo(dlg)
+        dlg.sensor_w.setValue(36.0)
+        dlg.sensor_h.setValue(24.0)
+        assert cam.sensor_size() == (36.0, 24.0)
+        assert dlg.sensor.currentData() == "custom"
+        dlg.sensor_w.setValue(30.0)
+        dlg.sensor_h.setValue(20.0)
+        assert cam.sensor_size() == (30.0, 20.0)
+        # Reopened, the list names it: a custom size reads «Custom».
+        dlg.close()
+        dlg = win._show_camera_settings()
+        assert dlg.sensor.currentData() == "custom"
+        cam.set_sensor(None)
+        dlg.close()
+        dlg = win._show_camera_settings()
+        assert dlg.sensor.currentData() == "full_frame"
+        dlg.close()
+    finally:
+        win._saved_version = win.viewport.scene.version
+        win.close()
+
+
+# ---- Zoom: the lens typed in the value box ------------------------------------------
+
+def _type(vp, text):
+    from PySide6.QtTest import QTest
+    QTest.keyClicks(vp, text)
+    QTest.keyClick(vp, Qt.Key_Return)
+
+
+def test_typing_the_lens_with_zoom_on():
+    from views.main_window import MainWindow
+    win = MainWindow()
+    try:
+        vp = win.viewport
+        cam = vp.camera
+        cam.set_projection("perspective")
+        vp.set_nav_mode("zoom")
+        _type(vp, "35mm")
+        assert cam.focal_mm == pytest.approx(35.0, abs=0.01)
+        _type(vp, "60deg")
+        assert cam.fov_deg == pytest.approx(60.0)
+        _type(vp, "45")                               # bare: degrees
+        assert cam.fov_deg == pytest.approx(45.0)
+        _type(vp, "72,5°")
+        assert cam.fov_deg == pytest.approx(72.5)
+        # The sensor counts: 35mm on APS-C is a narrower view.
+        from core.camera import SENSORS
+        cam.set_sensor(SENSORS["aps_c"])
+        _type(vp, "35mm")
+        assert cam.focal_mm == pytest.approx(35.0, abs=0.01)
+        assert cam.fov_deg < OrbitCamera().fov_for_focal(35.0)
+        # Out of range: held to 10°–120°; nonsense changes nothing.
+        _type(vp, "500deg")
+        assert cam.fov_deg == 120.0
+        before = cam.fov_deg
+        assert not vp.apply_zoom_value("abc")
+        assert cam.fov_deg == before
+        # Letters before a digit are not taken (they stay shortcuts).
+        assert vp._value_buffer == ""
+        # A parallel view has no lens: nothing changes.
+        cam.set_projection("parallel")
+        _type(vp, "50mm")
+        assert cam.fov_deg == before
+        # Without Zoom, the value box is the tools' as before.
+        cam.set_projection("perspective")
+        vp.set_nav_mode(None)
+        assert vp.active_tool is None
+        from PySide6.QtGui import QKeyEvent
+        from PySide6.QtCore import QEvent
+        five = QKeyEvent(QEvent.KeyPress, Qt.Key_5, Qt.NoModifier, "5")
+        assert not vp._handle_value_key(five)
+        assert vp._value_buffer == ""
+    finally:
+        win._saved_version = win.viewport.scene.version
+        win.close()
+
+
+def test_the_zoom_hint_says_what_to_type():
+    from views.status_hints import NAV_HINTS
+    assert "35mm" in NAV_HINTS["zoom"] and "60deg" in NAV_HINTS["zoom"]
+
+
+def test_the_value_box_shows_with_zoom():
+    """With Zoom on, the value box shows what is typed, and the focal
+    length the view has when nothing is."""
+    from PySide6.QtTest import QTest
+    from views.main_window import MainWindow
+    win = MainWindow()
+    try:
+        win.show()
+        QApplication.processEvents()
+        cam = win.viewport.camera
+        cam.set_projection("perspective")
+        win._activate_nav("zoom")
+        assert win._vcb_value.isVisibleTo(win)
+        QTest.keyClicks(win.viewport, "35mm")
+        assert win._vcb_value.text() == "35mm"
+        QTest.keyClick(win.viewport, Qt.Key_Return)
+        assert win._vcb_value.text() == "35 mm"       # the new focal
+        win._activate_nav("orbit")
+        assert not win._vcb_value.isVisibleTo(win)    # other nav: no box
+    finally:
+        win._saved_version = win.viewport.scene.version
+        win.close()
+
+
+def test_an_ordinary_title_bar_like_the_other_dialogs():
+    """The close cross of an ordinary dialog (the layer colour's), not a
+    tool window's small one; and it does not block the model."""
+    from views.main_window import MainWindow
+    win = MainWindow()
+    try:
+        dlg = win._show_camera_settings()
+        flags = dlg.windowFlags()
+        assert flags & Qt.WindowType_Mask == Qt.Dialog
+        assert not flags & Qt.WindowContextHelpButtonHint
+        assert not dlg.isModal()
+        dlg.close()
+    finally:
+        win._saved_version = win.viewport.scene.version
+        win.close()
+
+
+def test_from_24_to_35_typing_with_a_space_and_capitals():
+    """«35 MM» with Zoom on: the space is Select's shortcut and the
+    letters are tools' — while a lens is being typed they belong to the
+    box. And long lenses: 533 mm (2.6° on full frame) is not held to 10°."""
+    from PySide6.QtTest import QTest
+    from views.main_window import MainWindow
+    win = MainWindow()
+    try:
+        win.show()
+        win.activateWindow()
+        QApplication.processEvents()
+        vp = win.viewport
+        cam = vp.camera
+        cam.set_projection("perspective")
+        cam.apply_lens({})
+        cam.fov_deg = cam.fov_for_focal(24.0)
+        win._nav_actions["zoom"].trigger()          # the toolbar button
+        vp.setFocus()
+        QTest.keyClicks(vp, "35 MM")
+        assert vp.nav_mode == "zoom"                # the space did not leave
+        assert vp._value_buffer.lower() == "35 mm"
+        QTest.keyClick(vp, Qt.Key_Return)
+        assert cam.focal_mm == pytest.approx(35.0, abs=0.01)
+        QTest.keyClicks(vp, "533mm")
+        QTest.keyClick(vp, Qt.Key_Return)
+        assert cam.focal_mm == pytest.approx(533.0, abs=0.1)
+        assert cam.fov_deg == pytest.approx(2.58, abs=0.01)
+        QTest.keyClicks(vp, "60deg")
+        QTest.keyClick(vp, Qt.Key_Return)
+        assert cam.fov_deg == pytest.approx(60.0)
+        assert vp.nav_mode == "zoom"
+    finally:
+        win._saved_version = win.viewport.scene.version
+        win.close()
+
+
+def test_after_picking_a_scene_z_then_35mm_works():
+    """Picking a scene in the Scenes list left the keyboard in the list,
+    which kept the letters for its own search: Z did not reach Zoom and
+    «35mm» was lost. Showing a scene, choosing Zoom and opening Camera
+    Settings all leave the keyboard with the model."""
+    from PySide6.QtTest import QTest
+    from views.main_window import MainWindow
+    win, a, b = _window_with_scenes()
+    try:
+        win.show()
+        win.activateWindow()
+        QApplication.processEvents()
+        vp, cam = win.viewport, win.viewport.camera
+        panel = win.tray.scenes
+        item = next(panel.list.item(k) for k in range(panel.list.count())
+                    if panel.list.item(k).data(Qt.UserRole) is a)
+        panel.list.setFocus()
+        panel._on_activate(item)                     # a double-click
+        assert QApplication.focusWidget() is vp
+        cam.fov_deg = cam.fov_for_focal(24.0)
+        QTest.keyClick(vp, Qt.Key_Z)
+        QTest.keyClicks(vp, "35mm")
+        QTest.keyClick(vp, Qt.Key_Return)
+        assert vp.nav_mode == "zoom"
+        assert cam.focal_mm == pytest.approx(35.0, abs=0.01)
+        # Zoom from its button, the keyboard elsewhere: it comes back.
+        panel.list.setFocus()
+        win._activate_nav("zoom")
+        assert QApplication.focusWidget() is vp
+        # Camera Settings opens without taking the keyboard.
+        win._show_camera_settings()
+        assert QApplication.focusWidget() is vp
+        win._camera_settings.close()
+    finally:
+        win._saved_version = win.viewport.scene.version
+        win.close()

@@ -1869,7 +1869,6 @@
  "Click where the component goes.": "ຄລິກບ່ອນທີ່ຕ້ອງການວາງຄອມໂພເນນ.",
  "Drag to orbit. Shift = pan. Wheel = zoom. Middle button orbits from any tool.": "ລາກເມົາສ໌ເພື່ອໝຸນມຸມມອງ. Shift = ເລື່ອນມຸມມອງ. ລໍ້ເມົາສ໌ = ຊູມ. ປຸ່ມກາງເມົາສ໌ໃຊ້ໝຸນມຸມມອງໄດ້ຈາກທຸກເຄື່ອງມື.",
  "Drag to pan. Wheel = zoom.": "ລາກເມົາສ໌ເພື່ອເລື່ອນມຸມມອງ. ລໍ້ເມົາສ໌ = ຊູມ.",
- "Drag up to zoom in, down to zoom out. Wheel zooms at the cursor.": "ລາກຂຶ້ນເພື່ອຊູມເຂົ້າ, ລາກລົງເພື່ອຊູມອອກ. ລໍ້ເມົາສ໌ຊູມທີ່ຕຳແໜ່ງຕົວກະພິບ.",
  "Drag a box to zoom into it.": "ລາກກອບເພື່ອຊູມເຂົ້າໄປໃນສ່ວນນັ້ນ.",
  "{name}: Esc cancels.": "{name}: Esc ເພື່ອຍົກເລີກ.",
  "Select objects. Shift = add/remove, Ctrl = add. Double-click a group to edit it.": "ເລືອກວັດຖຸ. Shift = ເພີ່ມ/ເອົາອອກ, Ctrl = ເພີ່ມ. ດັບເບິນຄລິກທີ່ກຸ່ມເພື່ອແກ້ໄຂ.",
@@ -3010,7 +3009,6 @@
  "The extension «{name}» failed in the right-click menu and is left out of it until IngeTrazo restarts. Update it or turn it off in the Extension manager.": "ສ່ວນເສີມ «{name}» ເຮັດວຽກຜິດພາດໃນເມນູຄລິກຂວາ ແລະ ຈະຖືກຕັດອອກຈົນກວ່າຈະເປີດ IngeTrazo ໃໝ່. ກະລຸນາອັບເດດ ຫຼື ປິດມັນໄວ້ໃນຕົວຈັດການສ່ວນເສີມ.",
  "Field of View…": "ມຸມມອງການເບິ່ງເຫັນ…",
  "Change the camera's angle of view, like a lens: wider takes more in, narrower keeps the lines calm.": "ປ່ຽນມຸມມອງພາບຂອງກ້ອງ ຄືກັນກັບເລນ: ມຸມກວ້າງຈະເກັບພາບໄດ້ຫຼາຍຂຶ້ນ, ມຸມແຄບຈະຊ່ວຍໃຫ້ເສັ້ນສາຍເບິ່ງສະຫງົບ.",
- "Field of view in degrees (10–120):": "ມຸມມອງການເບິ່ງເຫັນເປັນອົງສາ (10–120):",
  "Field of view applies to perspective; switch to Perspective first.": "ມຸມມອງການເບິ່ງເຫັນໃຊ້ໄດ້ສະເພາະກັບມຸມມອງເພີສເປັກຕິບ (Perspective); ກະລຸນາປ່ຽນເປັນ Perspective ກ່ອນ.",
  "{name}: every face has its own material, so nothing changed — open it and paint the faces": "{name}: ແຕ່ລະໜ້າຜິວມີວັດສະດຸຂອງຕົນເອງຢູ່ແລ້ວ ຈຶ່ງບໍ່ມີຫຍັງປ່ຽນແປງ — ເປີດມັນຂຶ້ນມາ ແລ້ວໃສ່ວັດສະດຸໃຫ້ແຕ່ລະໜ້າຜິວ",
  "Ambient occlusion": "ແສງເງົາຕົກກະທົບ Ambient Occlusion",
@@ -3359,7 +3357,6 @@
  "Looks at (X, Y, Z):": "ເບິ່ງໄປທີ່ (X, Y, Z):",
  "{mm} mm": "{mm} ມມ",
  "Lens:": "ເລນ:",
- "Focal length (35 mm):": "ທາງຍາວໂຟກັສ (35 ມມ):",
  "Field of view (vertical):": "ມຸມມອງ (ແນວຕັ້ງ):",
  "Roll:": "ໝູນອຽງ:",
  "Slides the picture sideways without turning the camera.": "ເລື່ອນຮູບໄປທາງຂ້າງໂດຍບໍ່ໝູນກ້ອງ.",
@@ -3384,5 +3381,13 @@
  "Scene «{name}»: the changes made here are kept in the scene.": "ສາກ «{name}»: ການປ່ຽນແປງທີ່ເຮັດຢູ່ນີ້ຈະຖືກເກັບໄວ້ໃນສາກ.",
  "Show this scene and set its camera: lens, shift, frame and more. The changes are kept in the scene.": "ສະແດງສາກນີ້ ແລະ ຕັ້ງຄ່າກ້ອງຂອງມັນ: ເລນ, ການເລື່ອນກອບ, ກອບຮູບ ແລະ ອື່ນໆ. ການປ່ຽນແປງຈະຖືກເກັບໄວ້ໃນສາກ.",
  "Angle, roll and shift": "ມຸມ, ການໝູນອຽງ ແລະ ການເລື່ອນກອບ",
- "Show every setting: the eye and target by coordinates, the angle in degrees, roll, horizontal shift and clipping.": "ສະແດງການຕັ້ງຄ່າທັງໝົດ: ຕາ ແລະ ເປົ້າໝາຍເປັນພິກັດ, ມຸມເປັນອົງສາ, ການໝູນອຽງ, ການເລື່ອນກອບແນວນອນ ແລະ ການຕັດ."
+ "Show every setting: the eye and target by coordinates, the angle in degrees, roll, horizontal shift and clipping.": "ສະແດງການຕັ້ງຄ່າທັງໝົດ: ຕາ ແລະ ເປົ້າໝາຍເປັນພິກັດ, ມຸມເປັນອົງສາ, ການໝູນອຽງ, ການເລື່ອນກອບແນວນອນ ແລະ ການຕັດ.",
+ "Focal length:": "ທາງຍາວໂຟກັສ:",
+ "Sensor:": "ເຊັນເຊີ:",
+ "Sensor size:": "ຂະໜາດເຊັນເຊີ:",
+ "The camera's sensor: a focal length gives the picture it gives on that sensor. A smaller sensor sees narrower with the same lens.": "ເຊັນເຊີຂອງກ້ອງ: ທາງຍາວໂຟກັສໃຫ້ຮູບແບບທີ່ໄດ້ໃນເຊັນເຊີນັ້ນ. ເລນດຽວກັນໃນເຊັນເຊີນ້ອຍກວ່າຈະເຫັນແຄບກວ່າ.",
+ "Type a focal length like 35mm, or an angle like 60deg.": "ພິມທາງຍາວໂຟກັສ ເຊັ່ນ 35mm ຫຼື ມຸມ ເຊັ່ນ 60deg.",
+ "Lens {mm} mm, field of view {deg}°": "ເລນ {mm} ມມ, ມຸມມອງ {deg}°",
+ "Drag up or down to zoom; the wheel zooms at the cursor. Type 35mm or 60deg for the lens.": "ລາກຂຶ້ນ ຫຼື ລົງເພື່ອຊູມ; ລໍ້ທີ່ຕົວກະພິບ. ພິມ 35mm ຫຼື 60deg ສຳລັບເລນ.",
+ "Field of view in degrees (1–120):": "ມຸມມອງການເບິ່ງເຫັນເປັນອົງສາ (1–120):"
 }

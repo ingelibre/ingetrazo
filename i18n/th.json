@@ -1868,7 +1868,6 @@
  "Click where the component goes.": "คลิกตำแหน่งที่จะวางคอมโพเนนต์",
  "Drag to orbit. Shift = pan. Wheel = zoom. Middle button orbits from any tool.": "ลากเพื่อหมุนมุมมอง (Orbit) Shift = เลื่อนมุมมอง (Pan) ลูกกลิ้ง = ซูม ปุ่มกลางหมุนมุมมองได้จากทุกเครื่องมือ",
  "Drag to pan. Wheel = zoom.": "ลากเพื่อเลื่อนมุมมอง (Pan) ลูกกลิ้ง = ซูม",
- "Drag up to zoom in, down to zoom out. Wheel zooms at the cursor.": "ลากขึ้นเพื่อซูมเข้า ลากลงเพื่อซูมออก ลูกกลิ้งซูมที่ตำแหน่งเคอร์เซอร์",
  "Drag a box to zoom into it.": "ลากกรอบเพื่อซูมเข้าพื้นที่นั้น",
  "{name}: Esc cancels.": "{name}: กด Esc เพื่อยกเลิก",
  "Select objects. Shift = add/remove, Ctrl = add. Double-click a group to edit it.": "เลือกวัตถุ Shift = เพิ่ม/เอาออก, Ctrl = เพิ่ม ดับเบิลคลิกกลุ่มเพื่อแก้ไข",
@@ -3014,7 +3013,6 @@
  "Distance:": "ระยะ:",
  "Field of View…": "มุมมองภาพ…",
  "Field of view applies to perspective; switch to Perspective first.": "มุมมองภาพใช้กับมุมมองแบบ Perspective; สลับเป็น Perspective ก่อน",
- "Field of view in degrees (10–120):": "มุมมองภาพเป็นองศา (10–120):",
  "How far a surface still darkens its neighbour": "ระยะที่พื้นผิวหนึ่งยังทำให้พื้นผิวข้างเคียงมืดลง",
  "IngeTrazo did not open the last time with the Rust engine on, so it is back on the Python engine. You can turn it on again in Preferences ▸ General.": "ครั้งก่อน IngeTrazo เปิดไม่สำเร็จเมื่อเปิดเอนจิน Rust จึงกลับมาใช้เอนจิน Python คุณเปิดอีกครั้งได้ที่ การตั้งค่า ▸ ทั่วไป",
  "Intensity:": "ความเข้ม:",
@@ -3359,7 +3357,6 @@
  "Looks at (X, Y, Z):": "มองไปที่ (X, Y, Z):",
  "{mm} mm": "{mm} มม.",
  "Lens:": "เลนส์:",
- "Focal length (35 mm):": "ทางยาวโฟกัส (35 มม.):",
  "Field of view (vertical):": "มุมมอง (แนวตั้ง):",
  "Roll:": "หมุนเอียง:",
  "Slides the picture sideways without turning the camera.": "เลื่อนภาพไปด้านข้างโดยไม่หมุนกล้อง",
@@ -3384,5 +3381,13 @@
  "Scene «{name}»: the changes made here are kept in the scene.": "ฉาก «{name}»: การเปลี่ยนแปลงที่ทำที่นี่จะถูกเก็บไว้ในฉาก",
  "Show this scene and set its camera: lens, shift, frame and more. The changes are kept in the scene.": "แสดงฉากนี้และตั้งค่ากล้องของฉาก: เลนส์ การเลื่อนกรอบ กรอบภาพ และอื่น ๆ การเปลี่ยนแปลงจะถูกเก็บไว้ในฉาก",
  "Angle, roll and shift": "มุม การหมุนเอียง และการเลื่อนกรอบ",
- "Show every setting: the eye and target by coordinates, the angle in degrees, roll, horizontal shift and clipping.": "แสดงการตั้งค่าทั้งหมด: ตาและเป้าหมายเป็นพิกัด มุมเป็นองศา การหมุนเอียง การเลื่อนกรอบแนวนอน และการตัด"
+ "Show every setting: the eye and target by coordinates, the angle in degrees, roll, horizontal shift and clipping.": "แสดงการตั้งค่าทั้งหมด: ตาและเป้าหมายเป็นพิกัด มุมเป็นองศา การหมุนเอียง การเลื่อนกรอบแนวนอน และการตัด",
+ "Focal length:": "ทางยาวโฟกัส:",
+ "Sensor:": "เซนเซอร์:",
+ "Sensor size:": "ขนาดเซนเซอร์:",
+ "The camera's sensor: a focal length gives the picture it gives on that sensor. A smaller sensor sees narrower with the same lens.": "เซนเซอร์ของกล้อง: ทางยาวโฟกัสให้ภาพแบบที่ได้บนเซนเซอร์นั้น เลนส์เดียวกันบนเซนเซอร์ที่เล็กกว่าจะเห็นแคบกว่า",
+ "Type a focal length like 35mm, or an angle like 60deg.": "พิมพ์ทางยาวโฟกัส เช่น 35mm หรือมุม เช่น 60deg",
+ "Lens {mm} mm, field of view {deg}°": "เลนส์ {mm} มม. มุมมอง {deg}°",
+ "Drag up or down to zoom; the wheel zooms at the cursor. Type 35mm or 60deg for the lens.": "ลากขึ้นหรือลงเพื่อซูม ลูกกลิ้งซูมที่เคอร์เซอร์ พิมพ์ 35mm หรือ 60deg สำหรับเลนส์",
+ "Field of view in degrees (1–120):": "มุมมองภาพเป็นองศา (1–120):"
 }

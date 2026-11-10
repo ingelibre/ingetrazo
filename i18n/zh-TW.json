@@ -1872,7 +1872,6 @@
  "Click where the component goes.": "點擊元件的放置位置。",
  "Drag to orbit. Shift = pan. Wheel = zoom. Middle button orbits from any tool.": "拖曳以環繞。Shift = 平移。滾輪 = 縮放。中鍵可在任何工具下環繞。",
  "Drag to pan. Wheel = zoom.": "拖曳以平移。滾輪 = 縮放。",
- "Drag up to zoom in, down to zoom out. Wheel zooms at the cursor.": "向上拖曳放大，向下拖曳縮小。滾輪以游標位置為中心縮放。",
  "Drag a box to zoom into it.": "拖曳方框以縮放到該範圍。",
  "{name}: Esc cancels.": "{name}：按 Esc 取消。",
  "Select objects. Shift = add/remove, Ctrl = add. Double-click a group to edit it.": "選取物件。Shift = 加入／移除，Ctrl = 加入。連按兩下群組可編輯。",
@@ -3024,7 +3023,6 @@
  "The extension «{name}» failed in the right-click menu and is left out of it until IngeTrazo restarts. Update it or turn it off in the Extension manager.": "延伸程式「{name}」在右鍵選單中發生錯誤，在 IngeTrazo 重新啟動前會從選單中排除。請更新它，或在延伸程式管理器中關閉它。",
  "Field of View…": "視角…",
  "Change the camera's angle of view, like a lens: wider takes more in, narrower keeps the lines calm.": "變更鏡頭的視角，如同鏡頭：越寬容納越多，越窄線條越平穩。",
- "Field of view in degrees (10–120):": "視角（度）(10–120)：",
  "Field of view applies to perspective; switch to Perspective first.": "視角僅適用於透視；請先切換為透視。",
  "{name}: every face has its own material, so nothing changed — open it and paint the faces": "{name}：每個表面都有自己的材料，因此沒有任何變更 — 請開啟它並為表面上色",
  "Ambient occlusion": "環境光遮蔽",
@@ -3357,7 +3355,6 @@
  "Looks at (X, Y, Z):": "目標點 (X, Y, Z)：",
  "{mm} mm": "{mm} mm",
  "Lens:": "鏡頭：",
- "Focal length (35 mm):": "焦距 (35 mm)：",
  "Field of view (vertical):": "視野 (垂直)：",
  "Roll:": "滾轉：",
  "Slides the picture sideways without turning the camera.": "橫向平移畫面，不轉動相機。",
@@ -3382,5 +3379,13 @@
  "Scene «{name}»: the changes made here are kept in the scene.": "場景「{name}」：在此所做的變更會儲存到場景中。",
  "Show this scene and set its camera: lens, shift, frame and more. The changes are kept in the scene.": "顯示此場景並設定其相機：鏡頭、移軸、畫框等。變更會儲存到場景中。",
  "Angle, roll and shift": "角度、滾轉與移軸",
- "Show every setting: the eye and target by coordinates, the angle in degrees, roll, horizontal shift and clipping.": "顯示全部設定：以座標表示的視點和目標點、以度表示的角度、滾轉、水平移軸和裁切。"
+ "Show every setting: the eye and target by coordinates, the angle in degrees, roll, horizontal shift and clipping.": "顯示全部設定：以座標表示的視點和目標點、以度表示的角度、滾轉、水平移軸和裁切。",
+ "Focal length:": "焦距：",
+ "Sensor:": "感光元件：",
+ "Sensor size:": "感光元件尺寸：",
+ "The camera's sensor: a focal length gives the picture it gives on that sensor. A smaller sensor sees narrower with the same lens.": "相機的感光元件：焦距給出它在該感光元件上的畫面。同一鏡頭，感光元件越小看到的越窄。",
+ "Type a focal length like 35mm, or an angle like 60deg.": "輸入焦距如 35mm，或角度如 60deg。",
+ "Lens {mm} mm, field of view {deg}°": "鏡頭 {mm} mm，視野 {deg}°",
+ "Drag up or down to zoom; the wheel zooms at the cursor. Type 35mm or 60deg for the lens.": "上下拖曳縮放；滾輪在游標處縮放。輸入 35mm 或 60deg 設定鏡頭。",
+ "Field of view in degrees (1–120):": "視角（度）(1–120)："
 }

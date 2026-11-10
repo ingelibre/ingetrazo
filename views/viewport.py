@@ -18442,6 +18442,18 @@ class Viewport(QOpenGLWidget):
         if ev.type() == QEvent.ShortcutOverride and self._tool_claims_key(ev):
             ev.accept()
             return True
+        # Zoom takes the lens typed in the box (35mm, 60deg): digits, and
+        # once a digit is in, the unit's letters and the space, before the
+        # window's shortcuts (Space is Select, letters are tools).
+        if (ev.type() == QEvent.ShortcutOverride and self.active_tool is None
+                and getattr(self, "nav_mode", None) == "zoom"
+                and not _is_chord(ev.modifiers())):
+            t = ev.text().lower()
+            started = any(c.isdigit() for c in self._value_buffer)
+            if t and (t.isdigit() or t in (".", ",") or (started and (
+                    t in ("m", "d", "e", "g", " ", "°")))):
+                ev.accept()
+                return True
         if (ev.type() == QEvent.ShortcutOverride and self._value_buffer
                 and not _is_chord(ev.modifiers())):
             t = ev.text().lower()
@@ -18946,6 +18958,72 @@ class Viewport(QOpenGLWidget):
         if ref is not None and ref[1] == "plane":
             tool.plane_ref = None
 
+    # ---- Zoom: the lens typed in the value box ------------------------------
+    def _handle_zoom_value_key(self, ev) -> bool:
+        """With Zoom on, the value box takes the lens: «35mm» a focal
+        length, «60deg», «60°» or a bare «60» the field of view
+        (:meth:`apply_zoom_value`). Letters only follow a digit, so Zoom's
+        neighbours' shortcuts still work before anything is typed."""
+        key = ev.key()
+        buf = self._value_buffer
+        if key in (Qt.Key_Return, Qt.Key_Enter):
+            if not buf:
+                return False
+            # The lens first: the box, emptied, then reads the new focal.
+            self.apply_zoom_value(buf)
+            self._set_value_buffer("")
+            return True
+        if key == Qt.Key_Backspace:
+            if not buf:
+                return False
+            self._set_value_buffer(buf[:-1])
+            return True
+        if key == Qt.Key_Escape and buf:
+            self._set_value_buffer("")
+            return True
+        if _is_chord(getattr(ev, "modifiers", lambda: Qt.NoModifier)()):
+            return False
+        text = ev.text()
+        if not text or len(text) != 1:
+            return False
+        if text.isdigit() or text in (".", ","):
+            self._set_value_buffer(buf + text)
+            return True
+        if any(c.isdigit() for c in buf) and (
+                text.lower() in ("m", "d", "e", "g", " ") or text == "°"):
+            self._set_value_buffer(buf + text)
+            return True
+        return False
+
+    def apply_zoom_value(self, typed: str) -> bool:
+        """Set the lens from what was typed with Zoom on: ``35mm`` is a
+        focal length on the camera's sensor (Camera Settings), ``60deg``,
+        ``60°`` or ``60`` the vertical field of view. Only in perspective
+        — a parallel view has no lens. ``False`` (and nothing changes) when
+        it cannot be done; the status bar says why."""
+        from core.camera import FOV_RANGE
+        m = re.fullmatch(r"\s*(\d+(?:[.,]\d*)?|[.,]\d+)\s*(mm|deg|°)?\s*",
+                         typed.lower())
+        value = float(m.group(1).replace(",", ".")) if m else 0.0
+        if m is None or not math.isfinite(value) or value <= 0.0:
+            self.flash_status(tr(
+                "Type a focal length like 35mm, or an angle like 60deg."))
+            return False
+        cam = self.camera
+        if not cam.perspective:
+            self.flash_status(tr(
+                "Field of view applies to perspective; switch to "
+                "Perspective first."))
+            return False
+        fov = cam.fov_for_focal(value) if m.group(2) == "mm" else value
+        lo, hi = FOV_RANGE
+        cam.fov_deg = float(min(hi, max(lo, fov)))
+        self.update()
+        self.flash_status(tr(
+            "Lens {mm} mm, field of view {deg}°",
+            mm=f"{cam.focal_mm:.0f}", deg=f"{cam.fov_deg:.1f}"), 4000)
+        return True
+
     # ---- Numeric value buffer (VCB-style) ----------------------------------
     def _handle_value_key(self, ev) -> bool:
         """Buffer digit / dot / comma / semicolon / space / backspace.
@@ -18967,6 +19045,8 @@ class Viewport(QOpenGLWidget):
         See :meth:`_parse_value_buffer`.
         """
         if self.active_tool is None:
+            if getattr(self, "nav_mode", None) == "zoom":
+                return self._handle_zoom_value_key(ev)
             return False
 
         text = ev.text()

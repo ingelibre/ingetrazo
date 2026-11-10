@@ -1856,7 +1856,6 @@
  "Click where the component goes.": "コンポーネントの配置先をクリック。",
  "Drag to orbit. Shift = pan. Wheel = zoom. Middle button orbits from any tool.": "ドラッグでオービット。Shift でパン。ホイールでズーム。どのツールでも中ボタンでオービットできます。",
  "Drag to pan. Wheel = zoom.": "ドラッグでパン。ホイールでズーム。",
- "Drag up to zoom in, down to zoom out. Wheel zooms at the cursor.": "上へドラッグで拡大、下へドラッグで縮小。ホイールはカーソル位置を中心にズーム。",
  "Drag a box to zoom into it.": "枠をドラッグして範囲を拡大。",
  "{name}: Esc cancels.": "{name}: Esc でキャンセル。",
  "Select objects. Shift = add/remove, Ctrl = add. Double-click a group to edit it.": "オブジェクトを選択。Shift で追加 / 解除、Ctrl で追加。グループをダブルクリックして編集。",
@@ -3012,7 +3011,6 @@
  "The extension «{name}» failed in the right-click menu and is left out of it until IngeTrazo restarts. Update it or turn it off in the Extension manager.": "拡張機能「{name}」が右クリックメニューで失敗したため、IngeTrazo を再起動するまでメニューから外しました。拡張機能マネージャーで更新するかオフにしてください。",
  "Field of View…": "視野角…",
  "Change the camera's angle of view, like a lens: wider takes more in, narrower keeps the lines calm.": "レンズのようにカメラの画角を変えます：広くするとより多く写り、狭くすると線が落ち着きます。",
- "Field of view in degrees (10–120):": "視野角（度、10–120）：",
  "Field of view applies to perspective; switch to Perspective first.": "視野角は透視投影に適用されます。先に透視投影に切り替えてください。",
  "{name}: every face has its own material, so nothing changed — open it and paint the faces": "{name}：すべての面に個別のマテリアルがあるため、何も変わりませんでした — 開いて面を塗ってください",
  "Ambient occlusion": "アンビエントオクルージョン",
@@ -3356,7 +3354,6 @@
  "Looks at (X, Y, Z):": "注視点 (X, Y, Z):",
  "{mm} mm": "{mm} mm",
  "Lens:": "レンズ:",
- "Focal length (35 mm):": "焦点距離 (35 mm 判):",
  "Field of view (vertical):": "視野角 (垂直):",
  "Roll:": "ロール:",
  "Slides the picture sideways without turning the camera.": "カメラを回さずに画像を横にずらします。",
@@ -3381,5 +3378,13 @@
  "Scene «{name}»: the changes made here are kept in the scene.": "シーン「{name}」: ここでの変更はシーンに保存されます。",
  "Show this scene and set its camera: lens, shift, frame and more. The changes are kept in the scene.": "このシーンを表示してカメラを設定します: レンズ、シフト、フレームなど。変更はシーンに保存されます。",
  "Angle, roll and shift": "角度・ロール・シフト",
- "Show every setting: the eye and target by coordinates, the angle in degrees, roll, horizontal shift and clipping.": "すべての設定を表示します: 座標による視点と注視点、度単位の角度、ロール、水平シフト、クリッピング。"
+ "Show every setting: the eye and target by coordinates, the angle in degrees, roll, horizontal shift and clipping.": "すべての設定を表示します: 座標による視点と注視点、度単位の角度、ロール、水平シフト、クリッピング。",
+ "Focal length:": "焦点距離:",
+ "Sensor:": "センサー:",
+ "Sensor size:": "センサーサイズ:",
+ "The camera's sensor: a focal length gives the picture it gives on that sensor. A smaller sensor sees narrower with the same lens.": "カメラのセンサー: 焦点距離はそのセンサーで得られる画像になります。同じレンズでも小さいセンサーほど狭く写ります。",
+ "Type a focal length like 35mm, or an angle like 60deg.": "35mm のような焦点距離か、60deg のような角度を入力してください。",
+ "Lens {mm} mm, field of view {deg}°": "レンズ {mm} mm、視野角 {deg}°",
+ "Drag up or down to zoom; the wheel zooms at the cursor. Type 35mm or 60deg for the lens.": "上下にドラッグでズーム、ホイールはカーソル位置。35mm か 60deg でレンズを指定。",
+ "Field of view in degrees (1–120):": "視野角（度、1–120）："
 }
