@@ -125,6 +125,54 @@ def _run_text3d_dialog(monkeypatch, params, typed):
     return shown, out
 
 
+def test_text3d_dialog_previews_the_font(doc, monkeypatch):
+    """#1017: the Text box shows the chosen font, bold and italic — on
+    opening (an edited text's own) and as each control changes — while the
+    returned parameters stay what the controls say."""
+    from PySide6.QtGui import QFont, QFontDatabase
+    from PySide6.QtWidgets import QCheckBox, QFontComboBox, QLineEdit
+    from views.main_window import MainWindow
+    doc("m", 2)
+    families = [f for f in QFontDatabase.families()
+                if not QFontDatabase.isPrivateFamily(f)]
+    assert len(families) >= 2
+    rng = random.Random(1017)
+    first, second = rng.sample(families, 2)
+    seen = {}
+
+    def fake_exec(dlg):
+        edit = dlg.findChild(QLineEdit)
+        box = dlg.findChild(QFontComboBox)
+        bold, italic = dlg.findChildren(QCheckBox)
+        f = edit.font()
+        seen["open"] = (box.currentFont().family(), f.family(),
+                        f.bold(), f.italic())
+        seen["bigger"] = f.pointSizeF() > QLineEdit().font().pointSizeF()
+        box.setCurrentFont(QFont(second))
+        bold.setChecked(False)
+        italic.setChecked(True)
+        f = edit.font()
+        seen["changed"] = (box.currentFont().family(), f.family(),
+                           f.bold(), f.italic())
+        return QDialog.Accepted
+
+    monkeypatch.setattr(QDialog, "exec", fake_exec)
+    host = QWidget()
+    try:
+        out = MainWindow._text3d_dialog(
+            host, {"text": "Abc", "font": first, "bold": True,
+                   "italic": False})
+    finally:
+        host.deleteLater()
+    box_family, edit_family, b, i = seen["open"]
+    assert edit_family == box_family and (b, i) == (True, False)
+    box_family, edit_family, b, i = seen["changed"]
+    assert edit_family == box_family and (b, i) == (False, True)
+    assert seen["bigger"]
+    assert out["font"] == box_family
+    assert out["bold"] is False and out["italic"] is True
+
+
 def test_text3d_dialog_in_millimetres(doc, monkeypatch):
     doc("mm", 0)
     shown, out = _run_text3d_dialog(

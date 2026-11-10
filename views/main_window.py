@@ -8795,6 +8795,23 @@ class MainWindow(QMainWindow):
         italic_check = QCheckBox()
         italic_check.setChecked(bool(params.get("italic", False)))
         form.addRow(tr("Italic:"), italic_check)
+        # The Text box previews the letters (#1017): the chosen font, bold
+        # and italic, a little larger than the dialog's own text so the
+        # font's details read. Not the model height — that is in metres.
+        base_size = text_edit.font().pointSizeF()
+
+        def preview_font(*_):
+            f = QFont(font_box.currentFont())
+            f.setBold(bold_check.isChecked())
+            f.setItalic(italic_check.isChecked())
+            if base_size > 0:
+                f.setPointSizeF(base_size * 1.5)
+            text_edit.setFont(f)
+
+        font_box.currentFontChanged.connect(preview_font)
+        bold_check.toggled.connect(preview_font)
+        italic_check.toggled.connect(preview_font)
+        preview_font()
         height_spin = LengthSpinBox(minimum=0.001, maximum=1000.0)
         height_spin.setValue(float(params.get("height", 0.25)))
         form.addRow(tr("Height:"), height_spin)
