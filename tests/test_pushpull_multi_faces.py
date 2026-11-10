@@ -326,3 +326,71 @@ def test_ctrl_copy_stacks_on_every_face():
 
     assert len(_faces_at_z(scene, 3.0)) == 2   # the bases stay as slabs
     assert len(_faces_at_z(scene, 5.0)) == 2
+
+
+# ---- A face that cannot go the whole way stays where it was ----------------
+
+def _box(scene, x0, height, size=2.0):
+    face = _sheet(scene, History(scene), x0, size)
+    tool = PushPullTool()
+    tool.on_activate(_StubViewport(scene))
+    vp = _StubViewport(scene, pick=face)
+    tool.on_hover(_ctx(vp))
+    tool.on_click(_ctx(vp))
+    tool.extrusion = height
+    tool.on_click(_ctx(vp))
+
+
+def test_a_thin_solid_is_not_taken_away_by_a_push_meant_for_a_thick_one():
+    """A slab 0.5 thick and a box 3 high, both tops selected, pushed down
+    1.0 from the box: the slab's top went its 0.5 and the slab was gone,
+    with nothing said."""
+    scene = Scene()
+    _box(scene, 0.0, 3.0)
+    _box(scene, 5.0, 0.5)
+    faces_before = len(scene.faces)
+    box_top = _faces_at_z(scene, 3.0)[0]
+    slab_top = _faces_at_z(scene, 0.5)[0]
+    scene.select([box_top, slab_top])
+
+    tool, vp = _drag(scene, box_top, -1.0)
+
+    assert len(_faces_at_z(scene, 2.0)) == 1        # the box went down
+    assert len(_faces_at_z(scene, 0.5)) == 1        # the slab is still there
+    assert len(scene.faces) == faces_before
+    assert is_closed(scene.mesh)
+    assert "1" in vp.last_status and "2" in vp.last_status   # 1 of 2, said
+    assert vp.history.undo() is True
+    assert len(_faces_at_z(scene, 3.0)) == 1
+
+
+def test_a_box_pushed_from_both_ends_is_not_flattened():
+    """Top and bottom of a box 3 high, pushed in 2.0: the top went 2, the
+    bottom the 1 that was left, and the box was one flat face."""
+    scene = Scene()
+    _box(scene, 0.0, 3.0)
+    top = _faces_at_z(scene, 3.0)[0]
+    bottom = _faces_at_z(scene, 0.0)[0]
+    scene.select([top, bottom])
+
+    tool, vp = _drag(scene, top, -2.0)
+
+    assert is_closed(scene.mesh)
+    assert len(scene.faces) == 6
+    zs = sorted({round(v.z(), 6) for f in scene.faces for v in f.vertices})
+    assert zs in ([0.0, 1.0], [2.0, 3.0])            # one end moved, not both
+    assert "1" in vp.last_status and "2" in vp.last_status
+
+
+def test_both_ends_still_go_when_there_is_room():
+    scene = Scene()
+    _box(scene, 0.0, 3.0)
+    top = _faces_at_z(scene, 3.0)[0]
+    bottom = _faces_at_z(scene, 0.0)[0]
+    scene.select([top, bottom])
+
+    _drag(scene, top, -1.0)
+
+    assert is_closed(scene.mesh)
+    zs = sorted({round(v.z(), 6) for f in scene.faces for v in f.vertices})
+    assert zs == [1.0, 2.0]
