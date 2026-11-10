@@ -204,7 +204,8 @@ class PreferencesDialog(QDialog):
             "Once a day, IngeTrazo asks GitHub for the latest version number. "
             "Nothing about you or your files is sent."))
         self._check_updates.setChecked(auto_enabled(st))
-        self._check_updates.setVisible(not store_managed())
+        # Into the form, or nowhere: setVisible(True) while it had no
+        # parent yet showed it for an instant as a window of its own.
         if not store_managed():
             form.addRow("", self._check_updates)
 
