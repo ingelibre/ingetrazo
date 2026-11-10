@@ -3563,5 +3563,9 @@
  "The layers' line types on their edges in the 3D view too: dashed as a sheet at 1:50 draws them, in the line type's own colour (a gas line yellow); scenes remember it with the style.": "圖層的線型也顯示在 3D 視圖的邊線上：依 1:50 圖紙的虛線繪製，並使用線型本身的顏色（例如黃色瓦斯管線）；場景會隨樣式記住此設定。",
  "Save this size": "儲存此尺寸",
  "Remove from the list": "從清單中移除",
- "Keep these measures in the list of this kind of piece (marked ★), in every document": "將這些尺寸保存在此類塊材的清單中（標記為 ★），所有文件皆可使用"
+ "Keep these measures in the list of this kind of piece (marked ★), in every document": "將這些尺寸保存在此類塊材的清單中（標記為 ★），所有文件皆可使用",
+ "Text gap": "文字間隙",
+ "Gap between the dimension line and its text, on paper. (Separation moves the line away from the measured points.)": "尺寸線與其文字之間在圖紙上的距離。（「間距」是讓尺寸線遠離測量點。）",
+ "Flip text direction": "翻轉文字方向",
+ "Turns the text half a turn so it reads the other way along the line — a vertical dimension read from the right instead of from the left. The text stays on the same side.": "將文字旋轉半圈，使其沿尺寸線反向閱讀——垂直尺寸從右側而不是左側閱讀。文字仍在同一側。"
 }
