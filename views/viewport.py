@@ -2425,15 +2425,25 @@ class Viewport(QOpenGLWidget):
     #: worked in: the model shows there, without the tool in hand's preview.
     tool_preview = True
 
+    #: How many viewports are inside ``paintGL`` right now (a view of
+    #: several paints the others from its own). What a paint announces must
+    #: not show or hide a widget beside the view: that resizes it in the
+    #: middle of its frame, and macOS crashed on the flush after (#1316).
+    painting = 0
+
     def paintGL(self) -> None:
-        if getattr(self, "tool_preview", True):
-            Viewport._paint_frame(self)
-            return
-        tool, self.active_tool = self.active_tool, None
+        Viewport.painting += 1
         try:
-            Viewport._paint_frame(self)
+            if getattr(self, "tool_preview", True):
+                Viewport._paint_frame(self)
+                return
+            tool, self.active_tool = self.active_tool, None
+            try:
+                Viewport._paint_frame(self)
+            finally:
+                self.active_tool = tool
         finally:
-            self.active_tool = tool
+            Viewport.painting -= 1
 
     def _paint_frame(self) -> None:
         self._tick = getattr(self, "_tick", 0) + 1     # a new epoch memo

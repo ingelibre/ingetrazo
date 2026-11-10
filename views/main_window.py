@@ -6784,6 +6784,16 @@ class MainWindow(QMainWindow):
         doc = self.__dict__.get("_doc")
         if row is None or doc is None or doc.viewport is None:
             return
+        if Viewport.painting:
+            # Reached from inside paintGL (the Scenes panel follows
+            # sceneVersionChanged): the row coming or going resizes the
+            # view in the middle of its frame, and macOS crashed on the
+            # flush after an import that brought scenes (#1316). Once the
+            # frame is out, then; a burst asks once.
+            if not self.__dict__.get("_scene_tabs_queued"):
+                self._scene_tabs_queued = True
+                QTimer.singleShot(0, self, self._refresh_scene_tabs_queued)
+            return
         act = self.__dict__.get("_act_scene_tabs")
         if act is not None and act.isChecked() != bool(doc.scene_tabs):
             act.blockSignals(True)            # the project in front's choice
@@ -6796,6 +6806,10 @@ class MainWindow(QMainWindow):
             row.show_views(views)
         if row.isHidden() == on:
             row.setVisible(on)
+
+    def _refresh_scene_tabs_queued(self) -> None:
+        self._scene_tabs_queued = False
+        self._refresh_scene_tabs()
 
     def set_scene_tabs(self, on: bool, doc=None) -> None:
         """Show ``doc``'s (default: the active project's) scenes as tabs."""
