@@ -3392,5 +3392,9 @@
  "Create faces from closed planar outlines": "Tạo mặt từ các đường bao phẳng khép kín",
  "Slower on big drawings. You can also do it later, with the lines selected: Tools ▸ Make Faces.": "Chậm hơn với bản vẽ lớn. Bạn cũng có thể làm sau, khi đã chọn các đường: Công cụ ▸ Tạo mặt.",
  "{n} faces made from closed outlines": "Đã tạo {n} mặt từ các đường bao khép kín",
- "Making faces…": "Đang tạo mặt…"
+ "Making faces…": "Đang tạo mặt…",
+ "Text gap": "Khoảng cách chữ",
+ "Gap between the dimension line and its text, on paper. (Separation moves the line away from the measured points.)": "Khoảng cách giữa đường kích thước và chữ của nó, trên giấy. (Sự tách biệt đẩy đường ra xa các điểm đo.)",
+ "Flip text direction": "Đảo chiều chữ",
+ "Turns the text half a turn so it reads the other way along the line — a vertical dimension read from the right instead of from the left. The text stays on the same side.": "Xoay chữ nửa vòng để đọc theo chiều ngược lại dọc theo đường — kích thước dọc được đọc từ bên phải thay vì bên trái. Chữ vẫn ở cùng một phía."
 }

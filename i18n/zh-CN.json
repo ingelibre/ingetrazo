@@ -3366,5 +3366,9 @@
  "Create faces from closed planar outlines": "从闭合的平面轮廓创建面",
  "Slower on big drawings. You can also do it later, with the lines selected: Tools ▸ Make Faces.": "大型图纸上会较慢。也可以稍后选中线条再操作：工具 ▸ 创建面。",
  "{n} faces made from closed outlines": "已从闭合轮廓创建 {n} 个面",
- "Making faces…": "正在创建面…"
+ "Making faces…": "正在创建面…",
+ "Text gap": "文字间距",
+ "Gap between the dimension line and its text, on paper. (Separation moves the line away from the measured points.)": "尺寸线与其文字之间在图纸上的距离。（“分离”是让尺寸线远离测量点。）",
+ "Flip text direction": "翻转文字方向",
+ "Turns the text half a turn so it reads the other way along the line — a vertical dimension read from the right instead of from the left. The text stays on the same side.": "将文字旋转半圈，使其沿尺寸线反向阅读——竖向尺寸从右侧而不是左侧阅读。文字仍在同一侧。"
 }

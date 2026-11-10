@@ -3368,5 +3368,9 @@
  "Create faces from closed planar outlines": "Buat bidang dari kontur datar tertutup",
  "Slower on big drawings. You can also do it later, with the lines selected: Tools ▸ Make Faces.": "Lebih lambat pada gambar besar. Anda juga dapat melakukannya nanti, dengan garis terpilih: Alat ▸ Buat Bidang.",
  "{n} faces made from closed outlines": "{n} bidang dibuat dari kontur tertutup",
- "Making faces…": "Membuat bidang…"
+ "Making faces…": "Membuat bidang…",
+ "Text gap": "Jarak teks",
+ "Gap between the dimension line and its text, on paper. (Separation moves the line away from the measured points.)": "Jarak antara garis dimensi dan teksnya, di kertas. (Jarak pisah menjauhkan garis dari titik yang diukur.)",
+ "Flip text direction": "Balik arah teks",
+ "Turns the text half a turn so it reads the other way along the line — a vertical dimension read from the right instead of from the left. The text stays on the same side.": "Memutar teks setengah putaran agar terbaca ke arah sebaliknya di sepanjang garis — dimensi vertikal dibaca dari kanan, bukan dari kiri. Teks tetap di sisi yang sama."
 }

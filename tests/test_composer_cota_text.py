@@ -138,7 +138,7 @@ def test_text_along_puts_the_label_outside_an_end_and_the_drag_moves_only_it():
     izquierdo; es más, en los programas de láminas se puede mover el texto de la
     cota». The label goes outside the start / end of the line, or wherever
     the mouse drags it; the line never moves; the fields persist."""
-    from PySide6.QtCore import QEvent, QPointF, Qt
+    from PySide6.QtCore import QEvent, QPoint, QPointF, Qt
     from PySide6.QtWidgets import QGraphicsScene, QGraphicsSceneMouseEvent
     from core.composition import Composicion, CotaItem
     from views.composer import (CotaCanvasItem, cota_label_anchor,
@@ -173,6 +173,9 @@ def test_text_along_puts_the_label_outside_an_end_and_the_drag_moves_only_it():
     assert item._text_dragging
     move = QGraphicsSceneMouseEvent(QEvent.GraphicsSceneMouseMove)
     move.setPos(QPointF(end[0] + 5.0, end[1] - 2.5 + 7.0))
+    # past the drag distance on screen: a real drag, not a tremble
+    move.setButtonDownScreenPos(Qt.LeftButton, QPoint(0, 0))
+    move.setScreenPos(QPoint(20, 28))
     item.mouseMoveEvent(move)
     m = item.model
     assert (m.text_dx_mm, m.text_dy_mm) == (5.0, 7.0)

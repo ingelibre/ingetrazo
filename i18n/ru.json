@@ -3365,5 +3365,9 @@
  "Create faces from closed planar outlines": "Создать грани из замкнутых плоских контуров",
  "Slower on big drawings. You can also do it later, with the lines selected: Tools ▸ Make Faces.": "Медленнее на больших чертежах. Это можно сделать и позже, выбрав линии: Инструменты ▸ Создать грани.",
  "{n} faces made from closed outlines": "Граней создано из замкнутых контуров: {n}",
- "Making faces…": "Создание граней…"
+ "Making faces…": "Создание граней…",
+ "Text gap": "Отступ текста",
+ "Gap between the dimension line and its text, on paper. (Separation moves the line away from the measured points.)": "Расстояние между размерной линией и её текстом на бумаге. («Разделение / Отступ» отодвигает линию от измеряемых точек.)",
+ "Flip text direction": "Перевернуть направление текста",
+ "Turns the text half a turn so it reads the other way along the line — a vertical dimension read from the right instead of from the left. The text stays on the same side.": "Поворачивает текст на пол-оборота, чтобы он читался в другую сторону вдоль линии — вертикальный размер читается справа, а не слева. Текст остаётся с той же стороны."
 }

@@ -3366,5 +3366,9 @@
  "Create faces from closed planar outlines": "Crea facce dai contorni piani chiusi",
  "Slower on big drawings. You can also do it later, with the lines selected: Tools ▸ Make Faces.": "Più lento sui disegni grandi. Puoi farlo anche dopo, con le linee selezionate: Strumenti ▸ Crea facce.",
  "{n} faces made from closed outlines": "{n} facce create da contorni chiusi",
- "Making faces…": "Creazione delle facce…"
+ "Making faces…": "Creazione delle facce…",
+ "Text gap": "Distanza del testo",
+ "Gap between the dimension line and its text, on paper. (Separation moves the line away from the measured points.)": "Distanza tra la linea di quota e il suo testo, sulla carta. (Separazione allontana la linea dai punti misurati.)",
+ "Flip text direction": "Inverti il verso del testo",
+ "Turns the text half a turn so it reads the other way along the line — a vertical dimension read from the right instead of from the left. The text stays on the same side.": "Ruota il testo di mezzo giro perché si legga nell’altro verso lungo la linea — una quota verticale letta da destra invece che da sinistra. Il testo resta dallo stesso lato."
 }
