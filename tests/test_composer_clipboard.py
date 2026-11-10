@@ -109,6 +109,19 @@ def test_cut_and_paste_between_sheets_keeps_the_place(monkeypatch):
         _close(win, comp)
 
 
+def _activate(comp, view) -> None:
+    """The composer in front, as when the user types in it. Qt looks for a
+    shortcut in the ACTIVE window before the key reaches the canvas: with
+    a main window left active by an earlier test, its Edit ▸ Copy took
+    Ctrl+C and the sheet copied nothing — an order-dependent CI failure."""
+    from PySide6.QtWidgets import QApplication
+    comp.show()
+    comp.raise_()
+    comp.activateWindow()
+    view.setFocus()
+    QApplication.processEvents()
+
+
 def test_keys_reach_the_canvas_but_not_the_inline_editor(monkeypatch):
     from views.composer import ComposerCanvasView, ComposerWindow
     win, comp = _composer(monkeypatch)
@@ -117,14 +130,7 @@ def test_keys_reach_the_canvas_but_not_the_inline_editor(monkeypatch):
         comp.history.execute(AddItemCommand(comp.comp, t))
         comp._rebuild_canvas()
         view = comp.findChildren(ComposerCanvasView)[0]
-        # The keys go to the window being worked in, as when a user types:
-        # Ctrl+C is a window shortcut, and a window an earlier test left
-        # open and active took it instead (it failed only in the CI batch
-        # that ran test_browser_side_tree.py first).
-        comp.show()
-        comp.activateWindow()
-        assert QTest.qWaitForWindowActive(comp, 2000)
-        view.setFocus()
+        _activate(comp, view)
         item = comp._item_for(t)
         item.setSelected(True)
         QTest.keyClick(view, Qt.Key_C, Qt.ControlModifier)
@@ -139,6 +145,24 @@ def test_keys_reach_the_canvas_but_not_the_inline_editor(monkeypatch):
         comp.end_inline_edit(None, None)
     finally:
         _close(win, comp)
+
+
+def test_keys_still_reach_the_canvas_with_another_window_left_active(
+        monkeypatch):
+    """The order the CI runs tests in left a main window active before the
+    test above (PR #1289, #1292); it must pass all the same."""
+    from PySide6.QtWidgets import QApplication
+    from views.main_window import MainWindow
+    other = MainWindow()
+    other.show()
+    QApplication.setActiveWindow(other)
+    QApplication.processEvents()
+    assert QApplication.activeWindow() is other
+    try:
+        test_keys_reach_the_canvas_but_not_the_inline_editor(monkeypatch)
+    finally:
+        other._saved_version = other.viewport.scene.version
+        other.close()
 
 
 def test_property_pages_keep_their_rows_at_the_top(monkeypatch):
