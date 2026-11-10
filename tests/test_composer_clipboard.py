@@ -117,6 +117,14 @@ def test_keys_reach_the_canvas_but_not_the_inline_editor(monkeypatch):
         comp.history.execute(AddItemCommand(comp.comp, t))
         comp._rebuild_canvas()
         view = comp.findChildren(ComposerCanvasView)[0]
+        # The keys go to the window being worked in, as when a user types:
+        # Ctrl+C is a window shortcut, and a window an earlier test left
+        # open and active took it instead (it failed only in the CI batch
+        # that ran test_browser_side_tree.py first).
+        comp.show()
+        comp.activateWindow()
+        assert QTest.qWaitForWindowActive(comp, 2000)
+        view.setFocus()
         item = comp._item_for(t)
         item.setSelected(True)
         QTest.keyClick(view, Qt.Key_C, Qt.ControlModifier)
