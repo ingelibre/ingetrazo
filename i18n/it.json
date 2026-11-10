@@ -3351,5 +3351,17 @@
  "The Bulgarian translation.": "La traduzione bulgara.",
  "The Traditional Chinese translation.": "La traduzione in cinese tradizionale.",
  "A .skp component 10 000 times too big, traced.": "Un componente .skp 10 000 volte troppo grande, rintracciato.",
- "Thanks as well to all the authors of the extensions catalogue": "Grazie anche a tutti gli autori del catalogo delle estensioni"
+ "Thanks as well to all the authors of the extensions catalogue": "Grazie anche a tutti gli autori del catalogo delle estensioni",
+ "Make Faces": "Crea facce",
+ "Make the faces that the selected edges close, on those same edges.": "Crea le facce chiuse dagli spigoli selezionati, su quegli stessi spigoli.",
+ "Select the edges of the loops to turn into faces.": "Seleziona gli spigoli dei contorni da trasformare in facce.",
+ "The selected edges are not on one plane (nor on horizontal planes at different heights): Make Faces only builds flat faces.": "Gli spigoli selezionati non sono su uno stesso piano (né su piani orizzontali a quote diverse): Crea facce crea solo facce piane.",
+ "The selected edges close no loop.": "Gli spigoli selezionati non chiudono alcun contorno.",
+ "Make Faces: {n} faces made": "Crea facce: {n} facce create",
+ "Make Faces: those loops already had their faces": "Crea facce: quei contorni avevano già le loro facce",
+ "Make Faces: an existing face already covers those loops": "Crea facce: una faccia esistente copre già quei contorni",
+ "Create faces from closed planar outlines": "Crea facce dai contorni piani chiusi",
+ "Slower on big drawings. You can also do it later, with the lines selected: Tools ▸ Make Faces.": "Più lento sui disegni grandi. Puoi farlo anche dopo, con le linee selezionate: Strumenti ▸ Crea facce.",
+ "{n} faces made from closed outlines": "{n} facce create da contorni chiusi",
+ "Making faces…": "Creazione delle facce…"
 }
