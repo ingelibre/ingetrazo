@@ -3242,6 +3242,9 @@ class Viewport(QOpenGLWidget):
                             (tuple(ec[:3]), False))
         else:
             _edge_passes = ((tuple(ec[:3]), False),)
+        if (show_edges and not xray_edges
+                and getattr(style, "model_linetypes", True)):
+            self._mask_model_linetype_gaps()
         for (_ecol, _hidden), (_dx, _dy) in (
                 (_p, _j) for _p in _edge_passes for _j in _jit_e):
             if xray_edges:
@@ -3275,6 +3278,8 @@ class Viewport(QOpenGLWidget):
             if show_edges:
                 self._set_color(*_ecol, 1.0)
                 self._draw_instanced_edges()
+        if show_edges and getattr(style, "model_linetypes", True):
+            self._draw_model_linetype_dashes()
         if xray_edges:
             # Back to X-ray's depth: the faces never occlude, so selected
             # and hovered edges behind them still show.
@@ -9781,12 +9786,33 @@ class Viewport(QOpenGLWidget):
             return cached[1]
         idx = self._pick_flat(self._pick_index(near="all"))
         from core.section import cut_chords
-        segs = None
+        segs = tags = None
         if idx.tri_v0 is not None and len(idx.tri_v0):
-            segs = cut_chords(idx.tri_v0, idx.tri_e1, idx.tri_e2, n, o,
-                              idx.ent_vis[idx.tri_ent])
-        self._section_cut_cache = (key, segs)
+            segs, rows = cut_chords(idx.tri_v0, idx.tri_e1, idx.tri_e2, n, o,
+                                    idx.ent_vis[idx.tri_ent], rows=True)
+            if segs is not None:
+                tags = self._cut_layer_tags(idx, idx.tri_ent[rows])
+        self._section_cut_cache = (key, segs, tags)
         return segs
+
+    @staticmethod
+    def _cut_layer_tags(idx, ents):
+        """The layer each cut triangle's section is filled with, as a sheet
+        tags it: the face's own layer, else its object's."""
+        import numpy as np
+        from core.layers import DEFAULT_LAYER, layer_of
+        memo: dict = {}
+        out = []
+        for e in ents.tolist():
+            tag = memo.get(e)
+            if tag is None:
+                face, owner = idx.entities[e]
+                tag = layer_of(face)
+                if tag == DEFAULT_LAYER and owner is not None:
+                    tag = layer_of(owner)
+                memo[e] = tag
+            out.append(tag)
+        return np.asarray(out, dtype=object)
 
     def _section_fill_tris(self):
         """The fill's triangles for the active cut, cached with the cut
@@ -9818,6 +9844,182 @@ class Viewport(QOpenGLWidget):
         self._section_fill_cache = (segs, tris)
         self._section_hatch_cache = {}
         return tris
+
+    def _model_linetype_edges(self) -> list:
+        """``[(rgb or None, dashes, gaps)]``: the edges of the layers drawn
+        with their line type in the model (core.layers.model_line_styles),
+        cut into their dashes and gaps (world space, as a sheet at 1:50
+        dashes them) — rebuilt when the model or the line types change."""
+        import numpy as np
+        from core.layers import dash_segments, model_line_styles
+        scene = self.scene
+        styles = model_line_styles(scene)
+        if not styles:
+            return []
+        key = (scene.version, tuple(sorted(styles.items())))
+        memo = getattr(self, "_model_lines_cache", None)
+        if memo is not None and memo[0] == key:
+            return memo[1]
+        from core.hlr import collect_geometry
+        _t, hard, _s, hard_tags, _st, _tt = collect_geometry(scene,
+                                                              layers=True)
+        by_layer: dict = {}
+        for seg, tag in zip(hard, hard_tags):
+            if tag in styles:
+                by_layer.setdefault(tag, []).append(seg)
+        from core.layers import linetype_text
+        names = {ly.name: ly.linetype for ly in scene.layers}
+        out = []
+        for tag, segs in by_layer.items():
+            rgb, pattern = styles[tag]
+            dashes, gaps = dash_segments(np.asarray(segs), pattern)
+            words = self._model_line_words(
+                np.asarray(segs), linetype_text(names.get(tag), scene))
+            out.append((rgb, dashes, gaps, words))
+        self._model_lines_cache = (key, out)
+        return out
+
+    @staticmethod
+    def _model_line_words(segs, spec):
+        """A line type's words (GAS…) on the model's edges, in the gaps the
+        pattern leaves for them, as a sheet at 1:50 places them: their
+        letters' outlines as world segments, lying in the plane of the
+        edge and the horizontal across it, reading upright from above (a
+        rising edge: from its side)."""
+        import numpy as np
+        from core.layers import MODEL_DASH_SCALE, text_marks
+        empty = np.zeros((0, 2, 3), dtype=np.float32)
+        if spec is None or not len(segs):
+            return empty
+        from views.hatch_paint import line_text_strokes
+        strokes = line_text_strokes(spec[0], spec[1])
+        if not strokes:
+            return empty
+        unit = MODEL_DASH_SCALE
+        up_z = np.array([0.0, 0.0, 1.0])
+        out: list = []
+        for a, b in np.asarray(segs, dtype=np.float64).reshape(-1, 2, 3):
+            d = b - a
+            total = float(np.linalg.norm(d))
+            if total <= 1e-9:
+                continue
+            u = d / total
+            if u[0] < -1e-9 or (abs(u[0]) <= 1e-9 and u[1] < 0):
+                u = -u                  # read left to right
+                a, b = b, a
+            side = np.cross(up_z, u)
+            if np.linalg.norm(side) < 1e-6:
+                side = np.array([0.0, 1.0, 0.0])
+            side /= np.linalg.norm(side)
+            marks = text_marks((0.0, 0.0), (total / unit, 0.0), spec)
+            if len(marks) * len(strokes) > 4000:
+                continue
+            for x, _y, _deg in marks:
+                centre = a + u * (x * unit)
+                for poly in strokes:
+                    pts = [centre + u * (px * unit) + side * (py * unit)
+                           for px, py in poly]
+                    out += [(p0, p1) for p0, p1 in zip(pts, pts[1:])]
+        if not out:
+            return empty
+        return np.asarray(out, dtype=np.float32)
+
+    def _mask_model_linetype_gaps(self) -> None:
+        """Before the model's edges: the gaps of the dashed layers' edges
+        laid in the depth buffer only, a hair toward the eye along each
+        point's own sight line (so on the same pixels) — the edges drawn
+        next fail the depth test there, and break into dashes."""
+        try:
+            groups = self._model_linetype_edges()
+        except Exception:                    # never cost the frame
+            return
+        gaps = [g for _rgb, _d, g, _w in groups if len(g)]
+        if not gaps:
+            return
+        import numpy as np
+        eye = self.camera.eye()
+        e = np.array([eye.x(), eye.y(), eye.z()], dtype=np.float32)
+        pts = np.concatenate(gaps).reshape(-1, 3)
+        pts = pts + (e - pts) * 0.003
+        self._gl.glColorMask(False, False, False, False)
+        self._draw_section_arrays(pts.reshape(-1, 2, 3), (0.0, 0.0, 0.0),
+                                  GL_LINES)
+        self._gl.glColorMask(True, True, True, True)
+
+    def _draw_model_linetype_dashes(self) -> None:
+        """After the model's edges: the dashes of a layer whose line type
+        has a colour of its own drawn again in that colour — the same
+        lines, so the depth test lets them through where the edges show."""
+        try:
+            groups = self._model_linetype_edges()
+        except Exception:
+            return
+        ink = tuple(self._frame_style.edge_color[:3])
+        for rgb, dashes, _gaps, words in groups:
+            if rgb is not None and len(dashes):
+                self._draw_section_arrays(dashes, rgb, GL_LINES)
+            if len(words):
+                # A hair toward the eye: on a floor, over its face.
+                import numpy as np
+                eye = self.camera.eye()
+                e = np.array([eye.x(), eye.y(), eye.z()], dtype=np.float32)
+                pts = words.reshape(-1, 3)
+                pts = pts + (e - pts) * 0.002
+                self._draw_section_arrays(pts.reshape(-1, 2, 3),
+                                          rgb or ink, GL_LINES)
+
+    def _section_layer_fills(self, color):
+        """The cut filled layer by layer with the layers' hatches
+        (core.section.layer_fills) — once the cut rests, as its plain fill,
+        and again only when the cut or a layer's hatch changes."""
+        if self._section_fill_tris() is None:
+            return None
+        cut = getattr(self, "_section_cut_cache", None)
+        if cut is None or cut[1] is None:
+            return None
+        scene = self.scene
+        sign = (id(cut[1]), tuple(color[:3]),
+                repr([ly.to_dict() for ly in scene.layers]),
+                repr(getattr(scene, "bricks", None)))
+        memo = getattr(self, "_section_layer_cache", None)
+        if memo is not None and memo[0] == sign:
+            return memo[1]
+        from core.section import layer_fills
+        fills = layer_fills(cut[1], cut[2], scene.active_section().normal,
+                            scene, color)
+        self._section_layer_cache = (sign, fills)
+        return fills
+
+    def _draw_section_arrays(self, arr, rgb, mode) -> None:
+        """One colour of the cut's fill: triangles or lines, world space."""
+        raw = arr.reshape(-1).astype("float32").tobytes()
+        self._section_vbo.bind()
+        self._section_vbo.allocate(raw, len(raw))
+        self._section_vbo.release()
+        self._set_color(rgb[0], rgb[1], rgb[2], 1.0)
+        self._program.setUniformValue(
+            self._loc_back_color, QVector4D(rgb[0], rgb[1], rgb[2], 1.0))
+        self._section_vao.bind()
+        per = 3 if mode == GL_TRIANGLES else 2
+        self._gl.glDrawArrays(mode, 0, len(arr) * per)
+        self._section_vao.release()
+
+    def _draw_layer_fills(self, fc) -> None:
+        """«Layers' hatches»: each layer's cut in its ground, its hatch
+        lines over it in its ink — the sheets' patterns, in the model."""
+        fills = self._section_layer_fills(fc)
+        if not fills:
+            return
+        self._set_section_clip(False)
+        self._gl.glEnable(GL_POLYGON_OFFSET_FILL)
+        self._gl.glPolygonOffset(2.0, 2.0)
+        for tris, rgb, _lines, _ink in fills:
+            self._draw_section_arrays(tris, rgb, GL_TRIANGLES)
+        self._gl.glDisable(GL_POLYGON_OFFSET_FILL)
+        for _tris, _rgb, lines, ink in fills:
+            if lines is not None and len(lines):
+                self._draw_section_arrays(lines, ink, GL_LINES)
+        self._set_section_clip(True)
 
     def _section_hatch(self, spacing: float, cross: bool):
         """The hatch lines of the cut whose fill is cached, per (spacing,
@@ -9861,6 +10063,9 @@ class Viewport(QOpenGLWidget):
         from core.section import effective_fill
         pattern, fc, spacing = effective_fill(sp, style)
         if pattern == "none":
+            return
+        if pattern == "layers":
+            self._draw_layer_fills(fc)
             return
         tris = self._section_fill_tris()
         if tris is None or not len(tris):
@@ -9925,21 +10130,24 @@ class Viewport(QOpenGLWidget):
         a, b, t, ln = a[keep], b[keep], t[keep], ln[keep]
         t /= ln[:, None]
         side = np.cross(np.broadcast_to(n, t.shape), t)
-        # ~2.5 px of world width at each segment's distance from the eye.
+        # ~2.5 px of world width at each END's distance from the eye: one
+        # width per segment, taken at its middle, made a wall's cut line
+        # jump from thin to thick where its face's triangles meet.
         eye = self.camera.eye()
         eyev = np.array([eye.x(), eye.y(), eye.z()], dtype=np.float64)
-        mid = (a + b) * 0.5
-        dist = np.linalg.norm(mid - eyev, axis=1)
         h = max(1.0, self.height())
         fov = math.radians(getattr(self.camera, "fov_deg", 45.0))
-        wpp = np.maximum(dist * math.tan(fov * 0.5) * 2.0 / h, 1e-6)
-        w = (wpp * 1.25)[:, None]
+        scale = 1.25 * math.tan(fov * 0.5) * 2.0 / h
+        weight = self._cut_edge_weights(sp, keep)
+        wa = np.maximum(np.linalg.norm(a - eyev, axis=1) * scale, 1e-6)
+        wb = np.maximum(np.linalg.norm(b - eyev, axis=1) * scale, 1e-6)
+        wa = (wa * weight)[:, None]
+        wb = (wb * weight)[:, None]
         lift = n * 0.6
-        off = side * w
-        q0 = a - off + lift * w
-        q1 = b - off + lift * w
-        q2 = b + off + lift * w
-        q3 = a + off + lift * w
+        q0 = a - side * wa + lift * wa
+        q1 = b - side * wb + lift * wb
+        q2 = b + side * wb + lift * wb
+        q3 = a + side * wa + lift * wa
         tris = np.empty((len(a) * 2, 9), dtype=np.float32)
         tris[0::2, 0:3] = q0
         tris[0::2, 3:6] = q1
@@ -9956,6 +10164,30 @@ class Viewport(QOpenGLWidget):
         self._section_vao.bind()
         self._gl.glDrawArrays(GL_TRIANGLES, 0, len(a) * 6)
         self._section_vao.release()
+
+    #: The sheet's cut pen (mm) a layer's own cut weight is measured
+    #: against in the model: a layer at 0.50 draws the usual ~2.5 px line.
+    CUT_PEN_MM = 0.5
+
+    def _cut_edge_weights(self, plane, keep):
+        """How much thicker or thinner each cut line is drawn than usual:
+        with «Layers' hatches» each layer's cut weight (Muros at 0.70 a
+        heavy line, an insulation at 0.18 a fine one), as on a sheet;
+        otherwise all alike."""
+        import numpy as np
+        from core.section import effective_fill
+        count = int(keep.sum())
+        pattern = effective_fill(plane, self._frame_style)[0]
+        cut = getattr(self, "_section_cut_cache", None)
+        if pattern != "layers" or cut is None or cut[2] is None                 or len(cut[2]) != len(keep):
+            return np.ones(count)
+        pens = {ly.name: float(ly.cut_weight) / self.CUT_PEN_MM
+                for ly in self.scene.layers
+                if getattr(ly, "cut_weight", None) is not None}
+        if not pens:
+            return np.ones(count)
+        out = np.array([pens.get(t, 1.0) for t in cut[2][keep].tolist()])
+        return np.clip(out, 0.4, 2.4)
 
     def _clip_segment_front(
         self, a: QVector3D, b: QVector3D

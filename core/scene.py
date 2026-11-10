@@ -74,6 +74,23 @@ class Scene:
     layer_folders: list = field(default_factory=list)
     # Folder → the folder it sits in (absent: at the top).
     folder_parents: dict = field(default_factory=dict)
+    # Hatch patterns brought in from pattern files (core.hatches.parse_pat),
+    # name → {"label", "families"}: a layer's ``hatch`` names one as
+    # ``pat:<name>``, and the document carries it along.
+    hatch_patterns: dict = field(default_factory=dict)
+    # Line types the user made or brought in from line type files
+    # (core.layers.parse_lin), name → {"label", "pattern"} in paper mm: a
+    # layer's ``linetype`` names one as ``lin:<name>``.
+    line_types: dict = field(default_factory=dict)
+    # The colours given to the built-in line types in this document
+    # (core.layers.LINETYPES key → (r, g, b)): a dashed line drawn red,
+    # whatever its layer. An own line type keeps its colour in its entry.
+    linetype_colors: dict = field(default_factory=dict)
+    # The document's masonry pieces, kind → (length, width, height, joint)
+    # in mm («brick», «hollow», «block»; core.hatches.piece_kind): what every
+    # layer's masonry hatch is drawn with unless the layer sets its own
+    # (core.layers.layer_brick). A kind not here: its usual piece.
+    bricks: dict = field(default_factory=dict)
     # Named materials (core.materials.Material), name → Material. The
     # registry gives identity to paint recipes; faces keep their baked
     # attrs (color/texture) as the render truth and optionally carry
@@ -736,7 +753,9 @@ class Scene:
                 or self.show_hidden_objects or self.show_hidden_geometry
                 or self.custom_scales or self.back_face_color is not None
                 or len(self.layers) > 1 or self.layer_folders
-                or self.active_layer):
+                or self.active_layer or self.hatch_patterns
+                or self.line_types or self.linetype_colors
+                or self.bricks):
             self.mesh.clear()
             self.groups.clear()
             self.dimensions.clear()
@@ -757,6 +776,10 @@ class Scene:
             self.active_layer = None
             self.layer_folders = []
             self.folder_parents = {}
+            self.hatch_patterns = {}
+            self.line_types = {}
+            self.linetype_colors = {}
+            self.bricks = {}
             self.georef = None
             self.tile_layer = None
             self.terrain = None
