@@ -3351,5 +3351,9 @@
  "The Bulgarian translation.": "La traduzione bulgara.",
  "The Traditional Chinese translation.": "La traduzione in cinese tradizionale.",
  "A .skp component 10 000 times too big, traced.": "Un componente .skp 10 000 volte troppo grande, rintracciato.",
- "Thanks as well to all the authors of the extensions catalogue": "Grazie anche a tutti gli autori del catalogo delle estensioni"
+ "Thanks as well to all the authors of the extensions catalogue": "Grazie anche a tutti gli autori del catalogo delle estensioni",
+ "Text gap": "Distanza del testo",
+ "Gap between the dimension line and its text, on paper. (Separation moves the line away from the measured points.)": "Distanza tra la linea di quota e il suo testo, sulla carta. (Separazione allontana la linea dai punti misurati.)",
+ "Flip text direction": "Inverti il verso del testo",
+ "Turns the text half a turn so it reads the other way along the line — a vertical dimension read from the right instead of from the left. The text stays on the same side.": "Ruota il testo di mezzo giro perché si legga nell’altro verso lungo la linea — una quota verticale letta da destra invece che da sinistra. Il testo resta dallo stesso lato."
 }

@@ -1039,6 +1039,10 @@ class CotaItem:
     text_dx_mm: float = 0.0
     text_dy_mm: float = 0.0
     text_align: str = "aligned"  # aligned | horizontal
+    #: Turn an aligned label half a turn, so it reads the other way along
+    #: its line (a vertical cota read from the right, top-to-bottom). The
+    #: label stays on the same side of the line, at the same gap.
+    text_flip: bool = False
     text_color: str = ""
     text_bg: str = ""            # "" = no background behind the label
     text_bg_opacity: float = 1.0

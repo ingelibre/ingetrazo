@@ -1244,6 +1244,10 @@ class TestReanchorByDraggingBack1053:
             e = QGraphicsSceneMouseEvent(kind)
             e.setPos(local)
             e.setButton(Qt.LeftButton)
+            # a real drag travels on screen past the drag distance
+            e.setButtonDownScreenPos(Qt.LeftButton, QPoint(0, 0))
+            e.setScreenPos(QPoint(0, 0) if kind == QEvent.GraphicsSceneMousePress
+                           else QPoint(100, 0))
             return e
         start = QPointF(m.dx_mm, m.dy_mm)            # on the end's handle
         item.mousePressEvent(ev(QEvent.GraphicsSceneMousePress, start))
