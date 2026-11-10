@@ -5000,6 +5000,15 @@ class ScenesPanel(QWidget):
             from core import scene_folders as SF
             view = item.data(0, Qt.UserRole)[1]
             scene = self._scene()
+            edit = getattr(self._window, "edit_scene_camera", None)
+            if edit is not None:
+                from views.icons import tool_icon
+                act = menu.addAction(tool_icon("camera_settings"),
+                                     tr("Camera Settings…"))
+                act.setStatusTip(tr(
+                    "Show this scene and set its camera: lens, shift, frame "
+                    "and more. The changes are kept in the scene."))
+                act.triggered.connect(lambda _c=False, v=view: edit(v))
             mates = list(SF.scenes_in(scene, SF.folder_of(scene, view)))
             at = next(i for i, v in enumerate(mates) if v is view)
             menu.addSeparator()
