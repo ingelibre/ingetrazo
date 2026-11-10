@@ -499,13 +499,24 @@ def _single_coplanar_pair(faces) -> Optional[tuple]:
     return pairs[0]
 
 
+def _loop_has_segment(loop, v0, v1) -> bool:
+    """Whether the vertex loop walks the segment v0–v1 (either way)."""
+    n = len(loop)
+    return any(
+        (loop[i] is v0 and loop[(i + 1) % n] is v1)
+        or (loop[i] is v1 and loop[(i + 1) % n] is v0)
+        for i in range(n))
+
+
 class EraseSelectionCommand(Command):
     """Erase selected edges and faces, the usual way.
 
     An edge that divides two *coplanar* faces is dissolved and the faces merge
     back into one (rubbing out a face's split line reunites it). Any other erased
     edge takes the faces it bounds with it (a non-planar pair can't become one
-    face). Undo restores an identity-preserving snapshot — the merge restructures
+    face) — except through a *hole*: an edge that only bounds a face as one of
+    its hole's edges takes the hole with it and the face fills in. Undo restores
+    an identity-preserving snapshot — the merge restructures
     connectivity too much for a clean per-edge inverse."""
 
     def __init__(self, edges: Iterable, faces: Iterable = ()) -> None:
@@ -593,9 +604,25 @@ class EraseSelectionCommand(Command):
                 # Cascade: the edge and every face bounding it (a face can't
                 # outlive a bounding edge) go away.
                 ekey = frozenset((_key(edge.v0.position), _key(edge.v1.position)))
-                for f in seg_faces.get(ekey, ()):
-                    if id(f) in dead_faces:
+                dying = [f for f in seg_faces.get(ekey, ())
+                         if id(f) not in dead_faces]
+                # A hole is not a boundary the face dies with — the face
+                # CAN outlive a hole edge, as the same face with the
+                # opening filled in. Erasing one edge of a hole (an offset
+                # ring's, #1191) used to leave the face claiming a hole
+                # whose boundary no longer exists: the segment gone, the
+                # hole still covering — and still saved. Drop the hole
+                # from every surviving face that wears this segment only
+                # as a hole edge; the hole's other edges stay as lines.
+                for f in faces:
+                    if id(f) in dead_faces or f in dying:
                         continue
+                    for hole in list(f.hole_loops):
+                        if _loop_has_segment(hole, edge.v0, edge.v1) \
+                                and not _loop_has_segment(
+                                    f.loop, edge.v0, edge.v1):
+                            m.remove_hole(f, hole)
+                for f in dying:
                     dead_faces.add(id(f))
                     m.remove_face(f)
                     scene.selection.discard(f)
