@@ -850,3 +850,77 @@ def test_a_scene_shown_from_a_tab_is_marked_in_the_panel(win):
     assert panel.shown is _view(win, "B")
     font = panel.row_for(_view(win, "B")).font(0)
     assert font.bold()
+
+
+# ---- The panel's icons follow the theme; a picture is asked for again -------
+
+def test_the_bar_icons_are_named_so_a_theme_change_draws_them_again(win):
+    """Drawn in the theme's ink when made, and left in it: black on the
+    dark theme after a switch."""
+    from PySide6.QtGui import QColor, QIcon, QPixmap
+    from views import theme
+    panel = win.scenes_dock.panel
+    named = {panel.add_btn: "scene_add", panel.add_folder_btn: "folder_add",
+             panel.update_btn: "refresh",
+             panel.list_action: "scenes_list",
+             panel.thumbs_action: "scenes_thumbs"}
+    for obj, key in named.items():
+        assert obj.property("icon_key") == key
+    panel.set_thumbnails(True)
+    assert panel.view_btn.property("icon_key") == "scenes_thumbs"
+    panel.set_thumbnails(False)
+    assert panel.view_btn.property("icon_key") == "scenes_list"
+    # The redraw reaches them: a blank put in their place is replaced.
+    blank = QPixmap(16, 16)
+    blank.fill(QColor(0, 0, 0, 0))
+    for obj in list(named) + [panel.view_btn]:
+        obj.setIcon(QIcon(blank))
+    theme._redraw_icons(_app)
+    for obj in list(named) + [panel.view_btn]:
+        img = obj.icon().pixmap(16, 16).toImage()
+        assert any(img.pixelColor(x, y).alpha() > 0
+                   for x in range(img.width()) for y in range(img.height()))
+
+
+def test_a_picture_that_could_not_be_drawn_is_asked_for_again(
+        win, monkeypatch):
+    """At start-up the view may not be ready: the first try gave nothing
+    and the scene kept the camera until it changed."""
+    from PySide6.QtGui import QColor, QIcon, QPixmap
+    from PySide6.QtTest import QTest
+    from views.tray import ScenesPanel
+    tries = []
+
+    def fake(self, view):
+        tries.append(view.name)
+        if len(tries) < 2:
+            return None                      # not ready the first time
+        pm = QPixmap(96, 64)
+        pm.fill(QColor("red"))
+        return QIcon(pm)
+    monkeypatch.setattr(ScenesPanel, "_render_thumbnail", fake)
+    monkeypatch.setattr(ScenesPanel, "RETRY_AFTER_MS", 30)
+    panel = win.scenes_dock.panel
+    panel._retry_timer.setInterval(30)
+    panel = _scenes(win, "A")
+    _wait()
+    QTest.qWait(200)
+    _wait()
+    assert tries == ["A", "A"]
+    row = panel.row_for(_view(win, "A"))
+    assert row.icon(0).pixmap(96, 64).toImage().pixelColor(48, 32) == \
+        QColor("red")
+
+
+def test_a_scene_with_no_picture_to_be_had_is_not_asked_for_ever(
+        win, monkeypatch):
+    from PySide6.QtTest import QTest
+    from views.tray import ScenesPanel
+    tries = []
+    monkeypatch.setattr(ScenesPanel, "_render_thumbnail",
+                        lambda self, view: tries.append(view.name))
+    win.scenes_dock.panel._retry_timer.setInterval(20)
+    _scenes(win, "A")
+    _wait()
+    QTest.qWait(400)
+    assert len(tries) == ScenesPanel.RETRIES + 1

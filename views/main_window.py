@@ -1431,7 +1431,12 @@ class MainWindow(QMainWindow):
             key = dock.property("icon_key")
             if key:
                 dock.setWindowIcon(tool_icon(str(key)))
-        from PySide6.QtWidgets import QToolButton
+        from PySide6.QtWidgets import QDockWidget, QToolButton
+        from views.icons import letter_icon
+        for dock in self.findChildren(QDockWidget):
+            letter = dock.property("icon_letter")
+            if letter and dock.parent() is self:
+                dock.setWindowIcon(letter_icon(str(letter)))
         for btn in self.findChildren(QToolButton, "panel_options_button"):
             btn.setIcon(tool_icon("panel_options"))
         self._sync_tab_icons()
@@ -2846,6 +2851,8 @@ class MainWindow(QMainWindow):
         for d in self.findChildren(QDockWidget):
             if d.parent() is self and not d.testAttribute(Qt.WA_SetWindowIcon):
                 d.setWindowIcon(letter_icon(d.windowTitle()))
+                # Noted, so a change of theme draws it again in the new ink.
+                d.setProperty("icon_letter", d.windowTitle())
         self._sync_tab_icons()
 
     def _sync_tab_icons(self) -> None:
@@ -2855,13 +2862,13 @@ class MainWindow(QMainWindow):
         in here."""
         from PySide6.QtWidgets import QDockWidget
         from shiboken6 import isValid
-        docks = {d.windowTitle(): d for d in self.findChildren(QDockWidget)
-                 if d.parent() is self}
+        docks = [d for d in self.findChildren(QDockWidget)
+                 if d.parent() is self]
         for tb in self._dock_tab_bars():
             if not isValid(tb):
                 continue
             for i in range(tb.count()):
-                d = docks.get(tb.tabText(i))
+                d = self._tab_panel(tb, i, docks)
                 if d is not None and \
                         tb.tabIcon(i).cacheKey() != d.windowIcon().cacheKey():
                     tb.setTabIcon(i, d.windowIcon())
@@ -3161,12 +3168,30 @@ class MainWindow(QMainWindow):
     def _popup_menu(self, menu, pos) -> None:
         menu.exec(pos)
 
+    @staticmethod
+    def _tab_panel(bar, index, docks):
+        """The panel of ``docks`` that tab ``index`` of ``bar`` stands for.
+
+        By the panel itself, which Qt keeps in the tab's data (its address),
+        and only failing that by its title: two panels may share one — an
+        extension's «Scenes» beside the window's own — and by title the tab
+        of one answered for the other."""
+        from shiboken6 import getCppPointer
+        try:
+            address = int(bar.tabData(index) or 0)
+        except (TypeError, ValueError):
+            address = 0
+        if address:
+            for d in docks:
+                if getCppPointer(d)[0] == address:
+                    return d
+        text = bar.tabText(index)
+        return next((d for d in docks if d.windowTitle() == text), None)
+
     def _dock_of_tab(self, bar, index):
         if index < 0:
             return None
-        text = bar.tabText(index)
-        return next((d for d in self._sidebar_docks()
-                     if d.windowTitle() == text), None)
+        return self._tab_panel(bar, index, self._sidebar_docks())
 
     def _dock_tab_at(self, pos):
         """The tray whose tab is under ``pos`` (window coordinates)."""

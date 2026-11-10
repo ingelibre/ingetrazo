@@ -664,3 +664,78 @@ def test_resting_the_pointer_on_an_icon_tells_its_name(win):
     tab = win.project_browser.titleBarWidget().tab
     assert _tip_over(tab, 0) == "Browser"
     win.move_dock(win.project_browser, Qt.RightDockWidgetArea)
+
+
+# ---- Two panels of one name; the initial follows the theme ------------------
+
+def _own_dock(win, title, name):
+    from PySide6.QtWidgets import QDockWidget
+    dock = QDockWidget(title, win)
+    dock.setObjectName(name)
+    dock.setWidget(QLabel(name))
+    win.addDockWidget(win.dockWidgetArea(win.tray), dock)
+    win.tabifyDockWidget(win.tray, dock)
+    _app.processEvents()
+    win._style_dock_tabs()
+    _app.processEvents()
+    return dock
+
+
+def test_a_tab_stands_for_its_own_panel_not_for_one_of_the_same_name(win):
+    """An extension's «Scenes» beside the window's own: found by title,
+    the tab of one answered for the other — its menu, its icon."""
+    mine = win.scenes_dock
+    other = _own_dock(win, mine.windowTitle(), "own_scenes")
+    docks = [mine, other]
+    seen = []
+    for bar in win._dock_tab_bars():
+        # Qt keeps spare tab bars around: the ones on screen.
+        if not bar.isVisible() or not win.rect().contains(
+                bar.mapTo(win, QPoint(0, 0))):
+            continue
+        for i in range(bar.count()):
+            if bar.tabText(i) == mine.windowTitle():
+                seen.append((bar, i, win._tab_panel(bar, i, docks)))
+    assert sorted(d.objectName() for _b, _i, d in seen) == sorted(
+        d.objectName() for d in docks)
+    for bar, i, dock in seen:
+        assert _image(bar.tabIcon(i)) == _image(dock.windowIcon())
+    assert _image(mine.windowIcon()) != _image(other.windowIcon())
+    other.deleteLater()
+
+
+def test_the_initial_of_a_panel_without_icon_follows_the_theme(win):
+    from PySide6.QtGui import QColor
+    from views import icons
+    dock = _own_dock(win, "Zeta", "own_zeta")
+    before = _image(dock.windowIcon())
+    real = icons._ink
+    icons._ink = lambda: QColor(250, 0, 250)
+    try:
+        win._refresh_toolbar_icons()
+    finally:
+        icons._ink = real
+    assert _image(dock.windowIcon()) != before
+    bar, i = _bar_of(win, dock)
+    assert _image(bar.tabIcon(i)) == _image(dock.windowIcon())
+    win._refresh_toolbar_icons()
+    assert _image(dock.windowIcon()) == before
+    dock.deleteLater()
+
+
+def test_the_initial_is_drawn_with_the_weight_of_the_other_icons():
+    """Its frame as thin as theirs: fewer inked pixels than at full weight."""
+    from views import icons
+
+    def inked(icon):
+        img = _image(icon)
+        return sum(1 for x in range(img.width()) for y in range(img.height())
+                   if img.pixelColor(x, y).alpha() > 60)
+    thin = inked(icons.letter_icon("Zeta"))
+    stroke = icons.ICON_STROKE
+    icons.ICON_STROKE = 1.0
+    try:
+        full = inked(icons.letter_icon("Zeta"))
+    finally:
+        icons.ICON_STROKE = stroke
+    assert thin < full
