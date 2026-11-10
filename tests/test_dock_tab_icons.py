@@ -271,6 +271,11 @@ def _gear(bar):
 
 
 def test_the_gear_is_fixed_at_the_end_of_the_tabs_row(win):
+    # Wide enough for every tab: at the 280 px a tray has once a layout was
+    # saved, the tabs (Scenes among them, #1158) reach under the gear and
+    # the row scrolls instead.
+    win.resizeDocks([win.tray], [440], Qt.Horizontal)
+    _app.processEvents()
     bar, _i = _bar_of(win, win.tray)
     gear = _gear(bar)
     assert gear.isVisible() and not gear.icon().isNull()
