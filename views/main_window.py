@@ -9559,6 +9559,7 @@ class MainWindow(QMainWindow):
         QApplication.setOverrideCursor(Qt.WaitCursor)
         try:
             geometry = vp.hlr_geometry()
+            solids, texts = [], []
             if vp.camera.perspective:
                 groups = [("VISTA", hlr_perspective(vp.scene, vp.camera,
                                                     geometry=geometry))]
@@ -9569,7 +9570,8 @@ class MainWindow(QMainWindow):
                 from views.composer import dxf_groups_by_layer
                 d = hlr_drawing(vp.scene, vp.camera, layers=True)
                 d.styles = line_styles(vp.scene, True)
-                groups = dxf_groups_by_layer(d, "VISTA", hidden_lines=False)
+                groups = dxf_groups_by_layer(d, "VISTA", hidden_lines=False,
+                                             texts=texts)
             else:
                 d = hlr_drawing(vp.scene, vp.camera, geometry=geometry)
                 k = d.kinds
@@ -9577,7 +9579,13 @@ class MainWindow(QMainWindow):
                                            & (k != KIND_PROFILE)]),
                           ("VISTA-PERFIL", d.segs[k == KIND_PROFILE]),
                           ("VISTA-CORTE", d.segs[k == KIND_CUT])]
-            n = save_dxf_layers(path, groups)
+            if not vp.camera.perspective:
+                # The cut hatches and fills too, as a sheet at 1:50 draws
+                # them — as the composer's export does at its frame's scale.
+                from views.composer import dxf_cut_layers
+                lines, solids = dxf_cut_layers(vp.scene, vp.camera)
+                groups += lines
+            n = save_dxf_layers(path, groups, solids, texts)
         except Exception as exc:  # noqa: BLE001
             QApplication.restoreOverrideCursor()
             QMessageBox.critical(self, tr("Export DXF failed"), str(exc))
