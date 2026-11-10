@@ -166,7 +166,7 @@ class ExtensionApp:
     # ---- Side panel ----------------------------------------------------------
     def add_panel(self, title: str, widget, name: str | None = None, *,
                   panel: str | None = None, stretch: int = 0,
-                  start_hidden: bool = False):
+                  start_hidden: bool = False, icon=None):
         """Put ``widget`` in the side tray as a tab of its own, beside
         Properties / BIM / Terrain. Returns the dock.
 
@@ -186,7 +186,13 @@ class ExtensionApp:
 
         ``start_hidden``: the panel starts closed the first time (for a
         panel few users need open all the time); Window ▸ Panels opens it,
-        and from then on the user's choice is kept."""
+        and from then on the user's choice is kept.
+
+        ``icon``: what the panel's tab shows — the tabs show only an icon,
+        the name being their tooltip and the panel's heading. A QIcon, or
+        the key of one of IngeTrazo's drawn icons (``"panel_render"``…),
+        which then follows the theme. Without one the tab shows the
+        title's initial in a rounded square."""
         from PySide6.QtWidgets import QDockWidget, QVBoxLayout, QWidget
         win = self._window
         shared = getattr(win, "_shared_panels", None)
@@ -195,6 +201,8 @@ class ExtensionApp:
         if panel is not None and panel in shared:
             dock, box = shared[panel]
             box.addWidget(widget, stretch)
+            if icon is not None and not dock.property("ingetrazo_icon"):
+                self._set_panel_icon(dock, icon)
             return dock
         if panel is not None:
             object_name = f"extension_{panel}"
@@ -217,7 +225,9 @@ class ExtensionApp:
                 win._start_hidden = set()
             win._start_hidden.add(object_name)
         dock.setWidget(widget)
-        dock.setTitleBarWidget(QWidget(dock))   # the tab already names it
+        dock.setTitleBarWidget(QWidget(dock))   # the window puts its header
+        if icon is not None:
+            self._set_panel_icon(dock, icon)
         win._register_extension_dock(dock)
         if panel is not None:
             shared[panel] = (dock, box)
@@ -225,6 +235,10 @@ class ExtensionApp:
         if tray is not None:
             tray.raise_()                   # Properties stays the one in front
         return dock
+
+    def _set_panel_icon(self, dock, icon) -> None:
+        dock.setProperty("ingetrazo_icon", True)
+        self._window.set_dock_icon(dock, icon)
 
     def show_panel(self, dock) -> None:
         """Bring a tab from :meth:`add_panel` to the front — shown again

@@ -1333,7 +1333,8 @@ def setup(app) -> None:
     brings the tab forward."""
     from PySide6.QtCore import QTimer
     panel = SolidInspectorPanel(app.viewport)
-    dock = app.add_panel(tr("Solid Inspector"), panel)
+    dock = app.add_panel(tr("Solid Inspector"), panel,
+                         icon="panel_solid_inspector")
     app.window._solid_inspector = panel
     app.window._solid_inspector_dock = dock
     # Once the window has restored the saved layout (after every setup).
