@@ -316,9 +316,15 @@ def test_an_arrow_locked_planar_tool_starts_on_the_face_under_the_cursor(
         tool = vp.active_tool
         assert tool.on_key(vp, int(Qt.Key_Left), Qt.NoModifier)
 
-        centre = V(1.0, 1.0, 2.0)
-        face_plane = (centre, V(0.0, 0.0, 1.0))
-        px, py = _pixel(vp, centre)
+        # Off the face's middle: the exact centre is the «Face center»
+        # snap, a named point, and this asks about plain On face. Closer
+        # in, so the spot is clear of that centre and of the edges too.
+        vp.camera.distance = 6.0
+        vp.scene.version += 1
+        _app.processEvents()
+        spot = V(1.5, 0.5, 2.0)
+        face_plane = (spot, V(0.0, 0.0, 1.0))
+        px, py = _pixel(vp, spot)
         snap = vp.inference.snap(px, py, Qt.NoModifier)
         assert snap is not None and snap.kind == "on_face"
         assert _off_plane(QVector3D(snap.point), face_plane) < 1e-3

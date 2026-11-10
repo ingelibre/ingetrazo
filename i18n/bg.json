@@ -901,6 +901,7 @@
   "Component origin": "Начало на координатната система на компонента",
   "Tangent at vertex": "Допирателна във върха",
   "On face": "Върху повърхнина",
+  "Face center": "Център на повърхнина",
   "Open / Close path": "Отваряне / затваряне на траектория",
   "Open IngeTrazo document": "Отваряне на документ на IngeTrazo",
   "Open another drawing?": "Да се отвори ли друг чертеж?",
