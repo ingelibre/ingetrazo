@@ -3370,5 +3370,8 @@
  "Rename Scene": "Переименовать сцену",
  "Rename the selected scene": "Переименовать выбранную сцену",
  "Duplicate Scene": "Дублировать сцену",
- "Make a copy of the selected scene": "Создать копию выбранной сцены"
+ "Make a copy of the selected scene": "Создать копию выбранной сцены",
+ "Tabs on top": "Вкладки сверху",
+ "Tabs on the right, vertical": "Вкладки справа, вертикально",
+ "Panel options": "Параметры панелей"
 }

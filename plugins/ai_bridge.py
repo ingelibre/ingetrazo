@@ -493,7 +493,7 @@ def setup(app) -> None:
     """The bridge joins the assistant in the side tray's «AI» tab; the
     Extensions entry opens that section and starts the bridge."""
     section = BridgeSection(app.viewport)
-    dock = app.add_panel(tr("AI"), section, panel="ai")
+    dock = app.add_panel(tr("AI"), section, panel="ai", icon="panel_ai")
     app.window._ai_bridge_section = section
 
     def summon() -> None:

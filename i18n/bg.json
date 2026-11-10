@@ -3371,5 +3371,8 @@
   "Rename Scene": "Преименуване на сцената",
   "Rename the selected scene": "Преименуване на избраната сцена",
   "Duplicate Scene": "Дублиране на сцената",
-  "Make a copy of the selected scene": "Създаване на копие на избраната сцена"
+  "Make a copy of the selected scene": "Създаване на копие на избраната сцена",
+  "Tabs on top": "Раздели отгоре",
+  "Tabs on the right, vertical": "Раздели вдясно, вертикално",
+  "Panel options": "Настройки на панелите"
 }

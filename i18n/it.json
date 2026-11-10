@@ -3371,5 +3371,8 @@
  "Rename Scene": "Rinomina scena",
  "Rename the selected scene": "Rinomina la scena selezionata",
  "Duplicate Scene": "Duplica scena",
- "Make a copy of the selected scene": "Crea una copia della scena selezionata"
+ "Make a copy of the selected scene": "Crea una copia della scena selezionata",
+ "Tabs on top": "Schede in alto",
+ "Tabs on the right, vertical": "Schede a destra, in verticale",
+ "Panel options": "Opzioni dei pannelli"
 }

@@ -165,6 +165,16 @@ class SceneTabBar(QTabBar):
         if self.count():
             hint.setWidth(sum(self.tabSizeHint(i).width()
                               for i in range(self.count())))
+        else:
+            from views.documents import panel_tab_height
+            hint.setHeight(panel_tab_height(self))
+        return hint
+
+    def tabSizeHint(self, index: int):  # noqa: N802 — Qt override
+        """As tall as the project tabs and the side panels' tabs."""
+        from views.documents import panel_tab_height
+        hint = super().tabSizeHint(index)
+        hint.setHeight(panel_tab_height(self))
         return hint
 
     def minimumSizeHint(self):  # noqa: N802 — Qt override

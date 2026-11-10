@@ -3371,5 +3371,8 @@
  "Rename Scene": "重命名场景",
  "Rename the selected scene": "重命名所选场景",
  "Duplicate Scene": "复制场景",
- "Make a copy of the selected scene": "复制所选场景"
+ "Make a copy of the selected scene": "复制所选场景",
+ "Tabs on top": "标签页在顶部",
+ "Tabs on the right, vertical": "标签页在右侧（竖排）",
+ "Panel options": "面板选项"
 }

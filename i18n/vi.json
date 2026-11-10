@@ -3397,5 +3397,8 @@
  "Rename Scene": "Đổi tên cảnh",
  "Rename the selected scene": "Đổi tên cảnh đã chọn",
  "Duplicate Scene": "Nhân bản cảnh",
- "Make a copy of the selected scene": "Tạo bản sao của cảnh đã chọn"
+ "Make a copy of the selected scene": "Tạo bản sao của cảnh đã chọn",
+ "Tabs on top": "Thẻ ở trên",
+ "Tabs on the right, vertical": "Thẻ bên phải, dọc",
+ "Panel options": "Tùy chọn bảng"
 }

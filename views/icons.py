@@ -2193,6 +2193,141 @@ def _first_person(p, ink):
         p.drawPath(cap)
 
 
+# ---- Side panels (the tabs of the trays) ---------------------------------------
+# A tray tab shows only its icon (the name is its tooltip and heads the
+# panel): one plain picture per panel, in the tools' ink and accent.
+
+def _panel_properties(p, ink):
+    # A sheet of settings: three sliders, their knobs in the accent.
+    p.setBrush(Qt.NoBrush)
+    p.drawRoundedRect(QRectF(9, 8, 30, 32), 4, 4)
+    for y, knob in ((17, 28), (24, 19), (31, 31)):
+        p.drawLine(QPointF(15, y), QPointF(33, y))
+        _dot(p, knob, y, 3.4)
+
+
+def _panel_bim(p, ink):
+    # A building: walls under a pitched roof, a window in the accent and
+    # the door — the model as building elements.
+    p.setBrush(Qt.NoBrush)
+    p.drawPolygon(QPolygonF([QPointF(10, 39), QPointF(10, 19),
+                             QPointF(24, 9), QPointF(38, 19),
+                             QPointF(38, 39)]))
+    _accent_fill(p, QRectF(15, 22, 8, 7), 200)
+    p.drawRect(QRectF(15, 22, 8, 7))
+    p.drawRect(QRectF(27, 27, 7, 12))
+
+
+def _panel_terrain(p, ink):
+    # Two peaks on the ground line, the far one in the accent.
+    far = QPolygonF([QPointF(20, 38), QPointF(31, 15), QPointF(41, 38)])
+    _accent_fill(p, far, 150)
+    p.setBrush(Qt.NoBrush)
+    p.drawPolyline(far)
+    near = QPolygonF([QPointF(7, 38), QPointF(18, 20), QPointF(29, 38)])
+    p.setBrush(QApplication.palette().base().color())
+    p.drawPolygon(near)
+    p.drawLine(QPointF(6, 38.5), QPointF(42, 38.5))
+
+
+def _panel_browser(p, ink):
+    # A tree: the root, its branches and two children, one in the accent
+    # (the selected row).
+    p.setBrush(Qt.NoBrush)
+    p.drawLine(QPointF(14, 17), QPointF(14, 34))
+    p.drawLine(QPointF(14, 23), QPointF(22, 23))
+    p.drawLine(QPointF(14, 34), QPointF(22, 34))
+    p.drawRoundedRect(QRectF(9, 8, 10, 9), 2, 2)
+    p.drawRoundedRect(QRectF(22, 19, 17, 8), 2, 2)
+    p.setBrush(_accent())
+    p.drawRoundedRect(QRectF(22, 30, 17, 8), 2, 2)
+
+
+def _sparkle(p, cx, cy, r, inner):
+    path = QPainterPath()
+    for i in range(8):
+        a = math.pi / 4 * i - math.pi / 2
+        d = r if i % 2 == 0 else inner
+        pt = QPointF(cx + d * math.cos(a), cy + d * math.sin(a))
+        path.moveTo(pt) if i == 0 else path.lineTo(pt)
+    path.closeSubpath()
+    p.drawPath(path)
+
+
+def _panel_ai(p, ink):
+    # Two sparkles: the big one in ink, the small one in the accent.
+    p.setBrush(Qt.NoBrush)
+    _sparkle(p, 20, 27, 13, 4)
+    p.save()
+    p.setPen(Qt.NoPen)
+    p.setBrush(_accent())
+    _sparkle(p, 35, 13, 7, 2.4)
+    p.restore()
+
+
+def _panel_render(p, ink):
+    # A lit sphere: its shade in the accent, the light shining from the
+    # upper right.
+    shade = QPainterPath()
+    shade.addEllipse(QPointF(20, 28), 12, 12)
+    lit = QPainterPath()
+    lit.addEllipse(QPointF(16, 24), 11, 11)
+    _accent_fill(p, shade.subtracted(lit).toFillPolygon(), 170)
+    p.setBrush(Qt.NoBrush)
+    p.drawEllipse(QPointF(20, 28), 12, 12)
+    p.drawEllipse(QPointF(37, 11), 3, 3)
+    for deg in (-135, -90, -45, 0, 45):
+        a = math.radians(deg)
+        dx, dy = math.cos(a), math.sin(a)
+        p.drawLine(QPointF(37 + 6 * dx, 11 + 6 * dy),
+                   QPointF(37 + 8.5 * dx, 11 + 8.5 * dy))
+
+
+def _panel_solid_inspector(p, ink):
+    # A box looked at closely: the magnifier over its corner.
+    _box(p, ink,
+         (QPointF(7, 16), QPointF(7, 31)),
+         (QPointF(18, 21), QPointF(18, 36)),
+         (QPointF(29, 16), QPointF(29, 31)),
+         top=QPointF(18, 11))
+    p.setBrush(QApplication.palette().base().color())
+    p.drawEllipse(QPointF(31, 31), 7, 7)
+    _magnifier(p, ink, 31, 31, 7)
+
+
+def _panel_options(p, ink):
+    # A gear of eight teeth, its hub in the accent: options, not a tab.
+    import math
+    teeth = 8
+    points = []
+    for i in range(teeth):
+        mid = 2 * math.pi * i / teeth
+        for off, radius in ((-0.30, 13.5), (-0.17, 19.0), (0.17, 19.0),
+                            (0.30, 13.5)):
+            points.append(QPointF(24 + radius * math.cos(mid + off),
+                                  24 + radius * math.sin(mid + off)))
+    p.setBrush(Qt.NoBrush)
+    p.drawPolygon(QPolygonF(points))
+    _dot(p, 24, 24, 5.0)
+
+
+def _panel_levels(p, ink):
+    # A building cut through: floor slabs on columns, the level marker
+    # pointing at the middle floor.
+    p.setBrush(Qt.NoBrush)
+    for y in (9, 21, 33):
+        p.drawRect(QRectF(7, y, 26, 4))
+    for x in (11, 29):
+        p.drawLine(QPointF(x, 13), QPointF(x, 21))
+        p.drawLine(QPointF(x, 25), QPointF(x, 33))
+    mark = QPolygonF([QPointF(36, 23), QPointF(42, 19), QPointF(42, 27)])
+    p.save()
+    p.setPen(Qt.NoPen)
+    p.setBrush(_accent())
+    p.drawPolygon(mark)
+    p.restore()
+
+
 _DRAW = {
     **_SOLID_ICONS,
     "select": _select, "line": _line, "freehand": _freehand,
@@ -2231,6 +2366,11 @@ _DRAW = {
     "eraser": _eraser, "tape": _tape, "protractor": _protractor,
     "section": _section,
     "styles": _styles_icon, "shadows": _shadows_icon,
+    "panel_properties": _panel_properties, "panel_bim": _panel_bim,
+    "panel_terrain": _panel_terrain, "panel_browser": _panel_browser,
+    "panel_ai": _panel_ai, "panel_render": _panel_render,
+    "panel_solid_inspector": _panel_solid_inspector,
+    "panel_levels": _panel_levels, "panel_options": _panel_options,
     "layers_panel": _layers_panel, "layers_make_active": _layers_make_active,
     "layers_isolate": _layers_isolate, "layers_hide": _layers_hide,
     "layers_lock": _layers_lock, "layers_show_all": _layers_show_all,
@@ -2271,6 +2411,23 @@ def tool_icon(key: str) -> QIcon:
         return QIcon()
     pm, p, ink = _canvas()
     draw(p, ink)
+    p.end()
+    return QIcon(pm)
+
+
+def letter_icon(name: str) -> QIcon:
+    """A panel that brings no icon of its own: its initial in a rounded
+    square, in the tools' ink — so its tab, which shows only an icon,
+    is never blank."""
+    pm, p, ink = _canvas()
+    p.setBrush(Qt.NoBrush)
+    p.drawRoundedRect(QRectF(9, 9, 30, 30), 6, 6)
+    font = p.font()
+    font.setPixelSize(20)
+    font.setBold(True)
+    p.setFont(font)
+    letter = next((c for c in name if c.isalnum()), "?").upper()
+    p.drawText(QRectF(9, 9, 30, 30), Qt.AlignCenter, letter)
     p.end()
     return QIcon(pm)
 

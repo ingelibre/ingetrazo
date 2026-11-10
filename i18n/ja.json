@@ -3370,5 +3370,8 @@
  "Rename Scene": "シーン名を変更",
  "Rename the selected scene": "選択したシーンの名前を変更",
  "Duplicate Scene": "シーンを複製",
- "Make a copy of the selected scene": "選択したシーンのコピーを作成"
+ "Make a copy of the selected scene": "選択したシーンのコピーを作成",
+ "Tabs on top": "タブを上に表示",
+ "Tabs on the right, vertical": "タブを右に縦表示",
+ "Panel options": "パネルのオプション"
 }

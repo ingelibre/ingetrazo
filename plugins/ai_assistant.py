@@ -1155,7 +1155,8 @@ def setup(app) -> None:
     Extensions ▸ AI Assistant (Ctrl+Shift+A), which brings the tab
     forward — shown again if it was hidden — with the cursor in the input."""
     panel = AsistentePanel(app.viewport)
-    dock = app.add_panel(tr("AI"), panel, panel="ai", stretch=1)
+    dock = app.add_panel(tr("AI"), panel, panel="ai", stretch=1,
+                         icon="panel_ai")
     app.window._ai_assistant = panel
 
     def summon() -> None:
