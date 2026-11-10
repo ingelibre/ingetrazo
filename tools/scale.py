@@ -309,7 +309,7 @@ class ScaleTool(Tool):
         "endpoint", "midpoint", "intersection", "intersection_edge",
         "intersection_face", "center", "origin",
         "on_edge", "on_line", "from_point", "close", "guide",
-        "component_origin", "arc_midpoint"})
+        "component_origin", "arc_midpoint", "face_center"})
 
     def snap_excluded(self):
         """What is being scaled stays out of the snap engine, or the grip

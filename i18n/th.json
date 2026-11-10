@@ -901,6 +901,7 @@
  "Component origin": "จุดเริ่มต้นชิ้นส่วน",
  "Tangent at vertex": "เส้นสัมผัสที่จุดยอด",
  "On face": "บนพื้นผิว",
+ "Face center": "จุดศูนย์กลางพื้นผิว",
  "Open / Close path": "เปิด / ปิดเส้นทาง",
  "Open IngeTrazo document": "เปิดเอกสาร IngeTrazo",
  "Open another drawing?": "เปิดแบบวาดอื่นหรือไม่?",
