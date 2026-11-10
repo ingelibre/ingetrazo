@@ -438,6 +438,16 @@ class LayersToolbar:
             tr("{n} entities moved to '{layer}'", n=len(targets), layer=name),
             2500)
 
+    def refresh_icons(self) -> None:
+        """Redraw the drop-down's rows — eye, padlock and swatch — after the
+        theme or the accent changes. They are drawn once per set of layers,
+        so the box kept Light's dark eye and padlock on Dark and Slate."""
+        combo = self.combo
+        if combo.view().isVisible():
+            return                      # under an open list: next refresh
+        combo._drawn = None
+        combo.refresh()
+
     def on_scene_changed(self) -> None:
         """The window's per-change call: the list follows the document,
         rebuilt once the event loop is back — ``sceneVersionChanged`` also

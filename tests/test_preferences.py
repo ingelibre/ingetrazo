@@ -186,6 +186,24 @@ def test_theme_choice_applies_at_once(settings_file):
         theme.apply_theme(app, theme.DARK)
 
 
+def test_slate_is_offered_and_applies(settings_file):
+    from views import theme
+    app = QApplication.instance()
+    before = theme.saved_theme()
+    try:
+        win = _Win()
+        dlg = PreferencesDialog(win)
+        assert dlg._theme.findData(theme.SLATE) >= 0
+        dlg._theme.setCurrentIndex(dlg._theme.findData(theme.SLATE))
+        dlg.accept()
+        assert theme.saved_theme() == theme.SLATE
+        assert "QPushButton" in app.styleSheet()
+    finally:
+        theme.save_theme(before)
+        theme.apply_theme(app, theme.DARK)
+    assert app.styleSheet() == ""
+
+
 def test_the_3d_mouse_page_shows_the_device_live(settings_file, monkeypatch):
     """Nobody on the team has a SpaceMouse: the page shows the six numbers
     as the device sends them and how IngeTrazo reads them, so an owner can

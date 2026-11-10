@@ -1438,6 +1438,13 @@ class MainWindow(QMainWindow):
         layers = getattr(getattr(self, "layers_dock", None), "panel", None)
         if layers is not None:
             layers.refresh_icons()
+        browser = getattr(getattr(self, "project_browser", None),
+                          "outliner", None)
+        if browser is not None:
+            browser.refresh_icons()
+        bar = getattr(self, "layers_toolbar", None)
+        if bar is not None:
+            bar.refresh_icons()
 
     def changeEvent(self, event) -> None:
         # Qt posts these when the OS/Qt theme (palette) flips at runtime.
@@ -2812,8 +2819,12 @@ class MainWindow(QMainWindow):
         kept by the window."""
         style = getattr(self, "_icon_tab_style", None)
         if style is None:
+            # The application's style is a proxy since the themes' own
+            # (views.theme.ChromeStyle) and a proxy has no name: Fusion
+            # then, as views/floating_toolbar.py asks for it, not the
+            # desktop's own style.
             style = self._icon_tab_style = _IconTabStyle(
-                QApplication.style().name())
+                QApplication.style().name() or "Fusion")
             style.setParent(self)
         return style
 
