@@ -17,6 +17,8 @@ UX (the usual push/pull convention):
   stacked.
 - **Double-click** repeats the last committed distance on the face under
   the cursor (with Ctrl, as a copy).
+- **Several faces selected**: pushing or pulling any one of them moves them
+  all the same distance, each along its own normal, as one undo step.
 - Esc cancels without committing.
 
 Commit pipeline (the deterministic root-fix, no case tree):
@@ -383,6 +385,14 @@ class PushPullTool(Tool):
         # face is no longer in the mesh (undo) — the next idle hover then
         # picks normally again.
         self._selected_arm: bool = False
+        # Several faces at once: a drag started on a face while two or more
+        # loose-mesh Faces are selected, that face among them, pushes them
+        # all — the same distance, each along its own outward normal, one
+        # undo step. ``_extra_faces`` (and their outward normals) are the
+        # ones riding along with the base face in the drag under way; empty
+        # = the ordinary single-face push.
+        self._extra_faces: list = []
+        self._extra_normals: list = []
         # Whether the base face is embedded in a solid (its boundary edges are
         # shared), so an inner face pushed in is a recess (window/door pocket).
         self._attached: bool = False
@@ -503,6 +513,16 @@ class PushPullTool(Tool):
         # the cursor. Anything else (nothing, several items, an edge, a
         # group) leaves the tool idle, as before.
         sel = viewport.scene.selection
+        if len(sel) > 1:
+            # Several faces: no single arm (which one would the cursor
+            # measure along?), but a drag started on any of them takes them
+            # all along — see _take_extras.
+            faces = self._selected_faces(viewport.scene)
+            if len(faces) > 1:
+                viewport.flash_status(tr(
+                    "{n} faces selected — push or pull one of them to move "
+                    "them all", n=len(faces)), 5000)
+            return
         if len(sel) != 1:
             return
         item = next(iter(sel))
@@ -602,7 +622,11 @@ class PushPullTool(Tool):
         # once, then stretched — walls merging and old edges going live, as
         # the commit will leave them. A free face (nothing to merge with) and
         # a Ctrl-copy show the sweep as an overlay — see _build_light_faces.
-        if self._prism_cap and not self._keep_base:
+        # Several faces at once always show the overlay: a prism or staged
+        # preview edits the model under the OTHER faces' feet.
+        if self._extra_faces:
+            self._show_light_preview(viewport)
+        elif self._prism_cap and not self._keep_base:
             self._show_prism_preview(viewport)
         elif self._attached and not self._keep_base:
             self._show_staged_preview(viewport)
@@ -624,6 +648,7 @@ class PushPullTool(Tool):
                 self._refuse_closed_group(viewport)
                 return
             self.base_face = face
+            self._take_extras(face, viewport.scene)
             self.extrusion = 0.0
             self.dragging = True
             self._group = self._hover_group
@@ -704,6 +729,7 @@ class PushPullTool(Tool):
                 self._refuse_closed_group(viewport)
                 return
             self.base_face = face
+            self._take_extras(face, viewport.scene)
             self.dragging = True
             self._group = grp
             target = self._target_scene(viewport.scene)
@@ -800,6 +826,8 @@ class PushPullTool(Tool):
         self._cap_positions = last["cap_positions"]
         self._drag_pre_oriented = last["pre_oriented"]
         self._limit_in = last["limit_in"]
+        self._extra_faces = last["extras"]
+        self._extra_normals = last["extra_normals"]
         self.dragging = True
         self.extrusion = 0.0
         self._preview_snapshot = None
@@ -915,13 +943,19 @@ class PushPullTool(Tool):
         it a valid solid — no stitch, no per-plane rebuild, no guard. Those
         decide how the new geometry MERGES with what is already there, which
         is exactly what you cannot see while the shape is still moving."""
-        face = self.base_face
         d = self.extrusion
         self._light_rings = []
-        if face is None or self._normal is None or abs(d) < _MIN_EXTRUDE:
+        if (self.base_face is None or self._normal is None
+                or abs(d) < _MIN_EXTRUDE):
             return []
-        n = self._normal
-        off = n * d
+        out = self._sweep_faces(self.base_face, self._normal * d)
+        for face, n in zip(self._extra_faces, self._extra_normals):
+            out += self._sweep_faces(face, n * d)
+        return out
+
+    def _sweep_faces(self, face, off: QVector3D) -> list:
+        """One face's naive sweep by ``off``; its rings join
+        ``_light_rings``, which the wireframe reads back."""
         attrs = dict(face.attrs) if face.attrs else None
         # The walls take the base's PAINT, re-anchored to their own planes —
         # the same thing the commit stamps on them, so the drag shows the
@@ -929,7 +963,7 @@ class PushPullTool(Tool):
         wall_attrs = _paint_of(face) or None
         rings = [(list(face.vertices), [p + off for p in face.vertices])]
         rings += [(list(h), [p + off for p in h]) for h in face.holes]
-        self._light_rings = rings      # the wireframe reads these back
+        self._light_rings += rings
         cap = Face(rings[0][1], [r[1] for r in rings[1:]], attrs=attrs)
         out = [cap]
         for low, high in rings:
@@ -2031,9 +2065,11 @@ class PushPullTool(Tool):
         # and it is the identical mutation the live preview just showed. A push
         # aimed at a group snapshots that group's mesh instead.
         self._topped_out = False
+        self._multi_missed = 0
         if cmd is None:
             cmd = SnapshotMutation(
-                self._mutate_or_top_out,
+                self._mutate_many if self._extra_faces
+                else self._mutate_or_top_out,
                 mesh=self._group.mesh if self._group is not None else None)
         viewport.history.execute(cmd)
         # The retype window's payload, captured BEFORE _reset clears the drag
@@ -2057,6 +2093,12 @@ class PushPullTool(Tool):
         else:
             PushPullTool.last_distance = self.extrusion  # double-click repeats it
             last = self._retype_state(cmd)
+            if self._multi_missed:
+                total = len(self._extra_faces) + 1
+                viewport.flash_status(tr(
+                    "Pushed {done} of {total} faces — the others would "
+                    "break the solid", done=total - self._multi_missed,
+                    total=total), 6000)
         self._reset()
         self._spend_keep_mode(viewport)
         self._last = last             # arms the retype window, if one opened
@@ -2081,7 +2123,84 @@ class PushPullTool(Tool):
             "pre_oriented": self._drag_pre_oriented,
             "limit_in": self._limit_in,
             "sign": 1.0 if self.extrusion >= 0.0 else -1.0,
+            "extras": list(self._extra_faces),
+            "extra_normals": list(self._extra_normals),
         }
+
+    @staticmethod
+    def _selected_faces(scene) -> list:
+        """The selected Faces of the loose mesh."""
+        return [f for f in scene.selection
+                if isinstance(f, MeshFace) and f in scene.mesh.faces]
+
+    def _take_extras(self, face, scene) -> None:
+        """A drag starting on one of two or more selected faces takes the
+        others along; on any other face it is the ordinary single push.
+
+        The selection is read HERE, at every drag's start, not kept from the
+        activation: the pushed caps stay selected, and pushing the same
+        faces again moved only the one under the cursor."""
+        faces = self._selected_faces(scene)
+        if len(faces) < 2 or not any(f is face for f in faces):
+            self._extra_faces, self._extra_normals = [], []
+            return
+        mesh = scene.mesh
+        self._extra_faces = [f for f in faces if f is not face]
+        for f in self._extra_faces:
+            orient_outward(mesh, only=(f,))
+        self._extra_normals = [self._outward_normal(f, mesh)
+                               for f in self._extra_faces]
+
+    #: The drag state that belongs to ONE base face: _mutate_many swaps it
+    #: per face and hands the base face's back.
+    _FACE_STATE = ("base_face", "_normal", "_anchor", "_attached",
+                   "_prism_cap", "_cap_positions", "_limit_in",
+                   "_drag_pre_oriented", "_refused", "_topped_out",
+                   "extrusion")
+
+    def _mutate_many(self, scene) -> None:
+        """A multi-face push, inside the commit's one SnapshotMutation: the
+        base face first, then each other face the same signed distance along
+        its OWN outward normal — every one through the single-face pipeline,
+        guard and top-out included. A face the guard refuses is left as it
+        was and counted in ``_multi_missed``; only when ALL are refused is
+        the push itself refused. A face an earlier push rebuilt (a
+        neighbour) is found again by its outline."""
+        wanted = self.extrusion
+        self._mutate_or_top_out(scene)
+        lead = {k: getattr(self, k) for k in self._FACE_STATE}
+        missed = 1 if self._refused else 0
+        mesh = scene.mesh
+        shapes = [_face_shape(f) for f in self._extra_faces]
+        for face, shape in zip(self._extra_faces, shapes):
+            if face not in mesh.faces:
+                face = next((f for f in mesh.faces
+                             if _face_shape(f) == shape), None)
+            if face is None:
+                missed += 1
+                continue
+            orient_outward(mesh, only=(face,))
+            self.base_face = face
+            self._drag_pre_oriented = True
+            self._anchor = face.centroid()
+            self._normal = self._outward_normal(face, mesh)
+            self._attached, self._prism_cap = self._classify_base(scene)
+            self._cap_positions = self._cap_loop_positions(face)
+            self.extrusion = wanted
+            self._compute_inward_limit(scene)
+            self._clamp_extrusion()
+            self._mutate_or_top_out(scene)
+            if self._refused:
+                missed += 1
+        for k, v in lead.items():
+            setattr(self, k, v)
+        total = len(self._extra_faces) + 1
+        self._refused = missed == total
+        # A partial top-out has no single distance to report: the count
+        # says it instead.
+        self._topped_out = False
+        self.extrusion = wanted
+        self._multi_missed = 0 if self._refused else missed
 
     #: How many halvings the commit tries when the guard refuses the distance
     #: the user dragged to. Each costs a full pipeline run, so this buys a
@@ -2925,6 +3044,8 @@ class PushPullTool(Tool):
         self._group = None
         self._hover_group = None
         self._selected_arm = False
+        self._extra_faces = []
+        self._extra_normals = []
         self._anchor = None
         self._grab = None
         self._normal = None
