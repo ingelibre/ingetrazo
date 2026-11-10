@@ -2013,11 +2013,12 @@ class PushPullTool(Tool):
         """
         faces = scene.faces
         kinds = []
+        memo: dict = {}
         for loop in [self.base_face.vertices] + self.base_face.holes:
             n = len(loop)
             kinds.extend(
                 classify_push_edge(self.base_face, loop[i], loop[(i + 1) % n],
-                                   faces)
+                                   faces, memo)
                 for i in range(n)
             )
         normal = self.base_face.normal()
@@ -2512,8 +2513,10 @@ class PushPullTool(Tool):
         top_holes = [[v + normal * d for v in h] for h in base_holes]
         count = len(base)
         faces = scene.faces
+        memo: dict = {}
         kinds = [
-            classify_push_edge(face, base[i], base[(i + 1) % count], faces)
+            classify_push_edge(face, base[i], base[(i + 1) % count], faces,
+                               memo)
             for i in range(count)
         ]
         # Ctrl ("push/pull a copy") forces the free-extrusion semantics: the
@@ -2546,7 +2549,7 @@ class PushPullTool(Tool):
             for h in base_holes:
                 m = len(h)
                 if any(classify_push_edge(face, h[i], h[(i + 1) % m],
-                                          faces)[0] != "coplanar"
+                                          faces, memo)[0] != "coplanar"
                        for i in range(m)):
                     sheet_fast = False
                     break
