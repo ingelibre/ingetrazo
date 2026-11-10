@@ -4503,6 +4503,16 @@ class ScenesPanel(QWidget):
         at = views.index(item.data(Qt.UserRole))
         menu = QMenu(self.list)
         menu.setAttribute(Qt.WA_DeleteOnClose)
+        edit = getattr(self._window, "edit_scene_camera", None)
+        if edit is not None:
+            from views.icons import tool_icon
+            act = menu.addAction(tool_icon("camera_settings"),
+                                 tr("Camera Settings…"))
+            act.setStatusTip(tr(
+                "Show this scene and set its camera: lens, shift, frame and "
+                "more. The changes are kept in the scene."))
+            act.triggered.connect(
+                lambda _c=False, v=item.data(Qt.UserRole): edit(v))
         menu.addAction(tr("Rename…"), lambda: self.list.editItem(item))
         menu.addSeparator()
         up = menu.addAction(tr("Move up (Alt+↑)"), lambda: self._on_move(-1))

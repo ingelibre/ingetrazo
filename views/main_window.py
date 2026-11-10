@@ -1573,6 +1573,19 @@ class MainWindow(QMainWindow):
             "more in, narrower keeps the lines calm."))
         self._act_field_of_view.triggered.connect(self._ask_field_of_view)
         camera_menu.addAction(self._act_field_of_view)
+        # Camera Settings: the camera by the numbers — eye and target,
+        # focal length, roll, frame shift, clipping and the picture's frame
+        # (views/camera_panel.py). A tool window that stays open.
+        self._act_camera_settings = QAction(
+            tool_icon("camera_settings"), tr("Camera Settings…"), self)
+        self._icon_actions.append((self._act_camera_settings,
+                                   "camera_settings"))
+        self._act_camera_settings.setStatusTip(tr(
+            "Set the camera exactly: where the eye is and what it looks at, "
+            "the lens in millimetres, roll, shift, clipping and frame."))
+        self._act_camera_settings.triggered.connect(
+            lambda _c=False: self._show_camera_settings())
+        camera_menu.addAction(self._act_camera_settings)
 
         # Styles: the model's display look — face mode, edges,
         # background. Scenes remember the style; the composer's live-look
@@ -6123,6 +6136,9 @@ class MainWindow(QMainWindow):
         out = {"target": [float(t.x()), float(t.y()), float(t.z())]}
         for k in self._CAMERA_FIELDS:
             out[k] = getattr(cam, k)
+        lens = cam.lens_dict()
+        if lens:
+            out["lens"] = lens
         return out
 
     def _apply_camera_home(self) -> None:
@@ -6145,6 +6161,7 @@ class MainWindow(QMainWindow):
                     setattr(cam, k, type(getattr(cam, k))(home[k]))
                 except (TypeError, ValueError):
                     pass
+        cam.apply_lens(home.get("lens"))
         self.viewport.update()
 
     #: The angles the field of view may take: the composer's frames use the
@@ -6181,6 +6198,31 @@ class MainWindow(QMainWindow):
         if ok:
             self.set_field_of_view(value)
 
+    def _show_camera_settings(self):
+        """Camera ▸ Camera Settings…: one window, kept, raised if open —
+        on the live view (it stops editing a scene, if it was)."""
+        dlg = getattr(self, "_camera_settings", None)
+        if dlg is None:
+            from views.camera_panel import CameraSettingsDialog
+            dlg = self._camera_settings = CameraSettingsDialog(self)
+        dlg.stop_editing_scene()
+        dlg.present()               # whole, in the middle of the screen
+        return dlg
+
+    def edit_scene_camera(self, view) -> None:
+        """A scene's right-click ▸ Camera Settings…: show the scene and
+        open the camera settings on it — what is changed there is kept in
+        the scene."""
+        if view is None:
+            return
+        self.tray.scenes.show_view(view)
+        row = getattr(self, "_scene_tabs", None)
+        if row is not None:
+            row.mark_view(view)
+        dlg = self._show_camera_settings()
+        dlg.refresh()
+        dlg.edit_scene(view)
+
     def _reset_camera_home(self) -> None:
         """A new drawing opens on the default view (iso, 20 m out), not on
         wherever the previous one was left (issue #60)."""
@@ -6190,6 +6232,7 @@ class MainWindow(QMainWindow):
         cam.target = fresh.target
         for k in self._CAMERA_FIELDS:
             setattr(cam, k, getattr(fresh, k))
+        cam.reset_lens()
         self.viewport.update()
 
     @staticmethod
@@ -6865,6 +6908,14 @@ class MainWindow(QMainWindow):
         update.setEnabled(view is not None)
         update.triggered.connect(
             lambda _c=False, v=view: self.tray.scenes.update_view(v))
+        camera = menu.addAction(tool_icon("camera_settings"),
+                                tr("Camera Settings…"))
+        camera.setStatusTip(tr(
+            "Show this scene and set its camera: lens, shift, frame and "
+            "more. The changes are kept in the scene."))
+        camera.setEnabled(view is not None)
+        camera.triggered.connect(
+            lambda _c=False, v=view: self.edit_scene_camera(v))
         rename = menu.addAction(tr("Rename…"))
         rename.setEnabled(view is not None)
         rename.triggered.connect(
@@ -9529,8 +9580,11 @@ class MainWindow(QMainWindow):
         options.deleteLater()
         if not accepted:
             return
+        # With a camera frame (Camera Settings ▸ Frame) the picture is
+        # the framed shot, ``width`` wide, not the whole view.
         image = self.viewport.render_image(width, sharp_shadows=True,
-                                           transparent=transparent)
+                                           transparent=transparent,
+                                           crop_to_frame=True)
         if image is None or image.isNull() or not image.save(str(path)):
             QMessageBox.critical(self, tr("Export Image failed"),
                                  tr("Could not render or save the image."))

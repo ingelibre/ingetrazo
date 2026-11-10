@@ -2279,7 +2279,8 @@ class Viewport(QOpenGLWidget):
                      overlays: bool = True,
                      annotations_only: bool = False,
                      sharp_shadows: bool = False,
-                     transparent: bool = False) -> Optional["QImage"]:
+                     transparent: bool = False,
+                     crop_to_frame: bool = False) -> Optional["QImage"]:
         """Render the current view at ``width_px`` wide (height follows the
         viewport's aspect) and return it as a ``QImage`` — the hi-res 2D
         export. Reuses the exact ``paintGL`` pipeline against a temporary
@@ -2300,11 +2301,42 @@ class Viewport(QOpenGLWidget):
 
         ``transparent`` (Export image): no sky, no ground and no background
         colour — alpha 0 wherever the model is not, glass and the shadows on
-        the ground as translucent as they are."""
+        the ground as translucent as they are.
+
+        ``crop_to_frame`` (Export image): with a camera frame set (Camera
+        Settings ▸ Frame) the picture is what lies inside it, ``width_px``
+        wide — the view is rendered that much wider and cut to the frame,
+        so the export is exactly the shot framed on screen."""
         if self._gl is None or self._program is None:
             return None
         lw = max(self.width(), 1)
         lh = max(self.height(), 1)
+        if crop_to_frame and height_px is None:
+            from core.camera import frame_rect
+            rect = frame_rect(lw, lh, getattr(self.camera, "frame_aspect",
+                                               None))
+            if rect is not None and (rect[2] < lw - 0.5
+                                     or rect[3] < lh - 0.5):
+                fx, fy, fw, fh = rect
+                aspect = self.camera.frame_aspect
+                out_w = max(int(width_px), 64)
+                out_h = max(int(round(out_w / aspect)), 1)
+                full = self.render_image(
+                    max(int(round(out_w * lw / fw)), 64), None, overlays,
+                    annotations_only, sharp_shadows, transparent, False)
+                if full is None:
+                    return None
+                sx = full.width() / lw
+                sy = full.height() / lh
+                x = int(round(fx * sx))
+                y = int(round(fy * sy))
+                w = min(int(round(fw * sx)), full.width() - x)
+                h = min(int(round(fh * sy)), full.height() - y)
+                image = full.copy(x, y, w, h)
+                if (image.width(), image.height()) != (out_w, out_h):
+                    image = image.scaled(out_w, out_h, Qt.IgnoreAspectRatio,
+                                         Qt.SmoothTransformation)
+                return image
         width_px = max(int(width_px), 64)
         if height_px is None:
             height_px = max(int(round(width_px * lh / lw)), 64)
@@ -9219,11 +9251,41 @@ class Viewport(QOpenGLWidget):
             if q is not None:
                 painter.drawLine(QPointF(*q[0]), QPointF(*q[1]))
 
+    def _draw_camera_frame(self, painter: QPainter) -> None:
+        """Camera Settings ▸ Frame: the picture's shape (16:9, 4:3…) as the
+        largest such rectangle in the view, the bands outside it shaded and
+        a thin line around it, so what a render or a sheet will take is
+        seen while you frame it."""
+        from core.camera import frame_rect
+        rect = frame_rect(self.width(), self.height(),
+                          getattr(self.camera, "frame_aspect", None))
+        if rect is None:
+            return
+        x, y, w, h = rect
+        W, H = float(self.width()), float(self.height())
+        painter.save()
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(QColor(0, 0, 0, 110))
+        if x > 0.5:
+            painter.drawRect(QRectF(0.0, 0.0, x, H))
+            painter.drawRect(QRectF(x + w, 0.0, W - x - w, H))
+        if y > 0.5:
+            painter.drawRect(QRectF(0.0, 0.0, W, y))
+            painter.drawRect(QRectF(0.0, y + h, W, H - y - h))
+        painter.setBrush(Qt.NoBrush)
+        painter.setPen(QPen(QColor(255, 255, 255, 200), 1.0))
+        painter.drawRect(QRectF(x + 0.5, y + 0.5, w - 1.0, h - 1.0))
+        painter.restore()
+
     # ---- 2D overlay (QPainter on top of OpenGL) -----------------------------
     def _draw_overlay(self) -> None:
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing, True)
         painter.setRenderHint(QPainter.TextAntialiasing, True)
+
+        # The camera's picture frame first: what lies outside it is
+        # shaded, and everything below still draws over it.
+        self._draw_camera_frame(painter)
 
         # Rubber band for the "always on top" tools (Line/Rectangle/Move),
         # drawn here with a thick, reliable pen.
