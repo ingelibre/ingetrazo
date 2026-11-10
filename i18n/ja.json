@@ -3352,5 +3352,17 @@
  "A .skp component 10 000 times too big, traced.": "10 000 倍大きすぎる .skp コンポーネントの原因究明。",
  "Thanks as well to all the authors of the extensions catalogue": "拡張機能カタログのすべての作者にも感謝します",
  "{n} faces selected — push or pull one of them to move them all": "{n} 個の面を選択中 — どれか1つを押し出す/引き込むとすべてが動きます",
- "Pushed {done} of {total} faces — the others would break the solid": "{total} 面中 {done} 面を押し出しました — 残りはソリッドを壊すため変更していません"
+ "Pushed {done} of {total} faces — the others would break the solid": "{total} 面中 {done} 面を押し出しました — 残りはソリッドを壊すため変更していません",
+ "Make Faces": "面を作成",
+ "Make the faces that the selected edges close, on those same edges.": "選択したエッジが閉じる面を、そのエッジ上に作成します。",
+ "Select the edges of the loops to turn into faces.": "面にしたい輪郭のエッジを選択してください。",
+ "The selected edges are not on one plane (nor on horizontal planes at different heights): Make Faces only builds flat faces.": "選択したエッジが同一平面上にありません（高さの異なる水平面上でもありません）。面を作成は平らな面だけを作ります。",
+ "The selected edges close no loop.": "選択したエッジは輪郭を閉じていません。",
+ "Make Faces: {n} faces made": "面を作成: {n} 個の面を作成しました",
+ "Make Faces: those loops already had their faces": "面を作成: これらの輪郭にはすでに面があります",
+ "Make Faces: an existing face already covers those loops": "面を作成: 既存の面がこれらの輪郭をすでに覆っています",
+ "Create faces from closed planar outlines": "閉じた平面の輪郭から面を作成",
+ "Slower on big drawings. You can also do it later, with the lines selected: Tools ▸ Make Faces.": "大きな図面では遅くなります。後から線を選択して行うこともできます: ツール ▸ 面を作成。",
+ "{n} faces made from closed outlines": "閉じた輪郭から {n} 個の面を作成しました",
+ "Making faces…": "面を作成中…"
 }

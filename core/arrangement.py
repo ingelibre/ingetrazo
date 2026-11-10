@@ -322,11 +322,35 @@ def _classify(loops, coords) -> list:
     # fills the opening) so the hole lands on the surrounding ring instead.
     faces.sort(key=lambda f: f[1])  # smallest first
     face_holes: list = [[] for _ in faces]
+    # Each hole used to be tried against every face in turn, with its own
+    # area floor worked out again for each: thousands of separate outlines
+    # (the columns of a plan, text exploded to lines) made that the whole
+    # cost — 85 s for 8000 squares. The faces a hole can sit in are the
+    # larger ones whose box holds its inside point; only those are asked,
+    # in the same smallest-first order.
+    import numpy as np
+    areas = np.array([a for _xy, a in faces], dtype=np.float64)
+    ys = [[p[1] for p in fxy] for fxy, _a in faces]
+    y_lo = np.array([min(v) for v in ys], dtype=np.float64)
+    y_hi = np.array([max(v) for v in ys], dtype=np.float64)
+    x_hi = np.array([max(p[0] for p in fxy) for fxy, _a in faces],
+                    dtype=np.float64)
+    # The ray test below can only say "inside" for a point within the
+    # polygon's span in y (it compares the same numbers) and left of its
+    # rightmost corner (give or take the rounding of one division).
+    x_pad = 1e-9 * np.maximum(1.0, np.abs(x_hi))
     for hxy, harea in holes:
         hp = _interior_point(hxy)
-        for fi, (fxy, farea) in enumerate(faces):
-            if (farea > harea + _area_floor(hxy)
-                    and _point_in_polygon(hp, fxy)):
+        first = int(np.searchsorted(areas, harea + _area_floor(hxy),
+                                    side="right"))
+        if first >= len(faces):
+            continue
+        hx, hy = hp
+        near = np.flatnonzero((y_lo[first:] <= hy) & (y_hi[first:] >= hy)
+                              & (x_hi[first:] + x_pad[first:] >= hx))
+        for fi in near:
+            fi = first + int(fi)
+            if _point_in_polygon(hp, faces[fi][0]):
                 face_holes[fi].append(hxy)
                 break
 

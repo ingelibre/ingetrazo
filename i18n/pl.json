@@ -3360,5 +3360,17 @@
  "A .skp component 10 000 times too big, traced.": "Namierzony komponent .skp 10 000 razy za duży.",
  "Thanks as well to all the authors of the extensions catalogue": "Dziękujemy też wszystkim autorom katalogu rozszerzeń",
  "{n} faces selected — push or pull one of them to move them all": "Zaznaczono ścian: {n} — wypchnij lub wciągnij jedną z nich, aby przesunąć wszystkie",
- "Pushed {done} of {total} faces — the others would break the solid": "Wypchnięto {done} z {total} ścian — pozostałe uszkodziłyby bryłę"
+ "Pushed {done} of {total} faces — the others would break the solid": "Wypchnięto {done} z {total} ścian — pozostałe uszkodziłyby bryłę",
+ "Make Faces": "Utwórz ściany",
+ "Make the faces that the selected edges close, on those same edges.": "Tworzy ściany zamknięte przez zaznaczone krawędzie, na tych samych krawędziach.",
+ "Select the edges of the loops to turn into faces.": "Zaznacz krawędzie obrysów, które mają stać się ścianami.",
+ "The selected edges are not on one plane (nor on horizontal planes at different heights): Make Faces only builds flat faces.": "Zaznaczone krawędzie nie leżą w jednej płaszczyźnie (ani w poziomych płaszczyznach na różnych wysokościach): Utwórz ściany tworzy tylko płaskie ściany.",
+ "The selected edges close no loop.": "Zaznaczone krawędzie nie zamykają żadnego obrysu.",
+ "Make Faces: {n} faces made": "Utwórz ściany: utworzone ściany: {n}",
+ "Make Faces: those loops already had their faces": "Utwórz ściany: te obrysy miały już swoje ściany",
+ "Make Faces: an existing face already covers those loops": "Utwórz ściany: istniejąca ściana już pokrywa te obrysy",
+ "Create faces from closed planar outlines": "Utwórz ściany z zamkniętych płaskich obrysów",
+ "Slower on big drawings. You can also do it later, with the lines selected: Tools ▸ Make Faces.": "Wolniejsze przy dużych rysunkach. Możesz to zrobić także później, z zaznaczonymi liniami: Narzędzia ▸ Utwórz ściany.",
+ "{n} faces made from closed outlines": "Ściany utworzone z zamkniętych obrysów: {n}",
+ "Making faces…": "Tworzenie ścian…"
 }

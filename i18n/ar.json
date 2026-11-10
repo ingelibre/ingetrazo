@@ -3387,5 +3387,17 @@
   "A .skp component 10 000 times too big, traced.": "تتبُّع مكون .skp أكبر من حجمه بـ 10 000 مرة.",
   "Thanks as well to all the authors of the extensions catalogue": "شكرًا أيضًا لجميع مؤلفي كتالوج الإضافات",
   "{n} faces selected — push or pull one of them to move them all": "تم تحديد {n} أوجه — ادفع أو اسحب أحدها لتحريكها جميعًا",
-  "Pushed {done} of {total} faces — the others would break the solid": "تم دفع {done} من {total} أوجه — الباقي كان سيكسر المجسم"
+  "Pushed {done} of {total} faces — the others would break the solid": "تم دفع {done} من {total} أوجه — الباقي كان سيكسر المجسم",
+  "Make Faces": "إنشاء الأوجه",
+  "Make the faces that the selected edges close, on those same edges.": "ينشئ الأوجه التي تغلقها الحواف المحددة، على تلك الحواف نفسها.",
+  "Select the edges of the loops to turn into faces.": "حدد حواف المحيطات التي تريد تحويلها إلى أوجه.",
+  "The selected edges are not on one plane (nor on horizontal planes at different heights): Make Faces only builds flat faces.": "الحواف المحددة ليست على مستوى واحد (ولا على مستويات أفقية بارتفاعات مختلفة): إنشاء الأوجه ينشئ أوجهًا مستوية فقط.",
+  "The selected edges close no loop.": "الحواف المحددة لا تغلق أي محيط.",
+  "Make Faces: {n} faces made": "إنشاء الأوجه: أُنشئ {n} من الأوجه",
+  "Make Faces: those loops already had their faces": "إنشاء الأوجه: كانت لهذه المحيطات أوجهها بالفعل",
+  "Make Faces: an existing face already covers those loops": "إنشاء الأوجه: وجه موجود يغطي هذه المحيطات بالفعل",
+  "Create faces from closed planar outlines": "إنشاء الأوجه من المحيطات المستوية المغلقة",
+  "Slower on big drawings. You can also do it later, with the lines selected: Tools ▸ Make Faces.": "أبطأ في الرسومات الكبيرة. يمكنك أيضًا القيام بذلك لاحقًا مع تحديد الخطوط: أدوات ▸ إنشاء الأوجه.",
+  "{n} faces made from closed outlines": "أُنشئ {n} من الأوجه من المحيطات المغلقة",
+  "Making faces…": "جارٍ إنشاء الأوجه…"
 }
