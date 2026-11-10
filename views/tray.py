@@ -892,6 +892,8 @@ class BaseMapPanel(QWidget):
                 "Large capture — detail reduced to zoom {z} to stay fast.")
                 .format(z=layer.zoom))
         layer.visible = self._show.isChecked()
+        # A new capture keeps the terrain as it was (3D or flat).
+        layer.terrain3d = bool(getattr(self._window, "_terrain_on", False))
         scene.tile_layer = layer
         self._attribution.setText(src.attribution)
         self._window.viewport.reset_tiles()
@@ -936,6 +938,7 @@ class BaseMapPanel(QWidget):
         layer.set_rectangle(self._capture_w, self._capture_l, cx=cx, cy=cy)
         layer.cap_detail(datum, max_tiles=500)
         layer.visible = self._show.isChecked()
+        layer.terrain3d = bool(getattr(self._window, "_terrain_on", False))
         scene.tile_layer = layer
         self._attribution.setText(src.attribution)
         blockers = [QSignalBlocker(w) for w in (self._lat, self._lon)]
@@ -1093,6 +1096,10 @@ class BaseMapPanel(QWidget):
         layer = getattr(self._window.viewport.scene, "tile_layer", None)
         if layer is not None:
             self._window.viewport.reset_tiles()
+            # Saved with the 3D terrain on: build it again (it is display
+            # only, never in the file; it fills in as the elevation arrives).
+            if getattr(layer, "terrain3d", False):
+                self._window._build_terrain()
             self._window.viewport.update()
 
     def _sync_from_scene(self) -> None:
