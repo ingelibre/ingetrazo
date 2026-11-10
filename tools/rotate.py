@@ -47,7 +47,7 @@ from core.history import (
 from core.i18n import tr
 from core.mesh import Edge, Face, Mesh
 from core.axes import plane_axes  # drawing axes (#44)
-from core.guide import Guide
+from core.guide import is_guide
 from tools.base import ToolContext
 from tools.move import copied_guide, gather_targets, guide_ghost_segments
 from tools.protractor import ProtractorBase
@@ -158,7 +158,7 @@ class RotateTool(ProtractorBase):
             from tools.move import gather_images
             images = gather_images(ctx)
             guides = [g for g in viewport.scene.selection
-                      if isinstance(g, Guide)]
+                      if is_guide(g)]
             if not (groups or positions or splanes or images or guides):
                 viewport.flash_status(
                     tr("Select (or click) the geometry to rotate first"))

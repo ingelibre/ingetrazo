@@ -35,7 +35,7 @@ from core.group import Group, copy_group, transformed_attrs
 from core.i18n import tr
 from core.mesh import Edge, Face, Mesh
 from core.dimension import Dimension
-from core.guide import Guide
+from core.guide import Guide, is_guide
 from core.history import (AddEdgeCommand, AddFaceCommand, AddGuideCommand,
                           Command, CompoundCommand,
                           InsertGroupCommand, MoveGroupCommand,
@@ -143,7 +143,7 @@ def gather_guides(ctx: ToolContext) -> list[Guide]:
     guide wins over the face or group behind it. To move something else
     from a point on a guide, select it first."""
     viewport = ctx.viewport
-    guides = [g for g in viewport.scene.selection if isinstance(g, Guide)]
+    guides = [g for g in viewport.scene.selection if is_guide(g)]
     if guides or viewport.scene.selection:
         return guides
     pick = getattr(viewport, "pick_guide", None)
@@ -174,8 +174,16 @@ def guide_ghost_segments(guides, reach: float) -> list:
     return out
 
 
-def copied_guide(guide, m: QMatrix4x4) -> Guide:
-    """A new guide: ``guide`` carried by the transform ``m``."""
+def copied_guide(guide, m: QMatrix4x4):
+    """A new guide: ``guide`` carried by the transform ``m``. A circle stays
+    a circle — centre mapped, plane normal rotated, radius kept — instead of
+    collapsing into a guide line (Ctrl+copy of a guide circle, #238)."""
+    from core.guide import GuideCircle
+    if getattr(guide, "is_circle", False):
+        return GuideCircle(m.map(guide.center),
+                           m.mapVector(guide.normal),
+                           guide.radius,
+                           layer=getattr(guide, "layer", None))
     return Guide(m.map(guide.point),
                  None if guide.direction is None
                  else m.mapVector(guide.direction),
