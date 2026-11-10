@@ -2712,6 +2712,20 @@ def paint_cajetin_mm(painter: QPainter, c: Cajetin) -> None:
 
 # ── Canvas items ────────────────────────────────────────────────────────────
 
+class _RefillComboBox(QComboBox):
+    """A combo that refills its entries (``refill``) just before its list
+    opens, so it offers what exists now, not what existed when the panel
+    was built (#1283: styles saved while the composer is open)."""
+
+    def __init__(self, refill, parent=None) -> None:
+        super().__init__(parent)
+        self._refill = refill
+
+    def showPopup(self) -> None:
+        self._refill()
+        super().showPopup()
+
+
 class InlineTextEditor(QGraphicsTextItem):
     """Edit a text block or a label IN PLACE on the sheet: the same
     font at the same paper size, over the item; focus-out or Ctrl+Enter
@@ -7504,20 +7518,10 @@ class ComposerWindow(QMainWindow):
         self.fh_spin.setSuffix(" mm")
         self.fh_spin.valueChanged.connect(self._on_frame_props)
         form.addRow(tr("Frame height"), self.fh_spin)
-        self.style_combo = QComboBox()
-        # The model's display styles, one to one (sheet viewports
-        # pick any style). "Model style" = whatever is active in the model;
-        # legacy "tecnico"/"lineas" frames map onto Hidden line / Wireframe.
-        from core.style import BUILTIN_STYLES, user_styles
-        self.style_combo.addItem(tr("Model style"), "sombreado")
-        for preset in BUILTIN_STYLES:
-            self.style_combo.addItem(tr(preset.name), f"style:{preset.name}")
-        for saved in user_styles():
-            # The user library too (saved names stay verbatim — they are the
-            # user's own words, not ours to translate).
-            self.style_combo.addItem(saved.name, f"style:{saved.name}")
-        self.style_combo.addItem(
-            tr("Vector (hidden lines removed)"), "vectorial")
+        # Refilled whenever its list opens: a style saved after the composer
+        # opened must be there to pick (#1283).
+        self.style_combo = _RefillComboBox(self._reload_style_options)
+        self._reload_style_options()
         self.style_combo.currentIndexChanged.connect(self._on_frame_props)
         form.addRow(tr("Style"), self.style_combo)
         self.paper_bg_check = QCheckBox(tr("Paper background"))
@@ -9053,6 +9057,7 @@ class ComposerWindow(QMainWindow):
             if isinstance(item, FrameItem):
                 self._reload_view_sources()
                 self._reload_scale_options()
+                self._reload_style_options()
                 f: MarcoVista = item.model
                 idx = self.view_combo.findData(f.view_key)
                 self.view_combo.setCurrentIndex(max(idx, 0))
@@ -12702,6 +12707,41 @@ class ComposerWindow(QMainWindow):
         if path not in self._images:
             self._images[path] = QImage(path)
         return self._images[path]
+
+    def _reload_style_options(self) -> None:
+        """Fill the frame's Style list from the styles as they are NOW.
+
+        The model's display styles, one to one (sheet viewports pick any
+        style). "Model style" = whatever is active in the model; legacy
+        "tecnico"/"lineas" frames map onto Hidden line / Wireframe. The
+        user library is read afresh each time: filled once, a style saved
+        after the composer opened never showed, and a frame already using
+        it showed «Model style» (#1283). Keeps the pick and whether
+        «Vector» is greyed out (a perspective frame), without signals."""
+        from core.style import BUILTIN_STYLES, user_styles
+        combo = self.style_combo
+        current = combo.currentData()
+        vidx = combo.findData("vectorial")
+        entry = combo.model().item(vidx) if vidx >= 0 else None
+        vector_on = entry.isEnabled() if entry is not None else True
+        combo.blockSignals(True)
+        try:
+            combo.clear()
+            combo.addItem(tr("Model style"), "sombreado")
+            for preset in BUILTIN_STYLES:
+                combo.addItem(tr(preset.name), f"style:{preset.name}")
+            for saved in user_styles():
+                # The user library too (saved names stay verbatim — they
+                # are the user's own words, not ours to translate).
+                combo.addItem(saved.name, f"style:{saved.name}")
+            combo.addItem(tr("Vector (hidden lines removed)"), "vectorial")
+            entry = combo.model().item(combo.count() - 1)
+            if entry is not None:
+                entry.setEnabled(vector_on)
+            idx = combo.findData(current) if current is not None else -1
+            combo.setCurrentIndex(max(idx, 0))
+        finally:
+            combo.blockSignals(False)
 
     def _reload_view_sources(self) -> None:
         self.view_combo.blockSignals(True)
