@@ -590,8 +590,8 @@ def _box_holds(face, px, py, pz, pad) -> bool:
     by ``pad``."""
     lox = loy = loz = math.inf
     hix = hiy = hiz = -math.inf
-    for v in face.loop:
-        x, y, z = v.position.toTuple()
+    for v in face.vertices:          # a mesh face or a plain one
+        x, y, z = v.toTuple()
         if x < lox:
             lox = x
         if x > hix:
