@@ -381,6 +381,62 @@ def test_an_arrow_locked_planar_tool_off_any_face_uses_the_world_plane():
         win.close()
 
 
+def test_an_arrow_locked_planar_tool_still_aligns_with_a_dwelt_point():
+    """The arrow chooses the plane's orientation, not the axis of travel: a
+    point the cursor dwelt on (a circle's centre) can still be aligned with
+    along X, with the locked XZ plane passing through it."""
+    import math
+
+    win, vp = _scene()
+    try:
+        centre = V(3.0, 2.0, 0.0)            # off the XZ plane through the origin
+        vp.scene.mesh.add_face([
+            centre + V(0.5 * math.cos(a), 0.5 * math.sin(a))
+            for a in [2 * math.pi * k / 24 for k in range(24)]])
+        vp.scene.version += 1
+        win._activate_tool("circle")
+        _app.processEvents()
+        tool = vp.active_tool
+        vp.inference.encourage_point(centre)
+        assert tool.on_key(vp, int(Qt.Key_Left), Qt.NoModifier)
+
+        on_x = centre + V(2.5, 0.0, 0.0)      # outside the disc, along X
+        px, py = _pixel(vp, on_x)
+        snap = vp.inference.snap(px, py, Qt.NoModifier)
+        assert snap is not None and snap.kind == "from_point"
+        assert abs(snap.point.y() - centre.y()) < 1e-3
+        assert abs(snap.point.z() - centre.z()) < 1e-3
+
+        _press(vp, px, py)
+        _app.processEvents()
+        assert abs(tool.start_point.y() - centre.y()) < 1e-3
+        drawn = tool.drawing_plane()
+        assert abs(QVector3D.dotProduct(
+            QVector3D(drawn[1]).normalized(), V(0.0, 1.0, 0.0))) > 0.999
+    finally:
+        win._saved_version = vp.scene.version
+        win.close()
+
+
+def test_an_arrow_locked_planar_tool_far_from_a_dwelt_point_keeps_the_world_plane():
+    """Away from the reference's axis lines the lock stays on the world
+    plane: the reference only matters when it is being aligned with."""
+    win, vp = _scene()
+    try:
+        win._activate_tool("circle")
+        _app.processEvents()
+        tool = vp.active_tool
+        vp.inference.encourage_point(V(3.0, 2.0, 0.0))
+        assert tool.on_key(vp, int(Qt.Key_Left), Qt.NoModifier)
+        px, py = _pixel(vp, V(-3.0, 0.0, 1.0))
+        snap = vp.inference.snap(px, py, Qt.NoModifier)
+        assert snap is not None
+        assert abs(snap.point.y()) < 1e-3
+    finally:
+        win._saved_version = vp.scene.version
+        win.close()
+
+
 def test_shift_marks_the_plane_the_shape_is_on_and_gives_it_back():
     """Marco's gesture: «marca o plano que está a ser considerado, por
     exemplo uma face num cubo». Shift is Down HELD: the plane the shape is
@@ -419,6 +475,121 @@ def test_shift_marks_the_plane_the_shape_is_on_and_gives_it_back():
         assert abs(QVector3D.dotProduct(
             QVector3D(freed[1]).normalized(), V(0.0, 0.0, 1.0))) > 0.999, (
                 "the release did not hand the plane back")
+    finally:
+        win._saved_version = vp.scene.version
+        win.close()
+
+
+@pytest.mark.parametrize("tool", ["circle", "rectangle"])
+def test_a_planar_shape_keeps_its_plane_after_the_first_click_near_the_horizon(tool):
+    win, vp = _scene()
+    try:
+        import math
+        cam = vp.camera
+        cam.yaw = math.radians(-88.9957)
+        cam.pitch = math.radians(12.593)
+        cam.distance = 20.0
+        cam.target = V(3.2065, 0.3039, 0.8533)
+        _app.processEvents()
+        win._activate_tool(tool)
+        _app.processEvents()
+        px, py = _pixel(vp, V(3.0, 0.0, 0.0))
+        before = QVector3D(vp._last_work_plane[1]).normalized()
+        _press(vp, px, py)
+        px, py = _pixel(vp, V(5.0, 0.0, 0.0))
+        after = QVector3D(vp._last_work_plane[1]).normalized()
+        assert abs(QVector3D.dotProduct(before, after)) > 0.999
+    finally:
+        win._saved_version = vp.scene.version
+        win.close()
+
+
+def test_a_planar_shape_can_be_dragged_up_the_screen_near_the_horizon():
+    win, vp = _scene()
+    try:
+        import math
+        cam = vp.camera
+        cam.yaw = math.radians(-88.9957)
+        cam.pitch = math.radians(12.593)
+        cam.distance = 20.0
+        cam.target = V(3.2065, 0.3039, 0.8533)
+        _app.processEvents()
+        win._activate_tool("circle")
+        _app.processEvents()
+        _press(vp, *_pixel(vp, V(3.0, 0.0, 0.0)))
+        px, py = _pixel(vp, V(3.0, 0.0, 0.0))
+        horizon = _pixel(vp, V(3.0, 1.0e5, 0.0))[1]
+        for dy in range(0, int(py - horizon) - 5, 5):
+            vp._last_mouse_pos = QPointF(px, py - dy)
+            if vp._world_from_pixel(int(px), int(py - dy)) is None:
+                pytest.fail(f"cursor blocked {dy}px above the first point")
+    finally:
+        win._saved_version = vp.scene.version
+        win.close()
+
+
+def test_shift_holds_the_axis_aligned_from_a_dwelt_point_before_the_first_click():
+    import math
+
+    win, vp = _scene()
+    try:
+        centre = V(3.0, 2.0, 0.0)
+        vp.scene.mesh.add_face([
+            centre + V(0.5 * math.cos(a), 0.5 * math.sin(a))
+            for a in [2 * math.pi * k / 24 for k in range(24)]])
+        vp.scene.version += 1
+        win._activate_tool("circle")
+        _app.processEvents()
+        tool = vp.active_tool
+        vp.inference.encourage_point(centre)
+        assert tool.on_key(vp, int(Qt.Key_Left), Qt.NoModifier)
+
+        px, py = _pixel(vp, centre + V(2.5, 0.0, 0.0))
+        assert vp.last_snap is not None and vp.last_snap.kind == "from_point"
+        vp._capture_shift_lock()
+        assert vp._shift_lock is not None
+
+        vp._last_mouse_pos = QPointF(px, py + 60)       # well off the line
+        snap = vp.inference.snap(px, py + 60, Qt.ShiftModifier)
+        assert snap is not None
+        assert abs(snap.point.y() - centre.y()) < 1e-3
+        assert abs(snap.point.z() - centre.z()) < 1e-3
+        assert snap.guide is not None
+        assert (snap.guide[0] - centre).length() < 1e-3
+        # The base (#1095) draws the kept guide in the colour of the dwelt
+        # point's own axis line, not in the colour of the lock.
+        from core.snap import AXIS_COLORS
+        assert snap.guide_color == AXIS_COLORS["x"]
+    finally:
+        win._saved_version = vp.scene.version
+        win.close()
+
+
+def test_shift_lock_keeps_its_dashed_line_when_another_point_is_inferred():
+    import math
+
+    win, vp = _scene()
+    try:
+        centre = V(3.0, 2.0, 0.0)
+        vp.scene.mesh.add_face([
+            centre + V(0.5 * math.cos(a), 0.5 * math.sin(a))
+            for a in [2 * math.pi * k / 24 for k in range(24)]])
+        vp.scene.version += 1
+        win._activate_tool("circle")
+        _app.processEvents()
+        vp.inference.encourage_point(centre)
+        assert vp.active_tool.on_key(vp, int(Qt.Key_Left), Qt.NoModifier)
+        _pixel(vp, centre + V(2.5, 0.0, 0.0))
+        vp._capture_shift_lock()
+        assert vp._shift_lock is not None
+
+        px, py = _pixel(vp, V(SIZE, 2.0, 0.0))       # a cube corner on the line
+        snap = vp.inference.snap(px, py, Qt.ShiftModifier)
+        assert snap is not None
+        segments = ([snap.guide] if snap.guide else []) + [
+            (g[0], g[1]) for g in (snap.guides or [])]
+        assert any((s[0] - centre).length() < 1e-3 for s in segments), (
+            f"the locked line is gone: {snap.kind} {segments}")
     finally:
         win._saved_version = vp.scene.version
         win.close()
