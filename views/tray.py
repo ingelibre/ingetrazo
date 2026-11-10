@@ -4402,6 +4402,14 @@ class ScenesPanel(QWidget):
         self._old_timer.setSingleShot(True)
         self._old_timer.setInterval(self.OLD_AFTER_MS)
         self._old_timer.timeout.connect(self._mark_old)
+        # A picture that could not be drawn is asked for again a little
+        # later, a few times: at start-up the view may not be ready to
+        # draw yet, and the scene kept the camera for good.
+        self._misses: dict = {}
+        self._retry_timer = QTimer(self)
+        self._retry_timer.setSingleShot(True)
+        self._retry_timer.setInterval(self.RETRY_AFTER_MS)
+        self._retry_timer.timeout.connect(self._queue_thumbnails)
         lay = QVBoxLayout(self)
         lay.setContentsMargins(6, 6, 6, 6)
         lay.setSpacing(4)
@@ -4409,12 +4417,12 @@ class ScenesPanel(QWidget):
         # Browser: flat tool buttons that raise on hover.
         bar = QHBoxLayout()
         self.add_btn = self._tool_button(
-            tool_icon("scene_add"),
+            "scene_add",
             tr("Save the current view and layer visibility"), self._on_add)
         self.add_folder_btn = self._tool_button(
-            tool_icon("folder_add"), tr("Add folder"), self._on_add_folder)
+            "folder_add", tr("Add folder"), self._on_add_folder)
         self.update_btn = self._tool_button(
-            tool_icon("refresh"),
+            "refresh",
             tr("Update the selected scene from the current view"),
             self._on_update)
         bar.addWidget(self.add_btn)
@@ -4437,6 +4445,8 @@ class ScenesPanel(QWidget):
         self.list_action = menu.addAction(tool_icon("scenes_list"), tr("List"))
         self.thumbs_action = menu.addAction(tool_icon("scenes_thumbs"),
                                             tr("Thumbnails"))
+        self.list_action.setProperty("icon_key", "scenes_list")
+        self.thumbs_action.setProperty("icon_key", "scenes_thumbs")
         for act in (self.list_action, self.thumbs_action):
             act.setCheckable(True)
             group.addAction(act)
@@ -4478,9 +4488,13 @@ class ScenesPanel(QWidget):
         self.refresh()
 
     @staticmethod
-    def _tool_button(icon, tip: str, slot) -> QToolButton:
+    def _tool_button(key: str, tip: str, slot) -> QToolButton:
+        from views.icons import tool_icon
         btn = QToolButton()
-        btn.setIcon(icon)
+        btn.setIcon(tool_icon(key))
+        # Drawn in the theme's ink when made: named, so a change of theme
+        # draws it again (views.theme._redraw_icons).
+        btn.setProperty("icon_key", key)
         btn.setToolTip(tip)
         btn.setAutoRaise(True)
         btn.clicked.connect(lambda _c=False: slot())
@@ -4513,8 +4527,9 @@ class ScenesPanel(QWidget):
         from views.icons import tool_icon
         self.thumbs_action.setChecked(self.thumbnails)
         self.list_action.setChecked(not self.thumbnails)
-        self.view_btn.setIcon(tool_icon(
-            "scenes_thumbs" if self.thumbnails else "scenes_list"))
+        key = "scenes_thumbs" if self.thumbnails else "scenes_list"
+        self.view_btn.setIcon(tool_icon(key))
+        self.view_btn.setProperty("icon_key", key)
         self.tree.setIconSize(_SCENE_THUMB if self.thumbnails
                               else QSize(16, 16))
 
@@ -4587,6 +4602,17 @@ class ScenesPanel(QWidget):
             # picture that could not be drawn again is kept.
             if icon is None and key in self._old:
                 icon = self._thumbs.get(key)
+            if (icon is None
+                    and self._misses.get(key, 0) < self.RETRIES):
+                # Not noted as "has none": asked for again in a moment.
+                self._misses[key] = self._misses.get(key, 0) + 1
+                self._retry_timer.start()
+                if self._thumb_queue:
+                    from PySide6.QtCore import QTimer
+                    QTimer.singleShot(20, self._next_thumbnail)
+                return
+            if icon is not None:
+                self._misses.pop(key, None)
             self._old.discard(key)
             self._thumbs[key] = icon
             if not self._old_timer.isActive() and not self._old:
@@ -4622,12 +4648,17 @@ class ScenesPanel(QWidget):
         """Draw every picture again (the model changed since)."""
         self._thumbs.clear()
         self._old.clear()
+        self._misses.clear()
         self._model_seen = self._scene().content_version
         self._shape = None
         self.refresh()
 
     #: How long the model must stay still before the pictures go old.
     OLD_AFTER_MS = 1500
+    #: A picture that could not be drawn: how many times it is asked for
+    #: again, and how long after.
+    RETRIES = 3
+    RETRY_AFTER_MS = 400
 
     def _watch_model(self) -> None:
         """Called on every refresh: the model changed since the pictures

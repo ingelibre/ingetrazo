@@ -2472,17 +2472,18 @@ def tool_icon(key: str) -> QIcon:
 def letter_icon(name: str) -> QIcon:
     """A panel that brings no icon of its own: its initial in a rounded
     square, in the tools' ink — so its tab, which shows only an icon,
-    is never blank."""
-    pm, p, ink = _canvas()
-    p.setBrush(Qt.NoBrush)
-    p.drawRoundedRect(QRectF(9, 9, 30, 30), 6, 6)
-    font = p.font()
-    font.setPixelSize(20)
-    font.setBold(True)
-    p.setFont(font)
-    letter = next((c for c in name if c.isalnum()), "?").upper()
-    p.drawText(QRectF(9, 9, 30, 30), Qt.AlignCenter, letter)
-    p.end()
+    is never blank. Drawn with the weight of the other icons (the frame
+    thinned as theirs, the letter not bold), or it stood out among them."""
+    with _weighted(ICON_STROKE):
+        pm, p, ink = _canvas()
+        p.setBrush(Qt.NoBrush)
+        p.drawRoundedRect(QRectF(9, 9, 30, 30), 6, 6)
+        font = p.font()
+        font.setPixelSize(20)
+        p.setFont(font)
+        letter = next((c for c in name if c.isalnum()), "?").upper()
+        p.drawText(QRectF(9, 9, 30, 30), Qt.AlignCenter, letter)
+        p.end()
     return QIcon(pm)
 
 
