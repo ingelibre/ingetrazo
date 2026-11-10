@@ -5958,6 +5958,29 @@ class MainWindow(QMainWindow):
             self._rebuild_surfaces()
 
     # ---- 3D terrain (Track G, G2 full) --------------------------------------
+    @property
+    def _terrain_on(self) -> bool:
+        """Whether the 3D terrain is on — the document's say, kept with its
+        base map (``TileLayer.terrain3d``) and saved with it, so a project
+        reopens as it was left and each tab keeps its own. Without a base
+        map yet, the window remembers the wish for the one to come."""
+        layer = self._terrain_layer()
+        if layer is not None:
+            return bool(getattr(layer, "terrain3d", False))
+        return bool(self.__dict__.get("_terrain_wish", False))
+
+    @_terrain_on.setter
+    def _terrain_on(self, on: bool) -> None:
+        self.__dict__["_terrain_wish"] = bool(on)
+        layer = self._terrain_layer()
+        if layer is not None:
+            layer.terrain3d = bool(on)
+
+    def _terrain_layer(self):
+        vp = self.__dict__.get("viewport") or getattr(self, "viewport", None)
+        scene = getattr(vp, "scene", None)
+        return getattr(scene, "tile_layer", None)
+
     def set_terrain_enabled(self, on: bool) -> None:
         self._terrain_on = on
         if on:
