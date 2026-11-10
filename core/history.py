@@ -784,9 +784,27 @@ class AddFaceCommand(Command):
 
         # Direction B: the new face encloses existing smaller faces → it gains
         # each of them as a hole.
+        # A face with a corner off the new face's plane is not inside it
+        # (the first thing loop_inside_face checks): said here with the
+        # plane worked out once, and not once per face of the model.
+        from core.topology import _PLANAR_TOLERANCE
+        plane_n = self.face.normal()
+        nx, ny, nz = plane_n.x(), plane_n.y(), plane_n.z()
+        plane_d = (QVector3D.dotProduct(plane_n, self.face.loop[0].position)
+                   if self.face.loop else None)
         for other in list(m.faces):
             if other is self.face:
                 continue
+            if plane_d is not None:
+                off = False
+                for v in other.loop:
+                    x, y, z = v.position.toTuple()
+                    if abs(nx * x + ny * y + nz * z - plane_d) \
+                            > 2.0 * _PLANAR_TOLERANCE:
+                        off = True
+                        break
+                if off:
+                    continue
             if loop_inside_face(self.face, other.vertices):
                 loop = m.add_hole(self.face, other.vertices)
                 self._punches.append((self.face, loop))

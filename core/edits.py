@@ -66,11 +66,12 @@ def plan_edge_commands(
     commands such as a tool-managed face, in a single ``CompoundCommand``).
     """
     commands: list[Command] = []
-    simulated: list[Edge] = list(scene.edges)
+    simulated: list[Edge] = _PlanEdges(scene.edges)
     faces_snapshot: list[Face] = list(scene.faces)
     near = _Nearby(simulated, faces_snapshot)
     from core.topology import KeyMemo
     near.key = KeyMemo()            # nothing moves while a plan is made
+    simulated.key = near.key
 
     for a, b in segments:
         if not (_finite(a) and _finite(b)):
@@ -153,6 +154,32 @@ def plan_edge_commands(
                             near)
 
     return commands
+
+
+class _PlanEdges(list):
+    """A plan's edge list, with the graph the cycle search walks kept
+    beside it: built the first time a cycle is asked for, and following
+    every ``append`` and ``remove`` after that. A plan only ever changes
+    the list through those two."""
+
+    key = None
+    _graph = None
+
+    def graph(self):
+        if self._graph is None:
+            from core.topology import CycleGraph, _key
+            self._graph = CycleGraph(self, self.key or _key)
+        return self._graph
+
+    def append(self, edge) -> None:
+        list.append(self, edge)
+        if self._graph is not None:
+            self._graph.add(edge)
+
+    def remove(self, edge) -> None:
+        list.remove(self, edge)
+        if self._graph is not None and not self._graph.remove(edge):
+            self._graph = None      # built again at the next question
 
 
 class _Nearby:
@@ -294,7 +321,9 @@ def _plan_faces(commands, faces_snapshot, simulated, sa, sb, eye=None,
 
     for cycle in find_cycles_through(
             simulated, sa, sb,
-            key=getattr(near, "key", None) if near is not None else None):
+            key=getattr(near, "key", None) if near is not None else None,
+            graph=(simulated.graph() if isinstance(simulated, _PlanEdges)
+                   else None)):
         if is_planar(cycle) and not face_exists(
                 _around(near, faces_snapshot, cycle), cycle):
             cycle = face_up_or_toward(cycle, eye)
