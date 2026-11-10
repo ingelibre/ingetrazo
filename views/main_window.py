@@ -5138,8 +5138,14 @@ class MainWindow(QMainWindow):
                 vp.view_style = style.copy()
 
     def repaint_styled(self) -> None:
-        """Redraw the active view after a style change."""
-        self._active_view().update()
+        """Redraw every view shown after a style change: the others keep
+        their own style, and none waits for the mouse to show it."""
+        self.viewport.update()
+        doc = self.__dict__.get("_doc")
+        grid = getattr(doc, "view_grid", None) if doc is not None else None
+        if grid is not None and grid.is_enabled():
+            for vp in grid.visible_extras():
+                vp.update()
 
     def _apply_display_style(self, preset) -> None:
         """Activate a built-in style (a COPY — presets stay pristine) in the
@@ -6651,6 +6657,15 @@ class MainWindow(QMainWindow):
         self._refresh_sheet_tabs()
 
     def _on_standard_view(self, key: str) -> None:
+        """A standard view (Views bar, Ctrl+1…7) in the view being worked
+        in; one of several extra views takes it as its cell's view."""
+        vp = self._active_view()
+        if vp is not self.viewport:
+            grid = self._doc.view_grid
+            cell = next(c for c in grid.cells if c.viewport is vp)
+            cell.pick_view(key)
+            self._sync_projection_buttons(vp.camera.projection_mode())
+            return
         if key == "iso":
             self.viewport.camera.snap_iso()
         else:
