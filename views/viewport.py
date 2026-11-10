@@ -7417,7 +7417,7 @@ class Viewport(QOpenGLWidget):
         if ckey == getattr(self, "_edges_content_key", None):
             self._sync_selection_buffers()
             self._edges_version = _cache_ver(self)
-            self.sceneVersionChanged.emit(self._edges_version)
+            self._announce_after_paint(self._edges_version)
             return
 
         # Inside a group, the surroundings can fade out or leave the frame
@@ -7988,7 +7988,25 @@ class Viewport(QOpenGLWidget):
             _plog("sync_edges", (_time_mod.perf_counter() - _st0) * 1000.0)
         self._edges_version = _cache_ver(self)
         self._edges_content_key = ckey
-        self.sceneVersionChanged.emit(self._edges_version)
+        self._announce_after_paint(self._edges_version)
+
+    def _announce_after_paint(self, version: int) -> None:
+        """``sceneVersionChanged`` for what this frame found, once the frame
+        is out. ``_sync_edges`` runs inside ``paintGL``, and whoever hears
+        the signal may show or hide widgets beside the view: the scene tab
+        row coming up resized the view in the middle of its frame, and
+        macOS crashed on the flush after (#1316). Every listener runs on the
+        next turn instead, with the latest version; a burst says it once.
+        ``notify_scene_changed`` still says it at once."""
+        self._version_to_announce = version
+        if self.__dict__.get("_announce_queued"):
+            return
+        self._announce_queued = True
+        QTimer.singleShot(0, self, self._announce_queued_version)
+
+    def _announce_queued_version(self) -> None:
+        self._announce_queued = False
+        self.sceneVersionChanged.emit(self._version_to_announce)
 
     def _sync_content_key(self) -> tuple:
         """What the edge and face buffers of ``_sync_edges`` depend on:
