@@ -248,3 +248,26 @@ def test_compass_shows_the_current_north_and_follows_the_cursor():
 def test_compass_lies_flat_at_the_centre_height():
     segs = compass_segments(QVector3D(0, 0, 3.0), 1.0, 20.0)
     assert segs and all(p.z() == pytest.approx(3.0) for s in segs for p in s)
+
+
+def test_recalling_a_scene_keeps_the_north():
+    """North belongs to the site: a scene restores the shadow settings
+    whole, and must not take the north back with them (docs/north.md)."""
+    from core.saved_views import apply_shadow_state
+    scene = Scene()
+    snapshot = scene.shadows.to_dict()          # a scene saved before
+    scene.north_deg = 30.0
+    apply_shadow_state(scene, snapshot)
+    assert scene.north_deg == pytest.approx(30.0)
+
+
+def test_the_manual_shows_what_it_says():
+    """docs/north.md: every picture it shows is in the repository."""
+    import re
+    from pathlib import Path
+    docs = Path(__file__).resolve().parent.parent / "docs"
+    text = (docs / "north.md").read_text(encoding="utf-8")
+    pics = re.findall(r"\]\((images/north/[^)]+)\)", text)
+    assert len(pics) == 5
+    assert all((docs / p).is_file() for p in pics)
+    assert "Shift+N" in text
