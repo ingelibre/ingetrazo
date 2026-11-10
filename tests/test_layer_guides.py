@@ -253,6 +253,33 @@ def test_entity_info_offers_the_layer_of_a_selected_guide():
         win.close()
 
 
+def test_entity_info_offers_the_layer_of_a_selected_guide_circle():
+    """A guide circle is taggable too: Entity Info shows its Layer field
+    and moves it, exactly like a guide line."""
+    from core.guide import GuideCircle
+    from views.main_window import MainWindow
+    win = MainWindow()
+    try:
+        scene = win.viewport.scene
+        scene.layers.append(Layer("Guías"))
+        c = GuideCircle(V(0, 0, 0), V(0, 0, 1), 2.0)
+        scene.guides.append(c)
+        scene.selection = {c}
+        panel = win.tray.entity_info
+        panel.refresh()
+        assert panel._layer_box.isVisibleTo(panel)
+        assert panel._layer_box.currentData() == DEFAULT_LAYER
+
+        idx = panel._layer_box.findData("Guías")
+        panel._layer_box.setCurrentIndex(idx)          # the user picks Guías
+        assert layer_of(c) == "Guías"
+        win.viewport.history.undo()
+        assert layer_of(c) == DEFAULT_LAYER
+    finally:
+        win._saved_version = win.viewport.scene.version
+        win.close()
+
+
 # ---- Automatic layers: «Guides» and «Dimensions» ----------------------------
 
 def _dimension(x=0.0):
