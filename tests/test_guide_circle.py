@@ -76,6 +76,62 @@ def test_a_circle_guide_survives_the_igz(tmp_path):
     assert g.radius == 4.0
 
 
+def test_a_version_that_knows_only_lines_still_opens_the_file(tmp_path):
+    """Circles were written among the guide lines, and a version from before
+    them read each as a line: KeyError 'point', the document refused. They
+    go under a key of their own, where such a version does not look."""
+    from core.scene import Scene
+    from formats.igz import _read_document, load_into, save_scene
+
+    scene = Scene()
+    scene.guides.append(GuideCircle(V(1, 2, 3), V(0, 1, 0), 4.0))
+    scene.guides.append(Guide(V(0, 0, 0), V(1, 0, 0)))
+    scene.guides.append(GuideCircle(V(5, 5, 0), V(0, 0, 1), 1.5))
+    path = tmp_path / "mixed.igz"
+    save_scene(scene, path)
+
+    data, archive = _read_document(path)
+    if archive is not None:
+        archive.close()
+    stored = data["scene"]
+    # What the older loader does with "guides", entry by entry.
+    old = [Guide.from_dict(raw) for raw in stored.get("guides", [])]
+    assert len(old) == 1 and old[0].is_line
+    assert len(stored["guide_circles"]) == 2
+
+    scene2 = Scene()
+    load_into(scene2, path)
+    assert sorted(type(g).__name__ for g in scene2.guides) == [
+        "Guide", "GuideCircle", "GuideCircle"]
+    assert sorted(g.radius for g in scene2.guides
+                  if isinstance(g, GuideCircle)) == [1.5, 4.0]
+
+
+def test_a_circle_written_among_the_lines_is_still_read(tmp_path):
+    """A file from a build that wrote circles into "guides"."""
+    import json
+    from core.scene import Scene
+    from formats.igz import load_into, save_scene
+
+    scene = Scene()
+    scene.guides.append(Guide(V(0, 0, 0), V(1, 0, 0)))
+    path = tmp_path / "old.igz"
+    save_scene(scene, path)
+    raw = path.read_bytes()
+    if raw[:2] == b"PK":
+        import pytest
+        pytest.skip("a small document is expected to be plain JSON")
+    doc = json.loads(raw.decode("utf-8"))
+    doc["scene"]["guides"].append(
+        GuideCircle(V(1, 2, 3), V(0, 0, 1), 2.0).to_dict())
+    path.write_text(json.dumps(doc), encoding="utf-8")
+
+    scene2 = Scene()
+    load_into(scene2, path)
+    assert [type(g).__name__ for g in scene2.guides] == ["Guide",
+                                                         "GuideCircle"]
+
+
 def test_closest_on_circle_is_exact():
     from core.snap import _closest_on_circle
     circ = GuideCircle(V(0, 0, 0), V(0, 0, 1), 2.0)
