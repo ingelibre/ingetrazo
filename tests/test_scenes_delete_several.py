@@ -19,16 +19,18 @@ def test_three_of_four_scenes_go_and_come_back():
         scene.saved_views[:] = list(views)
         panel = win.tray.scenes
         panel.refresh()
+        rows = panel.scene_rows()
         for i in (0, 2, 3):
-            panel.list.item(i).setSelected(True)
+            rows[i].setSelected(True)
         panel._on_delete()
         assert [v.name for v in scene.saved_views] == ["S1"]
-        assert panel.list.count() == 1
+        assert len(panel.scene_rows()) == 1
         win._on_undo()                       # Ctrl+Z, as the user does
         from PySide6.QtWidgets import QApplication
         QApplication.processEvents()
         assert [v.name for v in scene.saved_views] == ["S0", "S1", "S2", "S3"]
-        assert panel.list.count() == 4       # the list follows the undo
+        panel.refresh()
+        assert len(panel.scene_rows()) == 4  # the list follows the undo
         win.viewport.history.redo()
         assert [v.name for v in scene.saved_views] == ["S1"]
     finally:

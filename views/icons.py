@@ -1710,6 +1710,40 @@ def _layer_add(p, ink):
     _badge_plus(p, ink)
 
 
+def _scene_add(p, ink):
+    # The Scenes tab's add button: the camera of the Browser's scene rows,
+    # up-left, and the same «+» below (#1158).
+    p.save()
+    p.setBrush(Qt.NoBrush)
+    p.drawRect(QRectF(5, 9, 22, 16))
+    p.drawPolygon(QPolygonF([QPointF(27, 15), QPointF(37, 9),
+                             QPointF(37, 25), QPointF(27, 19)]))
+    p.restore()
+    _badge_plus(p, ink)
+
+
+def _scenes_list(p, ink):
+    # The Scenes tab's view as a list: a small camera and a line, three rows.
+    p.save()
+    p.setBrush(Qt.NoBrush)
+    for y in (9, 21, 33):
+        p.drawRect(QRectF(6, y, 8, 6))
+        p.drawLine(QPointF(19, y + 3), QPointF(42, y + 3))
+    p.restore()
+
+
+def _scenes_thumbs(p, ink):
+    # The Scenes tab's view with pictures: a big picture and a line, twice.
+    p.save()
+    p.setBrush(Qt.NoBrush)
+    for y in (7, 27):
+        p.drawRect(QRectF(5, y, 20, 14))
+        p.drawPolyline(QPolygonF([QPointF(7, y + 12), QPointF(13, y + 6),
+                                  QPointF(17, y + 10), QPointF(23, y + 4)]))
+        p.drawLine(QPointF(29, y + 7), QPointF(43, y + 7))
+    p.restore()
+
+
 def _folder_add(p, ink):
     # The folder of the panel's rows, its tab up-left, in the accent.
     p.save()
@@ -2202,6 +2236,8 @@ _DRAW = {
     "layers_lock": _layers_lock, "layers_show_all": _layers_show_all,
     "layers_to_active": _layers_to_active,
     "layers_previous": _layers_previous, "layer_add": _layer_add, "folder_add": _folder_add,
+    "scene_add": _scene_add, "scenes_list": _scenes_list,
+    "scenes_thumbs": _scenes_thumbs,
     "layers_filter": _layers_filter, "layers_filter_on": _layers_filter_on,
     "layers_colour": _layers_colour,
     "layers_expand": _layers_expand, "layers_collapse": _layers_collapse,

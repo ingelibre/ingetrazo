@@ -721,6 +721,16 @@ def save_scene(scene, path: Path) -> dict:
     views = getattr(scene, "saved_views", None)
     if views:
         payload["saved_views"] = [v.to_dict() for v in views]
+    # The Scenes tab's folders (#1158). Older readers ignore both keys and
+    # the "folder" of each scene: the scenes show as one flat list there.
+    from core import scene_folders as SF
+    scene_folders = SF.folders_of(scene)
+    if scene_folders:
+        payload["scene_folders"] = scene_folders
+        parents = {f: SF.folder_parent(scene, f) for f in scene_folders
+                   if SF.folder_parent(scene, f)}
+        if parents:
+            payload["scene_folder_parents"] = parents
     comps = getattr(scene, "compositions", None)
     if comps:
         payload["compositions"] = [c.to_dict() for c in comps]
@@ -1197,6 +1207,8 @@ def _load_into_inner(scene, path: Path, progress=None) -> None:
     scene.active_layer = None
     scene.layer_folders = []
     scene.folder_parents = {}
+    scene.scene_folders = []
+    scene.scene_folder_parents = {}
     scene.section_planes = []
     scene.show_section_planes = True
     scene.show_section_cuts = True
@@ -1244,6 +1256,14 @@ def _load_into_inner(scene, path: Path, progress=None) -> None:
     from core.saved_views import SavedView
     scene.saved_views = [SavedView.from_dict(r)
                          for r in payload.get("saved_views", [])]
+    raw_sf = payload.get("scene_folders")
+    if isinstance(raw_sf, list):
+        scene.scene_folders = [f for f in raw_sf if isinstance(f, str) and f]
+    raw_sfp = payload.get("scene_folder_parents")
+    if isinstance(raw_sfp, dict):
+        scene.scene_folder_parents = {
+            f: p for f, p in raw_sfp.items()
+            if isinstance(f, str) and isinstance(p, str)}
     from core.composition import Composicion
     scene.compositions = []
     for r in payload.get("compositions", []):
