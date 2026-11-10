@@ -28,18 +28,20 @@ from __future__ import annotations
 from PySide6.QtCore import QCoreApplication, QEvent, QObject, Qt
 from PySide6.QtGui import QMouseEvent
 from PySide6.QtWidgets import (QApplication, QHBoxLayout, QLabel,
-                               QProxyStyle, QSizePolicy, QStyle, QToolBar,
+                               QSizePolicy, QStyle, QToolBar,
                                QToolButton, QWidget)
 
 from core.i18n import tr
+from views.theme import ChromeStyle
 
 _SHIFT = QEvent.Type(QEvent.registerEventType())
 _GRAB = "float_title_grab"      # set on the bar while the strip passes a press
 
 
-class _GripStyle(QProxyStyle):
-    """The application's style, except that while the strip hands a press
-    to the bar, the bar's grip is the whole bar — so Qt starts its drag."""
+class _GripStyle(ChromeStyle):
+    """The application's style (its one-line grip included), except that
+    while the strip hands a press to the bar, the bar's grip is the whole
+    bar — so Qt starts its drag."""
 
     def subElementRect(self, element, option, widget=None):
         if (element == QStyle.SE_ToolBarHandle and widget is not None
@@ -132,7 +134,7 @@ class _FloatingTitle(QObject):
         self.strip = _TitleStrip(tb)
         self.strip.hide()
         # The application's style, wrapped (it is always Fusion here).
-        self._style = _GripStyle(QApplication.style().name())
+        self._style = _GripStyle("Fusion")
         self._style.setParent(self)
         tb.setStyle(self._style)
         tb.installEventFilter(self)

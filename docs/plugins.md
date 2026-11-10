@@ -157,8 +157,11 @@ def setup(app):
     # A tab in the side tray, beside Properties / BIM / Terrain. It goes
     # back where the user left it and is listed in Window ▸ Panels (the
     # user may hide it there); `name` tells apart several panels of one
-    # extension, `panel=` puts several extensions in ONE tab.
-    dock = app.add_panel("Levels", my_widget)
+    # extension, `panel=` puts several extensions in ONE tab. The tabs show
+    # only an icon (the name is their tooltip and heads the panel): `icon=`
+    # takes a QIcon or one of IngeTrazo's drawn icons by key, which follows
+    # the theme; without it, the tab shows the name's initial.
+    dock = app.add_panel("Levels", my_widget, icon="panel_levels")
     # A panel few users need open all the time: closed the first time,
     # opened from Window ▸ Panels (and remembered from then on).
     app.add_panel("Levels — help", help_widget, name="help",

@@ -2039,17 +2039,27 @@ class ExplodeCurvesCommand(Command):
 
 
 class AddSceneCommand(Command):
-    """A new saved scene at the end of the list; undo takes it away again."""
+    """A saved scene into the list — a new one, or a copy (Duplicate) —
+    at ``index`` (``None``: at the end), with the rest of its folder;
+    undo takes it away again. Renamed in
+    :class:`core.saved_views.RenameSceneCommand`."""
 
-    def __init__(self, view) -> None:
+    def __init__(self, view, index: Optional[int] = None) -> None:
         self.view = view
+        self.index = index
 
     def do(self, scene) -> None:
-        scene.saved_views.append(self.view)
+        views = scene.saved_views
+        at = len(views) if self.index is None else self.index
+        views.insert(max(0, min(at, len(views))), self.view)
+        # Filed in a folder, it goes with the rest of that folder.
+        from core.scene_folders import sync_order
+        sync_order(scene)
         scene.version += 1
 
     def undo(self, scene) -> None:
-        scene.saved_views.remove(self.view)
+        if self.view in scene.saved_views:
+            scene.saved_views.remove(self.view)
         scene.version += 1
 
 
@@ -2071,6 +2081,61 @@ class DeleteScenesCommand(Command):
     def undo(self, scene) -> None:
         for i, v in sorted(self._at, key=lambda t: t[0]):
             scene.saved_views.insert(i, v)
+        scene.version += 1
+
+
+class UpdateSceneCommand(Command):
+    """Update a scene from the live view, keeping its name; undo gives it
+    back what it remembered before (#1158)."""
+
+    def __init__(self, view, camera) -> None:
+        self.view = view
+        self.camera = camera
+        self._before: dict = {}
+        self._after: Optional[dict] = None
+
+    def do(self, scene) -> None:
+        self._before = dict(self.view.__dict__)
+        if self._after is None:          # redo puts back the same capture
+            self.view.recapture(scene, self.camera)
+            self._after = dict(self.view.__dict__)
+        else:
+            self.view.__dict__.update(self._after)
+        scene.version += 1
+
+    def undo(self, scene) -> None:
+        self.view.__dict__.update(self._before)
+        scene.version += 1
+
+
+class SceneTreeCommand(Command):
+    """A change to the Scenes tab's tree — a folder made, renamed or taken
+    away, rows dragged into a folder or to another place (#1158). ``change``
+    does it with the helpers of :mod:`core.scene_folders` and returns
+    whether anything changed (False: rejected, nothing to undo). Undo puts
+    back the order of the scenes, their folders and the folder tree; redo
+    puts back what the change left, without running it again."""
+
+    def __init__(self, change) -> None:
+        self.change = change
+        self._before: Optional[tuple] = None
+        self._after: Optional[tuple] = None
+
+    def do(self, scene) -> None:
+        from core import scene_folders as SF
+        if self._after is not None:
+            SF.restore(scene, self._after)
+        else:
+            self._before = SF.state(scene)
+            if not self.change(scene):
+                SF.restore(scene, self._before)
+                raise CommandRejected("Nothing to change")
+            self._after = SF.state(scene)
+        scene.version += 1
+
+    def undo(self, scene) -> None:
+        from core import scene_folders as SF
+        SF.restore(scene, self._before)
         scene.version += 1
 
 
