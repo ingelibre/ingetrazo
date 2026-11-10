@@ -3350,5 +3350,10 @@
  "The Bulgarian translation.": "保加利亞文翻譯。",
  "The Traditional Chinese translation.": "繁體中文翻譯。",
  "A .skp component 10 000 times too big, traced.": "追查出一個大了 10 000 倍的 .skp 元件。",
- "Thanks as well to all the authors of the extensions catalogue": "同樣感謝擴充功能目錄的所有作者"
+ "Thanks as well to all the authors of the extensions catalogue": "同樣感謝擴充功能目錄的所有作者",
+ "Soft sun shadows": "柔和的陽光陰影",
+ "Slight": "輕微",
+ "Moderate": "適中",
+ "Strong": "強烈",
+ "Shadow edges that soften away from what casts them, as in daylight. They cost the graphics card more while the sun casts shadows.": "陰影邊緣隨著遠離投影物體而變得柔和,如同日光下一樣。太陽投射陰影時會更多佔用顯示卡。"
 }

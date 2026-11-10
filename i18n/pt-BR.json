@@ -3356,5 +3356,10 @@
  "The Bulgarian translation.": "A tradução para o búlgaro.",
  "The Traditional Chinese translation.": "A tradução para o chinês tradicional.",
  "A .skp component 10 000 times too big, traced.": "Um componente .skp 10 000 vezes grande demais, rastreado.",
- "Thanks as well to all the authors of the extensions catalogue": "Agradecemos também a todos os autores do catálogo de extensões"
+ "Thanks as well to all the authors of the extensions catalogue": "Agradecemos também a todos os autores do catálogo de extensões",
+ "Soft sun shadows": "Sombras suaves do sol",
+ "Slight": "Leve",
+ "Moderate": "Moderada",
+ "Strong": "Forte",
+ "Shadow edges that soften away from what casts them, as in daylight. They cost the graphics card more while the sun casts shadows.": "Bordas de sombra que se suavizam ao se afastar do que as projeta, como à luz do dia. Exigem mais da placa de vídeo enquanto o sol projeta sombras."
 }

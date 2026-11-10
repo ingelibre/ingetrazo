@@ -1268,6 +1268,24 @@ def _load_msaa() -> int:
         n = 4
     return n if n in (0, 2, 4, 8) else 4
 
+#: Soft sun shadows (#1281), Preferences ▸ General: off (0) or a level, and
+#: how fast the penumbra widens with the distance from what casts it, in
+#: world width per world distance. The real sun is about 0.009; the levels
+#: are broader, as a picture of soft daylight asks.
+SOFT_SHADOW_SPREAD = {1: 0.012, 2: 0.03, 3: 0.06}
+
+
+def _load_soft_shadows() -> int:
+    """The soft shadows level (Preferences ▸ General): 0 = off, the
+    default, since it costs the graphics card more while the sun is on."""
+    from PySide6.QtCore import QSettings
+    try:
+        n = int(QSettings().value("display/soft_shadows", 0))
+    except (TypeError, ValueError):
+        n = 0
+    return n if n in SOFT_SHADOW_SPREAD else 0
+
+
 _AXIS_DIRS = {"x": (1.0, 0.0, 0.0), "y": (0.0, 1.0, 0.0), "z": (0.0, 0.0, 1.0)}
 
 
@@ -1981,6 +1999,7 @@ class Viewport(QOpenGLWidget):
         self._invert_wheel = _load_invert_wheel()
         self._invert_orbit_y = _load_invert_orbit_y()
         self._msaa = _load_msaa()
+        self._soft_shadows = _load_soft_shadows()
 
         # Hover highlight (Select tool). Not version-tracked — it changes with
         # the cursor, not with scene mutations — so it's uploaded per paint.
@@ -2189,6 +2208,9 @@ class Viewport(QOpenGLWidget):
         self._loc_light_vp = self._program.uniformLocation("u_light_vp")
         self._loc_shadow_dark = self._program.uniformLocation("u_shadow_dark")
         self._loc_shadow_bias = self._program.uniformLocation("u_shadow_bias")
+        self._loc_shadow_soft = self._program.uniformLocation("u_shadow_soft")
+        self._loc_shadow_world = self._program.uniformLocation(
+            "u_shadow_world")
         self._loc_sun_dir = self._program.uniformLocation("u_sun_dir")
         self._loc_shadow_overlay = self._program.uniformLocation(
             "u_shadow_overlay")
@@ -2617,6 +2639,7 @@ class Viewport(QOpenGLWidget):
             # constant big enough to silence grazing faces peeled every
             # shadow off its base instead.
             self._program.setUniformValue1f(self._loc_shadow_bias, 0.0006)
+            self._set_soft_shadow_uniforms()
             sun = getattr(self, "_frame_sun", None) or (0.0, 0.0, 1.0)
             self._program.setUniformValue(
                 self._loc_sun_dir, QVector3D(sun[0], sun[1], sun[2]))
@@ -6352,6 +6375,29 @@ class Viewport(QOpenGLWidget):
         # on the site whichever way the axes were drawn.
         x, y = datum.grid_to_local_xy(d[0], d[1])
         return (x, y, d[2])
+
+    def _set_soft_shadow_uniforms(self) -> None:
+        """Soft sun shadows (#1281) for the map this frame samples: the
+        level's spread, and the map's footprint in the world read off the
+        light matrix — its sides across, its depth range along the sun —
+        so a detail map (#958) or an export's bigger one softens the same.
+        Level 0 leaves the crisp map as it was."""
+        spread = SOFT_SHADOW_SPREAD.get(getattr(self, "_soft_shadows", 0), 0.0)
+        self._program.setUniformValue1f(self._loc_shadow_soft, spread)
+        if spread:
+            across, along = self._shadow_footprint(self._shadow_vp)
+            self._program.setUniformValue(self._loc_shadow_world,
+                                          QVector2D(across, along))
+
+    @staticmethod
+    def _shadow_footprint(light_vp) -> tuple[float, float]:
+        """Metres across one side of the map and along its depth range.
+        The light's view is a rigid motion, so each row of the orthographic
+        projection keeps its scale: 2 / width and 2 / depth."""
+        def span(row: int) -> float:
+            n = light_vp.row(row).toVector3D().length()
+            return 2.0 / n if n > 1e-12 else 1.0
+        return span(0), span(2)
 
     @staticmethod
     def _light_vp(d, lo, hi, fit=None):

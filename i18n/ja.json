@@ -3349,5 +3349,10 @@
  "The Bulgarian translation.": "ブルガリア語翻訳。",
  "The Traditional Chinese translation.": "繁体字中国語翻訳。",
  "A .skp component 10 000 times too big, traced.": "10 000 倍大きすぎる .skp コンポーネントの原因究明。",
- "Thanks as well to all the authors of the extensions catalogue": "拡張機能カタログのすべての作者にも感謝します"
+ "Thanks as well to all the authors of the extensions catalogue": "拡張機能カタログのすべての作者にも感謝します",
+ "Soft sun shadows": "柔らかい日影",
+ "Slight": "弱",
+ "Moderate": "中",
+ "Strong": "強",
+ "Shadow edges that soften away from what casts them, as in daylight. They cost the graphics card more while the sun casts shadows.": "影を落とす物から離れるほど影の縁がぼやけます(日中の光のように)。太陽が影を落としている間、グラフィックカードの負荷が増えます。"
 }

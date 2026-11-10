@@ -3349,5 +3349,10 @@
  "The Bulgarian translation.": "Болгарский перевод.",
  "The Traditional Chinese translation.": "Перевод на традиционный китайский.",
  "A .skp component 10 000 times too big, traced.": "Найден компонент .skp, в 10 000 раз больше нужного.",
- "Thanks as well to all the authors of the extensions catalogue": "Спасибо также всем авторам каталога расширений"
+ "Thanks as well to all the authors of the extensions catalogue": "Спасибо также всем авторам каталога расширений",
+ "Soft sun shadows": "Мягкие тени от солнца",
+ "Slight": "Слабая",
+ "Moderate": "Средняя",
+ "Strong": "Сильная",
+ "Shadow edges that soften away from what casts them, as in daylight. They cost the graphics card more while the sun casts shadows.": "Края теней смягчаются по мере удаления от того, что их отбрасывает, как при дневном свете. Сильнее нагружают видеокарту, пока солнце отбрасывает тени."
 }

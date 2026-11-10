@@ -14,5 +14,10 @@
   "Could not check for updates. Check your internet connection and try again.": "Could not check for updates. Check your internet connection and try again.",
   "You have the latest version ({version}).": "You have the latest version ({version}).",
  "Transparent background": "Transparent background",
- "Only PNG images keep transparency.": "Only PNG images keep transparency."
+ "Only PNG images keep transparency.": "Only PNG images keep transparency.",
+ "Soft sun shadows": "Soft sun shadows",
+ "Slight": "Slight",
+ "Moderate": "Moderate",
+ "Strong": "Strong",
+ "Shadow edges that soften away from what casts them, as in daylight. They cost the graphics card more while the sun casts shadows.": "Shadow edges that soften away from what casts them, as in daylight. They cost the graphics card more while the sun casts shadows."
 }

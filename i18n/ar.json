@@ -3384,5 +3384,10 @@
   "The Bulgarian translation.": "الترجمة البلغارية.",
   "The Traditional Chinese translation.": "الترجمة الصينية التقليدية.",
   "A .skp component 10 000 times too big, traced.": "تتبُّع مكون .skp أكبر من حجمه بـ 10 000 مرة.",
-  "Thanks as well to all the authors of the extensions catalogue": "شكرًا أيضًا لجميع مؤلفي كتالوج الإضافات"
+  "Thanks as well to all the authors of the extensions catalogue": "شكرًا أيضًا لجميع مؤلفي كتالوج الإضافات",
+  "Soft sun shadows": "ظلال شمس ناعمة",
+  "Slight": "خفيفة",
+  "Moderate": "متوسطة",
+  "Strong": "قوية",
+  "Shadow edges that soften away from what casts them, as in daylight. They cost the graphics card more while the sun casts shadows.": "حواف ظل تلين كلما ابتعدت عمّا يلقيها، كما في ضوء النهار. تُثقل بطاقة الرسوميات أكثر ما دامت الشمس تلقي الظلال."
 }
