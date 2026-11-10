@@ -121,11 +121,58 @@ def _cycle_adjacency(edges, ka, kb, key=_key) -> dict:
     return adj
 
 
+class CycleGraph:
+    """The edge graph ``find_cycles_through`` searches, kept for a whole
+    plan instead of built again for each segment of the stroke: a circle
+    of 32 sides drawn on a solid of 6000 edges walked them 32 times.
+
+    Unlike :func:`_cycle_adjacency` it holds every edge, the segment asked
+    about included; the search leaves that one out as it goes (``direct``
+    in :func:`_smallest_cycle`). ``add`` and ``remove`` follow the plan's
+    edge list, so each node's neighbours stay in that list's order — the
+    order the search's answer depends on."""
+
+    __slots__ = ("adj", "_key")
+
+    def __init__(self, edges, key=_key) -> None:
+        self.adj: dict = {}
+        self._key = key
+        for edge in edges:
+            self.add(edge)
+
+    def add(self, edge) -> None:
+        ea, eb = self._key(edge.a), self._key(edge.b)
+        if ea == eb:
+            return
+        self.adj.setdefault(ea, []).append((eb, edge.b))
+        self.adj.setdefault(eb, []).append((ea, edge.a))
+
+    def remove(self, edge) -> bool:
+        """Take ``edge`` out. False if it was not found as it was added —
+        the graph is then not to be trusted and the caller drops it."""
+        ea, eb = self._key(edge.a), self._key(edge.b)
+        if ea == eb:
+            return True
+        for u, v, pos in ((ea, eb, edge.b), (eb, ea, edge.a)):
+            row = self.adj.get(u, ())
+            for i, (v_key, v_pos) in enumerate(row):
+                if v_pos is pos and v_key == v:
+                    del row[i]
+                    break
+            else:
+                return False
+        return True
+
+
 def _smallest_cycle(adj, a, b, ka, kb, max_len: int = 32,
-                    skip=frozenset()):
+                    skip=frozenset(), direct: bool = False):
     """Breadth-first search from ``b`` to ``a`` over ``adj``, never entering a
     node of ``skip`` — the same search ``adj`` built without the edges that
-    touch those nodes would make (adjacency lists keep the edge order)."""
+    touch those nodes would make (adjacency lists keep the edge order).
+
+    ``direct``: ``adj`` still holds segment ``a``–``b`` itself (a
+    :class:`CycleGraph`), and the search must not take it — the step from
+    ``b`` straight to ``a`` is the only place it could."""
     if ka not in adj or kb not in adj:
         return None
     if skip and not (any(v not in skip for v, _p in adj[ka])
@@ -142,6 +189,8 @@ def _smallest_cycle(adj, a, b, ka, kb, max_len: int = 32,
             found = True
             break
         for v_key, v_pos in adj.get(u, ()):
+            if direct and u == kb and v_key == ka:
+                continue
             if v_key not in parent and v_key not in skip:
                 parent[v_key] = u
                 parent_pos[v_key] = v_pos
@@ -413,8 +462,20 @@ def loop_inside_face(mother: Face, loop: list[QVector3D],
         return False
     if outside_holes:
         loop2 = [proj(v) for v in loop]
+        lx = [q[0] for q in loop2]
+        ly = [q[1] for q in loop2]
+        lx0, lx1, ly0, ly1 = min(lx), max(lx), min(ly), max(ly)
+        gap = 1e-6
         for hole in mother.holes:
             hole2 = [proj(p) for p in hole]
+            # An opening whose box stands clear of the loop's neither holds
+            # a corner of it, nor has one inside it, nor crosses it.
+            hx = [q[0] for q in hole2]
+            if min(hx) > lx1 + gap or max(hx) < lx0 - gap:
+                continue
+            hy = [q[1] for q in hole2]
+            if min(hy) > ly1 + gap or max(hy) < ly0 - gap:
+                continue
             if any(_strictly_inside_2d(q, hole2) for q in loop2):
                 return False
             # A loop that wraps or straddles the hole without a corner in
@@ -434,6 +495,19 @@ def _loops_cross_2d(a: list, b: list) -> bool:
         return (q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0])
 
     eps = 1e-12
+    # Two outlines whose boxes stand apart have no edges that cross: said
+    # before every edge of one is tried against every edge of the other (a
+    # circle drawn on a face with sixty openings was 60 000 pairs).
+    if a and b:
+        gap = 1e-9
+        ax = [p[0] for p in a]
+        bx = [p[0] for p in b]
+        if min(ax) > max(bx) + gap or min(bx) > max(ax) + gap:
+            return False
+        ay = [p[1] for p in a]
+        by = [p[1] for p in b]
+        if min(ay) > max(by) + gap or min(by) > max(ay) + gap:
+            return False
     for i in range(len(a)):
         p1, p2 = a[i], a[(i + 1) % len(a)]
         for j in range(len(b)):
@@ -472,7 +546,12 @@ def hole_merged_with_loop(face: Face, loop: list[QVector3D]):
             out.append(xy)
         return out
 
+    # An opening whose box stands clear of the loop's shares no stretch of
+    # rim with it (the clearance is a hundred times the welding distance).
+    loop_box = _points_box(loop)
     for idx, hole in enumerate(face.holes):
+        if _boxes_apart(loop_box, _points_box(hole), _BOX_PAD):
+            continue
         h3 = refine_loop_with_points(list(hole), loop)
         l3 = refine_loop_with_points(list(loop), hole)
         shared = set(_loop_edges(h3)) & set(_loop_edges(l3))
@@ -490,6 +569,45 @@ def hole_merged_with_loop(face: Face, loop: list[QVector3D]):
     return None
 
 
+def _points_box(pts) -> tuple:
+    """``(lox, loy, loz, hix, hiy, hiz)`` of a list of points."""
+    xyz = [p.toTuple() for p in pts]
+    if not xyz:
+        return (0.0,) * 6
+    xs, ys, zs = zip(*xyz)
+    return (min(xs), min(ys), min(zs), max(xs), max(ys), max(zs))
+
+
+def _boxes_apart(a: tuple, b: tuple, pad: float) -> bool:
+    """Whether two boxes are further than ``pad`` from each other."""
+    return (a[0] > b[3] + pad or b[0] > a[3] + pad
+            or a[1] > b[4] + pad or b[1] > a[4] + pad
+            or a[2] > b[5] + pad or b[2] > a[5] + pad)
+
+
+def _box_holds(face, px, py, pz, pad) -> bool:
+    """Whether the point is inside the box of ``face``'s outer loop, grown
+    by ``pad``."""
+    lox = loy = loz = math.inf
+    hix = hiy = hiz = -math.inf
+    for v in face.vertices:          # a mesh face or a plain one
+        x, y, z = v.toTuple()
+        if x < lox:
+            lox = x
+        if x > hix:
+            hix = x
+        if y < loy:
+            loy = y
+        if y > hiy:
+            hiy = y
+        if z < loz:
+            loz = z
+        if z > hiz:
+            hiz = z
+    return (lox - pad <= px <= hix + pad and loy - pad <= py <= hiy + pad
+            and loz - pad <= pz <= hiz + pad)
+
+
 def find_containing_face(
     faces: Iterable[Face], loop: list[QVector3D], exclude: Optional[Face] = None
 ) -> Optional[Face]:
@@ -503,8 +621,15 @@ def find_containing_face(
     ``exclude`` skips the face being added.
     """
     best: Optional[Face] = None
+    # A face that holds the loop strictly inside it holds the loop's first
+    # corner inside its box: the rest are passed over without working out
+    # their plane (every face of the model is asked, at every face drawn).
+    px, py, pz = (loop[0].x(), loop[0].y(), loop[0].z()) if loop else (0, 0, 0)
+    pad = _PLANAR_TOLERANCE + 1e-6 * max(abs(px), abs(py), abs(pz), 1.0)
     for face in faces:
         if face is exclude:
+            continue
+        if loop and not _box_holds(face, px, py, pz, pad):
             continue
         if loop_inside_face(face, loop, outside_holes=True):
             if best is None or len(face.vertices) < len(best.vertices):
@@ -652,7 +777,8 @@ def refine_loop_with_points(
 
 
 def classify_push_edge(
-    face: Face, a: QVector3D, b: QVector3D, faces: Iterable[Face]
+    face: Face, a: QVector3D, b: QVector3D, faces: Iterable[Face],
+    memo: Optional[dict] = None,
 ) -> tuple[str, Optional[Face]]:
     """How a push/pull side edge ``a``–``b`` of ``face`` attaches to the model.
 
@@ -667,20 +793,35 @@ def classify_push_edge(
     vertex — the colinear-overlap case). Without this, a block flush against a
     wider wall reads its shared edge as ``free`` and the push becomes a stray
     free extrusion that leaves the base as an internal partition.
+
+    ``memo`` (a dict the caller keeps while it asks about the edges of ONE
+    face against an unchanged model) remembers which faces are coplanar
+    with ``face`` and the edge set of each: a cap holed by sixty cylinders
+    has 2000 edges, and listing them again for each of the 32 edges of a
+    circle pushed on it was a third of the push.
     """
-    fn = face.normal()
+    if memo is None:
+        memo = {}
+    split = memo.get("split")
+    if split is None or split[0] is not face:
+        fn = face.normal()
+        coplanar, others = [], []
+        for g in faces:
+            if g is face:
+                continue
+            (coplanar if _faces_coplanar(fn, g.normal()) else others).append(g)
+        split = memo["split"] = (face, coplanar, others)
+        memo["edges"] = {}
+    _, coplanar, others = split
+    edges = memo["edges"]
     eset = frozenset((_key(a), _key(b)))
-    faces = list(faces)
-    for g in faces:
-        if g is face:
-            continue
-        if _faces_coplanar(fn, g.normal()) and (
-            eset in _face_all_edges(g) or _segment_on_face_boundary(a, b, g)
-        ):
+    for g in coplanar:
+        all_edges = edges.get(g)
+        if all_edges is None:
+            all_edges = edges[g] = _face_all_edges(g)
+        if eset in all_edges or _segment_on_face_boundary(a, b, g):
             return ("coplanar", g)
-    for s in faces:
-        if s is face or _faces_coplanar(fn, s.normal()):
-            continue
+    for s in others:
         if _segment_on_face_boundary(a, b, s):
             return ("perp", s)
     return ("free", None)
@@ -1086,7 +1227,7 @@ def _same_cycle(c1: list[QVector3D], c2: list[QVector3D]) -> bool:
 
 def find_cycles_through(
     edges: Iterable[Edge], a: QVector3D, b: QVector3D, max_results: int = 2,
-    key=None,
+    key=None, graph: Optional["CycleGraph"] = None,
 ) -> list[list[QVector3D]]:
     """Up to ``max_results`` distinct minimal cycles through segment ``a``–``b``.
 
@@ -1105,15 +1246,19 @@ def find_cycles_through(
     ka, kb = _key(a), _key(b)
     if ka == kb:
         return []
-    adj = _cycle_adjacency(edges, ka, kb, key)
-    first = _smallest_cycle(adj, a, b, ka, kb)
+    # ``graph`` is ``edges`` already laid out, by a caller that asks about
+    # one segment after another over the same list.
+    direct = graph is not None
+    adj = graph.adj if direct else _cycle_adjacency(edges, ka, kb, key)
+    first = _smallest_cycle(adj, a, b, ka, kb, direct=direct)
     if first is None:
         return []
     cycles = [first]
     if max_results >= 2:
         interior = {_key(v) for v in first} - {ka, kb}
         if interior:
-            second = _smallest_cycle(adj, a, b, ka, kb, skip=interior)
+            second = _smallest_cycle(adj, a, b, ka, kb, skip=interior,
+                                     direct=direct)
             if second is not None and not _same_cycle(second, first):
                 cycles.append(second)
     return cycles
@@ -1906,6 +2051,37 @@ _HEAL_FACE_CAP = 3000
 _BOX_PAD = 1e-2
 
 
+def _heal_partners(N, A, LO, HI) -> dict:
+    """``{i: rows}``: for each face, the smaller faces parallel to it whose
+    box lies inside its own — the only ones that can be lying on top of it.
+    Faces with none are left out.
+
+    The same test, asked for a block of faces at a time: asked face by
+    face it was four array passes over the whole model per face, and with
+    2000 faces that alone was a fifth of a second after every stroke."""
+    import numpy as np
+    out: dict = {}
+    n = len(A)
+    for start in range(0, n, 512):
+        rows = slice(start, min(start + 512, n))
+        # Parallel and smaller first: few pairs pass, and only those have
+        # their boxes compared.
+        ii, jj = np.nonzero((np.abs(N[rows] @ N.T) > 0.999)
+                            & (A[None, :] < A[rows, None]))
+        if not len(ii):
+            continue
+        gi = ii + start
+        ok = ((LO[jj] >= LO[gi] - _BOX_PAD).all(axis=1)
+              & (HI[jj] <= HI[gi] + _BOX_PAD).all(axis=1))
+        gi, jj = gi[ok], jj[ok]
+        if not len(gi):
+            continue
+        cuts = np.flatnonzero(np.diff(gi)) + 1
+        for block_i, block_j in zip(np.split(gi, cuts), np.split(jj, cuts)):
+            out[int(block_i[0])] = block_j
+    return out
+
+
 def _outer_boxes(faces):
     """``(lo, hi)``: per face, the bounding box of its outer loop."""
     import numpy as np
@@ -2000,6 +2176,7 @@ def heal_overlapping_faces(mesh, coverage: float = 0.5, partial=None,
     A = np.array([f.area() for f in snap], dtype=np.float64)
     LO, HI = _outer_boxes(snap)
     gone: set = set()
+    partners = _heal_partners(N, A, LO, HI)
     for i, face in enumerate(snap):
         a_face = A[i]
         if a_face < _SPLIT_TOLERANCE:
@@ -2011,9 +2188,7 @@ def heal_overlapping_faces(mesh, coverage: float = 0.5, partial=None,
         # inside the face sits inside its box too: on a flat plan every face
         # is coplanar with every other, and the box test is what keeps an
         # exploded DWG of 700 faces from testing them all (#491).
-        cand = np.flatnonzero((np.abs(N @ N[i]) > 0.999) & (A < a_face)
-                              & (LO >= LO[i] - _BOX_PAD).all(axis=1)
-                              & (HI <= HI[i] + _BOX_PAD).all(axis=1))
+        cand = partners.get(i, ())
         covered = 0.0
         for j in cand:
             g = snap[j]
