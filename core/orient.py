@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import math
 import random
+import weakref
 from typing import Optional
 
 from PySide6.QtGui import QVector3D
@@ -85,13 +86,101 @@ def _basis(n: QVector3D) -> tuple[QVector3D, QVector3D]:
     return u, v
 
 
+#: mesh -> {face: (shape, triangles)}: what each face triangulated to the
+#: last time a pass asked, and the corner positions it had then.
+_TRI_MEMO: "weakref.WeakKeyDictionary" = weakref.WeakKeyDictionary()
+
+
+def _face_shape(face) -> tuple:
+    """Everything a face's triangulation is made from: where each corner of
+    its loop and of its holes is, in order."""
+    return (tuple(v.position.toTuple() for v in face.loop),
+            tuple(tuple(v.position.toTuple() for v in h)
+                  for h in face.hole_loops))
+
+
 def _face_triangles(mesh) -> dict:
     """Triangulate every face once. Returns ``{face: [Triangle, …]}`` in world
-    space (holes included via the face's own earcut triangulation)."""
+    space (holes included via the face's own earcut triangulation).
+
+    A face whose corners are where they were the last time is not cut
+    again: an edit touches a handful of faces, and every pass re-cut all of
+    them — the one cap sixty cylinders stand on is 0.1 s of ear clipping,
+    paid three times per circle drawn and pushed."""
+    try:
+        memo = _TRI_MEMO.setdefault(mesh, {})
+    except TypeError:               # a stand-in mesh nothing can refer to
+        memo = {}
     tris: dict = {}
+    kept: dict = {}
     for f in mesh.faces:
-        tris[f] = f.triangulate()
+        shape = _face_shape(f)
+        known = memo.get(f)
+        if known is not None and known[0] == shape:
+            t = known[1]
+        else:
+            t = f.triangulate()
+        tris[f] = t
+        kept[f] = (shape, t)
+    memo.clear()
+    memo.update(kept)
     return tris
+
+
+#: Faces of a shell asked by ray before the whole shell is taken at their
+#: word (see :func:`_shell_verdict`).
+_SHELL_SAMPLES = 6
+
+
+def _winds_like(hole, face) -> bool:
+    """Whether a hole's loop goes round the same way as its face's own."""
+    nx = ny = nz = 0.0
+    prev = hole[-1].position
+    x0, y0, z0 = prev.x(), prev.y(), prev.z()
+    for v in hole:
+        p = v.position
+        x1, y1, z1 = p.x(), p.y(), p.z()
+        nx += (y0 - y1) * (z0 + z1)
+        ny += (z0 - z1) * (x0 + x1)
+        nz += (x0 - x1) * (y0 + y1)
+        x0, y0, z0 = x1, y1, z1
+    n = face._newell()
+    return nx * n.x() + ny * n.y() + nz * n.z() > 0.0
+
+
+def _coherent_shells(faces, comp_of: dict) -> set:
+    """The components that are one closed skin wound one way: every segment
+    of their loops walked by exactly two of their faces, once each way.
+
+    Such a skin has no partitions (a partition's edges carry three faces)
+    and its faces cannot disagree: all of them look out, or all look in."""
+    uses: dict = {}
+    for f in faces:
+        c = comp_of[f]
+        for k, loop in enumerate((f.loop, *f.hole_loops)):
+            n = len(loop)
+            # A face keeps its material on the left of its loop and on the
+            # right of a hole wound the same way round: such a hole is read
+            # backwards, and then the two loops speak the same language.
+            turn = -1 if k and _winds_like(loop, f) else 1
+            prev = id(loop[-1]) if n else 0
+            for i in range(n):
+                cur = id(loop[i])
+                if prev < cur:
+                    key, way = (c, prev, cur), turn
+                else:
+                    key, way = (c, cur, prev), -turn
+                seen = uses.get(key)
+                # (times walked, net direction): two walks, one each way,
+                # read (2, 0).
+                uses[key] = ((1, way) if seen is None
+                             else (seen[0] + 1, seen[1] + way))
+                prev = cur
+    good = set(comp_of.values())
+    for key, walked in uses.items():
+        if walked != (2, 0):
+            good.discard(key[0])
+    return good
 
 
 def _face_components(mesh) -> dict:
@@ -615,6 +704,43 @@ def orient_outward(mesh, seed: int = 12345, only=None) -> list:
 
     boundary = dict(all_tris)
     probes: dict = {}
+
+    # A closed skin wound one way is decided by a few of its faces, not by
+    # every one: its faces can only all look out or all look in, so the
+    # rays of six agree with the rays of two thousand. One that the sample
+    # does not read plainly (a skin crossing itself, a tied vote) goes
+    # through the full pass below, as every other component does.
+    mesh_closed = is_closed(mesh)
+    shell_flips: list = []
+    shells = _coherent_shells(scope, comp_of) if scope else set()
+    if shells:
+        by_comp: dict = {}
+        for f in scope:
+            if comp_of[f] in shells:
+                by_comp.setdefault(comp_of[f], []).append(f)
+        asked_first = set(only) if only is not None else set()
+        all_true = {c: np.ones(len(comp_rows[c]), dtype=bool) for c in by_comp}
+        decided = set()
+        for c, members in by_comp.items():
+            verdict = _shell_verdict(
+                members, asked_first, boundary, seed, sub[c], all_true[c],
+                fidx, probes, all_tris)
+            if verdict is None:
+                continue
+            decided.add(c)
+            for f in members:
+                f.interior = False
+            # Only a closed mesh, or a pass scoped to an edit's own solids,
+            # turns faces (see the full pass below).
+            if verdict == "inward" and (mesh_closed or only is not None):
+                shell_flips.extend(members)
+        if decided:
+            scope = [f for f in scope if comp_of[f] not in decided]
+            for f in shell_flips:
+                turn_face_over(f)
+            if not scope:
+                return shell_flips
+
     for _ in range(4):
         rng = random.Random(seed)
         base_by_comp = _boundary_base(set(boundary))
@@ -637,10 +763,9 @@ def orient_outward(mesh, seed: int = 12345, only=None) -> list:
     # above are still computed for open meshes (a plan mixing raised rooms
     # with flat floors is open as a whole, yet its interior walls are real
     # partitions the volumetric queries must skip).
-    mesh_closed = is_closed(mesh)
     if not mesh_closed:
         if only is None:
-            return []
+            return shell_flips
         # A scoped pass (an edit's own solids) judges closure per
         # component: one open piece elsewhere in the mesh used to stop the
         # pass for every solid, and a cube pushed beside a cube with a
@@ -650,7 +775,7 @@ def orient_outward(mesh, seed: int = 12345, only=None) -> list:
                       for f in e.faces if f in comp_of}
         scope = [f for f in scope if comp_of[f] not in open_comps]
         if not scope:
-            return []
+            return shell_flips
     rng = random.Random(seed)
     base_by_comp = _boundary_base(set(boundary))
     to_flip = []
@@ -702,7 +827,45 @@ def orient_outward(mesh, seed: int = 12345, only=None) -> list:
                     for h, old in zip(f.hole_loops, holes):
                         h[:] = old
             to_flip = [f for f in to_flip if comp_of[f] not in worse]
-    return to_flip
+    return shell_flips + to_flip
+
+
+def _shell_verdict(members, asked_first, boundary, seed, packed, mask,
+                   fidx, probes, all_tris) -> Optional[str]:
+    """``"outward"`` or ``"inward"`` for a closed skin wound one way (see
+    :func:`_coherent_shells`), read from a few of its faces: the ones the
+    edit named and others spread over the skin. ``None`` unless every one
+    of them says the same — then the skin is not what it looks like, and
+    the pass that asks every face decides."""
+    # A skin that really closes has area vectors that add up to nothing.
+    # One that only counts as closed edge by edge — an opening reaching
+    # past its own face, left mid-way by an edit — does not, and is not
+    # taken at anybody's word.
+    import numpy as np
+    areas = np.cross(packed.e1, packed.e2)
+    total = float(np.linalg.norm(areas, axis=1).sum())
+    if total <= 0.0 or float(np.linalg.norm(areas.sum(axis=0))) > 1e-5 * total:
+        return None
+    sample = [f for f in members if f in asked_first][:_SHELL_SAMPLES // 2]
+    step = max(1, len(members) // _SHELL_SAMPLES)
+    for f in members[::step]:
+        if len(sample) >= _SHELL_SAMPLES:
+            break
+        if f not in sample:
+            sample.append(f)
+    rng = random.Random(seed)
+    verdict = None
+    for f in sample:
+        state = _face_side_state(f, boundary, rng, packed=packed, mask=mask,
+                                 skip=fidx[f], probes=probes,
+                                 all_tris=all_tris)
+        if state not in ("outward", "inward"):
+            return None
+        if verdict is None:
+            verdict = state
+        elif state != verdict:
+            return None
+    return verdict
 
 
 def _incoherent_edges(faces) -> int:
