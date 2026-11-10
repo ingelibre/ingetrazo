@@ -3365,5 +3365,9 @@
  "Create faces from closed planar outlines": "닫힌 평면 윤곽에서 면 만들기",
  "Slower on big drawings. You can also do it later, with the lines selected: Tools ▸ Make Faces.": "큰 도면에서는 느려집니다. 나중에 선을 선택한 뒤 할 수도 있습니다: 도구 ▸ 면 만들기.",
  "{n} faces made from closed outlines": "닫힌 윤곽에서 면 {n}개를 만들었습니다",
- "Making faces…": "면 만드는 중…"
+ "Making faces…": "면 만드는 중…",
+ "Text gap": "문자 간격",
+ "Gap between the dimension line and its text, on paper. (Separation moves the line away from the measured points.)": "치수선과 그 문자 사이의 용지상 간격입니다. ('간격'은 치수선을 측정점에서 떨어뜨립니다.)",
+ "Flip text direction": "문자 방향 뒤집기",
+ "Turns the text half a turn so it reads the other way along the line — a vertical dimension read from the right instead of from the left. The text stays on the same side.": "문자를 반 바퀴 돌려 선을 따라 반대 방향으로 읽히게 합니다 — 세로 치수를 왼쪽이 아닌 오른쪽에서 읽습니다. 문자는 같은 쪽에 남습니다."
 }

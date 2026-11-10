@@ -3365,5 +3365,9 @@
  "Create faces from closed planar outlines": "Créer des faces à partir des contours plans fermés",
  "Slower on big drawings. You can also do it later, with the lines selected: Tools ▸ Make Faces.": "Plus lent sur les grands dessins. Vous pouvez aussi le faire plus tard, avec les lignes sélectionnées : Outils ▸ Créer des faces.",
  "{n} faces made from closed outlines": "{n} faces créées à partir de contours fermés",
- "Making faces…": "Création des faces…"
+ "Making faces…": "Création des faces…",
+ "Text gap": "Écart du texte",
+ "Gap between the dimension line and its text, on paper. (Separation moves the line away from the measured points.)": "Écart entre la ligne de cote et son texte, sur le papier. (Séparation éloigne la ligne des points mesurés.)",
+ "Flip text direction": "Inverser le sens du texte",
+ "Turns the text half a turn so it reads the other way along the line — a vertical dimension read from the right instead of from the left. The text stays on the same side.": "Tourne le texte d’un demi-tour pour qu’il se lise dans l’autre sens le long de la ligne — une cote verticale lue depuis la droite au lieu de la gauche. Le texte reste du même côté."
 }

@@ -3368,5 +3368,9 @@
  "Create faces from closed planar outlines": "ສ້າງໜ້າພຽງຈາກຮູບປິດທີ່ຢູ່ເທິງລະນາບດຽວ",
  "Slower on big drawings. You can also do it later, with the lines selected: Tools ▸ Make Faces.": "ຊ້າລົງເມື່ອແບບມີຂະໜາດໃຫຍ່. ເຮັດພາຍຫຼັງກໍໄດ້ໂດຍເລືອກເສັ້ນແລ້ວໄປທີ່ ເຄື່ອງມືຕ່າງໆ ▸ ສ້າງໜ້າພຽງ.",
  "{n} faces made from closed outlines": "ສ້າງແລ້ວ {n} ໜ້າພຽງຈາກຮູບປິດ",
- "Making faces…": "ກຳລັງສ້າງໜ້າພຽງ…"
+ "Making faces…": "ກຳລັງສ້າງໜ້າພຽງ…",
+ "Text gap": "ໄລຍະຫ່າງຂໍ້ຄວາມ",
+ "Gap between the dimension line and its text, on paper. (Separation moves the line away from the measured points.)": "ໄລຍະຫ່າງລະຫວ່າງເສັ້ນບອກຂະໜາດ ແລະ ຂໍ້ຄວາມຂອງມັນ ເທິງເຈ້ຍ. (ໄລຍະຫ່າງດ້ານເທິງຍ້າຍເສັ້ນອອກຈາກຈຸດທີ່ວັດ.)",
+ "Flip text direction": "ປີ້ນທິດທາງຂໍ້ຄວາມ",
+ "Turns the text half a turn so it reads the other way along the line — a vertical dimension read from the right instead of from the left. The text stays on the same side.": "ໝຸນຂໍ້ຄວາມເຄິ່ງຮອບ ເພື່ອໃຫ້ອ່ານໄປອີກທາງໜຶ່ງຕາມເສັ້ນ — ຂະໜາດແນວຕັ້ງອ່ານຈາກດ້ານຂວາແທນດ້ານຊ້າຍ. ຂໍ້ຄວາມຍັງຢູ່ດ້ານເດີມ."
 }
