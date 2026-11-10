@@ -3330,7 +3330,24 @@ class StylesPanel(QWidget):
 
     # ---- Plumbing -----------------------------------------------------------
     def _style(self):
+        """The style the view being worked in shows (one of several views
+        may have its own)."""
+        shown = getattr(self._window, "shown_style", None)
+        if shown is not None:
+            return shown()
         return getattr(self._window.viewport.scene, "display_style", None)
+
+    def _edit_style(self):
+        """The style an edit changes: that view's only."""
+        edit = getattr(self._window, "style_to_edit", None)
+        return edit() if edit is not None else self._style()
+
+    def _update_views(self) -> None:
+        update = getattr(self._window, "update_views", None)
+        if update is not None:
+            update()
+        else:
+            self._window.viewport.update()
 
     def _shown_color(self, attr: str):
         """The colour a swatch shows for ``attr``. Back color may be unset
@@ -3405,12 +3422,16 @@ class StylesPanel(QWidget):
         picked = style_by_name(self._combo.itemData(index))
         if picked is None:
             return
+        apply = getattr(self._window, "_apply_display_style", None)
+        if apply is not None:                    # the view worked in only
+            apply(picked)
+            return
         self._window.viewport.scene.display_style = picked
         self._window._sync_style_menu()          # menu + this panel
         self._window.viewport.update()
 
     def _apply_edits(self, *_a) -> None:
-        style = self._style()
+        style = self._edit_style() if not self._updating else None
         if style is None or self._updating:
             return
         style.face_mode = self._mode.currentData()
@@ -3423,7 +3444,7 @@ class StylesPanel(QWidget):
         style.ao_intensity = self._ao_int.value() / 10.0
         self._sync_ao_controls()
         self._window._sync_style_menu()
-        self._window.viewport.update()
+        self._update_views()
 
     _AO_DIST_STEPS = 200
 
@@ -3449,8 +3470,8 @@ class StylesPanel(QWidget):
     def _on_ao_dist_slider(self, pos: int) -> None:
         # Only a drag writes the distance: a value from a file that sits
         # between two slider steps is kept as it is until then.
-        style = self._style()
-        if style is None or self._updating:
+        style = self._edit_style() if not self._updating else None
+        if style is None:
             return
         style.ao_distance = self._ao_dist_at(pos)
         self._apply_edits()
@@ -3497,9 +3518,10 @@ class StylesPanel(QWidget):
             QColor.fromRgbF(*(float(v) for v in c[:3])), _dialog_parent(self), title)
         if not chosen.isValid():
             return
-        setattr(style, attr, (chosen.redF(), chosen.greenF(), chosen.blueF()))
+        setattr(self._edit_style(), attr,
+                (chosen.redF(), chosen.greenF(), chosen.blueF()))
         self.refresh()
-        self._window.viewport.update()
+        self._update_views()
         # Every colour is editable in every mode (build the look, save it) —
         # but an edit that can't show RIGHT NOW says so, or it reads as
         # "styles don't work" (it did, live, 2026-08-31).
