@@ -68,6 +68,60 @@ def test_the_dash_count_is_capped_however_long_the_guide():
     assert count <= 8000                        # 4000 dashes × 2 vertices
 
 
+def test_a_guide_circle_lays_dashes_on_its_rim():
+    from core.guide import GuideCircle
+    g = GuideCircle(V(1, 1, 0), V(0, 0, 1), 2.0)   # radius 2, in the XY plane
+    coords, spans = _guide_vertices([g], spacing=0.5)
+    assert len(spans) == 1
+    _start, count, selected = spans[0]
+    assert count >= 4 and count % 2 == 0 and selected is False
+    pts = np.asarray(coords, dtype=float).reshape(-1, 3)
+    r = np.hypot(pts[:, 0] - 1.0, pts[:, 1] - 1.0)
+    assert np.all(np.abs(r - 2.0) < 1e-4)          # every vertex on the rim
+    assert np.all(np.abs(pts[:, 2]) < 1e-6)        # and in the circle's plane
+
+
+def test_a_zero_radius_guide_circle_produces_nothing():
+    from core.guide import GuideCircle
+    coords, spans = _guide_vertices(
+        [GuideCircle(V(0, 0, 0), V(0, 0, 1), 0.0)], spacing=1.0)
+    assert spans == [] and len(coords) == 0
+
+
+def test_pick_guide_picks_a_guide_circle():
+    import types
+    from types import SimpleNamespace
+    from core.guide import GuideCircle
+    from core.scene import Scene
+    from views.viewport import Viewport
+
+    scene = Scene()
+    g = GuideCircle(V(0, 0, 0), V(0, 0, 1), 2.0)
+    scene.guides.append(g)
+
+    def w2p(p):
+        return (p.x() * 100.0, p.y() * 100.0)
+
+    stub = SimpleNamespace(scene=scene, _world_to_pixel=w2p,
+                           pick_threshold_px=8.0)
+    stub._circle_pick_distance = types.MethodType(
+        Viewport._circle_pick_distance, stub)
+    assert Viewport.pick_guide(stub, 200.0, 0.0) is g    # on the rim at (2,0)
+    assert Viewport.pick_guide(stub, 0.0, 0.0) is None   # far from the rim
+
+
+def test_a_small_guide_circle_still_gets_enough_dashes():
+    """A circle smaller than one dash period must not collapse to a single
+    camera-sized dash: its dashes shrink so the ring stays visibly dashed."""
+    from core.guide import GuideCircle
+    from views.viewport import _MIN_CIRCLE_DASHES
+    coords, spans = _guide_vertices(
+        [GuideCircle(V(0, 0, 0), V(0, 0, 1), 0.02)], spacing=1.0)
+    assert len(spans) == 1
+    _start, count, _sel = spans[0]
+    assert count >= 2 * _MIN_CIRCLE_DASHES and count % 2 == 0
+
+
 # ── The real thing: pixels ──────────────────────────────────────────────────
 
 def _viewport():

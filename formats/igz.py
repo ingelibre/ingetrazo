@@ -847,8 +847,20 @@ def save_scene(scene, path: Path) -> dict:
     if guides:
         # A guide at NaN is left out instead of refusing the save (#723):
         # it is only scaffolding, and the loader drops it anyway (#185).
-        payload["guides"] = [g.to_dict() for g in guides
-                             if not hasattr(g, "is_finite") or g.is_finite()]
+        sound = [g for g in guides
+                 if not hasattr(g, "is_finite") or g.is_finite()]
+        # Circles under a key of their own: a version that knows only
+        # guide lines read every entry of "guides" as one and refused the
+        # whole document at the first circle (KeyError 'point'). It now
+        # finds its lines where it looks and passes over the circles.
+        lines = [g.to_dict() for g in sound
+                 if not getattr(g, "is_circle", False)]
+        circles = [g.to_dict() for g in sound
+                   if getattr(g, "is_circle", False)]
+        if lines:
+            payload["guides"] = lines
+        if circles:
+            payload["guide_circles"] = circles
     # Reference images. Written BEFORE the packing step below on purpose:
     # each entry hangs its file under a "texture" key, so the same walk that
     # embeds face textures embeds the scans too.
@@ -1494,16 +1506,28 @@ def _load_into_inner(scene, path: Path, progress=None) -> None:
     for raw in payload.get("text_labels", []):
         scene.text_labels.append(TextLabel.from_dict(raw))
 
-    from core.guide import Guide
+    from core.guide import guide_from_dict
     scene.guides.clear()
-    for raw in payload.get("guides", []):
+    # Circles live in "guide_circles"; one found among the lines (a file
+    # from a build that wrote them there) is read all the same.
+    for raw in (list(payload.get("guides", []))
+                + [dict(c, kind="circle")
+                   for c in payload.get("guide_circles", [])]):
         # A guide at (nan, nan, nan) stalled every tool (#185): left out.
-        if not _finite_points(raw.get("point", ()),
-                              raw.get("direction") or (),
-                              raw.get("origin") or ()):
+        if raw.get("kind") == "circle":
+            radius = raw.get("radius", 0.0)
+            finite = (_finite_points(raw.get("center", ()),
+                                     raw.get("normal") or ())
+                      and isinstance(radius, (int, float))
+                      and math.isfinite(radius))
+        else:
+            finite = _finite_points(raw.get("point", ()),
+                                    raw.get("direction") or (),
+                                    raw.get("origin") or ())
+        if not finite:
             _dropped_nonfinite[0] += 1
             continue
-        scene.guides.append(Guide.from_dict(raw))
+        scene.guides.append(guide_from_dict(raw))
     # What had to be left out, for the window to say so.
     scene.load_repairs = _dropped_nonfinite[0]
 
