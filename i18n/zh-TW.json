@@ -3350,5 +3350,12 @@
  "The Bulgarian translation.": "保加利亞文翻譯。",
  "The Traditional Chinese translation.": "繁體中文翻譯。",
  "A .skp component 10 000 times too big, traced.": "追查出一個大了 10 000 倍的 .skp 元件。",
- "Thanks as well to all the authors of the extensions catalogue": "同樣感謝擴充功能目錄的所有作者"
+ "Thanks as well to all the authors of the extensions catalogue": "同樣感謝擴充功能目錄的所有作者",
+ "Set where north lies: click a centre, then click toward north. The sun's shadows turn with it.": "設定北方：按一下中心點，再朝北按一下。太陽陰影隨之旋轉。",
+ "North: {a}": "北: {a}",
+ "Click the centre of the compass.": "按一下指北針的中心。",
+ "Click toward north, or type the degrees from the green axis.": "朝北按一下，或輸入相對綠色軸的度數。",
+ "Where true north lies, in degrees clockwise from the green (Y) axis. The shadows turn with it; the model does not move.": "真北的方向，以綠色 (Y) 軸為起點順時針計算的度數。陰影隨之旋轉，模型不移動。",
+ "On screen": "在螢幕上",
+ "Tools ▸ North: click a centre, then click toward north.": "工具 ▸ 北: 按一下中心點，再朝北按一下。"
 }

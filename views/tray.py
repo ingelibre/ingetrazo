@@ -881,8 +881,12 @@ class BaseMapPanel(QWidget):
                         * _math.cos(_math.radians(self._lat.value())))
                 if _math.hypot(dlat, dlon) < 1000.0:
                     keep_alt = old_datum.alt
+            # The north set with Tools ▸ North before there was a location
+            # (or the old datum's) is how the model is drawn on its site:
+            # it carries over, the sun does not jump.
+            from core.sun import scene_north_deg
             datum = SceneDatum(self._lat.value(), self._lon.value(),
-                               alt=keep_alt)
+                               alt=keep_alt, north=scene_north_deg(scene))
         scene.georef = datum
         layer = TileLayer(src, zoom=self._zoom.value())
         layer.set_rectangle(self._capture_w, self._capture_l)
@@ -3644,14 +3648,36 @@ class ShadowsPanel(QWidget):
         self._tz.currentIndexChanged.connect(self._apply)
         grid.addWidget(self._tz, 7, 1)
 
+        # Where true north lies (core.sun.scene_north_deg): typed here, or
+        # aimed on screen with Tools ▸ North — the button picks it up.
+        grid.addWidget(QLabel(tr("North:")), 8, 0)
+        north_row = QHBoxLayout()
+        self._north = QDoubleSpinBox()
+        self._north.setRange(-180.0, 180.0)
+        self._north.setDecimals(1)
+        self._north.setSingleStep(1.0)
+        self._north.setWrapping(True)
+        self._north.setSuffix("°")
+        self._north.setToolTip(tr(
+            "Where true north lies, in degrees clockwise from the green (Y) "
+            "axis. The shadows turn with it; the model does not move."))
+        self._north.editingFinished.connect(self._on_north_edited)
+        north_row.addWidget(self._north, 1)
+        self._north_btn = QPushButton(tr("On screen"))
+        self._north_btn.setToolTip(tr(
+            "Tools ▸ North: click a centre, then click toward north."))
+        self._north_btn.clicked.connect(self._on_north_tool)
+        north_row.addWidget(self._north_btn)
+        grid.addLayout(north_row, 8, 1)
+
         self._site = QLabel("")
         self._site.setWordWrap(True)
         theme_style(self._site, "color:{muted}; font-size: 11px;")
-        grid.addWidget(self._site, 8, 0, 1, 2)
+        grid.addWidget(self._site, 9, 0, 1, 2)
 
         self._locate_btn = QPushButton(tr("Add location…"))
         self._locate_btn.clicked.connect(self._on_add_location)
-        grid.addWidget(self._locate_btn, 9, 0, 1, 2)
+        grid.addWidget(self._locate_btn, 10, 0, 1, 2)
 
         self.refresh()
 
@@ -3723,6 +3749,8 @@ class ShadowsPanel(QWidget):
             self._dark.setValue(round((1.0 - sh.darkness) * 100))
             idx = self._tz.findData(sh.utc_offset)
             self._tz.setCurrentIndex(idx if idx >= 0 else 0)
+            from core.sun import scene_north_deg
+            self._north.setValue(scene_north_deg(self._window.viewport.scene))
             datum = getattr(self._window.viewport.scene, "georef", None)
             if datum is not None:
                 self._site.setText(tr(
@@ -3734,6 +3762,30 @@ class ShadowsPanel(QWidget):
                     "a true sun study."))
         finally:
             self._updating = False
+
+    def showEvent(self, event) -> None:
+        # The north may have been aimed on screen (or undone) since the
+        # panel last dropped down.
+        self.refresh()
+        super().showEvent(event)
+
+    def _on_north_edited(self) -> None:
+        if self._updating:
+            return
+        from core.history import SetNorthCommand
+        from core.sun import scene_north_deg
+        from tools.north import refresh_north_display
+        vp = self._window.viewport
+        value = self._north.value()
+        if abs(value - scene_north_deg(vp.scene)) < 1e-9:
+            return
+        vp.history.execute(SetNorthCommand(value))
+        refresh_north_display(vp)
+
+    def _on_north_tool(self) -> None:
+        activate = getattr(self._window, "_activate_tool", None)
+        if callable(activate):
+            activate("north")
 
     def _on_date_edited(self, *_a) -> None:
         if self._updating:
@@ -3769,8 +3821,11 @@ class ShadowsPanel(QWidget):
         if result is None:
             return
         lat, lon, _w, _l = result
+        from core.sun import scene_north_deg
         from georef.datum import SceneDatum
-        self._window.viewport.scene.georef = SceneDatum(lat, lon)
+        scene = self._window.viewport.scene
+        # Tools ▸ North set before the location carries over.
+        scene.georef = SceneDatum(lat, lon, north=scene_north_deg(scene))
         self._window.viewport.scene.version += 1
         self.refresh()
         self._window.viewport.update()

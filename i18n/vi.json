@@ -3376,5 +3376,12 @@
  "The Bulgarian translation.": "Bản dịch tiếng Bulgaria.",
  "The Traditional Chinese translation.": "Bản dịch tiếng Trung phồn thể.",
  "A .skp component 10 000 times too big, traced.": "Truy ra một thành phần .skp lớn gấp 10 000 lần.",
- "Thanks as well to all the authors of the extensions catalogue": "Xin cảm ơn tất cả tác giả trong danh mục tiện ích mở rộng"
+ "Thanks as well to all the authors of the extensions catalogue": "Xin cảm ơn tất cả tác giả trong danh mục tiện ích mở rộng",
+ "Set where north lies: click a centre, then click toward north. The sun's shadows turn with it.": "Đặt hướng bắc: nhấp vào một tâm, rồi nhấp về phía bắc. Bóng đổ của mặt trời xoay theo.",
+ "North: {a}": "Phía bắc: {a}",
+ "Click the centre of the compass.": "Nhấp vào tâm la bàn.",
+ "Click toward north, or type the degrees from the green axis.": "Nhấp về phía bắc, hoặc gõ số độ tính từ trục xanh lá.",
+ "Where true north lies, in degrees clockwise from the green (Y) axis. The shadows turn with it; the model does not move.": "Vị trí hướng bắc thật, tính bằng độ theo chiều kim đồng hồ từ trục xanh lá (Y). Bóng đổ xoay theo; mô hình không di chuyển.",
+ "On screen": "Trên màn hình",
+ "Tools ▸ North: click a centre, then click toward north.": "Công cụ ▸ Phía bắc: nhấp vào một tâm, rồi nhấp về phía bắc."
 }

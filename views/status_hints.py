@@ -81,6 +81,8 @@ HINTS: dict = {
              "Click the second point, or type the distance and Enter."),
     "protractor": ("Click the vertex of the angle.",
                    "Click the start of the angle, then the end; or type the degrees."),
+    "north": ("Click the centre of the compass.",
+              "Click toward north, or type the degrees from the green axis."),
     "dimension": ("Click the first point of the dimension.",
                   "Click the 2nd point, then place it; past an end = linear."),
     # Two phases, because after the anchor click the tool is doing

@@ -797,6 +797,10 @@ def save_scene(scene, path: Path) -> dict:
         d = dstyle.to_dict()
         if d != Style().to_dict():   # default stays implicit (terse files)
             payload["display_style"] = d
+    # Tools ▸ North without a location (with one, the datum carries it).
+    north_deg = float(getattr(scene, "north_deg", 0.0) or 0.0)
+    if north_deg:
+        payload["north_deg"] = round(north_deg, 6)
     shadows = getattr(scene, "shadows", None)
     if shadows is not None:
         from core.sun import ShadowSettings
@@ -1436,6 +1440,11 @@ def _load_into_inner(scene, path: Path, progress=None) -> None:
         scene.show_hidden_objects = bool(shown.get("objects", False))
         scene.show_hidden_geometry = bool(shown.get("geometry", False))
     scene.show_axes = not bool(payload.get("axes_hidden", False))
+    from core.sun import wrap_north_deg
+    try:
+        scene.north_deg = wrap_north_deg(float(payload.get("north_deg", 0.0)))
+    except (TypeError, ValueError):
+        scene.north_deg = 0.0
 
     georef = payload.get("georef")
     if isinstance(georef, dict) and isinstance(georef.get("datum"), dict):

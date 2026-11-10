@@ -159,6 +159,11 @@ class Scene:
     # drawing hides — axis inference and the arrow-key locks still work,
     # and an open group keeps showing its own axes.
     show_axes: bool = True
+    # Tools ▸ North without a location: where true north lies, degrees
+    # clockwise from the green (Y) axis — the sun turns with it. Once the
+    # model has a location the datum's own north angle is the one that
+    # counts (core.sun.scene_north_deg).
+    north_deg: float = 0.0
     # Camera ▸ Component Edit ▸ Hide Similar Components: while a
     # component instance is open, its sibling instances (the other copies of
     # the same definition) leave the frame instead of fading with the rest.
@@ -723,7 +728,7 @@ class Scene:
                 or self.show_hidden_objects or self.show_hidden_geometry
                 or self.custom_scales or self.back_face_color is not None
                 or len(self.layers) > 1 or self.layer_folders
-                or self.active_layer):
+                or self.active_layer or self.north_deg):
             self.mesh.clear()
             self.groups.clear()
             self.dimensions.clear()
@@ -757,6 +762,7 @@ class Scene:
             self.show_hidden_objects = False
             self.show_hidden_geometry = False
             self.show_axes = True
+            self.north_deg = 0.0
             self.version += 1
         # Outside the guard: an empty document has a camera to forget too.
         self.camera_home = None

@@ -3352,5 +3352,12 @@
  "The Bulgarian translation.": "Terjemahan bahasa Bulgaria.",
  "The Traditional Chinese translation.": "Terjemahan bahasa Tionghoa Tradisional.",
  "A .skp component 10 000 times too big, traced.": "Komponen .skp yang 10 000 kali terlalu besar, berhasil dilacak.",
- "Thanks as well to all the authors of the extensions catalogue": "Terima kasih juga kepada semua pembuat katalog ekstensi"
+ "Thanks as well to all the authors of the extensions catalogue": "Terima kasih juga kepada semua pembuat katalog ekstensi",
+ "Set where north lies: click a centre, then click toward north. The sun's shadows turn with it.": "Tentukan letak utara: klik sebuah pusat, lalu klik ke arah utara. Bayangan matahari ikut berputar.",
+ "North: {a}": "Utara: {a}",
+ "Click the centre of the compass.": "Klik pusat kompas.",
+ "Click toward north, or type the degrees from the green axis.": "Klik ke arah utara, atau ketik derajat dari sumbu hijau.",
+ "Where true north lies, in degrees clockwise from the green (Y) axis. The shadows turn with it; the model does not move.": "Letak utara sejati, dalam derajat searah jarum jam dari sumbu hijau (Y). Bayangan ikut berputar; model tidak bergerak.",
+ "On screen": "Di layar",
+ "Tools ▸ North: click a centre, then click toward north.": "Alat ▸ Utara: klik sebuah pusat, lalu klik ke arah utara."
 }

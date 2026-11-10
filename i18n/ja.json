@@ -3349,5 +3349,12 @@
  "The Bulgarian translation.": "ブルガリア語翻訳。",
  "The Traditional Chinese translation.": "繁体字中国語翻訳。",
  "A .skp component 10 000 times too big, traced.": "10 000 倍大きすぎる .skp コンポーネントの原因究明。",
- "Thanks as well to all the authors of the extensions catalogue": "拡張機能カタログのすべての作者にも感謝します"
+ "Thanks as well to all the authors of the extensions catalogue": "拡張機能カタログのすべての作者にも感謝します",
+ "Set where north lies: click a centre, then click toward north. The sun's shadows turn with it.": "北の向きを設定します：中心をクリックし、次に北の方向をクリックします。太陽の影も一緒に回転します。",
+ "North: {a}": "北: {a}",
+ "Click the centre of the compass.": "方位磁針の中心をクリックします。",
+ "Click toward north, or type the degrees from the green axis.": "北の方向をクリックするか、緑の軸からの角度を入力します。",
+ "Where true north lies, in degrees clockwise from the green (Y) axis. The shadows turn with it; the model does not move.": "真北の向き。緑 (Y) の軸から時計回りの角度です。影も一緒に回転し、モデルは動きません。",
+ "On screen": "画面上で",
+ "Tools ▸ North: click a centre, then click toward north.": "ツール ▸ 北: 中心をクリックし、次に北の方向をクリックします。"
 }

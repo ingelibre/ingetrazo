@@ -3352,5 +3352,12 @@
  "The Bulgarian translation.": "คำแปลภาษาบัลแกเรีย",
  "The Traditional Chinese translation.": "คำแปลภาษาจีนตัวเต็ม",
  "A .skp component 10 000 times too big, traced.": "การตามหาคอมโพเนนต์ .skp ที่ใหญ่เกินไป 10 000 เท่า",
- "Thanks as well to all the authors of the extensions catalogue": "ขอบคุณผู้สร้างทุกท่านในแคตตาล็อกส่วนขยายด้วย"
+ "Thanks as well to all the authors of the extensions catalogue": "ขอบคุณผู้สร้างทุกท่านในแคตตาล็อกส่วนขยายด้วย",
+ "Set where north lies: click a centre, then click toward north. The sun's shadows turn with it.": "กำหนดทิศเหนือ: คลิกจุดศูนย์กลาง แล้วคลิกไปทางทิศเหนือ เงาของดวงอาทิตย์จะหมุนตาม",
+ "North: {a}": "ทิศเหนือ: {a}",
+ "Click the centre of the compass.": "คลิกจุดศูนย์กลางของเข็มทิศ",
+ "Click toward north, or type the degrees from the green axis.": "คลิกไปทางทิศเหนือ หรือพิมพ์องศาจากแกนสีเขียว",
+ "Where true north lies, in degrees clockwise from the green (Y) axis. The shadows turn with it; the model does not move.": "ตำแหน่งทิศเหนือจริง เป็นองศาตามเข็มนาฬิกาจากแกนสีเขียว (Y) เงาจะหมุนตาม แต่โมเดลไม่ขยับ",
+ "On screen": "บนหน้าจอ",
+ "Tools ▸ North: click a centre, then click toward north.": "เครื่องมือ ▸ ทิศเหนือ: คลิกจุดศูนย์กลาง แล้วคลิกไปทางทิศเหนือ"
 }

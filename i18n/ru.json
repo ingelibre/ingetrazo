@@ -3349,5 +3349,12 @@
  "The Bulgarian translation.": "Болгарский перевод.",
  "The Traditional Chinese translation.": "Перевод на традиционный китайский.",
  "A .skp component 10 000 times too big, traced.": "Найден компонент .skp, в 10 000 раз больше нужного.",
- "Thanks as well to all the authors of the extensions catalogue": "Спасибо также всем авторам каталога расширений"
+ "Thanks as well to all the authors of the extensions catalogue": "Спасибо также всем авторам каталога расширений",
+ "Set where north lies: click a centre, then click toward north. The sun's shadows turn with it.": "Укажите, где север: щёлкните центр, затем в сторону севера. Тени от солнца поворачиваются вместе с ним.",
+ "North: {a}": "Север: {a}",
+ "Click the centre of the compass.": "Щёлкните центр компаса.",
+ "Click toward north, or type the degrees from the green axis.": "Щёлкните в сторону севера или введите градусы от зелёной оси.",
+ "Where true north lies, in degrees clockwise from the green (Y) axis. The shadows turn with it; the model does not move.": "Где находится истинный север, в градусах по часовой стрелке от зелёной оси (Y). Тени поворачиваются вместе с ним; модель не сдвигается.",
+ "On screen": "На экране",
+ "Tools ▸ North: click a centre, then click toward north.": "Инструменты ▸ Север: щёлкните центр, затем в сторону севера."
 }

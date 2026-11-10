@@ -3349,5 +3349,12 @@
  "The Bulgarian translation.": "La traduction bulgare.",
  "The Traditional Chinese translation.": "La traduction en chinois traditionnel.",
  "A .skp component 10 000 times too big, traced.": "Un composant .skp 10 000 fois trop grand, retrouvé.",
- "Thanks as well to all the authors of the extensions catalogue": "Merci aussi à tous les auteurs du catalogue d'extensions"
+ "Thanks as well to all the authors of the extensions catalogue": "Merci aussi à tous les auteurs du catalogue d'extensions",
+ "Set where north lies: click a centre, then click toward north. The sun's shadows turn with it.": "Indiquer où se trouve le nord : cliquez un centre, puis vers le nord. Les ombres du soleil tournent avec lui.",
+ "North: {a}": "Nord : {a}",
+ "Click the centre of the compass.": "Cliquez le centre de la boussole.",
+ "Click toward north, or type the degrees from the green axis.": "Cliquez vers le nord, ou tapez les degrés depuis l’axe vert.",
+ "Where true north lies, in degrees clockwise from the green (Y) axis. The shadows turn with it; the model does not move.": "Où se trouve le nord géographique, en degrés dans le sens horaire depuis l’axe vert (Y). Les ombres tournent avec lui ; le modèle ne bouge pas.",
+ "On screen": "À l’écran",
+ "Tools ▸ North: click a centre, then click toward north.": "Outils ▸ Nord : cliquez un centre, puis vers le nord."
 }
