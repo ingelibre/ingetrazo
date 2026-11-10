@@ -3385,5 +3385,7 @@
   "The Bulgarian translation.": "الترجمة البلغارية.",
   "The Traditional Chinese translation.": "الترجمة الصينية التقليدية.",
   "A .skp component 10 000 times too big, traced.": "تتبُّع مكون .skp أكبر من حجمه بـ 10 000 مرة.",
-  "Thanks as well to all the authors of the extensions catalogue": "شكرًا أيضًا لجميع مؤلفي كتالوج الإضافات"
+  "Thanks as well to all the authors of the extensions catalogue": "شكرًا أيضًا لجميع مؤلفي كتالوج الإضافات",
+  "{n} faces selected — push or pull one of them to move them all": "تم تحديد {n} أوجه — ادفع أو اسحب أحدها لتحريكها جميعًا",
+  "Pushed {done} of {total} faces — the others would break the solid": "تم دفع {done} من {total} أوجه — الباقي كان سيكسر المجسم"
 }
