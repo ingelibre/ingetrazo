@@ -2289,7 +2289,8 @@ class OutlinerPanel(QWidget):
         sec.setHidden(sec.childCount() == 0 or not any_shown)
 
     _PATTERN_TEXT = {"solid": "Solid", "hatch": "Hatched 45°",
-                     "cross": "Cross-hatched", "none": "No fill"}
+                     "cross": "Cross-hatched", "none": "No fill",
+                     "layers": "Layers' hatches"}
 
     def set_plane_fill(self, plane, **changes) -> None:
         """Change this cut's own fill — ``pattern``, ``color``, ``spacing``;
@@ -2345,18 +2346,23 @@ class OutlinerPanel(QWidget):
         """The cut's own fill: pattern, colour, spacing, or the style's."""
         from PySide6.QtCore import QTimer
         sub = menu.addMenu(tr("Fill of this cut"))
+        sub.setToolTipsVisible(True)
         own = getattr(plane, "fill", None) or {}
         current = own.get("pattern")
         act = sub.addAction(tr("As the style"), lambda: self.set_plane_fill(
             plane, pattern=None))
         act.setCheckable(True)
         act.setChecked(current is None)
-        for pattern in ("solid", "hatch", "cross", "none"):
+        for pattern in ("solid", "hatch", "cross", "layers", "none"):
             act = sub.addAction(tr(self._PATTERN_TEXT[pattern]),
                                 lambda p=pattern: self.set_plane_fill(
                                     plane, pattern=p))
             act.setCheckable(True)
             act.setChecked(current == pattern)
+            if pattern == "layers":
+                act.setToolTip(tr(
+                    "Each layer's cut with the hatch the Layers panel gives "
+                    "it, as a sheet at 1:50 draws it"))
         sub.addSeparator()
         # Dialogs open once the menu has closed (see _fill_actions).
         sub.addAction(tr("Fill color of this cut…"), lambda: QTimer.singleShot(

@@ -323,6 +323,13 @@ class MarcoVista:
     #: "solid" | "hatch" (45° lines every ``cut_hatch_mm``) | "none".
     cut_fill: str = "solid"
     cut_fill_color: str = "#595e69"
+    #: Each cut solid filled with its layer's colour instead (the default
+    #: layer keeps ``cut_fill_color``).
+    cut_fill_by_layer: bool = False
+    #: Pen of the cut's hatch lines, in paper mm; 0: automatic (70 % of the
+    #: edges' pen). One value per view: what reads at its scale, the same
+    #: for every material, as drafting has it.
+    pen_hatch_mm: float = 0.0
     cut_hatch_mm: float = 1.5
     #: Scale label of the frame ("ESC. 1:40"): follows the scale, sits
     #: under or inside the frame; ``{n}`` in the text is the scale number.

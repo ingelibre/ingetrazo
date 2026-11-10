@@ -718,6 +718,27 @@ def save_scene(scene, path: Path) -> dict:
                if folder_parent(scene, f)}
     if parents:
         payload["layer_folder_parents"] = parents
+    own_lines = getattr(scene, "line_types", None)
+    if own_lines:
+        payload["line_types"] = {
+            n: dict({"label": e.get("label", n), "pattern": list(e["pattern"])},
+                    **{k: (list(e[k]) if k == "color" else e[k])
+                       for k in ("text", "text_size", "text_at", "pieces",
+                                 "color") if k in e})
+            for n, e in own_lines.items()
+            if isinstance(e, dict) and e.get("pattern")}
+    if getattr(scene, "linetype_colors", None):
+        payload["linetype_colors"] = {
+            k: [round(float(c), 4) for c in v]
+            for k, v in scene.linetype_colors.items()}
+    if getattr(scene, "bricks", None):
+        payload["bricks"] = {k: [round(float(v), 2) for v in size]
+                             for k, size in scene.bricks.items()}
+    patterns = getattr(scene, "hatch_patterns", None)
+    if patterns:
+        payload["hatch_patterns"] = {
+            n: {"label": p.get("label", n), "families": p.get("families", [])}
+            for n, p in patterns.items() if isinstance(p, dict)}
     views = getattr(scene, "saved_views", None)
     if views:
         payload["saved_views"] = [v.to_dict() for v in views]
@@ -1197,6 +1218,10 @@ def _load_into_inner(scene, path: Path, progress=None) -> None:
     scene.active_layer = None
     scene.layer_folders = []
     scene.folder_parents = {}
+    scene.hatch_patterns = {}
+    scene.line_types = {}
+    scene.linetype_colors = {}
+    scene.bricks = {}
     scene.section_planes = []
     scene.show_section_planes = True
     scene.show_section_cuts = True
@@ -1228,6 +1253,23 @@ def _load_into_inner(scene, path: Path, progress=None) -> None:
     if isinstance(raw_parents, dict):
         scene.folder_parents = {f: p for f, p in raw_parents.items()
                                 if isinstance(f, str) and isinstance(p, str)}
+    from core.layers import load_line_types, load_linetype_colors
+    load_line_types(scene, payload.get("line_types"))
+    load_linetype_colors(scene, payload.get("linetype_colors"))
+    from core.layers import load_bricks
+    load_bricks(scene, payload.get("bricks"))
+    raw_patterns = payload.get("hatch_patterns")
+    if isinstance(raw_patterns, dict):
+        from core.hatches import clean_families
+        for name, raw in list(raw_patterns.items())[:500]:
+            if not (isinstance(name, str) and name and isinstance(raw, dict)):
+                continue
+            families = clean_families(raw.get("families"))
+            if families:
+                label = raw.get("label")
+                scene.hatch_patterns[name[:64]] = {
+                    "label": label[:120] if isinstance(label, str) else name,
+                    "families": families}
     raw_tiles = payload.get("tile_layer")
     if raw_tiles:
         from georef.tiles import TileLayer
