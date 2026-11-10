@@ -2145,6 +2145,10 @@ class PushPullTool(Tool):
             self._extra_faces, self._extra_normals = [], []
             return
         mesh = scene.mesh
+        # In the mesh's order, not the selection's (a set): when the faces
+        # meet, which goes first decides the result.
+        place = {id(f): i for i, f in enumerate(mesh.faces)}
+        faces.sort(key=lambda f: place.get(id(f), 0))
         self._extra_faces = [f for f in faces if f is not face]
         for f in self._extra_faces:
             orient_outward(mesh, only=(f,))
@@ -2162,7 +2166,8 @@ class PushPullTool(Tool):
         """A multi-face push, inside the commit's one SnapshotMutation: the
         base face first, then each other face the same signed distance along
         its OWN outward normal — every one through the single-face pipeline,
-        guard and top-out included. A face the guard refuses is left as it
+        guard included. A face the guard refuses, or that cannot go the whole
+        distance, is left as it
         was and counted in ``_multi_missed``; only when ALL are refused is
         the push itself refused. A face an earlier push rebuilt (a
         neighbour) is found again by its outline."""
@@ -2189,7 +2194,21 @@ class PushPullTool(Tool):
             self.extrusion = wanted
             self._compute_inward_limit(scene)
             self._clamp_extrusion()
+            # Only the whole distance, or nothing. The drag showed the
+            # base face's own limit and no other: a face that can go only
+            # part of the way — its solid thinner than the push, or made
+            # thinner by a face pushed just before it — used to go as far
+            # as it could without a word, which took a thin slab away
+            # entirely and flattened a box pushed from both ends. It is
+            # left as it was and counted with the refused ones.
+            if abs(self.extrusion - wanted) > _MIN_EXTRUDE:
+                missed += 1
+                continue
+            before = mesh.capture_state()
             self._mutate_or_top_out(scene)
+            if self._topped_out and not self._refused:
+                mesh.restore_state(before)      # stopped short: same rule
+                self._refused = True
             if self._refused:
                 missed += 1
         for k, v in lead.items():
