@@ -3351,5 +3351,17 @@
  "The Bulgarian translation.": "保加利亞文翻譯。",
  "The Traditional Chinese translation.": "繁體中文翻譯。",
  "A .skp component 10 000 times too big, traced.": "追查出一個大了 10 000 倍的 .skp 元件。",
- "Thanks as well to all the authors of the extensions catalogue": "同樣感謝擴充功能目錄的所有作者"
+ "Thanks as well to all the authors of the extensions catalogue": "同樣感謝擴充功能目錄的所有作者",
+ "Make Faces": "建立表面",
+ "Make the faces that the selected edges close, on those same edges.": "在所選邊線上，建立這些邊線所封閉的表面。",
+ "Select the edges of the loops to turn into faces.": "選取要轉換為表面的迴圈邊線。",
+ "The selected edges are not on one plane (nor on horizontal planes at different heights): Make Faces only builds flat faces.": "所選邊線不在同一平面上（也不在不同高度的水平面上）：建立表面只能產生平面表面。",
+ "The selected edges close no loop.": "所選邊線未封閉任何迴圈。",
+ "Make Faces: {n} faces made": "建立表面：已建立 {n} 個表面",
+ "Make Faces: those loops already had their faces": "建立表面：這些迴圈已有表面",
+ "Make Faces: an existing face already covers those loops": "建立表面：既有的表面已覆蓋這些迴圈",
+ "Create faces from closed planar outlines": "從封閉的平面輪廓建立表面",
+ "Slower on big drawings. You can also do it later, with the lines selected: Tools ▸ Make Faces.": "大型圖面會較慢。也可以之後在選取線條時執行：工具 ▸ 建立表面。",
+ "{n} faces made from closed outlines": "已從封閉輪廓建立 {n} 個表面",
+ "Making faces…": "正在建立表面…"
 }

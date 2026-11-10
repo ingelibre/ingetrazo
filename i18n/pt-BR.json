@@ -3357,5 +3357,17 @@
  "The Bulgarian translation.": "A tradução para o búlgaro.",
  "The Traditional Chinese translation.": "A tradução para o chinês tradicional.",
  "A .skp component 10 000 times too big, traced.": "Um componente .skp 10 000 vezes grande demais, rastreado.",
- "Thanks as well to all the authors of the extensions catalogue": "Agradecemos também a todos os autores do catálogo de extensões"
+ "Thanks as well to all the authors of the extensions catalogue": "Agradecemos também a todos os autores do catálogo de extensões",
+ "Make Faces": "Criar Faces",
+ "Make the faces that the selected edges close, on those same edges.": "Cria as faces que as arestas selecionadas fecham, sobre essas mesmas arestas.",
+ "Select the edges of the loops to turn into faces.": "Selecione as arestas dos contornos que deseja transformar em faces.",
+ "The selected edges are not on one plane (nor on horizontal planes at different heights): Make Faces only builds flat faces.": "As arestas selecionadas não estão num mesmo plano (nem em planos horizontais a alturas diferentes): Criar Faces só cria faces planas.",
+ "The selected edges close no loop.": "As arestas selecionadas não fecham nenhum contorno.",
+ "Make Faces: {n} faces made": "Criar Faces: {n} faces criadas",
+ "Make Faces: those loops already had their faces": "Criar Faces: esses contornos já tinham suas faces",
+ "Make Faces: an existing face already covers those loops": "Criar Faces: uma face existente já cobre esses contornos",
+ "Create faces from closed planar outlines": "Criar faces a partir de contornos planos fechados",
+ "Slower on big drawings. You can also do it later, with the lines selected: Tools ▸ Make Faces.": "Mais lento em desenhos grandes. Você também pode fazer isso depois, com as linhas selecionadas: Ferramentas ▸ Criar Faces.",
+ "{n} faces made from closed outlines": "{n} faces criadas a partir de contornos fechados",
+ "Making faces…": "Criando faces…"
 }

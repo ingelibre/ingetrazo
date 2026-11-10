@@ -3353,5 +3353,17 @@
  "The Bulgarian translation.": "ການແປເປັນພາສາບັນແກເຣຍ.",
  "The Traditional Chinese translation.": "ການແປເປັນພາສາຈີນຕົວເຕັມ.",
  "A .skp component 10 000 times too big, traced.": "ການຕິດຕາມຫາອົງປະກອບ .skp ທີ່ໃຫຍ່ເກີນໄປ 10 000 ເທົ່າ.",
- "Thanks as well to all the authors of the extensions catalogue": "ຂອບໃຈຜູ້ຂຽນທຸກທ່ານໃນແຄັດຕາລັອກສ່ວນຂະຫຍາຍນຳອີກ"
+ "Thanks as well to all the authors of the extensions catalogue": "ຂອບໃຈຜູ້ຂຽນທຸກທ່ານໃນແຄັດຕາລັອກສ່ວນຂະຫຍາຍນຳອີກ",
+ "Make Faces": "ສ້າງໜ້າພຽງ",
+ "Make the faces that the selected edges close, on those same edges.": "ສ້າງໜ້າພຽງທີ່ເສັ້ນຂອບທີ່ເລືອກປິດລ້ອມ ເທິງເສັ້ນຂອບເຫຼົ່ານັ້ນເອງ.",
+ "Select the edges of the loops to turn into faces.": "ເລືອກເສັ້ນຂອບຂອງຮູບປິດທີ່ຕ້ອງການເຮັດເປັນໜ້າພຽງ.",
+ "The selected edges are not on one plane (nor on horizontal planes at different heights): Make Faces only builds flat faces.": "ເສັ້ນຂອບທີ່ເລືອກບໍ່ໄດ້ຢູ່ເທິງລະນາບດຽວກັນ (ແລະ ບໍ່ໄດ້ຢູ່ເທິງລະນາບແນວນອນທີ່ຄວາມສູງຕ່າງກັນ): ສ້າງໜ້າພຽງ ສ້າງໄດ້ສະເພາະໜ້າພຽງທີ່ຮາບ.",
+ "The selected edges close no loop.": "ເສັ້ນຂອບທີ່ເລືອກບໍ່ໄດ້ປິດລ້ອມຮູບໃດເລີຍ.",
+ "Make Faces: {n} faces made": "ສ້າງໜ້າພຽງ: ສ້າງແລ້ວ {n} ໜ້າ",
+ "Make Faces: those loops already had their faces": "ສ້າງໜ້າພຽງ: ຮູບປິດເຫຼົ່ານັ້ນມີໜ້າພຽງຢູ່ແລ້ວ",
+ "Make Faces: an existing face already covers those loops": "ສ້າງໜ້າພຽງ: ມີໜ້າພຽງເດີມປົກຄຸມຮູບປິດເຫຼົ່ານັ້ນຢູ່ແລ້ວ",
+ "Create faces from closed planar outlines": "ສ້າງໜ້າພຽງຈາກຮູບປິດທີ່ຢູ່ເທິງລະນາບດຽວ",
+ "Slower on big drawings. You can also do it later, with the lines selected: Tools ▸ Make Faces.": "ຊ້າລົງເມື່ອແບບມີຂະໜາດໃຫຍ່. ເຮັດພາຍຫຼັງກໍໄດ້ໂດຍເລືອກເສັ້ນແລ້ວໄປທີ່ ເຄື່ອງມືຕ່າງໆ ▸ ສ້າງໜ້າພຽງ.",
+ "{n} faces made from closed outlines": "ສ້າງແລ້ວ {n} ໜ້າພຽງຈາກຮູບປິດ",
+ "Making faces…": "ກຳລັງສ້າງໜ້າພຽງ…"
 }

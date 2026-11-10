@@ -3353,5 +3353,17 @@
  "The Bulgarian translation.": "Terjemahan bahasa Bulgaria.",
  "The Traditional Chinese translation.": "Terjemahan bahasa Tionghoa Tradisional.",
  "A .skp component 10 000 times too big, traced.": "Komponen .skp yang 10 000 kali terlalu besar, berhasil dilacak.",
- "Thanks as well to all the authors of the extensions catalogue": "Terima kasih juga kepada semua pembuat katalog ekstensi"
+ "Thanks as well to all the authors of the extensions catalogue": "Terima kasih juga kepada semua pembuat katalog ekstensi",
+ "Make Faces": "Buat Bidang",
+ "Make the faces that the selected edges close, on those same edges.": "Membuat bidang yang ditutup oleh tepi terpilih, di atas tepi-tepi itu sendiri.",
+ "Select the edges of the loops to turn into faces.": "Pilih tepi kontur yang ingin dijadikan bidang.",
+ "The selected edges are not on one plane (nor on horizontal planes at different heights): Make Faces only builds flat faces.": "Tepi terpilih tidak berada pada satu bidang datar (juga tidak pada bidang horizontal di ketinggian berbeda): Buat Bidang hanya membuat bidang datar.",
+ "The selected edges close no loop.": "Tepi terpilih tidak menutup kontur apa pun.",
+ "Make Faces: {n} faces made": "Buat Bidang: {n} bidang dibuat",
+ "Make Faces: those loops already had their faces": "Buat Bidang: kontur itu sudah punya bidangnya",
+ "Make Faces: an existing face already covers those loops": "Buat Bidang: bidang yang ada sudah menutupi kontur itu",
+ "Create faces from closed planar outlines": "Buat bidang dari kontur datar tertutup",
+ "Slower on big drawings. You can also do it later, with the lines selected: Tools ▸ Make Faces.": "Lebih lambat pada gambar besar. Anda juga dapat melakukannya nanti, dengan garis terpilih: Alat ▸ Buat Bidang.",
+ "{n} faces made from closed outlines": "{n} bidang dibuat dari kontur tertutup",
+ "Making faces…": "Membuat bidang…"
 }

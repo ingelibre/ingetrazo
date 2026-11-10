@@ -486,6 +486,33 @@ def _bridge(p, ink):
     p.drawPolygon(QPolygonF(b))
 
 
+def _make_faces(p, ink):
+    """Make Faces: the edges of a loop, their corners in the accent, and
+    the face they close filled in between; a + for the new face."""
+    pts = [QPointF(4, 28), QPointF(22, 15), QPointF(40, 28), QPointF(22, 41)]
+    acc = _accent()
+    p.save()
+    p.setPen(Qt.NoPen)
+    p.setBrush(QColor(acc.red(), acc.green(), acc.blue(), 130))
+    p.drawPolygon(QPolygonF(pts))
+    p.restore()
+    p.setBrush(Qt.NoBrush)
+    p.drawPolygon(QPolygonF(pts))
+    p.save()
+    p.setPen(QPen(ink, 1.4))
+    p.setBrush(QBrush(acc))
+    for q in pts:
+        p.drawEllipse(q, 3.2, 3.2)
+    p.restore()
+    p.save()
+    plus = QPen(ink, 3.0)
+    plus.setCapStyle(Qt.RoundCap)
+    p.setPen(plus)
+    p.drawLine(QPointF(34, 9), QPointF(44, 9))
+    p.drawLine(QPointF(39, 4), QPointF(39, 14))
+    p.restore()
+
+
 def _offset(p, ink):
     p.setBrush(Qt.NoBrush)
     p.drawRect(QRectF(10, 12, 28, 24))
@@ -2183,7 +2210,7 @@ _DRAW = {
     "rotated_rect": _rotated_rect, "circle": _circle, "polygon": _polygon,
     "arc": _arc, "arc3": _arc3, "center_arc": _center_arc, "pie": _pie,
     "rotate": _rotate, "scale": _scale, "flip": _flip, "followme": _followme, "pushpull": _pushpull, "offset": _offset, "fillet": _fillet,
-    "bridge": _bridge,
+    "bridge": _bridge, "make_faces": _make_faces,
     "move": _move, "paint": _paint, "eyedropper": _eyedropper,
     "dimension": _dimension, "dimension_chain": _dimension_chain,
     "dimension_radius": _dimension_radius,
