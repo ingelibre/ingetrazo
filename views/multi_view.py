@@ -244,10 +244,21 @@ class _FollowWindow(QObject):
     def eventFilter(self, obj, ev) -> bool:  # noqa: N802 — Qt override
         if ev.type() in self._EVENTS:
             main = self._grid.main
+            changed = False
             if obj.active_tool is not main.active_tool:
                 obj.active_tool = main.active_tool
+                changed = True
             if obj.nav_mode != main.nav_mode:
                 obj.nav_mode = main.nav_mode
+                changed = True
+            # The pointer comes along too: the magnifier, the orbit or pan
+            # hand, or the tool's icon — not the one the view had before.
+            if changed:
+                if obj.nav_mode is not None:
+                    obj._apply_nav_cursor()
+                else:
+                    obj.unsetCursor()
+                    obj._apply_tool_cursor()
         return False
 
 
@@ -619,8 +630,22 @@ class _CrossHandle(QWidget):
         self._landing = (x, y)
         grid.divider_guide.show_lines(
             [(column.line_at(x), x_stuck)]
-            + [(r.line_at(y), y_stuck) for r in rows])
+            + [(self._row_guide(r, x, y), y_stuck) for r in rows])
         self.place(QPoint(column.line_at(x).x1(), first.line_at(y).y1()))
+
+    def _row_guide(self, row, x: int, y: int) -> QLine:
+        """``row``'s guide at ``y``, reaching the column line at ``x`` (where
+        it will be, not where it is): the guide draws the views as they will
+        be, with no stub left over from the old crossing."""
+        grid = self._grid
+        line = row.line_at(y)
+        left = grid.columns.mapTo(grid, QPoint(x, 0)).x()
+        right = left + grid.columns.handle(1).thickness()
+        if row.splitter() is grid.columns.widget(0):
+            line.setP2(QPoint(left, line.y2()))
+        else:
+            line.setP1(QPoint(right, line.y1()))
+        return line
 
     def cancel(self) -> None:
         self._drag_offset = None
@@ -745,15 +770,24 @@ class ViewGrid(QWidget):
         if any(vp.scene is not self.main.scene for vp in self.extras()):
             self.follow_document()
         self._apply()
+        sync = getattr(self.window(), "on_active_view_changed", None)
+        if sync is not None:      # one view: the Styles are the window's
+            sync()
 
     def set_enabled(self, on: bool) -> None:
         """Four views, or the one."""
         self.set_layout("four" if on else "single")
 
     def set_active_cell(self, cell) -> None:
-        """The view being worked in: its label in the accent colour."""
+        """The view being worked in: its label in the accent colour. The
+        Styles (menu, panel) and the projection buttons show its own."""
+        if cell is self.active_cell():
+            return
         for c in self.cells:
             c.header.set_active(c is cell)
+        sync = getattr(self.window(), "on_active_view_changed", None)
+        if sync is not None:
+            sync()
 
     def active_cell(self):
         return next((c for c in self.cells
@@ -1001,6 +1035,7 @@ class ViewGrid(QWidget):
         for vp in self.extras():
             if vp.scene is not main.scene or vp.history is not main.history:
                 vp.set_document(main.scene, main.history)
+                vp.view_style = None    # another document: its own style
             else:
                 vp.reset_document_caches()
                 vp._edges_version = -1
@@ -1033,7 +1068,8 @@ class ViewGrid(QWidget):
         project going to the back (None before the views exist)."""
         if not self.extras():
             return None
-        return [(c.view, _camera_state(c.viewport.camera))
+        return [(c.view, _camera_state(c.viewport.camera),
+                 c.viewport.view_style)
                 for c in self.cells if c.viewport is not self.main]
 
     def restore(self, state) -> None:
@@ -1049,9 +1085,13 @@ class ViewGrid(QWidget):
                 cam = cell.viewport.camera
                 cam.target = type(main.target)(main.target)
                 cam.distance = max(main.distance, 15.0)
+                cell.viewport.view_style = None
                 cell.show_view(cell.view)
             return
-        for cell, (view, cam) in zip(cells, state):
+        for cell, (view, cam, *rest) in zip(cells, state):
+            # Each view's own style (None: the window's); older states
+            # carried only the view and the camera.
+            cell.viewport.view_style = rest[0] if rest else None
             cell.view = view
             cell._label()
             _apply_camera_state(cell.viewport.camera, cam)

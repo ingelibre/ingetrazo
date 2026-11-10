@@ -83,8 +83,12 @@ class SavedView:
 
     # ---- Snapshot / recall ---------------------------------------------------
     @classmethod
-    def capture(cls, name: str, scene, camera) -> "SavedView":
-        """Snapshot the live camera and the current layer visibility."""
+    def capture(cls, name: str, scene, camera, style=None) -> "SavedView":
+        """Snapshot the live camera and the current layer visibility.
+        ``style``: the one the view shows when it has its own (one of
+        several views); else the scene's."""
+        if style is None:
+            style = getattr(scene, "display_style", None)
         t = camera.target
         return cls(name, target=(t.x(), t.y(), t.z()),
                    distance=camera.distance, yaw=camera.yaw,
@@ -93,8 +97,7 @@ class SavedView:
                    two_point=bool(getattr(camera, "two_point", False)),
                    hidden_layers=[ly.name for ly in scene.layers
                                   if not ly.visible],
-                   style=(scene.display_style.to_dict()
-                          if getattr(scene, "display_style", None) else None),
+                   style=style.to_dict() if style else None,
                    section={
                        "active": (scene.active_section().uid
                                   if scene.active_section() else None),
@@ -115,16 +118,18 @@ class SavedView:
                        "geometry": bool(getattr(scene, "show_hidden_geometry",
                                                 False))})
 
-    def recapture(self, scene, camera) -> None:
+    def recapture(self, scene, camera, style=None) -> None:
         """Update this view in place from the live state (keeps the name
-        and the folder)."""
-        fresh = SavedView.capture(self.name, scene, camera)
+        and the folder). ``style``: as in :meth:`capture`."""
+        fresh = SavedView.capture(self.name, scene, camera, style)
         fresh.folder = self.folder
         self.__dict__.update(fresh.__dict__)
 
-    def apply(self, scene, camera) -> None:
+    def apply(self, scene, camera, put_style=None) -> None:
         """Recall the view: camera first, then the layer-visibility state.
-        The caller bumps ``scene.version`` / repaints (tray convention)."""
+        The caller bumps ``scene.version`` / repaints (tray convention).
+        ``put_style``: where the style goes, for a view with its own (one
+        of several views); else it becomes the scene's."""
         from PySide6.QtGui import QVector3D
         camera.target = QVector3D(*self.target)
         camera.distance = self.distance
@@ -138,7 +143,11 @@ class SavedView:
             ly.visible = ly.name not in hidden
         if self.style:
             from core.style import Style
-            scene.display_style = Style.from_dict(self.style)
+            style = Style.from_dict(self.style)
+            if put_style is not None:
+                put_style(style)
+            else:
+                scene.display_style = style
         if self.section is not None:
             uid = self.section.get("active")
             target = None

@@ -2106,16 +2106,19 @@ class UpdateSceneCommand(Command):
     """Update a scene from the live view, keeping its name; undo gives it
     back what it remembered before (#1158)."""
 
-    def __init__(self, view, camera) -> None:
+    def __init__(self, view, camera, style=None) -> None:
         self.view = view
         self.camera = camera
+        #: The style of the view it is taken from, when that view has its
+        #: own (one of several views, #1306); else the scene's.
+        self.style = style
         self._before: dict = {}
         self._after: Optional[dict] = None
 
     def do(self, scene) -> None:
         self._before = dict(self.view.__dict__)
         if self._after is None:          # redo puts back the same capture
-            self.view.recapture(scene, self.camera)
+            self.view.recapture(scene, self.camera, self.style)
             self._after = dict(self.view.__dict__)
         else:
             self.view.__dict__.update(self._after)
