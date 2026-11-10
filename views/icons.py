@@ -1366,6 +1366,31 @@ def _refresh(p, ink):
     p.drawPolygon(QPolygonF([QPointF(12, 40), QPointF(9, 30), QPointF(19, 32)]))
 
 
+def _tray(p):
+    # An open tray: what a file brings in or takes out.
+    p.setBrush(Qt.NoBrush)
+    p.drawPolyline(QPolygonF([QPointF(9, 28), QPointF(9, 39), QPointF(39, 39),
+                              QPointF(39, 28)]))
+
+
+def _file_import(p, ink):
+    # An arrow coming down into the tray — bring a file in.
+    _tray(p)
+    p.drawLine(QPointF(24, 8), QPointF(24, 29))
+    p.setBrush(ink)
+    p.drawPolygon(QPolygonF([QPointF(16, 22), QPointF(32, 22),
+                             QPointF(24, 32)]))
+
+
+def _file_export(p, ink):
+    # An arrow leaving the tray upwards — write a file out.
+    _tray(p)
+    p.drawLine(QPointF(24, 32), QPointF(24, 14))
+    p.setBrush(ink)
+    p.drawPolygon(QPolygonF([QPointF(16, 18), QPointF(32, 18),
+                             QPointF(24, 8)]))
+
+
 def _export_pdf(p, ink):
     # A page with a folded corner and an arrow leaving it — export.
     p.setBrush(Qt.NoBrush)
@@ -2204,6 +2229,7 @@ _DRAW = {
     "comp_cajetin": _comp_cajetin, "comp_flecha": _comp_flecha,
     "comp_terreno": _comp_terreno,
     "save": _save, "refresh": _refresh, "export_pdf": _export_pdf,
+    "file_import": _file_import, "file_export": _file_export,
     "print_preview": _print_preview,
     "comp_etiqueta": _comp_etiqueta, "comp_perfil": _comp_perfil,
     "comp_nivel": _comp_nivel, "comp_llamada": _comp_llamada,
