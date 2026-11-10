@@ -3373,5 +3373,8 @@
  "Rename Scene": "เปลี่ยนชื่อฉาก",
  "Rename the selected scene": "เปลี่ยนชื่อฉากที่เลือก",
  "Duplicate Scene": "ทำสำเนาฉาก",
- "Make a copy of the selected scene": "สร้างสำเนาของฉากที่เลือก"
+ "Make a copy of the selected scene": "สร้างสำเนาของฉากที่เลือก",
+ "Tabs on top": "แท็บด้านบน",
+ "Tabs on the right, vertical": "แท็บด้านขวา แนวตั้ง",
+ "Panel options": "ตัวเลือกแผง"
 }

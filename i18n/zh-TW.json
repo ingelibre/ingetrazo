@@ -3371,5 +3371,8 @@
  "Rename Scene": "重新命名場景",
  "Rename the selected scene": "重新命名選取的場景",
  "Duplicate Scene": "複製場景",
- "Make a copy of the selected scene": "建立選取場景的副本"
+ "Make a copy of the selected scene": "建立選取場景的副本",
+ "Tabs on top": "頁籤在上方",
+ "Tabs on the right, vertical": "頁籤在右側，直式",
+ "Panel options": "面板選項"
 }

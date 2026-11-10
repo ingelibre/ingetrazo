@@ -3370,5 +3370,8 @@
  "Rename Scene": "장면 이름 바꾸기",
  "Rename the selected scene": "선택한 장면의 이름 바꾸기",
  "Duplicate Scene": "장면 복제",
- "Make a copy of the selected scene": "선택한 장면의 사본 만들기"
+ "Make a copy of the selected scene": "선택한 장면의 사본 만들기",
+ "Tabs on top": "탭을 위에 표시",
+ "Tabs on the right, vertical": "탭을 오른쪽에 세로로 표시",
+ "Panel options": "패널 옵션"
 }

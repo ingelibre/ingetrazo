@@ -3373,5 +3373,8 @@
  "Rename Scene": "ປ່ຽນຊື່ສາກ",
  "Rename the selected scene": "ປ່ຽນຊື່ສາກທີ່ເລືອກ",
  "Duplicate Scene": "ສຳເນົາສາກ",
- "Make a copy of the selected scene": "ສ້າງສຳເນົາຂອງສາກທີ່ເລືອກ"
+ "Make a copy of the selected scene": "ສ້າງສຳເນົາຂອງສາກທີ່ເລືອກ",
+ "Tabs on top": "ແຖບຢູ່ດ້ານເທິງ",
+ "Tabs on the right, vertical": "ແຖບຢູ່ດ້ານຂວາ, ແນວຕັ້ງ",
+ "Panel options": "ຕົວເລືອກແຜງ"
 }

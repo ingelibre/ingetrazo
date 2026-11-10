@@ -3370,5 +3370,8 @@
  "Rename Scene": "Szene umbenennen",
  "Rename the selected scene": "Die ausgewählte Szene umbenennen",
  "Duplicate Scene": "Szene duplizieren",
- "Make a copy of the selected scene": "Eine Kopie der ausgewählten Szene erstellen"
+ "Make a copy of the selected scene": "Eine Kopie der ausgewählten Szene erstellen",
+ "Tabs on top": "Reiter oben",
+ "Tabs on the right, vertical": "Reiter rechts, vertikal",
+ "Panel options": "Bereichsoptionen"
 }

@@ -3405,5 +3405,8 @@
   "Rename Scene": "إعادة تسمية المشهد",
   "Rename the selected scene": "إعادة تسمية المشهد المحدد",
   "Duplicate Scene": "تكرار المشهد",
-  "Make a copy of the selected scene": "إنشاء نسخة من المشهد المحدد"
+  "Make a copy of the selected scene": "إنشاء نسخة من المشهد المحدد",
+  "Tabs on top": "علامات التبويب في الأعلى",
+  "Tabs on the right, vertical": "علامات التبويب على اليمين، عموديًا",
+  "Panel options": "خيارات اللوحات"
 }
