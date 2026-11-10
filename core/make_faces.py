@@ -116,7 +116,7 @@ def _onto_plane(mesh, edges, origin, normal) -> None:
 
 class _Sorted:
     """The loop corners sorted along each axis: the ones inside an edge's
-    box are found by bisecting along the axis where that box is thinnest
+    box are found by bisecting along the axis that leaves fewest of them
     (a line of a plan runs along one axis), not by walking them all — a
     big imported plan has thousands."""
 
@@ -128,10 +128,17 @@ class _Sorted:
             self._by.append(([t[axis] for t in ordered], ordered))
 
     def inside(self, lo, hi):
-        axis = min(range(3), key=lambda i: hi[i] - lo[i])
-        keys, ordered = self._by[axis]
-        i = bisect_left(keys, lo[axis] - _WELD)
-        j = bisect_right(keys, hi[axis] + _WELD)
+        # The axis that leaves the fewest corners to look at — not the one
+        # where the box is thinnest: on a flat plan that is always the
+        # height, where every corner of the plan is "inside".
+        best = None
+        for axis in range(3):
+            keys, ordered = self._by[axis]
+            i = bisect_left(keys, lo[axis] - _WELD)
+            j = bisect_right(keys, hi[axis] + _WELD)
+            if best is None or j - i < best[1] - best[0]:
+                best = (i, j, ordered)
+        i, j, ordered = best
         for t in ordered[i:j]:
             if all(lo[k] - _WELD <= t[k] <= hi[k] + _WELD for k in range(3)):
                 yield t[3]
