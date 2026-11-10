@@ -357,3 +357,82 @@ def test_the_tray_shows_a_surface_as_an_area():
     assert "×" in panel.tree.topLevelItem(1).text(1)
     assert not panel.tree.topLevelItem(1).text(1).endswith("surface")
     win._saved_version = scene.version
+
+
+def _copies(n=40):
+    """``n`` placements of ONE definition (turned, scaled, moved), half of
+    them painted as containers, under one container: what a scatter or a
+    row of chairs is. The definition has a face of its own paint."""
+    proto = _box(0.5, 0.5, 2.0)
+    next(iter(proto.faces)).attrs["color"] = [0.2, 0.6, 0.2]
+    kids = []
+    for i in range(n):
+        m = QMatrix4x4()
+        m.translate(QVector3D(i * 1.5, 0, 0))
+        m.rotate(i * 17.0, 0, 0, 1)
+        m.scale(0.8 + 0.01 * i)
+        k = _part(proto, f"copy {i}", m)
+        if i % 2:
+            k.material = {"color": [0.5, 0.3, 0.1]}
+        kids.append(k)
+    holder = Group(name="scatter")
+    holder.adopt(kids)
+    return holder
+
+
+def test_copies_of_one_definition_are_read_once(monkeypatch):
+    """A container of copies used to read the shared mesh once per copy,
+    for the material and again for the points: 300 copies of a
+    3 000-face tree froze the window ~14 s each time it was selected."""
+    from core import parts
+    holder = _copies(40)
+    calls = {"net": 0}
+    real = type(next(iter(holder.children[0].mesh.faces))).net_area
+
+    def counting(self):
+        calls["net"] += 1
+        return real(self)
+
+    monkeypatch.setattr(type(next(iter(holder.children[0].mesh.faces))),
+                        "net_area", counting)
+    rows = parts.part_rows(holder)
+    assert len(rows) == 40
+    assert calls["net"] == 6                     # one box's faces, once
+
+
+def test_shared_reading_gives_the_rows_reading_one_by_one_gave():
+    from core import parts
+    holder = _copies(12)
+    together = parts.part_rows(holder)
+    alone = [parts.part_row(k) for k in holder.children]
+    for a, b in zip(together, alone):
+        assert a["material"] == b["material"]
+        assert a["size"] == pytest.approx(b["size"], abs=1e-9)
+        assert a["faces"] == b["faces"] == 6
+    # Painted copies show their paint on the default faces; the others
+    # show the definition's own face, the only paint they have.
+    assert together[1]["material"] == "#804c1a"
+    assert together[0]["material"] == "#339933"
+    # And the size follows each copy's scale.
+    assert together[0]["size"][0] == pytest.approx(1.6, abs=1e-6)
+    assert together[10]["size"][0] == pytest.approx(1.8, abs=1e-6)
+
+
+def test_the_tray_reads_a_shared_definition_once_per_refresh(monkeypatch):
+    from core import parts
+    holder = _copies(30)
+    win, scene = _window_with(holder)
+    panel = win.tray.parts
+    seen = []
+    real = parts._mesh_paint_areas
+
+    def spy(mesh, cache=None):
+        seen.append(cache is not None and ("paint", id(mesh)) in cache)
+        return real(mesh, cache)
+
+    monkeypatch.setattr(parts, "_mesh_paint_areas", spy)
+    panel._cache.clear()
+    panel.refresh()
+    assert panel.tree.topLevelItemCount() == 30
+    assert seen.count(False) == 1 and len(seen) == 30
+    win._saved_version = scene.version

@@ -18,18 +18,29 @@ from __future__ import annotations
 from pathlib import PurePath
 
 
-def part_points(part):
+def part_points(part, cache=None):
     """``part``'s vertex positions in its container's coordinates, as an
-    ``(N, 3)`` float64 array (its nested placements included)."""
+    ``(N, 3)`` float64 array (its nested placements included).
+
+    ``cache`` (a dict the caller keeps for ONE pass over a container's
+    parts) holds each mesh's local array, so the copies of a shared
+    definition read its vertices once: a container of 300 copies of a
+    3 000-face tree read them 300 times."""
     import numpy as np
     from core.group import iter_placements
     chunks = []
     for g, m in iter_placements(part):
-        verts = g.mesh.vertices
-        if not verts:
+        key = ("points", id(g.mesh))
+        pos = cache.get(key) if cache is not None else None
+        if pos is None:
+            verts = g.mesh.vertices
+            pos = (np.array([[v.position.x(), v.position.y(), v.position.z()]
+                             for v in verts], dtype=np.float64)
+                   if verts else np.empty((0, 3)))
+            if cache is not None:
+                cache[key] = pos
+        if not len(pos):
             continue
-        pos = np.array([[v.position.x(), v.position.y(), v.position.z()]
-                        for v in verts], dtype=np.float64)
         if m is not None:
             rot = np.array([[m(r, c) for c in range(3)] for r in range(3)])
             pos = pos @ rot.T + np.array([m(0, 3), m(1, 3), m(2, 3)])
@@ -91,41 +102,76 @@ def _material_label(attrs) -> str | None:
     return None
 
 
-def part_material(part) -> str:
+def _mesh_paint_areas(mesh, cache=None):
+    """``(own, default)`` for ``mesh`` in its own coordinates: the net area
+    each material painted on its faces covers, and the net area of the
+    faces left default (they wear their container's paint)."""
+    from core.materials import has_own_material
+    key = ("paint", id(mesh))
+    hit = cache.get(key) if cache is not None else None
+    if hit is not None:
+        return hit
+    own: dict = {}
+    default = 0.0
+    for f in mesh.faces:
+        if has_own_material(f.attrs):
+            label = _material_label(f.attrs)
+            if label:
+                own[label] = own.get(label, 0.0) + f.net_area()
+        else:
+            default += f.net_area()
+    hit = (own, default)
+    if cache is not None:
+        cache[key] = hit
+    return hit
+
+
+def part_material(part, cache=None) -> str:
     """The material covering most of ``part``'s surface ('' when none).
     A default face shows its nearest painted container's paint, as it
-    draws."""
+    draws.
+
+    Areas are read in each mesh's own coordinates (as they always were),
+    so with a ``cache`` kept for one pass the copies of a shared
+    definition are read once: 300 copies of a 3 000-face tree were
+    300 × 3 000 face areas, 14 s with the container selected."""
     from core.group import iter_painted_placements
-    from core.materials import has_own_material
     area: dict = {}
     for g, _m, inherited in iter_painted_placements(part):
-        for f in g.mesh.faces:
-            attrs = f.attrs if has_own_material(f.attrs) else inherited
-            label = _material_label(attrs)
-            if label:
-                # Net: a face's opening covers nothing, so it must not
-                # vote for the material either (#742).
-                area[label] = area.get(label, 0.0) + f.net_area()
+        own, default = _mesh_paint_areas(g.mesh, cache)
+        for label, a in own.items():
+            area[label] = area.get(label, 0.0) + a
+        # Net: a face's opening covers nothing, so it must not vote for
+        # the material either (#742) — _mesh_paint_areas sums net areas.
+        label = _material_label(inherited)
+        if label and default:
+            area[label] = area.get(label, 0.0) + default
     if not area:
         return ""
     return max(area.items(), key=lambda kv: kv[1])[0]
 
 
+def part_row(part, cache=None) -> dict:
+    """``part``'s row: ``{"part", "name", "material", "size", "faces",
+    "hidden"}``. Pass the same ``cache`` (a dict) for every part of one
+    pass, so a definition several parts share is read once."""
+    from core.group import iter_placements
+    return {
+        "part": part,
+        "name": part.name,
+        "material": part_material(part, cache),
+        "size": part_size(part_points(part, cache)),
+        "faces": sum(len(g.mesh.faces) for g, _m in iter_placements(part)),
+        "hidden": bool(getattr(part, "hidden", False)),
+    }
+
+
 def part_rows(container) -> list:
     """One row per part of ``container``: ``{"part", "name", "material",
     "size", "faces"}``, in the container's order."""
-    from core.group import iter_placements
-    rows = []
-    for child in getattr(container, "children", None) or ():
-        rows.append({
-            "part": child,
-            "name": child.name,
-            "material": part_material(child),
-            "size": part_size(part_points(child)),
-            "faces": sum(len(g.mesh.faces) for g, _m in iter_placements(child)),
-            "hidden": bool(getattr(child, "hidden", False)),
-        })
-    return rows
+    cache: dict = {}
+    return [part_row(child, cache)
+            for child in getattr(container, "children", None) or ()]
 
 
 #: Thinner than this, a part is a SURFACE: a skin, a decal, a pane drawn as
