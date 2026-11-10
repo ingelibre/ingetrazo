@@ -402,7 +402,9 @@ def _python_crossings(origin, n, rays, packed, mask, skip) -> list:
 
 def _face_side_state(face, tris_by_face: dict, rng: random.Random,
                      packed: Optional[_PackedTris] = None,
-                     mask=None, skip: Optional[int] = None) -> Optional[str]:
+                     mask=None, skip: Optional[int] = None,
+                     probes: Optional[dict] = None,
+                     all_tris: Optional[dict] = None) -> Optional[str]:
     """Classify ``face`` against the volume bounded by ``tris_by_face`` (the
     current *boundary* faces): ``"outward"`` / ``"inward"`` for a boundary face
     (by which side is empty), ``"interior"`` for a partition with material on
@@ -411,8 +413,20 @@ def _face_side_state(face, tris_by_face: dict, rng: random.Random,
 
     ``packed``/``mask`` (triangles of the boundary set minus this face) let the
     caller reuse one packed array across every face instead of re-listing —
-    the difference between O(F²·T) and O(F·T)."""
-    n = face.normal()
+    the difference between O(F²·T) and O(F·T).
+
+    ``probes`` memoises each face's probe point and normal across the
+    rounds of one pass (no face changes until the flips at its end), and
+    ``all_tris`` hands the probe the triangles the pass already has: a
+    solid of 2000 faces asked for 7900 probes per push, each
+    re-triangulating its face — and the one cap holed by sixty cylinders
+    is 0.1 s of ear clipping every time."""
+    known = probes.get(face) if probes is not None else None
+    if known is not None:
+        n, probe = known
+    else:
+        n = face.normal()
+        probe = None
     if n.length() < 1e-9:
         return None
     if packed is None:
@@ -423,7 +437,11 @@ def _face_side_state(face, tris_by_face: dict, rng: random.Random,
     # wrong for a ring face: it falls in the hole (an annular cap's centroid
     # sits in the tube's channel), and rays cast from the void misclassify
     # the cap. The largest triangle's centroid always lies on material.
-    probe = _interior_probe(face)
+    if probe is None:
+        probe = _interior_probe(
+            face, all_tris.get(face) if all_tris is not None else None)
+        if probes is not None:
+            probes[face] = (n, probe)
     # The region just past the probe along the normal being outside is
     # exactly the normal pointing outward.
     ahead = ray_parity_outside(probe, n, others, rng,
@@ -439,7 +457,7 @@ def _face_side_state(face, tris_by_face: dict, rng: random.Random,
     return "interior" if behind is False else None
 
 
-def _interior_probe(face) -> QVector3D:
+def _interior_probe(face, tris=None) -> QVector3D:
     """A point on the face's solid material.
 
     For a HOLED face the loop centroid falls in the hole (an annular tube cap
@@ -456,7 +474,8 @@ def _interior_probe(face) -> QVector3D:
         # stands — and probing from there read a boundary wall and floor as
         # interior partitions: a closed, correct solid whose volume came out
         # 2.3 m³ short (issue #94). Only then the largest triangle.
-    tris = face.triangulate()
+    if tris is None:
+        tris = face.triangulate()
     if not tris:
         return face.centroid()
     t0, t1, t2 = max(
@@ -595,6 +614,7 @@ def orient_outward(mesh, seed: int = 12345, only=None) -> list:
         scope = [f for f in mesh.faces if comp_of[f] in live_comps]
 
     boundary = dict(all_tris)
+    probes: dict = {}
     for _ in range(4):
         rng = random.Random(seed)
         base_by_comp = _boundary_base(set(boundary))
@@ -604,7 +624,7 @@ def orient_outward(mesh, seed: int = 12345, only=None) -> list:
             sp = sub[c]
             state = _face_side_state(
                 f, boundary, rng, packed=sp, mask=base_by_comp[c],
-                skip=fidx[f])
+                skip=fidx[f], probes=probes, all_tris=all_tris)
             if state == "interior":
                 interior_now.add(f)
         if interior_now == {f for f in scope if f not in boundary}:
@@ -640,7 +660,8 @@ def orient_outward(mesh, seed: int = 12345, only=None) -> list:
         c = comp_of[f]
         sp = sub[c]
         if _face_side_state(f, boundary, rng, packed=sp,
-                            mask=base_by_comp[c], skip=fidx[f]) == "inward":
+                            mask=base_by_comp[c], skip=fidx[f],
+                            probes=probes, all_tris=all_tris) == "inward":
             to_flip.append(f)
     # Through an open mesh (the scoped path above) the flips are checked
     # before they stay: a solid whose shared edges disagree MORE after the

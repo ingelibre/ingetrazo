@@ -652,7 +652,8 @@ def refine_loop_with_points(
 
 
 def classify_push_edge(
-    face: Face, a: QVector3D, b: QVector3D, faces: Iterable[Face]
+    face: Face, a: QVector3D, b: QVector3D, faces: Iterable[Face],
+    memo: Optional[dict] = None,
 ) -> tuple[str, Optional[Face]]:
     """How a push/pull side edge ``a``–``b`` of ``face`` attaches to the model.
 
@@ -667,20 +668,35 @@ def classify_push_edge(
     vertex — the colinear-overlap case). Without this, a block flush against a
     wider wall reads its shared edge as ``free`` and the push becomes a stray
     free extrusion that leaves the base as an internal partition.
+
+    ``memo`` (a dict the caller keeps while it asks about the edges of ONE
+    face against an unchanged model) remembers which faces are coplanar
+    with ``face`` and the edge set of each: a cap holed by sixty cylinders
+    has 2000 edges, and listing them again for each of the 32 edges of a
+    circle pushed on it was a third of the push.
     """
-    fn = face.normal()
+    if memo is None:
+        memo = {}
+    split = memo.get("split")
+    if split is None or split[0] is not face:
+        fn = face.normal()
+        coplanar, others = [], []
+        for g in faces:
+            if g is face:
+                continue
+            (coplanar if _faces_coplanar(fn, g.normal()) else others).append(g)
+        split = memo["split"] = (face, coplanar, others)
+        memo["edges"] = {}
+    _, coplanar, others = split
+    edges = memo["edges"]
     eset = frozenset((_key(a), _key(b)))
-    faces = list(faces)
-    for g in faces:
-        if g is face:
-            continue
-        if _faces_coplanar(fn, g.normal()) and (
-            eset in _face_all_edges(g) or _segment_on_face_boundary(a, b, g)
-        ):
+    for g in coplanar:
+        all_edges = edges.get(g)
+        if all_edges is None:
+            all_edges = edges[g] = _face_all_edges(g)
+        if eset in all_edges or _segment_on_face_boundary(a, b, g):
             return ("coplanar", g)
-    for s in faces:
-        if s is face or _faces_coplanar(fn, s.normal()):
-            continue
+    for s in others:
         if _segment_on_face_boundary(a, b, s):
             return ("perp", s)
     return ("free", None)
