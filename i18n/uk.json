@@ -3352,5 +3352,17 @@
  "A .skp component 10 000 times too big, traced.": "Компонент .skp, який імпортувався в 10 000 разів більшим: причину знайдено.",
  "Thanks as well to all the authors of the extensions catalogue": "Також дякуємо всім авторам каталогу розширень",
  "{n} faces selected — push or pull one of them to move them all": "Вибрано граней: {n} — висуньте або втягніть одну з них, щоб зсунути всі",
- "Pushed {done} of {total} faces — the others would break the solid": "Зсунуто граней: {done} з {total} — решта зруйнувала б тіло"
+ "Pushed {done} of {total} faces — the others would break the solid": "Зсунуто граней: {done} з {total} — решта зруйнувала б тіло",
+ "Make Faces": "Створити грані",
+ "Make the faces that the selected edges close, on those same edges.": "Створює грані, які замикають вибрані ребра, на цих самих ребрах.",
+ "Select the edges of the loops to turn into faces.": "Виберіть ребра контурів, які треба перетворити на грані.",
+ "The selected edges are not on one plane (nor on horizontal planes at different heights): Make Faces only builds flat faces.": "Вибрані ребра не лежать в одній площині (і не на горизонтальних площинах на різній висоті): «Створити грані» будує лише плоскі грані.",
+ "The selected edges close no loop.": "Вибрані ребра не замикають жодного контуру.",
+ "Make Faces: {n} faces made": "Створити грані: створено граней: {n}",
+ "Make Faces: those loops already had their faces": "Створити грані: ці контури вже мали свої грані",
+ "Make Faces: an existing face already covers those loops": "Створити грані: ці контури вже покриває наявна грань",
+ "Create faces from closed planar outlines": "Створити грані із замкнених плоских контурів",
+ "Slower on big drawings. You can also do it later, with the lines selected: Tools ▸ Make Faces.": "Повільніше на великих кресленнях. Це можна зробити й пізніше, вибравши лінії: Інструменти ▸ Створити грані.",
+ "{n} faces made from closed outlines": "Граней створено із замкнених контурів: {n}",
+ "Making faces…": "Створення граней…"
 }

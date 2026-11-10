@@ -3355,5 +3355,17 @@
  "A .skp component 10 000 times too big, traced.": "การตามหาคอมโพเนนต์ .skp ที่ใหญ่เกินไป 10 000 เท่า",
  "Thanks as well to all the authors of the extensions catalogue": "ขอบคุณผู้สร้างทุกท่านในแคตตาล็อกส่วนขยายด้วย",
  "{n} faces selected — push or pull one of them to move them all": "เลือก {n} หน้า — กดหรือดึงหน้าใดหน้าหนึ่งเพื่อย้ายทั้งหมด",
- "Pushed {done} of {total} faces — the others would break the solid": "กด/ดึงแล้ว {done} จาก {total} หน้า — หน้าที่เหลือจะทำให้วัตถุเสียหาย"
+ "Pushed {done} of {total} faces — the others would break the solid": "กด/ดึงแล้ว {done} จาก {total} หน้า — หน้าที่เหลือจะทำให้วัตถุเสียหาย",
+ "Make Faces": "สร้างระนาบ",
+ "Make the faces that the selected edges close, on those same edges.": "สร้างระนาบที่ขอบที่เลือกปิดล้อมไว้ บนขอบเหล่านั้นเอง",
+ "Select the edges of the loops to turn into faces.": "เลือกขอบของรูปปิดที่ต้องการทำเป็นระนาบ",
+ "The selected edges are not on one plane (nor on horizontal planes at different heights): Make Faces only builds flat faces.": "ขอบที่เลือกไม่ได้อยู่บนระนาบเดียวกัน (และไม่ได้อยู่บนระนาบแนวนอนที่ความสูงต่างกัน): สร้างระนาบสร้างได้เฉพาะระนาบเรียบ",
+ "The selected edges close no loop.": "ขอบที่เลือกไม่ได้ปิดล้อมรูปใดเลย",
+ "Make Faces: {n} faces made": "สร้างระนาบ: สร้าง {n} ระนาบแล้ว",
+ "Make Faces: those loops already had their faces": "สร้างระนาบ: รูปปิดเหล่านั้นมีระนาบอยู่แล้ว",
+ "Make Faces: an existing face already covers those loops": "สร้างระนาบ: มีระนาบเดิมครอบคลุมรูปปิดเหล่านั้นอยู่แล้ว",
+ "Create faces from closed planar outlines": "สร้างระนาบจากรูปปิดที่อยู่บนระนาบเดียว",
+ "Slower on big drawings. You can also do it later, with the lines selected: Tools ▸ Make Faces.": "ช้าลงเมื่อแบบมีขนาดใหญ่ ทำภายหลังก็ได้โดยเลือกเส้นแล้วไปที่ เครื่องมือ ▸ สร้างระนาบ",
+ "{n} faces made from closed outlines": "สร้าง {n} ระนาบจากรูปปิดแล้ว",
+ "Making faces…": "กำลังสร้างระนาบ…"
 }

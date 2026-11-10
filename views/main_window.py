@@ -1059,6 +1059,18 @@ class MainWindow(QMainWindow):
         self._act_bridge.triggered.connect(self._on_bridge)
         self.toolbars["modify"].addAction(self._act_bridge)
         self._icon_actions.append((self._act_bridge, "bridge"))
+        # Make Faces: the faces the selected edges close, in place (lines
+        # imported from a drawing file come in without them). A one-shot
+        # command beside Bridge, the other one that builds faces.
+        self._act_make_faces = QAction(tool_icon("make_faces"),
+                                       tr("Make Faces"), self)
+        self._act_make_faces.setStatusTip(tr(
+            "Make the faces that the selected edges close, on those same "
+            "edges."))
+        set_tooltip(self._act_make_faces, tr("Make Faces"))
+        self._act_make_faces.triggered.connect(self._on_make_faces)
+        self.toolbars["modify"].addAction(self._act_make_faces)
+        self._icon_actions.append((self._act_make_faces, "make_faces"))
 
         # Save, first on the Main bar (the composer's Sheet bar has had it
         # since the start; Marco, 2026-09-14: «el icono de guardar también en
@@ -1790,6 +1802,7 @@ class MainWindow(QMainWindow):
                 # Bridge (issue #614), with the tools that build faces
                 # out of others: the Modify toolbar's own action.
                 tools_menu.addAction(self._act_bridge)
+                tools_menu.addAction(self._act_make_faces)
             tools_menu.addSeparator()
         # Tools ▸ Outer Shell, and Tools ▸ Solid Tools ▸ the rest.
         tools_menu.addAction(self._tool_actions["outer_shell"])
@@ -4972,6 +4985,8 @@ class MainWindow(QMainWindow):
                 texm.addAction(tr("Reset Position"), self._on_texture_reset)
         if self._bridgeable(sel):
             menu.addAction(tr("Bridge"), self._on_bridge)
+        if self._makes_faces(sel):
+            menu.addAction(tr("Make Faces"), self._on_make_faces)
         if has_mesh or has_group:
             # Flip Along ▸ Red / Green / Blue: a mirror in place about the
             # selection's centre in one click, the way modelling tutorials
@@ -5539,6 +5554,53 @@ class MainWindow(QMainWindow):
         self.viewport.update()
         self.viewport.flash_status(
             tr("Bridge: {n} faces added", n=len(result)), 3000)
+
+    @staticmethod
+    def _makes_faces(sel) -> bool:
+        """Whether the right-click menu offers Make Faces: three selected
+        edges at least, the fewest that close a loop. Counted, not
+        walked: every right-click asks, and Ctrl+A may hold the model."""
+        edges = 0
+        for e in sel:
+            if isinstance(e, Edge):
+                edges += 1
+                if edges >= 3:
+                    return True
+        return False
+
+    @_repeatable("Make Faces")
+    def _on_make_faces(self) -> None:
+        """Make Faces (core/make_faces.py): the faces the selected edges
+        close, on those edges, in one undo step. The faces end up
+        selected, ready for Push/Pull."""
+        from core.history import SnapshotMutation
+        from core.make_faces import (MakeFacesError, make_faces, plan,
+                                     selected_edges)
+        scene = self.viewport.scene
+        edges = selected_edges(scene.mesh, scene.selection)
+        try:
+            plan(edges)
+        except MakeFacesError as err:
+            self.viewport.flash_status(tr(str(err)), 4000)
+            return
+        cam = getattr(self.viewport, "camera", None)
+        eye = cam.eye() if cam is not None and hasattr(cam, "eye") else None
+        result: dict = {}
+        self.viewport.history.execute(SnapshotMutation(
+            lambda sc: result.update(make_faces(sc.mesh, edges, eye))))
+        faces = [f for f in result.get("faces", ()) if f in scene.mesh.faces]
+        scene.selection.clear()
+        scene.selection.update(faces)
+        scene.version += 1
+        self.viewport.update()
+        if result.get("new"):
+            msg = tr("Make Faces: {n} faces made", n=result["new"])
+        elif faces:
+            msg = tr("Make Faces: those loops already had their faces")
+        else:
+            msg = tr("Make Faces: an existing face already covers those "
+                     "loops")
+        self.viewport.flash_status(msg, 3000)
 
     def _on_flip_along(self, axis: str) -> None:
         """Right-click ▸ Flip Along ▸ Red / Green / Blue (issue #178)."""
@@ -9105,16 +9167,18 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, tr("Import DXF failed"), str(exc))
             return False
         suggested, _code = suggest_unit_scale(doc)
-        scale = self._dxf_unit(shown, suggested)
-        if scale is None:
+        options = self._dxf_options(shown, suggested)
+        if options is None:
             return False
+        scale, make_faces = options
         dlg, cb = self._import_progress(tr("Importing {name}…",
                                            name=shown.name))
         stats: dict = {}
 
         def load(scene):
             stats.update(load_dxf(scene, path, progress=cb, scale=scale,
-                                  doc=doc, name=shown.stem))
+                                  doc=doc, name=shown.stem,
+                                  make_faces=make_faces))
 
         cmd = self._run_import(
             load, dlg, (tr("Import DWG failed") if label is not None
@@ -9133,6 +9197,9 @@ class MainWindow(QMainWindow):
         msg = tr("Imported {name}: {edges} edges in {groups} tagged groups",
                  name=shown.name, edges=stats.get("edges", 0),
                  groups=stats.get("groups", 0))
+        if make_faces:
+            msg += "  ·  " + tr("{n} faces made from closed outlines",
+                                n=stats.get("outline_faces", 0))
         msg += self._survey_note(stats.get("offset"))
         self.statusBar().showMessage(msg, 8000)
         return True
@@ -9151,11 +9218,16 @@ class MainWindow(QMainWindow):
             text += "\n\n" + tr("Left out: {kinds}", kinds=kinds)
         return text
 
-    def _dxf_unit(self, path, header_scale=None) -> "float | None":
-        """Confirm the drawing's unit. The header's declaration (when there
-        is one) arrives preselected; without one, the last answer does —
-        importing a batch from one office is Enter, Enter, Enter."""
-        from PySide6.QtWidgets import QInputDialog
+    def _dxf_options(self, path, header_scale=None
+                     ) -> "tuple[float, bool] | None":
+        """``(scale, make_faces)`` for a drawing, or ``None`` if cancelled.
+        The header's declaration of the unit (when there is one) arrives
+        preselected; without one, the last answer does, and the last answer
+        about faces too — importing a batch from one office is Enter, Enter,
+        Enter. Faces start off (#1109): the classic CAD linework, and the
+        speed on big drawings, unless asked for."""
+        from PySide6.QtWidgets import (QCheckBox, QComboBox, QDialog,
+                                       QDialogButtonBox, QVBoxLayout)
 
         keys = ["mm", "cm", "m", "in", "ft"]
         factors = {"mm": 0.001, "cm": 0.01, "m": 1.0,
@@ -9166,15 +9238,33 @@ class MainWindow(QMainWindow):
         last = (by_scale.get(header_scale)
                 or str(QSettings().value("import/dxf_unit", "mm") or "mm"))
         idx = keys.index(last) if last in keys else 0
-        label, ok = QInputDialog.getItem(
-            self, tr("Import DXF"),
-            tr("What unit is this drawing in? (CAD headers often lie)"),
-            labels, idx, False)
-        if not ok:
+        dlg = QDialog(self)
+        dlg.setWindowTitle(tr("Import DXF"))
+        lay = QVBoxLayout(dlg)
+        lay.addWidget(QLabel(
+            tr("What unit is this drawing in? (CAD headers often lie)")))
+        combo = QComboBox(dlg)
+        combo.addItems(labels)
+        combo.setCurrentIndex(idx)
+        lay.addWidget(combo)
+        faces = QCheckBox(tr("Create faces from closed planar outlines"), dlg)
+        faces.setToolTip(tr("Slower on big drawings. You can also do it "
+                            "later, with the lines selected: Tools ▸ Make "
+                            "Faces."))
+        faces.setChecked(QSettings().value("import/dxf_make_faces", False,
+                                           type=bool))
+        lay.addWidget(faces)
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.Ok | QDialogButtonBox.Cancel, dlg)
+        buttons.accepted.connect(dlg.accept)
+        buttons.rejected.connect(dlg.reject)
+        lay.addWidget(buttons)
+        if dlg.exec() != QDialog.Accepted:
             return None
-        key = keys[labels.index(label)]
+        key = keys[combo.currentIndex()]
         QSettings().setValue("import/dxf_unit", key)
-        return factors[key]
+        QSettings().setValue("import/dxf_make_faces", faces.isChecked())
+        return factors[key], faces.isChecked()
 
     def _on_import_photomesh(self) -> None:
         """Import a WebODM/ODM photogrammetric survey as georeferenced reference

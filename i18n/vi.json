@@ -3379,5 +3379,17 @@
  "A .skp component 10 000 times too big, traced.": "Truy ra một thành phần .skp lớn gấp 10 000 lần.",
  "Thanks as well to all the authors of the extensions catalogue": "Xin cảm ơn tất cả tác giả trong danh mục tiện ích mở rộng",
  "{n} faces selected — push or pull one of them to move them all": "Đã chọn {n} mặt — đẩy hoặc kéo một mặt để di chuyển tất cả",
- "Pushed {done} of {total} faces — the others would break the solid": "Đã đẩy {done} trên {total} mặt — các mặt còn lại sẽ làm hỏng khối rắn"
+ "Pushed {done} of {total} faces — the others would break the solid": "Đã đẩy {done} trên {total} mặt — các mặt còn lại sẽ làm hỏng khối rắn",
+ "Make Faces": "Tạo mặt",
+ "Make the faces that the selected edges close, on those same edges.": "Tạo các mặt mà các cạnh đã chọn khép kín, ngay trên chính các cạnh đó.",
+ "Select the edges of the loops to turn into faces.": "Hãy chọn các cạnh của đường bao muốn biến thành mặt.",
+ "The selected edges are not on one plane (nor on horizontal planes at different heights): Make Faces only builds flat faces.": "Các cạnh đã chọn không nằm trên cùng một mặt phẳng (cũng không nằm trên các mặt phẳng ngang ở độ cao khác nhau): Tạo mặt chỉ tạo mặt phẳng.",
+ "The selected edges close no loop.": "Các cạnh đã chọn không khép kín đường bao nào.",
+ "Make Faces: {n} faces made": "Tạo mặt: đã tạo {n} mặt",
+ "Make Faces: those loops already had their faces": "Tạo mặt: các đường bao đó đã có mặt",
+ "Make Faces: an existing face already covers those loops": "Tạo mặt: một mặt hiện có đã phủ các đường bao đó",
+ "Create faces from closed planar outlines": "Tạo mặt từ các đường bao phẳng khép kín",
+ "Slower on big drawings. You can also do it later, with the lines selected: Tools ▸ Make Faces.": "Chậm hơn với bản vẽ lớn. Bạn cũng có thể làm sau, khi đã chọn các đường: Công cụ ▸ Tạo mặt.",
+ "{n} faces made from closed outlines": "Đã tạo {n} mặt từ các đường bao khép kín",
+ "Making faces…": "Đang tạo mặt…"
 }
