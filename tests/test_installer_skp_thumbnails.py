@@ -64,3 +64,39 @@ def test_handler_is_searched_in_progid_extension_and_system_associations():
 
 def test_an_upgrade_does_not_take_its_own_progid_as_the_source():
     assert "CompareText(PreviousSkpProgId, SkpProgId) = 0" in _section("Code")
+
+
+# ---- Uninstall hands .skp back (issue #1268) --------------------------------
+
+def test_the_previous_opener_is_read_from_the_root_the_install_writes():
+    """HKCR shows both roots merged; the uninstaller deletes only its own."""
+    code = _section("Code")
+    capture = code[code.index("CurStep = ssInstall"):
+                   code.index("CurStep = ssPostInstall")]
+    assert "RegQueryStringValue(HKA, SkpClassKey, '', PreviousOwnRootProgId)" in capture
+    assert r"SkpClassKey = 'Software\Classes\.skp'" in code
+
+
+def test_it_is_written_down_only_when_skp_is_taken_and_was_someone_elses():
+    code = _section("Code")
+    keep = code[code.index("WizardIsTaskSelected('skpdefault')"):
+                code.index("procedure CurUninstallStepChanged")]
+    assert "CompareText(PreviousOwnRootProgId, SkpProgId) <> 0" in keep
+    assert ("RegWriteStringValue(HKA, SkpOwnKey, PreviousValueName, "
+            "PreviousOwnRootProgId)") in keep
+
+
+def test_uninstall_reads_it_before_the_key_goes_and_writes_it_back_after():
+    code = _section("Code")
+    un = code[code.index("procedure CurUninstallStepChanged"):]
+    assert un.index("usUninstall then") < un.index("usPostUninstall then")
+    before = un[un.index("usUninstall then"):un.index("usPostUninstall then")]
+    after = un[un.index("usPostUninstall then"):]
+    assert "RegQueryStringValue(HKA, SkpOwnKey, PreviousValueName, ProgIdToRestore)" in before
+    assert "RegWriteStringValue(HKA, SkpClassKey, '', ProgIdToRestore)" in after
+
+
+def test_a_choice_made_since_is_left_alone():
+    code = _section("Code")
+    after = code[code.index("usPostUninstall then"):]
+    assert "(Current = '') or (CompareText(Current, SkpProgId) = 0)" in after
