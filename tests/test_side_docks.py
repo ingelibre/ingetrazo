@@ -102,7 +102,12 @@ def test_the_tab_under_the_pointer_names_its_tray():
     bar = next(tb for tb in win._dock_tab_bars() if tb.isVisible()
                and win.rect().contains(tb.mapTo(win, QPoint(0, 0))))
     i = next(i for i in range(bar.count()) if bar.tabText(i) == "BIM")
+    # With the Scenes tab in the row (#1158) BIM can sit past the end of a
+    # narrow tray, behind the scroll arrows: scrolled into sight first.
+    bar.setCurrentIndex(i)
+    _app.processEvents()
     centre = bar.tabRect(i).center()
+    assert bar.rect().contains(centre)
     pos = bar.mapTo(win, centre)
     assert win._dock_tab_at(pos) is win.bim_tray
     _close(win)

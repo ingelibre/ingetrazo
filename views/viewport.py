@@ -2335,6 +2335,11 @@ class Viewport(QOpenGLWidget):
         prev_size = self._fbo_size
         view_shadow = None
         self.makeCurrent()
+        from PySide6.QtGui import QOpenGLContext
+        if QOpenGLContext.currentContext() is None:
+            # The widget's context is not up yet (asked for a picture before
+            # its first frame): an FBO made with no context current crashes.
+            return None
         try:
             self._export_size = (width_px, height_px)
             self._export_transparent = transparent
