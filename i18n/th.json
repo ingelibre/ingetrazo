@@ -3593,5 +3593,12 @@
  "Make a copy of the selected scene": "สร้างสำเนาของฉากที่เลือก",
  "Tabs on top": "แท็บด้านบน",
  "Tabs on the right, vertical": "แท็บด้านขวา แนวตั้ง",
- "Panel options": "ตัวเลือกแผง"
+ "Panel options": "ตัวเลือกแผง",
+ "Set where north lies: click a centre, then click toward north. The sun's shadows turn with it.": "กำหนดทิศเหนือ: คลิกจุดศูนย์กลาง แล้วคลิกไปทางทิศเหนือ เงาของดวงอาทิตย์จะหมุนตาม",
+ "North: {a}": "ทิศเหนือ: {a}",
+ "Click the centre of the compass.": "คลิกจุดศูนย์กลางของเข็มทิศ",
+ "Click toward north, or type the degrees from the green axis.": "คลิกไปทางทิศเหนือ หรือพิมพ์องศาจากแกนสีเขียว",
+ "Where true north lies, in degrees clockwise from the green (Y) axis. The shadows turn with it; the model does not move.": "ตำแหน่งทิศเหนือจริง เป็นองศาตามเข็มนาฬิกาจากแกนสีเขียว (Y) เงาจะหมุนตาม แต่โมเดลไม่ขยับ",
+ "On screen": "บนหน้าจอ",
+ "Tools ▸ North: click a centre, then click toward north.": "เครื่องมือ ▸ ทิศเหนือ: คลิกจุดศูนย์กลาง แล้วคลิกไปทางทิศเหนือ"
 }

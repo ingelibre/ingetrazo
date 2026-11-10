@@ -3591,5 +3591,12 @@
   "Make a copy of the selected scene": "Създаване на копие на избраната сцена",
   "Tabs on top": "Раздели отгоре",
   "Tabs on the right, vertical": "Раздели вдясно, вертикално",
-  "Panel options": "Настройки на панелите"
+  "Panel options": "Настройки на панелите",
+  "Set where north lies: click a centre, then click toward north. The sun's shadows turn with it.": "Посочете къде е север: щракнете център, после към севера. Сенките от слънцето се завъртат с него.",
+  "North: {a}": "Север: {a}",
+  "Click the centre of the compass.": "Щракнете центъра на компаса.",
+  "Click toward north, or type the degrees from the green axis.": "Щракнете към севера или въведете градусите от зелената ос.",
+  "Where true north lies, in degrees clockwise from the green (Y) axis. The shadows turn with it; the model does not move.": "Къде е истинският север, в градуси по часовниковата стрелка от зелената ос (Y). Сенките се завъртат с него; моделът не се мести.",
+  "On screen": "На екрана",
+  "Tools ▸ North: click a centre, then click toward north.": "Инструменти ▸ Север: щракнете център, после към севера."
 }

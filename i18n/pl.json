@@ -3598,5 +3598,12 @@
  "Make a copy of the selected scene": "Utwórz kopię zaznaczonej sceny",
  "Tabs on top": "Karty u góry",
  "Tabs on the right, vertical": "Karty po prawej, pionowo",
- "Panel options": "Opcje paneli"
+ "Panel options": "Opcje paneli",
+ "Set where north lies: click a centre, then click toward north. The sun's shadows turn with it.": "Wskaż, gdzie jest północ: kliknij środek, a potem w stronę północy. Cienie słońca obracają się razem z nią.",
+ "North: {a}": "Północ: {a}",
+ "Click the centre of the compass.": "Kliknij środek kompasu.",
+ "Click toward north, or type the degrees from the green axis.": "Kliknij w stronę północy lub wpisz stopnie od zielonej osi.",
+ "Where true north lies, in degrees clockwise from the green (Y) axis. The shadows turn with it; the model does not move.": "Gdzie leży północ geograficzna, w stopniach zgodnie z ruchem wskazówek zegara od zielonej osi (Y). Cienie obracają się razem z nią; model się nie przesuwa.",
+ "On screen": "Na ekranie",
+ "Tools ▸ North: click a centre, then click toward north.": "Narzędzia ▸ Północ: kliknij środek, a potem w stronę północy."
 }

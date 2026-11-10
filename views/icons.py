@@ -1355,6 +1355,19 @@ def _comp_norte(p, ink):
     p.drawPolygon(poly)
 
 
+def _north(p, ink):
+    """Tools ▸ North: a compass circle, its arrow in the accent colour
+    pointing up, and the N above it."""
+    p.setBrush(Qt.NoBrush)
+    p.drawEllipse(QPointF(24, 28), 12, 12)
+    p.setBrush(_accent())
+    p.drawPolygon(QPolygonF([QPointF(24, 15), QPointF(28.5, 30),
+                             QPointF(24, 27), QPointF(19.5, 30)]))
+    p.setBrush(Qt.NoBrush)
+    p.drawPolyline(QPolygonF([QPointF(20, 11), QPointF(20, 3),
+                              QPointF(28, 11), QPointF(28, 3)]))
+
+
 def _comp_leyenda(p, ink):
     for i, y in enumerate((12, 24, 36)):
         p.drawRect(8, y - 3, 6, 6)
@@ -2470,6 +2483,7 @@ _DRAW = {
     "undo": _undo, "redo": _redo,
     "text": _text, "text3d": _text3d,
     "eraser": _eraser, "tape": _tape, "protractor": _protractor,
+    "north": _north,
     "section": _section,
     "styles": _styles_icon, "shadows": _shadows_icon,
     "panel_properties": _panel_properties, "panel_bim": _panel_bim,
@@ -2581,6 +2595,7 @@ _CURSOR_HOTSPOTS = {
     "eraser": (15, 31),             # the middle of the rubber's accent end
     "tape": (10, 28),               # the tape's end hook (now at the left)
     "protractor": (24, 24),         # the protractor's vertex
+    "north": (24, 28),              # the compass centre
     "orbit": (24, 24),              # camera navigation (wheel-drag / modes)
     "pan": (24, 24),
     "zoom": (21, 21),               # the magnifier's lens centre

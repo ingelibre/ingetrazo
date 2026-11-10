@@ -3591,5 +3591,12 @@
  "Make a copy of the selected scene": "复制所选场景",
  "Tabs on top": "标签页在顶部",
  "Tabs on the right, vertical": "标签页在右侧（竖排）",
- "Panel options": "面板选项"
+ "Panel options": "面板选项",
+ "Set where north lies: click a centre, then click toward north. The sun's shadows turn with it.": "设置北方：单击一个中心点，再朝北单击。太阳阴影随之旋转。",
+ "North: {a}": "北: {a}",
+ "Click the centre of the compass.": "单击指南针的中心。",
+ "Click toward north, or type the degrees from the green axis.": "朝北单击，或输入相对绿色轴的度数。",
+ "Where true north lies, in degrees clockwise from the green (Y) axis. The shadows turn with it; the model does not move.": "真北的方向，以绿色 (Y) 轴为起点顺时针计算的度数。阴影随之旋转，模型不移动。",
+ "On screen": "在屏幕上",
+ "Tools ▸ North: click a centre, then click toward north.": "工具 ▸ 北: 单击一个中心点，再朝北单击。"
 }
