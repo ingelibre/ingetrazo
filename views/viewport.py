@@ -9842,7 +9842,12 @@ class Viewport(QOpenGLWidget):
         styles = model_line_styles(scene)
         if not styles:
             return []
-        key = (scene.version, tuple(sorted(styles.items())))
+        # The document's version, not the view's: picking something moves
+        # ``scene.version`` too, and every click on a model with dashed
+        # layers walked all its edges and cut them into dashes again (a
+        # second per click with 24 000 of them).
+        key = (id(scene), scene.content_version,
+               tuple(sorted(styles.items())))
         memo = getattr(self, "_model_lines_cache", None)
         if memo is not None and memo[0] == key:
             return memo[1]
