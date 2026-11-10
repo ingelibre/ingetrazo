@@ -982,6 +982,14 @@ class AsistentePanel(QWidget):
             return
         self._local_warm = True
         text = ai.strip_thoughts(msg["text"])
+        if not text.strip():
+            # Nothing to read (an empty reply, or only a <thinking> block):
+            # kept, it made Anthropic refuse every request after it with
+            # HTTP 400 (#1266). Say so and stop; «continue» asks again.
+            self._append(tr('The model sent an empty reply — type '
+                            '"continue" to ask again.'), "err")
+            self._finish()
+            return
         self._convo.append({"role": "assistant", "text": text})
         self._append(text, "ai")
         code = ai.extract_code(text)

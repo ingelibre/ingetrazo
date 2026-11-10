@@ -3356,5 +3356,6 @@
  "The Bulgarian translation.": "Болгарський переклад.",
  "The Traditional Chinese translation.": "Переклад традиційною китайською.",
  "A .skp component 10 000 times too big, traced.": "Знайдений компонент .skp, у 10 000 разів завеликий.",
- "Thanks as well to all the authors of the extensions catalogue": "Дякуємо також усім авторам каталогу розширень"
+ "Thanks as well to all the authors of the extensions catalogue": "Дякуємо також усім авторам каталогу розширень",
+ "The model sent an empty reply — type \"continue\" to ask again.": "Модель надіслала порожню відповідь — введіть \"continue\", щоб запитати ще раз."
 }

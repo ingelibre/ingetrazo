@@ -3349,5 +3349,6 @@
  "The Bulgarian translation.": "ブルガリア語翻訳。",
  "The Traditional Chinese translation.": "繁体字中国語翻訳。",
  "A .skp component 10 000 times too big, traced.": "10 000 倍大きすぎる .skp コンポーネントの原因究明。",
- "Thanks as well to all the authors of the extensions catalogue": "拡張機能カタログのすべての作者にも感謝します"
+ "Thanks as well to all the authors of the extensions catalogue": "拡張機能カタログのすべての作者にも感謝します",
+ "The model sent an empty reply — type \"continue\" to ask again.": "モデルから空の応答が返されました — もう一度尋ねるには \"continue\" と入力してください。"
 }

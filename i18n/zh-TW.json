@@ -3350,5 +3350,6 @@
  "The Bulgarian translation.": "保加利亞文翻譯。",
  "The Traditional Chinese translation.": "繁體中文翻譯。",
  "A .skp component 10 000 times too big, traced.": "追查出一個大了 10 000 倍的 .skp 元件。",
- "Thanks as well to all the authors of the extensions catalogue": "同樣感謝擴充功能目錄的所有作者"
+ "Thanks as well to all the authors of the extensions catalogue": "同樣感謝擴充功能目錄的所有作者",
+ "The model sent an empty reply — type \"continue\" to ask again.": "模型傳回了空白回覆 — 輸入 \"continue\" 重新提問。"
 }

@@ -14,5 +14,6 @@
   "Could not check for updates. Check your internet connection and try again.": "Could not check for updates. Check your internet connection and try again.",
   "You have the latest version ({version}).": "You have the latest version ({version}).",
  "Transparent background": "Transparent background",
- "Only PNG images keep transparency.": "Only PNG images keep transparency."
+ "Only PNG images keep transparency.": "Only PNG images keep transparency.",
+ "The model sent an empty reply — type \"continue\" to ask again.": "The model sent an empty reply — type \"continue\" to ask again."
 }
