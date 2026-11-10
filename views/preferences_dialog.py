@@ -1044,6 +1044,7 @@ class PreferencesDialog(QDialog):
         if self._rust.isEnabled() and rust != str(
                 _gs.value(_native.SETTING, _native.DEFAULT, st)):
             _gs.set_value(_native.SETTING, rust, st)
+            _native.chosen_by_user(st)
             QMessageBox.information(
                 self, tr("Rust engine"),
                 tr("Restart IngeTrazo to switch the engine."))
