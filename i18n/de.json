@@ -3350,5 +3350,9 @@
  "The Bulgarian translation.": "Die bulgarische Übersetzung.",
  "The Traditional Chinese translation.": "Die traditionell-chinesische Übersetzung.",
  "A .skp component 10 000 times too big, traced.": "Eine 10 000-mal zu große .skp-Komponente, aufgespürt.",
- "Thanks as well to all the authors of the extensions catalogue": "Danke auch allen Autoren des Erweiterungskatalogs"
+ "Thanks as well to all the authors of the extensions catalogue": "Danke auch allen Autoren des Erweiterungskatalogs",
+ "Text gap": "Textabstand",
+ "Gap between the dimension line and its text, on paper. (Separation moves the line away from the measured points.)": "Abstand zwischen Maßlinie und Text, auf dem Papier. („Abstand“ oben rückt die Linie von den gemessenen Punkten ab.)",
+ "Flip text direction": "Leserichtung umkehren",
+ "Turns the text half a turn so it reads the other way along the line — a vertical dimension read from the right instead of from the left. The text stays on the same side.": "Dreht den Text um eine halbe Umdrehung, sodass er entlang der Linie andersherum gelesen wird — ein senkrechtes Maß von rechts statt von links gelesen. Der Text bleibt auf derselben Seite."
 }

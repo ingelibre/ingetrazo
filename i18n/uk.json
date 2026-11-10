@@ -3350,5 +3350,9 @@
  "The Bulgarian translation.": "Переклад болгарською.",
  "The Traditional Chinese translation.": "Переклад традиційною китайською.",
  "A .skp component 10 000 times too big, traced.": "Компонент .skp, який імпортувався в 10 000 разів більшим: причину знайдено.",
- "Thanks as well to all the authors of the extensions catalogue": "Також дякуємо всім авторам каталогу розширень"
+ "Thanks as well to all the authors of the extensions catalogue": "Також дякуємо всім авторам каталогу розширень",
+ "Text gap": "Відступ тексту",
+ "Gap between the dimension line and its text, on paper. (Separation moves the line away from the measured points.)": "Відстань між розмірною лінією та її текстом на папері. («Відступ» вище відсуває лінію від виміряних точок.)",
+ "Flip text direction": "Перевернути напрямок тексту",
+ "Turns the text half a turn so it reads the other way along the line — a vertical dimension read from the right instead of from the left. The text stays on the same side.": "Повертає текст на пів оберту, щоб він читався в інший бік уздовж лінії — вертикальний розмір читається справа, а не зліва. Текст залишається з того ж боку."
 }

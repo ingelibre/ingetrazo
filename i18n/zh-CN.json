@@ -3351,5 +3351,9 @@
  "The Bulgarian translation.": "保加利亚语翻译。",
  "The Traditional Chinese translation.": "繁体中文翻译。",
  "A .skp component 10 000 times too big, traced.": "追查出一个大了 10 000 倍的 .skp 组件。",
- "Thanks as well to all the authors of the extensions catalogue": "同样感谢扩展目录的所有作者"
+ "Thanks as well to all the authors of the extensions catalogue": "同样感谢扩展目录的所有作者",
+ "Text gap": "文字间距",
+ "Gap between the dimension line and its text, on paper. (Separation moves the line away from the measured points.)": "尺寸线与其文字之间在图纸上的距离。（“分离”是让尺寸线远离测量点。）",
+ "Flip text direction": "翻转文字方向",
+ "Turns the text half a turn so it reads the other way along the line — a vertical dimension read from the right instead of from the left. The text stays on the same side.": "将文字旋转半圈，使其沿尺寸线反向阅读——竖向尺寸从右侧而不是左侧阅读。文字仍在同一侧。"
 }

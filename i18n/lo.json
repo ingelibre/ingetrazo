@@ -3353,5 +3353,9 @@
  "The Bulgarian translation.": "ການແປເປັນພາສາບັນແກເຣຍ.",
  "The Traditional Chinese translation.": "ການແປເປັນພາສາຈີນຕົວເຕັມ.",
  "A .skp component 10 000 times too big, traced.": "ການຕິດຕາມຫາອົງປະກອບ .skp ທີ່ໃຫຍ່ເກີນໄປ 10 000 ເທົ່າ.",
- "Thanks as well to all the authors of the extensions catalogue": "ຂອບໃຈຜູ້ຂຽນທຸກທ່ານໃນແຄັດຕາລັອກສ່ວນຂະຫຍາຍນຳອີກ"
+ "Thanks as well to all the authors of the extensions catalogue": "ຂອບໃຈຜູ້ຂຽນທຸກທ່ານໃນແຄັດຕາລັອກສ່ວນຂະຫຍາຍນຳອີກ",
+ "Text gap": "ໄລຍະຫ່າງຂໍ້ຄວາມ",
+ "Gap between the dimension line and its text, on paper. (Separation moves the line away from the measured points.)": "ໄລຍະຫ່າງລະຫວ່າງເສັ້ນບອກຂະໜາດ ແລະ ຂໍ້ຄວາມຂອງມັນ ເທິງເຈ້ຍ. (ໄລຍະຫ່າງດ້ານເທິງຍ້າຍເສັ້ນອອກຈາກຈຸດທີ່ວັດ.)",
+ "Flip text direction": "ປີ້ນທິດທາງຂໍ້ຄວາມ",
+ "Turns the text half a turn so it reads the other way along the line — a vertical dimension read from the right instead of from the left. The text stays on the same side.": "ໝຸນຂໍ້ຄວາມເຄິ່ງຮອບ ເພື່ອໃຫ້ອ່ານໄປອີກທາງໜຶ່ງຕາມເສັ້ນ — ຂະໜາດແນວຕັ້ງອ່ານຈາກດ້ານຂວາແທນດ້ານຊ້າຍ. ຂໍ້ຄວາມຍັງຢູ່ດ້ານເດີມ."
 }
