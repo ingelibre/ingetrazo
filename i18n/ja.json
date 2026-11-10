@@ -891,6 +891,8 @@
  "Rectangle needs two sides — pick the opposite corner": "長方形には2辺が必要です — 対角の角を指定してください",
  "in group": "グループ内",
  "in component": "コンポーネント内",
+ "outside the group": "グループ外",
+ "outside the component": "コンポーネント外",
  "Arc midpoint": "円弧の中点",
  "Component origin": "コンポーネントの原点",
  "Tangent at vertex": "頂点で接する方向",

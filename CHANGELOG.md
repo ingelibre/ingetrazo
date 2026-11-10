@@ -6,6 +6,19 @@ follow [SemVer](https://semver.org).
 
 ## [Unreleased]
 
+### Arreglado
+
+- **Dentro de un grupo o componente, lo de fuera vuelve a engancharse.** La
+  malla suelta de la raíz —lo que no está agrupado— salía del índice de
+  selección al abrir un contexto: se dibujaba atenuada, pero sus esquinas y
+  aristas no ofrecían «Punto final», «Punto medio» ni «En cara», y tampoco
+  tapaban lo que quedaba detrás. Ahora es una referencia más (sin poder
+  seleccionarse), y las caras de los demás componentes también dan «En cara»
+  desde dentro: mover o dibujar dentro de un componente se alinea con el
+  resto del modelo. El aviso del cursor lo dice —«Punto final fuera del
+  componente», «En cara fuera del grupo»— en vez del ambiguo «en
+  componente». Con «Ocultar el resto del modelo» sigue sin ofrecerse.
+
 ## [0.6.1] — 2026-11-08
 
 **Vistas en la misma pestaña: una, dos, tres o cuatro, con líneas que se

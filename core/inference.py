@@ -176,7 +176,9 @@ class InferenceEngine:
         else:
             if self._hover_edge is not None:
                 self._acquired_edge = self._hover_edge
-            face, _g = vp.pick_face_placement(px, py)
+            pick = (getattr(vp, "pick_face_inference", None)
+                    or vp.pick_face_placement)
+            face, _g = pick(px, py)
             if face is not None:
                 from core.snap import face_plane_world
                 self._acquired_face_normal = face_plane_world(
@@ -187,7 +189,9 @@ class InferenceEngine:
         what a direction lock meets as «constrained on plane». ``ref`` is the
         cursor's own point on the face, where the dotted guide starts."""
         vp = self.viewport
-        face, owner = vp.pick_face_placement(px, py)
+        pick = (getattr(vp, "pick_face_inference", None)
+                or vp.pick_face_placement)
+        face, owner = pick(px, py)
         if face is None:
             return None
         from core.snap import face_plane_world
@@ -254,6 +258,8 @@ class InferenceEngine:
             hover_lock_plane=lock_plane,
             are_occluded=None if _no_snap_fast() else vp._occluded_many,
             face_under_cursor=vp._still_face_under(px_x, px_y),
+            face_context=(vp._face_context_under(px_x, px_y)
+                          if hasattr(vp, "_face_context_under") else None),
             edge_threshold_px=vp.edge_snap_threshold_px,
             magnetic_axis_deg=getattr(tool, "magnetic_axis_deg", None),
             screen_axis_px=getattr(tool, "screen_axis_px", None),

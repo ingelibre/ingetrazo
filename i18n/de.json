@@ -896,6 +896,8 @@
  "Rectangle needs two sides — pick the opposite corner": "Das Rechteck benötigt zwei Seiten — wähle die gegenüberliegende Ecke",
  "in group": "in Gruppe",
  "in component": "in Komponente",
+ "outside the group": "außerhalb der Gruppe",
+ "outside the component": "außerhalb der Komponente",
  "Arc midpoint": "Bogenmittelpunkt",
  "Component origin": "Komponentenursprung",
  "Tangent at vertex": "Tangente am Eckpunkt",

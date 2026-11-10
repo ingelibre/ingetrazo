@@ -897,6 +897,8 @@
   "Rectangle needs two sides — pick the opposite corner": "За правоъгълника са необходими две страни — посочете срещуположния ъгъл",
   "in group": "в група",
   "in component": "в компонент",
+  "outside the group": "извън групата",
+  "outside the component": "извън компонента",
   "Arc midpoint": "Средна точка на дъгата",
   "Component origin": "Начало на координатната система на компонента",
   "Tangent at vertex": "Допирателна във върха",

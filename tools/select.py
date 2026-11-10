@@ -108,7 +108,13 @@ def _box_loose_fast(viewport, rect, crossing):
         return None
     mask = _seg_rect_mask(ax, ay, bx, by, ok, rect, crossing)
     sel = viewport.scene.entity_selectable
+    # What the context lets a click take. The index also carries the rest of
+    # the model's loose edges (a reference while a group is open); those are
+    # drawn faded and must not be caught by the box.
+    pick_ok = getattr(idx, "edge_sel", None)
     hit_idx = np.where(mask)[0]
+    if pick_ok is not None:
+        hit_idx = hit_idx[pick_ok[hit_idx]]
     edges = [edges_all[int(i)] for i in hit_idx
              if sel(edges_all[int(i)])
              and not getattr(edges_all[int(i)], "hidden", False)]

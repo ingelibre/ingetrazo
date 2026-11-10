@@ -877,6 +877,8 @@
  "Rectangle needs two sides — pick the opposite corner": "Persegi panjang membutuhkan dua sisi — pilih sudut yang berseberangan",
  "in group": "dalam grup",
  "in component": "dalam komponen",
+ "outside the group": "di luar grup",
+ "outside the component": "di luar komponen",
  "Arc midpoint": "Titik tengah busur",
  "Component origin": "Titik asal komponen",
  "Tangent at vertex": "Singgung di titik sudut",

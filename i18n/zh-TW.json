@@ -896,6 +896,8 @@
  "Rectangle needs two sides — pick the opposite corner": "矩形需要兩個邊 — 請選取對角",
  "in group": "在群組中",
  "in component": "在元件中",
+ "outside the group": "在群組外",
+ "outside the component": "在元件外",
  "Arc midpoint": "圓弧中點",
  "Component origin": "元件原點",
  "Tangent at vertex": "頂點切線",

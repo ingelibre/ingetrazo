@@ -971,6 +971,8 @@
   "Rectangle needs two sides — pick the opposite corner": "يحتاج المستطيل إلى ضلعين — اختر الزاوية المقابلة",
   "in group": "في المجموعة",
   "in component": "في المكون",
+  "outside the group": "خارج المجموعة",
+  "outside the component": "خارج المكون",
   "Arc midpoint": "نقطة المنتصف القوسية",
   "Component origin": "أصل المكون",
   "Tangent at vertex": "مماس عند رأس المنحنى",
