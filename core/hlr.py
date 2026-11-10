@@ -297,7 +297,8 @@ def solid_depth(ring, tris, normal) -> float | None:
     return reach[0] + reach[1]
 
 
-def section_loops(cut_edges, tol: float | None = None) -> list:
+def section_loops(cut_edges, tol: float | None = None,
+                  members: list | None = None) -> list:
     """Chain the plane∩triangle chords of a section cut into CLOSED loops —
     the outlines of the solids the plane slices through, i.e. the areas a
     drafter fills with poché. Returns a list of (M, 3) arrays in world
@@ -308,7 +309,10 @@ def section_loops(cut_edges, tol: float | None = None) -> list:
     a chain that dead-ends (an open surface: a lone wall face, a roof
     without walls) is dropped rather than filled — a section fill would
     leak on those, we prefer to leave them white. Nested rings (a
-    hollow wall, a pipe) are the caller's even-odd fill rule."""
+    hollow wall, a pipe) are the caller's even-odd fill rule.
+
+    ``members``, a list handed in, receives for each ring returned the
+    rows of ``cut_edges`` it was chained from."""
     if not len(cut_edges):
         return []
     E = np.asarray(cut_edges, dtype=np.float64).reshape(-1, 2, 3)
@@ -341,6 +345,7 @@ def section_loops(cut_edges, tol: float | None = None) -> list:
 
     adj: dict = {}
     chords: list = []
+    rows: list = []                     # chord → its row of cut_edges
     for k in range(len(E)):
         a = node_of(E[k, 0])
         b = node_of(E[k, 1])
@@ -348,6 +353,7 @@ def section_loops(cut_edges, tol: float | None = None) -> list:
             continue                    # a triangle touching the plane at a point
         idx = len(chords)
         chords.append((a, b))
+        rows.append(k)
         adj.setdefault(a, []).append(idx)
         adj.setdefault(b, []).append(idx)
     used = [False] * len(chords)
@@ -358,6 +364,7 @@ def section_loops(cut_edges, tol: float | None = None) -> list:
         a0, b0 = chords[start]
         used[start] = True
         ring = [a0, b0]
+        walked = [start]
         cur, prev_chord = b0, start
         closed = False
         while True:
@@ -369,6 +376,7 @@ def section_loops(cut_edges, tol: float | None = None) -> list:
             if nxt is None:
                 break
             used[nxt] = True
+            walked.append(nxt)
             x, y = chords[nxt]
             cur = y if x == cur else x
             prev_chord = nxt
@@ -379,7 +387,49 @@ def section_loops(cut_edges, tol: float | None = None) -> list:
         if closed and len(ring) >= 3:
             loops.append(np.asarray([nodes[i] for i in ring],
                                     dtype=np.float64))
+            if members is not None:
+                members.append([rows[c] for c in walked])
     return loops
+
+
+def closing_tags(cut_edges, cut_tags) -> list:
+    """``cut_tags`` with each chord given the layer of the ring it closes.
+
+    Rings are chained one layer at a time, so that a wall's cut takes the
+    wall's fill and the door's beside it its own. But a solid is not always
+    of one layer — a wall with one face moved to another — and then neither
+    layer's chords close by themselves: the wall lost its fill altogether.
+    The chords that close no ring within their own layer are chained
+    together, whatever their layers, and each ring found that way goes to
+    the layer most of its outline belongs to."""
+    tags = list(cut_tags)
+    if len(set(tags)) < 2:
+        return tags
+    E = np.asarray(cut_edges, dtype=np.float64).reshape(-1, 2, 3)
+    by_tag: dict = {}
+    for k, tag in enumerate(tags):
+        by_tag.setdefault(tag, []).append(k)
+    loose: list = []
+    for tag, idx in by_tag.items():
+        closed: list = []
+        section_loops(E[idx], members=closed)
+        inside = {j for ring in closed for j in ring}
+        loose.extend(k for j, k in enumerate(idx) if j not in inside)
+    if not loose or len({tags[k] for k in loose}) < 2:
+        return tags
+    mixed: list = []
+    section_loops(E[loose], members=mixed)
+    for ring in mixed:
+        length: dict = {}
+        for j in ring:
+            k = loose[j]
+            length[tags[k]] = length.get(tags[k], 0.0) + float(
+                np.linalg.norm(E[k, 1] - E[k, 0]))
+        # The most outline; names break a tie so the answer is one.
+        winner = max(sorted(length, key=str), key=lambda t: length[t])
+        for j in ring:
+            tags[loose[j]] = winner
+    return tags
 
 
 # ── The exact visibility kernel ─────────────────────────────────────────────
@@ -1021,7 +1071,8 @@ def hlr_drawing(scene, camera, geometry=None, profiles: bool = True,
             # Chained one layer at a time: each solid closes on its own, so
             # its ring takes its layer's fill.
             by_tag: dict = {}
-            for edge, tag in zip(cut_edges, cut_tags):
+            for edge, tag in zip(cut_edges,
+                                 closing_tags(cut_edges, cut_tags)):
                 by_tag.setdefault(tag, []).append(edge)
             rings = [(ring, tag) for tag, edges in by_tag.items()
                      for ring in section_loops(edges)]
