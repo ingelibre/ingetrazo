@@ -2095,6 +2095,35 @@ def _position_camera(p, ink):
                              QPointF(23, 44)]))
 
 
+def _camera_settings(p, ink):
+    # Camera Settings: the camera body with its lens in the accent, and
+    # under it two slider lines with their knobs — the camera by numbers.
+    top = QPainterPath()
+    top.moveTo(15, 9)
+    top.lineTo(18, 4)
+    top.lineTo(28, 4)
+    top.lineTo(31, 9)
+    p.setPen(_rpen(ink, 2.6))
+    p.setBrush(Qt.NoBrush)
+    p.drawPath(top)
+    body = QPainterPath()
+    body.addRoundedRect(QRectF(7, 9, 32, 19), 3.5, 3.5)
+    p.setPen(_rpen(ink, 2.8))
+    p.drawPath(body)
+    acc = _accent()
+    p.setPen(_rpen(ink, 2.6))
+    p.setBrush(QColor(acc.red(), acc.green(), acc.blue(), 210))
+    p.drawEllipse(QPointF(23, 18.5), 5.6, 5.6)
+    p.setPen(_rpen(ink, 2.4))
+    p.setBrush(Qt.NoBrush)
+    p.drawLine(QPointF(7, 35), QPointF(39, 35))
+    p.drawLine(QPointF(7, 42), QPointF(39, 42))
+    p.setPen(Qt.NoPen)
+    p.setBrush(acc)
+    p.drawEllipse(QPointF(15, 35), 3.4, 3.4)
+    p.drawEllipse(QPointF(30, 42), 3.4, 3.4)
+
+
 def _walk(p, ink):
     # Walk: two footprints stepping forward up the icon, the leading one in
     # the accent — the camera advances as you walk.
@@ -2508,6 +2537,7 @@ _DRAW = {
     "section_fill": _section_fill,
     "zoom": _zoom, "zoom_window": _zoom_window,
     "position_camera": _position_camera, "walk": _walk,
+    "camera_settings": _camera_settings,
     "look_around": _look_around, "first_person": _first_person,
     "four_views": _four_views, "close": _close,
     "zoom_extents": _zoom_extents, "zoom_selection": _zoom_selection,

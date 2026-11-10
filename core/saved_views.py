@@ -25,7 +25,7 @@ class SavedView:
                  fov_deg: float = 45.0, perspective: bool = True,
                  two_point: bool = False, hidden_layers=None, style=None, section=None,
                  georef=None, shadows=None, hidden_objects=None,
-                 hidden_shown=None, folder=None) -> None:
+                 hidden_shown=None, folder=None, lens=None) -> None:
         self.name = name
         #: The folder of the Scenes tab the scene is filed under, or
         #: ``None`` at the top (core.scene_folders, #1158). Only organises
@@ -80,6 +80,11 @@ class SavedView:
         #: (``{"objects": bool, "geometry": bool}``); scenes keep
         #: both. ``None`` = hands-off.
         self.hidden_shown = dict(hidden_shown) if hidden_shown else None
+        #: The camera's lens beyond the field of view — frame shift, roll,
+        #: clipping, frame shape (``OrbitCamera.lens_dict``). ``{}`` is an
+        #: ordinary lens, and recalling it takes off whatever lens the view
+        #: had before: every scene stands on its own, like sections.
+        self.lens = dict(lens) if lens else {}
 
     # ---- Snapshot / recall ---------------------------------------------------
     @classmethod
@@ -95,6 +100,8 @@ class SavedView:
                    pitch=camera.pitch, fov_deg=camera.fov_deg,
                    perspective=camera.perspective,
                    two_point=bool(getattr(camera, "two_point", False)),
+                   lens=(camera.lens_dict()
+                         if hasattr(camera, "lens_dict") else None),
                    hidden_layers=[ly.name for ly in scene.layers
                                   if not ly.visible],
                    style=style.to_dict() if style else None,
@@ -118,6 +125,21 @@ class SavedView:
                        "geometry": bool(getattr(scene, "show_hidden_geometry",
                                                 False))})
 
+    def take_camera(self, camera) -> None:
+        """Keep ``camera`` as this scene's camera — and nothing else: the
+        layers, style, section and hidden objects it remembers stay as they
+        are (Camera Settings editing a scene)."""
+        t = camera.target
+        self.target = (t.x(), t.y(), t.z())
+        self.distance = float(camera.distance)
+        self.yaw = float(camera.yaw)
+        self.pitch = float(camera.pitch)
+        self.fov_deg = float(camera.fov_deg)
+        self.perspective = bool(camera.perspective)
+        self.two_point = bool(getattr(camera, "two_point", False))
+        if hasattr(camera, "lens_dict"):
+            self.lens = camera.lens_dict()
+
     def recapture(self, scene, camera, style=None) -> None:
         """Update this view in place from the live state (keeps the name
         and the folder). ``style``: as in :meth:`capture`."""
@@ -138,6 +160,8 @@ class SavedView:
         camera.fov_deg = self.fov_deg
         camera.perspective = self.perspective
         camera.two_point = self.two_point
+        if hasattr(camera, "apply_lens"):
+            camera.apply_lens(self.lens)
         hidden = set(self.hidden_layers)
         for ly in scene.layers:
             ly.visible = ly.name not in hidden
@@ -189,6 +213,8 @@ class SavedView:
             entry["parallel"] = True
         if self.two_point:
             entry["two_point"] = True
+        if self.lens:
+            entry["lens"] = dict(self.lens)
         if self.hidden_layers:
             entry["hidden_layers"] = list(self.hidden_layers)
         if self.style:
@@ -226,7 +252,9 @@ class SavedView:
                    hidden_objects=raw.get("hidden_objects"),
                    hidden_shown=raw.get("hidden_shown"),
                    folder=(raw.get("folder")
-                           if isinstance(raw.get("folder"), str) else None))
+                           if isinstance(raw.get("folder"), str) else None),
+                   lens=(raw.get("lens")
+                         if isinstance(raw.get("lens"), dict) else None))
 
 
 def apply_shadow_state(scene, raw: dict) -> None:

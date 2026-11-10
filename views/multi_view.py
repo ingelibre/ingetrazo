@@ -60,6 +60,8 @@ def _camera_state(cam) -> dict:
     out = {"target": (t.x(), t.y(), t.z())}
     for k in _CAMERA_FIELDS:
         out[k] = getattr(cam, k)
+    if hasattr(cam, "lens_dict"):
+        out["lens"] = cam.lens_dict()
     return out
 
 
@@ -69,6 +71,8 @@ def _apply_camera_state(cam, state: dict) -> None:
     for k in _CAMERA_FIELDS:
         if k in state:
             setattr(cam, k, state[k])
+    if hasattr(cam, "apply_lens") and "lens" in state:
+        cam.apply_lens(state["lens"])
 
 
 #: The view's name as a small label over its top-left corner (not a strip
