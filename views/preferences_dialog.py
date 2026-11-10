@@ -66,6 +66,12 @@ _DEFAULTS_NOTE = (
     "they are.")
 
 
+def graphics_server_applies(platform: str | None = None) -> bool:
+    """Whether choosing the display server means anything here: on Linux."""
+    import sys
+    return (platform or sys.platform).startswith("linux")
+
+
 class PreferencesDialog(QDialog):
     def __init__(self, window) -> None:
         super().__init__(window)
@@ -295,7 +301,15 @@ class PreferencesDialog(QDialog):
             "125 % / 150 % display scale the viewport stutters; X11 "
             "(XWayland) draws smoothly and stays crisp. Takes effect at the "
             "next start."))
-        form.addRow(tr("Graphics server:"), self._platform)
+        # Wayland or X11 is a question only Linux asks: on Windows and
+        # macOS the row spoke of KDE and XWayland to someone with neither
+        # (#1179). The box is still made — reading and saving go through
+        # it — only not shown.
+        if graphics_server_applies():
+            form.addRow(tr("Graphics server:"), self._platform)
+        else:
+            self._platform.setParent(general)
+            self._platform.hide()
 
         # The Rust engine (core._native): on by default, read
         # once at start. Greyed out in a build that does not carry it.
