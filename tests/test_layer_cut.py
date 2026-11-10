@@ -32,6 +32,18 @@ from core.section import SectionPlane
 V = QVector3D
 
 
+@pytest.fixture(autouse=True)
+def _pointer_out_of_the_way():
+    """The picker's preview follows the pointer, and the pointer stays
+    wherever the last test that clicked left it — on a pattern, as likely
+    as not, when a picker opens there."""
+    from PySide6.QtGui import QCursor, QGuiApplication
+    screen = QGuiApplication.primaryScreen()
+    if screen is not None:
+        QCursor.setPos(screen.geometry().bottomRight())
+    yield
+
+
 def _box(m, x0, y0, z0, x1, y1, z1):
     """A closed axis-aligned box of six faces."""
     m.add_face([V(x0, y0, z0), V(x1, y0, z0), V(x1, y1, z0), V(x0, y1, z0)])
@@ -2098,8 +2110,22 @@ def test_a_click_on_a_style_cell_selects_the_layer_being_edited(win,
 
 
 
-def test_the_picker_shows_at_once_without_the_menu_effects(win,
-                                                            monkeypatch):
+@pytest.fixture
+def menu_effects():
+    """The application's menu effects as the test found them: left on, the
+    next menu a test opens in this process fades in and is not yet visible
+    when it is asked."""
+    from PySide6.QtCore import Qt
+    from PySide6.QtWidgets import QApplication
+    kinds = (Qt.UI_General, Qt.UI_FadeMenu, Qt.UI_AnimateMenu)
+    was = [QApplication.isEffectEnabled(k) for k in kinds]
+    yield
+    for k, on in zip(kinds, was):
+        QApplication.setEffectEnabled(k, on)
+
+
+def test_the_picker_shows_at_once_without_the_menu_effects(win, monkeypatch,
+                                                            menu_effects):
     """No fade or slide while it opens — its shadow would show first, alone
     — and the effects back for every other menu once it is up."""
     from PySide6.QtCore import Qt
@@ -3493,3 +3519,75 @@ def test_an_open_cell_of_a_honeycomb_bond_is_closed_on_both_sides():
     assert inside                                     # cells to look at
     for left, right in inside:
         assert left in uprights and right in uprights
+
+
+# ---- A solid of two layers; picking with dashed layers ---------------------
+
+def _wall_with_a_face_elsewhere(scene):
+    scene = _wall_and_door(scene)
+    scene.layers.append(Layer("Revestimiento"))
+    wall = scene.groups[0]
+    side = next(f for f in wall.mesh.faces
+                if all(abs(v.y()) < 1e-9 for v in f.vertices))
+    L.assign_layer(side, "Revestimiento")
+    return scene
+
+
+def test_a_solid_with_a_face_on_another_layer_keeps_its_cut():
+    """The rings are chained layer by layer, and neither the wall's three
+    sides nor the one moved to another layer close alone: the wall had no
+    fill at all. It closes whole, and is the layer of most of its outline."""
+    scene = _wall_with_a_face_elsewhere(Scene())
+    cam = _top_camera(scene)
+    plain = hlr_drawing(scene, cam, profiles=False)
+    d = hlr_drawing(scene, cam, profiles=False, layers=True)
+    assert len(plain.loops) == 3
+    assert len(d.loops) == 3
+    assert sorted(d.loop_layers) == sorted(
+        ["Muros", "Carpinterías", DEFAULT_LAYER])
+
+
+def test_the_model_cut_fills_a_solid_of_two_layers():
+    from core.section import layer_fills
+    scene = _wall_with_a_face_elsewhere(Scene())
+    scene.layer("Muros").hatch = "solid"
+    scene.layer("Muros").hatch_color = (0.6, 0.1, 0.1)
+    chords, tags = _model_cut(scene)
+    assert "Revestimiento" in set(tags)
+    fills = layer_fills(chords, tags, scene.active_section().normal, scene,
+                        (0.35, 0.37, 0.41))
+    wall = [f for f in fills if f[1] == (0.6, 0.1, 0.1)]
+    assert len(wall) == 1
+    area = sum(0.5 * float(np.linalg.norm(np.cross(t[1] - t[0], t[2] - t[0])))
+               for t in np.asarray(wall[0][0], dtype=np.float64))
+    assert abs(area - 4 * 0.3) < 1e-6                    # the whole wall
+
+
+def test_solids_each_of_one_layer_are_tagged_as_they_were():
+    from core.hlr import closing_tags
+    scene = _wall_and_door(Scene())
+    chords, tags = _model_cut(scene)
+    assert closing_tags(chords, tags) == list(tags)
+
+
+def test_picking_does_not_dash_the_model_again(win, monkeypatch):
+    """A click moves the scene's version (the view's caches follow it); the
+    dashes of the layers' line types follow the document's."""
+    from core import hlr
+    vp = win.viewport
+    scene = _gas_scene(vp.scene)
+    scene.version += 1
+    walked = []
+    real = hlr.collect_geometry
+    monkeypatch.setattr(
+        hlr, "collect_geometry",
+        lambda *a, **k: walked.append(1) or real(*a, **k))
+    groups = vp._model_linetype_edges()
+    assert len(walked) == 1
+    scene.select([scene.groups[0]])
+    scene.clear_selection()
+    assert vp._model_linetype_edges() is groups
+    assert len(walked) == 1
+    scene.version += 1                                   # the model changed
+    assert vp._model_linetype_edges() is not groups
+    assert len(walked) == 2

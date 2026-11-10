@@ -407,11 +407,12 @@ def layer_fills(chords, tags, normal, scene, color,
     sheet)."""
     import numpy as np
     from core.hatches import hatch_lines
-    from core.hlr import section_loops
+    from core.hlr import closing_tags, section_loops
     from core.layers import cut_hatch_forms, cut_hatches, hatch_ground_rgb,         hatch_ink_rgb
     if chords is None or not len(chords):
         return []
-    tags = np.asarray(tags, dtype=object)
+    # A solid of more than one layer is filled as the layer of most of it.
+    tags = np.asarray(closing_tags(chords, tags), dtype=object)
     hatches = cut_hatches(scene)
     forms = cut_hatch_forms(scene, scale_n)
     u, v = _sheet_basis(normal)
