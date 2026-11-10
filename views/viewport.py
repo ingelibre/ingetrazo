@@ -11260,14 +11260,14 @@ class Viewport(QOpenGLWidget):
                 # Once started, the plane goes through the first point and
                 # keeps the one shown before the click, so it must not turn
                 # unreachable toward the horizon either.
-                through_origin = (
+                anchored = (
                     getattr(tool, "start_point", None) is not None
                     or (QVector3D(plane_point) - axes.origin()).length() < 1e-5)
                 principal = any(
                     abs(QVector3D.dotProduct(normal, axes.axis(name))) > 0.999
                     for name in ("x", "y", "z")
                 )
-                allow_planar_grazing = through_origin and principal
+                allow_planar_grazing = anchored and principal
         hit = self._ray_plane(
             origin, direction, plane_point, plane_normal,
             allow_grazing=allow_planar_grazing)
@@ -12057,7 +12057,7 @@ class Viewport(QOpenGLWidget):
         for ref in reversed(refs):
             plane = tool.locked_work_plane(ref)
             if plane is None:
-                return None
+                continue
             hit = self._ray_hit_plane(cursor, plane)
             if hit is None:
                 continue
