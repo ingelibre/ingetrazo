@@ -6,6 +6,120 @@ follow [SemVer](https://semver.org).
 
 ## [Unreleased]
 
+**Exportar la vista como SVG con caras, colores, texturas y sombras, diez
+veces más rápido en modelos grandes y con una barra para cancelar; la
+herramienta Norte y los ajustes de cámara; el motor Rust hace las caras del
+SVG, la triangulación y las líneas por capa; peso y trama de corte por capa;
+escenas con carpetas y miniaturas, pestañas de iconos y el tema Pizarra;
+secciones que se arrastran sin tirones; y decenas de arreglos.**
+
+### Añadido
+
+- **Exportar la vista como SVG en capas** (#1331, @canalsecuario-blip; cierra
+  #332): las caras bajo las líneas, con sus colores, texturas y sombras del
+  sol, una capa por capa del modelo, en una hoja o al tamaño de la pantalla,
+  con vista previa. *Cómo probarlo:* Archivo ▸ Exportar vista actual como SVG.
+- **Barra de progreso con Cancelar** al exportar o previsualizar el SVG de un
+  modelo grande: la ventana sigue respondiendo y se puede desistir; un
+  modelo chico nunca la ve.
+- **Herramienta Norte** (#1330, @canalsecuario-blip): Herramientas ▸ Norte
+  (Mayús+N) orienta el norte real, y con él las sombras del sol, dibujándolo
+  sobre el modelo con una brújula. Manual en `docs/north.md`.
+- **Cámara ▸ Ajustes de cámara** (#1332, @canalsecuario-blip): distancia
+  focal sobre un sensor elegido, desplazamiento de lente, giro, recorte y
+  encuadre; la lente se escribe con Zoom.
+- **Peso y trama de corte por capa** (#1100, @canalsecuario-blip; cierra #926
+  y #281): en las láminas, en el DXF y en la vista 3D.
+- **Escenas** como pestaña propia del panel lateral, con carpetas y
+  miniaturas (#1297, #1158, @canalsecuario-blip), y como acciones de la
+  ventana: añadir, actualizar, eliminar, mostrar, renombrar y duplicar (#695).
+- **Tema Pizarra**, Oscuro y Claro renovados e iconos más finos (#1292,
+  @canalsecuario-blip); los paneles siguen el cambio de tema.
+- **Pestañas de iconos** en los paneles laterales, con el nombre en un
+  globo y arriba del panel, un engranaje con sus opciones y pestañas que
+  pueden ir en vertical (#1142, #1140, @canalsecuario-blip).
+- **Varias vistas**: cada una con su estilo, proyección y escena; lupa de
+  Zoom ventana y Zoom a selección en todas; una vista estándar va a la vista
+  pulsada (#1307, #1306, @canalsecuario-blip).
+- **Crear caras**: comando nuevo y opción al importar DXF/DWG (#1143, #1109,
+  @canalsecuario-blip); miles de contornos sueltos ya no congelan la ventana.
+- **Empujar/Tirar con varias caras seleccionadas** a la vez, cada una por su
+  normal (#1298, @canalsecuario-blip).
+- **Círculos guía analíticos** (#1031, #238, @pacaeiro): Ctrl en la
+  herramienta Círculo dibuja una guía circular perfecta, con enganche al
+  centro, al borde, a cuadrantes, tangentes e intersecciones.
+- **Enganche «Centro de cara»** (#736, @canalsecuario-blip): el centro de
+  área de cada cara, descontados los agujeros.
+- **Cotas de lámina**: etiqueta debajo o volteada, separación del texto,
+  enganche a líneas y arreglos de selección (#1249, @BastelBaus); crear y
+  enganchar cotas sobre aristas (#933, #478, @BastelBaus).
+- **Exportar todas las láminas a PDF desde la línea de órdenes**, sin
+  ventana (#1055, @BastelBaus).
+- **Texto 3D**: el cuadro de texto muestra la fuente, negrita y cursiva
+  elegidas (#1309, #1017, @canalsecuario-blip).
+- **Centímetros** como unidad lista al arrancar (#1284, #1216) y
+  **Preferencias con Ctrl+,** (#1285), @canalsecuario-blip.
+- **Ucraniano**: cadenas que faltaban y correcciones (#1295, @bolotov).
+
+### Cambiado
+
+- **Motor Rust**: las caras visibles del SVG, su geometría, la triangulación
+  de las caras y las líneas por capa ya se calculan en Rust, con el camino
+  Python detrás. La plaza de prueba (1 035 objetos) exporta su vista en
+  planta en 17 s en vez de 170; abre en 5 s en vez de 10. Dos diferencias
+  queridas: una cara vista de canto (más fina que una micra) no se dibuja, y
+  una cara oculta dentro de un componente ya no tapa líneas en las láminas
+  por capa, como en pantalla.
+- **Secciones**: arrastrar un plano por su flecha ya no vuelve a medir el
+  modelo en cada movimiento, mover un plano es una edición del documento y
+  no del modelo, y el primer corte lee las capas sin construir las mallas
+  diferidas (eran 140 s de los 153 del primer corte de un modelo grande).
+- **Cortes en el compositor**: un sólido de dos capas conserva su corte y
+  picar algo no vuelve a trazar las líneas del modelo (#1100).
+- **Instalador de Windows**: al desinstalar, los `.skp` vuelven al programa
+  que los abría (#1268), y las miniaturas se toman del programa anterior
+  aunque ya haya otra instalación de IngeTrazo.
+- **Pestañas de proyecto y escenas** tan altas como las de iconos; el
+  compositor reclama Ctrl+C/X/V antes que los atajos de la ventana.
+- **Gestor de extensiones**: descarga las miniaturas del catálogo y las
+  renueva si cambian (#1296).
+- **Preferencia «Servidor gráfico»** solo en Linux (#1179).
+
+### Arreglado
+
+- **Empujar/Tirar y dibujar sobre un sólido con muchos rasgos** preguntan al
+  modelo una vez; una cara que no puede ir toda la distancia se queda donde
+  estaba; mover una curva sobre la de abajo hace una rampa, y una cara de
+  1 mm se encuentra bajo el cursor (#1294).
+- **Orientación**: una piel cerrada enrollada en un sentido se decide con
+  pocas caras.
+- **Herramientas planas**: bloqueo por flechas, cerca del horizonte y en
+  ángulo rasante (#1171, @pacaeiro); el primer clic conserva el plano.
+- **Enganche a grupos y componentes bloqueados** (#1250, @APBureauEtude).
+- **Borrar la arista de un agujero** quita el agujero en vez de dejarlo
+  colgando (#1291, #1191, @tony1233200).
+- **SKP**: cotas y textos con línea guía dentro de grupos (#1288, #1226,
+  @tony1233200).
+- **Autoguardado** respeta la variable APPDATA del proceso en Windows (#1286,
+  #1180); **cerrar** antes o durante la apertura inicial (#1289, #1269); el
+  **selector de color de Qt** traducido (#1290, #1178); @tony1233200.
+- **BIM**: el volumen de un conjunto de caras se mide desde el conjunto, no
+  desde el origen (#1264, #1221, @tony1233200).
+- **Bandeja de piezas**: una definición compartida se lee una vez, no una por
+  copia (#1237, @vicc3d); **el terreno 3D** se conserva en el documento
+  (#1238, @vicc3d).
+- **Invertir una cara dentro de un componente** se ve igual al salir (#1153).
+- **Láminas**: la lista de elementos ya no se cierra tras un clic derecho; un
+  punto a lo largo de una arista también engancha (#1219); la lista de
+  estilos de un marco muestra los guardados después de abrirlo (#1310,
+  #1283).
+- **Asistente de IA**: nunca envía un bloque de texto vacío (#1266).
+- **Círculo**: la pista en español cabe en una pantalla de 1366 px; un
+  archivo con círculos guía abre en una versión sin ellos.
+- **Imagen PNG**: vuelve a empezar con fondo opaco; la casilla de fondo
+  transparente sigue ahí.
+- **Motor Rust**: un arranque que no llegó a dibujar no lo apaga.
+
 ## [0.6.1] — 2026-11-08
 
 **Vistas en la misma pestaña: una, dos, tres o cuatro, con líneas que se
