@@ -42,11 +42,15 @@ numbers in the commit message, like the marathon did.
   the perf log. Phase 0 exists so we stop guessing.
 - **Draw less before drawing faster.** Culling and instancing beat any
   library swap.
-- **Native code only where the profiler demands it,** as leaf kernels
-  behind a stable NumPy-shaped interface — never a rewrite.
-- **The Python core is the moat, not the bottleneck to remove.** The
-  velocity of this project (solo dev + AI pair) exists BECAUSE the app
-  is Python. We keep it.
+- **The engine moves to Rust, piece by piece** (decided 2026-11-11, after
+  the SVG export of a villa took 13 minutes in Python + NumPy). Each piece
+  is a kernel in `rust/ingetrazo_core` behind the same Python interface,
+  held to the Python pass by a parity test, with both engines runnable
+  (`INGETRAZO_RUST=1|0`) until the Python one is retired. By 0.6.5 no code
+  of our own depends on NumPy; ezdxf and openskp keep it for now.
+- **The Python app stays Python.** Windows, dialogs, tools and the
+  document model are where the velocity (solo dev + AI pair) comes from;
+  what moves is the geometry that takes seconds, measured first.
 
 ## Phases
 
@@ -106,8 +110,9 @@ cores once PySide6 supports it cleanly), Qt RHI.
 
 ## What we deliberately do NOT do
 
-- **No C++/Rust rewrite of the app or the engine.** Death by rewrite is
-  how solo projects end; the leaf-kernel path gets 80 % of the benefit.
+- **No big-bang rewrite.** The engine goes to Rust one measured kernel at
+  a time, each one landing on its own with its parity test — never a
+  branch that rewrites everything and lands months later.
 - **No renderer/library swap** (VTK, Qt Quick 3D, ModernGL, wgpu,
   game engines): our draw-call count is already low — the overhead they
   would remove is not where the time goes, and each drags its own

@@ -17,8 +17,16 @@ import pytest
 
 pytest.importorskip("manifold3d")
 
+from core import _native                                # noqa: E402
 from core import vista_caras as VC                      # noqa: E402
 from core.vista_caras import FaceFill                   # noqa: E402
+
+
+@pytest.fixture(autouse=True)
+def python_pass(monkeypatch):
+    """These count the Python pass's own steps (its grid, its unions): the
+    Rust engine, which has its own, stays out of them."""
+    monkeypatch.setattr(_native, "native", None)
 
 
 def _brute(lo, hi, opaque, i):

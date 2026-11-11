@@ -39,6 +39,8 @@ def _faces(n=300):
 # ---- The visible faces say how far they have come --------------------------
 
 def test_the_visible_faces_tell_how_far_they_have_come(monkeypatch):
+    from core import _native
+    monkeypatch.setattr(_native, "native", None)      # the Python pass's own
     monkeypatch.setattr(P, "REPORT_EVERY", 0.0)
     told = []
     plain = VC._visible_parts(_faces())
@@ -54,6 +56,8 @@ def test_the_visible_faces_tell_how_far_they_have_come(monkeypatch):
 
 
 def test_a_report_that_raises_stops_the_work_there(monkeypatch):
+    from core import _native
+    monkeypatch.setattr(_native, "native", None)      # counts _take_away
     monkeypatch.setattr(P, "REPORT_EVERY", 0.0)
     done = []
     real = VC._take_away
@@ -108,8 +112,13 @@ def test_every_stretch_of_the_work_is_heard(monkeypatch):
     _sunny(scene)
     with P.reporting(lambda done: None):
         VC.view_faces(scene, cam, shadows=True)
-    assert {"view_faces", "__init__", "_visible_parts",
-            "_cast_shadows"} <= set(heard)
+    # Gathering, cutting down (the Python pass or the Rust engine's
+    # batches), the shadows — and the grid, when the Python pass runs.
+    assert {"view_faces", "_cast_shadows"} <= set(heard)
+    assert any(name.startswith("_visible_parts") for name in heard)
+    from core import _native
+    if _native.native is None:
+        assert "__init__" in heard
     # And the hidden lines drawn over them (8.7 s of the plaza's export
     # after the faces, with nothing said).
     from core.hlr import hlr_drawing
