@@ -52,6 +52,21 @@ class DeferredFaces:
         faces = self.mesh.faces
         return (faces[k] for k in self.index.tolist())
 
+    def layer_at(self, i):
+        """The layer the ``i``-th drawn face carries (``None``: none of its
+        own), read from the document while the mesh is still unbuilt: the
+        section cut asks it of every face it crosses, and asking for the
+        face built the whole mesh — 140 s of a first cut on a big model."""
+        from core.mesh import DeferredMesh
+        k = int(self.index[i])
+        if type(self.mesh) is not DeferredMesh:
+            return (self.mesh.faces[k].attrs or {}).get("layer")
+        src = self.mesh.__dict__["_deferred_source"]
+        a = int(src["face_attr"][k])
+        if a < 0:
+            return None
+        return (src["meta"].get("face_attrs") or [])[a].get("layer") or None
+
 
 def _geometry(mesh, plan):
     d = mesh.__dict__
@@ -599,6 +614,15 @@ class LazyPairs:
         owner = self.owner
         return ((f, owner) for f in self.faces)
 
+    def layer_at(self, i):
+        """``(the face's own layer or None, owner)`` — see
+        :meth:`DeferredFaces.layer_at`."""
+        faces = self.faces
+        if hasattr(faces, "layer_at"):
+            return faces.layer_at(i), self.owner
+        return (getattr(faces[i], "attrs", None) or {}).get("layer"), \
+            self.owner
+
 
 class PickEntities:
     """The pick index's ``entities`` — one list of ``(face, owner)`` — kept
@@ -643,3 +667,15 @@ class PickEntities:
     def __iter__(self):
         for part in self._parts:
             yield from part
+
+    def layer_at(self, i):
+        """``(the face's own layer or None, owner)`` of entity ``i``,
+        without building a lazy mesh for it."""
+        import bisect
+        i = int(i)
+        k = bisect.bisect_right(self._starts, i) - 1
+        part, j = self._parts[k], i - self._starts[k]
+        if hasattr(part, "layer_at"):
+            return part.layer_at(j)
+        face, owner = part[j]
+        return (getattr(face, "attrs", None) or {}).get("layer"), owner
