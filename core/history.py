@@ -704,12 +704,15 @@ class AddFaceCommand(Command):
         auto: bool = True,
         holes: Optional[Iterable[Iterable[QVector3D]]] = None,
         attrs: Optional[dict] = None,
+        *,
+        interior: bool = False,
     ) -> None:
         self.vertices = [QVector3D(v) for v in vertices]
         self.preset_holes = (
             [[QVector3D(v) for v in loop] for loop in holes] if holes else None
         )
         self.auto = auto
+        self.interior = interior
         # Attrs stamped onto the face at creation (paste carries the copied
         # colour/texture); they stay on the object across undo/redo.
         self.attrs = dict(attrs) if attrs else None
@@ -743,6 +746,7 @@ class AddFaceCommand(Command):
                 if e is not None:
                     had_e.add(id(e))
             self.face = m.add_face(self.vertices, holes)
+            self.face.interior = self.interior
             # Edges are remembered by the corners they join, not as
             # objects: redo's relink_face builds fresh Edge objects.
             self._made_pairs = set()
@@ -3532,10 +3536,14 @@ class SnapshotCompound(Command):
     faces); the per-command inverses don't compose into a clean whole — undoing
     them piecemeal leaves orphan split edges and stray vertices behind. One
     snapshot of the entire edit reverses it exactly, and because identity is
-    preserved, earlier history entries keep working across this undo."""
+    preserved, earlier history entries keep working across this undo.
+    ``heal=False`` preserves supplied copy topology instead of applying
+    drawing-specific global face cleanup.
+    """
 
-    def __init__(self, inner: Iterable[Command]) -> None:
+    def __init__(self, inner: Iterable[Command], *, heal: bool = True) -> None:
         self.inner = list(inner)
+        self._heal = heal
         self.before: Optional[dict] = None
         self.after: Optional[dict] = None
 
@@ -3548,11 +3556,12 @@ class SnapshotCompound(Command):
             # Which way every face looked before the draw: the heal may
             # align the faces the draw MADE, never the ones already there
             # (a Reverse Faces undone by the next rectangle).
-            footprint = winding_footprint(scene.mesh)
+            footprint = winding_footprint(scene.mesh) if self._heal else None
             for cmd in self.inner:
                 cmd.do(scene)
-            for f in heal_overlapping_faces(scene.mesh, footprint=footprint):
-                scene.selection.discard(f)
+            if self._heal:
+                for f in heal_overlapping_faces(scene.mesh, footprint=footprint):
+                    scene.selection.discard(f)
             # A draw that split a curve leaves it in separate contours — break
             # the curve ids there, before the snapshot so redo keeps it.
             scene.mesh.resplit_curves()
