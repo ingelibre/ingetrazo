@@ -678,8 +678,13 @@ def _solid(scene, v0):
     *((t, -0.05, 0.1, -0.1) for t in _OUT_OF_TRUE),
     *((t, 0.15, -0.1, -0.1) for t in _OUT_OF_TRUE),
     # …and out of it: from 2 mm on, the guard refuses that push on any route.
-    *((t, -0.05, -0.1, 0.1) for t in _OUT_OF_TRUE[:2]),
-    *((t, 0.15, 0.1, 0.1) for t in _OUT_OF_TRUE[:2]),
+    # Not 1 mm: there the door's corner is 0.0010004 off its plane, a hair
+    # past the 1 mm tolerance, and whether the guard takes the whole push
+    # comes down to the last bit of QVector3D.length(), which macOS and
+    # Linux round differently. Worked out exactly (math.sqrt in double), it
+    # refuses, like 2 mm; Linux's rounding happened to let it through.
+    *((t, -0.05, -0.1, 0.1) for t in _OUT_OF_TRUE[:1]),
+    *((t, 0.15, 0.1, 0.1) for t in _OUT_OF_TRUE[:1]),
 ])
 def test_a_typed_distance_counts_on_a_door_out_of_true(door, tilt, mouse,
                                                        typed, want):
