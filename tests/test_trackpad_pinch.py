@@ -51,6 +51,10 @@ def test_a_pinch_of_one_notchs_scale_zooms_one_notch(vp):
     from views.viewport import Viewport
     wheel = Viewport(None)
     wheel.resize(400, 300)
+    # Preferences ▸ invert wheel turns the notch around (a pinch is not
+    # turned): an earlier test may have left it saved in this session's
+    # settings, so the notch here is the plain one.
+    wheel._invert_wheel = False
     notch(wheel, 120)
     pinch(vp, 1.0 / 0.9 - 1.0)
     assert vp.camera.distance == pytest.approx(wheel.camera.distance, rel=1e-6)
