@@ -11,6 +11,7 @@ use numpy::{PyArray1, PyArray2, PyReadonlyArray2, PyReadonlyArray3, PyReadonlyAr
 use pyo3::prelude::*;
 
 mod boxes;
+mod earcut;
 mod facegeom;
 mod gltape;
 mod hlr;
@@ -36,6 +37,7 @@ fn ingetrazo_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(segment_distances, m)?)?;
     m.add_function(wrap_pyfunction!(nearest_within, m)?)?;
     m.add_function(wrap_pyfunction!(visible_parts, m)?)?;
+    m.add_function(wrap_pyfunction!(earcut_indices, m)?)?;
     m.add_class::<GlReplay>()?;
     m.add_class::<InstanceProto>()?;
     m.add_class::<InstanceSet>()?;
@@ -1284,4 +1286,26 @@ fn visible_parts<'py>(
     }
     let arr = if flat.is_empty() { PyArray2::zeros(py, [0, 2], false) } else { PyArray2::from_vec2(py, &flat)? };
     Ok((arr, PyArray1::from_vec(py, ring_out), PyArray1::from_vec(py, face_out)))
+}
+
+/// `core.triangulate.earcut` (see `earcut.rs`): `points` (N, 2), the outer
+/// ring then each hole's points, `holes` where each hole starts; the
+/// triangles as an (M, 3) array of indices into `points`, the same ones
+/// the Python port gives, in the same order.
+#[pyfunction]
+#[pyo3(name = "earcut", signature = (points, holes=Vec::new()))]
+fn earcut_indices<'py>(
+    py: Python<'py>,
+    points: PyReadonlyArray2<'py, f64>,
+    holes: Vec<usize>,
+) -> PyResult<Bound<'py, PyArray2<i64>>> {
+    let p = points.as_array();
+    let pts: Vec<[f64; 2]> = (0..p.shape()[0]).map(|k| [p[[k, 0]], p[[k, 1]]]).collect();
+    let tris = py.detach(|| earcut::earcut(&pts, &holes));
+    let rows: Vec<Vec<i64>> = tris.iter().map(|t| vec![t[0] as i64, t[1] as i64, t[2] as i64]).collect();
+    if rows.is_empty() {
+        Ok(PyArray2::zeros(py, [0, 3], false))
+    } else {
+        Ok(PyArray2::from_vec2(py, &rows)?)
+    }
 }
