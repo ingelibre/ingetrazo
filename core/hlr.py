@@ -1097,9 +1097,13 @@ def hlr_drawing(scene, camera, geometry=None, profiles: bool = True,
             if wanted:
                 if tag in wanted:
                     if tag not in by_layer_tris:
-                        by_layer_tris[tag] = [
-                            t for t, g in zip(whole_tris, whole_tags)
-                            if g == tag]
+                        if isinstance(whole_tris, np.ndarray):
+                            by_layer_tris[tag] = whole_tris[
+                                np.asarray(whole_tags, dtype=object) == tag]
+                        else:
+                            by_layer_tris[tag] = [
+                                t for t, g in zip(whole_tris, whole_tags)
+                                if g == tag]
                     n = sp.normal
                     loop_depths.append(solid_depth(
                         ring, by_layer_tris[tag], (n.x(), n.y(), n.z())))

@@ -621,7 +621,7 @@ DXF_VIEW_SCALE = 50.0
 
 
 def dxf_cut_layers(scene, camera, scale_n: float = DXF_VIEW_SCALE, k=None,
-                   frame_scale: float = 1.0) -> tuple:
+                   frame_scale: float = 1.0, geometry=None) -> tuple:
     """The section cut of ``scene`` under ``camera`` (parallel) as a DXF
     carries it, in MODEL units like the view's lines: ``(groups, solids)``
     for formats.dxf_out.save_dxf_layers. ``groups``: one layer
@@ -640,8 +640,12 @@ def dxf_cut_layers(scene, camera, scale_n: float = DXF_VIEW_SCALE, k=None,
     hatches = cut_hatches(scene)
     if not hatches:
         return [], []
+    # ``geometry``: the tagged arrays of Viewport.hlr_geometry(tags=True)
+    # (world space, any camera), so the drawing is not walked out of the
+    # model.
     drawing = hlr_drawing(scene, camera, profiles=False, fills=True,
-                          layers=True, depth_layers=grain_layers(scene))
+                          layers=True, depth_layers=grain_layers(scene),
+                          geometry=geometry)
     if drawing.loop_layers is None:
         return [], []
     scale_n = float(scale_n or DXF_VIEW_SCALE)
@@ -13635,9 +13639,13 @@ class ComposerWindow(QMainWindow):
         k = frame.h_mm / model_height_for_frame(frame.h_mm, scale_n)
         frame_scale = max(0.2, float(getattr(frame, "cut_hatch_mm", 1.5)
                                      or 1.5) / 1.5)
+        vp = self._window.viewport
+        # The viewport's arrays with their layers (a stand-in without them
+        # walks the model, as before).
+        tagged = getattr(vp, "hlr_geometry", None)
         return self._with_frame_camera(frame, lambda: dxf_cut_layers(
-            self._window.viewport.scene, self._window.viewport.camera,
-            scale_n, k, frame_scale))
+            vp.scene, vp.camera, scale_n, k, frame_scale,
+            geometry=tagged(tags=True) if tagged is not None else None))
 
     def dxf_hatch_groups(self, frame: MarcoVista) -> list:
         """The line groups of :meth:`dxf_cut_layers` alone."""

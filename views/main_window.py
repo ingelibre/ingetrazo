@@ -10664,8 +10664,9 @@ class MainWindow(QMainWindow):
                 # colour and line type — as the composer's export.
                 from core.layers import line_styles
                 from views.composer import dxf_groups_by_layer
+                tagged = vp.hlr_geometry(tags=True)
                 d = hlr_drawing(vp.scene, vp.camera, layers=True,
-                                geometry=vp.hlr_geometry(tags=True))
+                                geometry=tagged)
                 d.styles = line_styles(vp.scene, True)
                 groups = dxf_groups_by_layer(d, "VISTA", hidden_lines=False,
                                              texts=texts)
@@ -10680,7 +10681,10 @@ class MainWindow(QMainWindow):
                 # The cut hatches and fills too, as a sheet at 1:50 draws
                 # them — as the composer's export does at its frame's scale.
                 from views.composer import dxf_cut_layers
-                lines, solids = dxf_cut_layers(vp.scene, vp.camera)
+                lines, solids = dxf_cut_layers(
+                    vp.scene, vp.camera,
+                    geometry=tagged if len(vp.scene.layers) > 1
+                    else vp.hlr_geometry(tags=True))
                 groups += lines
             n = save(path, groups, solids, texts)
         except Exception as exc:  # noqa: BLE001
