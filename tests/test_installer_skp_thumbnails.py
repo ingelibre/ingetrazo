@@ -100,3 +100,21 @@ def test_a_choice_made_since_is_left_alone():
     code = _section("Code")
     after = code[code.index("usPostUninstall then"):]
     assert "(Current = '') or (CompareText(Current, SkpProgId) = 0)" in after
+
+
+def test_last_the_programs_offered_for_skp_lend_their_handler():
+    """A copy for one user over the one for the whole machine finds
+    IngeTrazo.skp as the previous ProgID; the other program's handler was
+    only under .skp's OpenWithProgids, and the previews went (minipc,
+    11-11)."""
+    code = _section("Code")
+    post = code[code.index("CurStep = ssPostInstall"):
+                code.index("procedure CurUninstallStepChanged")]
+    assert post.index(r"'SystemFileAssociations\.skp'") < post.index(
+        "Found := ReadOpenWithHandler(Clsid)") < post.index("if Found then")
+    fn = code[code.index("function ReadOpenWithHandler"):
+              code.index("procedure CurStepChanged")]
+    assert r"RegGetValueNames(HKCR, '.skp\OpenWithProgids', Names)" in fn
+    # Never its own ProgID, and the first that has one wins.
+    assert "CompareText(Names[I], SkpProgId) <> 0" in fn
+    assert "(not Result)" in fn
