@@ -229,18 +229,42 @@ end;
 // The programs Windows offers for .skp: the one that owned it before may be
 // only there once another install of IngeTrazo has the default — a copy for
 // one user over the one for the whole machine found IngeTrazo.skp as the
-// previous ProgID and skipped it, and the previews of the other program,
-// listed here, were not borrowed.
-function ReadOpenWithHandler(var Clsid: String): Boolean;
+// previous ProgID and skipped it, and the previews of the other program were
+// not borrowed. Its ProgID is named in any of three places: the ProgIDs
+// .skp's OpenWithProgids lists, the keys under .skp (a program's ShellNew
+// goes there), and the list Explorer keeps of what opened .skp (seen on the
+// minipc, 11-11: only the last two named it).
+function HandlerOfAny(const Root: Integer; const Key: String; const Values: Boolean;
+                      var Clsid: String): Boolean;
 var
   Names: TArrayOfString;
+  Listed: Boolean;
   I: Integer;
 begin
   Result := False;
-  if RegGetValueNames(HKCR, '.skp\OpenWithProgids', Names) then
+  if Values then
+    Listed := RegGetValueNames(Root, Key, Names)
+  else
+    Listed := RegGetSubkeyNames(Root, Key, Names);
+  if Listed then
     for I := 0 to GetArrayLength(Names) - 1 do
-      if (not Result) and (CompareText(Names[I], SkpProgId) <> 0) then
+      if (not Result) and (Names[I] <> '') and (CompareText(Names[I], SkpProgId) <> 0)
+         and (CompareText(Names[I], 'OpenWithProgids') <> 0)
+         and (CompareText(Names[I], 'OpenWithList') <> 0)
+         and (CompareText(Names[I], 'ShellEx') <> 0)
+         and (CompareText(Names[I], 'ShellNew') <> 0) then
         Result := ReadThumbnailHandler(Names[I], Clsid);
+end;
+
+function ReadOpenWithHandler(var Clsid: String): Boolean;
+begin
+  Result := HandlerOfAny(HKCR, '.skp\OpenWithProgids', True, Clsid);
+  if not Result then
+    Result := HandlerOfAny(HKCR, '.skp', False, Clsid);
+  if not Result then
+    Result := HandlerOfAny(HKCU,
+      'Software\Microsoft\Windows\CurrentVersion\Explorer\FileExts\.skp\OpenWithProgids',
+      True, Clsid);
 end;
 
 procedure CurStepChanged(CurStep: TSetupStep);

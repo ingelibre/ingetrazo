@@ -104,9 +104,9 @@ def test_a_choice_made_since_is_left_alone():
 
 def test_last_the_programs_offered_for_skp_lend_their_handler():
     """A copy for one user over the one for the whole machine finds
-    IngeTrazo.skp as the previous ProgID; the other program's handler was
-    only under .skp's OpenWithProgids, and the previews went (minipc,
-    11-11)."""
+    IngeTrazo.skp as the previous ProgID; the other program's ProgID was
+    only a key under .skp and in Explorer's list of what opened .skp, and
+    the previews went (minipc, 11-11)."""
     code = _section("Code")
     post = code[code.index("CurStep = ssPostInstall"):
                 code.index("procedure CurUninstallStepChanged")]
@@ -114,7 +114,16 @@ def test_last_the_programs_offered_for_skp_lend_their_handler():
         "Found := ReadOpenWithHandler(Clsid)") < post.index("if Found then")
     fn = code[code.index("function ReadOpenWithHandler"):
               code.index("procedure CurStepChanged")]
-    assert r"RegGetValueNames(HKCR, '.skp\OpenWithProgids', Names)" in fn
-    # Never its own ProgID, and the first that has one wins.
-    assert "CompareText(Names[I], SkpProgId) <> 0" in fn
-    assert "(not Result)" in fn
+    assert r"HandlerOfAny(HKCR, '.skp\OpenWithProgids', True, Clsid)" in fn
+    assert r"HandlerOfAny(HKCR, '.skp', False, Clsid)" in fn
+    assert (r"'Software\Microsoft\Windows\CurrentVersion\Explorer"
+            r"\FileExts\.skp\OpenWithProgids'") in fn
+    any_ = code[code.index("function HandlerOfAny"):
+                code.index("function ReadOpenWithHandler")]
+    assert "RegGetValueNames(Root, Key, Names)" in any_
+    assert "RegGetSubkeyNames(Root, Key, Names)" in any_
+    # Never its own ProgID nor a key of .skp's own, and the first wins.
+    assert "CompareText(Names[I], SkpProgId) <> 0" in any_
+    for own in ("OpenWithProgids", "OpenWithList", "ShellEx", "ShellNew"):
+        assert f"CompareText(Names[I], '{own}') <> 0" in any_
+    assert "(not Result)" in any_
