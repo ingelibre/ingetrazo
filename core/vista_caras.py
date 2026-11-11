@@ -567,6 +567,54 @@ class _OverlapGrid:
 
 
 def _visible_parts(faces):
+    """Each face cut down to what nothing in front of it covers — the Rust
+    engine's pass (``visible_parts``) when it is on, else
+    :func:`_visible_parts_py`. The two give the same faces, in the same
+    order, with the same area; the Rust one does the faces in parallel."""
+    from core import _native
+    native = _native.native
+    if native is not None and hasattr(native, "visible_parts"):
+        return _visible_parts_native(faces, native)
+    return _visible_parts_py(faces)
+
+
+def _visible_parts_native(faces, native):
+    """:func:`_visible_parts` through the Rust engine: the rings of all the
+    faces flat, back the same way, and the progress reports between its
+    batches of faces."""
+    faces = list(faces)
+    if not faces:
+        return []
+    coords, ring_off, face_off = [], [0], [0]
+    at = 0
+    for f in faces:
+        for r in f.rings:
+            coords.append(np.asarray(r, dtype=np.float64).reshape(-1, 2))
+            at += len(coords[-1])
+            ring_off.append(at)
+        face_off.append(len(ring_off) - 1)
+    out, r_off, f_off = native.visible_parts(
+        np.ascontiguousarray(np.concatenate(coords)),
+        np.asarray(ring_off, dtype=np.int64),
+        np.asarray(face_off, dtype=np.int64),
+        np.ascontiguousarray(np.array([f.extra["near"] for f in faces],
+                                      dtype=np.float64).reshape(-1, 3)),
+        np.array([f.opacity >= 0.999 for f in faces], dtype=bool),
+        _MIN_AREA_MM2 * 1e-6, _progress.tick)
+    result = []
+    for i, fa in enumerate(faces):
+        rings = [out[r_off[k]:r_off[k + 1]]
+                 for k in range(f_off[i], f_off[i + 1])]
+        if rings:
+            fa.rings = rings
+            result.append(fa)
+    # Opaque first (they do not overlap: any order), then the see-through
+    # ones far to near.
+    result.sort(key=lambda f: (f.opacity < 0.999, -f.depth))
+    return result
+
+
+def _visible_parts_py(faces):
     """Each face cut down to what nothing in front of it covers.
 
     Exact for flat faces, in no particular order: where another opaque
