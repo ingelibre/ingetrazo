@@ -285,10 +285,18 @@ fn nearness(rings: &[Ring2], depths: &[Vec<f64>], perspective: bool) -> Option<[
 /// One face through the walk's steps; `None` where the walk `continue`d.
 fn one(f: &FaceIn, xforms: &[[[f64; 4]; 4]], cam: &Camera, section: Option<&Section>) -> Option<FaceOut> {
     let perspective = matches!(cam, Camera::Perspective { .. });
+    // The model keeps its points in single precision (QVector3D), and so
+    // does the walk, which maps them through Qt: the world ring is rounded
+    // to that precision. Taken exact in double, the plaza's duplicated and
+    // abutting faces fell on each other to the last bit, and the booleans
+    // of the visible parts ran away on them (a 0.08 m² kerb under 967
+    // covers never finished and ate the memory); a bit of the model's own
+    // rounding apart, they are the regions the viewport draws.
+    let f32r = |p: [f64; 3]| [p[0] as f32 as f64, p[1] as f32 as f64, p[2] as f32 as f64];
     let mut world: Vec<Ring3> = Vec::with_capacity(f.rings.len());
     for r in &f.rings {
         world.push(match f.xform {
-            Some(k) => r.iter().map(|p| apply(&xforms[k], *p)).collect(),
+            Some(k) => r.iter().map(|p| f32r(apply(&xforms[k], *p))).collect(),
             None => r.clone(),
         });
     }
