@@ -954,9 +954,10 @@ def hlr_drawing(scene, camera, geometry=None, profiles: bool = True,
     own colour, line type and weight. Its section cut is tagged too, by
     the layer of the face each chord cuts, and its rings are chained layer
     by layer (`HlrDrawing.loop_layers`): a wall's cut gets the wall's pen
-    and fill, the door's beside it its own. It walks the model itself (the
-    fast `geometry` carries no layers), so it is asked for only when a layer
-    has a line of its own.
+    and fill, the door's beside it its own. With a tagged ``geometry`` —
+    the seven arrays ``Viewport.hlr_geometry(tags=True)`` returns, the
+    layers of the triangles, hard edges and soft edges after the four —
+    nothing is walked; without one, it walks the model itself.
     ``depth_layers`` — layer names — measures, for each ring of those
     layers, how far its solid runs through the plane
     (``HlrDrawing.loop_depths``, :func:`solid_depth`): where timber is cut
@@ -965,7 +966,10 @@ def hlr_drawing(scene, camera, geometry=None, profiles: bool = True,
     htags = stags = ttags = None
     whole_tris = whole_tags = ()
     cut_tags: list = []
-    if layers:
+    if layers and geometry is not None and len(geometry) == 7:
+        tris, hard, soft, soft_n, ttags, htags, stags = geometry
+        ttags, htags, stags = list(ttags), list(htags), list(stags)
+    elif layers:
         tris, hard, soft, htags, stags, ttags = collect_geometry(
             scene, layers=True)
     elif geometry is None:
@@ -1009,6 +1013,9 @@ def hlr_drawing(scene, camera, geometry=None, profiles: bool = True,
             mask = np.isnan(fb) | ((fa < 0.0) != (fb < 0.0))
             hard = np.concatenate(
                 [hard, np.asarray(soft, dtype=np.float64)[mask]])
+            if htags is not None:       # the silhouettes keep their layer
+                htags = list(htags) + [stags[k] for k in
+                                       np.flatnonzero(mask).tolist()]
         if not len(hard) and not len(cut_edges):
             return empty_drawing()
     else:

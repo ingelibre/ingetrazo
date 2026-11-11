@@ -3573,15 +3573,14 @@ def test_solids_each_of_one_layer_are_tagged_as_they_were():
 def test_picking_does_not_dash_the_model_again(win, monkeypatch):
     """A click moves the scene's version (the view's caches follow it); the
     dashes of the layers' line types follow the document's."""
-    from core import hlr
     vp = win.viewport
     scene = _gas_scene(vp.scene)
     scene.version += 1
-    walked = []
-    real = hlr.collect_geometry
+    walked = []                 # the geometry read (the arrays, no walk)
+    real = type(vp).hlr_geometry
     monkeypatch.setattr(
-        hlr, "collect_geometry",
-        lambda *a, **k: walked.append(1) or real(*a, **k))
+        type(vp), "hlr_geometry",
+        lambda self, *a, **k: walked.append(1) or real(self, *a, **k))
     groups = vp._model_linetype_edges()
     assert len(walked) == 1
     scene.select([scene.groups[0]])
