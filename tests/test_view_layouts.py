@@ -203,12 +203,15 @@ def test_the_labels_menu_says_maximize_or_restore(win):
     def entry():
         header.menu().aboutToShow.emit()
         return header.menu().actions()[0]               # first of all
-    assert entry().text() == tr("Maximize") + "\tCtrl+Space"
+    # The keys as this platform writes them: «Ctrl+Space», «⌘Space» on macOS.
+    from PySide6.QtGui import QKeySequence
+    keys = "\t" + QKeySequence("Ctrl+Space").toString(QKeySequence.NativeText)
+    assert entry().text() == tr("Maximize") + keys
     assert header.menu().actions()[1].isSeparator()
     assert entry().shortcut().isEmpty(), "the window's action holds the key"
     entry().trigger()
     assert _shown(win) == [2] and _grid(win).active_cell() is _grid(win).cells[2]
-    assert entry().text() == tr("Restore") + "\tCtrl+Space"
+    assert entry().text() == tr("Restore") + keys
     entry().trigger()
     assert _shown(win) == [0, 1, 2, 3]
     assert len(header.menu().actions()) == 10, "the views, once"
