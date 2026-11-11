@@ -216,6 +216,121 @@ def _faces_of(scene):
                        own if own != DEFAULT_LAYER else owner)
 
 
+def _face_geometry(items, camera, proj, sp):
+    """For each ``(face, matrix, paint, layer)`` of ``items``, its
+    geometry under the view: ``(world rings, drawn rings, their depths,
+    normal, back, nearness)`` — ``nearness`` ``None`` (with no drawn
+    rings) for a face the camera draws nothing of, which still casts a
+    shadow — or ``None`` where the face is skipped (fewer than three
+    corners, degenerate, wholly past the section). The Rust engine's
+    ``faces_view`` when it is on, else :func:`_face_geometry_py`: the
+    same steps, face by face."""
+    from core import _native
+    native = _native.native
+    if native is not None and hasattr(native, "faces_view") and items:
+        return _face_geometry_native(items, camera, proj, sp, native)
+    return _face_geometry_py(items, camera, proj, sp)
+
+
+def _face_geometry_py(items, camera, proj, sp):
+    from PySide6.QtGui import QVector3D
+    out = []
+    for face, m, _paint, _layer in items:
+        loops = [face.vertices] + list(face.holes or [])
+        if m is not None:
+            loops = [[m.map(QVector3D(p)) for p in ring] for ring in loops]
+        world = [np.array([(p.x(), p.y(), p.z()) for p in ring],
+                          dtype=np.float64) for ring in loops]
+        if len(world[0]) < 3:
+            out.append(None)
+            continue
+        normal = _newell(world[0])
+        if normal is None:
+            out.append(None)
+            continue
+        if m is not None and _mirrors(m):
+            # A mirrored placement turns the loop round; its front is
+            # still the side the mesh's own normal points to.
+            normal = -normal
+        if sp is not None:
+            world = [_clip_ring_to_section(r, sp) for r in world]
+            world = [r for r in world if len(r) >= 3]
+            if not world or len(world[0]) < 3:
+                out.append(None)
+                continue
+        centre = world[0].mean(axis=0)
+        back = proj.facing_back(normal, centre)
+        rings2, depths = [], []
+        for r in world:
+            xy, dz = proj.ring(r)
+            if len(xy) >= 3:
+                rings2.append(xy)
+                depths.append(dz)
+        near = (_nearness_plane(rings2, depths, camera.perspective)
+                if rings2 else None)
+        if near is None:
+            rings2, depths = [], []
+        out.append((world, rings2, depths, normal, back, near))
+    return out
+
+
+def _face_geometry_native(items, camera, proj, sp, native):
+    """:func:`_face_geometry` through the engine: every face's rings flat,
+    in its mesh's coordinates, with its placement; back the same way."""
+    coords, ring_off, face_off = [], [0], [0]
+    xf_index, xforms, seen = [], [], {}
+    at = 0
+    for face, m, _paint, _layer in items:
+        for ring in [face.vertices] + list(face.holes or []):
+            coords.extend((p.x(), p.y(), p.z()) for p in ring)
+            at += len(ring)
+            ring_off.append(at)
+        face_off.append(len(ring_off) - 1)
+        if m is None:
+            xf_index.append(-1)
+        else:
+            k = seen.get(id(m))
+            if k is None:
+                k = seen[id(m)] = len(xforms)
+                xforms.append(np.array(m.data(), dtype=np.float64)
+                              .reshape(4, 4, order="F").reshape(-1))
+            xf_index.append(k)
+    if camera.perspective:
+        cam = (list(proj.M.reshape(-1)) + list(proj.eye_pt)
+               + list(proj.scale))
+    else:
+        cam = (list(proj.eye) + list(proj.right) + list(proj.up)
+               + list(proj.fwd))
+    section = None
+    if sp is not None:
+        n = (sp.normal.x(), sp.normal.y(), sp.normal.z())
+        section = [*n, n[0] * sp.point.x() + n[1] * sp.point.y()
+                   + n[2] * sp.point.z()]
+    (kept, back, normal, near, _depth, wc, wro, wfo, pc, pd, pro,
+     pfo) = native.faces_view(
+        np.asarray(coords, dtype=np.float64).reshape(-1, 3),
+        np.asarray(ring_off, dtype=np.int64),
+        np.asarray(face_off, dtype=np.int64),
+        np.asarray(xf_index, dtype=np.int64),
+        (np.asarray(xforms, dtype=np.float64).reshape(-1, 16)
+         if xforms else np.zeros((0, 16))),
+        bool(camera.perspective), [float(v) for v in cam], section)
+    out = []
+    for i in range(len(items)):
+        if kept[i] == 0:
+            out.append(None)
+            continue
+        world = [wc[wro[r]:wro[r + 1]] for r in range(wfo[i], wfo[i + 1])]
+        if kept[i] == 1:
+            out.append((world, [], [], normal[i], bool(back[i]), None))
+            continue
+        rings2 = [pc[pro[r]:pro[r + 1]] for r in range(pfo[i], pfo[i + 1])]
+        depths = [pd[pro[r]:pro[r + 1]] for r in range(pfo[i], pfo[i + 1])]
+        out.append((world, rings2, depths, normal[i], bool(back[i]),
+                    tuple(float(v) for v in near[i])))
+    return out
+
+
 def _side_paint(eff, back: bool, default_front, back_color):
     """``(rgb or None, texture or None)`` a side of a face wears."""
     from core.materials import back_is_default
@@ -277,30 +392,14 @@ def view_faces(scene, camera, as_view: bool = True,
 
     raw = []
     casters = []          # world rings of every face that blocks the sun
-    for face, m, paint, layer in _faces_of(scene):
+    items = list(_faces_of(scene))
+    for (face, m, paint, layer), geo in zip(items, _face_geometry(
+            items, camera, proj, sp)):
         _progress.tick()
-        loops = [face.vertices] + list(face.holes or [])
-        if m is not None:
-            loops = [[m.map(QVector3D(p)) for p in ring] for ring in loops]
-        world = [np.array([(p.x(), p.y(), p.z()) for p in ring],
-                          dtype=np.float64) for ring in loops]
-        if len(world[0]) < 3:
+        if geo is None:
             continue
-        normal = _newell(world[0])
-        if normal is None:
-            continue
-        if m is not None and _mirrors(m):
-            # A mirrored placement turns the loop round; its front is
-            # still the side the mesh's own normal points to.
-            normal = -normal
+        world, rings2, depths, normal, back, near = geo
         n_q = QVector3D(*map(float, normal))
-        if sp is not None:
-            world = [_clip_ring_to_section(r, sp) for r in world]
-            world = [r for r in world if len(r) >= 3]
-            if not world or len(world[0]) < 3:
-                continue
-        centre = world[0].mean(axis=0)
-        back = proj.facing_back(normal, centre)
         attrs = face.attrs
         if m is not None and attrs and attrs.get("texture"):
             attrs = transformed_attrs(attrs, m)
@@ -317,17 +416,8 @@ def view_faces(scene, camera, as_view: bool = True,
         opacity = float(eff.get("opacity", 1.0) or 1.0)
         if opacity >= SHADOW_OPACITY_MIN:
             casters.append(world)
-        rings2, depths = [], []
-        for r in world:
-            xy, dz = proj.ring(r)
-            if len(xy) >= 3:
-                rings2.append(xy)
-                depths.append(dz)
-        if not rings2:
-            continue
-        near = _nearness_plane(rings2, depths, camera.perspective)
         if near is None:
-            continue                            # edge-on: nothing to fill
+            continue           # nothing drawn, or edge on: nothing to fill
         texture = None
         if tex is not None and use_tex:
             gu, cu, gv, cv = face_uv_axes(tex, n_q)

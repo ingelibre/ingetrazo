@@ -32,9 +32,17 @@ def _faces(rng, n, **kw):
     return [FaceFill(**vars(f)) for f in _scene(rng, n, **kw)]
 
 
+def _net(f):
+    """The face's drawn area: its rings' signed areas added — a hole counts
+    against its outer ring, and a region the booleans hand back as one
+    ring touching itself where a cover grazed a hole's corner counts the
+    same as the outer ring and the hole apart."""
+    return sum(VC._area(r) for r in f.rings)
+
+
 def _canon(out):
-    return [(round(f.depth, 9), round(sum(abs(VC._area(r)) for r in f.rings),
-                                      11), f.opacity < 0.999) for f in out]
+    return [(round(f.depth, 9), round(abs(_net(f)), 11), f.opacity < 0.999)
+            for f in out]
 
 
 def _both(faces):
@@ -74,6 +82,20 @@ def test_faces_with_holes_and_see_through_ones():
     # The glass came last, whole.
     assert rust[-1].opacity == 0.5 and abs(
         sum(abs(VC._area(r)) for r in rust[-1].rings) - 100.0) < 1e-9
+
+
+def test_a_cover_grazing_a_holes_corner_leaves_the_same_region():
+    """A box standing on a slab, its corner on the corner of the slab's
+    hole: the booleans may hand the remainder back as one ring touching
+    itself there, or as a ring and a hole — the same region either way."""
+    slab = FaceFill(rings=[_square(0, 0, 6), _square(2, 2, 2)[::-1].copy()],
+                    rgb=(0, 0, 0), layer="0", depth=0.0,
+                    extra={"near": (0.0, 0.0, 0.0)})
+    box = FaceFill(rings=[_square(1, 1, 1)], rgb=(0, 0, 0), layer="0",
+                   depth=-1.0, extra={"near": (0.0, 0.0, 1.0)})
+    rust, py = _both([slab, box])
+    assert [c[:2] for c in _canon(rust)] == [c[:2] for c in _canon(py)]
+    assert abs(_net(rust[0])) == pytest.approx(36 - 4 - 1, abs=1e-9)
 
 
 def test_coplanar_faces_the_earlier_wins():
