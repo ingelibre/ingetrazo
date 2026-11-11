@@ -1325,6 +1325,8 @@
  "Portrait": "Pionowo",
  "Preview": "Podgląd",
  "Working out the preview…": "Obliczanie podglądu…",
+ "Working out the drawing…": "Obliczanie rysunku…",
+ "SVG export cancelled": "Eksport SVG anulowany",
  "Frame scale ({scale})": "Skala ramki ({scale})",
  "A vector drawing of the view to finish in an illustration program: one layer per model layer, the faces under the lines.": "Rysunek wektorowy widoku do dokończenia w programie graficznym: jedna warstwa na każdą warstwę modelu, ściany pod liniami.",
  "Materials and textures": "Materiały i tekstury",

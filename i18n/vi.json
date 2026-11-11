@@ -1328,6 +1328,8 @@
  "Portrait": "Dọc",
  "Preview": "Xem trước",
  "Working out the preview…": "Đang tính bản xem trước…",
+ "Working out the drawing…": "Đang tính bản vẽ…",
+ "SVG export cancelled": "Đã hủy xuất SVG",
  "Frame scale ({scale})": "Tỉ lệ của khung ({scale})",
  "A vector drawing of the view to finish in an illustration program: one layer per model layer, the faces under the lines.": "Bản vẽ vectơ của chế độ xem để hoàn thiện trong chương trình minh họa: mỗi lớp của mô hình thành một lớp, các mặt dưới các đường.",
  "Materials and textures": "Vật liệu và họa tiết",

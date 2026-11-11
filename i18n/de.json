@@ -1325,6 +1325,8 @@
  "Portrait": "Hochformat",
  "Preview": "Vorschau",
  "Working out the preview…": "Vorschau wird berechnet…",
+ "Working out the drawing…": "Zeichnung wird berechnet…",
+ "SVG export cancelled": "SVG-Export abgebrochen",
  "Frame scale ({scale})": "Maßstab des Rahmens ({scale})",
  "A vector drawing of the view to finish in an illustration program: one layer per model layer, the faces under the lines.": "Eine Vektorzeichnung der Ansicht zum Fertigstellen in einem Illustrationsprogramm: eine Ebene je Modell-Layer, die Flächen unter den Linien.",
  "Materials and textures": "Materialien und Texturen",

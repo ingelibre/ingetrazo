@@ -1315,6 +1315,8 @@
  "Portrait": "縦",
  "Preview": "プレビュー",
  "Working out the preview…": "プレビューを計算中…",
+ "Working out the drawing…": "図面を計算中…",
+ "SVG export cancelled": "SVG の書き出しを取り消しました",
  "Frame scale ({scale})": "枠の縮尺 ({scale})",
  "A vector drawing of the view to finish in an illustration program: one layer per model layer, the faces under the lines.": "ビューのベクター図面をイラストソフトで仕上げるために書き出します。モデルのレイヤーごとに 1 レイヤー、面は線の下に置かれます。",
  "Materials and textures": "マテリアルとテクスチャ",

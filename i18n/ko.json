@@ -1327,6 +1327,8 @@
  "Portrait": "세로",
  "Preview": "미리 보기",
  "Working out the preview…": "미리 보기 계산 중…",
+ "Working out the drawing…": "도면 계산 중…",
+ "SVG export cancelled": "SVG 내보내기가 취소됨",
  "Frame scale ({scale})": "프레임 축척 ({scale})",
  "A vector drawing of the view to finish in an illustration program: one layer per model layer, the faces under the lines.": "일러스트레이션 프로그램에서 마무리할 뷰의 벡터 도면: 모델 레이어마다 레이어 하나, 면은 선 아래에.",
  "Materials and textures": "재질과 텍스처",

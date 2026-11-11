@@ -9997,9 +9997,9 @@ class Viewport(QOpenGLWidget):
         memo = getattr(self, "_model_lines_cache", None)
         if memo is not None and memo[0] == key:
             return memo[1]
-        from core.hlr import collect_geometry
-        _t, hard, _s, hard_tags, _st, _tt = collect_geometry(scene,
-                                                              layers=True)
+        # From the viewport's arrays with their layers, not a walk of the
+        # model: every change of the model walked 85 000 faces of a plaza.
+        _t, hard, _s, _n, _tt, hard_tags, _st = self.hlr_geometry(tags=True)
         by_layer: dict = {}
         for seg, tag in zip(hard, hard_tags):
             if tag in styles:
@@ -13012,6 +13012,10 @@ class Viewport(QOpenGLWidget):
         soft_n1: list = []
         soft_c1: list = []
         soft_single: list = []
+        # The layer each drawn edge carries of its own (None: its
+        # object's), in the order of ``edges`` and of ``soft_pts``.
+        edge_layer: list = []
+        soft_layer: list = []
         fprops: dict = {}
 
         # Faces first: one Newell walk per face yields normal + area, and the
@@ -13142,12 +13146,14 @@ class Viewport(QOpenGLWidget):
             if not getattr(e, "soft", False):
                 edges_data.extend([e.a.x(), e.a.y(), e.a.z(),
                                    e.b.x(), e.b.y(), e.b.z()])
+                edge_layer.append(getattr(e, "layer", None))
                 continue
             fs = e.faces
             if len(fs) not in (1, 2):
                 continue                  # dangling / non-manifold: not drawn
             soft_pts.append([e.a.x(), e.a.y(), e.a.z(),
                              e.b.x(), e.b.y(), e.b.z()])
+            soft_layer.append(getattr(e, "layer", None))
             n0, c0 = props(fs[0])
             soft_n0.append(n0)
             soft_c0.append(c0)
@@ -13229,7 +13235,8 @@ class Viewport(QOpenGLWidget):
                  "soft_c0": np.asarray(soft_c0, dtype=np.float64),
                  "soft_n1": np.asarray(soft_n1, dtype=np.float64),
                  "soft_c1": np.asarray(soft_c1, dtype=np.float64),
-                 "soft_single": np.asarray(soft_single, dtype=bool)}
+                 "soft_single": np.asarray(soft_single, dtype=bool),
+                 "edge_layer": edge_layer, "soft_layer": soft_layer}
         if _PERF:
             _plog("chunk_rebuild", (_time_mod.perf_counter() - _c0) * 1000.0,
                   extra=f"faces={len(faces)}")
@@ -13322,8 +13329,8 @@ class Viewport(QOpenGLWidget):
         "edges", "vcol", "by_texture", "tcol", "ttex", "back_vcol",
         "back_tex", "back_tcol", "back_ttex", "fvcol", "dback", "areas",
         "v0", "e1", "e2", "tri_ent", "soft_pts", "soft_n0", "soft_c0",
-        "soft_n1", "soft_c1", "soft_single", "bbox", "coordsum",
-        "nv", "ne", "nf", "samples")
+        "soft_n1", "soft_c1", "soft_single", "edge_layer", "soft_layer",
+        "bbox", "coordsum", "nv", "ne", "nf", "samples")
 
     def _chunk_cache_load(self, group, fp, vkey):
         mesh = group.mesh
@@ -13337,8 +13344,10 @@ class Viewport(QOpenGLWidget):
                 return None
             with open(path, "rb") as fh:
                 stored = pickle.load(fh)     # our own cache dir only
-            if stored.get("nf") != len(mesh.faces) or "dback" not in stored:
-                return None          # a cache predating the back-side tint
+            if (stored.get("nf") != len(mesh.faces) or "dback" not in stored
+                    or "edge_layer" not in stored):
+                return None    # a cache predating the back-side tint or
+                #                the edges' layers
             entry = dict(stored)
             entry.update(fp=fp, vkey=vkey, rev=0, uid=next(_chunk_uid),
                          faces=list(mesh.faces))
@@ -14221,6 +14230,7 @@ class Viewport(QOpenGLWidget):
         # empty space / lines-only group) walked every group edge in
         # Python (~300 ms per mouse move against a 300k-edge import).
         b_gea, b_geb, b_ggi = [], [], []
+        b_gel: list = []
         b_gbase: list = []    # each chunk's (n, 2, 3) edge array, kept
         b_gsel: list = []     # per edge: may pick_group land on it
         b_ggroups: list = []
@@ -14290,6 +14300,11 @@ class Viewport(QOpenGLWidget):
                 b_geb.append(ge[:, 1])
                 b_ggi.append(np.full(len(ge), n_ggroups + len(b_ggroups),
                                      dtype=np.int64))
+                own = chunk.get("edge_layer")
+                gel = np.empty(len(ge), dtype=object)
+                if own is not None and len(own) == len(ge):
+                    gel[:] = own
+                b_gel.append(gel)
                 b_gsel.append(np.full(len(ge), gsel, dtype=bool))
                 b_ggroups.append(owner)
         part = {"entities": b_entities, "pidx": b_pidx, "plist": b_plist,
@@ -14297,6 +14312,7 @@ class Viewport(QOpenGLWidget):
                 "own": b_own, "static_key": static_key,
                 "v0": b_v0, "e1": b_e1, "e2": b_e2, "te": b_te,
                 "spans": b_spans, "gea": b_gea, "geb": b_geb, "ggi": b_ggi,
+                "gel": b_gel,
                 "gsel": b_gsel, "ggroups": b_ggroups, "gbase": b_gbase,
                 "n_ent": n_ent + count, "n_plist": n_plist + len(b_plist),
                 "n_tri": b_tri_off,
@@ -14304,7 +14320,7 @@ class Viewport(QOpenGLWidget):
         if base is None:
             # The fixed part joins its own lists once, here: it is kept.
             for k in ("pidx", "area", "vis", "sel", "gea", "geb", "ggi",
-                      "gsel"):
+                      "gel", "gsel"):
                 part[k] = [np.concatenate(part[k])] if part[k] else []
             if all(isinstance(e, list) for e in b_entities):
                 part["entities"] = [[x for e in b_entities for x in e]]
@@ -14348,6 +14364,7 @@ class Viewport(QOpenGLWidget):
             "gedge_a": np.concatenate(gea) if gea else None,
             "gedge_b": cat("geb", None) if gea else None,
             "gedge_gi": cat("ggi", None) if gea else None,
+            "gedge_layer": cat("gel", None) if gea else None,
             "gedge_sel": cat("gsel", None) if gea else None,
             "gedge_groups": fixed["ggroups"] + lazy["ggroups"],
             # The fixed part's edges lead, and that part outlives many lazy
@@ -14566,6 +14583,7 @@ class Viewport(QOpenGLWidget):
                              for bb, a, b, c, te, o in block.get("own", ())]
 
         gedge_a = gedge_b = gedge_gi = gedge_sel = gedge_fixed = None
+        gedge_layer = None
         gedge_groups: list = []
         if candidatos:
             block = self._pick_block[1] if getattr(self, "_pick_block", None) \
@@ -14573,6 +14591,7 @@ class Viewport(QOpenGLWidget):
             gedge_a = block.get("gedge_a")
             gedge_b = block.get("gedge_b")
             gedge_gi = block.get("gedge_gi")
+            gedge_layer = block.get("gedge_layer")
             gedge_sel = block.get("gedge_sel")
             gedge_groups = block.get("gedge_groups", [])
             gedge_fixed = block.get("gedge_fixed")
@@ -14627,6 +14646,7 @@ class Viewport(QOpenGLWidget):
             gedge_a=gedge_a,
             gedge_b=gedge_b,
             gedge_gi=gedge_gi,
+            gedge_layer=gedge_layer,
             gedge_sel=gedge_sel,
             gedge_groups=gedge_groups,
             gedge_fixed=gedge_fixed,
@@ -16578,7 +16598,7 @@ class Viewport(QOpenGLWidget):
             size = min(size * 4, 1024)
         return None
 
-    def hlr_geometry(self):
+    def hlr_geometry(self, tags: bool = False):
         """World-space geometry for the hidden-line pass (core.hlr) as
         arrays, straight from the caches the viewport already keeps: the
         pick index's triangles, every placement chunk's hard edges and soft
@@ -16589,19 +16609,37 @@ class Viewport(QOpenGLWidget):
 
         Returns ``(tris (T,3,3), hard (E,2,3), soft (S,2,3), soft_n
         (S,2,3))``; ``soft_n[:, 1]`` is NaN where a soft edge bounds an
-        open surface (no second face)."""
+        open surface (no second face).
+
+        ``tags``: also the layer each triangle, hard edge and soft edge is
+        inked with on a sheet — its own, else its object's, as
+        ``collect_geometry(layers=True)`` tags them — three more object
+        arrays ``(…, tri_tags, hard_tags, soft_tags)``. Read from the pick
+        index and the chunks (a lazy placement's from the document), never
+        from the faces: the walk was 12.8 s of the 16 s of the plaza's
+        line drawing by layer."""
         import numpy as np
+        from core.layers import DEFAULT_LAYER, layer_of
         scene = self.scene
         idx = self._pick_flat(self._pick_index(near="all"))
+        ttags = htags = stags = None
         if getattr(idx, "tri_v0", None) is not None and len(idx.tri_v0):
             keep = idx.ent_vis[idx.tri_ent]
             v0 = idx.tri_v0[keep]
             tris = np.stack([v0, v0 + idx.tri_e1[keep],
                              v0 + idx.tri_e2[keep]], axis=1)
             tris = tris.astype(np.float64)
+            if tags:
+                # One lookup per entity, not per triangle.
+                ents, back = np.unique(idx.tri_ent[keep],
+                                       return_inverse=True)
+                ttags = Viewport._cut_layer_tags(idx, ents)[back]
         else:
             tris = np.empty((0, 3, 3))
+            if tags:
+                ttags = np.empty(0, dtype=object)
         hard_parts: list = []
+        htag_parts: list = []
         if getattr(idx, "gedge_a", None) is not None and len(idx.gedge_a):
             gvis = np.array([scene.entity_visible(g)
                              and not getattr(g, "billboard", False)
@@ -16610,12 +16648,26 @@ class Viewport(QOpenGLWidget):
                  else np.zeros(len(idx.gedge_a), dtype=bool))
             hard_parts.append(np.stack([idx.gedge_a[m], idx.gedge_b[m]],
                                        axis=1).astype(np.float64))
+            if tags:
+                # Its object's layer, unless the edge carries one of its own.
+                owners = np.array([layer_of(g) for g in idx.gedge_groups]
+                                  + [DEFAULT_LAYER], dtype=object)
+                t = owners[idx.gedge_gi[m]]
+                own = getattr(idx, "gedge_layer", None)
+                if own is not None:
+                    own = own[m]
+                    has = np.array([o is not None for o in own], dtype=bool)
+                    t[has] = own[has]
+                htag_parts.append(t)
         soft_parts: list = []
         n_parts: list = []
+        stag_parts: list = []
         nan3 = (float("nan"),) * 3
         lh: list = []
+        lht: list = []
         ls: list = []
         ln: list = []
+        lst: list = []
         for e in scene.loose_mesh.edges:
             if getattr(e, "hidden", False) or not scene.entity_visible(e):
                 continue
@@ -16630,13 +16682,17 @@ class Viewport(QOpenGLWidget):
                 ls.append((p0, p1))
                 ln.append(((na.x(), na.y(), na.z()),
                            nan3 if nb is None else (nb.x(), nb.y(), nb.z())))
+                lst.append(layer_of(e))
             else:
                 lh.append((p0, p1))
+                lht.append(layer_of(e))
         if lh:
             hard_parts.append(np.asarray(lh, dtype=np.float64))
+            htag_parts.append(np.asarray(lht, dtype=object))
         if ls:
             soft_parts.append(np.asarray(ls, dtype=np.float64))
             n_parts.append(np.asarray(ln, dtype=np.float64))
+            stag_parts.append(np.asarray(lst, dtype=object))
         for g in self._placements():
             if (getattr(g, "billboard", False)
                     or not scene.entity_visible(g)):
@@ -16651,13 +16707,28 @@ class Viewport(QOpenGLWidget):
                           np.asarray(ch["soft_n1"], dtype=np.float64))
             n_parts.append(np.stack(
                 [np.asarray(ch["soft_n0"], dtype=np.float64), n1], axis=1))
+            if tags:
+                owner = layer_of(g)
+                own = ch.get("soft_layer")
+                n = len(soft_parts[-1])
+                if own is not None and len(own) == n:
+                    stag_parts.append(np.array(
+                        [o or owner for o in own], dtype=object))
+                else:
+                    stag_parts.append(np.array([owner] * n, dtype=object))
         hard = (np.concatenate(hard_parts) if hard_parts
                 else np.empty((0, 2, 3)))
         soft = (np.concatenate(soft_parts) if soft_parts
                 else np.empty((0, 2, 3)))
         soft_n = (np.concatenate(n_parts) if n_parts
                   else np.empty((0, 2, 3)))
-        return tris, hard, soft, soft_n
+        if not tags:
+            return tris, hard, soft, soft_n
+        htags = (np.concatenate(htag_parts) if htag_parts
+                 else np.empty(0, dtype=object))
+        stags = (np.concatenate(stag_parts) if stag_parts
+                 else np.empty(0, dtype=object))
+        return tris, hard, soft, soft_n, ttags, htags, stags
 
     def _effective_style(self):
         """The display style this frame draws with (Styles): the
