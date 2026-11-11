@@ -793,7 +793,9 @@ def _content_ver(vp):
     if frozen is not None:
         return ("frozen", frozen)
     sc = vp.scene
-    return getattr(sc, "content_version", sc.version)
+    # Nor the section planes' own bumps: a plane moved changes no face.
+    return getattr(sc, "geometry_version",
+                   getattr(sc, "content_version", sc.version))
 
 
 def _plan_curved_edges(plan):
@@ -3935,7 +3937,8 @@ class Viewport(QOpenGLWidget):
         # version. Orbiting a model of 21 406 placements walked them all on
         # every frame, ~55 ms (issue #158). The CONTENT version: a click
         # (a view-only bump) changes none of what the walk reads either.
-        cheap = (getattr(sc, "content_version", sc.version),
+        cheap = (getattr(sc, "geometry_version",
+                         getattr(sc, "content_version", sc.version)),
                  id(sc.edit_group), id(sc.mesh),
                  getattr(self, "_preview_epoch", 0),
                  bool(getattr(self, "_preview_groups", None)),

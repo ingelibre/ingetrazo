@@ -41,6 +41,13 @@ class Scene:
     #: and need every bump; "unsaved changes" must not: a click on empty
     #: space after Ctrl+S asked to save again (issue #159).
     view_version: int = 0
+    #: How many of ``version``'s bumps moved only the section planes —
+    #: placed, moved, turned, switched. They ARE document edits (the planes
+    #: are saved), but no face, edge or object changed: the caches of what
+    #: the model is (``geometry_version``) stay. Every drag of a section's
+    #: arrow rebuilt the pick index of the whole model, ~2 s a move on a
+    #: furnished house.
+    section_version: int = 0
     # Encapsulated chunks (own meshes), isolated from the main mesh's welding.
     groups: list = field(default_factory=list)
     # Annotation entities (static dimensions) — not geometry, drawn as overlays.
@@ -704,6 +711,18 @@ class Scene:
         the caches keyed on ``version`` refresh, the document stays clean."""
         self.version += 1
         self.view_version += 1
+
+    def bump_sections(self) -> None:
+        """The section planes changed and nothing else (see
+        ``section_version``): the document is edited, the model is not."""
+        self.version += 1
+        self.section_version += 1
+
+    @property
+    def geometry_version(self) -> int:
+        """``content_version`` without the section planes' own bumps: what
+        the faces, edges and objects are."""
+        return self.version - self.view_version - self.section_version
 
     @property
     def content_version(self) -> int:

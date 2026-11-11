@@ -132,3 +132,74 @@ def test_the_heights_are_kept_only_for_the_same_arrays_and_normal():
                      reach=reach)
     want = _cut_plain(v0, e1, e2, other, QVector3D(0.5, 0, 0), rows=True)
     assert _same(got[0], want[0]) and _same(got[1], want[1])
+
+
+# ---- The model's caches stay while only a section moves --------------------
+
+def _viewport_with_a_cut():
+    import os
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+    if QApplication.instance() is None:
+        QApplication([])
+    from core.history import History, PlaceSectionPlaneCommand
+    from core.section import SectionPlane
+    from tests.test_pushpull_ux import _cube
+    from views.viewport import Viewport
+    vp = Viewport(None)
+    hist = History(vp.scene)
+    _cube(vp.scene, hist, size=4.0, height=3.0)
+    plane = SectionPlane(QVector3D(2, 2, 1.0), QVector3D(0, 0, 1))
+    hist.execute(PlaceSectionPlaneCommand(plane))
+    return vp, hist, plane
+
+
+def test_a_moved_section_keeps_the_pick_index_and_edits_the_document():
+    from core.history import (MoveSectionPlanesCommand,
+                              RotateSectionPlanesCommand)
+    vp, hist, plane = _viewport_with_a_cut()
+    scene = vp.scene
+    idx = vp._pick_index(near="all")
+    cut = vp._section_cut_segments().copy()
+    edited = scene.content_version
+    hist.execute(MoveSectionPlanesCommand([plane], QVector3D(0, 0, 1.0)))
+    # Saved with the file: the document has changed …
+    assert scene.content_version != edited
+    # … the model has not: the index of its triangles is the same one,
+    assert vp._pick_index(near="all") is idx
+    # and the cut follows the plane (z = 1 → z = 2).
+    moved = vp._section_cut_segments()
+    assert abs(float(moved[:, :, 2].mean()) - 2.0) < 1e-5
+    assert abs(float(cut[:, :, 2].mean()) - 1.0) < 1e-5
+    hist.execute(RotateSectionPlanesCommand([plane], QVector3D(2, 2, 2),
+                                            QVector3D(1, 0, 0), 90.0))
+    assert vp._pick_index(near="all") is idx
+    hist.undo()
+    hist.undo()
+    assert vp._pick_index(near="all") is idx
+
+
+def test_an_edit_of_the_model_still_rebuilds_the_index():
+    from core.history import translate_points
+    from core.topology import _key
+    vp, _hist, _plane = _viewport_with_a_cut()
+    idx = vp._pick_index(near="all")
+    top = {_key(v.position) for v in vp.scene.mesh.vertices
+           if abs(v.position.z() - 3.0) < 1e-6}
+    translate_points(vp.scene, top, QVector3D(0, 0, 1.0))
+    assert vp._pick_index(near="all") is not idx
+
+
+def test_dragging_only_a_section_with_move_keeps_the_index():
+    """The Move tool's live drag of a section plane bumped the scene as an
+    edit of the model on every pointer move."""
+    from tools.move import MoveTool
+    vp, _hist, plane = _viewport_with_a_cut()
+    idx = vp._pick_index(near="all")
+    tool = MoveTool()
+    tool._splanes = [plane]
+    before = vp.scene.content_version
+    tool._shift(vp, QVector3D(0, 0, 0.25))
+    assert vp._pick_index(near="all") is idx
+    assert vp.scene.content_version != before
+    assert abs(plane.point.z() - 1.25) < 1e-9
