@@ -1787,7 +1787,7 @@ class PlaceSectionPlaneCommand(Command):
         scene.set_active_section(self.plane)
         scene.selection.clear()
         scene.selection.add(self.plane)
-        scene.version += 1
+        scene.bump_sections()
 
     def undo(self, scene) -> None:
         if self.plane in scene.section_planes:
@@ -1796,7 +1796,7 @@ class PlaceSectionPlaneCommand(Command):
         prev = self._prev_active
         scene.set_active_section(
             prev if prev in scene.section_planes else None)
-        scene.version += 1
+        scene.bump_sections()
 
 
 class DeleteSectionPlanesCommand(Command):
@@ -1814,12 +1814,12 @@ class DeleteSectionPlanesCommand(Command):
             if p in scene.section_planes:
                 scene.section_planes.remove(p)
             scene.selection.discard(p)
-        scene.version += 1
+        scene.bump_sections()
 
     def undo(self, scene) -> None:
         for i, p in sorted(self._restore):
             scene.section_planes.insert(i, p)
-        scene.version += 1
+        scene.bump_sections()
 
 
 class ReverseSectionPlaneCommand(Command):
@@ -1830,11 +1830,11 @@ class ReverseSectionPlaneCommand(Command):
 
     def do(self, scene) -> None:
         self.plane.flip()
-        scene.version += 1
+        scene.bump_sections()
 
     def undo(self, scene) -> None:
         self.plane.flip()
-        scene.version += 1
+        scene.bump_sections()
 
 
 class SetActiveSectionCommand(Command):
@@ -1848,13 +1848,13 @@ class SetActiveSectionCommand(Command):
     def do(self, scene) -> None:
         self._prev = scene.active_section()
         scene.set_active_section(self.plane)
-        scene.version += 1
+        scene.bump_sections()
 
     def undo(self, scene) -> None:
         prev = self._prev
         scene.set_active_section(
             prev if prev in scene.section_planes else None)
-        scene.version += 1
+        scene.bump_sections()
 
 
 class SetSectionModeCommand(Command):
@@ -1878,14 +1878,14 @@ class SetSectionModeCommand(Command):
         self.plane.hidden = not self.frame
         if self.plane.hidden:
             scene.selection.discard(self.plane)
-        scene.version += 1
+        scene.bump_sections()
 
     def undo(self, scene) -> None:
         active, hidden = self._prev
         scene.set_active_section(
             active if active in scene.section_planes else None)
         self.plane.hidden = hidden
-        scene.version += 1
+        scene.bump_sections()
 
 
 class SetSectionFillCommand(Command):
@@ -1901,11 +1901,11 @@ class SetSectionFillCommand(Command):
         prev = getattr(self.plane, "fill", None)
         self._prev = dict(prev) if prev else None
         self.plane.fill = dict(self.fill) if self.fill else None
-        scene.version += 1
+        scene.bump_sections()
 
     def undo(self, scene) -> None:
         self.plane.fill = dict(self._prev) if self._prev else None
-        scene.version += 1
+        scene.bump_sections()
 
 
 class RenameSectionPlaneCommand(Command):
@@ -1921,11 +1921,11 @@ class RenameSectionPlaneCommand(Command):
     def do(self, scene) -> None:
         self._prev = (self.plane.name, self.plane.symbol)
         self.plane.name, self.plane.symbol = self.name, self.symbol
-        scene.version += 1
+        scene.bump_sections()
 
     def undo(self, scene) -> None:
         self.plane.name, self.plane.symbol = self._prev
-        scene.version += 1
+        scene.bump_sections()
 
 
 class AddSheetCommand(Command):
@@ -2172,12 +2172,12 @@ class MoveSectionPlanesCommand(Command):
     def do(self, scene) -> None:
         for p in self._planes:
             p.point = p.point + self.delta
-        scene.version += 1
+        scene.bump_sections()
 
     def undo(self, scene) -> None:
         for p in self._planes:
             p.point = p.point - self.delta
-        scene.version += 1
+        scene.bump_sections()
 
 
 class RotateSectionPlanesCommand(Command):
@@ -2198,7 +2198,7 @@ class RotateSectionPlanesCommand(Command):
             n = m.mapVector(p.normal)
             if n.length() > 1e-12:
                 p.normal = n.normalized()
-        scene.version += 1
+        scene.bump_sections()
 
     def do(self, scene) -> None:
         self._apply(scene, self.deg)

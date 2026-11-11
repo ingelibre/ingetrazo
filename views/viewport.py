@@ -793,7 +793,9 @@ def _content_ver(vp):
     if frozen is not None:
         return ("frozen", frozen)
     sc = vp.scene
-    return getattr(sc, "content_version", sc.version)
+    # Nor the section planes' own bumps: a plane moved changes no face.
+    return getattr(sc, "geometry_version",
+                   getattr(sc, "content_version", sc.version))
 
 
 def _plan_curved_edges(plan):
@@ -3935,7 +3937,8 @@ class Viewport(QOpenGLWidget):
         # version. Orbiting a model of 21 406 placements walked them all on
         # every frame, ~55 ms (issue #158). The CONTENT version: a click
         # (a view-only bump) changes none of what the walk reads either.
-        cheap = (getattr(sc, "content_version", sc.version),
+        cheap = (getattr(sc, "geometry_version",
+                         getattr(sc, "content_version", sc.version)),
                  id(sc.edit_group), id(sc.mesh),
                  getattr(self, "_preview_epoch", 0),
                  bool(getattr(self, "_preview_groups", None)),
@@ -9899,8 +9902,19 @@ class Viewport(QOpenGLWidget):
         from core.section import cut_chords
         segs = tags = None
         if idx.tri_v0 is not None and len(idx.tri_v0):
+            # Each triangle's height along the normal is kept while the
+            # model and the normal stay: a plane dragged by its arrow then
+            # only compares three arrays with its new offset (a furnished
+            # house froze ~2 s per drag measuring every triangle again).
+            reach = getattr(self, "_section_reach", None)
+            if reach is None or not reach.fits(idx.tri_v0, n, idx.tri_e1,
+                                               idx.tri_e2):
+                from core.section import PlaneReach
+                reach = self._section_reach = PlaneReach(
+                    idx.tri_v0, idx.tri_e1, idx.tri_e2, n)
             segs, rows = cut_chords(idx.tri_v0, idx.tri_e1, idx.tri_e2, n, o,
-                                    idx.ent_vis[idx.tri_ent], rows=True)
+                                    idx.ent_vis[idx.tri_ent], rows=True,
+                                    reach=reach)
             if segs is not None:
                 tags = self._cut_layer_tags(idx, idx.tri_ent[rows])
         self._section_cut_cache = (key, segs, tags)
@@ -9914,11 +9928,18 @@ class Viewport(QOpenGLWidget):
         from core.layers import DEFAULT_LAYER, layer_of
         memo: dict = {}
         out = []
+        # A lazy placement's face is built with its whole mesh when asked
+        # for: its layer is read from the document instead.
+        quick = getattr(idx.entities, "layer_at", None)
         for e in ents.tolist():
             tag = memo.get(e)
             if tag is None:
-                face, owner = idx.entities[e]
-                tag = layer_of(face)
+                if quick is not None:
+                    own, owner = quick(e)
+                    tag = own or DEFAULT_LAYER
+                else:
+                    face, owner = idx.entities[e]
+                    tag = layer_of(face)
                 if tag == DEFAULT_LAYER and owner is not None:
                     tag = layer_of(owner)
                 memo[e] = tag
