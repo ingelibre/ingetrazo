@@ -419,6 +419,15 @@ class OrbitCamera:
         return all(math.isfinite(v) for v in (
             t.x(), t.y(), t.z(), self.distance, self.yaw, self.pitch))
 
+    def sees_from_below(self, z: float) -> bool:
+        """The view looks at the horizontal plane at height ``z`` from
+        underneath: in perspective the eye is at or below it; in parallel
+        projection, whose eye is only a point at ``distance``, the view
+        looks upward. The ground's shadows are not drawn then (#1301)."""
+        if self.perspective:
+            return self.eye().z() <= z
+        return self.forward().z() > 0.0
+
     def set_aspect(self, w: int, h: int) -> None:
         self.aspect = max(w, 1) / max(h, 1)
 
