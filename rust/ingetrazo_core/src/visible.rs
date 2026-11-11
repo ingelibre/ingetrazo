@@ -21,6 +21,10 @@ use rayon::prelude::*;
 
 pub type Ring = Vec<[f64; 2]>;
 
+/// A region on the integer grid as `i_overlay` hands it back: shapes, each
+/// an outer contour and its holes.
+type Shapes = Vec<Vec<Vec<IntPoint<i64>>>>;
+
 pub struct Face {
     pub rings: Vec<Ring>,
     /// The nearness plane `(a, b, c)`: nearer where `a·x + b·y + c` is bigger.
@@ -61,7 +65,7 @@ fn bbox<'a>(pts: impl Iterator<Item = &'a [f64; 2]>) -> ([f64; 2], [f64; 2]) {
     (lo, hi)
 }
 
-fn int_bbox(shapes: &[Vec<Vec<IntPoint<i64>>>]) -> (IntPoint<i64>, IntPoint<i64>) {
+fn int_bbox(shapes: &Shapes) -> (IntPoint<i64>, IntPoint<i64>) {
     let mut lo = IntPoint::new(i64::MAX, i64::MAX);
     let mut hi = IntPoint::new(i64::MIN, i64::MIN);
     for p in shapes.iter().flatten().flatten() {
@@ -228,6 +232,12 @@ pub struct Setup<'a> {
     min_area: f64,
     scale: f64,
     area: Vec<f64>,
+    /// Each face as a region of its own — its rings made even-odd, as the
+    /// Python pass's ``_section`` made them: outer contours one way, holes
+    /// the other, a self-crossing ring split at its crossings — on the
+    /// integer grid, and the same back in the drawing's units.
+    region: Vec<Shapes>,
+    region_f: Vec<Vec<Ring>>,
 }
 
 impl<'a> Setup<'a> {
@@ -280,7 +290,42 @@ impl<'a> Setup<'a> {
         // for the arithmetic on differences.
         let limit = (1u64 << 60) as f64 / (biggest.max(1e-12) * 4.0);
         let scale = units.min(limit);
-        Setup { faces, lo, hi, grid, span, min_area, scale, area }
+        let inv = 1.0 / scale;
+        // Oriented by the sign of its area, a ring that crosses itself (a
+        // face seen as a bow tie) kept one lobe unfilled under the non-zero
+        // rule and covered less than it does: 227 slivers of the plaza the
+        // Python pass had not. Made even-odd once, every region is simple
+        // and wound alike, and the unions and differences below are exact.
+        let region: Vec<Shapes> = (0..n)
+            .into_par_iter()
+            .map(|i| {
+                if area[i] <= 0.0 {
+                    return Vec::new();
+                }
+                let mut ov = Overlay::<i64>::new(16);
+                for r in &faces[i].rings {
+                    if r.len() >= 3 {
+                        let pts: Vec<IntPoint<i64>> = r
+                            .iter()
+                            .map(|p| IntPoint::new((p[0] * scale).round() as i64, (p[1] * scale).round() as i64))
+                            .collect();
+                        ov.add_contour(&pts, ShapeType::Subject);
+                    }
+                }
+                ov.overlay(OverlayRule::Subject, FillRule::EvenOdd)
+            })
+            .collect();
+        let region_f: Vec<Vec<Ring>> = region
+            .iter()
+            .map(|shapes| {
+                shapes
+                    .iter()
+                    .flatten()
+                    .map(|c| c.iter().map(|p| [p.x as f64 * inv, p.y as f64 * inv]).collect())
+                    .collect()
+            })
+            .collect();
+        Setup { faces, lo, hi, grid, span, min_area, scale, area, region, region_f }
     }
 
     fn to_int_pt(&self, p: [f64; 2]) -> IntPoint<i64> {
@@ -293,39 +338,12 @@ impl<'a> Setup<'a> {
             .collect()
     }
 
-    /// A region's rings, wound for a non-zero fill to mean what even-odd
-    /// means on them: the biggest ring one way, the rest (its holes) the
-    /// other. The covers of one face must all turn the same way, or one
-    /// would cancel another in the union.
-    fn oriented(&self, rings: &[Ring]) -> Vec<Vec<IntPoint<i64>>> {
-        let areas: Vec<f64> = rings.iter().map(|r| area2(r)).collect();
-        let mut outer = 0;
-        for k in 1..rings.len() {
-            if areas[k].abs() > areas[outer].abs() {
-                outer = k;
-            }
-        }
-        rings
-            .iter()
-            .enumerate()
-            .map(|(k, r)| {
-                let want_ccw = k == outer;
-                let mut pts = self.to_int(r);
-                if (areas[k] > 0.0) != want_ccw {
-                    pts.reverse();
-                }
-                pts
-            })
-            .collect()
-    }
-
     /// Face `i` less what covers it: its visible rings (drawing units).
     fn one(&self, i: usize) -> Vec<Ring> {
         if self.area[i] <= 0.0 {
             return Vec::new();
         }
-        let fa = &self.faces[i];
-        let qa = fa.near;
+        let qa = self.faces[i].near;
         let (a_lo, a_hi) = (self.lo[i], self.hi[i]);
         // Nearness differences below this are "the same plane": a millionth
         // of the drawing's size.
@@ -363,38 +381,38 @@ impl<'a> Setup<'a> {
             if kind == 0 {
                 continue;
             }
-            let part: Vec<Ring> = if kind == 1 {
-                fb.rings.clone()
-            } else {
-                // A neighbour sharing an edge clips to a sliver of no area
-                // along it: nothing to take away.
-                fb.rings
-                    .iter()
-                    .map(|r| clip_half(r, dq))
-                    .filter(|c| c.len() >= 3 && area2(c).abs() * 0.5 >= self.min_area)
-                    .collect()
-            };
+            if kind == 1 {
+                // B whole: its region as made, wound already.
+                let contours: Vec<Vec<IntPoint<i64>>> = self.region[j].iter().flatten().cloned().collect();
+                if contours.is_empty() {
+                    continue;
+                }
+                covers.push(Cover { contours, lo: self.lo[j], hi: self.hi[j],
+                                    size: (self.hi[j][0] - self.lo[j][0]) * (self.hi[j][1] - self.lo[j][1]) });
+                continue;
+            }
+            // The part of B nearer than A: each contour of B's region cut
+            // to one side of the line — a simple contour stays simple and
+            // keeps its winding, a hole's piece lies within its outer's. A
+            // neighbour sharing an edge clips to a sliver of no area along
+            // it: nothing to take away.
+            let part: Vec<Ring> = self.region_f[j]
+                .iter()
+                .map(|r| clip_half(r, dq))
+                .filter(|c| c.len() >= 3 && area2(c).abs() * 0.5 >= self.min_area)
+                .collect();
             if part.is_empty() {
                 continue;
             }
             let (lo, hi) = bbox(part.iter().flatten());
             covers.push(Cover {
-                contours: self.oriented(&part).into_iter().filter(|c| c.len() >= 3).collect(),
+                contours: part.iter().map(|r| self.to_int(r)).collect(),
                 lo,
                 hi,
                 size: (hi[0] - lo[0]) * (hi[1] - lo[1]),
             });
         }
-        // The face as a region of its own (its rings made even-odd).
-        let mut visible = {
-            let mut ov = Overlay::<i64>::new(16);
-            for pts in self.oriented(&fa.rings) {
-                if pts.len() >= 3 {
-                    ov.add_contour(&pts, ShapeType::Subject);
-                }
-            }
-            ov.overlay(OverlayRule::Subject, FillRule::NonZero)
-        };
+        let mut visible = self.region[i].clone();
         covers.sort_by(|a, b| b.size.partial_cmp(&a.size).unwrap_or(std::cmp::Ordering::Equal));
         // The few biggest first, on their own: a face under a roof is found
         // hidden there, and the rest never joins a union. Then batch by
