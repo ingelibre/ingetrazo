@@ -294,8 +294,32 @@ def test_a_click_the_wheel_or_esc_in_the_view_stops_it(rig, kind):
                          Qt.NoScrollPhase, False)
     else:
         ev = QKeyEvent(QEvent.KeyPress, Qt.Key_Escape, Qt.NoModifier)
-    QApplication.sendEvent(window.viewport.widget, ev)
+    # Straight to the player's filter: in a long run of test files, a
+    # window an earlier file left behind keeps an application-wide key
+    # filter that may take Esc first (the CI's sixth batch did).
+    eaten = player.eventFilter(window.viewport.widget, ev)
     assert not player.is_active()
+    assert eaten is (kind == "esc")          # Esc is the player's alone
+
+
+def test_the_player_watches_the_viewport_while_it_moves(rig):
+    """The filter is on the viewport only while a glide or a run is on."""
+    from PySide6.QtCore import QEvent, QPointF, Qt
+    from PySide6.QtGui import QMouseEvent
+    window, player, _clock = rig
+
+    def press():
+        QApplication.sendEvent(window.viewport.widget, QMouseEvent(
+            QEvent.MouseButtonPress, QPointF(5, 5), QPointF(5, 5),
+            Qt.LeftButton, Qt.LeftButton, Qt.NoModifier))
+    player.glide_to(_view("Planta", x=8.0), 2.0, lambda v: None)
+    press()
+    assert not player.is_active()
+    arrived = []
+    player.glide_to(_view("Alzado", "front", x=-8.0), 2.0, arrived.append)
+    player.cancel()
+    press()                                  # nothing to stop, nothing done
+    assert arrived == [] and not player.is_active()
 
 
 def test_another_project_in_front_stops_it(rig):
@@ -574,6 +598,16 @@ def test_the_toggle_shows_the_choice_of_the_project_in_front(win):
 
 
 # ---- The video ---------------------------------------------------------------
+def _need_video():
+    """Skip where Qt Multimedia cannot load. Not only when it is missing:
+    on a Linux machine without PulseAudio (the CI's) the module is there
+    but its import fails on libpulse.so.0 — an ImportError that
+    ``pytest.importorskip`` does not treat as a reason to skip."""
+    from views.video_export import multimedia_available
+    if not multimedia_available():
+        pytest.skip("Qt Multimedia does not load here")
+
+
 def test_a_video_shows_the_first_scene_glides_and_ends_on_the_last():
     from core.scene_animation import video_at, video_frame_count, video_seconds
     poses = [_pose(x=0), _pose(x=10), _pose(x=20)]
@@ -593,7 +627,7 @@ def test_a_video_shows_the_first_scene_glides_and_ends_on_the_last():
 
 
 def test_the_mkv_writer_writes_a_matroska_file(tmp_path):
-    pytest.importorskip("PySide6.QtMultimedia")
+    _need_video()
     from PySide6.QtGui import QColor, QImage
 
     from views.video_export import MkvWriter
@@ -612,7 +646,7 @@ def test_the_mkv_writer_writes_a_matroska_file(tmp_path):
 
 
 def test_a_discarded_video_leaves_no_file(tmp_path):
-    pytest.importorskip("PySide6.QtMultimedia")
+    _need_video()
     from PySide6.QtGui import QImage
 
     from views.video_export import MkvWriter
@@ -640,7 +674,7 @@ def _fake_render(win, log):
 
 def test_export_video_renders_every_frame_and_puts_the_view_back(
         win, tmp_path):
-    pytest.importorskip("PySide6.QtMultimedia")
+    _need_video()
     from views.video_export import export_video
     _with_layer(win, "Muebles")
     _scenes(win, ("Vista", "iso", set()), ("Planta", "top", {"Muebles"}))
@@ -669,7 +703,7 @@ def test_export_video_renders_every_frame_and_puts_the_view_back(
 
 
 def test_cancelling_the_video_removes_the_file(win, tmp_path):
-    pytest.importorskip("PySide6.QtMultimedia")
+    _need_video()
     from views.video_export import export_video
     _scenes(win, ("A", "iso", set()), ("B", "top", set()))
     _fake_render(win, [])
@@ -708,3 +742,38 @@ def test_the_video_is_in_file_export_and_in_the_animation_menu(win):
                for a in m.actions()}
     assert (tr("Export"), tr("Scenes as Video (.mkv)…")) in entries
     assert (tr("Animation"), tr("Export Video (.mkv)…")) in entries
+
+
+def _without_multimedia(monkeypatch):
+    """What the CI's Linux machine does: the import of Qt Multimedia
+    fails (there, on libpulse.so.0)."""
+    import sys
+    monkeypatch.setitem(sys.modules, "PySide6.QtMultimedia", None)
+
+
+def test_without_multimedia_the_writer_says_why(monkeypatch, tmp_path):
+    from views.video_export import (MkvWriter, VideoError,
+                                    multimedia_available, no_video_message)
+    _without_multimedia(monkeypatch)
+    assert not multimedia_available()
+    with pytest.raises(VideoError) as err:
+        MkvWriter(tmp_path / "x.mkv", 64, 48, 10)
+    assert str(err.value) == no_video_message()
+    assert not (tmp_path / "x.mkv").exists()
+
+
+def test_without_multimedia_the_export_says_so_and_asks_nothing(
+        win, monkeypatch):
+    from PySide6.QtWidgets import QMessageBox
+
+    import views.video_export as ve
+    from views.filedialogs import file_dialogs
+    _scenes(win, ("A", "iso", set()))
+    _without_multimedia(monkeypatch)
+    said, asked = [], []
+    monkeypatch.setattr(QMessageBox, "critical",
+                        lambda *a, **k: said.append(a[2]))
+    monkeypatch.setattr(file_dialogs, "getSaveFileName",
+                        lambda *a, **k: asked.append(a) or ("", ""))
+    ve.run_export(win)
+    assert said == [ve.no_video_message()] and asked == []

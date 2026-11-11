@@ -41,6 +41,9 @@ def even(n: int) -> int:
 
 
 def multimedia_available() -> bool:
+    """Whether Qt Multimedia loads. Missing is not the only way to fail:
+    on Linux it is there but needs the system's PulseAudio library
+    (libpulse.so.0), and without it the import fails all the same."""
     try:
         import PySide6.QtMultimedia  # noqa: F401
     except ImportError:
@@ -48,13 +51,21 @@ def multimedia_available() -> bool:
     return True
 
 
+def no_video_message() -> str:
+    return tr("This build of IngeTrazo has no video support (Qt Multimedia).")
+
+
 class MkvWriter:
     """Frames in, a .mkv file out."""
 
     def __init__(self, path, width: int, height: int, fps: int) -> None:
         from PySide6.QtCore import QSize, QUrl
-        from PySide6.QtMultimedia import (QMediaCaptureSession, QMediaFormat,
-                                          QMediaRecorder, QVideoFrameInput)
+        try:
+            from PySide6.QtMultimedia import (QMediaCaptureSession,
+                                              QMediaFormat, QMediaRecorder,
+                                              QVideoFrameInput)
+        except ImportError as exc:
+            raise VideoError(no_video_message()) from exc
         from PySide6.QtWidgets import QApplication
         self._app = QApplication.instance()
         self.path = Path(path).resolve()   # a relative URL lands elsewhere
@@ -272,8 +283,8 @@ def run_export(window) -> None:
             "first (Scenes panel, «+ Scene»)."))
         return
     if not multimedia_available():
-        QMessageBox.critical(window, tr("Export Video failed"), tr(
-            "This build of IngeTrazo has no video support (Qt Multimedia)."))
+        QMessageBox.critical(window, tr("Export Video failed"),
+                             no_video_message())
         return
     path_cur = getattr(window, "_current_path", None)
     base = path_cur.stem if path_cur is not None else "untitled"
