@@ -1,5 +1,7 @@
 # Project tabs, scenes and views
 
+[Bahasa Indonesia](project-tabs.id.md)
+
 Several projects can be open in one window, each in its own tab. Under the
 view, the project's scenes are tabs too; the button at the left of the
 project tabs shows the model in one, two, three or four views at once.
