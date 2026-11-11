@@ -1369,15 +1369,15 @@ def faces_progress(parent, hold=None):
     previewing «Faces in colour», with nothing to say it was working nor
     a way to stop. ``hold``: a widget that does not paint meanwhile — the
     view, whose camera the export moves while it works."""
-    from core import vista_caras
+    from core import progress
     started = time.monotonic()
     box = []
 
-    def progress(done):
+    def report(done):
         if not box:
             if time.monotonic() - started < PROGRESS_AFTER:
                 return
-            dlg = QProgressDialog(tr("Working out the visible faces…"),
+            dlg = QProgressDialog(tr("Working out the drawing…"),
                                   tr("Cancel"), 0, 1000, parent)
             dlg.setWindowTitle(tr("Export SVG"))
             dlg.setWindowModality(Qt.WindowModal)
@@ -1398,7 +1398,7 @@ def faces_progress(parent, hold=None):
     if held:
         hold.setUpdatesEnabled(False)
     try:
-        with vista_caras.reporting(progress):
+        with progress.reporting(report):
             yield
     finally:
         if box:

@@ -1327,7 +1327,7 @@
  "Portrait": "Retrato",
  "Preview": "Pré-visualização",
  "Working out the preview…": "Calculando a pré-visualização…",
- "Working out the visible faces…": "Calculando as faces visíveis…",
+ "Working out the drawing…": "Calculando o desenho…",
  "SVG export cancelled": "Exportação SVG cancelada",
  "Frame scale ({scale})": "Escala do quadro ({scale})",
  "A vector drawing of the view to finish in an illustration program: one layer per model layer, the faces under the lines.": "Um desenho vetorial da vista para finalizar em um programa de ilustração: uma camada por camada do modelo, as faces sob as linhas.",
