@@ -324,7 +324,7 @@ class _RadialTool(AxisMagnet, PlaneLock, Tool):
         if not self._guide_capable:
             return ""
         # Short on purpose: the clause rides the same line as a long hint.
-        return "Ctrl to " + tr("guide")
+        return tr("Ctrl = guide")
 
     def _toggle_guide(self, viewport, say: bool = True) -> None:
         self._guide_mode = not self._guide_mode

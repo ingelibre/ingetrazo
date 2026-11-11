@@ -1992,6 +1992,7 @@
  "guide points": "가이드 점",
  "measure": "측정",
  "guide": "가이드",
+ "Ctrl = guide": "Ctrl = 가이드",
  "Click a point or an edge to measure. Arrows lock an axis.": "점이나 모서리를 클릭해 측정하세요. 화살표로 축 고정.",
  "Click the second point, or type the distance and Enter.": "두 번째 점을 클릭하거나, 거리를 입력하고 Enter를 누르세요.",
  "Click the centre. Arrows pick the plane, Down = perpendicular to an edge. Type the sides first.": "중심을 클릭하세요. 화살표로 평면 선택, 아래 화살표 = 모서리에 수직. 변의 수를 먼저 입력하세요.",

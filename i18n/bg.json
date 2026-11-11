@@ -1997,6 +1997,7 @@
   "guide points": "помощни точки",
   "measure": "измерване",
   "guide": "помощен елемент",
+  "Ctrl = guide": "Ctrl = помощен елемент",
   "Click a point or an edge to measure. Arrows lock an axis.": "Щракнете върху точка или ръб за измерване. Стрелките фиксират ос.",
   "Click the second point, or type the distance and Enter.": "Щракнете върху втората точка или въведете разстоянието и натиснете Enter.",
   "Click the centre. Arrows pick the plane, Down = perpendicular to an edge. Type the sides first.": "Щракнете върху центъра. Стрелките избират равнина, стрелка надолу = перпендикулярно на ръб. Първо въведете броя на страните.",

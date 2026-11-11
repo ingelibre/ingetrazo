@@ -1996,6 +1996,7 @@
  "guide points": "輔助點",
  "measure": "量測",
  "guide": "輔助線",
+ "Ctrl = guide": "Ctrl = 輔助線",
  "Click a point or an edge to measure. Arrows lock an axis.": "點擊一點或一條邊線進行量測。方向鍵鎖定軸向。",
  "Click the second point, or type the distance and Enter.": "點擊第二點，或輸入距離並按 Enter。",
  "Click the centre. Arrows pick the plane, Down = perpendicular to an edge. Type the sides first.": "點擊中心。方向鍵選擇平面，↓ = 垂直於邊線。請先輸入邊數。",

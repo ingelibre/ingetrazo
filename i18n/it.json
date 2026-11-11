@@ -1975,6 +1975,7 @@
  "guide points": "punti guida",
  "measure": "misura",
  "guide": "guida",
+ "Ctrl = guide": "Ctrl = guida",
  "Click a point or an edge to measure. Arrows lock an axis.": "Fai clic su un punto o su uno spigolo da misurare. Le frecce bloccano un asse.",
  "Click the second point, or type the distance and Enter.": "Fai clic sul secondo punto, oppure digita la distanza e premi Invio.",
  "Click the centre. Arrows pick the plane, Down = perpendicular to an edge. Type the sides first.": "Fai clic sul centro. Le frecce scelgono il piano, Giù = perpendicolare a uno spigolo. Digita prima i lati.",

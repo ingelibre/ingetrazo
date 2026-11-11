@@ -1992,6 +1992,7 @@
  "guide points": "จุดร่างอ้างอิง",
  "measure": "วัดระยะ",
  "guide": "เส้นร่างอ้างอิง",
+ "Ctrl = guide": "Ctrl = เส้นร่างอ้างอิง",
  "Click a point or an edge to measure. Arrows lock an axis.": "คลิกจุดหรือขอบเพื่อวัดระยะ ปุ่มลูกศรล็อกแกน",
  "Click the second point, or type the distance and Enter.": "คลิกจุดที่สอง หรือพิมพ์ระยะทางแล้วกด Enter",
  "Click the centre. Arrows pick the plane, Down = perpendicular to an edge. Type the sides first.": "คลิกจุดศูนย์กลาง ปุ่มลูกศรเลือกระนาบ ปุ่มลูกศรลง = ตั้งฉากกับขอบ พิมพ์จำนวนด้านก่อน",

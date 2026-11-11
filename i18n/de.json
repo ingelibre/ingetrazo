@@ -1993,6 +1993,7 @@
  "guide points": "Hilfspunkte",
  "measure": "messen",
  "guide": "Hilfslinie",
+ "Ctrl = guide": "Ctrl = Hilfslinie",
  "Click a point or an edge to measure. Arrows lock an axis.": "Klicke einen Punkt oder eine Kante zum Messen an. Pfeiltasten fixieren eine Achse.",
  "Click the second point, or type the distance and Enter.": "Klicke den zweiten Punkt an oder gib den Abstand ein und drücke Enter.",
  "Click the centre. Arrows pick the plane, Down = perpendicular to an edge. Type the sides first.": "Klicke den Mittelpunkt an. Pfeiltasten wählen die Ebene, Ab = senkrecht zu einer Kante. Gib zuerst die Seitenzahl ein.",

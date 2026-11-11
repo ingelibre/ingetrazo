@@ -1993,6 +1993,7 @@
  "guide points": "điểm gióng phụ",
  "measure": "đo lường",
  "guide": "đường gióng",
+ "Ctrl = guide": "Ctrl = đường gióng",
  "Click a point or an edge to measure. Arrows lock an axis.": "Bấm vào một điểm hoặc một cạnh để đo. Mũi tên khóa một trục.",
  "Click the second point, or type the distance and Enter.": "Bấm vào điểm thứ hai hoặc nhập khoảng cách và Enter.",
  "Click the centre. Arrows pick the plane, Down = perpendicular to an edge. Type the sides first.": "Bấm vào trung tâm. Mũi tên chọn mặt phẳng, Xuống = vuông góc với một cạnh. Nhập các cạnh đầu tiên.",

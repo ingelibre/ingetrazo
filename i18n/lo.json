@@ -1993,6 +1993,7 @@
  "guide points": "ຈຸດອ້າງອີງ",
  "measure": "ວັດແທກ",
  "guide": "ແນວທາງ",
+ "Ctrl = guide": "Ctrl = ແນວທາງ",
  "Click a point or an edge to measure. Arrows lock an axis.": "ຄລິກຈຸດ ຫຼື ຂອບເພື່ອວັດແທກ. ປຸ່ມລູກສອນໃຊ້ລັອກແກນ.",
  "Click the second point, or type the distance and Enter.": "ຄລິກຈຸດທີສອງ, ຫຼື ພິມໄລຍະຫ່າງແລ້ວກົດ Enter.",
  "Click the centre. Arrows pick the plane, Down = perpendicular to an edge. Type the sides first.": "ຄລິກຈຸດໃຈກາງ. ປຸ່ມລູກສອນເລືອກລະນັບ, ລູກສອນລົງ = ຕັ້ງສາກກັບຂອບ. ພິມຈຳນວນດ້ານກ່ອນ.",

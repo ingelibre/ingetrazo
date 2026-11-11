@@ -1995,6 +1995,7 @@
  "guide points": "指南点",
  "measure": "测量",
  "guide": "指南",
+ "Ctrl = guide": "Ctrl = 指南",
  "Click a point or an edge to measure. Arrows lock an axis.": "点击一个点或一条边进行测量。箭头锁定一个轴。",
  "Click the second point, or type the distance and Enter.": "点击第二个点，或输入距离并按 Enter。",
  "Click the centre. Arrows pick the plane, Down = perpendicular to an edge. Type the sides first.": "点击中心。箭头选择平面，向下 = 垂直于一条边。首先输入边数。",
