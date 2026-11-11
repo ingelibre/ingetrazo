@@ -224,11 +224,20 @@ class _ProjectTabs(QTabBar):
 
     def sizeHint(self):  # noqa: N802 — Qt override
         """Exactly as wide as its tabs: Qt's hint keeps room for the
-        scroll arrows, which left «+» a gap away from the last tab."""
+        scroll arrows, which left «+» a gap away from the last tab.
+
+        As tall as a tab from the start, tabs or not. The bar is built
+        empty (Qt's hint: 0 high) and its first tab comes while the window
+        is still hidden, when Qt asks for no new size. So it opened at the
+        row's height and grew to a tab's on a later layout, a moment after
+        the window showed: with a font whose tab is taller than that row
+        (macOS), the accent line under the name was cut off until then,
+        and the views under the bar shrank by the difference."""
         hint = super().sizeHint()
         if self.count():
             hint.setWidth(sum(self.tabSizeHint(i).width()
                               for i in range(self.count())))
+        hint.setHeight(max(hint.height(), self._panel_tab_height()))
         return hint
 
     def minimumSizeHint(self):  # noqa: N802 — Qt override
