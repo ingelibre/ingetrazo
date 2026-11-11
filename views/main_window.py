@@ -268,6 +268,7 @@ class MainWindow(QMainWindow):
         # main.py passes True: the plugins' setup runs once the window is up
         # (see load_extensions). Set first — the menu bar is built below.
         self._defer_extensions = bool(defer_extensions)
+        self._extension_manager_dialog = None
         self.resize(1280, 800)
         # Every toolbar — ours, a later one, a plugin's — floats as a
         # small window with its name and a × to close it.
@@ -3135,24 +3136,62 @@ class MainWindow(QMainWindow):
             self.layout().activate()
 
     def _on_manage_extensions(self) -> None:
-        # An exception in a menu slot goes to stderr, and a windowed build
-        # has none: the click did nothing at all (#1152).
-        try:
-            from views.extension_manager_dialog import ExtensionManagerDialog
-            dialog = ExtensionManagerDialog(self)
-        except Exception as exc:  # noqa: BLE001 — say so, whatever it was
-            import logging
-            from core.extensions import note_failure
-            logging.getLogger("ingetrazo.plugins").exception(
-                "the extension manager could not open")
-            note_failure("the extension manager could not open")
-            QMessageBox.warning(
-                self, tr("Extension manager"),
-                tr("Could not load extensions: {error}",
-                   error=f"{type(exc).__name__}: {exc}"))
-            return
+        dialog = self._extension_manager_dialog
+        if dialog is None:
+            # An exception in a menu slot goes to stderr, and a windowed
+            # build has none: the click did nothing at all (#1152).
+            try:
+                from views.extension_manager_dialog import (
+                    ExtensionManagerDialog)
+                dialog = ExtensionManagerDialog(self)
+            except Exception as exc:  # noqa: BLE001 — say so, whatever it was
+                import logging
+                from core.extensions import note_failure
+                logging.getLogger("ingetrazo.plugins").exception(
+                    "the extension manager could not open")
+                note_failure("the extension manager could not open")
+                QMessageBox.warning(
+                    self, tr("Extension manager"),
+                    tr("Could not load extensions: {error}",
+                       error=f"{type(exc).__name__}: {exc}"))
+                return
+            self._extension_manager_dialog = dialog
         dialog.exec()
-        dialog.deleteLater()
+        if dialog._restart_requested:
+            dialog._restart_requested = False
+            if self._prepare_extension_restart():
+                self._launch_extension_restart()
+
+    def _prepare_extension_restart(self) -> bool:
+        if self._workspace is not None:
+            QMessageBox.information(
+                self, tr("Restart IngeTrazo"),
+                tr("Leave the extension workspace before restarting."))
+            return False
+        if self._current_path is None and self._import_name is not None:
+            # Imported files have no native path to reopen. Preserve the
+            # converted document through the normal Save As flow first.
+            self._on_save()
+            return self._current_path is not None and not self._is_dirty()
+        return self._confirm_discard(
+            tr("Restart IngeTrazo to apply extension changes?"))
+
+    def _launch_extension_restart(self) -> bool:
+        from PySide6.QtCore import QProcess
+
+        command = self._new_window_command()
+        arguments = command[1:]
+        if self._current_path is not None:
+            arguments.append(str(self._current_path))
+        self._save_window_settings()
+        if not QProcess.startDetached(command[0], arguments):
+            QMessageBox.warning(
+                self, tr("Restart IngeTrazo"),
+                tr("Could not restart IngeTrazo."))
+            return False
+        self._restart_confirmed = True
+        self.close()
+        return True
 
     PLUGIN_GUIDE_URL = ("https://github.com/ingelibre/ingetrazo"
                         "/blob/main/docs/plugins.md")
@@ -9645,7 +9684,8 @@ class MainWindow(QMainWindow):
         if self._workspace is not None and not self.leave_workspace():
             event.ignore()
             return
-        if not self._confirm_quit():
+        if (not getattr(self, "_restart_confirmed", False)
+                and not self._confirm_quit()):
             event.ignore()
             return
         # A clean goodbye: whatever the user decided (save or discard), this
@@ -9656,17 +9696,7 @@ class MainWindow(QMainWindow):
         # Quitting from the empty area: the panels it hid are the user's
         # arrangement, kept for the next session.
         self._show_panels_again()
-        # The window arrangement (toolbars, docks, size) IS a preference.
-        # Closing mid-presentation must remember the WORKSPACE, not the
-        # clean screen's everything-hidden state.
-        act = getattr(self, "_act_clean_screen", None)
-        clean_state = getattr(self, "_clean_screen_state", None)
-        st = QSettings()
-        st.setValue("ui/window_state",
-                    clean_state if (act is not None and act.isChecked()
-                                    and clean_state is not None)
-                    else self.saveState())
-        st.setValue("ui/window_geometry", self.saveGeometry())
+        self._save_window_settings()
         # Free every GL texture while a GL context still exists — the survey
         # atlases (hundreds of MB), the tile and terrain textures, and the
         # general texture cache (faces, reference images). Letting Qt tear
@@ -9684,6 +9714,19 @@ class MainWindow(QMainWindow):
             if doc.composer is not None:
                 doc.composer.close()
         super().closeEvent(event)
+
+    def _save_window_settings(self) -> None:
+        # The window arrangement (toolbars, docks, size) IS a preference.
+        # Closing mid-presentation must remember the WORKSPACE, not the
+        # clean screen's everything-hidden state.
+        act = getattr(self, "_act_clean_screen", None)
+        clean_state = getattr(self, "_clean_screen_state", None)
+        st = QSettings()
+        st.setValue("ui/window_state",
+                    clean_state if (act is not None and act.isChecked()
+                                    and clean_state is not None)
+                    else self.saveState())
+        st.setValue("ui/window_geometry", self.saveGeometry())
 
     def _confirm_quit(self) -> bool:
         """Quitting: one project with unsaved changes gets the usual

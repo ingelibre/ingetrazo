@@ -6,6 +6,21 @@ follow [SemVer](https://semver.org).
 
 ## [Unreleased]
 
+### Añadido
+- **Fuentes propias en el gestor de extensiones**: añade catálogos HTTPS o
+  carpetas locales con un catálogo, archivos `.py`/`.zip` o paquetes Python.
+  Las extensiones externas conservan el aviso de confianza.
+
+### Mejorado
+- **El gestor de extensiones crea tarjetas al acercarse a ellas**: las
+  entradas fuera de pantalla usan marcadores ligeros; las tarjetas completas
+  se construyen en tandas al desplazarse por la lista.
+- **El gestor puede reiniciar IngeTrazo para aplicar cambios de extensiones**,
+  conservando el documento abierto después de confirmar cómo guardar sus
+  cambios pendientes.
+- **La instalación de extensiones muestra el progreso de descarga**, permite
+  cancelarla de forma segura y ofrece reintento ante errores; las instalaciones
+  correctas se notifican en el gestor sin ventanas emergentes.
 ## [0.6.1] — 2026-11-08
 
 **Vistas en la misma pestaña: una, dos, tres o cuatro, con líneas que se
@@ -715,7 +730,6 @@ visión, y unos sesenta arreglos.
   por fase (segundos, memoria residente y pico), en Linux y Windows (#760).
 - Las pruebas que muestran una ventana para GL la cierran antes de
   saltarse.
-
 ## [0.5.9] — 2026-10-19
 
 **Motor Rust experimental, modelos enormes mucho más fluidos y una semana
