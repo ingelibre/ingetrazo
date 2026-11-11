@@ -10507,7 +10507,9 @@ class MainWindow(QMainWindow):
             # colour and line type — as the composer's export.
             from core.layers import line_styles
             from views.composer import dxf_groups_by_layer
-            d = hlr_drawing(vp.scene, vp.camera, layers=True)
+            d = hlr_drawing(vp.scene, vp.camera, layers=True,
+                            geometry=vp.hlr_geometry(tags=True) if fast
+                            else None)
             d.styles = line_styles(vp.scene, True)
             return dxf_groups_by_layer(d, "VISTA", hidden_lines=False)
         d = hlr_drawing(vp.scene, vp.camera, geometry=geometry)
@@ -10662,7 +10664,8 @@ class MainWindow(QMainWindow):
                 # colour and line type — as the composer's export.
                 from core.layers import line_styles
                 from views.composer import dxf_groups_by_layer
-                d = hlr_drawing(vp.scene, vp.camera, layers=True)
+                d = hlr_drawing(vp.scene, vp.camera, layers=True,
+                                geometry=vp.hlr_geometry(tags=True))
                 d.styles = line_styles(vp.scene, True)
                 groups = dxf_groups_by_layer(d, "VISTA", hidden_lines=False,
                                              texts=texts)
