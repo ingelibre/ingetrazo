@@ -1997,6 +1997,7 @@
  "guide points": "направляющие точки",
  "measure": "измерение",
  "guide": "направляющая",
+ "Ctrl = guide": "Ctrl = направляющая",
  "Click a point or an edge to measure. Arrows lock an axis.": "Кликните точку или ребро для замера. Стрелки фиксируют ось.",
  "Click the second point, or type the distance and Enter.": "Кликните вторую точку, или введите расстояние и Enter.",
  "Click the centre. Arrows pick the plane, Down = perpendicular to an edge. Type the sides first.": "Кликните центр. Стрелки выбирают плоскость, Вниз = перпендикулярно ребру.",

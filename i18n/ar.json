@@ -2014,6 +2014,7 @@
   "guide points": "نقاط إرشادية",
   "measure": "قياس",
   "guide": "دليل",
+  "Ctrl = guide": "Ctrl = دليل",
   "Click a point or an edge to measure. Arrows lock an axis.": "انقر فوق نقطة أو حافة للقياس. الأسهم قفل محور.",
   "Click the second point, or type the distance and Enter.": "انقر فوق النقطة الثانية، أو اكتب المسافة ثم أدخل.",
   "Click the centre. Arrows pick the plane, Down = perpendicular to an edge. Type the sides first.": "انقر فوق المركز. اختر المستوى باستخدام الأسهم، لأسفل = عمودي على الحافة. اكتب الجوانب أولاً.",

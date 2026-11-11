@@ -1997,6 +1997,7 @@
  "guide points": "напрямні точки",
  "measure": "вимірювання",
  "guide": "напрямна",
+ "Ctrl = guide": "Ctrl = напрямна",
  "Click a point or an edge to measure. Arrows lock an axis.": "Клацніть точку або ребро для вимірювання. Стрілки фіксують вісь.",
  "Click the second point, or type the distance and Enter.": "Клацніть другу точку або введіть відстань і Enter.",
  "Click the centre. Arrows pick the plane, Down = perpendicular to an edge. Type the sides first.": "Клацніть центр. Стрілки вибирають площину, «Вниз» = перпендикулярно до ребра. Спершу введіть кількість сторін.",

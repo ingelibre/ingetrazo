@@ -1980,6 +1980,7 @@
  "guide points": "補助点",
  "measure": "測定",
  "guide": "補助",
+ "Ctrl = guide": "Ctrl = 補助",
  "Click a point or an edge to measure. Arrows lock an axis.": "点またはエッジをクリックして測定。矢印キーで軸を固定。",
  "Click the second point, or type the distance and Enter.": "2点目をクリックするか、距離を入力して Enter。",
  "Click the centre. Arrows pick the plane, Down = perpendicular to an edge. Type the sides first.": "中心をクリック。矢印キーで平面を選択、下キーでエッジに垂直。辺数は先に入力します。",

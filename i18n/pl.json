@@ -1999,6 +1999,7 @@
  "guide points": "punkty pomocnicze",
  "measure": "pomiar",
  "guide": "element pomocniczy",
+ "Ctrl = guide": "Ctrl = element pomocniczy",
  "Click a point or an edge to measure. Arrows lock an axis.": "Kliknij punkt lub krawędź, którą chcesz zmierzyć. Strzałki blokują oś.",
  "Click the second point, or type the distance and Enter.": "Kliknij drugi punkt lub wpisz odległość i Enter.",
  "Click the centre. Arrows pick the plane, Down = perpendicular to an edge. Type the sides first.": "Kliknij środek. Strzałki wskazują płaszczyznę, W dół = prostopadle do krawędzi. Najpierw wpisz boki.",

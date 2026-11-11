@@ -1974,6 +1974,7 @@
  "guide points": "titik bantu",
  "measure": "ukur",
  "guide": "garis bantu",
+ "Ctrl = guide": "Ctrl = garis bantu",
  "Click a point or an edge to measure. Arrows lock an axis.": "Klik sebuah titik atau tepi untuk mengukur. Tombol panah mengunci sumbu.",
  "Click the second point, or type the distance and Enter.": "Klik titik kedua, atau ketik jarak lalu Enter.",
  "Click the centre. Arrows pick the plane, Down = perpendicular to an edge. Type the sides first.": "Klik pusat. Tombol panah memilih bidang, Bawah = tegak lurus terhadap tepi. Ketik jumlah sisi terlebih dahulu.",
