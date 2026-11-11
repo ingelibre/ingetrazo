@@ -226,6 +226,23 @@ begin
       Result := Clsid <> '';
 end;
 
+// The programs Windows offers for .skp: the one that owned it before may be
+// only there once another install of IngeTrazo has the default — a copy for
+// one user over the one for the whole machine found IngeTrazo.skp as the
+// previous ProgID and skipped it, and the previews of the other program,
+// listed here, were not borrowed.
+function ReadOpenWithHandler(var Clsid: String): Boolean;
+var
+  Names: TArrayOfString;
+  I: Integer;
+begin
+  Result := False;
+  if RegGetValueNames(HKCR, '.skp\OpenWithProgids', Names) then
+    for I := 0 to GetArrayLength(Names) - 1 do
+      if (not Result) and (CompareText(Names[I], SkpProgId) <> 0) then
+        Result := ReadThumbnailHandler(Names[I], Clsid);
+end;
+
 procedure CurStepChanged(CurStep: TSetupStep);
 var
   Clsid: String;
@@ -249,6 +266,8 @@ begin
       Found := ReadThumbnailHandler('.skp', Clsid);
     if not Found then
       Found := ReadThumbnailHandler('SystemFileAssociations\.skp', Clsid);
+    if not Found then
+      Found := ReadOpenWithHandler(Clsid);
     // The key is deleted with IngeTrazo.skp (uninsdeletekey) on uninstall.
     if Found then
       RegWriteStringValue(HKA, 'Software\Classes\' + SkpProgId + '\' + ThumbnailHandlerKey, '', Clsid);
