@@ -4,7 +4,7 @@ All notable changes to IngeTrazo are documented here.
 Format inspired by [Keep a Changelog](https://keepachangelog.com); versions
 follow [SemVer](https://semver.org).
 
-## [Sin publicar]
+## [Unreleased]
 
 ### Añadido
 - **Fuentes propias en el gestor de extensiones**: añade catálogos HTTPS o
@@ -21,6 +21,134 @@ follow [SemVer](https://semver.org).
 - **La instalación de extensiones muestra el progreso de descarga**, permite
   cancelarla de forma segura y ofrece reintento ante errores; las instalaciones
   correctas se notifican en el gestor sin ventanas emergentes.
+## [0.6.1] — 2026-11-08
+
+**Vistas en la misma pestaña: una, dos, tres o cuatro, con líneas que se
+arrastran y escenas en su propia fila; aviso cuando sale una versión nueva;
+PNG con fondo transparente y vidrio translúcido en Monocromo; búlgaro y chino
+tradicional, ya son 19 idiomas; Empujar/Tirar y las herramientas de ángulo más
+fiables, y decenas de arreglos de importación, pintura y grupos.**
+
+### Añadido
+
+- **Distribuciones de vistas** (#1127, @canalsecuario-blip): la zona del
+  modelo se divide en una, dos, tres o cuatro vistas, cada una con su cámara.
+  Cada línea entre vistas se arrastra sola y un cuadrado mueve el bloque;
+  Maximizar y Restaurar están en el menú de la etiqueta de cada vista. Lo que
+  dibujas en una se ve en las demás, y la distribución se guarda en el `.igz`
+  si usas más de una vista. *Cómo probarlo:* el botón de los cuatro cuadrados, a
+  la izquierda de las pestañas; Ctrl+Espacio maximiza la vista bajo el cursor.
+- **Escenas como pestañas** (#1127): una fila de pestañas bajo el visor, que
+  solo aparece si el proyecto tiene escenas. Se crean, renombran, reordenan y
+  eliminan desde la fila o desde el panel; crear una es un paso de Deshacer.
+  Alt+E oculta la fila.
+- **Área vacía** (#1127): al cerrar la última pestaña queda un área vacía con
+  un «+» que abre un documento nuevo.
+- **Aviso de versión nueva**: una vez al día, al abrir, IngeTrazo pregunta a
+  GitHub cuál es la última versión y, si hay una más reciente, muestra sus
+  novedades sin interrumpir. También en Ayuda ▸ Buscar actualizaciones…; se
+  apaga en Preferencias. No aparece en Flatpak ni Snap, que se actualizan
+  solos.
+- **PNG con fondo transparente**: una casilla en Exportar imagen deja sin
+  cielo ni suelo el fondo del PNG. *Cómo probarlo:* Archivo ▸ Exportar imagen,
+  formato PNG, marca «Fondo transparente». En JPG aparece desactivada.
+- **Búlgaro** (#1185, @davidsmavrov-debug) y **chino tradicional de Taiwán**
+  (#1010, #1099, @KuoYaMu).
+- **Campo `{sheet_name}`** (#1168, @BastelBaus): siempre el nombre de la
+  lámina, como aparece en la lista de láminas — a diferencia de
+  `{lamina}`/`{sheet}`, que leen la fila LÁMINA del cajetín (el número de
+  plano). Es otro nombre de `{nombre}`/`{name}`. *Cómo probarlo:* escribe un
+  texto «{sheet} — {sheet_name}» en una lámina con cajetín y renombra la
+  lámina.
+- **Enganche donde una arista o guía atraviesa una cara** (#1169, @pacaeiro).
+- **Atajos de teclado**: cada comando muestra su menú y se puede buscar por él
+  (#1157, @canalsecuario-blip).
+
+### Cambiado
+
+- **Doble clic de la rueda: recentra en el punto** (#1154,
+  @canalsecuario-blip): el punto bajo el cursor pasa al centro de la vista,
+  sobre el modelo o sobre el vacío, sin cambiar el zoom ni encuadrar nada.
+  Antes encuadraba todo el modelo (eso sigue en «Zoom a extensión»). *Cómo
+  probarlo:* con la herramienta que sea, doble clic de la rueda sobre una
+  esquina del modelo.
+- **Equidistancia** (#1084, @pacaeiro): engancha solo a puntos finales y
+  medios, y solo durante el arrastre, no a aristas, caras ni inferencias.
+- **Punto de referencia en 3D** (#1097, @pacaeiro): pausar sobre un punto da
+  su referencia también en 3D al dibujar, y Shift la bloquea.
+- **Niveles** (#1075, @consumr): las alturas van en las unidades del documento,
+  las flechas avanzan 10 cm o 4 pulgadas, y cada nivel nuevo repite la altura
+  del anterior.
+- **Pestañas de láminas**: ocupan el ancho libre de la barra de estado y solo
+  muestran flechas si hace falta; un nombre muy largo se corta en la pestaña y
+  se lee entero en su globo (#1184).
+- **Abrir una pestaña nueva** tarda la mitad (@canalsecuario-blip).
+
+### Corregido
+
+- **El programa ya no se cierra de golpe en las láminas**: tras un clic derecho
+  en una fila de la lista de elementos del compositor, ocultarla o cambiar la
+  lista podía tumbar IngeTrazo, y se perdía lo que no estuviera guardado.
+- **Importar `.skp`**: un componente escalado de cierta forma entraba 10 000
+  veces más grande (#1196, @DarkBiscuits).
+- **Una importación que falla o no trae nada lo dice y no deja una pestaña
+  vacía**: DXF, DWG, DAE, GLB, OBJ y SKP (#1176, #1172).
+- **DXF** (#1160, @nicolasmarc): cada parte POLYFACE o MESH se une por su
+  cuenta, los bloques de ensamblaje dan un componente con nombre por parte y
+  una cara repetida por las entidades de malla queda una sola vez.
+- **Importar GLB**: las imágenes ya no llegan al revés (#1159,
+  @canalsecuario-blip).
+- **Exportar GLB**: una cara pintada solo por el reverso sale con esa pintura.
+- **Guardar escribe el documento del proyecto activo** (#1106).
+- **Extensiones**: una que no se puede leer o cargar ya no impide cargar las
+  demás ni abrir el gestor, e instalar como administrador ya no la deja sin
+  permisos para los demás usuarios (#1152).
+- **Empujar/Tirar**: una distancia tecleada o un clic ya no se ignoran en
+  silencio en una cara desviada, y una puerta desviada 1 mm se abre al empujar
+  el grueso del muro (#1094).
+- **Transportador y Rotar**: el disco ya no cambia de tamaño al mover el cursor
+  en vistas rasantes (#1200, #1208, @pacaeiro), y cambiar el plano con
+  una flecha después de colocar el centro también mueve el plano de trabajo,
+  así que el eje Z engancha (#1220, @pacaeiro).
+- **Formas planas con flecha**: se anclan en la cara bajo el cursor, en lugar
+  de en el plano del origen (#1171, @pacaeiro).
+- **Hacer componente sobre un grupo** ya no lo hace desaparecer de la vista
+  (#1150, @canalsecuario-blip).
+- **Puente**: dos arcos opuestos ya no se cruzan en un reloj de arena (#1164,
+  @canalsecuario-blip).
+- **Grupos anidados**: una pieza sin pintar lleva la pintura de su contenedor
+  pintado más cercano, y la conserva al moverla (#1156, #1101, @alteralto).
+- **Lo que cambias dentro de un grupo anidado se ve al momento**: en un grupo
+  abierto dentro de otro, o en un contenedor con caras propias, pintar, dibujar
+  o mover no aparecía en pantalla hasta salir del grupo. Tampoco se veía
+  Deshacer tras salir del grupo ni editar un material usado dentro de un
+  componente cerrado. *Cómo probarlo:* entra en un grupo dentro de otro y pinta
+  una cara; Deshacer y Rehacer también deben verse.
+- **Pintar**: lo pintado dentro de un grupo ya no vuelve a su color anterior al
+  salir; cada repintado de una definición compartida ve la edición (#1129); el
+  aviso al pintar un contenedor dura diez segundos, y al salir de un componente
+  anidado cuenta bien sus copias.
+- **Vidrio**: en Monocromo es translúcido y gris, en lugar de opaco y blanco, y
+  las imágenes exportadas salen opacas detrás del vidrio: el fondo ya no queda
+  semitransparente en los PNG.
+- **Seleccionar**: entre objetos sobre un mismo plano gana el más pequeño
+  (#982). **Pegar**: lo pegado queda seleccionado, también caras y aristas
+  sueltas.
+- **`{proyecto}`, `{autor}` y `{lamina}` leen la tabla del cajetín** (#1168,
+  @BastelBaus): los campos de los textos de la lámina tomaban los valores con
+  los que nació el cajetín, no los que uno escribe después en su tabla —
+  cambiabas el nombre del proyecto y el texto seguía diciendo el viejo. Ahora
+  leen la fila con ese nombre (PROYECTO, AUTOR, LÁMINA; también en inglés o
+  alemán, con o sin tilde), y el texto se repinta al editar la fila. *Cómo
+  probarlo:* en una lámina con cajetín, escribe un texto «{proyecto} —
+  {lamina}» y cambia la fila PROYECTO en el panel.
+- **Compositor**: los campos del panel lateral responden a la rueda solo si
+  tienen el foco (#1163).
+- **Tabla BIM**: conserva las ramas que plegaste (#1117).
+- **Panel de capas**: las marcas de cada fila se repintan al cambiar de tema
+  (#1128, @alteralto).
+- **macOS**: la release deja el ejecutor `macos-14`, que se retira (#1123).
+
 ## [0.6.0] — 2026-11-01
 
 **Varios proyectos en pestañas en la misma ventana; IngeTrazo ya habla 17

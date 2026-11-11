@@ -462,6 +462,7 @@ class ExtensionManagerDialog(QDialog):
             "render_items": [],
             "render_index": 0,
             "pending_indices": [],
+            "failed_indices": set(),
             "items_ready": False,
             "shown": 0,
             "total": 0,
@@ -825,6 +826,7 @@ class ExtensionManagerDialog(QDialog):
             page["render_timer"].stop()
             page["pending_indices"] = []
             page["render_index"] = 0
+            page["failed_indices"].clear()
             self._clear_cards(key)
             extensions = self._filtered_extensions(key)
             unknown = self._hand_only(key) if key == "installed" else []
@@ -857,22 +859,36 @@ class ExtensionManagerDialog(QDialog):
         columns = self._columns(key)
         grid = page["grid"]
         for index in indices:
+            if index in page["failed_indices"]:
+                continue
             kind, item = items[index]
             if kind == "extension":
                 row = page["rows"].get(item.id)
                 if row is None:
-                    row = self._make_row(
-                        item, current_language(), page["cards"], key)
+                    row = self._card(
+                        self._make_row, item, current_language(),
+                        page["cards"], key)
+                    if row is None:
+                        page["failed_indices"].add(index)
+                        continue
                     page["rows"][item.id] = row
             elif kind == "hand":
                 row = page["hand_rows"].get(item)
                 if row is None:
-                    row = self._make_hand_row(item, page["cards"])
+                    row = self._card(
+                        self._make_hand_row, item, page["cards"])
+                    if row is None:
+                        page["failed_indices"].add(index)
+                        continue
                     page["hand_rows"][item] = row
             else:
                 row = page["retired_rows"].get(item)
                 if row is None:
-                    row = self._make_retired_row(item, page["cards"])
+                    row = self._card(
+                        self._make_retired_row, item, page["cards"])
+                    if row is None:
+                        page["failed_indices"].add(index)
+                        continue
                     page["retired_rows"][item] = row
             cell = grid.itemAtPosition(index // columns, index % columns)
             if cell is not None and cell.widget() is not row:
@@ -942,6 +958,8 @@ class ExtensionManagerDialog(QDialog):
         grid = page["grid"]
         pending = []
         for index in self._visible_card_indices(key):
+            if index in page["failed_indices"]:
+                continue
             cell = grid.itemAtPosition(index // columns, index % columns)
             if cell is None or cell.widget() is None:
                 pending.append(index)
@@ -960,6 +978,18 @@ class ExtensionManagerDialog(QDialog):
         if key == self._active_page_key():
             self._show_count(key)
             self._images_timer.start()
+
+    @staticmethod
+    def _card(build, subject, *args):
+        """A card, or None and a note in the log: one extension must never
+        keep the manager from showing the rest (#1152)."""
+        try:
+            return build(subject, *args)
+        except Exception:  # noqa: BLE001
+            from core.extensions import note_failure
+            log.exception("could not build the card of %r", subject)
+            note_failure(f"could not build the card of {subject!r}")
+            return None
 
     def _show_count(self, key: str) -> None:
         page = self._pages[key]

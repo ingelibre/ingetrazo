@@ -544,6 +544,7 @@ def bake(vp, mesh, paint, msig, vkey, uid):
     samples = [(i, tuple(plan.pos[i].tolist())) for i in idxs]
     return {"fp": fp, "vkey": vkey, "rev": 0, "uid": uid,
             "msig": msig, "serial": None,
+            "flags_gen": getattr(mesh, "_flags_gen", 0),
             "nv": nv, "ne": len(plan.edges), "nf": nf,
             "samples": samples, "coordsum": _coordsum(plan), "bbox": bbox,
             "obb": None,

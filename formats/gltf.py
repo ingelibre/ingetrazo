@@ -89,7 +89,7 @@ def _file_hierarchy(scene, only=None):
     from core.i18n import tr
     from core.materials import material_sig
     from .meshexport import (SmoothNormals, _add_face, _facing_quad, _feet,
-                             _piece_paint, _resolve_finishes, _shown,
+                             _resolve_finishes, _shown,
                              _turned_toward)
     smoother = SmoothNormals()
     materials: dict = {}
@@ -111,12 +111,12 @@ def _file_hierarchy(scene, only=None):
         roots.append({"name": tr("Loose geometry"), "matrix": None,
                       "mesh": "loose", "children": []})
 
-    def part(g, base, top):
+    def part(g, base, above):
         m = getattr(g, "xform", None)
         world = m if base is None else (base if m is None else base * m)
         # What the piece's unpainted faces show: its own paint, else the
-        # top-level object's — as the viewport draws it.
-        paint = _piece_paint(g, top)
+        # nearest painted container's above it — as the viewport draws it.
+        paint = getattr(g, "material", None) or above
         kind = getattr(g, "billboard", False)
         if kind:
             mesh = g.mesh if world is None else transformed_mesh(g.mesh, world)
@@ -150,7 +150,7 @@ def _file_hierarchy(scene, only=None):
                 "matrix": m, "mesh": key if meshes[key] else None,
                 "children": []}
         for child in getattr(g, "children", None) or ():
-            sub = part(child, world, top)
+            sub = part(child, world, paint)
             if sub is not None:
                 node["children"].append(sub)
         return node
@@ -160,7 +160,7 @@ def _file_hierarchy(scene, only=None):
             continue
         if only is not None and g not in only:
             continue
-        node = part(g, None, g)
+        node = part(g, None, None)
         if node is not None:
             roots.append(node)
     roots.extend(figures)
