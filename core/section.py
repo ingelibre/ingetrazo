@@ -179,45 +179,91 @@ class SectionPlane:
 
 # ---- The cut, as geometry --------------------------------------------------
 
-def cut_chords(v0, e1, e2, normal, point, visible=None, rows=False):
+def cut_chords(v0, e1, e2, normal, point, visible=None, rows=False,
+               reach=None):
     """The chords the plane cuts out of triangles given as ``v0`` + edge
     vectors ``e1``/``e2`` ((N, 3) arrays, as the pick index keeps them):
     an (K, 2, 3) float32 array, or ``None`` when the plane misses them all.
     ``visible`` (N bools) leaves hidden triangles out. ``rows=True`` returns
-    ``(chords, triangle index of each)`` — whose layer each chord is."""
-    import numpy as np
+    ``(chords, triangle index of each)`` — whose layer each chord is.
+    ``reach``: a :class:`PlaneReach` of these very triangles and this
+    normal, kept between calls — a plane slid along its normal (a section
+    dragged by its arrow) then only measures where it now stands."""
     if v0 is None or not len(v0):
         return (None, None) if rows else None
-    nv = np.array([normal.x(), normal.y(), normal.z()], dtype=np.float64)
-    c = float(np.dot(nv, [point.x(), point.y(), point.z()]))
-    p0 = np.asarray(v0, dtype=np.float64)
-    p1 = p0 + e1
-    p2 = p0 + e2
-    d0 = p0 @ nv - c
-    d1 = p1 @ nv - c
-    d2 = p2 @ nv - c
-    pts = []
-    for (a, b, da, db) in ((p0, p1, d0, d1), (p1, p2, d1, d2),
-                           (p2, p0, d2, d0)):
-        cross = (da * db) < 0
-        t = np.zeros(len(da))
-        np.divide(da, da - db, out=t, where=cross)
-        pts.append((cross, a + (b - a) * t[:, None]))
-    two = (pts[0][0].astype(np.int8) + pts[1][0] + pts[2][0]) == 2
-    if visible is not None:
-        two &= visible
-    if not two.any():
-        return (None, None) if rows else None
-    acc = np.zeros((int(two.sum()), 2, 3))
-    slot = np.zeros(int(two.sum()), dtype=np.int64)
-    for cross, p in pts:
-        m = cross[two]
-        where = np.where(m)[0]
-        acc[where, np.minimum(slot[where], 1)] = p[two][m]
-        slot[where] += 1
-    if rows:
-        return acc.astype(np.float32), np.nonzero(two)[0]
-    return acc.astype(np.float32)
+    if reach is None or not reach.fits(v0, normal, e1, e2):
+        reach = PlaneReach(v0, e1, e2, normal)
+    return reach.cut(point, visible, rows)
+
+
+class PlaneReach:
+    """The corners of a set of triangles and how far along one normal each
+    stands — what every cut by a plane of that normal starts from. Sliding
+    the plane only moves the offset: the triangles it crosses are found by
+    comparing three arrays with it, and only those are cut.
+
+    The chords are those :func:`cut_chords` always made, in the same order
+    and to the bit: the same products, the same differences."""
+
+    __slots__ = ("_v0", "_e1", "_e2", "_n", "p0", "p1", "p2", "h0", "h1", "h2", "lo",
+                 "hi", "_nv")
+
+    def __init__(self, v0, e1, e2, normal) -> None:
+        import numpy as np
+        self._v0, self._e1, self._e2 = v0, e1, e2
+        self._n = (normal.x(), normal.y(), normal.z())
+        self._nv = np.array(self._n, dtype=np.float64)
+        self.p0 = np.asarray(v0, dtype=np.float64)
+        self.p1 = self.p0 + e1
+        self.p2 = self.p0 + e2
+        self.h0 = self.p0 @ self._nv
+        self.h1 = self.p1 @ self._nv
+        self.h2 = self.p2 @ self._nv
+        self.lo = np.minimum(np.minimum(self.h0, self.h1), self.h2)
+        self.hi = np.maximum(np.maximum(self.h0, self.h1), self.h2)
+
+    def fits(self, v0, normal, e1=None, e2=None) -> bool:
+        """Made from these very arrays (the pick index never writes into
+        its own: a changed model is new arrays) and this normal."""
+        return (v0 is self._v0
+                and (e1 is None or e1 is self._e1)
+                and (e2 is None or e2 is self._e2)
+                and (normal.x(), normal.y(), normal.z()) == self._n)
+
+    def cut(self, point, visible=None, rows=False):
+        import numpy as np
+        c = float(np.dot(self._nv, [point.x(), point.y(), point.z()]))
+        # Only a triangle with corners on both sides can have an edge that
+        # crosses: the rest is never cut, whatever the plane's offset.
+        near = np.nonzero((self.lo - c < 0) & (self.hi - c > 0))[0]
+        if visible is not None and len(near):
+            near = near[np.asarray(visible)[near]]
+        if not len(near):
+            return (None, None) if rows else None
+        p0, p1, p2 = self.p0[near], self.p1[near], self.p2[near]
+        d0 = self.h0[near] - c
+        d1 = self.h1[near] - c
+        d2 = self.h2[near] - c
+        pts = []
+        for (a, b, da, db) in ((p0, p1, d0, d1), (p1, p2, d1, d2),
+                               (p2, p0, d2, d0)):
+            cross = (da * db) < 0
+            t = np.zeros(len(da))
+            np.divide(da, da - db, out=t, where=cross)
+            pts.append((cross, a + (b - a) * t[:, None]))
+        two = (pts[0][0].astype(np.int8) + pts[1][0] + pts[2][0]) == 2
+        if not two.any():
+            return (None, None) if rows else None
+        acc = np.zeros((int(two.sum()), 2, 3))
+        slot = np.zeros(int(two.sum()), dtype=np.int64)
+        for cross, p in pts:
+            m = cross[two]
+            where = np.where(m)[0]
+            acc[where, np.minimum(slot[where], 1)] = p[two][m]
+            slot[where] += 1
+        if rows:
+            return acc.astype(np.float32), near[two]
+        return acc.astype(np.float32)
 
 
 def _plane_basis(normal):
