@@ -304,11 +304,17 @@ impl<'a> Setup<'a> {
                 }
                 let mut ov = Overlay::<i64>::new(16);
                 for r in &faces[i].rings {
-                    if r.len() >= 3 {
-                        let pts: Vec<IntPoint<i64>> = r
-                            .iter()
-                            .map(|p| IntPoint::new((p[0] * scale).round() as i64, (p[1] * scale).round() as i64))
-                            .collect();
+                    let mut pts: Vec<IntPoint<i64>> = Vec::with_capacity(r.len());
+                    for p in r {
+                        let q = IntPoint::new((p[0] * scale).round() as i64, (p[1] * scale).round() as i64);
+                        if pts.last().map_or(true, |l| *l != q) {
+                            pts.push(q);
+                        }
+                    }
+                    while pts.len() > 1 && pts[0] == *pts.last().unwrap() {
+                        pts.pop();
+                    }
+                    if pts.len() >= 3 {
                         ov.add_contour(&pts, ShapeType::Subject);
                     }
                 }
@@ -332,10 +338,24 @@ impl<'a> Setup<'a> {
         IntPoint::new((p[0] * self.scale).round() as i64, (p[1] * self.scale).round() as i64)
     }
 
+    /// A ring on the integer grid, without the points the rounding makes
+    /// one — a corner repeated, a cut landing on a corner. A cover with a
+    /// zero-length edge, in the dozens of a fan of slivers over one face,
+    /// sent the booleans running away (a 0.08 m² kerb of the plaza under
+    /// sixty 1.5 mm facets of a curved bench never finished); the Python
+    /// pass made a region of every part, which drops them too.
     fn to_int(&self, ring: &[[f64; 2]]) -> Vec<IntPoint<i64>> {
-        ring.iter()
-            .map(|p| IntPoint::new((p[0] * self.scale).round() as i64, (p[1] * self.scale).round() as i64))
-            .collect()
+        let mut out: Vec<IntPoint<i64>> = Vec::with_capacity(ring.len());
+        for p in ring {
+            let q = IntPoint::new((p[0] * self.scale).round() as i64, (p[1] * self.scale).round() as i64);
+            if out.last().map_or(true, |l| *l != q) {
+                out.push(q);
+            }
+        }
+        while out.len() > 1 && out[0] == *out.last().unwrap() {
+            out.pop();
+        }
+        out
     }
 
     /// Face `i` less what covers it: its visible rings (drawing units).
@@ -405,12 +425,12 @@ impl<'a> Setup<'a> {
                 continue;
             }
             let (lo, hi) = bbox(part.iter().flatten());
-            covers.push(Cover {
-                contours: part.iter().map(|r| self.to_int(r)).collect(),
-                lo,
-                hi,
-                size: (hi[0] - lo[0]) * (hi[1] - lo[1]),
-            });
+            let contours: Vec<Vec<IntPoint<i64>>> =
+                part.iter().map(|r| self.to_int(r)).filter(|c| c.len() >= 3).collect();
+            if contours.is_empty() {
+                continue;
+            }
+            covers.push(Cover { contours, lo, hi, size: (hi[0] - lo[0]) * (hi[1] - lo[1]) });
         }
         let mut visible = self.region[i].clone();
         covers.sort_by(|a, b| b.size.partial_cmp(&a.size).unwrap_or(std::cmp::Ordering::Equal));
