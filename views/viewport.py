@@ -635,6 +635,104 @@ class _InstanceBatch(list):
     __slots__ = ("idx", "mats")
 
 
+#: The CPU side of a document's bakes — the render/pick chunks of its
+#: groups, the instances' derived chunks, the fingerprints and the
+#: prototypes' stand-ins — one store per Scene, shared by every viewport
+#: that shows it. Four views of the plaza (1 035 objects) baked the model
+#: four times over, 16.7 s on the first split; the arrays do not depend on
+#: the view, only their upload to each view's own GL context does.
+import weakref
+#: ``id(scene)`` → ``(weakref to the scene, its store)``. By id, not by the
+#: scene itself: a Scene compares by value and has no hash. The weak
+#: reference tells a dead scene's id from a new scene born at the same
+#: address, and a finalizer drops the store when the scene goes.
+_BAKE_STORES: dict = {}
+_SHARED_BAKES = ("_group_chunks", "_inst_chunks", "_fp_memo",
+                 "_proto_wrappers")
+
+
+def _bake_store_of(scene) -> dict:
+    """The shared store of ``scene``, made on first use; ``None`` for a
+    stand-in that cannot be weakly referenced."""
+    key = id(scene)
+    hit = _BAKE_STORES.get(key)
+    if hit is not None and hit[0]() is scene:
+        return hit[1]
+    try:
+        ref = weakref.ref(scene)
+    except TypeError:
+        return None
+    store: dict = {}
+    _BAKE_STORES[key] = (ref, store)
+    weakref.finalize(scene, _drop_bake_store, key, ref)
+    return store
+
+
+def _drop_bake_store(key, ref) -> None:
+    hit = _BAKE_STORES.get(key)
+    if hit is not None and hit[0] is ref:
+        del _BAKE_STORES[key]
+
+
+def _bind_bake_store(vp) -> None:
+    """Point ``vp``'s shared caches at its scene's store (made on first
+    use); another scene, another store. A stub without a scene keeps
+    dicts of its own."""
+    store = _bake_store_of(getattr(vp, "scene", None))
+    if store is None:
+        store = {}
+    for name in _SHARED_BAKES:
+        setattr(vp, name, store.setdefault(name, {}))
+
+
+#: Texture images decoded once per file, for every GL context that
+#: uploads them: ``path`` → ``(mtime, size, mirrored QImage, cutout)``,
+#: the newest last, held to a budget of bytes. Three views joining the
+#: plaza's decoded its textures again each (1.6 s of the 3.8 s); the GL
+#: texture itself belongs to each context and is made from this.
+_DECODED_TEXTURES: dict = {}
+_DECODED_BUDGET = 256 * 1024 * 1024
+
+
+def _decoded_texture(path: str):
+    """``(QImage mirrored for GL, cutout)`` of the image at ``path`` — the
+    file's current version — or ``None`` when it cannot be loaded.
+    ``cutout``: a foliage card of low alpha coverage (mip-averaged alpha
+    plus atlas bleed erase or darken the leaves at distance, and the Bayer
+    dither turns the rest into ghost speckle: the textured passes sample
+    the top level only and cut hard at 0.5)."""
+    import os
+    try:
+        st = os.stat(path)
+        stamp = (st.st_mtime_ns, st.st_size)
+    except OSError:
+        stamp = None
+    hit = _DECODED_TEXTURES.get(path)
+    if hit is not None and hit[0] == stamp:
+        _DECODED_TEXTURES[path] = _DECODED_TEXTURES.pop(path)   # newest last
+        return hit[1]
+    img = QImage(path)
+    if img.isNull():
+        _DECODED_TEXTURES.pop(path, None)
+        return None
+    cutout = False
+    if img.hasAlphaChannel():
+        small = img.scaled(64, 64).convertToFormat(QImage.Format_Alpha8)
+        import numpy as _np
+        al = _np.frombuffer(small.constBits(), _np.uint8,
+                            count=small.height() * small.bytesPerLine())
+        cutout = (float((al > 128).mean()) if len(al) else 1.0) < 0.6
+    out = (img.mirrored(), cutout)          # OBJ/.skp V is bottom-up
+    _DECODED_TEXTURES.pop(path, None)
+    _DECODED_TEXTURES[path] = (stamp, out)
+    total = sum(v[1][0].sizeInBytes() for v in _DECODED_TEXTURES.values())
+    for old in list(_DECODED_TEXTURES):
+        if total <= _DECODED_BUDGET or old == path:
+            break
+        total -= _DECODED_TEXTURES.pop(old)[1][0].sizeInBytes()
+    return out
+
+
 def _proto_wrapper(vp, mesh, paint=None):
     """The stable stand-in a prototype mesh is baked through, one per
     (mesh, container paint): ``_group_chunk`` caches by the wrapper's id,
@@ -1961,6 +2059,7 @@ class Viewport(QOpenGLWidget):
 
         self.camera = OrbitCamera()
         self.scene = Scene()
+        _bind_bake_store(self)
         from core import units as _units
         _units.bind_scene(self.scene)   # readouts format in the model's units
         self.history = History(self.scene)
@@ -5655,29 +5754,17 @@ class Viewport(QOpenGLWidget):
             cache = self._tex_cache = {}
         if path in cache:
             return cache[path]
-        img = QImage(path)
+        decoded = _decoded_texture(path)
         tex = None
-        if not img.isNull():
-            tex = QOpenGLTexture(img.mirrored())  # OBJ/.skp V is bottom-up
+        if decoded is not None:
+            img, cutout = decoded
+            tex = QOpenGLTexture(img)           # already mirrored
             tex.setWrapMode(QOpenGLTexture.Repeat)
             tex.setMinificationFilter(QOpenGLTexture.LinearMipMapLinear)
             tex.setMagnificationFilter(QOpenGLTexture.Linear)
-            # Foliage cutouts (low alpha coverage): mip-averaged alpha plus
-            # atlas bleed erase or darken the leaves at distance, and the
-            # Bayer dither turns the rest into ghost speckle. Tag them: the
-            # textured passes sample the top level only and cut hard at 0.5
-            # — crisp cutout vegetation at every zoom.
-            if img.hasAlphaChannel():
-                small = img.scaled(64, 64).convertToFormat(
-                    QImage.Format_Alpha8)
-                import numpy as _np
-                al = _np.frombuffer(small.constBits(), _np.uint8,
-                                    count=small.height()
-                                    * small.bytesPerLine())
-                cov = float((al > 128).mean()) if len(al) else 1.0
-                if cov < 0.6:
-                    tex.setMinificationFilter(QOpenGLTexture.Linear)
-                    tex._cutout = True
+            if cutout:
+                tex.setMinificationFilter(QOpenGLTexture.Linear)
+                tex._cutout = True
         cache[path] = tex
         return tex
 
@@ -5899,8 +5986,13 @@ class Viewport(QOpenGLWidget):
                         "_placement_tops", "_arc_mid_by_mesh",
                         "_billboard_extents", "_figure_tokens")
 
-    def reset_document_caches(self) -> None:
+    def reset_document_caches(self, keep_bakes: bool = False) -> None:
         """Forget the previous document's chunks at the document boundary.
+
+        ``keep_bakes``: only the GL side goes — a viewport moving to another
+        parent gets a new context and must upload again, but its scene's
+        shared bakes (:data:`_SHARED_BAKES`, CPU arrays) are as good as
+        before, and the views that join it in the grid draw from them.
 
         The chunk caches are keyed by ``id()`` of groups and meshes and were
         never emptied: every New / Open kept the old document's chunks — and,
@@ -5920,6 +6012,8 @@ class Viewport(QOpenGLWidget):
             finally:
                 self.doneCurrent()
         for name in self._DOCUMENT_CACHES:
+            if keep_bakes and name in _SHARED_BAKES:
+                continue
             cache = getattr(self, name, None)
             if isinstance(cache, dict):
                 cache.clear()
@@ -17837,6 +17931,7 @@ class Viewport(QOpenGLWidget):
             getattr(self.scene, "hide_similar_components", False))
         self.scene = scene
         self.history = history
+        _bind_bake_store(self)        # the incoming document's shared bakes
         from core import units as _units
         _units.bind_scene(scene)
         self._edges_version = -1
