@@ -13,6 +13,7 @@ use pyo3::prelude::*;
 mod boxes;
 mod earcut;
 mod facegeom;
+mod facesview;
 mod gltape;
 mod hlr;
 mod instances;
@@ -38,6 +39,7 @@ fn ingetrazo_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(nearest_within, m)?)?;
     m.add_function(wrap_pyfunction!(visible_parts, m)?)?;
     m.add_function(wrap_pyfunction!(earcut_indices, m)?)?;
+    m.add_function(wrap_pyfunction!(faces_view, m)?)?;
     m.add_class::<GlReplay>()?;
     m.add_class::<InstanceProto>()?;
     m.add_class::<InstanceSet>()?;
@@ -1308,4 +1310,129 @@ fn earcut_indices<'py>(
     } else {
         Ok(PyArray2::from_vec2(py, &rows)?)
     }
+}
+
+/// The geometry of every face of a view (see `facesview.rs`), for
+/// `core.vista_caras.view_faces`. In: the faces' rings flat in their
+/// meshes' coordinates — `coords` (M, 3), `ring_off` (R + 1), `face_off`
+/// (n + 1) — `xf_index` (n,) the placement of each face into `xforms`
+/// (K, 16, row major; -1: none), the camera (`perspective`, and `cam`: a
+/// parallel one's eye, right, up, fwd — 12 numbers — or a perspective
+/// one's clip matrix row major, eye and picture scale — 21) and the
+/// section's kept side `(nx, ny, nz, c)` or none. Out, per face: `kept`
+/// (0: skipped, 1: a caster only, 2: drawn), `back`, `normal` (n, 3),
+/// `near` (n, 3), `depth` (n,); the world rings flat (`w_coords`,
+/// `w_ring_off`, `w_face_off`) and the drawn rings flat with their depths
+/// (`p_coords`, `p_depth`, `p_ring_off`, `p_face_off`).
+#[pyfunction]
+#[pyo3(signature = (coords, ring_off, face_off, xf_index, xforms, perspective, cam, section=None))]
+#[allow(clippy::too_many_arguments, clippy::type_complexity)]
+fn faces_view<'py>(
+    py: Python<'py>,
+    coords: PyReadonlyArray2<'py, f64>,
+    ring_off: PyReadonlyArray1<'py, i64>,
+    face_off: PyReadonlyArray1<'py, i64>,
+    xf_index: PyReadonlyArray1<'py, i64>,
+    xforms: PyReadonlyArray2<'py, f64>,
+    perspective: bool,
+    cam: Vec<f64>,
+    section: Option<Vec<f64>>,
+) -> PyResult<(
+    Bound<'py, PyArray1<i8>>, Bound<'py, PyArray1<bool>>, Bound<'py, PyArray2<f64>>,
+    Bound<'py, PyArray2<f64>>, Bound<'py, PyArray1<f64>>,
+    Bound<'py, PyArray2<f64>>, Bound<'py, PyArray1<i64>>, Bound<'py, PyArray1<i64>>,
+    Bound<'py, PyArray2<f64>>, Bound<'py, PyArray1<f64>>, Bound<'py, PyArray1<i64>>, Bound<'py, PyArray1<i64>>,
+)> {
+    use pyo3::exceptions::PyValueError;
+    let c = coords.as_array();
+    let ro = ring_off.as_slice()?;
+    let fo = face_off.as_slice()?;
+    let xi = xf_index.as_slice()?;
+    let xf = xforms.as_array();
+    let n = fo.len().saturating_sub(1);
+    let mut faces: Vec<facesview::FaceIn> = Vec::with_capacity(n);
+    for i in 0..n {
+        let mut rings = Vec::new();
+        for r in fo[i] as usize..fo[i + 1] as usize {
+            let (a, b) = (ro[r] as usize, ro[r + 1] as usize);
+            rings.push((a..b).map(|k| [c[[k, 0]], c[[k, 1]], c[[k, 2]]]).collect::<Vec<[f64; 3]>>());
+        }
+        faces.push(facesview::FaceIn { rings, xform: if xi[i] < 0 { None } else { Some(xi[i] as usize) } });
+    }
+    let mats: Vec<[[f64; 4]; 4]> = (0..xf.shape()[0])
+        .map(|k| {
+            let mut m = [[0.0f64; 4]; 4];
+            for r in 0..4 {
+                for q in 0..4 {
+                    m[r][q] = xf[[k, r * 4 + q]];
+                }
+            }
+            m
+        })
+        .collect();
+    let v3 = |at: usize| [cam[at], cam[at + 1], cam[at + 2]];
+    let camera = if perspective {
+        if cam.len() != 21 {
+            return Err(PyValueError::new_err("perspective camera: 21 numbers"));
+        }
+        let mut m = [[0.0f64; 4]; 4];
+        for r in 0..4 {
+            for q in 0..4 {
+                m[r][q] = cam[r * 4 + q];
+            }
+        }
+        facesview::Camera::Perspective { m, eye: v3(16), scale: [cam[19], cam[20]] }
+    } else {
+        if cam.len() != 12 {
+            return Err(PyValueError::new_err("parallel camera: 12 numbers"));
+        }
+        facesview::Camera::Parallel { eye: v3(0), right: v3(3), up: v3(6), fwd: v3(9) }
+    };
+    let sec = section.map(|s| facesview::Section { n: [s[0], s[1], s[2]], c: s[3] });
+    let out = py.detach(|| facesview::faces_view(&faces, &mats, &camera, sec.as_ref()));
+    let mut kept = vec![0i8; n];
+    let mut back = vec![false; n];
+    let mut normal = vec![vec![0.0f64; 3]; n];
+    let mut near = vec![vec![f64::NAN; 3]; n];
+    let mut depth = vec![f64::NAN; n];
+    let mut wc: Vec<Vec<f64>> = Vec::new();
+    let mut wro: Vec<i64> = vec![0];
+    let mut wfo: Vec<i64> = vec![0];
+    let mut pc: Vec<Vec<f64>> = Vec::new();
+    let mut pd: Vec<f64> = Vec::new();
+    let mut pro: Vec<i64> = vec![0];
+    let mut pfo: Vec<i64> = vec![0];
+    for (i, f) in out.iter().enumerate() {
+        if let Some(f) = f {
+            kept[i] = if f.drawn.is_empty() { 1 } else { 2 };
+            back[i] = f.back;
+            normal[i] = f.normal.to_vec();
+            near[i] = f.near.to_vec();
+            depth[i] = f.depth;
+            for r in &f.world {
+                for p in r {
+                    wc.push(p.to_vec());
+                }
+                wro.push(wc.len() as i64);
+            }
+            for (r, d) in f.drawn.iter().zip(&f.depths) {
+                for (p, &z) in r.iter().zip(d) {
+                    pc.push(p.to_vec());
+                    pd.push(z);
+                }
+                pro.push(pc.len() as i64);
+            }
+        }
+        wfo.push(wro.len() as i64 - 1);
+        pfo.push(pro.len() as i64 - 1);
+    }
+    let arr2 = |py: Python<'py>, v: &Vec<Vec<f64>>, w: usize| -> PyResult<Bound<'py, PyArray2<f64>>> {
+        if v.is_empty() { Ok(PyArray2::zeros(py, [0, w], false)) } else { Ok(PyArray2::from_vec2(py, v)?) }
+    };
+    Ok((
+        PyArray1::from_vec(py, kept), PyArray1::from_vec(py, back), arr2(py, &normal, 3)?,
+        arr2(py, &near, 3)?, PyArray1::from_vec(py, depth),
+        arr2(py, &wc, 3)?, PyArray1::from_vec(py, wro), PyArray1::from_vec(py, wfo),
+        arr2(py, &pc, 2)?, PyArray1::from_vec(py, pd), PyArray1::from_vec(py, pro), PyArray1::from_vec(py, pfo),
+    ))
 }
