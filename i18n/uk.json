@@ -1329,6 +1329,8 @@
  "Portrait": "Книжкова",
  "Preview": "Попередній перегляд",
  "Working out the preview…": "Обчислення попереднього перегляду…",
+ "Working out the visible faces…": "Обчислення видимих граней…",
+ "SVG export cancelled": "Експорт SVG скасовано",
  "Frame scale ({scale})": "Масштаб рамки ({scale})",
  "A vector drawing of the view to finish in an illustration program: one layer per model layer, the faces under the lines.": "Векторне креслення виду для доопрацювання в програмі ілюстрації: по шару на кожен шар моделі, грані під лініями.",
  "Materials and textures": "Матеріали й текстури",

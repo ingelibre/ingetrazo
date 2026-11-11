@@ -13939,7 +13939,8 @@ class ComposerWindow(QMainWindow):
             path += ".svg"
         from PySide6.QtWidgets import QApplication
         from core.sun import scene_sun_direction
-        from views.export_svg_dialog import ask_svg_options
+        from views.export_svg_dialog import (SvgCancelled, ask_svg_options,
+                                             faces_progress)
         frame = item.model
         builder = self.frame_svg_builder(frame)
         ok, opts, paper = ask_svg_options(
@@ -13949,13 +13950,17 @@ class ComposerWindow(QMainWindow):
             scene_sun_direction(self._window.viewport.scene) is not None,
             tr("In the frame"),
             bool(getattr(self._window.viewport.scene, "show_axes", True)),
-            builder.screen_mm, tr("The frame"))
+            builder.screen_mm, tr("The frame"),
+            hold=self._window.viewport)
         if not ok:
             return
         QApplication.setOverrideCursor(Qt.WaitCursor)
         try:
-            self.export_frame_svg(frame, path, faces=opts, paper=paper,
-                                  builder=builder)
+            with faces_progress(self, self._window.viewport):
+                self.export_frame_svg(frame, path, faces=opts, paper=paper,
+                                      builder=builder)
+        except SvgCancelled:
+            self.statusBar().showMessage(tr("SVG export cancelled"), 5000)
         finally:
             QApplication.restoreOverrideCursor()
 
