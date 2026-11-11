@@ -1042,7 +1042,14 @@ class MoveTool(Tool):
             sp.point = sp.point + step
         for im in self._images:
             im.origin = im.origin + step
-        viewport.scene.version += 1
+        if self._splanes and not (self._groups or self._verts or self._labels
+                                  or self._moved_guides or self._dims
+                                  or self._images):
+            # Only section planes ride the drag: no face moved, so nothing
+            # built from the model is thrown away on each pointer move.
+            viewport.scene.bump_sections()
+        else:
+            viewport.scene.version += 1
 
     def _apply_preview(self, viewport, target_delta: QVector3D) -> None:
         """Live-deform the scene so the current offset is ``target_delta`` from
