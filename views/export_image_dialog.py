@@ -22,12 +22,8 @@ class ExportImageDialog(QDialog):
         self.width_box.setSingleStep(320)
         self.width_box.setValue(3840)
         self.transparent_box = QCheckBox(tr("Transparent background"))
-        # Asked for each picture, like the width. A PNG starts with it on —
-        # a picture to lay over a plan or a sheet wants no sky behind it —
-        # and a JPEG, which cannot keep it, with it off and greyed.
-        if suffix.lower() in ALPHA_SUFFIXES:
-            self.transparent_box.setChecked(True)
-        else:
+        # Asked for each picture, off to begin with, like the width.
+        if suffix.lower() not in ALPHA_SUFFIXES:
             self.transparent_box.setEnabled(False)
             self.transparent_box.setToolTip(
                 tr("Only PNG images keep transparency."))

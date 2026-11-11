@@ -224,38 +224,27 @@ def export(view, monkeypatch):
     return vp, run, seen
 
 
-def test_the_box_is_offered_for_a_png_and_starts_on(export):
-    """Accepted as it opens, a PNG comes out with no background."""
+def test_the_box_is_offered_for_a_png_and_starts_off(export):
     vp, run, seen = export
     img = run("a.png")
-    assert seen == {"enabled": True, "checked": True, "tip": ""}
+    assert seen == {"enabled": True, "checked": False, "tip": ""}
+    assert _at(vp, img, "background").alpha() == 255
+
+
+def test_ticking_it_makes_the_png_transparent(export):
+    vp, run, _seen = export
+    img = run("a.png", tick=True)
     assert img.width() == WIDTH
     assert _at(vp, img, "background").alpha() == 0
     assert _at(vp, img, "solid").alpha() == 255
 
 
-def test_unticking_it_keeps_the_png_background(export):
-    vp, run, _seen = export
-    img = run("a.png", tick=False)
-    assert _at(vp, img, "background").alpha() == 255
-    assert _at(vp, img, "solid").alpha() == 255
-
-
 def test_the_next_export_does_not_remember_it(export):
-    """The dialog keeps none of its options: the width is 3840 each time,
-    and the box is on again after one picture without it."""
+    """The dialog keeps none of its options: the width is 3840 each time."""
     _vp, run, seen = export
-    run("a.png", tick=False)
+    run("a.png", tick=True)
     run("b.png")
-    assert seen["checked"] is True
-
-
-@pytest.mark.parametrize("suffix", [".png", ".PNG"])
-def test_the_dialog_starts_transparent_for_a_png(suffix):
-    from views.export_image_dialog import ExportImageDialog
-    dlg = ExportImageDialog(None, suffix)
-    assert dlg.transparent() is True
-    dlg.deleteLater()
+    assert seen["checked"] is False
 
 
 @pytest.mark.parametrize("name", ["a.jpg", "a.jpeg", "a.JPG"])
