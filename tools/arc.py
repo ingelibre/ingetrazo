@@ -82,6 +82,29 @@ def _circumcenter2(a, b, c):
     return (ux, uy)
 
 
+def _lines_meet(a0, a1, b0, b1, tol: float = 1e-6):
+    """Where the line through ``a0``–``a1`` meets the one through
+    ``b0``–``b1``, or ``None`` when they are parallel or don't meet (skew,
+    farther apart than ``tol`` relative to their size)."""
+    u = a1 - a0
+    w = b1 - b0
+    r = a0 - b0
+    uu = QVector3D.dotProduct(u, u)
+    ww = QVector3D.dotProduct(w, w)
+    uw = QVector3D.dotProduct(u, w)
+    den = uu * ww - uw * uw
+    if uu < 1e-18 or ww < 1e-18 or abs(den) <= 1e-12 * uu * ww:
+        return None
+    s = (uw * QVector3D.dotProduct(w, r) - ww * QVector3D.dotProduct(u, r)) / den
+    t = (uu * QVector3D.dotProduct(w, r) - uw * QVector3D.dotProduct(u, r)) / den
+    p = a0 + u * s
+    q = b0 + w * t
+    size = max(math.sqrt(uu), math.sqrt(ww), 1.0)
+    if (p - q).length() > tol * size:
+        return None
+    return (p + q) * 0.5
+
+
 def _wrap(a: float) -> float:
     while a <= -math.pi:
         a += 2.0 * math.pi
@@ -404,9 +427,62 @@ class ArcTool(SegmentCount, AxisMagnet, PlaneLock, Tool):
                     continue
                 if best is None or dist < best[0]:
                     best = (dist, V.position, P2, B)
+        # A corner an arc has already rounded (#1354): measured from where
+        # its two edges' lines meet, the corner as it was drawn.
+        for X, B, near_end, far_end in self._rounded_corners(viewport, edge):
+            d = (P1 - X).length()
+            span = (far_end - X).length()
+            if span < 1e-9 or d < (near_end - X).length() - 1e-6 or d > span + 1e-6:
+                continue
+            P2 = X + (far_end - X) * (d / span)
+            dist = self._pixel_distance(viewport, screen, cursor, P2)
+            if dist is None or dist > self.FILLET_PX:
+                continue
+            if best is None or dist < best[0]:
+                best = (dist, X, P2, B)
         if best is None:
             return None
         return QVector3D(best[1]), QVector3D(best[2]), best[3]
+
+    @staticmethod
+    def _rounded_corners(viewport, edge):
+        """``(X, B, near, far)`` for each corner of ``edge`` that an arc
+        already rounds: a curve leaves an end of ``edge`` and meets a
+        straight edge ``B`` at its other end. ``X`` is where the lines of
+        ``edge`` and ``B`` meet, the corner before it was rounded, and
+        ``near``/``far`` are ``B``'s ends closest to and farthest from it."""
+        mesh = getattr(getattr(viewport, "scene", None), "mesh", None)
+        if mesh is None:
+            return
+        for V in (edge.v0, edge.v1):
+            for C in V.edges:
+                if C is edge or getattr(C, "curve", None) is None:
+                    continue
+                chain = mesh.curve_edges(C)
+                seen: dict = {}
+                for c in chain:
+                    for vv in (c.v0, c.v1):
+                        seen[id(vv)] = (vv, seen.get(id(vv), (vv, 0))[1] + 1)
+                for V2, count in seen.values():
+                    if count != 1 or V2 is V:
+                        continue                   # not the curve's other end
+                    for B in V2.edges:
+                        if (B in chain or getattr(B, "curve", None) is not None
+                                or getattr(B, "soft", False)):
+                            continue
+                        far = B.other(V2).position
+                        X = _lines_meet(V.position, edge.other(V).position,
+                                        V2.position, far)
+                        if X is None:
+                            continue
+                        # The corner lies past the curve's ends, on the
+                        # lines' continuations away from the edges.
+                        out_a = V.position - edge.other(V).position
+                        out_b = V2.position - far
+                        if (QVector3D.dotProduct(X - V.position, out_a) < -1e-9
+                                or QVector3D.dotProduct(X - V2.position, out_b) < -1e-9):
+                            continue
+                        yield X, B, QVector3D(V2.position), QVector3D(far)
 
     def _pixel_distance(self, viewport, screen, cursor, P):
         """Cursor→``P`` distance in screen pixels (a world fallback, scaled
@@ -642,11 +718,17 @@ class ArcTool(SegmentCount, AxisMagnet, PlaneLock, Tool):
         d = radius / math.tan(theta / 2.0)
         edge_a = self._start_edge[0] if self._start_edge else None
         edge_b = self._fillet_edge_b
-        reach = []
+        # How far from the corner each edge reaches, and where it starts: at
+        # the corner itself, or past the arc of a corner already rounded.
+        reach, start = [], []
         for e in (edge_a, edge_b):
             if e is None:
                 continue
-            reach.append((e.v0.position - e.v1.position).length())
+            ends = sorted(((e.v0.position - V).length(), (e.v1.position - V).length()))
+            start.append(ends[0])
+            reach.append(ends[1])
+        if start and d < max(start) - 1e-6:
+            return False                       # inside the arc already there
         if reach and d > min(reach) + 1e-6:
             viewport.flash_status(tr(
                 "Radius {r} needs {d} of edge on each side of the "
