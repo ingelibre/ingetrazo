@@ -9928,11 +9928,18 @@ class Viewport(QOpenGLWidget):
         from core.layers import DEFAULT_LAYER, layer_of
         memo: dict = {}
         out = []
+        # A lazy placement's face is built with its whole mesh when asked
+        # for: its layer is read from the document instead.
+        quick = getattr(idx.entities, "layer_at", None)
         for e in ents.tolist():
             tag = memo.get(e)
             if tag is None:
-                face, owner = idx.entities[e]
-                tag = layer_of(face)
+                if quick is not None:
+                    own, owner = quick(e)
+                    tag = own or DEFAULT_LAYER
+                else:
+                    face, owner = idx.entities[e]
+                    tag = layer_of(face)
                 if tag == DEFAULT_LAYER and owner is not None:
                     tag = layer_of(owner)
                 memo[e] = tag
