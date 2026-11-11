@@ -10507,7 +10507,9 @@ class MainWindow(QMainWindow):
             # colour and line type — as the composer's export.
             from core.layers import line_styles
             from views.composer import dxf_groups_by_layer
-            d = hlr_drawing(vp.scene, vp.camera, layers=True)
+            d = hlr_drawing(vp.scene, vp.camera, layers=True,
+                            geometry=vp.hlr_geometry(tags=True) if fast
+                            else None)
             d.styles = line_styles(vp.scene, True)
             return dxf_groups_by_layer(d, "VISTA", hidden_lines=False)
         d = hlr_drawing(vp.scene, vp.camera, geometry=geometry)
@@ -10540,7 +10542,8 @@ class MainWindow(QMainWindow):
         if not path.lower().endswith(".svg"):
             path += ".svg"
         from core.sun import scene_sun_direction
-        from views.export_svg_dialog import ask_svg_options
+        from views.export_svg_dialog import (SvgCancelled, ask_svg_options,
+                                             faces_progress)
         scene = self.viewport.scene
         builder = [self.view_svg_builder()]
         views = list(getattr(scene, "saved_views", []) or [])
@@ -10562,13 +10565,19 @@ class MainWindow(QMainWindow):
                 builder[0].screen_mm, None, bool(scene.selection),
                 builder[0].can_frame(),
                 scenes=[v.name for v in views] or None,
-                on_scene=on_scene if switch is not None else None)
+                on_scene=on_scene if switch is not None else None,
+                hold=self.viewport)
             if not ok:
                 return
             QApplication.setOverrideCursor(Qt.WaitCursor)
             try:
-                text, n = builder[0].build(opts, paper)
+                with faces_progress(self, self.viewport):
+                    text, n = builder[0].build(opts, paper)
                 Path(path).write_text(text, encoding="utf-8")
+            except SvgCancelled:
+                QApplication.restoreOverrideCursor()
+                self.statusBar().showMessage(tr("SVG export cancelled"), 5000)
+                return
             except Exception as exc:  # noqa: BLE001
                 QApplication.restoreOverrideCursor()
                 QMessageBox.critical(self, tr("Export SVG failed"), str(exc))
@@ -10655,7 +10664,9 @@ class MainWindow(QMainWindow):
                 # colour and line type — as the composer's export.
                 from core.layers import line_styles
                 from views.composer import dxf_groups_by_layer
-                d = hlr_drawing(vp.scene, vp.camera, layers=True)
+                tagged = vp.hlr_geometry(tags=True)
+                d = hlr_drawing(vp.scene, vp.camera, layers=True,
+                                geometry=tagged)
                 d.styles = line_styles(vp.scene, True)
                 groups = dxf_groups_by_layer(d, "VISTA", hidden_lines=False,
                                              texts=texts)
@@ -10670,7 +10681,10 @@ class MainWindow(QMainWindow):
                 # The cut hatches and fills too, as a sheet at 1:50 draws
                 # them — as the composer's export does at its frame's scale.
                 from views.composer import dxf_cut_layers
-                lines, solids = dxf_cut_layers(vp.scene, vp.camera)
+                lines, solids = dxf_cut_layers(
+                    vp.scene, vp.camera,
+                    geometry=tagged if len(vp.scene.layers) > 1
+                    else vp.hlr_geometry(tags=True))
                 groups += lines
             n = save(path, groups, solids, texts)
         except Exception as exc:  # noqa: BLE001

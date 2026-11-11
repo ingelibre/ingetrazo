@@ -511,6 +511,11 @@ def bake(vp, mesh, paint, msig, vkey, uid):
     edges_data = pos32[plan.edges[hard]].reshape(-1).tobytes() \
         if len(hard) else b""
     softs = np.flatnonzero(vis & plan.soft & ((ef_n == 1) | (ef_n == 2)))
+    # The layer each drawn edge carries of its own (None: its object's), in
+    # the order of ``edges`` and of ``soft_pts``: what a sheet inks a line
+    # with, read here so the hidden-line pass need not walk the mesh.
+    edge_layer = [plan.layer[int(k)] for k in hard]
+    soft_layer = [plan.layer[int(k)] for k in softs]
     fn = normal.astype(np.float64)
     fc = cen.astype(np.float64)
     short = np.isnan(fc[:, 0]) if nf else np.zeros(0, dtype=bool)
@@ -583,6 +588,7 @@ def bake(vp, mesh, paint, msig, vkey, uid):
             "soft_n0": soft_n0, "soft_c0": soft_c0,
             "soft_n1": soft_n1, "soft_c1": soft_c1,
             "soft_single": soft_single,
+            "edge_layer": edge_layer, "soft_layer": soft_layer,
             "mesh": mesh}
 
 

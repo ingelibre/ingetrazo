@@ -29,6 +29,8 @@ import math
 
 import numpy as np
 
+from core import progress as _progress
+
 #: Merge tolerance for the union of occluded intervals, in edge-parameter
 #: units — gaps smaller than this are drafting dust, not visibility.
 _T_EPS = 1e-6
@@ -86,6 +88,7 @@ def collect_geometry(scene, layers: bool = False):
 
     def eat_mesh(mesh, visible=lambda _e: True, owner=DEFAULT_LAYER):
         for face in mesh.faces:
+            _progress.tick()
             if not visible(face):
                 continue
             own = layer_of(face)
@@ -832,6 +835,7 @@ def _merge_collinear(segs, world, kinds, tol: float, tags=None):
     inv = 1.0 / tol
     cells: dict = {}
     for i in range(n):
+        _progress.tick()
         for end in (0, 1):
             x, y = segs[i, 2 * end], segs[i, 2 * end + 1]
             cells.setdefault((int(math.floor(x * inv)),
@@ -881,6 +885,7 @@ def _merge_collinear(segs, world, kinds, tol: float, tags=None):
             pw = world[j, 1 - jend]
 
     for i in range(n):
+        _progress.tick()
         if used[i]:
             continue
         used[i] = True
@@ -949,9 +954,10 @@ def hlr_drawing(scene, camera, geometry=None, profiles: bool = True,
     own colour, line type and weight. Its section cut is tagged too, by
     the layer of the face each chord cuts, and its rings are chained layer
     by layer (`HlrDrawing.loop_layers`): a wall's cut gets the wall's pen
-    and fill, the door's beside it its own. It walks the model itself (the
-    fast `geometry` carries no layers), so it is asked for only when a layer
-    has a line of its own.
+    and fill, the door's beside it its own. With a tagged ``geometry`` —
+    the seven arrays ``Viewport.hlr_geometry(tags=True)`` returns, the
+    layers of the triangles, hard edges and soft edges after the four —
+    nothing is walked; without one, it walks the model itself.
     ``depth_layers`` — layer names — measures, for each ring of those
     layers, how far its solid runs through the plane
     (``HlrDrawing.loop_depths``, :func:`solid_depth`): where timber is cut
@@ -960,7 +966,10 @@ def hlr_drawing(scene, camera, geometry=None, profiles: bool = True,
     htags = stags = ttags = None
     whole_tris = whole_tags = ()
     cut_tags: list = []
-    if layers:
+    if layers and geometry is not None and len(geometry) == 7:
+        tris, hard, soft, soft_n, ttags, htags, stags = geometry
+        ttags, htags, stags = list(ttags), list(htags), list(stags)
+    elif layers:
         tris, hard, soft, htags, stags, ttags = collect_geometry(
             scene, layers=True)
     elif geometry is None:
@@ -1004,6 +1013,9 @@ def hlr_drawing(scene, camera, geometry=None, profiles: bool = True,
             mask = np.isnan(fb) | ((fa < 0.0) != (fb < 0.0))
             hard = np.concatenate(
                 [hard, np.asarray(soft, dtype=np.float64)[mask]])
+            if htags is not None:       # the silhouettes keep their layer
+                htags = list(htags) + [stags[k] for k in
+                                       np.flatnonzero(mask).tolist()]
         if not len(hard) and not len(cut_edges):
             return empty_drawing()
     else:
@@ -1085,9 +1097,13 @@ def hlr_drawing(scene, camera, geometry=None, profiles: bool = True,
             if wanted:
                 if tag in wanted:
                     if tag not in by_layer_tris:
-                        by_layer_tris[tag] = [
-                            t for t, g in zip(whole_tris, whole_tags)
-                            if g == tag]
+                        if isinstance(whole_tris, np.ndarray):
+                            by_layer_tris[tag] = whole_tris[
+                                np.asarray(whole_tags, dtype=object) == tag]
+                        else:
+                            by_layer_tris[tag] = [
+                                t for t, g in zip(whole_tris, whole_tags)
+                                if g == tag]
                     n = sp.normal
                     loop_depths.append(solid_depth(
                         ring, by_layer_tris[tag], (n.x(), n.y(), n.z())))

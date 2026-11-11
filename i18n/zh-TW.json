@@ -1328,6 +1328,8 @@
  "Portrait": "直向",
  "Preview": "預覽",
  "Working out the preview…": "正在計算預覽…",
+ "Working out the drawing…": "正在計算圖紙…",
+ "SVG export cancelled": "已取消 SVG 匯出",
  "Frame scale ({scale})": "框的比例（{scale}）",
  "A vector drawing of the view to finish in an illustration program: one layer per model layer, the faces under the lines.": "檢視的向量圖，可在插畫軟體中完成：模型的每個圖層各成一個圖層，面位於線條之下。",
  "Materials and textures": "材質與紋理",

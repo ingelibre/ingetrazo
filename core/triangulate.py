@@ -463,8 +463,21 @@ def earcut(points: list[Point2], hole_indices: Optional[list[int]] = None) -> li
 
     ``points`` is the outer ring followed by each hole's vertices; each entry
     of ``hole_indices`` is the start offset of a hole. Returns triangles as
-    triples of indices into ``points``.
+    triples of indices into ``points`` — the Rust engine's when it is on
+    (the same triangles, in the same order), else :func:`earcut_py`.
     """
+    from core import _native
+    native = _native.native
+    if native is not None and hasattr(native, "earcut") and len(points) >= 3:
+        import numpy as np
+        tris = native.earcut(np.ascontiguousarray(points, dtype=np.float64)
+                             .reshape(-1, 2), list(hole_indices or []))
+        return [tuple(t) for t in tris.tolist()]
+    return earcut_py(points, hole_indices)
+
+
+def earcut_py(points: list[Point2], hole_indices: Optional[list[int]] = None) -> list[tuple[int, int, int]]:
+    """:func:`earcut` in Python — the port the engine mirrors."""
     hole_indices = hole_indices or []
     has_holes = len(hole_indices) > 0
     outer_len = hole_indices[0] if has_holes else len(points)

@@ -1329,6 +1329,8 @@
  "Portrait": "Vertical",
  "Preview": "Vista previa",
  "Working out the preview…": "Calculando la vista previa…",
+ "Working out the drawing…": "Calculando el dibujo…",
+ "SVG export cancelled": "Exportación SVG cancelada",
  "Frame scale ({scale})": "Escala del marco ({scale})",
  "A vector drawing of the view to finish in an illustration program: one layer per model layer, the faces under the lines.": "Un dibujo vectorial de la vista para terminarlo en un programa de ilustración: una capa por cada capa del modelo, con las caras debajo de las líneas.",
  "Materials and textures": "Materiales y texturas",

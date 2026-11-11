@@ -1327,6 +1327,8 @@
  "Portrait": "Portrait",
  "Preview": "Aperçu",
  "Working out the preview…": "Calcul de l'aperçu…",
+ "Working out the drawing…": "Calcul du dessin…",
+ "SVG export cancelled": "Export SVG annulé",
  "Frame scale ({scale})": "Échelle du cadre ({scale})",
  "A vector drawing of the view to finish in an illustration program: one layer per model layer, the faces under the lines.": "Un dessin vectoriel de la vue à finir dans un logiciel d'illustration : un calque par calque du modèle, les faces sous les lignes.",
  "Materials and textures": "Matériaux et textures",
