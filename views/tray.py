@@ -5040,11 +5040,18 @@ class ScenesPanel(QWidget):
             row = self.row_for(view)
         if row is not None:
             self._on_activate(row)
+        else:
+            # A view that is no scene of the list (the view as it was,
+            # put back after an export showed another scene).
+            self._show(view)
 
     def _on_activate(self, item, _column=0) -> None:
         kind, view = item.data(0, Qt.UserRole)
         if kind != "scene" or view is None:
             return
+        self._show(view)
+
+    def _show(self, view) -> None:
         scene = self._scene()
         self._begin_own()
         from core.saved_views import shown_state

@@ -261,3 +261,27 @@ class ShadowSettings:
             darkness=max(0.0, min(1.0, dark)),
             utc_offset=int(off) if off is not None else None,
         )
+
+
+def scene_sun_direction(scene):
+    """Unit vector toward the sun for ``scene``'s shadow settings, in model
+    axes — ``None`` when there is nothing to cast (shadows off, night, or a
+    date that does not exist in a hand-edited file). The one the viewport
+    casts its shadows with and the vector exports draw them with."""
+    import datetime as _dt
+    sh = getattr(scene, "shadows", None)
+    if sh is None or not getattr(sh, "enabled", False):
+        return None
+    datum = getattr(scene, "georef", None)
+    lat = getattr(datum, "lat", None)
+    lon = getattr(datum, "lon", None)
+    if lat is None or lon is None:
+        lat, lon = DEFAULT_LAT, DEFAULT_LON
+    try:
+        when = sh.when_utc(lon, year=_dt.date.today().year)
+    except ValueError:
+        return None
+    # The sun comes in grid axes (east, north); the model's frame may be
+    # turned by the north angle — the datum's, or Tools ▸ North's when
+    # there is no location yet.
+    return turn_sun_to_model(scene, sun_direction(lat, lon, when))

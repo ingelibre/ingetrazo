@@ -414,6 +414,52 @@ class _OpenAborted(Exception):
     at its next milestone instead of finishing behind the close."""
 
 
+class _SceneSwitch:
+    """Show the model's scenes for a while — the scene chosen in the SVG
+    export dialog — and put the view back as it was afterwards: camera,
+    layers, style, shadows, the scene tab marked; and a document that had
+    no changes still has none."""
+
+    def __init__(self, window) -> None:
+        from core.saved_views import SavedView
+        self._window = window
+        vp = window.viewport
+        self._before = SavedView.capture("", vp.scene, vp.camera)
+        self._clean = vp.scene.version == window._saved_version
+        row = getattr(window, "_scene_tabs", None)
+        self._tab = row.tabs.currentIndex() if row is not None else -1
+        self._shown = window.tray.scenes.shown
+        self._moved = False
+
+    def show(self, view) -> None:
+        """Show ``view`` (a scene), or ``None``: the view as it was."""
+        if view is None:
+            if not self._moved:
+                return
+            view = self._before
+        self._window.tray.scenes.show_view(view)
+        self._moved = view is not self._before
+        if view is self._before:
+            self._put_back()
+
+    def restore(self) -> None:
+        if self._moved:
+            self.show(None)
+
+    def _put_back(self) -> None:
+        w = self._window
+        w.statusBar().clearMessage()          # not «Scene ''»
+        w.tray.scenes.shown = self._shown
+        row = getattr(w, "_scene_tabs", None)
+        if row is not None and self._tab >= 0:
+            row.tabs.blockSignals(True)
+            row.tabs.setCurrentIndex(self._tab)
+            row.tabs.blockSignals(False)
+        if self._clean:
+            w._saved_version = w.viewport.scene.version
+            w._update_title()
+
+
 class MainWindow(QMainWindow):
     """Top-level IngeTrazo window."""
 
@@ -4040,6 +4086,12 @@ class MainWindow(QMainWindow):
              tr("Save the view on screen as a 2D line drawing for CAD, with "
                 "the hidden lines removed."),
              self._on_export_view_dxf),
+            (tr("Current view as SVG…"),
+             tr("Save the view on screen as a vector drawing at 1:100: the "
+                "faces in their colours and textures under the lines, one "
+                "layer per model layer, to edit in an illustration "
+                "program."),
+             self._on_export_view_svg),
             (tr("Image (PNG / JPG)…"),
              tr("Save the view on screen as a PNG or JPG picture at the "
                 "width you choose."),
@@ -6420,6 +6472,19 @@ class MainWindow(QMainWindow):
 
     # ---- View navigation ----------------------------------------------------
     def _on_zoom_extents(self) -> None:
+        bounds = self._extents_bounds()
+        if bounds is None:
+            return
+        self.viewport.camera.fit_box(bounds[0], bounds[1])
+        self.viewport.update()
+        grid = self._doc.view_grid
+        if grid is not None:                 # every view shown frames it
+            grid.fit_box(bounds[0], bounds[1])
+
+    def _extents_bounds(self):
+        """The box Zoom Extents frames: the model, its face-me figures, its
+        visible reference images — or the survey alone — as ``(lo, hi)``;
+        ``None`` when there is nothing to frame."""
         from PySide6.QtGui import QVector3D
         bounds = self.viewport.scene.bounds()
         # Face-me figures count too, as a Zoom Extents should:
@@ -6444,15 +6509,11 @@ class MainWindow(QMainWindow):
             # one) would otherwise make Zoom Extents do nothing at all.
             survey = getattr(self.viewport.scene, "photo_mesh", None)
             if survey is None or not getattr(survey, "visible", False):
-                return
+                return None
             bounds = survey.bounds()
             if bounds[0] is None:
-                return
-        self.viewport.camera.fit_box(bounds[0], bounds[1])
-        self.viewport.update()
-        grid = self._doc.view_grid
-        if grid is not None:                 # every view shown frames it
-            grid.fit_box(bounds[0], bounds[1])
+                return None
+        return bounds
 
     def _on_zoom_selection(self) -> None:
         """Zoom Extents over the selection. Nothing selected: nothing."""
@@ -10425,24 +10486,165 @@ class MainWindow(QMainWindow):
         self.georef_tray.survey._on_import()
         self.georef_tray.raise_()
 
+    def _view_line_groups(self, fast: bool = True) -> list:
+        """The view on screen as the line groups the DXF and SVG exports
+        write (see formats.dxf_out.save_dxf_layers), hidden lines removed.
+        Parallel: true size in metres, edges / profiles / section cut on
+        their own layers — or one layer per model layer, with its colour
+        and line type. Perspective (two-point included): what the window
+        shows, true size at the depth of the orbit target. ``fast`` off
+        walks the model instead of the viewport's caches — what sees a
+        visibility of the moment, as the export of the selection alone."""
+        from core.hlr import (KIND_CUT, KIND_PROFILE, hlr_drawing,
+                              hlr_perspective)
+        vp = self.viewport
+        geometry = vp.hlr_geometry() if fast else None
+        if vp.camera.perspective:
+            return [("VISTA", hlr_perspective(vp.scene, vp.camera,
+                                              geometry=geometry))]
+        if len(vp.scene.layers) > 1:
+            # With layers, each one as a layer of its own, with its
+            # colour and line type — as the composer's export.
+            from core.layers import line_styles
+            from views.composer import dxf_groups_by_layer
+            d = hlr_drawing(vp.scene, vp.camera, layers=True)
+            d.styles = line_styles(vp.scene, True)
+            return dxf_groups_by_layer(d, "VISTA", hidden_lines=False)
+        d = hlr_drawing(vp.scene, vp.camera, geometry=geometry)
+        k = d.kinds
+        return [("VISTA", d.segs[(k != KIND_CUT) & (k != KIND_PROFILE)]),
+                ("VISTA-PERFIL", d.segs[k == KIND_PROFILE]),
+                ("VISTA-CORTE", d.segs[k == KIND_CUT])]
+
     def _on_export_view_dxf(self) -> None:
         """The view on screen as a 2D line drawing for CAD, hidden lines
-        removed (José Castro Basso, FADU–UDELAR). Parallel: true size in
-        metres, edges / profiles / section cut on their own layers, as the
-        composer's «Export view as DXF». Perspective (two-point included):
-        what the window shows, true size at the depth of the orbit
-        target."""
+        removed (José Castro Basso, FADU–UDELAR) — see _view_line_groups."""
         path, _ = file_dialogs.getSaveFileName(
             self, tr("Export current view as DXF"), "vista.dxf",
             "DXF (*.dxf)")
         if not path:
             return
-        from core.hlr import (KIND_CUT, KIND_PROFILE, hlr_drawing,
-                              hlr_perspective)
         from formats.dxf_out import save_dxf_layers
+        self._export_view_lines(path, save_dxf_layers, tr("Export DXF failed"))
+
+    def _on_export_view_svg(self) -> None:
+        """The view on screen as an SVG vector drawing at 1:100, or fitted
+        on a sheet, one layer per group of _view_line_groups and the faces
+        under them, to finish in an illustration program — the dialog
+        previews it."""
+        path, _ = file_dialogs.getSaveFileName(
+            self, tr("Export current view as SVG"), "vista.svg",
+            "SVG (*.svg)")
+        if not path:
+            return
+        if not path.lower().endswith(".svg"):
+            path += ".svg"
+        from core.sun import scene_sun_direction
+        from views.export_svg_dialog import ask_svg_options
+        scene = self.viewport.scene
+        builder = [self.view_svg_builder()]
+        views = list(getattr(scene, "saved_views", []) or [])
+        switch = _SceneSwitch(self) if views else None
+
+        def on_scene(index):
+            # The scene chosen in the dialog, shown in the view, and a
+            # builder that reads it.
+            switch.show(None if index is None else views[index])
+            builder[0] = self.view_svg_builder()
+            return builder[0].build
+
+        try:
+            ok, opts, paper = ask_svg_options(
+                self, builder[0].build, None,
+                scene_sun_direction(scene) is not None,
+                tr("On screen"),
+                bool(getattr(scene, "show_axes", True)),
+                builder[0].screen_mm, None, bool(scene.selection),
+                builder[0].can_frame(),
+                scenes=[v.name for v in views] or None,
+                on_scene=on_scene if switch is not None else None)
+            if not ok:
+                return
+            QApplication.setOverrideCursor(Qt.WaitCursor)
+            try:
+                text, n = builder[0].build(opts, paper)
+                Path(path).write_text(text, encoding="utf-8")
+            except Exception as exc:  # noqa: BLE001
+                QApplication.restoreOverrideCursor()
+                QMessageBox.critical(self, tr("Export SVG failed"), str(exc))
+                return
+            QApplication.restoreOverrideCursor()
+        finally:
+            if switch is not None:
+                switch.restore()
+        self.statusBar().showMessage(
+            tr("Exported {n} lines to {name}", n=n, name=path), 5000)
+
+    def view_svg_builder(self):
+        """The SVG builder (views.svg_export) of the view on screen: its
+        lines, its faces and its picture — of the selection alone, and in
+        a window of another shape, when the sheet asks."""
+        from core.vista_caras import view_faces, view_rect
+        from contextlib import contextmanager
+
+        from views.svg_export import (SvgBuilder, fitted, framed,
+                                      pictured_alone, selection_only,
+                                      widened)
         vp = self.viewport
+
+        def image(width_px, axes=True, aspect=None):
+            # «Hide the axes»: the picture without them, the view as it was.
+            shown = getattr(vp.scene, "show_axes", True)
+            vp.scene.show_axes = shown and axes
+            try:
+                if aspect is None:
+                    picture = vp.render_image(width_px, overlays=False,
+                                              sharp_shadows=True)
+                else:
+                    # A window of the sheet's shape (the camera is already
+                    # widened to it): the picture has that shape too.
+                    picture = vp.render_image(
+                        width_px, max(64, round(width_px / aspect)),
+                        overlays=False, sharp_shadows=True)
+            finally:
+                vp.scene.show_axes = shown
+            return picture, view_rect(vp.camera)
+
+        @contextmanager
+        def picture_alone():
+            # The picture of the selection alone; a document with nothing to
+            # save keeps nothing to save.
+            clean = vp.scene.version == self._saved_version
+            try:
+                with pictured_alone(vp.scene):
+                    yield
+            finally:
+                if clean:
+                    self._saved_version = vp.scene.version
+                vp.update()
+
+        # «On screen»: the window as it is, a pixel being 1/96 inch.
+        mm = 25.4 / 96.0
+        return SvgBuilder(self._view_line_groups,
+                          lambda **o: view_faces(vp.scene, vp.camera, **o),
+                          image, window=lambda: view_rect(vp.camera),
+                          screen_mm=(max(vp.width(), 1) * mm,
+                                     max(vp.height(), 1) * mm),
+                          isolate=lambda: selection_only(vp.scene),
+                          widen=lambda aspect: widened(vp.camera, aspect),
+                          frame=lambda frame: framed(vp.camera, frame),
+                          fit=lambda selection: fitted(
+                              vp.camera, vp.scene.selection_bounds()
+                              if selection else
+                              (self._extents_bounds() or (None, None))),
+                          isolate_picture=picture_alone)
+
+    def _export_view_lines(self, path: str, save, failed: str) -> None:
         QApplication.setOverrideCursor(Qt.WaitCursor)
         try:
+            from core.hlr import (KIND_CUT, KIND_PROFILE, hlr_drawing,
+                                  hlr_perspective)
+            vp = self.viewport
             geometry = vp.hlr_geometry()
             solids, texts = [], []
             if vp.camera.perspective:
@@ -10470,10 +10672,10 @@ class MainWindow(QMainWindow):
                 from views.composer import dxf_cut_layers
                 lines, solids = dxf_cut_layers(vp.scene, vp.camera)
                 groups += lines
-            n = save_dxf_layers(path, groups, solids, texts)
+            n = save(path, groups, solids, texts)
         except Exception as exc:  # noqa: BLE001
             QApplication.restoreOverrideCursor()
-            QMessageBox.critical(self, tr("Export DXF failed"), str(exc))
+            QMessageBox.critical(self, failed, str(exc))
             return
         QApplication.restoreOverrideCursor()
         self.statusBar().showMessage(
