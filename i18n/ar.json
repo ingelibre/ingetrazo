@@ -1363,7 +1363,7 @@
   "Portrait": "عمودي",
   "Preview": "معاينة",
   "Working out the preview…": "جارٍ حساب المعاينة…",
-  "Working out the visible faces…": "جارٍ حساب الأوجه المرئية…",
+  "Working out the drawing…": "جارٍ حساب الرسم…",
   "SVG export cancelled": "أُلغي تصدير SVG",
   "Frame scale ({scale})": "مقياس الإطار ({scale})",
   "A vector drawing of the view to finish in an illustration program: one layer per model layer, the faces under the lines.": "رسم متجهي للعرض لإكماله في برنامج رسم توضيحي: طبقة لكل طبقة من النموذج، والأوجه تحت الخطوط.",

@@ -1329,7 +1329,7 @@
   "Portrait": "Портрет",
   "Preview": "Преглед",
   "Working out the preview…": "Изчисляване на прегледа…",
-  "Working out the visible faces…": "Изчисляване на видимите лица…",
+  "Working out the drawing…": "Изчисляване на чертежа…",
   "SVG export cancelled": "Експортът в SVG е отменен",
   "Frame scale ({scale})": "Мащаб на рамката ({scale})",
   "A vector drawing of the view to finish in an illustration program: one layer per model layer, the faces under the lines.": "Векторен чертеж на изгледа за довършване в програма за илюстрации: по един слой за всеки слой на модела, стените под линиите.",

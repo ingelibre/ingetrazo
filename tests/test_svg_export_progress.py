@@ -21,6 +21,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from PySide6.QtCore import QSettings, Qt                 # noqa: E402
 from PySide6.QtWidgets import QApplication              # noqa: E402
 
+from core import progress as P                         # noqa: E402
 from core import vista_caras as VC                      # noqa: E402
 from core.vista_caras import FaceFill                   # noqa: E402
 from tests.test_view_faces_cost import _scene           # noqa: E402
@@ -38,14 +39,14 @@ def _faces(n=300):
 # ---- The visible faces say how far they have come --------------------------
 
 def test_the_visible_faces_tell_how_far_they_have_come(monkeypatch):
-    monkeypatch.setattr(VC, "_REPORT_EVERY", 0.0)
+    monkeypatch.setattr(P, "REPORT_EVERY", 0.0)
     told = []
     plain = VC._visible_parts(_faces())
-    with VC.reporting(told.append):
+    with P.reporting(told.append):
         reported = VC._visible_parts(_faces())
-    assert VC._report is None
-    assert len(told) > 100
-    assert told == sorted(told) and len(set(told)) == len(told)
+    assert P._report is None
+    assert len(set(told)) > 100
+    assert told == sorted(told)
     assert 0.0 <= told[0] and told[-1] < 1.0
     # Reporting changes nothing of what comes out.
     assert ([(f.depth, [r.tolist() for r in f.rings]) for f in reported]
@@ -53,7 +54,7 @@ def test_the_visible_faces_tell_how_far_they_have_come(monkeypatch):
 
 
 def test_a_report_that_raises_stops_the_work_there(monkeypatch):
-    monkeypatch.setattr(VC, "_REPORT_EVERY", 0.0)
+    monkeypatch.setattr(P, "REPORT_EVERY", 0.0)
     done = []
     real = VC._take_away
 
@@ -74,10 +75,48 @@ def test_a_report_that_raises_stops_the_work_there(monkeypatch):
             raise Enough()
 
     with pytest.raises(Enough):
-        with VC.reporting(stop):
+        with P.reporting(stop):
             VC._visible_parts(_faces())
-    assert VC._report is None
+    assert P._report is None
     assert 0 < len(done) < 0.5 * whole
+
+
+def test_every_stretch_of_the_work_is_heard(monkeypatch):
+    """Gathering the faces, filing them, cutting them down and their
+    shadows: a stretch that said nothing was a window Windows marked as
+    not responding before the bar came (14 s of a plaza's preview)."""
+    from core.scene import Scene
+    from tests.test_export_view_svg import _box, _camera, _sunny
+    scene = Scene()
+    from core.group import Group
+    from core.mesh import Mesh
+    for k in range(40):
+        g = Group(Mesh(), name=f"c{k}")
+        _box(g.mesh, x0=1.5 * (k % 8), y0=1.5 * (k // 8))
+        scene.groups.append(g)
+    scene.version += 1
+    cam = _camera(scene)
+    heard = []
+    real_tick = P.tick
+
+    def where(done=None):
+        import sys
+        heard.append(sys._getframe(1).f_code.co_name)
+        real_tick(done)
+
+    monkeypatch.setattr(P, "tick", where)
+    _sunny(scene)
+    with P.reporting(lambda done: None):
+        VC.view_faces(scene, cam, shadows=True)
+    assert {"view_faces", "__init__", "_visible_parts",
+            "_cast_shadows"} <= set(heard)
+    # And the hidden lines drawn over them (8.7 s of the plaza's export
+    # after the faces, with nothing said).
+    from core.hlr import hlr_drawing
+    heard.clear()
+    with P.reporting(lambda done: None):
+        hlr_drawing(scene, cam)
+    assert {"eat_mesh", "_merge_collinear"} <= set(heard)
 
 
 # ---- The bar ----------------------------------------------------------------
@@ -110,7 +149,7 @@ def _bars(monkeypatch, cancel_after=None, watch=None):
 def test_a_small_model_never_sees_the_bar(monkeypatch):
     _app()
     made = _bars(monkeypatch)
-    monkeypatch.setattr(VC, "_REPORT_EVERY", 0.0)
+    monkeypatch.setattr(P, "REPORT_EVERY", 0.0)
     with D.faces_progress(None):
         VC._visible_parts(_faces(20))
     assert made == []
@@ -121,7 +160,7 @@ def test_cancel_on_the_bar_raises_and_puts_everything_back(monkeypatch):
     _app()
     view = QWidget()
     made = _bars(monkeypatch, cancel_after=3, watch=view)
-    monkeypatch.setattr(VC, "_REPORT_EVERY", 0.0)
+    monkeypatch.setattr(P, "REPORT_EVERY", 0.0)
     monkeypatch.setattr(D, "PROGRESS_AFTER", 0.0)
     QApplication.setOverrideCursor(Qt.WaitCursor)        # the export's own
     try:
@@ -141,7 +180,7 @@ def test_cancel_on_the_bar_raises_and_puts_everything_back(monkeypatch):
     assert bar.held and not any(bar.held)
     assert view.updatesEnabled()
     assert not bar.isVisible()
-    assert VC._report is None
+    assert P._report is None
 
 
 def _window_with_faces():
@@ -173,7 +212,7 @@ def test_cancel_stops_the_export_and_writes_nothing(tmp_path, monkeypatch):
     win = _window_with_faces()
     try:
         made = _bars(monkeypatch, cancel_after=0, watch=win.viewport)
-        monkeypatch.setattr(VC, "_REPORT_EVERY", 0.0)
+        monkeypatch.setattr(P, "REPORT_EVERY", 0.0)
         monkeypatch.setattr(D, "PROGRESS_AFTER", 0.0)
         _export(win, monkeypatch, tmp_path / "vista.svg")
         assert not (tmp_path / "vista.svg").exists()
@@ -192,7 +231,7 @@ def test_the_bar_left_alone_writes_the_svg_as_before(tmp_path, monkeypatch):
     try:
         _export(win, monkeypatch, tmp_path / "antes.svg")
         made = _bars(monkeypatch)
-        monkeypatch.setattr(VC, "_REPORT_EVERY", 0.0)
+        monkeypatch.setattr(P, "REPORT_EVERY", 0.0)
         monkeypatch.setattr(D, "PROGRESS_AFTER", 0.0)
         win2 = _window_with_faces()
         try:
@@ -224,7 +263,7 @@ def test_cancel_on_a_slow_preview_turns_the_preview_off(tmp_path,
     try:
         dlg.preview_box.setChecked(True)
         made = _bars(monkeypatch, cancel_after=1)
-        monkeypatch.setattr(VC, "_REPORT_EVERY", 0.0)
+        monkeypatch.setattr(P, "REPORT_EVERY", 0.0)
         monkeypatch.setattr(D, "PROGRESS_AFTER", 0.0)
         built.clear()
         dlg._refresh_preview()
@@ -293,7 +332,7 @@ def test_cancel_stops_the_composer_frame_export(tmp_path, monkeypatch):
         monkeypatch.setattr(C.file_dialogs, "getSaveFileName",
                             lambda *a, **k: (str(tmp_path / "marco"), ""))
         made = _bars(monkeypatch, cancel_after=0, watch=win.viewport)
-        monkeypatch.setattr(VC, "_REPORT_EVERY", 0.0)
+        monkeypatch.setattr(P, "REPORT_EVERY", 0.0)
         monkeypatch.setattr(D, "PROGRESS_AFTER", 0.0)
         comp._on_export_svg()
         assert len(made) == 1 and made[0].held == [False]

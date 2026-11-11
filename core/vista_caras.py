@@ -21,11 +21,11 @@ texture and three points that pin its UV map to the drawing.
 from __future__ import annotations
 
 import math
-import time
-from contextlib import contextmanager
 from dataclasses import dataclass, field
 
 import numpy as np
+
+from core import progress as _progress
 
 #: The viewport's fixed matte light (``Viewport._LIGHT``): from above,
 #: slightly front-right. A test keeps the two in step.
@@ -278,6 +278,7 @@ def view_faces(scene, camera, as_view: bool = True,
     raw = []
     casters = []          # world rings of every face that blocks the sun
     for face, m, paint, layer in _faces_of(scene):
+        _progress.tick()
         loops = [face.vertices] + list(face.holes or [])
         if m is not None:
             loops = [[m.map(QVector3D(p)) for p in ring] for ring in loops]
@@ -494,30 +495,6 @@ def _hidden_by_the_biggest(visible, in_front, box_area, region) -> bool:
     return (visible - cover).is_empty()
 
 
-#: Who hears how far the visible faces have come (see :func:`reporting`).
-_report = None
-
-#: Seconds between two reports.
-_REPORT_EVERY = 0.1
-
-
-@contextmanager
-def reporting(progress):
-    """Within it, working out the visible faces tells ``progress(done)``
-    how far it has come — ``done`` from 0 to 1 — every tenth of a second
-    or so. ``progress`` may raise to stop the work there: the exception
-    leaves :func:`view_faces` as it is.
-
-    A big model's faces take minutes: the window that exports them can
-    show a bar and keep painting, and let the person give up."""
-    global _report
-    was, _report = _report, progress
-    try:
-        yield
-    finally:
-        _report = was
-
-
 class _OverlapGrid:
     """Which opaque faces' boxes overlap a face's box in the drawing —
     the same answer as testing it against every face, from a grid of
@@ -552,6 +529,7 @@ class _OverlapGrid:
         self.big = np.flatnonzero(opaque & self.is_big)
         cells: dict = {}
         for j in np.flatnonzero(opaque & ~self.is_big):
+            _progress.tick()
             x0, y0 = self.c_lo[j]
             x1, y1 = self.c_hi[j]
             for cx in range(x0, x1 + 1):
@@ -604,6 +582,7 @@ def _visible_parts(faces):
     order they land over what they let through."""
     items = []
     for f in faces:
+        _progress.tick()
         mins = np.min([r.min(axis=0) for r in f.rings], axis=0)
         maxs = np.max([r.max(axis=0) for r in f.rings], axis=0)
         items.append((f, mins, maxs))
@@ -630,12 +609,9 @@ def _visible_parts(faces):
         return r
 
     out = []
-    report, n = _report, len(items)
-    told = time.monotonic()
+    n = len(items)
     for i, (fa, a_lo, a_hi) in enumerate(items):
-        if report is not None and time.monotonic() - told >= _REPORT_EVERY:
-            report(i / n)
-            told = time.monotonic()
+        _progress.tick(i / n)
         overlap = near_by.overlapping(i)
         visible = region(i)
         qa = nearness[i]
@@ -731,6 +707,7 @@ def _cast_shadows(faces, casters, sun, proj, alpha):
         return out
 
     for f in faces:
+        _progress.tick()
         world = f.extra.get("world")
         if world is None or f.opacity < 0.999:
             continue
@@ -769,6 +746,7 @@ def _cast_shadows(faces, casters, sun, proj, alpha):
     up, origin = np.array([0.0, 0.0, 1.0]), np.zeros(3)
     pieces = []
     for cast in casters:
+        _progress.tick()
         rings = slid(cast, up, origin)
         if rings:
             pieces.append(_section(rings))

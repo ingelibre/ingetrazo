@@ -29,6 +29,8 @@ import math
 
 import numpy as np
 
+from core import progress as _progress
+
 #: Merge tolerance for the union of occluded intervals, in edge-parameter
 #: units — gaps smaller than this are drafting dust, not visibility.
 _T_EPS = 1e-6
@@ -86,6 +88,7 @@ def collect_geometry(scene, layers: bool = False):
 
     def eat_mesh(mesh, visible=lambda _e: True, owner=DEFAULT_LAYER):
         for face in mesh.faces:
+            _progress.tick()
             if not visible(face):
                 continue
             own = layer_of(face)
@@ -832,6 +835,7 @@ def _merge_collinear(segs, world, kinds, tol: float, tags=None):
     inv = 1.0 / tol
     cells: dict = {}
     for i in range(n):
+        _progress.tick()
         for end in (0, 1):
             x, y = segs[i, 2 * end], segs[i, 2 * end + 1]
             cells.setdefault((int(math.floor(x * inv)),
@@ -881,6 +885,7 @@ def _merge_collinear(segs, world, kinds, tol: float, tags=None):
             pw = world[j, 1 - jend]
 
     for i in range(n):
+        _progress.tick()
         if used[i]:
             continue
         used[i] = True
