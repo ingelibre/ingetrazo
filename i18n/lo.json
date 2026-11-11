@@ -1328,6 +1328,8 @@
  "Portrait": "ແນວຕັ້ງ",
  "Preview": "ສະແດງຕົວຢ່າງ",
  "Working out the preview…": "ກຳລັງຄິດໄລ່ຕົວຢ່າງ…",
+ "Working out the visible faces…": "ກຳລັງຄິດໄລ່ໜ້າທີ່ເຫັນ…",
+ "SVG export cancelled": "ຍົກເລີກການສົ່ງອອກ SVG ແລ້ວ",
  "Frame scale ({scale})": "ມາດຕາສ່ວນຂອງກອບ ({scale})",
  "A vector drawing of the view to finish in an illustration program: one layer per model layer, the faces under the lines.": "ຮູບແຕ້ມເວັກເຕີຂອງມຸມມອງເພື່ອເຮັດໃຫ້ສຳເລັດໃນໂປຣແກຣມອອກແບບພາບ: ໜຶ່ງຊັ້ນຕໍ່ຊັ້ນຂອງແບບຈຳລອງ, ໜ້າຢູ່ລຸ່ມເສັ້ນ.",
  "Materials and textures": "ວັດສະດຸ ແລະ ລາຍພື້ນຜິວ",

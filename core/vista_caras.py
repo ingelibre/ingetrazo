@@ -21,6 +21,8 @@ texture and three points that pin its UV map to the drawing.
 from __future__ import annotations
 
 import math
+import time
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 
 import numpy as np
@@ -492,6 +494,30 @@ def _hidden_by_the_biggest(visible, in_front, box_area, region) -> bool:
     return (visible - cover).is_empty()
 
 
+#: Who hears how far the visible faces have come (see :func:`reporting`).
+_report = None
+
+#: Seconds between two reports.
+_REPORT_EVERY = 0.1
+
+
+@contextmanager
+def reporting(progress):
+    """Within it, working out the visible faces tells ``progress(done)``
+    how far it has come — ``done`` from 0 to 1 — every tenth of a second
+    or so. ``progress`` may raise to stop the work there: the exception
+    leaves :func:`view_faces` as it is.
+
+    A big model's faces take minutes: the window that exports them can
+    show a bar and keep painting, and let the person give up."""
+    global _report
+    was, _report = _report, progress
+    try:
+        yield
+    finally:
+        _report = was
+
+
 class _OverlapGrid:
     """Which opaque faces' boxes overlap a face's box in the drawing —
     the same answer as testing it against every face, from a grid of
@@ -604,7 +630,12 @@ def _visible_parts(faces):
         return r
 
     out = []
+    report, n = _report, len(items)
+    told = time.monotonic()
     for i, (fa, a_lo, a_hi) in enumerate(items):
+        if report is not None and time.monotonic() - told >= _REPORT_EVERY:
+            report(i / n)
+            told = time.monotonic()
         overlap = near_by.overlapping(i)
         visible = region(i)
         qa = nearness[i]

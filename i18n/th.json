@@ -1327,6 +1327,8 @@
  "Portrait": "แนวตั้ง",
  "Preview": "ตัวอย่าง",
  "Working out the preview…": "กำลังคำนวณตัวอย่าง…",
+ "Working out the visible faces…": "กำลังคำนวณหน้าที่มองเห็น…",
+ "SVG export cancelled": "ยกเลิกการส่งออก SVG แล้ว",
  "Frame scale ({scale})": "มาตราส่วนของกรอบ ({scale})",
  "A vector drawing of the view to finish in an illustration program: one layer per model layer, the faces under the lines.": "ภาพวาดเวกเตอร์ของมุมมองเพื่อตกแต่งต่อในโปรแกรมวาดภาพประกอบ: หนึ่งเลเยอร์ต่อเลเยอร์ของโมเดล ผิวหน้าอยู่ใต้เส้น",
  "Materials and textures": "วัสดุและพื้นผิว",

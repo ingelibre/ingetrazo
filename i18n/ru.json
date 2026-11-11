@@ -1329,6 +1329,8 @@
  "Portrait": "Книжная",
  "Preview": "Предпросмотр",
  "Working out the preview…": "Расчёт предпросмотра…",
+ "Working out the visible faces…": "Расчёт видимых граней…",
+ "SVG export cancelled": "Экспорт SVG отменён",
  "Frame scale ({scale})": "Масштаб рамки ({scale})",
  "A vector drawing of the view to finish in an illustration program: one layer per model layer, the faces under the lines.": "Векторный чертёж вида для доработки в программе иллюстрации: по слою на каждый слой модели, грани под линиями.",
  "Materials and textures": "Материалы и текстуры",

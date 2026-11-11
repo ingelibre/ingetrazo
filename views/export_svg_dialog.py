@@ -12,6 +12,8 @@ dialog remembers the last choices."""
 from __future__ import annotations
 
 import re
+import time
+from contextlib import contextmanager
 
 from PySide6.QtCore import (QByteArray, QLineF, QPoint, QPointF, QRectF,
                             QSettings, Qt, QTimer, Signal)
@@ -19,8 +21,8 @@ from PySide6.QtGui import QColor, QIcon, QPainter, QPen, QPixmap, QPolygonF
 from PySide6.QtWidgets import (QApplication, QButtonGroup, QCheckBox,
                                QComboBox, QDialog, QDialogButtonBox,
                                QDoubleSpinBox, QFormLayout, QGridLayout,
-                               QHBoxLayout, QLabel, QPushButton,
-                               QRadioButton, QToolButton, QVBoxLayout,
+                               QHBoxLayout, QLabel, QProgressDialog,
+                               QPushButton, QRadioButton, QToolButton, QVBoxLayout,
                                QWidget)
 
 from core.i18n import tr
@@ -203,8 +205,11 @@ class ExportSvgDialog(QDialog):
                  can_frame: bool = False,
                  settings: QSettings | None = None,
                  advanced: bool | None = None,
-                 scenes=None, on_scene=None) -> None:
+                 scenes=None, on_scene=None, hold=None) -> None:
         super().__init__(parent)
+        #: The view, kept from painting while the preview works out faces
+        #: (see :func:`faces_progress`).
+        self._hold = hold
         #: The model's scenes by name, and what shows one (an index, or
         #: ``None`` for the view as it was) and hands back its builder.
         self._scenes = list(scenes or [])
@@ -402,6 +407,9 @@ class ExportSvgDialog(QDialog):
         self.preview_note = QLabel()
         self.preview_note.setEnabled(False)
         self.preview_note.setAlignment(Qt.AlignCenter)
+        #: A preview being worked out: the bar lets the events through, the
+        #: timer among them, and one preview must not start inside another.
+        self._previewing = False
         self._timer = QTimer(self)
         self._timer.setSingleShot(True)
         self._timer.setInterval(250)
@@ -698,14 +706,29 @@ class ExportSvgDialog(QDialog):
     def _refresh_preview(self) -> None:
         if not self.preview_box.isChecked():
             return
+        if self._previewing:
+            self._timer.start()          # again once this one is done
+            return
         QApplication.setOverrideCursor(Qt.WaitCursor)
+        self._previewing = True
         try:
-            text, _n = self._build(self.options(), self.paper(), preview=True)
+            with faces_progress(self, self._hold):
+                text, _n = self._build(self.options(), self.paper(),
+                                       preview=True)
+        except SvgCancelled:
+            self._previewing = False
+            self._timer.stop()
+            # Too slow to wait for: the preview goes off, as its box says.
+            QApplication.restoreOverrideCursor()
+            self.preview_box.setChecked(False)
+            return
         except Exception as exc:  # noqa: BLE001
+            self._previewing = False
             QApplication.restoreOverrideCursor()
             self.preview.setPixmap(QPixmap())
             self.preview_note.setText(str(exc))
             return
+        self._previewing = False
         QApplication.restoreOverrideCursor()
         pixmap, page = svg_thumbnail_page(text, PREVIEW_W, PREVIEW_H)
         self.preview.show_sheet(pixmap, page)
@@ -1328,21 +1351,80 @@ def svg_thumbnail_page(text: str, width: int, height: int):
     return pm, page
 
 
+class SvgCancelled(Exception):
+    """The person stopped the visible faces being worked out."""
+
+
+#: Seconds of work before the bar shows: a small model never sees it.
+PROGRESS_AFTER = 0.5
+
+
+@contextmanager
+def faces_progress(parent, hold=None):
+    """Within it, working out the visible faces of a view shows a bar
+    with Cancel over ``parent`` once it has taken half a second; Cancel
+    raises :class:`SvgCancelled` where the work is.
+
+    A plaza of 90 000 faces froze the window for minutes, exporting or
+    previewing «Faces in colour», with nothing to say it was working nor
+    a way to stop. ``hold``: a widget that does not paint meanwhile — the
+    view, whose camera the export moves while it works."""
+    from core import vista_caras
+    started = time.monotonic()
+    box = []
+
+    def progress(done):
+        if not box:
+            if time.monotonic() - started < PROGRESS_AFTER:
+                return
+            dlg = QProgressDialog(tr("Working out the visible faces…"),
+                                  tr("Cancel"), 0, 1000, parent)
+            dlg.setWindowTitle(tr("Export SVG"))
+            dlg.setWindowModality(Qt.WindowModal)
+            dlg.setMinimumDuration(0)
+            dlg.setAutoClose(False)
+            dlg.setAutoReset(False)
+            # The wait cursor of the work is not over Cancel.
+            QApplication.setOverrideCursor(Qt.ArrowCursor)
+            box.append(dlg)
+            dlg.show()
+        dlg = box[0]
+        dlg.setValue(int(round(done * 1000)))
+        QApplication.processEvents()
+        if dlg.wasCanceled():
+            raise SvgCancelled()
+
+    held = hold is not None and hold.updatesEnabled()
+    if held:
+        hold.setUpdatesEnabled(False)
+    try:
+        with vista_caras.reporting(progress):
+            yield
+    finally:
+        if box:
+            QApplication.restoreOverrideCursor()
+            box[0].close()
+            box[0].deleteLater()
+        if held:
+            hold.setUpdatesEnabled(True)
+
+
 def ask_svg_options(parent, build=None, base_label: str | None = None,
                     shadows_available: bool = False,
                     screen_label: str | None = None,
                     axes_available: bool = False, screen_mm=None,
                     view_label: str | None = None,
                     selection_available: bool = False,
-                    can_frame: bool = False, scenes=None, on_scene=None):
+                    can_frame: bool = False, scenes=None, on_scene=None,
+                    hold=None):
     """Show the dialog: ``(accepted, options, sheet)`` as
     :meth:`ExportSvgDialog.options` and :meth:`ExportSvgDialog.paper`
     give them. ``scenes`` (names) and ``on_scene`` offer the model's scenes
-    in the advanced dialog."""
+    in the advanced dialog; ``hold``, the view (see :func:`faces_progress`)."""
     dlg = ExportSvgDialog(parent, build, base_label, shadows_available,
                           screen_label, axes_available, screen_mm, view_label,
                           selection_available, can_frame, scenes=scenes,
-                          on_scene=on_scene)
+                          on_scene=on_scene, hold=hold)
     ok = bool(dlg.exec())
     opts, sheet = dlg.options(), dlg.paper()
     dlg.deleteLater()

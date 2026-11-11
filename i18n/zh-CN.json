@@ -1329,6 +1329,8 @@
  "Portrait": "纵向",
  "Preview": "预览",
  "Working out the preview…": "正在计算预览…",
+ "Working out the visible faces…": "正在计算可见面…",
+ "SVG export cancelled": "已取消 SVG 导出",
  "Frame scale ({scale})": "画框比例（{scale}）",
  "A vector drawing of the view to finish in an illustration program: one layer per model layer, the faces under the lines.": "视图的矢量图，可在插画软件中完成：模型的每个图层对应一个图层，面位于线条之下。",
  "Materials and textures": "材质和纹理",
