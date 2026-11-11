@@ -3181,6 +3181,8 @@
  "Default columns": "Kolom bawaan",
  "Sort by name": "Urutkan menurut nama",
  "Sort by order created": "Urutkan menurut urutan pembuatan",
+ "Sort by visible": "Urutkan menurut yang terlihat",
+ "Sort by locked": "Urutkan menurut yang terkunci",
  "Short dashes (hidden)": "Putus pendek (tersembunyi)",
  "Long dashes": "Putus panjang",
  "Dash-dot-dot": "Garis-titik-titik",

@@ -3174,6 +3174,8 @@
  "Shown alone — click to show back what Isolate hid": "แสดงเพียงลำพัง — คลิกเพื่อแสดงสิ่งที่แยกการทำงานซ่อนไว้กลับมา",
  "Sort by name": "เรียงตามชื่อ",
  "Sort by order created": "เรียงตามลำดับการสร้าง",
+ "Sort by visible": "เรียงตามที่มองเห็น",
+ "Sort by locked": "เรียงตามที่ล็อก",
  "Texts": "ตัวอักษร",
  "The active layer is hidden or locked: new objects go to '{default}' again.": "เลเยอร์ที่ใช้งานอยู่ถูกซ่อนหรือล็อก: วัตถุใหม่จะกลับไปอยู่ที่ '{default}'",
  "The layer of what is selected becomes the active one: new objects go to it.": "เลเยอร์ของสิ่งที่เลือกจะกลายเป็นเลเยอร์ที่ใช้งานอยู่: วัตถุใหม่จะอยู่ในเลเยอร์นี้",

@@ -3178,6 +3178,8 @@
  "Default columns": "Столбцы по умолчанию",
  "Sort by name": "Сортировать по имени",
  "Sort by order created": "Сортировать по порядку создания",
+ "Sort by visible": "Сортировать по видимым",
+ "Sort by locked": "Сортировать по заблокированным",
  "Short dashes (hidden)": "Короткий штрих (невидимая)",
  "Long dashes": "Длинный штрих",
  "Dash-dot-dot": "Штрих и две точки",

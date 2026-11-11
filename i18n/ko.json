@@ -3171,6 +3171,8 @@
  "Shown alone — click to show back what Isolate hid": "단독 표시 중 — 클릭하면 격리로 숨긴 것을 다시 표시",
  "Sort by name": "이름순 정렬",
  "Sort by order created": "생성순 정렬",
+ "Sort by visible": "표시된 항목순 정렬",
+ "Sort by locked": "잠긴 항목순 정렬",
  "Texts": "문자",
  "The active layer is hidden or locked: new objects go to '{default}' again.": "활성 레이어가 숨겨지거나 잠겨 있습니다: 새 객체는 다시 '{default}'(으)로 들어갑니다.",
  "The layer of what is selected becomes the active one: new objects go to it.": "선택한 항목의 레이어가 활성 레이어가 됩니다: 새 객체는 이 레이어에 들어갑니다.",

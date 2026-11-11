@@ -1978,6 +1978,97 @@ def test_sort_by_order_created_from_the_options_menu(win):
     QSettings().remove(LayersPanel.SORT_KEY)
 
 
+def _top_rows(panel):
+    return [panel.tree.topLevelItem(i).text(0)
+            for i in range(panel.tree.topLevelItemCount())]
+
+
+def _child_rows(panel, folder):
+    item = panel.item_for(folder, "folder")
+    return [item.child(i).text(0) for i in range(item.childCount())]
+
+
+@pytest.mark.parametrize("how, label, attr", [
+    ("visible", "Sort by visible", "visible"),
+    ("locked", "Sort by locked", "locked"),
+])
+def test_sort_by_visible_or_locked_from_the_options_menu(win, how, label,
+                                                         attr):
+    from PySide6.QtCore import QSettings
+    from views.layers_panel import LayersPanel
+    QSettings().remove(LayersPanel.SORT_KEY)
+    panel = win.layers_dock.panel
+    scene = win.viewport.scene
+    # Visible (or locked) layers go first, the others after.
+    scene.layers += [Layer("Capa 10", **{attr: True}),
+                     Layer("Capa 2", **{attr: False}),
+                     Layer("Capa 1", **{attr: True}),
+                     Layer("Alzado", **{attr: False})]
+    panel.refresh()
+    assert _layer_rows(panel)[1:] == ["Alzado", "Capa 1", "Capa 2",
+                                      "Capa 10"]
+    panel._fill_more_menu()
+    next(a for a in panel.more_menu.actions() if a.text() == label).trigger()
+    assert panel.sort_by == how
+    # Layer 0 still first; then that state's layers, each group by name
+    # with its numbers read as numbers.
+    assert _layer_rows(panel) == [DEFAULT_LAYER, "Capa 1", "Capa 10",
+                                  "Alzado", "Capa 2"]
+    panel._fill_more_menu()
+    checks = {a.text(): a.isChecked() for a in panel.more_menu.actions()}
+    assert checks[label]
+    assert sum(checks[t] for t in ("Sort by name", "Sort by order created",
+                                   "Sort by visible", "Sort by locked")) == 1
+    assert str(QSettings().value(LayersPanel.SORT_KEY)) == how   # remembered
+    panel.set_sort_by("name")
+    QSettings().remove(LayersPanel.SORT_KEY)
+
+
+def test_sort_by_visible_moves_a_row_when_its_eye_is_clicked(win):
+    from PySide6.QtCore import QSettings
+    from views.layers_panel import COL_EYE, COL_LOCK, LayersPanel
+    QSettings().remove(LayersPanel.SORT_KEY)
+    panel = win.layers_dock.panel
+    scene = win.viewport.scene
+    scene.layers += [Layer("A"), Layer("B"), Layer("C")]
+    panel.set_sort_by("visible")
+    assert _layer_rows(panel)[1:] == ["A", "B", "C"]
+    panel.click_cell(("layer", "A"), COL_EYE)       # hide A: it goes down
+    assert not scene.layer("A").visible
+    assert _layer_rows(panel)[1:] == ["B", "C", "A"]
+    panel.click_cell(("layer", "A"), COL_EYE)       # shown again: back up
+    assert _layer_rows(panel)[1:] == ["A", "B", "C"]
+    panel.set_sort_by("locked")
+    panel.click_cell(("layer", "C"), COL_LOCK)      # locked: it goes up
+    assert _layer_rows(panel)[1:] == ["C", "A", "B"]
+    panel.set_sort_by("name")
+    QSettings().remove(LayersPanel.SORT_KEY)
+
+
+def test_sort_by_visible_keeps_folders_first_and_sorts_inside_them(win):
+    from PySide6.QtCore import QSettings
+    from views.layers_panel import LayersPanel
+    QSettings().remove(LayersPanel.SORT_KEY)
+    panel = win.layers_dock.panel
+    scene = win.viewport.scene
+    hidden = L.add_folder(scene, "Apagada")
+    shown = L.add_folder(scene, "Zona")
+    scene.layers += [Layer("Muro", folder=hidden, visible=False),
+                     Layer("Losa", folder=shown, visible=False),
+                     Layer("Pilar", folder=shown),
+                     Layer("Suelta", visible=False), Layer("Viga")]
+    panel.set_sort_by("visible")
+    # Layer 0, the folders (the one with a layer shown first), the layers.
+    assert _top_rows(panel) == [DEFAULT_LAYER, shown, hidden, "Viga",
+                                "Suelta"]
+    assert _child_rows(panel, shown) == ["Pilar", "Losa"]
+    panel.set_sort_by("name")
+    assert _top_rows(panel) == [DEFAULT_LAYER, hidden, shown, "Suelta",
+                                "Viga"]
+    assert _child_rows(panel, shown) == ["Losa", "Pilar"]
+    QSettings().remove(LayersPanel.SORT_KEY)
+
+
 def test_a_new_layer_goes_into_the_folder_of_the_selected_layer(win):
     panel = win.layers_dock.panel
     scene = win.viewport.scene

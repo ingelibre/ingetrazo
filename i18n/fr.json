@@ -3180,6 +3180,8 @@
  "Default columns": "Colonnes par défaut",
  "Sort by name": "Trier par nom",
  "Sort by order created": "Trier par ordre de création",
+ "Sort by visible": "Trier par visibles",
+ "Sort by locked": "Trier par verrouillés",
  "Short dashes (hidden)": "Tirets courts (caché)",
  "Long dashes": "Tirets longs",
  "Dash-dot-dot": "Tiret-point-point",
