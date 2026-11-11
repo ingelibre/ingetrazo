@@ -3449,5 +3449,6 @@
   "Choose a source style below, then click a category or drag the style onto it.": "Изберете изходен стил отдолу, след което щракнете върху категория или плъзнете стила върху нея.",
   "Select a source style.": "Изберете изходен стил.",
   "Source style: {name}": "Изходен стил: {name}",
-  "Source styles": "Изходни стилове"
+  "Source styles": "Изходни стилове",
+  "Edge color:": "Цвят на ръбовете:"
 }

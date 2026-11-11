@@ -3449,5 +3449,6 @@
  "Choose a source style below, then click a category or drag the style onto it.": "在下方選擇來源樣式，然後按一下類別，或將樣式拖曳至類別上。",
  "Select a source style.": "選擇來源樣式。",
  "Source style: {name}": "來源樣式：{name}",
- "Source styles": "來源樣式"
+ "Source styles": "來源樣式",
+ "Edge color:": "邊線顏色："
 }
