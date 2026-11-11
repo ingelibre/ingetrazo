@@ -9899,8 +9899,19 @@ class Viewport(QOpenGLWidget):
         from core.section import cut_chords
         segs = tags = None
         if idx.tri_v0 is not None and len(idx.tri_v0):
+            # Each triangle's height along the normal is kept while the
+            # model and the normal stay: a plane dragged by its arrow then
+            # only compares three arrays with its new offset (a furnished
+            # house froze ~2 s per drag measuring every triangle again).
+            reach = getattr(self, "_section_reach", None)
+            if reach is None or not reach.fits(idx.tri_v0, n, idx.tri_e1,
+                                               idx.tri_e2):
+                from core.section import PlaneReach
+                reach = self._section_reach = PlaneReach(
+                    idx.tri_v0, idx.tri_e1, idx.tri_e2, n)
             segs, rows = cut_chords(idx.tri_v0, idx.tri_e1, idx.tri_e2, n, o,
-                                    idx.ent_vis[idx.tri_ent], rows=True)
+                                    idx.ent_vis[idx.tri_ent], rows=True,
+                                    reach=reach)
             if segs is not None:
                 tags = self._cut_layer_tags(idx, idx.tri_ent[rows])
         self._section_cut_cache = (key, segs, tags)
