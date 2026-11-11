@@ -771,9 +771,15 @@ class ExtensionManagerDialog(QDialog):
         tags_row = FlowLayout(spacing=5)
         for tag in extension.tags:
             chip = QLabel(_tag_label(tag))
-            chip.setWordWrap(True)
-            chip.setMaximumWidth(_IMAGE_SIZE[0])
             chip.setObjectName("extChip")
+            # One line, and a new row when it does not fit: only a tag
+            # wider than the card wraps inside its chip. Word wrap on every
+            # chip let Qt size each one narrow (its wrapped guess), so a
+            # short tag broke in two with room to spare, and the chips
+            # crowded onto one row with some fonts (macOS).
+            chip.ensurePolished()           # its style sheet's padding
+            chip.setWordWrap(chip.sizeHint().width() > _IMAGE_SIZE[0])
+            chip.setMaximumWidth(_IMAGE_SIZE[0])
             tags_row.addWidget(chip)
         image_column.addLayout(tags_row)
         license_label = QLabel(
