@@ -119,6 +119,11 @@ class SavedView:
     def apply(self, scene, camera) -> None:
         """Recall the view: camera first, then the layer-visibility state.
         The caller bumps ``scene.version`` / repaints (tray convention)."""
+        self.apply_camera(camera)
+        self.apply_state(scene)
+
+    def apply_camera(self, camera) -> None:
+        """Only the camera (a scene transition glides it there first)."""
         from PySide6.QtGui import QVector3D
         camera.target = QVector3D(*self.target)
         camera.distance = self.distance
@@ -127,6 +132,10 @@ class SavedView:
         camera.fov_deg = self.fov_deg
         camera.perspective = self.perspective
         camera.two_point = self.two_point
+
+    def apply_state(self, scene) -> None:
+        """Everything but the camera: layers, style, section, geographic
+        layers, shadows, hidden objects."""
         hidden = set(self.hidden_layers)
         for ly in scene.layers:
             ly.visible = ly.name not in hidden

@@ -4393,15 +4393,40 @@ class ScenesPanel(QWidget):
     def _on_activate(self, item) -> None:
         self.show_view(item.data(Qt.UserRole))
 
-    def show_view(self, view) -> None:
+    def show_view(self, view, animate: bool = True) -> None:
         """Show the saved ``view`` (a double-click here, and a click on the
-        scene tabs under the viewport)."""
+        scene tabs under the viewport). With the document's transitions on
+        (``scene.animation``) the camera glides there first, and the rest
+        of the scene comes in when it arrives (views/scene_player.py)."""
+        if view is None:
+            return
+        player = getattr(self._window, "scene_player", None)
+        if player is not None:
+            player.cancel()
+        anim = getattr(self._scene(), "animation", None)
+        seconds = anim.glide_seconds() if (animate and anim) else 0.0
+        if (player is not None and seconds > 0.0
+                and self._window.viewport.isVisible()
+                and player.glide_to(view, seconds,
+                                    lambda v: self.finish_view(v, False))):
+            row = getattr(self._window, "_scene_tabs", None)
+            if row is not None:
+                row.mark_view(view)
+            return
+        self.finish_view(view)
+
+    def finish_view(self, view, camera: bool = True) -> None:
+        """Recall ``view``: its camera (unless a glide already took the
+        camera there, ``camera=False``), layers, style, section…"""
         if view is None:
             return
         scene = self._scene()
         from core.saved_views import shown_state
         before = shown_state(scene)
-        view.apply(scene, self._window.viewport.camera)
+        if camera:
+            view.apply(scene, self._window.viewport.camera)
+        else:
+            view.apply_state(scene)
         # A scene that only moves the camera changes nothing the caches
         # keyed on ``scene.version`` hold: bumping it re-synced every edge
         # and profile of the model (120 ms on a 1 M-face building) and

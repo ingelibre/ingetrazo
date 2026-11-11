@@ -398,6 +398,9 @@ class MainWindow(QMainWindow):
         scenes.renameRequested.connect(self._rename_scene_tab)
         scenes.moveRequested.connect(self._move_scene_tab)
         scenes.setVisible(False)
+        from views.scene_player import ScenePlayer
+        self.scene_player = ScenePlayer(self)
+        self.scene_player.activeChanged.connect(self._on_player_active)
         box.addWidget(scenes)
         # Every project closed: an empty, hatched area with only «+» above
         # (views/empty_area.py), in the stack's place — beside it, not in
@@ -1573,6 +1576,10 @@ class MainWindow(QMainWindow):
             "more in, narrower keeps the lines calm."))
         self._act_field_of_view.triggered.connect(self._ask_field_of_view)
         camera_menu.addAction(self._act_field_of_view)
+
+        # Scene transitions (views/scene_player.py): the camera glides from
+        # scene to scene, and Play runs through them all, for a presentation.
+        camera_menu.addMenu(self._build_animation_menu())
 
         # Styles: the model's display look — face mode, edges,
         # background. Scenes remember the style; the composer's live-look
@@ -3446,6 +3453,10 @@ class MainWindow(QMainWindow):
              tr("Save the view on screen as a PNG or JPG picture at the "
                 "width you choose."),
              self._on_export_image),
+            (tr("Scenes as Video (.mkv)…"),
+             tr("Save the scenes as a video: the camera glides from one to "
+                "the next, with the times of Camera ▸ Animation."),
+             self.export_video),
         ):
             act = QAction(label, self)
             act.setStatusTip(tip)
@@ -6789,6 +6800,7 @@ class MainWindow(QMainWindow):
             act.blockSignals(True)            # the project in front's choice
             act.setChecked(bool(doc.scene_tabs))
             act.blockSignals(False)
+        self._sync_animation_menu()          # the project in front's choice
         views = list(getattr(self.viewport.scene, "saved_views", []) or [])
         on = (bool(views) and bool(doc.scene_tabs) and self._workspace is None
                and not self.__dict__.get("_empty_on"))
@@ -6836,13 +6848,158 @@ class MainWindow(QMainWindow):
         menu = self._build_scene_bar_menu()
         menu.exec(menu_upwards(menu, global_pos))
 
+    # ---- scene transitions (views/scene_player.py) -------------------------
+    def _build_animation_menu(self):
+        """Camera ▸ Animation: play the scenes, step through them, and the
+        document's transition times."""
+        from PySide6.QtGui import QKeySequence
+        from PySide6.QtWidgets import QMenu
+        menu = QMenu(tr("Animation"), self)
+        menu.aboutToShow.connect(self._sync_animation_menu)
+        glide = self._act_scene_transitions = QAction(
+            tr("Scene Transitions"), self)
+        glide.setCheckable(True)
+        glide.setChecked(True)
+        glide.setStatusTip(tr(
+            "On: showing a scene glides the camera there. Off: it jumps "
+            "straight to it. Saved with the project."))
+        glide.toggled.connect(self.set_scene_transitions)
+        menu.addAction(glide)
+        menu.addSeparator()
+        play = self._act_play_scenes = QAction(tr("Play"), self)
+        play.setCheckable(True)
+        play.setStatusTip(tr(
+            "Go through every scene in turn, gliding from one to the next; "
+            "Esc or a click in the view stops it."))
+        play.triggered.connect(lambda on: self.play_scenes(bool(on)))
+        menu.addAction(play)
+        for label, tip, keys, step in (
+                (tr("Next Scene"), tr("Glide to the next scene."),
+                 "PgDown", 1),
+                (tr("Previous Scene"), tr("Glide to the previous scene."),
+                 "PgUp", -1)):
+            act = QAction(label, self)
+            act.setStatusTip(tip)
+            act.setShortcut(QKeySequence(keys))
+            act.triggered.connect(lambda _c=False, k=step: self.step_scene(k))
+            self.addAction(act)
+            menu.addAction(act)
+        menu.addSeparator()
+        video = QAction(tr("Export Video (.mkv)…"), self)
+        video.setStatusTip(tr(
+            "Save the scenes as a video: the camera glides from one to "
+            "the next, with the times of Camera ▸ Animation."))
+        video.triggered.connect(lambda _c=False: self.export_video())
+        menu.addAction(video)
+        settings = QAction(tr("Animation Settings…"), self)
+        settings.setStatusTip(tr(
+            "How long the camera takes from one scene to the next, and how "
+            "long Play stays on each."))
+        settings.triggered.connect(lambda _c=False: self.ask_animation())
+        menu.addAction(settings)
+        self._act_animation_settings = settings
+        return menu
+
+    def _sync_animation_menu(self) -> None:
+        """The menu shows the project in front's choice."""
+        act = self.__dict__.get("_act_scene_transitions")
+        anim = getattr(self.viewport.scene, "animation", None)
+        if act is not None and anim is not None                 and act.isChecked() != anim.enabled:
+            act.blockSignals(True)
+            act.setChecked(anim.enabled)
+            act.blockSignals(False)
+
+    def set_scene_transitions(self, on: bool) -> None:
+        """Turn the active project's scene transitions on or off."""
+        scene = self.viewport.scene
+        anim = scene.animation
+        if anim.enabled == bool(on):
+            return
+        from core.scene_animation import SceneAnimation
+        scene.animation = SceneAnimation(enabled=bool(on),
+                                         transition=anim.transition,
+                                         pause=anim.pause)
+        if not on:
+            self.scene_player.stop()
+        scene.version += 1                 # the document changed: title «*»
+        self._sync_animation_menu()
+
+    def _on_player_active(self, on: bool) -> None:
+        act = self.__dict__.get("_act_play_scenes")
+        if act is not None and act.isChecked() != (
+                on and self.scene_player.is_playing()):
+            act.blockSignals(True)
+            act.setChecked(on and self.scene_player.is_playing())
+            act.blockSignals(False)
+
+    def _shown_scene_index(self) -> int:
+        """The place of the scene marked in the tabs (−1: none)."""
+        views = list(getattr(self.viewport.scene, "saved_views", []) or [])
+        marked = self._scene_tabs.tabs.marked_view()
+        for i, v in enumerate(views):
+            if v is marked:
+                return i
+        return -1
+
+    def play_scenes(self, on: bool = True) -> None:
+        """Run through the active project's scenes (on), or stop (off)."""
+        player = self.scene_player
+        if not on:
+            player.stop()
+            return
+        scene = self.viewport.scene
+        views = list(getattr(scene, "saved_views", []) or [])
+        if not views:
+            self._on_player_active(False)
+            self.statusBar().showMessage(tr(
+                "This project has no scenes to play: keep a view as a scene "
+                "first (Scenes panel, «+ Scene»)."), 4000)
+            return
+        anim = scene.animation
+        start = self._shown_scene_index() + 1
+        tray = self.tray.scenes
+        player.play(views, start, anim.transition, anim.pause,
+                    lambda v: tray.finish_view(v, False))
+        self._on_player_active(True)
+        self.statusBar().showMessage(tr(
+            "Playing the scenes: Esc or a click in the view stops."), 3000)
+
+    def step_scene(self, step: int) -> None:
+        """Glide to the next (1) or previous (−1) scene, round the ends."""
+        views = list(getattr(self.viewport.scene, "saved_views", []) or [])
+        if not views:
+            return
+        at = self._shown_scene_index()
+        if at < 0:
+            at = -1 if step > 0 else 0
+        self.tray.scenes.show_view(views[(at + step) % len(views)])
+
+    def export_video(self) -> None:
+        """The scenes as a .mkv video (views/video_export.py)."""
+        from views.video_export import run_export
+        run_export(self)
+
+    def ask_animation(self) -> None:
+        """The document's transition settings, in a small dialog."""
+        from views.scene_player import ask_animation_settings
+        scene = self.viewport.scene
+        fresh = ask_animation_settings(self, scene.animation)
+        if fresh is None or fresh == scene.animation:
+            return
+        scene.animation = fresh
+        scene.version += 1                 # the document changed: title «*»
+        self._sync_animation_menu()
+
     def _build_scene_bar_menu(self):
-        """The scene row's own right-click menu (off the tabs): hide it.
-        Alt+E, Window ▸ and the project tab's menu bring it back."""
+        """The scene row's own right-click menu (off the tabs): play the
+        scenes, or hide the row. Alt+E, Window ▸ and the project tab's menu
+        bring it back."""
         from PySide6.QtGui import QKeySequence
         from PySide6.QtWidgets import QMenu
         menu = QMenu(self)
         menu.setAttribute(Qt.WA_DeleteOnClose)
+        self._add_play_entry(menu)
+        menu.addSeparator()
         act = menu.addAction(tr("Hide scenes"))
         act.setShortcut(QKeySequence("Alt+E"))
         act.setShortcutVisibleInContextMenu(True)
@@ -6860,6 +7017,8 @@ class MainWindow(QMainWindow):
         menu.setAttribute(Qt.WA_DeleteOnClose)
         views = self._scene_tabs.tabs.views
         view = views[index] if 0 <= index < len(views) else None
+        self._add_play_entry(menu)
+        menu.addSeparator()
         update = menu.addAction(tr("Update"))
         update.setStatusTip(tr("Update the selected scene from the current view"))
         update.setEnabled(view is not None)
@@ -6878,6 +7037,19 @@ class MainWindow(QMainWindow):
         act.triggered.connect(
             lambda _c=False, v=view: self.tray.scenes.delete_views([v]))
         return menu
+
+    def _add_play_entry(self, menu) -> None:
+        """«Play» or, while the scenes play, «Stop» — the scene row's menus."""
+        if self.scene_player.is_playing():
+            act = menu.addAction(tr("Stop"))
+            act.setStatusTip(tr("Stop going through the scenes."))
+            act.triggered.connect(lambda _c=False: self.play_scenes(False))
+        else:
+            act = menu.addAction(tr("Play"))
+            act.setStatusTip(tr(
+                "Go through every scene in turn, gliding from one to the "
+                "next; Esc or a click in the view stops it."))
+            act.triggered.connect(lambda _c=False: self.play_scenes(True))
 
     def _add_scene_from_tabs(self) -> None:
         self.tray.scenes.add_scene()

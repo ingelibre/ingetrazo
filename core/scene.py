@@ -31,6 +31,11 @@ def _make_shadows():
     return ShadowSettings()
 
 
+def _make_animation():
+    from core.scene_animation import SceneAnimation
+    return SceneAnimation()
+
+
 @dataclass
 class Scene:
     mesh: Mesh = field(default_factory=Mesh)
@@ -143,6 +148,9 @@ class Scene:
     # Sun shadows (core/sun.py): whether they draw, and the local date/time
     # the sun stands at. Document data — the shadow study is a deliverable.
     shadows: object = field(default_factory=lambda: _make_shadows())
+    # Scene transitions (core/scene_animation.py): whether showing a scene
+    # glides there, and how long the glide and a run's pause on each take.
+    animation: object = field(default_factory=lambda: _make_animation())
     # Section planes (core/section.py). At most ONE is
     # ``active`` (the cut) in the model context; the two flags mirror
     # View ▸ Section Planes / Section Cuts toggles.
@@ -717,7 +725,7 @@ class Scene:
                 or self.saved_views or self.compositions
                 or self.image_planes or self.plugin_data
                 or self.kept_components or self.section_planes
-                or self.materials
+                or self.materials or self.animation.to_dict()
                 or not self.show_section_planes
                 or not self.show_section_cuts
                 or self.show_hidden_objects or self.show_hidden_geometry
@@ -751,6 +759,7 @@ class Scene:
             self.active_ifc = None
             self.display_style = _make_style()
             self.shadows = _make_shadows()
+            self.animation = _make_animation()
             self.section_planes.clear()
             self.show_section_planes = True
             self.show_section_cuts = True
