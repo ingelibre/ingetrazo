@@ -766,6 +766,24 @@ def _paint_of(vp, group):
     return paint
 
 
+def _ghost_edge_points(scene) -> array:
+    """The ends of the edges of the mesh being edited that View ▸ Hidden
+    Geometry draws dotted, on layers that are shown: the hidden ones, and
+    the soft ones a curved surface or a bevel reads smooth with (#1361).
+    The pick already takes soft edges while the view is on; drawn, they
+    are no longer clicked blind.
+
+    Module-level, like :func:`_cache_ver`, so tests reach it without a GL
+    context."""
+    points = array("f")
+    for e in scene.mesh.edges:
+        if ((getattr(e, "hidden", False) or getattr(e, "soft", False))
+                and scene._layer_state(e)[0]):
+            points.extend([e.a.x(), e.a.y(), e.a.z(),
+                           e.b.x(), e.b.y(), e.b.z()])
+    return points
+
+
 def _cache_ver(vp):
     """The scene version the per-version caches key on — frozen during a
     groups-only transform preview (see Viewport.begin_groups_preview).
@@ -6975,7 +6993,8 @@ class Viewport(QOpenGLWidget):
     def _sync_hidden_ghosts(self) -> bool:
         """Scratch VBOs of the hidden things the view shows — the hidden
         OBJECTS' chunk arrays and the hidden FACES / EDGES of the mesh being
-        edited — rebuilt only when the placements or the mesh change.
+        edited, its soft edges among them — rebuilt only when the
+        placements or the mesh change.
         Returns False when there is nothing to draw."""
         sc = self.scene
         objects = bool(getattr(sc, "show_hidden_objects", False))
@@ -7024,11 +7043,7 @@ class Viewport(QOpenGLWidget):
                                  t2.x(), t2.y(), t2.z(), r, gg, b])
             if data:
                 vcol_parts.append(data.tobytes())
-            edata = array("f")
-            for e in sc.mesh.edges:
-                if getattr(e, "hidden", False) and sc._layer_state(e)[0]:
-                    edata.extend([e.a.x(), e.a.y(), e.a.z(),
-                                  e.b.x(), e.b.y(), e.b.z()])
+            edata = _ghost_edge_points(sc)
             if edata:
                 edge_parts.append(edata.tobytes())
         raw = b"".join(edge_parts)
