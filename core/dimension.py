@@ -116,6 +116,63 @@ class VertexAnchor:
             else QVector3D(v.position)
 
 
+def _may_hold(mesh, local: QVector3D, tol: float) -> bool:
+    """Whether ``mesh`` can have a vertex within ``tol`` of ``local``. A
+    mesh still deferred (the experimental engine's lazy meshes) answers
+    from its source positions, without building a single Python object:
+    asking its registry built the whole mesh, and resolving one anchor on a
+    3 400-placement model built all 164 of them (2 s on opening a sheet)."""
+    from core.mesh import DeferredMesh
+    if type(mesh) is not DeferredMesh:
+        return True
+    d = mesh.__dict__
+    src = d.get("_deferred_source")
+    if not src or "pos" not in src:
+        return True
+    pos = src["pos"]
+    if not len(pos):
+        return False
+    box = d.get("_anchor_box")
+    if box is None:
+        import numpy as np
+        a = np.asarray(pos, dtype=np.float64)
+        box = d["_anchor_box"] = (a.min(axis=0), a.max(axis=0))
+    # The weld can move a point by its own resolution: a margin of a few.
+    pad = 4.0 * tol
+    p = (local.x(), local.y(), local.z())
+    lo, hi = box
+    if any(p[i] < lo[i] - pad or p[i] > hi[i] + pad for i in range(3)):
+        return False
+    import numpy as np
+    a = np.asarray(pos, dtype=np.float64)
+    near = np.all(np.abs(a - np.array(p)) <= pad, axis=1)
+    return bool(near.any())
+
+
+def _placements_with_inverses(scene) -> list:
+    """``[(top_group, placed, inverse or None)]`` for every placement,
+    kept while the model does not change: each anchor resolved walked all
+    of them and inverted every matrix again."""
+    from core.group import iter_placements
+    key = (getattr(scene, "version", None), len(getattr(scene, "groups", ()) or ()))
+    cached = scene.__dict__.get("_anchor_placements")
+    if cached is not None and cached[0] == key:
+        return cached[1]
+    out = []
+    for g in getattr(scene, "groups", None) or ():
+        if getattr(g, "billboard", False):
+            continue
+        for placed, m in iter_placements(g):
+            if m is None:
+                out.append((g, placed, None))
+                continue
+            inv, ok = m.inverted()
+            if ok:
+                out.append((g, placed, inv))
+    scene.__dict__["_anchor_placements"] = (key, out)
+    return out
+
+
 def resolve_vertex_anchor(scene, point: QVector3D, tol: float = 1e-4):
     """The vertex sitting at *point* (world), as a :class:`VertexAnchor`,
     or ``None``. Loose geometry first, then every group placement, the
@@ -124,10 +181,12 @@ def resolve_vertex_anchor(scene, point: QVector3D, tol: float = 1e-4):
     model. ``tol`` is the registry's own weld resolution (0.1 mm): a
     point that came through a placement's float32 matrix and back lands
     within a micron of the vertex, which a tighter tolerance rejected on
-    far-out coordinates."""
-    from core.group import iter_placements
+    far-out coordinates. A lazy mesh is only built when its own points
+    say the vertex may be there (:func:`_may_hold`)."""
 
-    def hit(mesh, local, chain):
+    def hit(mesh, local):
+        if not _may_hold(mesh, local, tol):
+            return None
         v = mesh.vertex_at(local)
         if v is None or (v.position - local).length() > tol:
             return None
@@ -139,28 +198,20 @@ def resolve_vertex_anchor(scene, point: QVector3D, tol: float = 1e-4):
             # group scaled away from under it (Marco, 2026-09-20: «faltaba
             # en grupo»). A point held by nothing holds nothing.
             return None
-        return VertexAnchor(v, mesh, chain)
+        return v
 
     # The LOOSE mesh, not ``scene.mesh``: inside a group edit that is the
     # open group's, which the loop below finds with its chain — held as
     # loose, the anchor was dead from birth (#621).
-    found = hit(getattr(scene, "loose_mesh", scene.mesh), QVector3D(point), ())
-    if found is not None:
-        return found
-    for g in getattr(scene, "groups", None) or ():
-        if getattr(g, "billboard", False):
-            continue
-        for placed, m in iter_placements(g):
-            local = QVector3D(point)
-            chain = _chain_to(g, placed)
-            if m is not None:
-                inv, ok = m.inverted()
-                if not ok:
-                    continue
-                local = inv.map(local)
-            found = hit(placed.mesh, local, chain)
-            if found is not None:
-                return found
+    loose = getattr(scene, "loose_mesh", scene.mesh)
+    v = hit(loose, QVector3D(point))
+    if v is not None:
+        return VertexAnchor(v, loose, ())
+    for g, placed, inv in _placements_with_inverses(scene):
+        local = QVector3D(point) if inv is None else inv.map(QVector3D(point))
+        v = hit(placed.mesh, local)
+        if v is not None:
+            return VertexAnchor(v, placed.mesh, _chain_to(g, placed))
     return None
 
 

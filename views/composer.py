@@ -13504,7 +13504,16 @@ class ComposerWindow(QMainWindow):
             if frame is None:
                 continue                  # frame gone: a free paper cota now
             try:
-                _pts, wpts = self.frame_snap_points(frame)
+                # The frame's snap points only when an end needs them: an
+                # end held by its vertex (``follow``) does not, and building
+                # them for a frame with other layers cost 1.3 s on opening
+                # a big model's sheet.
+                snap = []
+
+                def wpts_of(frame=frame, snap=snap):
+                    if not snap:
+                        snap.append(self.frame_snap_points(frame)[1])
+                    return snap[0]
                 # 2.5 paper mm at the frame scale, hard-capped at 0.5 m —
                 # at 1:1000 an uncapped tolerance is 2.5 m and captures
                 # unrelated vertices.
@@ -13525,7 +13534,8 @@ class ComposerWindow(QMainWindow):
                     if not inside:
                         continue
                     setattr(ct, attr, _resnap_anchor(
-                        memo, ct, attr, wpts, tol, lambda: edges_of(frame)))
+                        memo, ct, attr, wpts_of(), tol,
+                        lambda: edges_of(frame)))
                 (ax, ay), (bx, by) = self._frame_world_to_page(
                     frame, [ct.a_world, ct.b_world])
                 ct.x_mm, ct.y_mm = ax, ay
@@ -13541,7 +13551,6 @@ class ComposerWindow(QMainWindow):
             if frame is None:
                 continue
             try:
-                _pts, wpts = self.frame_snap_points(frame)
                 tol = min(2.5 * frame.scale_n / 1000.0, 0.5)
                 (px, py), = self._frame_world_to_page(frame, [et.a_world])
                 inside = (frame.x_mm - 0.5 <= px <= frame.x_mm + frame.w_mm + 0.5
@@ -13550,6 +13559,7 @@ class ComposerWindow(QMainWindow):
                 if follow(et, "a_world"):
                     inside = False
                 if inside:
+                    _pts, wpts = self.frame_snap_points(frame)
                     et.a_world = _resnap_anchor(
                         memo, et, "a_world", wpts, tol,
                         lambda: edges_of(frame))
@@ -13577,7 +13587,6 @@ class ComposerWindow(QMainWindow):
             if frame is None:
                 continue
             try:
-                _pts, wpts = self.frame_snap_points(frame)
                 tol = min(2.5 * frame.scale_n / 1000.0, 0.5)
                 (px, py), = self._frame_world_to_page(frame, [nv.a_world])
                 inside = (frame.x_mm - 0.5 <= px <= frame.x_mm + frame.w_mm + 0.5
@@ -13586,6 +13595,7 @@ class ComposerWindow(QMainWindow):
                 if follow(nv, "a_world"):
                     inside = False
                 if inside:
+                    _pts, wpts = self.frame_snap_points(frame)
                     nv.a_world = _resnap_anchor(
                         memo, nv, "a_world", wpts, tol,
                         lambda: edges_of(frame))

@@ -107,3 +107,66 @@ def test_a_frame_with_other_layers_does_not_walk_the_faces(monkeypatch):
             comp.close()
         win._saved_version = win.viewport.scene.version
         win.close()
+
+
+def _canon(arrays):
+    tris, hard, soft, normals = arrays
+    def rows(a, k):
+        return sorted(tuple(np.round(r.reshape(-1), 5)) for r in a.reshape(-1, k))
+    nn = np.nan_to_num(normals, nan=9.0)
+    return (rows(tris, 9), rows(hard, 6), rows(soft, 6), rows(nn, 6))
+
+
+def test_copies_not_baked_yet_come_out_as_their_bakes():
+    """Copies of a component the view has not baked are placed in one go
+    per prototype (1.2 s → a few ms on the plaza's 3 400): the very
+    triangles, edges and soft edges with their normals that baking each
+    copy gives — turned, mirrored and scaled ones too."""
+    from PySide6.QtGui import QMatrix4x4
+    from core.group import Group
+    from core.mesh import Mesh
+    from views.main_window import MainWindow
+    win = MainWindow()
+    try:
+        vp = win.viewport
+        scene = vp.scene
+        proto = Mesh()
+        p = [V(0, 0, 0), V(1, 0, 0), V(1, 1, 0), V(0, 1, 0),
+             V(0, 0, 1), V(1, 0, 1), V(1, 1, 1), V(0, 1, 1)]
+        for f in ((0, 1, 5, 4), (1, 2, 6, 5), (2, 3, 7, 6), (3, 0, 4, 7),
+                  (4, 5, 6, 7), (3, 2, 1, 0)):
+            proto.add_face([p[i] for i in f])
+        # A soft edge with its two faces: its normals must follow the copy.
+        e = proto.find_edge(proto.vertex_at(p[1]), proto.vertex_at(p[5]))
+        e.soft = True
+        mats = []
+        m = QMatrix4x4(); m.translate(5, 0, 0); mats.append(m)
+        m = QMatrix4x4(); m.translate(0, 7, 2); m.rotate(33, 0.3, 0.2, 1); mats.append(m)
+        m = QMatrix4x4(); m.translate(-4, 1, 0); m.scale(-1, 2, 0.5); mats.append(m)
+        for i, m in enumerate(mats):
+            g = Group(proto, name=f"copy {i}")
+            g.xform = m
+            scene.groups.append(g)
+        scene.version += 1
+        import views.viewport as VP
+        calls = []
+        real = VP._batch_instances
+        VP._batch_instances = lambda base, xfs, *a: (calls.append(len(xfs)),
+                                                     real(base, xfs, *a))
+        try:
+            batched = vp.hlr_geometry_now()
+        finally:
+            VP._batch_instances = real
+        assert calls == [3]                      # one batch, three copies
+        assert len(batched[0]) == 3 * 12 and len(batched[2]) == 3
+        # Bake each copy the usual way; then every copy is read baked.
+        for g in vp._placements():
+            vp._group_chunk(g)
+        baked = vp.hlr_geometry_now()
+        a, b = _canon(batched), _canon(baked)
+        for x, y in zip(a, b):
+            assert len(x) == len(y)
+            assert np.allclose(np.array(x), np.array(y), atol=1e-5)
+    finally:
+        win._saved_version = win.viewport.scene.version
+        win.close()

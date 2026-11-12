@@ -1222,6 +1222,60 @@ def _placed_maps(xf):
     return L, tv, tp
 
 
+def _batch_instances(base, xfs, tri_parts, hard_parts, soft_parts,
+                     n_parts) -> None:
+    """The world triangles, hard and soft edges (with normals) of every
+    copy of prototype chunk ``base`` placed by the matrices ``xfs``, added
+    to the lists :meth:`Viewport.hlr_geometry_now` joins. The maps of
+    :func:`_placed_maps`, term by term, over all the copies at once."""
+    import numpy as np
+    m = np.stack([np.array(x.data(), dtype=np.float64).reshape(4, 4, order="F")
+                  for x in xfs])
+    L, t = m[:, :3, :3], m[:, :3, 3]            # (k, 3, 3), (k, 3)
+
+    def tv(a):                                   # (n, 3) → (k, n, 3)
+        return (a[None, :, 0:1] * L[:, None, :, 0]
+                + a[None, :, 1:2] * L[:, None, :, 1]
+                + a[None, :, 2:3] * L[:, None, :, 2])
+
+    def tp(a):
+        return tv(a) + t[:, None, :]
+
+    v0 = base.get("v0")
+    if v0 is not None and len(v0):
+        w0 = tp(np.asarray(v0, dtype=np.float64))
+        w1 = tv(np.asarray(base["e1"], dtype=np.float64))
+        w2 = tv(np.asarray(base["e2"], dtype=np.float64))
+        tri_parts.append(np.stack([w0, w0 + w1, w0 + w2],
+                                  axis=2).reshape(-1, 3, 3))
+    if base.get("edges"):
+        a = np.frombuffer(base["edges"], np.float32).reshape(-1, 3)
+        we = tp(a.astype(np.float64)).astype(np.float32)
+        hard_parts.append(we.reshape(-1, 2, 3).astype(np.float64))
+    sp = base.get("soft_pts")
+    if sp is not None and len(sp):
+        s6 = np.asarray(sp).reshape(-1, 6).astype(np.float64)
+        a0 = tp(s6[:, 0:3]).astype(np.float32).astype(np.float64)
+        a1 = tp(s6[:, 3:6]).astype(np.float32).astype(np.float64)
+        soft_parts.append(np.stack([a0, a1], axis=2).reshape(-1, 2, 3))
+        inv = np.empty_like(L)
+        for i in range(len(L)):
+            try:
+                inv[i] = np.linalg.inv(L[i])
+            except np.linalg.LinAlgError:
+                inv[i] = np.eye(3)
+
+        def tn(a):                                # unit normals
+            a = np.asarray(a, dtype=np.float64)
+            out = np.matmul(a[None], inv)         # a @ inv(L) = a @ n_mat.T
+            ln = np.linalg.norm(out, axis=2, keepdims=True)
+            return out / np.where(ln > 1e-12, ln, 1.0)
+        n0 = tn(base["soft_n0"])
+        n1 = np.where(np.asarray(base["soft_single"])[None, :, None],
+                      np.nan, tn(base["soft_n1"]))
+        n_parts.append(np.stack([n0, n1], axis=2).reshape(-1, 2, 3))
+
+
 def _cat_kept(vp, slot, parts):
     """``np.concatenate(parts)``, the same array again while the parts are
     the same objects: the pick index is rebuilt on each change of its lazy
@@ -17227,10 +17281,25 @@ class Viewport(QOpenGLWidget):
         if ls:
             soft_parts.append(np.asarray(ls, dtype=np.float64))
             n_parts.append(np.asarray(ln, dtype=np.float64))
+        # Component copies not baked yet go in one batch per prototype:
+        # baking them one by one (``_instance_chunk``) cost 1.2 s for the
+        # 3 400 placements of Marco's plaza on opening its sheet. Same
+        # maps, term by term, so the arrays are the ones a bake makes.
+        batches: dict = {}
+        inst_cache = getattr(self, "_inst_chunks", None) or {}
         for g in self._placements():
             if (getattr(g, "billboard", False)
                     or not scene.entity_visible(g)):
                 continue
+            xf = getattr(g, "xform", None)
+            if xf is not None and getattr(g, "mesh", None) is not None:
+                base = self._group_chunk(
+                    _proto_wrapper(self, g.mesh, _paint_of(self, g)))
+                cur = inst_cache.get(id(g))
+                if cur is None or cur["ikey"] != (
+                        base["uid"], tuple(xf.data()), base.get("rev")):
+                    batches.setdefault(id(base), (base, []))[1].append(xf)
+                    continue
             ch = self._group_chunk(g)
             v0 = ch.get("v0")
             if v0 is not None and len(v0):
@@ -17252,6 +17321,10 @@ class Viewport(QOpenGLWidget):
                 n_parts.append(np.stack(
                     [np.asarray(ch["soft_n0"], dtype=np.float64), n1],
                     axis=1))
+
+        for base, xfs in batches.values():
+            _batch_instances(base, xfs, tri_parts, hard_parts, soft_parts,
+                             n_parts)
 
         def cat(parts, shape):
             return np.concatenate(parts) if parts else np.empty(shape)
