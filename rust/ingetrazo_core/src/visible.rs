@@ -45,6 +45,11 @@ const HIDE_TRY: usize = 6;
 /// How many covers are taken away at a time after that.
 const COVER_BATCH: usize = 128;
 
+/// Above this many covers a face is cut into quarters (`Setup::subtract`),
+/// at most this many times over.
+const SPLIT_AT: usize = 512;
+const SPLIT_DEPTH: u32 = 10;
+
 /// One cover of a face: its contours wound for a non-zero fill, its box.
 struct Cover {
     contours: Vec<Vec<IntPoint<i64>>>,
@@ -432,14 +437,96 @@ impl<'a> Setup<'a> {
             }
             covers.push(Cover { contours, lo, hi, size: (hi[0] - lo[0]) * (hi[1] - lo[1]) });
         }
-        let mut visible = self.region[i].clone();
         covers.sort_by(|a, b| b.size.partial_cmp(&a.size).unwrap_or(std::cmp::Ordering::Equal));
-        // The few biggest first, on their own: a face under a roof is found
-        // hidden there, and the rest never joins a union. Then batch by
-        // batch, taken from what is left, no further once nothing is — and
-        // never a cover whose box misses what is left. One union of the
-        // thousands of faces over a plaza's ground crossed each other
-        // millions of times; the batches on a shrinking region do not.
+        let refs: Vec<&Cover> = covers.iter().collect();
+        let visible = self.subtract(self.region[i].clone(), &refs, 0);
+        let inv = 1.0 / self.scale;
+        let mut out = Vec::new();
+        for shape in visible {
+            for contour in shape {
+                let ring: Ring = contour.iter().map(|p| [p.x as f64 * inv, p.y as f64 * inv]).collect();
+                if ring.len() >= 3 && area2(&ring).abs() * 0.5 >= self.min_area {
+                    out.push(ring);
+                }
+            }
+        }
+        out
+    }
+
+    /// `visible` less `covers` (biggest first). Under many covers — the
+    /// ground of a whole house seen from above, under 690 000 faces — the
+    /// region is cut into quarters, each taking away only the covers over
+    /// it, and the pieces are joined again at the end: the one region less
+    /// thousands of batches, on a region that grew holes with each, took
+    /// 210 s for that one face; quarter by quarter it is a few seconds.
+    fn subtract(&self, visible: Shapes, covers: &[&Cover], depth: u32) -> Shapes {
+        if covers.len() <= SPLIT_AT || depth >= SPLIT_DEPTH {
+            return self.subtract_batches(visible, covers);
+        }
+        // The biggest few first, on the whole: a roof takes the house at once.
+        let head = HIDE_TRY.min(covers.len());
+        let visible = self.subtract_batches(visible, &covers[..head]);
+        let rest = &covers[head..];
+        if visible.is_empty() {
+            return visible;
+        }
+        let (lo, hi) = int_bbox(&visible);
+        if hi.x - lo.x < 4 || hi.y - lo.y < 4 {
+            return self.subtract_batches(visible, rest);
+        }
+        let mx = lo.x + (hi.x - lo.x) / 2;
+        let my = lo.y + (hi.y - lo.y) / 2;
+        let quads = [(lo.x, lo.y, mx, my), (mx, lo.y, hi.x, my),
+                     (lo.x, my, mx, hi.y), (mx, my, hi.x, hi.y)];
+        let pieces: Vec<Shapes> = quads
+            .par_iter()
+            .map(|&(x0, y0, x1, y1)| {
+                let rect = vec![IntPoint::new(x0, y0), IntPoint::new(x1, y0),
+                                IntPoint::new(x1, y1), IntPoint::new(x0, y1)];
+                let mut ov = Overlay::<i64>::new(64);
+                ov.add_source(&visible, ShapeType::Subject);
+                ov.add_contour(&rect, ShapeType::Clip);
+                let part = ov.overlay(OverlayRule::Intersect, FillRule::NonZero);
+                if part.is_empty() {
+                    return part;
+                }
+                let here: Vec<&Cover> = rest
+                    .iter()
+                    .copied()
+                    .filter(|cv| {
+                        let (a, b) = (self.to_int_pt(cv.lo), self.to_int_pt(cv.hi));
+                        !(a.x > x1 || b.x < x0 || a.y > y1 || b.y < y0)
+                    })
+                    .collect();
+                self.subtract(part, &here, depth + 1)
+            })
+            .collect();
+        if depth > 0 {
+            // Joined once, at the top.
+            return pieces.into_iter().flatten().collect();
+        }
+        let mut ov = Overlay::<i64>::new(64);
+        let mut any = false;
+        for p in &pieces {
+            if !p.is_empty() {
+                ov.add_source(p, ShapeType::Subject);
+                any = true;
+            }
+        }
+        if !any {
+            return Vec::new();
+        }
+        ov.overlay(OverlayRule::Union, FillRule::NonZero)
+    }
+
+    /// `visible` less `covers`, batch by batch: the few biggest first, on
+    /// their own — a face under a roof is found hidden there, and the rest
+    /// never joins a union — then the others, taken from what is left, no
+    /// further once nothing is, and never a cover whose box misses what is
+    /// left. One union of the thousands of faces over a plaza's ground
+    /// crossed each other millions of times; the batches on a shrinking
+    /// region do not.
+    fn subtract_batches(&self, mut visible: Shapes, covers: &[&Cover]) -> Shapes {
         let mut at = 0usize;
         while at < covers.len() && !visible.is_empty() {
             let take = if at == 0 { HIDE_TRY } else { COVER_BATCH };
@@ -463,17 +550,7 @@ impl<'a> Setup<'a> {
             }
             at = end;
         }
-        let inv = 1.0 / self.scale;
-        let mut out = Vec::new();
-        for shape in visible {
-            for contour in shape {
-                let ring: Ring = contour.iter().map(|p| [p.x as f64 * inv, p.y as f64 * inv]).collect();
-                if ring.len() >= 3 && area2(&ring).abs() * 0.5 >= self.min_area {
-                    out.push(ring);
-                }
-            }
-        }
-        out
+        visible
     }
 
     /// The visible rings of the faces `range`, worked out in parallel.
