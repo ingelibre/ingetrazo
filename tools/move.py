@@ -37,7 +37,7 @@ from core.mesh import Edge, Face, Mesh
 from core.dimension import Dimension
 from core.guide import Guide, is_guide
 from core.history import (AddEdgeCommand, AddFaceCommand, AddGuideCommand,
-                          Command, CompoundCommand,
+                          Command, CommandRejected, CompoundCommand,
                           InsertGroupCommand, MoveGroupCommand,
                           MoveDimensionsCommand, MoveGuidesCommand,
                           MoveTextLabelsCommand, MoveVerticesCommand)
@@ -306,6 +306,86 @@ class _PlannedWhenRun(Command):
     def undo(self, scene) -> None:
         if self._cmd is not None:
             self._cmd.undo(scene)
+
+
+def _copied_edges(mesh, segments):
+    """Resolve copied strokes after welding and splitting, using incidence.
+
+    A copied edge may now be several edges, or reuse an existing one. Walk
+    only its collinear chain rather than scanning the whole model per edge.
+    """
+    picked = set()
+    for a, b in segments:
+        start, end = mesh.vertex_at(a), mesh.vertex_at(b)
+        if start is None or end is None or start is end:
+            continue
+        ab = b - a
+        length2 = ab.lengthSquared()
+        if length2 < 1e-18:
+            continue
+        todo, seen = [start], {start}
+        while todo:
+            vertex = todo.pop()
+            for edge in vertex.edges:
+                other = edge.v1 if edge.v0 is vertex else edge.v0
+                if other is not start and other is not end:
+                    p = other.position
+                    t = QVector3D.dotProduct(p - a, ab) / length2
+                    if not 0 <= t <= 1 or (p - (a + ab * t)).length() > 1e-4:
+                        continue
+                picked.add(edge)
+                if other not in seen:
+                    seen.add(other)
+                    todo.append(other)
+    return picked
+
+
+class _MoveCopiesCommand(CompoundCommand):
+    """Select the entire copy/array; undo restores the source selection."""
+
+    def __init__(self, commands, groups, guides, faces, segments) -> None:
+        super().__init__(commands)
+        self._groups = groups
+        self._guides = guides
+        self._faces = faces
+        self._segments = segments
+        self._before_selection = None
+        self._context = None
+
+    def do(self, scene) -> None:
+        before = set(scene.selection)
+        scene.selection = set(before)
+        try:
+            super().do(scene)
+        except CommandRejected:
+            # A late refusal may already have inserted (and undone) groups,
+            # whose commands each replace the selection.
+            scene.selection = before
+            scene.bump_view()
+            raise
+        if self._before_selection is None:
+            self._before_selection = before
+            self._context = scene.edit_group
+        if scene.edit_group is not self._context:
+            # History can replay this mesh after its group was closed.
+            # Its contents must not become a selection in the outer model.
+            scene.selection = before
+            scene.bump_view()
+            return
+        picked = set(self._groups) | set(self._guides)
+        if self._faces:
+            live = set(scene.mesh.faces)
+            picked.update(cmd.face for cmd in self._faces if cmd.face in live)
+        picked.update(_copied_edges(scene.mesh, self._segments))
+        scene.selection = picked
+        scene.bump_view()
+
+    def undo(self, scene) -> None:
+        picked = (self._before_selection if scene.edit_group is self._context
+                  else set(scene.selection))
+        super().undo(scene)
+        scene.selection = set(picked or ())
+        scene.bump_view()
 
 
 class MoveTool(Tool):
@@ -934,6 +1014,7 @@ class MoveTool(Tool):
             from core.geometry import Edge as GeomEdge, Face as GeomFace
             deltas = list(deltas)
             cmds: list = []
+            copied_groups, copied_guides, copied_faces, copied_segments = [], [], [], []
             # Other array members are outside this copy too. Build their
             # geometric views before execution, so array order is irrelevant.
             copies = []
@@ -957,19 +1038,26 @@ class MoveTool(Tool):
                 m = QMatrix4x4()
                 m.translate(d)
                 for group in groups:
-                    cmds.append(InsertGroupCommand(copy_group(group, d)))
+                    clone = copy_group(group, d)
+                    copied_groups.append(clone)
+                    cmds.append(InsertGroupCommand(clone))
                 for g in guides:
-                    cmds.append(AddGuideCommand(copied_guide(g, m)))
+                    clone = copied_guide(g, m)
+                    copied_guides.append(clone)
+                    cmds.append(AddGuideCommand(clone))
                 for f in faces:
-                    cmds.append(AddFaceCommand(
+                    cmd = AddFaceCommand(
                         [v + d for v in f.vertices],
                         holes=[[v + d for v in h] for h in f.holes] or None,
                         auto=False,
                         attrs=transformed_attrs(f.attrs, m),
                         interior=f.interior,
-                    ))
+                    )
+                    copied_faces.append(cmd)
+                    cmds.append(cmd)
                 id_map: dict[int, int] = {}
                 for e in edges:
+                    copied_segments.append((e.a + d, e.b + d))
                     curve = getattr(e, "curve", None)
                     soft = getattr(e, "soft", False)
                     if scene is not None and curve is None and not soft:
@@ -986,7 +1074,8 @@ class MoveTool(Tool):
                     cmds.append(_PlannedWhenRun(planned))
             if not cmds:
                 return None
-            return cmds[0] if len(cmds) == 1 else CompoundCommand(cmds)
+            return _MoveCopiesCommand(cmds, copied_groups, copied_guides,
+                                      copied_faces, copied_segments)
 
         return build
 
