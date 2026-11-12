@@ -186,6 +186,25 @@ def _cut_to_own_size(rect, own: int, shape, rtl: bool) -> QRect:
     return rect.adjusted(cut, 0, 0, 0) if rtl else rect.adjusted(0, 0, -cut, 0)
 
 
+def _keep_on_top(bar, *ours) -> None:
+    """``ours`` (the gear and the «+») above the rest of ``bar``'s
+    children — the tabs' scroll arrows — raising them only when something
+    else is above them. This runs at every paint of the bar, and a raise
+    restacks and repaints it: raising the two in turn swapped them at
+    every paint, a repaint that never ended, and with the window covered
+    (the sheet composer in front of it) each paint waited up to a second
+    for the screen."""
+    ours = [w for w in ours if w is not None]
+    if not ours:
+        return
+    from PySide6.QtWidgets import QWidget
+    kids = [c for c in bar.children() if isinstance(c, QWidget)]
+    if {id(w) for w in kids[-len(ours):]} == {id(w) for w in ours}:
+        return
+    for w in ours:
+        w.raise_()
+
+
 class _IconTabStyle(QProxyStyle):
     """The side trays' tabs show only their icon, so many fit on the bar
     without scrolling. The name stays the tab's text — Qt writes it there
@@ -3145,7 +3164,6 @@ class MainWindow(QMainWindow):
             if gear.geometry() != geo:
                 gear.setFixedSize(geo.size())
                 gear.setGeometry(geo)
-            gear.raise_()
         last = visual_rect(bar, whole,
                            self._real_tab_rect(bar, bar.count() - 1))
         y = max(0, last.center().y() - btn.height() // 2 + 1)
@@ -3172,7 +3190,7 @@ class MainWindow(QMainWindow):
         if btn.geometry() != geo:
             btn.setFixedSize(geo.size())
             btn.setGeometry(geo)
-        btn.raise_()
+        _keep_on_top(bar, gear, btn)
 
     def _place_add_panels_button_down(self, bar, btn, gear, cell) -> None:
         """The same on a bar that runs top to bottom: under the last tab
@@ -3185,7 +3203,6 @@ class MainWindow(QMainWindow):
             if gear.geometry() != geo:
                 gear.setFixedSize(geo.size())
                 gear.setGeometry(geo)
-            gear.raise_()
         arrows = sorted((b for b in bar.findChildren(QToolButton)
                          if b is not btn and b is not gear and b.isVisible()),
                         key=lambda b: b.y())
@@ -3208,7 +3225,7 @@ class MainWindow(QMainWindow):
         if btn.geometry() != geo:
             btn.setFixedSize(geo.size())
             btn.setGeometry(geo)
-        btn.raise_()
+        _keep_on_top(bar, gear, btn)
 
     def _area_of_bar(self, bar):
         """The side a tab bar is on, from the trays on its tabs."""
@@ -7659,8 +7676,9 @@ class MainWindow(QMainWindow):
         buffers are made again there, but it still remembers having
         uploaded the geometry and would skip it — the view came out blank.
         Forget the uploads (while the old context is still valid); the
-        geometry and the undo history are not touched."""
-        vp.reset_document_caches()
+        geometry and the undo history are not touched — nor the document's
+        bakes, which the views joining it in the grid draw from."""
+        vp.reset_document_caches(keep_bakes=True)
         vp._vbo_parts.clear()
         vp._edges_version = -1
         if vp.isValid():
@@ -10497,7 +10515,7 @@ class MainWindow(QMainWindow):
         visibility of the moment, as the export of the selection alone."""
         from core.hlr import (KIND_CUT, KIND_PROFILE, hlr_drawing,
                               hlr_perspective)
-        vp = self.viewport
+        vp = self._active_view()        # with several views, the active one
         geometry = vp.hlr_geometry() if fast else None
         if vp.camera.perspective:
             return [("VISTA", hlr_perspective(vp.scene, vp.camera,
@@ -10599,7 +10617,7 @@ class MainWindow(QMainWindow):
         from views.svg_export import (SvgBuilder, fitted, framed,
                                       pictured_alone, selection_only,
                                       widened)
-        vp = self.viewport
+        vp = self._active_view()        # with several views, the active one
 
         def image(width_px, axes=True, aspect=None):
             # «Hide the axes»: the picture without them, the view as it was.
@@ -10653,7 +10671,7 @@ class MainWindow(QMainWindow):
         try:
             from core.hlr import (KIND_CUT, KIND_PROFILE, hlr_drawing,
                                   hlr_perspective)
-            vp = self.viewport
+            vp = self._active_view()    # with several views, the active one
             geometry = vp.hlr_geometry()
             solids, texts = [], []
             if vp.camera.perspective:
@@ -10718,9 +10736,10 @@ class MainWindow(QMainWindow):
             return
         # With a camera frame (Camera Settings ▸ Frame) the picture is
         # the framed shot, ``width`` wide, not the whole view.
-        image = self.viewport.render_image(width, sharp_shadows=True,
-                                           transparent=transparent,
-                                           crop_to_frame=True)
+        # With several views, the one worked in, as Styles and Shift+P.
+        image = self._active_view().render_image(
+            width, sharp_shadows=True, transparent=transparent,
+            crop_to_frame=True)
         if image is None or image.isNull() or not image.save(str(path)):
             QMessageBox.critical(self, tr("Export Image failed"),
                                  tr("Could not render or save the image."))

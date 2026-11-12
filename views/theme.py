@@ -37,7 +37,12 @@ from PySide6.QtGui import QColor, QGuiApplication, QPainter, QPalette, QPen
 from PySide6.QtWidgets import QProxyStyle, QStyle
 
 SYSTEM, LIGHT, DARK, SLATE = "system", "light", "dark", "slate"
-THEMES = (SYSTEM, LIGHT, DARK, SLATE)
+# The themes after the colour schemes Linux users keep in their terminals:
+# each is a table of shades on Slate's pattern (see SHEET_THEMES).
+SOLARIZED, CAMPBELL, SAND = "solarized", "campbell", "sand"
+# And one after the 3D suites' neutral studio grey.
+STUDIO = "studio"
+THEMES = (SYSTEM, LIGHT, DARK, SLATE, SOLARIZED, CAMPBELL, SAND, STUDIO)
 _KEY = "theme"          # a General setting: core.general_settings (#266)
 
 # The one accent both themes share — selection and the IngeTrazo blue.
@@ -118,8 +123,10 @@ def is_dark(mode: str, system_scheme: Qt.ColorScheme) -> bool:
     desktop, a bare X session) keeps the dark chrome IngeTrazo always had."""
     if mode == LIGHT:
         return False
-    if mode in (DARK, SLATE):
+    if mode == DARK:
         return True
+    if mode in SHEET_THEMES:
+        return mode not in LIGHT_SHEET_THEMES
     return system_scheme != Qt.ColorScheme.Light
 
 
@@ -216,8 +223,80 @@ SLATE_COLOURS = {
 }
 
 
-def slate_palette() -> QPalette:
-    c = {k: QColor(v) for k, v in SLATE_COLOURS.items()}
+# ---- the themes drawn on Slate's pattern ------------------------------------
+# Each is the same table of shades (the roles of SLATE_COLOURS) with the
+# extras a theme of its own colour wants (SHEET_EXTRAS): the icons' ink, the
+# selection and the links. They take their shades from the colour schemes
+# Linux users keep in their terminals — Solarized's dark blue-green and its
+# light warm sand (Sand), the classic console's Campbell — so the window
+# can go with the terminal beside it — and Studio, the 3D suites' look.
+# Nothing else differs from Slate: the same
+# stylesheet, the same grip and outline drawn by ChromeStyle.
+SOLARIZED_COLOURS = {
+    # Solarized's dark: its deep blue-green ground, the text a step
+    # brighter than the scheme's own soft grey — a window is read in
+    # small type, not a terminal's.
+    "deep": "#002730", "window": "#002b36", "raised": "#073642",
+    "button": "#0d4452", "border": "#00202a", "edge": "#2a5561",
+    "thumb": "#2f5f6b", "grip": "#3d6b76", "active": "#4f7f8c",
+    "text": "#b4c0c0", "bright": "#eee8d5", "muted": "#839496",
+    "disabled": "#586e75",
+}
+CAMPBELL_COLOURS = {
+    # The classic console's near black and light grey, with its bright
+    # blue for the selection.
+    "deep": "#0c0c0c", "window": "#161616", "raised": "#1f1f1f",
+    "button": "#2d2d2d", "border": "#000000", "edge": "#3a3a3a",
+    "thumb": "#3c3c3c", "grip": "#444444", "active": "#4a6fb5",
+    "text": "#cccccc", "bright": "#f2f2f2", "muted": "#8a8a8a",
+    "disabled": "#5a5a5a",
+}
+STUDIO_COLOURS = {
+    # The 3D suites' studio look, the other way round from Slate: the
+    # bars (menus, toolbars, dock titles, status) near black above lighter
+    # mid-grey panels, fields as dark as the bars, buttons a clearly
+    # lighter grey, and a soft blue for the active tool and the selection.
+    "deep": "#1b1b1b", "window": "#404040", "raised": "#1f1f1f",
+    "button": "#5c5c5c", "border": "#121212", "edge": "#585858",
+    "thumb": "#646464", "grip": "#5a5a5a", "active": "#5a7fb8",
+    "text": "#e6e6e6", "bright": "#ffffff", "muted": "#a0a0a0",
+    "disabled": "#7a7a7a",
+}
+SAND_COLOURS = {
+    # A light theme: the fields are the lightest, the hairlines a step
+    # darker than the panels, the text a deep blue-black, not the soft
+    # grey such schemes print with (the rows' icons drawn in it washed out
+    # at 16 px on Light, see light_palette).
+    "deep": "#fdf6e3", "window": "#eee8d5", "raised": "#e6dfca",
+    "button": "#f6f0dd", "border": "#d3cbb4", "edge": "#c5bda5",
+    "thumb": "#c9c1a9", "grip": "#bdb59c", "active": "#93a1a1",
+    "text": "#1f3138", "bright": "#073642", "muted": "#657b83",
+    "disabled": "#a3a89a",
+}
+
+#: Every theme drawn with :data:`SLATE_SHEET`, by its shades.
+SHEET_THEMES = {SLATE: SLATE_COLOURS,
+                SOLARIZED: SOLARIZED_COLOURS, CAMPBELL: CAMPBELL_COLOURS,
+                SAND: SAND_COLOURS, STUDIO: STUDIO_COLOURS}
+#: Those of them that are light.
+LIGHT_SHEET_THEMES = frozenset({SAND})
+#: What a theme of its own colour adds: the icons' ink, the selection, its
+#: text and the links. Slate keeps IngeTrazo's blue.
+SHEET_EXTRAS = {
+    SLATE: {"ink": "#c3c4c7"},
+    SOLARIZED: {"ink": "#93a1a1", "highlight": "#268bd2", "link": "#2aa198"},
+    CAMPBELL: {"ink": "#c0c0c0", "highlight": "#3b78ff", "link": "#61d6d6"},
+    STUDIO: {"ink": "#d0d0d0", "highlight": "#4772b3", "link": "#71a8ff"},
+    SAND: {"ink": "#586e75", "highlight": "#268bd2", "link": "#1d6fa5",
+           "shadow": "#8a8470"},
+}
+
+
+def sheet_palette(mode: str) -> QPalette:
+    """The palette of a theme on Slate's pattern (:data:`SHEET_THEMES`)."""
+    c = {k: QColor(v) for k, v in SHEET_THEMES[mode].items()}
+    extra = SHEET_EXTRAS.get(mode, {})
+    light = mode in LIGHT_SHEET_THEMES
     p = QPalette()
     p.setColor(QPalette.Window, c["window"])
     p.setColor(QPalette.WindowText, c["text"])
@@ -227,21 +306,26 @@ def slate_palette() -> QPalette:
     p.setColor(QPalette.PlaceholderText, c["disabled"])
     p.setColor(QPalette.Button, c["raised"])
     p.setColor(QPalette.ButtonText, c["text"])
-    p.setColor(QPalette.BrightText, QColor(255, 104, 104))
+    p.setColor(QPalette.BrightText, QColor(200, 30, 30) if light
+               else QColor(255, 104, 104))
     p.setColor(QPalette.ToolTipBase, c["button"])
     p.setColor(QPalette.ToolTipText, c["bright"])
-    p.setColor(QPalette.Highlight, _HIGHLIGHT)
+    p.setColor(QPalette.Highlight, QColor(extra.get("highlight", _HIGHLIGHT)))
     p.setColor(QPalette.HighlightedText, QColor(255, 255, 255))
-    p.setColor(QPalette.Link, QColor(96, 166, 226))
+    p.setColor(QPalette.Link, QColor(extra.get("link", "#60a6e2")))
     p.setColor(QPalette.Light, c["border"])
     p.setColor(QPalette.Midlight, c["border"])
     p.setColor(QPalette.Mid, c["raised"])
     p.setColor(QPalette.Dark, c["deep"])
-    p.setColor(QPalette.Shadow, QColor(0x0a, 0x0c, 0x0f))
+    p.setColor(QPalette.Shadow, QColor(extra.get("shadow", "#0a0c0f")))
     for role in (QPalette.WindowText, QPalette.Text, QPalette.ButtonText,
                  QPalette.HighlightedText):
         p.setColor(QPalette.Disabled, role, c["disabled"])
     return p
+
+
+def slate_palette() -> QPalette:
+    return sheet_palette(SLATE)
 
 
 #: The Slate chrome. Only type selectors and sub-controls: a widget that
@@ -254,9 +338,11 @@ QMainWindow::separator {{ background: {deep}; width: 3px; height: 3px; }}
 QMenuBar {{ background: {deep}; }}
 QMenuBar::item {{ background: transparent; padding: 3px 8px 2px 8px;
     border-radius: 3px; }}
-QMenuBar::item:selected {{ background: rgba({accent_rgb}, 46); }}
+QMenuBar::item:selected {{ background: rgba({accent_rgb}, 46);
+    color: {bright}; }}
 QMenu {{ background: {raised}; border: 1px solid {edge}; }}
 QMenu::separator {{ height: 1px; background: {border}; margin: 4px 8px; }}
+QMenu::item:selected {{ background: rgba({accent_rgb}, 70); color: {bright}; }}
 QToolBar {{ background: {raised}; border: none; padding: 4px;
     spacing: 0; }}
 QToolBar::separator {{ background: {border}; width: 1px; height: 1px;
@@ -301,15 +387,20 @@ QScrollBar::add-page, QScrollBar::sub-page {{ background: none; }}
 #: The grip's grey on each theme's toolbar: a step off the background,
 #: like the dots it replaces.
 GRIP_COLOURS = {DARK: "#485462", LIGHT: "#c8cbd0",
-                SLATE: SLATE_COLOURS["grip"]}
+                **{k: c["grip"] for k, c in SHEET_THEMES.items()}}
+
+
+def sheet_for(mode: str) -> str:
+    """:data:`SLATE_SHEET` with ``mode``'s shades and the accent in force."""
+    accent = accent_color()
+    return SLATE_SHEET.format(
+        accent_rgb=f"{accent.red()}, {accent.green()}, {accent.blue()}",
+        **SHEET_THEMES[mode])
 
 
 def slate_sheet() -> str:
     """:data:`SLATE_SHEET` with the shades and the accent in force."""
-    accent = accent_color()
-    return SLATE_SHEET.format(
-        accent_rgb=f"{accent.red()}, {accent.green()}, {accent.blue()}",
-        **SLATE_COLOURS)
+    return sheet_for(SLATE)
 
 
 def app_sheet(mode: str) -> str:
@@ -317,14 +408,14 @@ def app_sheet(mode: str) -> str:
     all for the others. Any app sheet, even one rule, makes Qt paint the
     checked tool buttons in the desktop's accent on Windows (light blue in
     Dark, blue in Light), so Dark and Light must keep none."""
-    return slate_sheet() if mode == SLATE else ""
+    return sheet_for(mode) if mode in SHEET_THEMES else ""
 
 
 #: The active tool's outline on each theme: a thin, quiet grey border and
 #: nothing inside, as IngeTrazo always had it — Fusion's bright edge read
 #: too heavy, a fill too loud (the user, 0.6.1).
 ACTIVE_COLOURS = {DARK: "#5b6676", LIGHT: "#a7aeb8",
-                  SLATE: SLATE_COLOURS["active"]}
+                  **{k: c["active"] for k, c in SHEET_THEMES.items()}}
 
 
 def active_tool_colour() -> QColor:
@@ -334,7 +425,8 @@ def active_tool_colour() -> QColor:
 
 #: The icons' ink on each theme: a very light or very dark grey, softer
 #: than the text — pure white or black lines glared (the user, 0.6.1).
-ICON_INKS = {DARK: "#d9dce1", LIGHT: "#55595f", SLATE: "#c3c4c7"}
+ICON_INKS = {DARK: "#d9dce1", LIGHT: "#55595f",
+             **{k: e["ink"] for k, e in SHEET_EXTRAS.items()}}
 
 
 def icon_ink() -> QColor:
@@ -523,8 +615,8 @@ def apply_accent(app) -> None:
     """Repaint what wears the accent after Preferences changed it."""
     from views import icons
     icons.clear_cursor_cache()
-    if _applied == SLATE:               # its hovers wear the accent
-        _set_app_sheet(app, app_sheet(SLATE))
+    if _applied in SHEET_THEMES:        # its hovers wear the accent
+        _set_app_sheet(app, app_sheet(_applied))
     _restyle()
     _redraw_icons(app)
     for top in app.topLevelWidgets():
@@ -573,12 +665,11 @@ def apply_theme(app, mode: str | None = None) -> bool:
         hints.setColorScheme(Qt.ColorScheme.Dark if dark
                              else Qt.ColorScheme.Light)
     global _app_style, _grip_key
-    _grip_key = mode if mode == SLATE else (DARK if dark else LIGHT)
+    _grip_key = mode if mode in SHEET_THEMES else (DARK if dark else LIGHT)
     if not isinstance(app.style(), ChromeStyle):
         _app_style = ChromeStyle("Fusion")
         app.setStyle(_app_style)
-    slate = mode == SLATE
-    app.setPalette(slate_palette() if slate
+    app.setPalette(sheet_palette(mode) if mode in SHEET_THEMES
                    else dark_palette() if dark else light_palette())
     _set_app_sheet(app, app_sheet(mode))
     _reinherit_palettes(app)

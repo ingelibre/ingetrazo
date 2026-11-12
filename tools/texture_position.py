@@ -19,6 +19,11 @@ dotted tile grid and four pins on the corners of the tile under the cursor:
   among them); Ctrl while dragging turns the snap off («Ctrl
   = Sin ajuste»);
 * **blue** — drag to SCALE vertically and SHEAR (red and green stay);
+* a pin dragged or set down near a corner of the face or the middle of
+  one of its edges holds there — with a mark on the
+  point, as the drawing tools show it (a YouTube review of 0.6.1, #1308:
+  «the texture map placement anchors don't snap to vertices or
+  corners»). Ctrl lets go, as it frees the rotation;
 * **yellow** — perspective distort. The engine maps textures
   with an affine map per face (what every exporter writes), so this pin is
   shown but not draggable yet.
@@ -179,6 +184,10 @@ class TexturePositionTool(Tool):
     #: is the default everywhere. (Rotate's near/far rule does not apply.)
     DISC_PX = 30.0
     TICK_DEG = 15.0
+    #: How near on screen a pin's spot must come to a corner or an edge
+    #: middle of the face to hold to it. Not to the edges themselves: the
+    #: green pin's protractor steps would lose to them along every side.
+    SNAP_PX = 10.0
 
     def __init__(self) -> None:
         self.face = None
@@ -203,6 +212,9 @@ class TexturePositionTool(Tool):
         self._on_tick = False
         self._pivot_px_dist = 0.0
         self._snap_free = False          # Ctrl held: no snapping
+        #: The point a pin holds to and what it is ("corner", "middle"),
+        #: or None — drawn as the drawing tools draw it.
+        self._held: tuple[QVector3D, str] | None = None
         self._cursor: QVector3D | None = None
         self._viewport = None
         self._esc_armed = False
@@ -333,6 +345,60 @@ class TexturePositionTool(Tool):
             return None
         return hit(origin, direction, self._plane[0], self._plane[1])
 
+    def _outline(self) -> list[tuple[QVector3D, QVector3D]]:
+        """The face's edges, holes included, as world segments."""
+        out = []
+        for loop in (self.face.vertices, *getattr(self.face, "holes", ())):
+            pts = [QVector3D(p) for p in loop]
+            out.extend(zip(pts, pts[1:] + pts[:1]))
+        return out
+
+    def _hold(self, viewport, want: QVector3D | None):
+        """``want``, held to the corner or the edge middle of the face
+        that is within SNAP_PX of it on screen — a corner first, as the
+        drawing tools rank them; ``want`` itself when none is (or with
+        Ctrl). Notes what it held to for the overlay."""
+        self._held = None
+        to_px = getattr(viewport, "_world_to_pixel", None)
+        if want is None or to_px is None or self._snap_free \
+                or self.face is None:
+            return want
+        w = to_px(want)
+        if w is None:
+            return want
+        edges = self._outline()
+
+        def nearest(points):
+            best = None
+            for q in points:
+                pq = to_px(q)
+                if pq is None:
+                    continue
+                d = math.hypot(pq[0] - w[0], pq[1] - w[1])
+                if d <= self.SNAP_PX and (best is None or d < best[0]):
+                    best = (d, q)
+            return None if best is None else best[1]
+
+        for kind, points in (("corner", [a for a, _b in edges]),
+                             ("middle", [(a + b) * 0.5 for a, b in edges])):
+            q = nearest(points)
+            if q is not None:
+                self._held = (QVector3D(q), kind)
+                return QVector3D(q)
+        return want
+
+    def _held_drag_point(self, viewport, p: QVector3D) -> QVector3D:
+        """The cursor point for a pin drag, moved so that the PIN lands on
+        what it holds to: the red pin follows the cursor's offset from
+        where it was grabbed, the green and blue go to the cursor."""
+        _k, pin, m0, uv0 = self._drag
+        if pin == PIN_MOVE:
+            start = m0.world(*uv0[PIN_MOVE])
+            spot = start + (p - self._drag_start)
+            held = self._hold(viewport, spot)
+            return p + (held - spot)
+        return self._hold(viewport, p)
+
     def _pin_at(self, viewport, screen) -> int | None:
         to_px = getattr(viewport, "_world_to_pixel", None)
         if to_px is None or screen is None:
@@ -364,9 +430,11 @@ class TexturePositionTool(Tool):
         self._esc_armed = False
         if self._lifted is not None:
             # Set the floating pin down: it now holds the UV under it.
-            p = self._on_plane(vp, ctx.screen)
+            self._snap_free = bool(ctx.modifiers & Qt.ControlModifier)
+            p = self._hold(vp, self._on_plane(vp, ctx.screen))
             if p is not None:
                 self.pin_uv[self._lifted] = self.map.uv_of(p)
+            self._held = None
             self._lifted = None
             self._lifted_pos = None
             self._drag = None
@@ -401,6 +469,8 @@ class TexturePositionTool(Tool):
                            ctx.screen.y() - self._press_px.y()) > self.CLICK_PX):
                 self._moved = True
         if self._lifted is not None:
+            self._snap_free = bool(ctx.modifiers & Qt.ControlModifier)
+            p = self._hold(vp, p)
             if p is not None:
                 self._lifted_pos = p
             vp.update()
@@ -409,6 +479,8 @@ class TexturePositionTool(Tool):
                 and self._drag_start is not None:
             self._snap_free = bool(ctx.modifiers & Qt.ControlModifier)
             self._pivot_px_dist = self._px_from_pivot(vp, ctx.screen)
+            if self._drag[0] == "pin":
+                p = self._held_drag_point(vp, p)
             self._apply_drag(p)
             vp.update()
             return
@@ -423,6 +495,7 @@ class TexturePositionTool(Tool):
         self._drag = None
         self._press_px = None
         self._sweep_deg = None
+        self._held = None
         if not self._moved:
             if drag[0] == "pin":
                 # A click on a pin lifts it: it floats with the
@@ -470,7 +543,12 @@ class TexturePositionTool(Tool):
         cos_t = max(-1.0, min(1.0, QVector3D.dotProduct(a, b) / (la * lb)))
         sin_t = QVector3D.dotProduct(n, QVector3D.crossProduct(a, b)) / (la * lb)
         theta = math.atan2(sin_t, cos_t)
-        theta = self._snap_rotation(theta)
+        if self._held is None:
+            theta = self._snap_rotation(theta)
+        else:
+            # Held to a point of the face: the pin goes exactly there.
+            self._sweep_deg = round(math.degrees(theta), 1)
+            self._on_tick = False
         e_u = _rotated(m0.e_u, n, theta) * s
         e_v = _rotated(m0.e_v, n, theta) * s
         m = TextureMap(R, self.pin_uv[PIN_MOVE], e_u, e_v)
@@ -815,6 +893,22 @@ class TexturePositionTool(Tool):
                     if pq is not None:
                         painter.drawRect(pq[0] - 2.5, pq[1] - 2.5, 5.0, 5.0)
                 painter.setBrush(Qt.NoBrush)
+        if self._held is not None:
+            q = to_px(self._held[0])
+            if q is not None:
+                # The drawing tools' marks: green corner, cyan middle.
+                colour = (QColor(40, 200, 220) if self._held[1] == "middle"
+                          else QColor(40, 200, 60))
+                painter.setPen(QPen(colour, 2.0))
+                painter.setBrush(Qt.NoBrush)
+                if self._held[1] == "middle":
+                    from PySide6.QtGui import QPolygonF
+                    r = 7.0
+                    painter.drawPolygon(QPolygonF([
+                        QPointF(q[0], q[1] - r), QPointF(q[0] + r, q[1] + r * 0.8),
+                        QPointF(q[0] - r, q[1] + r * 0.8)]))
+                else:
+                    painter.drawRect(q[0] - 6.0, q[1] - 6.0, 12.0, 12.0)
         half = self.PIN_PX
         for i, p in enumerate(self.pins()):
             q = to_px(p)
