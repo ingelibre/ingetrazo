@@ -524,6 +524,40 @@ def test_long_author_tags_and_license_wrap_within_preview_width(
         app.processEvents()
 
 
+def test_a_tag_chip_stays_on_one_line_unless_wider_than_the_card(
+        tmp_path, monkeypatch):
+    """Word wrap on every chip let Qt size each one narrow, so a short tag
+    broke in two with room to spare (and, with some fonts, the chips all
+    crowded onto one row). Only a tag wider than the card wraps."""
+    app = QApplication.instance() or QApplication([])
+    huge = "-".join(["a-very-long-tag-name"] * 6)
+    extension = manager.Extension(**{
+        **_extension(b"chips").__dict__,
+        "tags": ("data-import-export", huge),
+    })
+    from views import extension_manager_dialog as dialog_module
+    _stub_catalog(monkeypatch, dialog_module, [extension])
+    monkeypatch.setattr(manager, "user_plugins_dir", lambda: tmp_path)
+    dialog = dialog_module.ExtensionManagerDialog()
+    try:
+        _wait_for_catalog(dialog, app)
+        dialog.show()
+        app.processEvents()
+        row = dialog._pages["browse"]["grid"].itemAt(0).widget()
+        chips = {label.text(): label for label in row.findChildren(QLabel)
+                 if label.objectName() == "extChip"}
+        short = chips[dialog_module._tag_label("data-import-export")]
+        long_ = chips[dialog_module._tag_label(huge)]
+        assert not short.wordWrap()
+        assert short.height() < 2 * short.fontMetrics().height()
+        assert long_.wordWrap()
+        assert long_.width() <= dialog_module._IMAGE_SIZE[0]
+    finally:
+        dialog.close()
+        dialog.deleteLater()
+        app.processEvents()
+
+
 def test_incompatible_extension_is_not_offered_for_install_or_enable(
         tmp_path, monkeypatch):
     app = QApplication.instance() or QApplication([])
