@@ -900,6 +900,8 @@
  "Rectangle needs two sides — pick the opposite corner": "ຮູບສີ່ແຈສາກຕ້ອງມີສອງດ້ານ — ເລືອກມຸມກົງກັນຂ້າມ",
  "in group": "ຢູ່ໃນກຸ່ມ",
  "in component": "ຢູ່ໃນອົງປະກອບ",
+ "outside the group": "ນອກກຸ່ມ",
+ "outside the component": "ນອກອົງປະກອບ",
  "Arc midpoint": "ຈຸດເຄິ່ງກາງເສັ້ນໂຄ້ງ",
  "Component origin": "ຈຸດກຳເນີດອົງປະກອບ",
  "Tangent at vertex": "ເສັ້ນສຳຜັດທີ່ຈຸດຍອດ",

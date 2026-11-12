@@ -119,6 +119,13 @@ secciones que se arrastran sin tirones; y decenas de arreglos.**
 
 ### Arreglado
 
+- **Dentro de un grupo o componente, lo de fuera vuelve a engancharse**
+  (#1327, @hvfrancesco): la malla suelta de la raíz —lo que no está
+  agrupado— ofrece otra vez «Punto final», «Punto medio» y «En cara» y tapa
+  lo que queda detrás, y las caras de los demás componentes también dan «En
+  cara» desde dentro. El aviso del cursor lo dice —«Punto final fuera del
+  componente», «En cara fuera del grupo»—. Con «Ocultar el resto del modelo»
+  sigue sin ofrecerse.
 - **Mac: importar un .skp con escenas cerraba la 0.6.1** (#1321 y #1322,
   @ultracat; cierra #1316): la fila de pestañas de escena se mostraba en
   medio del dibujo de la vista; ahora la versión de la escena se anuncia

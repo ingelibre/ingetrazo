@@ -3794,5 +3794,7 @@
  "Slight": "خفيفة",
  "Moderate": "متوسطة",
  "Strong": "قوية",
- "Shadow edges that soften away from what casts them, as in daylight. They cost the graphics card more while the sun casts shadows.": "حواف ظل تلين كلما ابتعدت عمّا يلقيها، كما في ضوء النهار. تُثقل بطاقة الرسوميات أكثر ما دامت الشمس تلقي الظلال."
+ "Shadow edges that soften away from what casts them, as in daylight. They cost the graphics card more while the sun casts shadows.": "حواف ظل تلين كلما ابتعدت عمّا يلقيها، كما في ضوء النهار. تُثقل بطاقة الرسوميات أكثر ما دامت الشمس تلقي الظلال.",
+ "outside the group": "خارج المجموعة",
+ "outside the component": "خارج المكون"
 }

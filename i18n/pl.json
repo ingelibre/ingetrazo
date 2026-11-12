@@ -898,6 +898,8 @@
  "Rectangle needs two sides — pick the opposite corner": "Prostokąt potrzebuje dwóch boków — wybierz przeciwny róg",
  "in group": "w grupie",
  "in component": "w komponencie",
+ "outside the group": "poza grupą",
+ "outside the component": "poza komponentem",
  "Arc midpoint": "Środek łuku",
  "Component origin": "Początek układu komponentu",
  "Tangent at vertex": "Styczna do wierzchołka",

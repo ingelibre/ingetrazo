@@ -1875,6 +1875,7 @@ def compute_snap(
     face_crossing: Optional[Callable[[], Optional[tuple]]] = None,
     face_outline: Optional[Callable[[], Optional[tuple]]] = None,
     face_centers: Optional[list] = None,
+    face_context: Optional[str] = None,
 ) -> SnapResult:
     # Linear-inference toggle (Alt): "all" = every inference, "off" =
     # point snaps only, "parallel_perp" = keep only parallel/perpendicular. The
@@ -2778,7 +2779,10 @@ def compute_snap(
 
     # 10. On-face: the cursor hovers a face with nothing closer to snap to.
     #     The candidate already lies on that face's plane (the work plane).
+    #     ``face_context`` is what the ScreenTip says about it — the rest of
+    #     the model while a group / component is open ("outside").
     if face_under_cursor:
-        return SnapResult(candidate_world, "on_face", COLOR_ON_FACE)
+        return SnapResult(candidate_world, "on_face", COLOR_ON_FACE,
+                          context=face_context)
 
     return SnapResult(candidate_world, "none", COLOR_NONE)

@@ -3760,5 +3760,7 @@
  "Slight": "Слаба",
  "Moderate": "Умерена",
  "Strong": "Силна",
- "Shadow edges that soften away from what casts them, as in daylight. They cost the graphics card more while the sun casts shadows.": "Краищата на сенките омекват с отдалечаването от това, което ги хвърля, както на дневна светлина. Натоварват повече видеокартата, докато слънцето хвърля сенки."
+ "Shadow edges that soften away from what casts them, as in daylight. They cost the graphics card more while the sun casts shadows.": "Краищата на сенките омекват с отдалечаването от това, което ги хвърля, както на дневна светлина. Натоварват повече видеокартата, докато слънцето хвърля сенки.",
+ "outside the group": "извън групата",
+ "outside the component": "извън компонента"
 }

@@ -57,7 +57,7 @@ def test_the_crossings_are_the_ones_both_sides_gave(make, monkeypatch):
         rays = [0]
         real = type(vp)._front_face_at
         monkeypatch.setattr(type(vp), "_front_face_at",
-                            lambda self, x, y: (rays.__setitem__(
+                            lambda self, x, y, *a: (rays.__setitem__(
                                 0, rays[0] + 1), real(self, x, y))[1])
         w, h = vp.width(), vp.height()
         found = 0

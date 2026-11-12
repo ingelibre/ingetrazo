@@ -199,14 +199,41 @@ def _copy_snap_edge(e: _SnapEdge) -> _SnapEdge:
     return c
 
 
+def _snap_context_of(vp, place):
+    """What the ScreenTip says the snapped geometry belongs to.
+
+    ``None`` for the open context's own loose geometry (and at the root);
+    ``"outside"`` for everything drawn around an open group / component —
+    its loose mesh, another component, the rest of the model — so the tip
+    can say the point is not in the thing being edited; otherwise
+    ``"group"`` / ``"component"`` for the placement it was reached through.
+    """
+    if place is None:
+        return None
+    scene = getattr(vp, "scene", None)
+    ctx = getattr(scene, "edit_group", None)
+    if ctx is not None and place is not ctx \
+            and getattr(place, "context", None) is not ctx:
+        return "outside"
+    owner = getattr(place, "owner", None) or place
+    is_comp = getattr(owner, "is_instance", None)
+    return "component" if (is_comp is not None and is_comp()) else "group"
+
+
 def _group_pseudo_edge(idx, i: int) -> _SnapEdge:
     """The i-th group hard edge of the pick index as a world pseudo-edge
-    that knows its owner and whether that is a group or a component."""
+    that knows its owner and whether that is a group or a component — or
+    the rest of the model around an open context ("outside")."""
     gi = getattr(idx, "gedge_gi", None)
     groups = getattr(idx, "gedge_groups", None)
-    owner = groups[int(gi[i])] if gi is not None and groups else None
-    is_comp = getattr(owner, "is_instance", None)
-    context = "component" if (is_comp is not None and is_comp()) else "group"
+    g = int(gi[i]) if gi is not None and groups else 0
+    owner = groups[g] if gi is not None and groups else None
+    ctxs = getattr(idx, "gedge_ctx", None)
+    if ctxs is not None and g < len(ctxs):
+        context = ctxs[g]
+    else:
+        is_comp = getattr(owner, "is_instance", None)
+        context = "component" if (is_comp is not None and is_comp()) else "group"
     return _SnapEdge(QVector3D(*idx.gedge_a[i]), QVector3D(*idx.gedge_b[i]),
                      in_group=True, context=context, group=owner)
 
@@ -9730,6 +9757,25 @@ class Viewport(QOpenGLWidget):
             min(self.camera.distance * frac, MAX_DISTANCE))
         self.update()
 
+    def _snap_context_suffix(self, context) -> str:
+        """What the ScreenTip adds after the snap's own name: the geometry
+        is inside a group / component, or — while one is open — outside the
+        one being edited. Empty when there is nothing to say (the open
+        context's own geometry, or the root)."""
+        if context == "component":
+            return " " + tr("in component")
+        if context == "group":
+            return " " + tr("in group")
+        if context == "outside":
+            # ``edit_group`` is already on its world copy (xform None) while
+            # it is open: ask the shared definition, not is_instance().
+            is_comp = (self.scene.edit_definition() is not None
+                       if self.scene.edit_group is not None else None)
+            word = ("outside the component" if is_comp
+                    else "outside the group")
+            return " " + tr(word)
+        return ""
+
     def _draw_snap_indicator(self, painter: QPainter, snap: SnapResult) -> None:
         # Axis-lock and inference state is conveyed by the coloured rubber
         # band; no badge follows the cursor along the lock line. Only the
@@ -9844,11 +9890,7 @@ class Viewport(QOpenGLWidget):
         if getattr(snap, "label", None):
             label = snap.label               # an extension's own words
         if label:
-            ctx_ = getattr(snap, "context", None)
-            if ctx_ == "component":
-                label += " " + tr("in component")
-            elif ctx_ == "group":
-                label += " " + tr("in group")
+            label += self._snap_context_suffix(getattr(snap, "context", None))
             font = QFont()
             font.setPointSize(9)
             painter.setFont(font)
@@ -11539,7 +11581,7 @@ class Viewport(QOpenGLWidget):
         # status bar said "On face"). If a real face IS under the cursor,
         # believe the face — that is what the cursor is pointing at, and what
         # the inference is already promising.
-        face, group = self.pick_face_any(x, y)
+        face, group = self.pick_face_inference(x, y)
         if face is not None:
             from core.snap import face_plane_world
             fpoint, fnormal = face_plane_world(face, getattr(group, "xform", None))
@@ -11824,7 +11866,9 @@ class Viewport(QOpenGLWidget):
             # reference model) — use that face's plane so a new polygon
             # drawn "inside" it lands on the face instead of the ground.
             if cursor is not None and tool is not None:
-                face, grp = self.pick_face_placement(cursor[0], cursor[1])
+                pick = (getattr(self, "pick_face_inference", None)
+                        or self.pick_face_placement)
+                face, grp = pick(cursor[0], cursor[1])
                 if face is not None:
                     from core.snap import face_plane_world
                     return face_plane_world(face, getattr(grp, "xform", None))
@@ -11908,11 +11952,12 @@ class Viewport(QOpenGLWidget):
                     return fp
         return base
 
-    def _front_face_at(self, x: float, y: float):
-        """``(face, placement)`` of the front-most selectable face on the ray
-        through pixel ``(x, y)``, or ``None``. A bare pass with no memo:
-        the face-crossing search asks it at pixels around the cursor, and
-        :meth:`pick_face_any`'s memo holds the cursor's own answer."""
+    def _front_face_at(self, x: float, y: float, which: str = "sel"):
+        """``(face, placement)`` of the front-most face on the ray through
+        pixel ``(x, y)`` that passes ``which`` (see :meth:`_face_hits`), or
+        ``None``. A bare pass with no memo: the face-crossing search asks it
+        at pixels around the cursor, and :meth:`pick_face_any`'s memo holds
+        the cursor's own answer."""
         o, d = self._pixel_to_ray(x, y)
         if o is None or d is None:
             return None
@@ -11921,14 +11966,14 @@ class Viewport(QOpenGLWidget):
         nat = (self._lazy_native() if hasattr(self, "_lazy_native")
                else None)
         if nat is not None and _FRONT_LEAN:
-            return Viewport._front_face_lean(self, idx, nat, o, d)
-        hits = Viewport._face_hits(self, idx, o, d, "sel")
+            return Viewport._front_face_lean(self, idx, nat, o, d, which)
+        hits = Viewport._face_hits(self, idx, o, d, which)
         if hits is None or len(hits.t) == 0:
             return None
         i = int(np.argmin(hits.t))
         return hits.ent(i)[0], hits.place(i)
 
-    def _front_face_lean(self, idx, nat, o, d):
+    def _front_face_lean(self, idx, nat, o, d, which: str = "sel"):
         """_front_face_at's answer over the engine's lazy placements (#158)
         without gathering every face the ray meets: the index's nearest
         face, then the lazy placements' only nearer than it (a tie goes to
@@ -11940,7 +11985,13 @@ class Viewport(QOpenGLWidget):
         import numpy as np
         best_t, best = float("inf"), None
         if len(idx.entities):
-            face_t = self._ray_hits(idx, o, d, idx.ent_sel, own=False)
+            if which == "sel":
+                mask = idx.ent_sel
+            elif which == "infer":
+                mask = getattr(idx, "ent_infer", idx.ent_sel)
+            else:
+                mask = idx.ent_vis
+            face_t = self._ray_hits(idx, o, d, mask, own=False)
             if face_t is not None and len(face_t):
                 i = int(np.argmin(face_t))
                 if np.isfinite(face_t[i]):
@@ -11950,7 +12001,12 @@ class Viewport(QOpenGLWidget):
                              if pidx is not None and i < len(pidx)
                              and pidx[i] >= 0 else idx.entities[i][1])
                     best = (idx.entities[i][0], place)
-        rows = Viewport._lazy_sel_rows(self, nat)
+        if which == "sel":
+            rows = Viewport._lazy_sel_rows(self, nat)
+        elif which == "infer":
+            rows = nat[1]
+        else:
+            rows = nat[2]
         if not len(rows):
             return best
         iset = nat[0]
@@ -12003,7 +12059,7 @@ class Viewport(QOpenGLWidget):
         «in group» tip."""
         if _active_cut(self.scene) is not None:
             return None
-        f_face, f_place = self.pick_face_placement(px, py)   # memoised
+        f_face, f_place = self.pick_face_inference(px, py)   # memoised
         if f_face is None:
             return None
         o, d = self._pixel_to_ray(px, py)
@@ -12011,7 +12067,7 @@ class Viewport(QOpenGLWidget):
             return None
         import numpy as np
         idx = self._pick_index(near=Viewport._ray_near(self, px, py))
-        hits = self._hover_hits(idx, o, d)                    # memoised
+        hits = self._infer_hits(idx, o, d)                    # memoised
         if hits is None or not np.isfinite(hits.t).any():
             return None
         face_t = hits.t
@@ -12113,28 +12169,33 @@ class Viewport(QOpenGLWidget):
             # one: a side that does not ends the search there (each probe
             # is a ray through the model, ~2 ms over the plant of #158,
             # and dense spots try five crossings a move that fail).
-            h = self._front_face_at(*q)
+            h = self._front_face_at(q[0], q[1], "infer")
             if h is None or (id(h[0]), id(h[1])) not in want:
                 return None
             ids.add((id(h[0]), id(h[1])))
         if ids != want:
             return None
         context = None
+        found_ctx = []
         for place in (f_place, g_place):
             if place is None:
-                continue
-            owner = self._owner_of(place)
-            is_comp = getattr(owner, "is_instance", None)
-            context = ("component" if is_comp is not None and is_comp()
-                       else "group")
-            break
+                continue        # the open context's own loose geometry
+            word = _snap_context_of(self, place)
+            if word is not None:
+                found_ctx.append(word)
+        if "outside" in found_ctx:
+            context = "outside"
+        elif found_ctx:
+            context = found_ctx[0]
         return x, context
 
     def _face_outline_world(self, px: float, py: float):
         """The face under the cursor as ``(outer loop, holes, context)`` in
         world space (``context``: "group" / "component" when it is inside
-        one), or ``None``. What a line piercing the face is tested against."""
-        face, place = self.pick_face_placement(px, py)    # memoised
+        one), or ``None``. What a line piercing the face is tested against.
+        The rest of the model around an open group counts: a line drawn
+        inside it can pierce a face left outside."""
+        face, place = self.pick_face_inference(px, py)    # memoised
         if face is None:
             return None
         xf = getattr(place, "xform", None)
@@ -12147,14 +12208,16 @@ class Viewport(QOpenGLWidget):
         if place is not None:
             owner = self._owner_of(place)
             is_comp = getattr(owner, "is_instance", None)
-            context = ("component" if is_comp is not None and is_comp()
-                       else "group")
+            if is_comp is not None:
+                # A reference wrapper (the outer loose mesh) has no
+                # ``is_instance``: it is not "in" a group, it IS the root.
+                context = ("component" if is_comp() else "group")
         return outer, holes, context
 
     def _still_face_under(self, px: float, py: float) -> bool:
         """Whether a face the drag is NOT bending is under the cursor —
         the «On face» cue never names the face being moved."""
-        face, grp = self.pick_face_any(px, py)
+        face, grp = self.pick_face_inference(px, py)
         if face is None:
             return False
         moving = getattr(self.active_tool, "moving_face_ids", None)
@@ -12272,13 +12335,26 @@ class Viewport(QOpenGLWidget):
             painter.drawEllipse(QPointF(x, y), 7.0, 7.0)
         painter.setBrush(Qt.NoBrush)
 
+    def _face_context_under(self, px: float, py: float):
+        """The ScreenTip's context for the face under the cursor: "outside"
+        while a group / component is open and the face is not part of it;
+        "group" / "component" for a placement; ``None`` for the open
+        context's own loose mesh (and at the root)."""
+        face, place = self.pick_face_inference(px, py)
+        if face is None:
+            return None
+        return _snap_context_of(self, place)
+
     def _hover_face_plane(self, cursor):
         """World plane of the face under the cursor, or None.
 
         Selected geometry remains a valid plane target for planar drawing
-        tools; other tools must not land on geometry they are moving.
+        tools; other tools must not land on geometry they are moving. The
+        rest of the model outside an open group / component IS a valid
+        target (faded, never selectable): that is how a part is aligned to
+        the floor it sits on when the model is made of components.
         """
-        face, grp = self.pick_face_placement(cursor[0], cursor[1])
+        face, grp = self.pick_face_inference(cursor[0], cursor[1])
         if face is None:
             return None
         sel = self.scene.selection
@@ -14411,7 +14487,7 @@ class Viewport(QOpenGLWidget):
         b_pidx: list = []
         b_plist: list = []
         b_v0, b_e1, b_e2, b_te = [], [], [], []
-        b_area, b_vis, b_sel = [], [], []
+        b_area, b_vis, b_sel, b_infer = [], [], [], []
         b_spans: list = []    # (bbox, tri start, count) per chunk
         # Group hard edges, flat — pick_group's fallback (cursor over
         # empty space / lines-only group) walked every group edge in
@@ -14421,6 +14497,7 @@ class Viewport(QOpenGLWidget):
         b_gbase: list = []    # each chunk's (n, 2, 3) edge array, kept
         b_gsel: list = []     # per edge: may pick_group land on it
         b_ggroups: list = []
+        b_gctx: list = []     # per group: the tip's context word
         # Lazy placements (#158) keep their triangles in their own
         # arrays — spans the ray walks as they are — and go after
         # the static chunks, whose concatenation is kept: joining
@@ -14454,6 +14531,9 @@ class Viewport(QOpenGLWidget):
             b_area.append(chunk["areas"])
             b_vis.append(np.full(n, gvis, dtype=bool))
             b_sel.append(np.full(n, gsel, dtype=bool))
+            # Inferred from even when the open context makes it untouchable:
+            # the rest of the model is a reference, not an answer.
+            b_infer.append(np.full(n, gsnap, dtype=bool))
             if chunk["v0"] is not None and id(g) in lazy_set:
                 b_own.append((chunk.get("bbox"), chunk["v0"],
                               chunk["e1"], chunk["e2"],
@@ -14494,20 +14574,25 @@ class Viewport(QOpenGLWidget):
                 b_gel.append(gel)
                 b_gsel.append(np.full(len(ge), gsel, dtype=bool))
                 b_ggroups.append(owner)
+                # "outside" while a group/component is open and this
+                # placement is not part of it (see _snap_context_of).
+                b_gctx.append(_snap_context_of(self, g))
         part = {"entities": b_entities, "pidx": b_pidx, "plist": b_plist,
                 "area": b_area, "vis": b_vis, "sel": b_sel,
+                "infer": b_infer,
                 "own": b_own, "static_key": static_key,
                 "v0": b_v0, "e1": b_e1, "e2": b_e2, "te": b_te,
                 "spans": b_spans, "gea": b_gea, "geb": b_geb, "ggi": b_ggi,
                 "gel": b_gel,
-                "gsel": b_gsel, "ggroups": b_ggroups, "gbase": b_gbase,
+                "gsel": b_gsel, "ggroups": b_ggroups, "gctx": b_gctx,
+                "gbase": b_gbase,
                 "n_ent": n_ent + count, "n_plist": n_plist + len(b_plist),
                 "n_tri": b_tri_off,
                 "n_ggroups": n_ggroups + len(b_ggroups)}
         if base is None:
             # The fixed part joins its own lists once, here: it is kept.
-            for k in ("pidx", "area", "vis", "sel", "gea", "geb", "ggi",
-                      "gel", "gsel"):
+            for k in ("pidx", "area", "vis", "sel", "infer", "gea", "geb",
+                      "ggi", "gel", "gsel"):
                 part[k] = [np.concatenate(part[k])] if part[k] else []
             if all(isinstance(e, list) for e in b_entities):
                 part["entities"] = [[x for e in b_entities for x in e]]
@@ -14542,6 +14627,7 @@ class Viewport(QOpenGLWidget):
             "areas": cat("area", np.empty(0)),
             "vis": cat("vis", np.empty(0, bool)),
             "sel": cat("sel", np.empty(0, bool)),
+            "infer": cat("infer", np.empty(0, bool)),
             **Viewport._pick_static_tris(self, tuple(static),
                                          fixed["v0"] + lazy["v0"],
                                          fixed["e1"] + lazy["e1"],
@@ -14554,12 +14640,65 @@ class Viewport(QOpenGLWidget):
             "gedge_layer": cat("gel", None) if gea else None,
             "gedge_sel": cat("gsel", None) if gea else None,
             "gedge_groups": fixed["ggroups"] + lazy["ggroups"],
+            "gedge_ctx": fixed.get("gctx", []) + lazy.get("gctx", []),
             # The fixed part's edges lead, and that part outlives many lazy
             # rebuilds: their screen projection is kept across them.
             "gedge_fixed": (fixed, sum(map(len, fixed["gea"])),
                             lazy["gbase"]),
             "spans": fixed["spans"] + lazy["spans"],
         }
+
+    def _outer_loose_meshes(self):
+        """The root loose mesh drawn AROUND an open group / component, as a
+        tuple of meshes (usually one, or none).
+
+        Opening a group points ``scene.mesh`` at its mesh: the loose
+        geometry of the outer context stops being the loose part of the
+        index, and it was nowhere else in it — the rest of the model could
+        be inferred on only where it was grouped («estoy dentro del
+        componente y no me snapea a lo de fuera»). It is drawn faded
+        (``scene.loose_mesh``), so it must occlude, snap and be acquirable
+        as a reference like every other faded thing.
+
+        Hidden with «Hide rest of model» it is not drawn, so it is not
+        offered either (same rule as the placements, see
+        ``_pick_candidates``). A mesh a placement already draws is left out
+        or the model would be snapped through twice (a copied group can
+        share the loose mesh)."""
+        scene = self.scene
+        if scene.edit_group is None:
+            return ()
+        rest_hidden = getattr(self, "_rest_is_hidden", None)
+        if callable(rest_hidden) and rest_hidden():
+            return ()
+        outer = getattr(scene, "loose_mesh", None)
+        if outer is None or outer is scene.mesh:
+            return ()
+        key = (_content_ver(self), id(outer), id(scene.edit_group),
+               id(scene.mesh))
+        memo = getattr(self, "_outer_loose_memo", None)
+        if memo is not None and memo[0] == key:
+            return memo[1]
+        carried = {id(g.mesh) for g in self._placements()}
+        meshes = () if id(outer) in carried else (outer,)
+        self._outer_loose_memo = (key, meshes)
+        return meshes
+
+    def _loose_mesh_wrapper(self, mesh):
+        """A stable stand-in for a mesh that is a *reference*, not an
+        object: what an outer loose face rides in the index so the snap
+        paths can tell its mesh (and its world frame: identity) from the
+        open context's. Cached, as ``_group_chunk`` keys on ``id``."""
+        wrappers = getattr(self, "_loose_wrappers", None)
+        if wrappers is None:
+            wrappers = self._loose_wrappers = {}
+        w = wrappers.get(id(mesh))
+        if w is None:
+            from types import SimpleNamespace
+            w = wrappers[id(mesh)] = SimpleNamespace(
+                mesh=mesh, xform=None, material=None, name=None,
+                billboard=False, hidden=False, locked=False, layer=None)
+        return w
 
     def _pick_index(self, near=None):
         """Flat NumPy pick index of the scene — triangles of every loose and
@@ -14622,6 +14761,7 @@ class Viewport(QOpenGLWidget):
         ent_sel: list = []
         ent_vis: list = []
         ent_loose: list = []
+        ent_infer: list = []
         tris: list = []
         tri_ent: list = []
 
@@ -14631,13 +14771,17 @@ class Viewport(QOpenGLWidget):
         tris_of = getattr(self, "_tris_of", None) or \
             (lambda f: f.triangulate())
 
-        def add_face(f, grp, vis, sel):
+        def add_face(f, grp, vis, sel, infer=None, loose=None):
             i = len(entities)
             entities.append((f, grp))
             ent_area.append(area_of(f))
             ent_vis.append(vis)
             ent_sel.append(sel)
-            ent_loose.append(grp is None)
+            # What the snap engine may INFER FROM: selectable, except that
+            # the rest of the model outside the open context is a reference
+            # even though it cannot be picked (see _face_hits "infer").
+            ent_infer.append(sel if infer is None else infer)
+            ent_loose.append((grp is None) if loose is None else loose)
             for t0, t1, t2 in tris_of(f):
                 tris.append((t0.x(), t0.y(), t0.z(),
                              t1.x(), t1.y(), t1.z(),
@@ -14654,6 +14798,19 @@ class Viewport(QOpenGLWidget):
             for f in scene.faces:
                 add_face(f, None, scene.entity_visible(f),
                          scene.entity_selectable(f))
+            # The loose mesh drawn AROUND an open group / component: the
+            # rest of the model when it was never grouped. It cannot be
+            # picked or selected from inside the context, but it is drawn
+            # (faded), so it occludes and the snap engine infers from it
+            #. Its own mesh rides with the face (the wrapper) so
+            # the plane and the centre come from the right mesh.
+            outer_of = getattr(self, "_outer_loose_meshes", None)
+            for om in (outer_of() if outer_of is not None else ()):
+                wrap = self._loose_mesh_wrapper(om)
+                for f in om.faces:
+                    add_face(f, wrap, scene.entity_visible(f),
+                             False, infer=scene.entity_selectable(f),
+                             loose=True)
             # Loose part → arrays; groups append their cached chunk arrays.
             if tris:
                 t = np.asarray(tris, dtype=np.float64).reshape(-1, 3, 3)
@@ -14665,6 +14822,7 @@ class Viewport(QOpenGLWidget):
                      np.asarray(ent_area, dtype=np.float64),
                      np.asarray(ent_vis, dtype=bool),
                      np.asarray(ent_sel, dtype=bool),
+                     np.asarray(ent_infer, dtype=bool),
                      np.asarray(ent_loose, dtype=bool))
             self._pick_loose_memo = (key[:4], loose)
         entities = list(loose[0])
@@ -14673,8 +14831,8 @@ class Viewport(QOpenGLWidget):
             v0s, e1s, e2s, tents = [lt[0]], [lt[1]], [lt[2]], [lt[3]]
         else:
             v0s, e1s, e2s, tents = [], [], [], []
-        areas, vis_parts, sel_parts, loose_parts = ([loose[3]], [loose[4]],
-                                                    [loose[5]], [loose[6]])
+        areas, vis_parts, sel_parts, infer_parts, loose_parts = (
+            [loose[3]], [loose[4]], [loose[5]], [loose[6]], [loose[7]])
 
         # Per-chunk triangle spans (P3): a hover/zoom ray prefilters chunks
         # by AABB and runs Möller-Trumbore only on the spans it crosses.
@@ -14757,6 +14915,7 @@ class Viewport(QOpenGLWidget):
                 areas.append(block["areas"])
                 vis_parts.append(block["vis"])
                 sel_parts.append(block["sel"])
+                infer_parts.append(block.get("infer", block["sel"]))
                 loose_parts.append(
                     np.zeros(len(block["entities"]), dtype=bool))
                 if block["v0"] is not None:
@@ -14772,6 +14931,7 @@ class Viewport(QOpenGLWidget):
         gedge_a = gedge_b = gedge_gi = gedge_sel = gedge_fixed = None
         gedge_layer = None
         gedge_groups: list = []
+        gedge_ctx: list = []
         if candidatos:
             block = self._pick_block[1] if getattr(self, "_pick_block", None) \
                 else {}
@@ -14781,6 +14941,7 @@ class Viewport(QOpenGLWidget):
             gedge_layer = block.get("gedge_layer")
             gedge_sel = block.get("gedge_sel")
             gedge_groups = block.get("gedge_groups", [])
+            gedge_ctx = block.get("gedge_ctx", [])
             gedge_fixed = block.get("gedge_fixed")
 
         edges: list = []
@@ -14809,6 +14970,19 @@ class Viewport(QOpenGLWidget):
             # here so the corner a from-point acquires cannot come from a
             # line the user cannot see.
             esnap.append(scene.edge_snappable(e))
+        # The rest of the model's loose edges — drawn around an open group /
+        # component, a reference to snap to and never a thing to pick. They
+        # are what a move started inside the component aligns to, and what
+        # occludes the corners behind them.
+        outer_of = getattr(self, "_outer_loose_meshes", None)
+        for om in (outer_of() if outer_of is not None else ()):
+            for e in om.edges:
+                edges.append(e)
+                esoft.append(bool(getattr(e, "soft", False)))
+                ea.append([e.a.x(), e.a.y(), e.a.z()])
+                eb.append([e.b.x(), e.b.y(), e.b.z()])
+                esel.append(False)
+                esnap.append(scene.edge_snappable(e))
 
         idx = SimpleNamespace(
             entities=entities,
@@ -14817,6 +14991,8 @@ class Viewport(QOpenGLWidget):
             ent_placements=placements,
             ent_area=np.concatenate(areas) if entities else np.empty(0),
             ent_sel=np.concatenate(sel_parts) if entities else np.empty(0, bool),
+            ent_infer=(np.concatenate(infer_parts) if entities
+                       else np.empty(0, bool)),
             ent_vis=np.concatenate(vis_parts) if entities else np.empty(0, bool),
             ent_loose=(np.concatenate(loose_parts) if entities
                        else np.empty(0, bool)),
@@ -14836,6 +15012,7 @@ class Viewport(QOpenGLWidget):
             gedge_layer=gedge_layer,
             gedge_sel=gedge_sel,
             gedge_groups=gedge_groups,
+            gedge_ctx=gedge_ctx,
             gedge_fixed=gedge_fixed,
             tri_spans=None,
         )
@@ -15068,17 +15245,25 @@ class Viewport(QOpenGLWidget):
     def _face_hits(self, idx, origin, direction, which: str = "sel"):
         """The faces the ray from ``origin`` along ``direction`` meets, each
         at its nearest t, of the index entities that pass ``which``
-        ("sel": selectable, "vis": visible) — in the index's order, which
-        the ties of every pick go by: ``SimpleNamespace(t, area, loose,
-        ent(k) → (face, owner), place(k) → placement)``, or None when the
-        index has no triangles. With the experimental engine the lazy
-        placements' faces come from it, none of them baked (#158), after
-        the index's own, in the order their bakes would follow them."""
+        ("sel": selectable, "vis": visible, "infer": a face the snap
+        engine may infer from — the selectable ones PLUS the rest of the
+        model around an open group / component, which cannot be picked but
+        is drawn as a reference) — in the index's order, which the ties of
+        every pick go by: ``SimpleNamespace(t, area, loose, ent(k) →
+        (face, owner), place(k) → placement)``, or None when the index has
+        no triangles. With the experimental engine the lazy placements'
+        faces come from it, none of them baked (#158), after the index's
+        own, in the order their bakes would follow them."""
         import numpy as np
         from types import SimpleNamespace
         nat = (self._lazy_native() if hasattr(self, "_lazy_native")
                else None)
-        mask = idx.ent_sel if which == "sel" else idx.ent_vis
+        if which == "sel":
+            mask = idx.ent_sel
+        elif which == "infer":
+            mask = getattr(idx, "ent_infer", idx.ent_sel)
+        else:
+            mask = idx.ent_vis
         face_t = (self._ray_hits(idx, origin, direction, mask,
                                  own=nat is None)
                   if len(idx.entities) else None)
@@ -15138,8 +15323,15 @@ class Viewport(QOpenGLWidget):
         may meet; which it meets, and where, is decided here by the pick
         index's own test."""
         import numpy as np
-        iset, _snap, vis = nat
-        rows = Viewport._lazy_sel_rows(self, nat) if which == "sel" else vis
+        iset, snap, vis = nat
+        if which == "sel":
+            rows = Viewport._lazy_sel_rows(self, nat)
+        elif which == "infer":
+            # The lazy placements the snap may land on (visible, unlocked),
+            # touchable or not — see _face_hits.
+            rows = snap
+        else:
+            rows = vis
         if not len(rows):
             return None
         o = np.array([origin.x(), origin.y(), origin.z()])
@@ -15210,6 +15402,26 @@ class Viewport(QOpenGLWidget):
         self._hover_hits_cache = (key, hits, idx, nat)
         return hits
 
+    def _infer_hits(self, idx, origin, direction):
+        """:meth:`_hover_hits` of the faces the snap engine may INFER FROM:
+        every selectable one plus the rest of the model around an open group
+        / component (drawn faded, never pickable). Geometry being moved is
+        still left out by the caller's own rules — this only widens the
+        context, not the moving set."""
+        key = (self.scene.version, id(self.scene.mesh),
+               origin.x(), origin.y(), origin.z(),
+               direction.x(), direction.y(), direction.z())
+        nat = (self._lazy_native() if hasattr(self, "_lazy_native")
+               else None)
+        cached = getattr(self, "_infer_hits_cache", None)
+        if (cached is not None and cached[0] == key and cached[2] is idx
+                and cached[3] is nat):
+            return cached[1]
+        hits = Viewport._face_hits(self, idx, origin, direction, "infer")
+        Viewport._drop_past_cut(self, hits, origin, direction)
+        self._infer_hits_cache = (key, hits, idx, nat)
+        return hits
+
     def _drop_past_cut(self, hits, origin, direction) -> None:
         """Hits beyond the active cut are on clipped-away geometry: their
         ``t`` becomes ``inf``, in place."""
@@ -15255,14 +15467,19 @@ class Viewport(QOpenGLWidget):
         return self._pick_edge(screen_x, screen_y, visible_only=True)
 
     def _pick_edge(self, screen_x: float, screen_y: float,
-                   visible_only: bool):
+                   visible_only: bool, which: str = "sel"):
+        """``which``: "sel" for the edges a click means, "snap" for the ones a
+        reference may hold — the rest of the model's loose edges, drawn
+        around an open group / component, are snappable and not selectable."""
         import numpy as np
         idx = self._pick_index(near="skip")
         if idx.edge_a is None:
             return None
         ax, ay, oka = self._project_px(idx.edge_a)
         bx, by, okb = self._project_px(idx.edge_b)
-        ok = oka & okb & idx.edge_sel
+        allowed = (idx.edge_sel if which == "sel"
+                   else getattr(idx, "edge_snap", idx.edge_sel))
+        ok = oka & okb & allowed
         soft = getattr(idx, "edge_soft", None)
         if (visible_only and soft is not None
                 and not getattr(self.scene, "show_hidden_geometry", False)):
@@ -15571,15 +15788,21 @@ class Viewport(QOpenGLWidget):
         return d
 
     def _ledge_screen(self):
-        """Screen-projected endpoints of every LOOSE edge — the
+        """Screen-projected endpoints of every loose edge — the
         ``_gedge_screen`` twin for the snap prefilter after an explode
-        leaves a big loose mesh. Cached until the scene/camera moves."""
+        leaves a big loose mesh. While a context is open the rest of the
+        model's loose edges ride along (see ``_outer_loose_meshes``); their
+        ``edge_sel`` is False, so picks and the box leave them alone.
+        Cached until the scene/camera moves."""
         idx = self._pick_index(near="skip")
         if idx.edge_a is None or not len(idx.edge_a):
             return None
         M = self._np_mvp()
+        # Whether the rest of the model's loose edges are in the index
+        # changes with «Hide rest of model», which bumps no scene version.
         key = (_content_ver(self), id(self.scene.mesh), M.tobytes(),
-               self.width(), self.height())
+               self.width(), self.height(),
+               bool(getattr(self, "_rest_is_hidden", lambda: False)()))
         cached = getattr(self, "_ledge_px_cache", None)
         if cached is not None and cached[0] == key:
             return cached[1]
@@ -15724,11 +15947,9 @@ class Viewport(QOpenGLWidget):
             for i, aa, bb, dd in zip(pl.tolist(), a.tolist(), b.tolist(),
                                      d.tolist()):
                 owner = self._owner_of(groups[i])
-                comp = getattr(owner, "is_instance", None)
                 out.append((dd, _SnapEdge(
                     QVector3D(*aa), QVector3D(*bb), in_group=True,
-                    context=("component" if comp is not None and comp()
-                             else "group"), group=owner)))
+                    context=_snap_context_of(self, groups[i]), group=owner)))
         out.sort(key=lambda de: de[0])        # stable: the fixed ones first
         return out[:cap]
 
@@ -15800,8 +16021,13 @@ class Viewport(QOpenGLWidget):
         pseudo-edge with ``in_group``), nearest first — what the linear
         inferences hover: parallel / perpendicular to a component's edge,
         the reference lock, Push/Pull level with it (groups are read
-        from outside without opening them)."""
-        loose = self.pick_edge(screen_x, screen_y)
+        from outside without opening them).
+
+        The loose half is picked with the SNAP rule, not the click one: the
+        rest of the model drawn around an open group / component is a
+        reference too, even though a click cannot select it."""
+        loose = self._pick_edge(screen_x, screen_y, visible_only=False,
+                                which="snap")
         nat = (self._lazy_native() if hasattr(self, "_lazy_native")
                else None)
         if nat is not None:
@@ -15891,7 +16117,8 @@ class Viewport(QOpenGLWidget):
             if len(out) >= cap:
                 break
             o = QVector3D(*pts[i])
-            out.append(_SnapEdge(o, QVector3D(o), component_origin=True))
+            out.append(_SnapEdge(o, QVector3D(o), component_origin=True,
+                                 context=_snap_context_of(self, groups[i])))
         return out
 
     def _arc_midpoints(self, px: float, py: float) -> list:
@@ -15902,7 +16129,9 @@ class Viewport(QOpenGLWidget):
         cache = getattr(self, "_arc_mid_cache", None)
         # On the content, not the version: a click's selection bump made
         # every placement's midpoints over again.
-        ckey = (_content_ver(self), id(self.scene.mesh))
+        ckey = (_content_ver(self), id(self.scene.mesh),
+                id(self.scene.edit_group),
+                bool(getattr(self, "_rest_is_hidden", lambda: False)()))
         if cache is None or cache[0] != ckey:
             # Per MESH, keyed by its mutation serial: a scene version bump
             # (every frame of a drag) used to walk every prototype's curves
@@ -15925,7 +16154,12 @@ class Viewport(QOpenGLWidget):
                     hit = (serial, self._mesh_arc_midpoints(mesh), mesh)
                 seen[id(mesh)] = hit
                 return hit[1]
-            mids = list(local_mids(self.scene.mesh))
+            mids = [(m, None) for m in local_mids(self.scene.mesh)]
+            # …the root loose mesh drawn around an open context (a reference
+            # outside it), in its own world coordinates…
+            outer_of = getattr(self, "_outer_loose_meshes", None)
+            for om in (outer_of() if outer_of is not None else ()):
+                mids += [(m, "outside") for m in local_mids(om)]
             # …and the arcs inside every placed group / component, through
             # each placement's matrix.
             for g in self._placements():
@@ -15936,16 +16170,19 @@ class Viewport(QOpenGLWidget):
                 if not lm:
                     continue
                 xf = getattr(g, "xform", None)
-                mids += [xf.map(m) if xf is not None else QVector3D(m) for m in lm]
+                ctx = _snap_context_of(self, g)
+                mids += [(xf.map(m) if xf is not None else QVector3D(m), ctx)
+                         for m in lm]
             self._arc_mid_by_mesh = seen
             cache = (ckey, mids)
             self._arc_mid_cache = cache
         out: list = []
-        for m in cache[1]:
+        for m, ctx in cache[1]:
             pc = self._world_to_pixel(m)
             if pc is None or math.hypot(pc[0] - px, pc[1] - py) > self.POINT_INFERENCE_PX:
                 continue
-            out.append(_SnapEdge(QVector3D(m), QVector3D(m), arc_midpoint=True))
+            out.append(_SnapEdge(QVector3D(m), QVector3D(m),
+                                 arc_midpoint=True, context=ctx))
         return out
 
     @staticmethod
@@ -16139,19 +16376,29 @@ class Viewport(QOpenGLWidget):
         for gp in getattr(self.scene, "geo_points", None) or []:
             near.append(_SnapEdge(QVector3D(gp.position),
                                   QVector3D(gp.position)))
+        # The rest of the model's loose geometry — the root mesh drawn faded
+        # around an open group / component — is a reference too.
+        # Its edges are filtered one by one (each carries its own layer and
+        # hidden flag), and «Hide rest of model» leaves them out already.
+        outer_of = getattr(self, "_outer_loose_meshes", None)
+        outer = []
+        for om in (outer_of() if outer_of is not None else ()):
+            outer += [e for e in om.edges if self.scene.edge_snappable(e)]
         big = (px is not None
-               and len(self.scene.edges) > _LOOSE_SNAP_CAP)
+               and (len(self.scene.edges) + len(outer)) > _LOOSE_SNAP_CAP)
         if not lines and not near and not circles and sp is None \
-                and not big and excl is None and not _snap_dropped_loose(self):
+                and not big and not outer and excl is None \
+                and not _snap_dropped_loose(self):
             return self.scene
         if big:
             # Only the edges near the cursor are considered, so ask each one
             # (dozens) rather than walking a mesh of 160k to build the drop
-            # set above.
+            # set above. The index holds the rest of the model's loose
+            # edges too, so this reaches them.
             loose = [e for e in self._nearby_loose_edges(px, py)
                      if self.scene.edge_snappable(e)]
         else:
-            loose = list(self.scene.edges)
+            loose = list(self.scene.edges) + outer
             drops = _snap_dropped_loose(self)
             if drops:
                 loose = [e for e in loose if id(e) not in drops]
@@ -16159,6 +16406,12 @@ class Viewport(QOpenGLWidget):
             loose = [e for e in loose if id(e) not in excl[0]]
         if sp is not None:
             loose = [e for e in loose if _kept(e)]
+        if outer:
+            # The ScreenTip must say these are outside the open context:
+            # a real Edge carries no context of its own.
+            outer_ids = {id(e) for e in outer}
+            loose = [_SnapEdge(e.a, e.b, context="outside")
+                     if id(e) in outer_ids else e for e in loose]
         from types import SimpleNamespace
         return SimpleNamespace(edges=loose + lines + near, circles=circles)
 
@@ -16316,10 +16569,15 @@ class Viewport(QOpenGLWidget):
         elif getattr(edge, "in_group", False) and getattr(edge, "group", None) is not None:
             found = self._center_of_group_edge(edge)
         if found is None:
-            pick = getattr(self, "pick_face_placement", None) or self.pick_face_any   # stub VPs in tests
+            pick = (getattr(self, "pick_face_inference", None)
+                    or getattr(self, "pick_face_placement", None)
+                    or self.pick_face_any)   # stub VPs in tests
             face, group = pick(x, y)
             if face is not None:
-                mesh = group.mesh if group is not None else self.scene.mesh
+                mesh = getattr(group, "mesh", None) if group is not None \
+                    else self.scene.mesh
+                if mesh is None:
+                    mesh = self.scene.mesh
                 found = self._center_of_face(face, group, mesh, x, y)
         if found is not None:
             self._center_ref = found
@@ -17566,35 +17824,52 @@ class Viewport(QOpenGLWidget):
         — drawing takes its plane, Push/Pull refuses it until the group is
         opened. While a group IS open its own faces are the loose part and
         come back with ``None``; the model around it is in the index for
-        snapping and occlusion only, never as an answer here.
+        snapping and occlusion only, never as an answer here (the snap
+        engine's own reading is :meth:`pick_face_inference`).
 
         Memoised per cursor position and view: a hover asks up to three
         times (work plane, acquisition, on-face flag) for the same answer."""
+        face, owner, _place, _mesh = Viewport._face_any(
+            self, screen_x, screen_y, "sel")
+        return face, owner
+
+    def _face_any(self, screen_x: float, screen_y: float, which: str):
+        """``pick_face_any`` behind ``which`` (see :meth:`_face_hits`):
+        ``(face, owner, placement, mesh)``, memoised per variant."""
+        if which == "infer" and (
+                self.scene.edit_group is None
+                or bool(getattr(self, "_rest_is_hidden",
+                                lambda: False)())):
+            # At the root (and with the rest hidden) there is nothing outside
+            # the context to widen to: the same faces answer, and the hover
+            # pays for one ray pass, not two.
+            return Viewport._face_any(self, screen_x, screen_y, "sel")
         idx = self._pick_index(near=Viewport._ray_near(self, screen_x, screen_y))
         nat = (self._lazy_native() if hasattr(self, "_lazy_native")
                else None)
         try:
             cam = self.camera
-            key = (round(screen_x, 2), round(screen_y, 2), id(idx),
+            key = (which, round(screen_x, 2), round(screen_y, 2), id(idx),
                    cam.yaw, cam.pitch, cam.distance, cam.perspective,
                    cam.target.x(), cam.target.y(), cam.target.z(),
                    self.width(), self.height())
         except AttributeError:            # a bare stand-in (tests): no memo
             key = None
-        cached = getattr(self, "_face_any_memo", None)
+        slot = ("_face_any_memo" if which == "sel"
+                else "_face_infer_memo")
+        cached = getattr(self, slot, None)
         # Keyed by the index itself, not its id(): a rebuilt index can be
         # given the address of the one it replaced.
         if (key is not None and cached is not None and cached[0] == key
                 and len(cached) > 3 and cached[2] is idx
                 and cached[3] is nat):
-            self._face_any_place = cached[4]
             return cached[1]
-        result = (None, None)
-        self._face_any_place = None
+        result = (None, None, None, None)
         origin, direction = self._pixel_to_ray(screen_x, screen_y)
         if origin is not None and direction is not None:
             import numpy as np
-            hits = self._hover_hits(idx, origin, direction)
+            hits = (self._hover_hits(idx, origin, direction) if which == "sel"
+                    else self._infer_hits(idx, origin, direction))
             if hits is not None and len(hits.t):
                 face_t = hits.t
                 best_t = face_t.min()
@@ -17605,14 +17880,28 @@ class Viewport(QOpenGLWidget):
                         chosen = int(cand[0])
                     else:
                         chosen = int(cand[np.argmin(hits.area[cand])])
-                    result = hits.ent(chosen)
-                    # The placement it was hit through, for
-                    # pick_face_placement.
-                    self._face_any_place = (result[0], hits.place(chosen))
+                    face, owner = hits.ent(chosen)
+                    place = hits.place(chosen)
+                    mesh = (getattr(place, "mesh", None)
+                            if place is not None else self.scene.mesh)
+                    result = (face, owner, place, mesh)
         if key is not None:
-            self._face_any_memo = (key, result, idx, nat,
-                                   self._face_any_place)
+            setattr(self, slot, (key, result, idx, nat))
         return result
+
+    def pick_face_inference(self, screen_x: float, screen_y: float):
+        """The face the SNAP ENGINE may read under the cursor as
+        ``(face, placement_or_None)``: selectable faces as
+        :meth:`pick_face_placement`, plus the rest of the model drawn
+        around an open group / component — faded, never pickable, but a
+        reference the cursor may infer «On face» from, and the plane a
+        planar tool or a moved part lands on.
+
+        Picking never uses this: a click outside the open context must not
+        select or edit what it cannot touch (see :meth:`pick_face_any`)."""
+        face, _owner, place, _mesh = Viewport._face_any(
+            self, screen_x, screen_y, "infer")
+        return face, place
 
     def pick_face_placement(self, screen_x: float, screen_y: float):
         """Like :meth:`pick_face_any`, but the group half is the PLACEMENT
@@ -17621,13 +17910,11 @@ class Viewport(QOpenGLWidget):
         every face-PLANE reading needs: the owner of a nested component
         carries the container's matrix, so a rectangle on the pergola's
         post got the post's plane in the wrong place (Marco, 2026-09-14)."""
-        face, owner = self.pick_face_any(screen_x, screen_y)
+        face, _owner, place, _mesh = Viewport._face_any(
+            self, screen_x, screen_y, "sel")
         if face is None:
             return None, None
-        fp = getattr(self, "_face_any_place", None)
-        if fp is not None and fp[0] is face:
-            return face, fp[1]
-        return face, owner
+        return face, place
 
     def _smallest_at_front(self, hits, origin, direction):
         """Rows of ``hits`` a ray pick lands on: of the faces at the nearest

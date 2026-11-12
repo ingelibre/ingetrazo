@@ -897,6 +897,8 @@
  "Rectangle needs two sides — pick the opposite corner": "Retângulo precisa de dois lados — escolha o canto oposto",
  "in group": "no grupo",
  "in component": "no componente",
+ "outside the group": "fora do grupo",
+ "outside the component": "fora do componente",
  "Arc midpoint": "Ponto médio do arco",
  "Component origin": "Origem do componente",
  "Tangent at vertex": "Tangente no vértice",

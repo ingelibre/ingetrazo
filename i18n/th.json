@@ -899,6 +899,8 @@
  "Rectangle needs two sides — pick the opposite corner": "สี่เหลี่ยมต้องการสองด้าน — เลือกมุมตรงข้าม",
  "in group": "ในกลุ่ม",
  "in component": "ในชิ้นส่วน",
+ "outside the group": "นอกกลุ่ม",
+ "outside the component": "นอกชิ้นส่วน",
  "Arc midpoint": "จุดกึ่งกลางส่วนโค้ง",
  "Component origin": "จุดเริ่มต้นชิ้นส่วน",
  "Tangent at vertex": "เส้นสัมผัสที่จุดยอด",

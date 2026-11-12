@@ -900,6 +900,8 @@
  "Rectangle needs two sides — pick the opposite corner": "Hình chữ nhật cần có hai cạnh - chọn góc đối diện",
  "in group": "trong nhóm",
  "in component": "trong thành phần",
+ "outside the group": "ngoài nhóm",
+ "outside the component": "ngoài thành phần",
  "Arc midpoint": "Điểm giữa của cung",
  "Component origin": "Gốc tọa độ cấu kiện",
  "Tangent at vertex": "Tiếp tuyến tại đỉnh",
