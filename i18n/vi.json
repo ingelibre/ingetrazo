@@ -3275,6 +3275,8 @@
  "Shown alone — click to show back what Isolate hid": "Đang hiện riêng — bấm để hiện lại những gì Cô lập đã ẩn",
  "Sort by name": "Sắp xếp theo tên",
  "Sort by order created": "Sắp xếp theo thứ tự tạo",
+ "Sort by visible": "Sắp xếp theo hiển thị",
+ "Sort by locked": "Sắp xếp theo đã khóa",
  "Texts": "Văn bản",
  "The active layer is hidden or locked: new objects go to '{default}' again.": "Lớp hiện hành đang bị ẩn hoặc khóa: đối tượng mới lại vào '{default}'.",
  "The layer of what is selected becomes the active one: new objects go to it.": "Lớp của đối tượng đang chọn trở thành lớp hiện hành: đối tượng mới sẽ vào lớp đó.",

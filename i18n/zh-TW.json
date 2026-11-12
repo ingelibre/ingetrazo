@@ -3254,6 +3254,8 @@
  "Default columns": "預設欄位",
  "Sort by name": "依名稱排序",
  "Sort by order created": "依建立順序排序",
+ "Sort by visible": "依可見排序",
+ "Sort by locked": "依鎖定排序",
  "Short dashes (hidden)": "短虛線（隱藏）",
  "Long dashes": "長虛線",
  "Dash-dot-dot": "雙點劃線",

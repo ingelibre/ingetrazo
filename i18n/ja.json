@@ -3248,6 +3248,8 @@
  "Shown alone — click to show back what Isolate hid": "単独表示中 — クリックすると単独表示で隠したものを再表示します",
  "Sort by name": "名前順に並べ替え",
  "Sort by order created": "作成順に並べ替え",
+ "Sort by visible": "表示中を先に並べ替え",
+ "Sort by locked": "ロック中を先に並べ替え",
  "Texts": "文字",
  "The active layer is hidden or locked: new objects go to '{default}' again.": "現在のレイヤーが非表示またはロックされています: 新しいオブジェクトは再び「{default}」に入ります。",
  "The layer of what is selected becomes the active one: new objects go to it.": "選択したもののレイヤーが現在のレイヤーになります: 新しいオブジェクトはそこに入ります。",

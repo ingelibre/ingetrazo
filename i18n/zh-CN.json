@@ -3256,6 +3256,8 @@
  "Default columns": "默认列",
  "Sort by name": "按名称排序",
  "Sort by order created": "按创建顺序排序",
+ "Sort by visible": "按可见排序",
+ "Sort by locked": "按锁定排序",
  "Short dashes (hidden)": "短虚线（隐藏线）",
  "Long dashes": "长虚线",
  "Dash-dot-dot": "双点划线",

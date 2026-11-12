@@ -3251,6 +3251,8 @@
  "Shown alone — click to show back what Isolate hid": "ສະແດງດ່ຽວ — ຄລິກເພື່ອສະແດງສິ່ງທີ່ແຍກດ່ຽວເຊື່ອງໄວ້ຄືນ",
  "Sort by name": "ຮຽງຕາມຊື່",
  "Sort by order created": "ຮຽງຕາມລຳດັບການສ້າງ",
+ "Sort by visible": "ຮຽງຕາມທີ່ເຫັນໄດ້",
+ "Sort by locked": "ຮຽງຕາມທີ່ລັອກ",
  "Texts": "ຕົວໜັງສື",
  "The active layer is hidden or locked: new objects go to '{default}' again.": "ຊັ້ນວຽກທີ່ກຳລັງໃຊ້ງານຖືກເຊື່ອງ ຫຼື ລັອກ: ວັດຖຸໃໝ່ຈະກັບໄປ '{default}' ອີກ.",
  "The layer of what is selected becomes the active one: new objects go to it.": "ຊັ້ນວຽກຂອງສິ່ງທີ່ເລືອກ ຈະກາຍເປັນຊັ້ນວຽກທີ່ກຳລັງໃຊ້ງານ: ວັດຖຸໃໝ່ຈະເຂົ້າໄປຢູ່ໃນນັ້ນ.",

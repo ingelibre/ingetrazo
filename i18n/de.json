@@ -3255,6 +3255,8 @@
  "Default columns": "Standardspalten",
  "Sort by name": "Nach Name sortieren",
  "Sort by order created": "Nach Erstellungsreihenfolge sortieren",
+ "Sort by visible": "Nach sichtbaren sortieren",
+ "Sort by locked": "Nach gesperrten sortieren",
  "Short dashes (hidden)": "Kurze Striche (verdeckt)",
  "Long dashes": "Lange Striche",
  "Dash-dot-dot": "Strich-Punkt-Punkt",

@@ -32,7 +32,7 @@ It sits in the side tray, next to the Browser. The first button of the
 | Funnel | One-click filters: all, visible, hidden, locked, not printed, in use, unused, the selection's; and **Invert filter**. It fills in while a filter is on. |
 | Expand / collapse all | Opens or closes every folder. |
 | Colour by layer | Paints the model in each layer's colour (shaded, textured and X-ray styles). Scenes keep it with their style. |
-| Templates and options | Sort by name or by order created; new layers hidden in existing scenes; export and import layer templates. |
+| Templates and options | Sort by name, by order created, visible first or locked first; new layers hidden in existing scenes; export and import layer templates. |
 
 ### Columns
 
@@ -75,8 +75,10 @@ stays open while you tick, so several change in one go.
 ### Order
 
 Layer 0 always first, then the folders, then the layers. By name, numbers
-read as numbers («Layer 2» before «Layer 10»), or in the order they were
-made (**Templates and options ▸ Sort by…**).
+read as numbers («Layer 2» before «Layer 10»), in the order they were
+made, the visible ones first or the locked ones first — by name inside each
+group, and a layer moves to its group as soon as its eye or padlock is
+clicked (**Templates and options ▸ Sort by…**).
 
 ![Options](images/layers/menu-options.png)
 

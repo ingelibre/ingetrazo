@@ -3255,6 +3255,8 @@
  "Default columns": "Columnas por defecto",
  "Sort by name": "Ordenar por nombre",
  "Sort by order created": "Ordenar por orden de creación",
+ "Sort by visible": "Ordenar por visibles",
+ "Sort by locked": "Ordenar por bloqueadas",
  "Short dashes (hidden)": "Discontinua corta (oculta)",
  "Long dashes": "Discontinua larga",
  "Dash-dot-dot": "Trazo y dos puntos",

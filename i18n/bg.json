@@ -3255,6 +3255,8 @@
   "Default columns": "Колони по подразбиране",
   "Sort by name": "Сортиране по име",
   "Sort by order created": "Сортиране по ред на създаване",
+  "Sort by visible": "Сортиране по видими",
+  "Sort by locked": "Сортиране по заключени",
   "Short dashes (hidden)": "Къси щрихи (скрити линии)",
   "Long dashes": "Дълги щрихи",
   "Dash-dot-dot": "Щрихпунктирна с две точки",

@@ -203,6 +203,14 @@ def none_swatch() -> QIcon:
     return QIcon(pm)
 
 
+#: The orders of the panel's rows: by name, as they were made, the visible
+#: ones first, the locked ones first (the «⋯» menu; remembered).
+SORT_MODES = ("name", "created", "visible", "locked")
+
+#: The orders that group the rows by a state, and the column holding it.
+_STATE_SORTS = {"visible": COL_EYE, "locked": COL_LOCK}
+
+
 class _Row(QTreeWidgetItem):
     """A row that sorts the way the panel reads: the default layer first,
     then the folders, then the layers — whichever way the column runs."""
@@ -217,7 +225,16 @@ class _Row(QTreeWidgetItem):
             # Ranks hold in both directions: undo the reversal Qt applies.
             return (a < b) if asc else (a > b)
         panel = getattr(tree, "_panel", None)
-        if col == COL_NAME and getattr(panel, "sort_by", "name") == "created":
+        how = getattr(panel, "sort_by", "name") if col == COL_NAME else ""
+        if how in _STATE_SORTS:
+            # Visible (or locked) rows first, then the rest — a group that
+            # holds both ways, like the ranks; by name inside each group.
+            state_col = _STATE_SORTS[how]
+            sa = bool(self.data(state_col, Qt.UserRole + 1))
+            sb = bool(other.data(state_col, Qt.UserRole + 1))
+            if sa != sb:
+                return sa if asc else sb
+        if how == "created":
             oa, ob = self.data(COL_NAME, ROLE_ORDER), other.data(COL_NAME,
                                                                  ROLE_ORDER)
             if oa is not None and ob is not None and oa != ob:
@@ -3279,6 +3296,9 @@ class LayersPanel(QWidget):
         locked = bool(layers) and all(ly.locked for ly in layers)
         item.setIcon(COL_EYE, node_icon("eye" if shown else "eye_off"))
         item.setIcon(COL_LOCK, node_icon("lock" if locked else "lock_open"))
+        # Read by «Sort by visible / locked», as a layer row's are.
+        item.setData(COL_EYE, Qt.UserRole + 1, int(shown))
+        item.setData(COL_LOCK, Qt.UserRole + 1, int(locked))
         item.setToolTip(COL_EYE, tr("Show or hide every layer in the folder"))
         printed = (not layers
                    or any(getattr(ly, "printable", True) for ly in layers))
@@ -4070,22 +4090,24 @@ class LayersPanel(QWidget):
             self.tree.setColumnHidden(col, col in hidden)
         self._place_columns_button()
 
-    #: QSettings key of the rows' order: by name or as they were made.
+    #: QSettings key of the rows' order: one of ``SORT_MODES``.
     SORT_KEY = "layers/sort_by"
 
     @property
     def sort_by(self) -> str:
         from PySide6.QtCore import QSettings
         v = str(QSettings().value(self.SORT_KEY, "name") or "name")
-        return v if v in ("name", "created") else "name"
+        return v if v in SORT_MODES else "name"
 
     def set_sort_by(self, how: str) -> None:
-        """Order the rows by name (numbers read as numbers) or in the order
-        they were made — Layer 0 first and folders before layers either
-        way; remembered."""
+        """Order the rows by name (numbers read as numbers), in the order
+        they were made, the visible ones first or the locked ones first
+        (by name inside each group) — Layer 0 first and folders before
+        layers either way; remembered. A row whose eye or padlock is
+        clicked moves to its group at once."""
         from PySide6.QtCore import QSettings
         QSettings().setValue(self.SORT_KEY,
-                             how if how in ("name", "created") else "name")
+                             how if how in SORT_MODES else "name")
         self._sort = (COL_NAME, Qt.AscendingOrder)
         self.refresh()
 
@@ -4472,7 +4494,9 @@ class LayersPanel(QWidget):
         menu.clear()
         group = QActionGroup(menu)
         for key, label in (("name", "Sort by name"),
-                           ("created", "Sort by order created")):
+                           ("created", "Sort by order created"),
+                           ("visible", "Sort by visible"),
+                           ("locked", "Sort by locked")):
             act = menu.addAction(tr(label))
             act.setCheckable(True)
             act.setChecked(self.sort_by == key)
