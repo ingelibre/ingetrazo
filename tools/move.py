@@ -284,40 +284,23 @@ def rotation_grips(obb, eye: QVector3D) -> list:
     return out
 
 
-def _loop_key(points) -> frozenset:
-    """A loop's corners, whatever its start and winding."""
-    return frozenset((round(p.x(), 6), round(p.y(), 6), round(p.z(), 6))
-                     for p in points)
-
-
 class _PlannedWhenRun(Command):
     """Drawn edges planned when the command RUNS, not when it is built:
     by then the copied faces before it in the same compound are in the
     model, so the Line tool's planner splits the faces the edges land on
     without laying another face over the copied ones (#379). Redo
-    replays the same plan.
+    replays the same plan. Supplied faces are kept verbatim: empty cycles,
+    including holes and open internal rims, must stay empty (#1087)."""
 
-    ``open_loops`` are the copied faces' holes: the planner closes every
-    loop it traces, and a hole's rim is one, so a frame copied with its
-    opening came out with the opening faced over on both sides. A copy
-    keeps open what the original had open."""
-
-    def __init__(self, segments, open_loops=()) -> None:
+    def __init__(self, segments) -> None:
         self._segments = list(segments)
-        self._open = set(open_loops)
         self._cmd = None
 
     def do(self, scene) -> None:
         if self._cmd is None:
             from core.edits import build_add_edges
-            from core.history import SnapshotCompound
             self._cmd = build_add_edges(scene, self._segments,
-                                        detect_faces=True)
-            if self._open and isinstance(self._cmd, SnapshotCompound):
-                self._cmd.inner = [
-                    c for c in self._cmd.inner
-                    if not (isinstance(c, AddFaceCommand)
-                            and _loop_key(c.vertices) in self._open)]
+                                        preserve_faces=True, plane_rebuild=True)
         self._cmd.do(scene)
 
     def undo(self, scene) -> None:
@@ -937,38 +920,40 @@ class MoveTool(Tool):
         one copy per offset. Kept by the array window so ``3x`` / ``/3`` can
         re-lay the copies after the tool has reset.
 
-        Plain copied edges go through the same edge planner as the Line
-        tool, so a copy laid across a face splits it and one crossing an
-        edge cuts it there, as users expect (Lefteris Schetakis, #177).
-        Faces are stamped FIRST: the planner then finds their loops closed
-        and does not add a second face over them."""
+        Stamp the supplied topology verbatim. Only edges touching geometry
+        outside their copy need the intersection planner (#177, #379).
+        Replanning the copy against itself split imported faces and invented
+        floors across empty rims, depending on selection order (#1087)."""
         groups = list(self._groups)
         faces = list(self._sel_faces)
         edges = list(self._sel_edges)
         guides = list(self._moved_guides)
 
-        # Edges that bound a copied face travel with it the old way: the
-        # planner runs before the faces are stamped and would lay a second
-        # face over their loop.
-        def _k(p):
-            return (round(p.x(), 6), round(p.y(), 6), round(p.z(), 6))
-        face_sides = set()
-        for f in faces:
-            for lp in (list(f.vertices), *[list(h) for h in f.holes]):
-                for i in range(len(lp)):
-                    a, b = _k(lp[i]), _k(lp[(i + 1) % len(lp)])
-                    face_sides.add((a, b) if a <= b else (b, a))
-
-        def _bounds_a_face(e):
-            a, b = _k(e.a), _k(e.b)
-            return ((a, b) if a <= b else (b, a)) in face_sides
-
         def build(deltas):
+            from core.edits import touching_segments
+            from core.geometry import Edge as GeomEdge, Face as GeomFace
+            deltas = list(deltas)
             cmds: list = []
-            plain: list = []
-            bound: list = []
-            open_loops: set = set()
+            # Other array members are outside this copy too. Build their
+            # geometric views before execution, so array order is irrelevant.
+            copies = []
             for d in deltas:
+                ef = [GeomEdge(e.a + d, e.b + d) for e in edges]
+                ff = [GeomFace([v + d for v in f.vertices],
+                               [[v + d for v in h] for h in f.holes]) for f in faces]
+                copies.append((ef, ff))
+            for index, d in enumerate(deltas):
+                planned = []
+                if scene is not None:
+                    outside_edges, outside_faces = list(scene.edges), list(scene.faces)
+                    for j, (ef, ff) in enumerate(copies):
+                        if j != index:
+                            outside_edges.extend(ef)
+                            outside_faces.extend(ff)
+                    hard = [(e.a + d, e.b + d) for e in edges
+                            if e.curve is None and not e.soft]
+                    planned = touching_segments(hard, outside_edges, outside_faces)
+                planned_keys = {(_key(a), _key(b)) for a, b in planned}
                 m = QMatrix4x4()
                 m.translate(d)
                 for group in groups:
@@ -976,22 +961,20 @@ class MoveTool(Tool):
                 for g in guides:
                     cmds.append(AddGuideCommand(copied_guide(g, m)))
                 for f in faces:
-                    for h in f.holes:
-                        open_loops.add(_loop_key([v + d for v in h]))
                     cmds.append(AddFaceCommand(
                         [v + d for v in f.vertices],
                         holes=[[v + d for v in h] for h in f.holes] or None,
                         auto=False,
                         attrs=transformed_attrs(f.attrs, m),
+                        interior=f.interior,
                     ))
                 id_map: dict[int, int] = {}
                 for e in edges:
                     curve = getattr(e, "curve", None)
                     soft = getattr(e, "soft", False)
                     if scene is not None and curve is None and not soft:
-                        (bound if _bounds_a_face(e) else plain).append(
-                            (e.a + d, e.b + d))
-                        continue
+                        if (_key(e.a + d), _key(e.b + d)) in planned_keys:
+                            continue
                     # Soft edges and curves keep their flags on the copy.
                     if curve is not None and curve not in id_map:
                         id_map[curve] = Mesh.next_curve_id()
@@ -999,17 +982,8 @@ class MoveTool(Tool):
                         e.a + d, e.b + d,
                         soft=soft or None,
                         curve=id_map.get(curve)))
-            if plain:
-                from core.edits import build_add_edges
-                cmds.append(build_add_edges(scene, plain, detect_faces=True))
-            if bound:
-                # The edges of a copied face go through the same planner,
-                # but planned once the faces are stamped: planned now, it
-                # would lay a second face over their loop, and sent the old
-                # way they never split the face they land on — the edge of
-                # a piece copied 1 cm down left its neighbour's face whole
-                # (#379, after #177).
-                cmds.append(_PlannedWhenRun(bound, open_loops))
+                if planned:
+                    cmds.append(_PlannedWhenRun(planned))
             if not cmds:
                 return None
             return cmds[0] if len(cmds) == 1 else CompoundCommand(cmds)

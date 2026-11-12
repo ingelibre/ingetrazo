@@ -48,6 +48,41 @@ from core.topology import (
 Segment = tuple[QVector3D, QVector3D]
 
 
+def touching_segments(segments: Sequence[Segment], edges: Iterable[Edge],
+                      faces: Iterable[Face]) -> list[Segment]:
+    """Copy only needs to plan segments that touch geometry OUTSIDE the copy.
+
+    Test real contacts after the box filter: disjoint pieces can have
+    overlapping boxes. Never rediscover intersections within supplied
+    topology; imports may intentionally contain long edges over facets.
+    """
+    if not segments:
+        return []
+    from core.topology import (_point_in_face_solid, _point_on_seg_incl,
+                               segment_intersection)
+    edges, faces = list(edges), list(faces)
+    near = _Nearby(edges, faces)
+    out = []
+    for a, b in segments:
+        if any(segment_intersection(a, b, e.a, e.b) is not None
+               or _point_on_seg_incl(a, e.a, e.b)
+               or _point_on_seg_incl(e.a, a, b)
+               for e in near.edges(edges, a, b)):
+            out.append((a, b))
+            continue
+        for f in near.faces(faces, a, b):
+            normal = f.normal()
+            origin = f.vertices[0]
+            if (normal.lengthSquared() > 0.5
+                    and abs(QVector3D.dotProduct(a - origin, normal)) < 1e-4
+                    and abs(QVector3D.dotProduct(b - origin, normal)) < 1e-4
+                    and any(_point_in_face_solid(f, p)
+                            for p in (a, b, (a + b) * 0.5))):
+                out.append((a, b))
+                break
+    return out
+
+
 def _finite(p) -> bool:
     return all(math.isfinite(c) for c in (p.x(), p.y(), p.z()))
 
@@ -57,6 +92,8 @@ def plan_edge_commands(
     segments: Sequence[Segment],
     detect_faces: bool = True,
     eye=None,
+    *,
+    close_cycles: bool = True,
 ) -> list[Command]:
     """Build the ordered command list to add ``segments`` to ``scene``.
 
@@ -64,6 +101,8 @@ def plan_edge_commands(
     ``simulated`` edge list, so planning and execution stay in lock-step.
     Returns a flat list (callers wrap it, possibly alongside their own
     commands such as a tool-managed face, in a single ``CompoundCommand``).
+    ``close_cycles=False`` keeps chord splits but never infers new faces
+    from cycles, for tools that carry existing topology.
     """
     commands: list[Command] = []
     simulated: list[Edge] = _PlanEdges(scene.edges)
@@ -151,7 +190,7 @@ def plan_edge_commands(
                 simulated.append(Edge(sa, sb))
             if detect_faces:
                 _plan_faces(commands, faces_snapshot, simulated, sa, sb, eye,
-                            near)
+                            near, close_cycles=close_cycles)
 
     return commands
 
@@ -286,7 +325,7 @@ def _around(near, faces, loop):
 
 
 def _plan_faces(commands, faces_snapshot, simulated, sa, sb, eye=None,
-                near=None) -> None:
+                near=None, *, close_cycles=True) -> None:
     """Emit the face commands for a freshly added edge ``sa``–``sb``.
 
     Two paths, mutually exclusive:
@@ -315,10 +354,13 @@ def _plan_faces(commands, faces_snapshot, simulated, sa, sb, eye=None,
         for loop in (loop_a, loop_b):
             if is_planar(loop) and not face_exists(
                     _around(near, faces_snapshot, loop), loop):
-                commands.append(AddFaceCommand(loop, attrs=keep))
+                commands.append(AddFaceCommand(loop, attrs=keep,
+                                               auto=close_cycles))
                 faces_snapshot.append(Face(list(loop), attrs=keep))
         return
 
+    if not close_cycles:
+        return
     for cycle in find_cycles_through(
             simulated, sa, sb,
             key=getattr(near, "key", None) if near is not None else None,
@@ -335,7 +377,7 @@ def _scene_has_curves(scene) -> bool:
     return any(getattr(e, "curve", None) is not None for e in scene.edges)
 
 
-def _append_flat_curve_rebuild(scene, commands, points) -> None:
+def _append_flat_curve_rebuild(scene, commands, points, *, close_cycles=True) -> None:
     """Append the deterministic planar-arrangement rebuild after a draw when
     the cycle planner alone cannot produce the expected regions:
 
@@ -360,7 +402,7 @@ def _append_flat_curve_rebuild(scene, commands, points) -> None:
     has_curves = _scene_has_curves(scene)
     verts = [v.position for v in scene.mesh.vertices] + list(points)
     if coplanar_plane(verts) is not None:
-        if has_curves:
+        if has_curves and close_cycles:
             # Whole-flat drawing with curves: the full rebuild (every minimal
             # region gets a face — how a lone circle yields its disc).
             commands.append(RebuildPlanarFacesCommand())
@@ -517,6 +559,8 @@ def build_add_edges(
     extra: Iterable[Command] = (),
     eye=None,
     plane_rebuild: bool = False,
+    *,
+    preserve_faces: bool = False,
 ) -> Command:
     """Batch convenience: many drawn edges (+ optional ``extra`` commands such
     as a tool-managed face) → one atomic command. ``eye`` (the camera's
@@ -525,18 +569,27 @@ def build_add_edges(
     ``plane_rebuild``: a tool that owns its face (the Rectangle) asks for
     the plane it lands on to be rebuilt, as a drawn Line has been since
     July — drawn over a ring on walls it stacked a full face on the ring
-    instead of filling the hole (#538)."""
+    instead of filling the hole (#538).
+
+    ``preserve_faces``: copied geometry supplies its own faces. Split faces
+    the edges cross, but do not face empty cycles or globally heal the mesh.
+    Rebuild coverage only for cuts or an explicitly requested plane rebuild;
+    callers must keep isolated copies out of the planner (#1087).
+    """
     commands = plan_edge_commands(scene, segments, detect_faces=detect_faces,
-                                  eye=eye)
+                                  eye=eye, close_cycles=not preserve_faces)
     commands.extend(extra)
     _append_active_tag(scene, commands)
     points = [p for seg in segments for p in seg]
-    _append_flat_curve_rebuild(scene, commands, points)
-    if plane_rebuild:
-        _append_face_plane_rebuild(scene, commands, points)
+    cuts = any(isinstance(c, (DeleteFaceCommand, DeleteEdgesCommand)) for c in commands)
+    if not preserve_faces or cuts or plane_rebuild:
+        _append_flat_curve_rebuild(scene, commands, points,
+                                   close_cycles=not preserve_faces)
+        if plane_rebuild:
+            _append_face_plane_rebuild(scene, commands, points)
     if len(commands) == 1 and not _scene_has_curves(scene):
         return commands[0]
-    return SnapshotCompound(commands)
+    return SnapshotCompound(commands, heal=not preserve_faces)
 
 
 def divide_edges(mesh, edges, n: int) -> int:
