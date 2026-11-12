@@ -522,6 +522,16 @@ def _paint_view_edit_border(painter: QPainter, frame: MarcoVista) -> None:
 _GEO_PATH_INK = QColor(0, 150, 170)
 
 
+class _SheetContext:
+    """What an extension's sheet provider is told about the frame
+    (``ExtensionApp.add_sheet_annotations``)."""
+
+    def __init__(self, scale_n: float, text_mm: float, paper) -> None:
+        self.scale_n = scale_n
+        self.text_mm = text_mm
+        self.paper = paper
+
+
 def _paint_annots_mm(painter: QPainter, frame: MarcoVista, annots) -> None:
     """Model dimensions, leader texts and traced paths projected into the
     frame (mm): ``("line", x0, y0, x1, y1)``,
@@ -582,6 +592,28 @@ def _paint_annots_mm(painter: QPainter, frame: MarcoVista, annots) -> None:
             painter.restore()
         elif a[0] == "secmark":
             _paint_section_mark_mm(painter, a, ink, halo)
+        elif a[0] == "xpoly":                 # an extension's line
+            painter.setPen(QPen(QColor(*a[3]), a[2], Qt.SolidLine,
+                                Qt.RoundCap, Qt.RoundJoin))
+            painter.setBrush(Qt.NoBrush)
+            painter.drawPolyline([QPointF(x, y) for x, y in a[1]])
+        elif a[0] == "xtext":                 # an extension's label
+            (_kind, x, y, deg, text, size, bold, rgb, bg, alpha,
+             left, w, h) = a
+            box = QRectF(left, -h / 2, w, h)
+            painter.save()
+            painter.translate(QPointF(x, y))
+            painter.rotate(deg)
+            if bg:
+                fill = QColor(*bg)
+                fill.setAlphaF(alpha)
+                painter.setPen(Qt.NoPen)
+                painter.setBrush(fill)
+                painter.drawRoundedRect(box, h * 0.15, h * 0.15)
+                painter.setBrush(Qt.NoBrush)
+            _draw_text_mm(painter, box, text, size, bold=bold,
+                          align=Qt.AlignCenter, color=QColor(*rgb))
+            painter.restore()
         elif a[0] == "text":
             _kind, x, y, deg, text, size = a
             box = QRectF(-60, -size * 1.3, 120, size * 1.3)
@@ -10856,6 +10888,7 @@ class ComposerWindow(QMainWindow):
                 out.extend(self._chainage_marks(frame, scene, pt, drape))
             if getattr(frame, "section_marks", False):
                 out.extend(self._section_marks(frame, scene, pt, fwd))
+            out.extend(self._extension_marks(frame, scene, pt))
             if not getattr(frame, "annotations", False):
                 return out
             size = float(getattr(frame, "annot_text_mm", 2.8) or 2.8)
@@ -10903,6 +10936,102 @@ class ComposerWindow(QMainWindow):
                                 line, size))
             return out
         return self._with_frame_camera(frame, run)
+
+    def _extension_marks(self, frame: MarcoVista, scene, pt) -> list:
+        """The extensions' own sheet items (``add_sheet_annotations``),
+        projected into the frame: ``("xpoly", pts, width_mm, rgb)`` and
+        ``("xtext", x, y, deg, text, size, bold, rgb, bg_rgb, bg_alpha,
+        left, w, h)``, the box ``(left, -h/2, w, h)`` in the text's own
+        turned axes. Texts with a ``priority`` give way where they would
+        overlap. A provider that raises is logged once and dropped."""
+        import logging
+        import math
+        from PySide6.QtGui import QFontMetricsF
+        fns = list(getattr(self._window, "_ext_sheet_annots", None) or ())
+        if not fns:
+            return []
+
+        def paper(points):
+            return [pt(QVector3D(*map(float, p))) for p in points]
+
+        sheet = _SheetContext(
+            0.0 if getattr(frame, "perspective", False)
+            else float(frame.scale_n),
+            float(getattr(frame, "annot_text_mm", 2.8) or 2.8), paper)
+        polys, texts = [], []
+        for fn in fns:
+            try:
+                items = list(fn(scene, sheet) or ())
+            except Exception:  # noqa: BLE001 — a plugin never breaks a sheet
+                logging.getLogger("ingetrazo.plugins").exception(
+                    "extension sheet annotations %r failed; removed", fn)
+                try:
+                    self._window._ext_sheet_annots.remove(fn)
+                except ValueError:
+                    pass
+                continue
+            for it in items:
+                if not isinstance(it, dict):
+                    continue
+                if it.get("line"):
+                    pts = paper(it["line"])
+                    if len(pts) >= 2:
+                        polys.append(("xpoly", pts,
+                                      float(it.get("width_mm", 0.25)),
+                                      tuple(it.get("color") or (45, 55, 75))))
+                elif it.get("text") and it.get("at") is not None:
+                    texts.append(it)
+        fonts: dict = {}
+        placed = []
+        for it in texts:
+            text = str(it["text"])
+            size = float(it.get("size_mm") or sheet.text_mm)
+            bold = bool(it.get("bold", True))
+            fm = fonts.get(bold)
+            if fm is None:
+                font = QFont("Sans Serif")
+                font.setPixelSize(100)
+                font.setBold(bold)
+                fm = fonts[bold] = QFontMetricsF(font)
+            s = size / 100.0 * 0.75          # the scale _draw_text_mm applies
+            pad = size * 0.3
+            w = fm.horizontalAdvance(text) * s + 2 * pad
+            h = fm.height() * s + pad
+            x, y = pt(QVector3D(*map(float, it["at"])))
+            deg, left = 0.0, -w / 2.0
+            if it.get("toward") is not None:
+                qx, qy = pt(QVector3D(*map(float, it["toward"])))
+                if math.hypot(qx - x, qy - y) > 1e-6:
+                    deg = math.degrees(math.atan2(qy - y, qx - x))
+                    flipped = abs(deg) > 90.0          # never upside down
+                    if flipped:
+                        deg += 180.0 if deg < 0 else -180.0
+                    if it.get("anchor") == "start":
+                        left = -w if flipped else 0.0
+            c, sn = math.cos(math.radians(deg)), math.sin(math.radians(deg))
+            corners = [(x + u * c - v * sn, y + u * sn + v * c)
+                       for u in (left, left + w) for v in (-h / 2, h / 2)]
+            box = (min(q[0] for q in corners), min(q[1] for q in corners),
+                   max(q[0] for q in corners), max(q[1] for q in corners))
+            bg = it.get("background")
+            alpha = max(0.0, min(1.0, float(
+                it.get("background_opacity", 100)) / 100.0))
+            placed.append((it.get("priority"), len(placed), box, (
+                "xtext", x, y, deg, text, size, bold,
+                tuple(it.get("color") or (45, 55, 75)),
+                tuple(bg) if bg else None, alpha, left, w, h)))
+        out = list(polys)
+        taken = []
+        # the free ones first, then the ranked ones from the lowest number
+        for prio, _n, box, item in sorted(
+                placed, key=lambda r: (r[0] is not None, r[0] or 0, r[1])):
+            if prio is not None and any(
+                    box[0] < t[2] and t[0] < box[2]
+                    and box[1] < t[3] and t[1] < box[3] for t in taken):
+                continue
+            taken.append(box)
+            out.append(item)
+        return out
 
     def _section_marks(self, frame: MarcoVista, scene, pt, fwd) -> list:
         """One ``("secmark", x0, y0, x1, y1, ax, ay, label, size)`` per

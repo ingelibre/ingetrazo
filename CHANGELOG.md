@@ -60,6 +60,12 @@ secciones que se arrastran sin tirones; y decenas de arreglos.**
 - **Cotas de lámina**: etiqueta debajo o volteada, separación del texto,
   enganche a líneas y arreglos de selección (#1249, @BastelBaus); crear y
   enganchar cotas sobre aristas (#933, #478, @BastelBaus).
+- **Las extensiones dibujan también en las láminas**
+  (`add_sheet_annotations`): lo que una extensión sólo pintaba sobre la
+  vista —las progresivas de un camino, un canal o una carretera— sale en
+  los marcos de vista del modelo como texto y líneas vectoriales, a un
+  tamaño en milímetros de papel, nunca al revés y sin pisarse, en la
+  impresión y en el PDF. Documentado en `docs/plugins.md`.
 - **Exportar todas las láminas a PDF desde la línea de órdenes**, sin
   ventana (#1055, @BastelBaus).
 - **Texto 3D**: el cuadro de texto muestra la fuente, negrita y cursiva

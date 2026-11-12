@@ -339,6 +339,40 @@ class ExtensionApp:
         self.viewport._ext_overlays.append(fn)
         self.viewport.update()
 
+    # ---- Sheets ----------------------------------------------------------------
+    def add_sheet_annotations(self, fn) -> None:
+        """What an overlay draws on screen, for the SHEETS too: ``fn(scene,
+        sheet)`` returns the items to print in a model-view frame, in
+        WORLD points (metres), and the sheet projects them with the frame's
+        own camera and draws them as vectors — crisp at any scale, in the
+        print and in the PDF. It is asked each time a frame's overlay is
+        worked out (an Update, an annotation switch), with that frame's
+        scene applied: ask ``scene.entity_visible(group)`` and a layer the
+        frame hides hides your items too.
+
+        ``sheet`` gives ``scale_n`` (1:N; 0 for a perspective frame),
+        ``text_mm`` (the frame's annotation text height) and
+        ``paper(points)`` → ``[(x_mm, y_mm), …]``, where your points land.
+
+        Items are dicts:
+
+        - ``{"line": [p0, p1, …]}``: a polyline; ``width_mm`` (0.25),
+          ``color`` (RGB 0–255).
+        - ``{"text": "0+020", "at": p}``: ``toward`` (a second world
+          point: the text runs from ``at`` toward it, turned so it is never
+          upside down; none = level on the page), ``anchor`` (``"center"``
+          or ``"start"``: the text begins at ``at``), ``size_mm``,
+          ``bold`` (True), ``color``, ``background`` (RGB or None),
+          ``background_opacity`` (0–100), and ``priority``: texts that
+          have one give way where they would overlap, the LOWER number
+          kept first.
+
+        A provider that raises is logged once and removed."""
+        win = self._window
+        if not hasattr(win, "_ext_sheet_annots"):
+            win._ext_sheet_annots = []
+        win._ext_sheet_annots.append(fn)
+
     def world_to_pixels(self, points):
         """World points (metres; anything shaped ``(N, 3)``) → ``(px, py,
         in_front)`` NumPy arrays: one call for thousands of points, the same

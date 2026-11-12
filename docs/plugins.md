@@ -205,6 +205,18 @@ def setup(app):
     app.add_overlay(lambda viewport, painter: ...)
     px, py, in_front = app.world_to_pixels(points_n_by_3)
 
+    # The same marks on the SHEETS (0.6.2): lines and texts in world
+    # points; each model-view frame projects and prints them as vectors,
+    # texts at a height in paper mm, never upside down, and those with a
+    # `priority` giving way (lower kept first) where they would overlap.
+    # `sheet.scale_n`, `sheet.text_mm`, `sheet.paper(points)` say where.
+    if hasattr(app, "add_sheet_annotations"):
+        app.add_sheet_annotations(lambda scene, sheet: [
+            {"line": [(0, 0, 0), (10, 0, 0)], "width_mm": 0.25},
+            {"text": "0+010", "at": (10, 0, 0), "toward": (10, 5, 0),
+             "anchor": "start", "size_mm": 2.5, "background": (255, 255, 255),
+             "priority": 2}])
+
     # Your own items, selectable with the Select tool and deleted with
     # Supr (moving them comes later): `pick` says which item is under a
     # pixel (asked before the model's geometry), `on_select(id)` hears the
@@ -221,7 +233,8 @@ def setup(app):
 Rules the host enforces: a snap provider never overrides a named point
 (endpoint, midpoint, centre, intersection, on edge…) — the user aimed at
 it; a provider that raises is logged and skipped, an overlay that raises
-is logged once and removed, never breaking the frame or the cursor; the
+is logged once and removed, never breaking the frame or the cursor
+(a sheet provider too, never breaking the sheet); the
 painter state is saved and restored around every overlay; document data
 that is not JSON-safe is dropped on save rather than failing it.
 
