@@ -2760,6 +2760,18 @@ class MaterialsPanel(QWidget):
 
     def _load_texture_fields(self) -> None:
         tex = PaintTool.current_texture
+        mat = PaintTool.current_material
+        vp = getattr(self._window, "viewport", None)
+        reg = (vp.scene.materials.get(mat.name)
+               if mat is not None and vp is not None else None)
+        if (tex and not tex.get("tint") and reg is not None and reg.texture
+                and reg.texture.get("tint")
+                and reg.texture.get("path") == tex.get("path")):
+            # A tinted swatch of «In model» hands over the image it shows,
+            # not its colour: the fields read the colour off the material,
+            # or an Apply to change the size would strip it everywhere.
+            tex = {**reg.texture, **{k: tex[k] for k in ("sw", "sh", "rot")
+                                     if k in tex}}
         if tex:
             self._sw_box.setValue(float(tex.get("sw", 1.0)))
             self._sh_box.setValue(float(tex.get("sh", 1.0)))
@@ -2841,12 +2853,14 @@ class MaterialsPanel(QWidget):
         sw = self._sw_box.value()
         sh = self._sh_box.value()
         rot = self._rot_box.value() % 360.0
-        if PaintTool.current_texture:
-            PaintTool.current_texture = self._retinted({
-                **PaintTool.current_texture, "sw": sw, "sh": sh, "rot": rot})
         scene = self._window.viewport.scene
         targets = [f for f in scene.selection
                    if isinstance(f, Face) and f.attrs.get("texture")]
+        if self._edit_model_material(sw, sh, rot, targets):
+            return
+        if PaintTool.current_texture:
+            PaintTool.current_texture = self._retinted({
+                **PaintTool.current_texture, "sw": sw, "sh": sh, "rot": rot})
         if targets:
             # Each face keeps its own image; size/rotation and the tint change.
             from core.history import CompoundCommand
@@ -2870,6 +2884,52 @@ class MaterialsPanel(QWidget):
                     tr("Pick a texture (or select textured faces) first"),
                     2500)
         self._refresh_preview()
+
+    def _edit_model_material(self, sw, sh, rot, selected=()) -> bool:
+        """Apply on a textured material of the model: the material itself
+        changes, on every face and object that wears it, one undo step —
+        not only the faces selected, which left one name in two looks
+        (#1308). The tile size and turn reach those faces only when they
+        were changed here; otherwise each face keeps its own (a texture
+        placed by hand stays where it was). Selected textured faces of
+        other materials take the fields, as before, in the same step.
+        False when the active texture is no model material: then Apply
+        works on the selection alone."""
+        mat = PaintTool.current_material
+        scene = self._window.viewport.scene
+        reg = scene.materials.get(mat.name) if mat is not None else None
+        if not PaintTool.current_texture or reg is None or not reg.texture:
+            return False
+        from core.history import (CompoundCommand,
+                                  EditTexturedMaterialCommand,
+                                  SetFaceTextureCommand)
+        old = reg.texture
+        was = (float(old.get("sw", 1.0)), float(old.get("sh", 1.0)),
+               float(old.get("rot", 0.0)) % 360.0)
+        size = (sw, sh, rot)
+        if all(abs(a - b) < 1e-9 for a, b in zip(size, was)):
+            size = None
+        mode = self._tint_mode.currentData()
+        cmds = [EditTexturedMaterialCommand(
+            reg.name, self._tint, int(mode if mode is not None else 0),
+            size)]
+        for f in selected:
+            if f.attrs.get("mat") != reg.name:
+                cmds.append(SetFaceTextureCommand([f], self._retinted({
+                    **f.attrs["texture"], "sw": sw, "sh": sh, "rot": rot})))
+        self._window.viewport.history.execute(
+            cmds[0] if len(cmds) == 1 else CompoundCommand(cmds))
+        new = scene.materials.get(reg.name) or reg
+        PaintTool.current_material = new
+        PaintTool.current_texture = dict(new.texture or {}) or None
+        self._window.viewport.notify_scene_changed()
+        self._window.viewport.update()
+        self.refresh_in_model()
+        self._refresh_preview()
+        self._window.statusBar().showMessage(
+            tr("Material '{name}' updated on every face that wears it",
+               name=reg.name), 3000)
+        return True
 
     def _recolour_active(self, rgb) -> bool:
         """Give the active plain colour ``rgb``: a named material is edited

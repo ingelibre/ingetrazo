@@ -1445,6 +1445,90 @@ class RestampMaterialCommand(Command):
         scene.version += 1
 
 
+class EditTexturedMaterialCommand(RestampMaterialCommand):
+    """Edit a TEXTURED registry material — its colour, its tile size —
+    and carry the edit to every face, group and component that wears it.
+
+    A YouTube review of 0.6.1 (#1308): «when you edit an already applied
+    material, say change the colour, it does not affect the applied
+    materials in the model, almost as if it creates another material
+    definition». It did: the Materials panel's Apply changed the texture
+    to paint with next and the faces SELECTED, so the model kept the old
+    look, and with one face selected the same name came out in two
+    colours. Unlike a restamp, the edit is applied to each face's own
+    texture: a texture placed by hand (``uvw``), continued round a curved
+    surface or turned on another wall keeps its place; only the colour —
+    and the tile size and turn, when ``size`` is given — change.
+
+    ``tint`` is an RGB (0-1) or ``None`` to remove the colour; ``size`` is
+    ``(sw, sh, rot)`` or ``None`` to leave each face's own. Undo is the
+    restamp's: the registry entry, each face's and each container's paint
+    exactly as they were."""
+
+    def __init__(self, name, tint, tint_mode: int = 0, size=None) -> None:
+        super().__init__(name, None)
+        self._tint = tuple(tint) if tint is not None else None
+        self._tint_mode = int(tint_mode or 0)
+        self._size = tuple(size) if size is not None else None
+
+    def edited(self, tex):
+        """*tex* with this edit: the colour (from its untinted image) and,
+        when given, the size and turn."""
+        if not tex:
+            return tex
+        from core.texture import tinted_texture, untinted_texture
+        out = dict(tex)
+        if self._size is not None:
+            out["sw"], out["sh"], out["rot"] = (float(v) for v in self._size)
+        if self._tint is None:
+            return untinted_texture(out)
+        return tinted_texture(out, self._tint, self._tint_mode)
+
+    def do(self, scene) -> None:
+        from core.materials import Material
+        old = scene.materials.get(self._name)
+        if old is None or not old.texture:
+            return
+        if self._old_faces is None:
+            self._old_material = old
+            self._old_faces = [
+                (f, {k: f.attrs.get(k) for k in self._KEYS})
+                for f in self._targets(scene)]
+            self._old_groups = [(g, g.material)
+                                for g in self._painted_groups(scene)]
+            self._new = Material(self._name, color=old.color,
+                                 texture=self.edited(old.texture),
+                                 opacity=old.opacity, finish=old.finish)
+        scene.materials[self._name] = self._new
+        for f, before in self._old_faces:
+            if before["texture"]:
+                f.attrs["texture"] = self.edited(before["texture"])
+        for g, before in self._old_groups or []:
+            if isinstance(before, dict) and before.get("texture"):
+                g.material = {**before,
+                              "texture": self.edited(before["texture"])}
+        self._count_meshes(scene)
+        _dirty_group_chunks(scene)
+        scene.version += 1
+
+    def undo(self, scene) -> None:
+        if self._old_faces is None:
+            return
+        # The name never changes: the restamp's undo, without its renaming.
+        scene.materials[self._name] = self._old_material
+        for f, old in self._old_faces:
+            for k in self._KEYS:
+                if old[k] is None:
+                    f.attrs.pop(k, None)
+                else:
+                    f.attrs[k] = old[k]
+        for g, old in self._old_groups or []:
+            g.material = old
+        self._count_meshes(scene)
+        _dirty_group_chunks(scene)
+        scene.version += 1
+
+
 class PurgeUnusedCommand(Command):
     """"Purge Unused", for layers and/or materials.
 
