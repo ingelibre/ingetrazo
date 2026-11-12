@@ -4943,7 +4943,11 @@ class MainWindow(QMainWindow):
             menu.addAction(tr("Make Group"), self._on_make_group)
         if has_mesh:
             menu.addAction(tr("Make Component…"), self._on_make_component)
-        if any(isinstance(e, Face) for e in sel):
+        faces = [e for e in sel if isinstance(e, Face)]
+        if faces:
+            if len(faces) == 1:
+                menu.addAction(tr("Align View"),
+                               lambda: self._on_align_view_to_face(faces[0]))
             # Reverse Faces goes in the face's own right-click menu,
             # which is where anyone looks for it. It lived only in the Edit
             # menu and Marco could not find it (2026-09-10).
@@ -5100,6 +5104,21 @@ class MainWindow(QMainWindow):
         redo.setEnabled(bool(self.viewport.history.redo_stack))
 
         menu.exec(global_pos)
+
+    def _on_align_view_to_face(self, face) -> None:
+        """Look along the selected face's world-space normal."""
+        import math
+
+        cam = self.viewport.camera
+        normal = face.normal()
+        cam.target = face.centroid()
+        cam.pitch = math.asin(max(-1.0, min(1.0, normal.z())))
+        if abs(normal.x()) > 1e-9 or abs(normal.y()) > 1e-9:
+            cam.yaw = math.atan2(normal.y(), normal.x())
+        if cam.projection_mode() == "two_point":
+            self.viewport.set_projection("perspective")
+        else:
+            self.viewport.update()
 
     def _single_textured_face(self):
         """``(face, side)``: the one selected face with an image texture on
