@@ -10515,7 +10515,7 @@ class MainWindow(QMainWindow):
         visibility of the moment, as the export of the selection alone."""
         from core.hlr import (KIND_CUT, KIND_PROFILE, hlr_drawing,
                               hlr_perspective)
-        vp = self.viewport
+        vp = self._active_view()        # with several views, the active one
         geometry = vp.hlr_geometry() if fast else None
         if vp.camera.perspective:
             return [("VISTA", hlr_perspective(vp.scene, vp.camera,
@@ -10617,7 +10617,7 @@ class MainWindow(QMainWindow):
         from views.svg_export import (SvgBuilder, fitted, framed,
                                       pictured_alone, selection_only,
                                       widened)
-        vp = self.viewport
+        vp = self._active_view()        # with several views, the active one
 
         def image(width_px, axes=True, aspect=None):
             # «Hide the axes»: the picture without them, the view as it was.
@@ -10671,7 +10671,7 @@ class MainWindow(QMainWindow):
         try:
             from core.hlr import (KIND_CUT, KIND_PROFILE, hlr_drawing,
                                   hlr_perspective)
-            vp = self.viewport
+            vp = self._active_view()    # with several views, the active one
             geometry = vp.hlr_geometry()
             solids, texts = [], []
             if vp.camera.perspective:
@@ -10736,9 +10736,10 @@ class MainWindow(QMainWindow):
             return
         # With a camera frame (Camera Settings ▸ Frame) the picture is
         # the framed shot, ``width`` wide, not the whole view.
-        image = self.viewport.render_image(width, sharp_shadows=True,
-                                           transparent=transparent,
-                                           crop_to_frame=True)
+        # With several views, the one worked in, as Styles and Shift+P.
+        image = self._active_view().render_image(
+            width, sharp_shadows=True, transparent=transparent,
+            crop_to_frame=True)
         if image is None or image.isNull() or not image.save(str(path)):
             QMessageBox.critical(self, tr("Export Image failed"),
                                  tr("Could not render or save the image."))
