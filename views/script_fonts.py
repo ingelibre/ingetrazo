@@ -22,7 +22,7 @@ import sys
 #: ships with Windows 8 and later (Lao, Thai and Latin); Lao UI with
 #: Windows 7; Noto Sans Lao when the user installed it.
 SCRIPT_FONTS: dict[str, tuple[str, ...]] = {
-    "lo": ("Leelawadee UI", "Lao UI", "Noto Sans Lao UI", "Noto Sans Lao"),
+    "lo": ("Noto Sans Lao", "Leelawadee UI", "Lao UI"),
 }
 
 #: Platforms whose own font fallback breaks these scripts apart.
