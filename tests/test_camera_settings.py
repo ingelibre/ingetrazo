@@ -841,9 +841,8 @@ def test_after_picking_a_scene_z_then_35mm_works():
         QApplication.processEvents()
         vp, cam = win.viewport, win.viewport.camera
         panel = win.tray.scenes
-        item = next(panel.list.item(k) for k in range(panel.list.count())
-                    if panel.list.item(k).data(Qt.UserRole) is a)
-        panel.list.setFocus()
+        item = panel.row_for(a)                      # the Scenes tree (#1297)
+        panel.tree.setFocus()
         panel._on_activate(item)                     # a double-click
         assert QApplication.focusWidget() is vp
         cam.fov_deg = cam.fov_for_focal(24.0)
@@ -853,7 +852,7 @@ def test_after_picking_a_scene_z_then_35mm_works():
         assert vp.nav_mode == "zoom"
         assert cam.focal_mm == pytest.approx(35.0, abs=0.01)
         # Zoom from its button, the keyboard elsewhere: it comes back.
-        panel.list.setFocus()
+        panel.tree.setFocus()
         win._activate_nav("zoom")
         assert QApplication.focusWidget() is vp
         # Camera Settings opens without taking the keyboard.
