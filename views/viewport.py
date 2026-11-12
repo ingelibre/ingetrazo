@@ -6933,9 +6933,14 @@ class Viewport(QOpenGLWidget):
         visible colour or edges (on-ground shadows). Skipped
         over the map, terrain and photo mesh, which bring their own ground;
         depth writes OFF so below-ground geometry still draws over it and a
-        real floor AT z=0 never z-fights."""
+        real floor AT z=0 never z-fights. Not drawn either when the
+        camera looks at it from below the ground (#1301): a shadow cast
+        on the ground is not seen from underneath."""
         if (self._base_map_showing() or self._terrain_showing()
                 or self._photo_showing()):
+            return
+        z = -0.005
+        if self.camera.sees_from_below(z):
             return
         lo, hi = self.scene.bounds()
         if lo is None:
@@ -6943,7 +6948,6 @@ class Viewport(QOpenGLWidget):
         cx = (lo.x() + hi.x()) / 2.0
         cy = (lo.y() + hi.y()) / 2.0
         r = max(hi.x() - lo.x(), hi.y() - lo.y(), 20.0) * 1.5
-        z = -0.005
         x0, x1, y0, y1 = cx - r, cx + r, cy - r, cy + r
         data = array("f", [x0, y0, z, x1, y0, z, x1, y1, z,
                            x0, y0, z, x1, y1, z, x0, y1, z])
