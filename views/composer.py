@@ -13094,7 +13094,11 @@ class ComposerWindow(QMainWindow):
             by_sig = self._geom_by_sig = {}
         geometry = by_sig.get(sig)
         if geometry is None:
-            geometry = by_sig[sig] = self._collect_geometry_arrays()
+            # From each visible placement's cached arrays — not the
+            # per-face walk, ~20 s on a big plaza (2026-11-12).
+            now = getattr(self._window.viewport, "hlr_geometry_now", None)
+            geometry = by_sig[sig] = (now() if now is not None
+                                      else self._collect_geometry_arrays())
         return geometry
 
     def _scene_circles(self) -> list:

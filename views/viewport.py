@@ -16824,6 +16824,89 @@ class Viewport(QOpenGLWidget):
                  else np.empty(0, dtype=object))
         return tris, hard, soft, soft_n, ttags, htags, stags
 
+    def hlr_geometry_now(self):
+        """:meth:`hlr_geometry` (without tags) with the layers as they are
+        switched NOW, for a sheet frame whose scene shows other layers than
+        the live model. The pick index behind ``hlr_geometry`` leaves out
+        the groups hidden when it was built, so a frame showing them found
+        no walls (#1249); the fallback, ``collect_geometry``'s per-face
+        walk, took ~20 s on Marco's Queñuamarca plaza (2026-11-12) before
+        the first dimension could snap. Here each visible placement's
+        cached chunk lends its arrays — a group hidden from the live view
+        is baked once, the first time a frame asks for it."""
+        import numpy as np
+        scene = self.scene
+        tris_of = getattr(self, "_tris_of", None) or \
+            (lambda f: f.triangulate())
+        nan3 = (float("nan"),) * 3
+        tri_parts: list = []
+        hard_parts: list = []
+        soft_parts: list = []
+        n_parts: list = []
+        lt: list = []
+        for f in scene.faces:
+            if not scene.entity_visible(f):
+                continue
+            for t0, t1, t2 in tris_of(f):
+                lt.append(((t0.x(), t0.y(), t0.z()), (t1.x(), t1.y(), t1.z()),
+                           (t2.x(), t2.y(), t2.z())))
+        if lt:
+            tri_parts.append(np.asarray(lt, dtype=np.float64))
+        lh: list = []
+        ls: list = []
+        ln: list = []
+        for e in scene.loose_mesh.edges:
+            if getattr(e, "hidden", False) or not scene.entity_visible(e):
+                continue
+            p0 = (e.v0.position.x(), e.v0.position.y(), e.v0.position.z())
+            p1 = (e.v1.position.x(), e.v1.position.y(), e.v1.position.z())
+            if getattr(e, "soft", False):
+                fs = [f for f in e.faces if scene.entity_visible(f)]
+                if not fs:
+                    continue
+                na = fs[0].normal()
+                nb = fs[1].normal() if len(fs) > 1 else None
+                ls.append((p0, p1))
+                ln.append(((na.x(), na.y(), na.z()),
+                           nan3 if nb is None else (nb.x(), nb.y(), nb.z())))
+            else:
+                lh.append((p0, p1))
+        if lh:
+            hard_parts.append(np.asarray(lh, dtype=np.float64))
+        if ls:
+            soft_parts.append(np.asarray(ls, dtype=np.float64))
+            n_parts.append(np.asarray(ln, dtype=np.float64))
+        for g in self._placements():
+            if (getattr(g, "billboard", False)
+                    or not scene.entity_visible(g)):
+                continue
+            ch = self._group_chunk(g)
+            v0 = ch.get("v0")
+            if v0 is not None and len(v0):
+                v0 = np.asarray(v0, dtype=np.float64)
+                tri_parts.append(np.stack(
+                    [v0, v0 + np.asarray(ch["e1"], dtype=np.float64),
+                     v0 + np.asarray(ch["e2"], dtype=np.float64)], axis=1))
+            if ch.get("edges"):
+                hard_parts.append(
+                    np.frombuffer(ch["edges"], dtype=np.float32)
+                    .reshape(-1, 2, 3).astype(np.float64))
+            sp = ch.get("soft_pts")
+            if sp is not None and len(sp):
+                soft_parts.append(
+                    np.asarray(sp, dtype=np.float64).reshape(-1, 2, 3))
+                n1 = np.where(np.asarray(ch["soft_single"])[:, None],
+                              np.nan,
+                              np.asarray(ch["soft_n1"], dtype=np.float64))
+                n_parts.append(np.stack(
+                    [np.asarray(ch["soft_n0"], dtype=np.float64), n1],
+                    axis=1))
+
+        def cat(parts, shape):
+            return np.concatenate(parts) if parts else np.empty(shape)
+        return (cat(tri_parts, (0, 3, 3)), cat(hard_parts, (0, 2, 3)),
+                cat(soft_parts, (0, 2, 3)), cat(n_parts, (0, 2, 3)))
+
     def _effective_style(self):
         """The display style this frame draws with (Styles): the
         composer's ``plano_style`` override maps onto the same face modes,
