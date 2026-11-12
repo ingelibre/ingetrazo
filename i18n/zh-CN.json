@@ -3599,9 +3599,7 @@
  "Drag: move these views' lines together": "拖动：一起移动这些视图的分隔线",
  "Transparent background": "透明背景",
  "Only PNG images keep transparency.": "只有 PNG 图像才能保留透明度。",
- "Architect. The units system, the Browser, Layers 2.0, the Solid Inspector, Fillet 3D bevels, Bridge, Join Segments, Camera ▸ Axes, soft ambient occlusion, round curved surfaces, view layouts, scenes as tabs, cleaner exports and many everyday editing tools.": "建筑师。单位系统、浏览器、图层 2.0、实体检查器、Fillet 3D 倒角、桥接、合并线段、相机 ▸ 坐标轴、柔和环境光遮蔽、圆润曲面、视图布局、标签页形式的场景、更整洁的导出，以及许多日常编辑工具。",
  "Italian translation of the interface, and the 3D mouse's axes and navigation profiles.": "界面的意大利语翻译，以及 3D 鼠标的坐标轴和导航配置。",
- "Korean translation of the interface, and the AI key from an environment variable.": "界面的韩语翻译，以及从环境变量读取 AI 密钥。",
  "Sheet dimensions and level marks in the document's units, dimensions that follow their object, Push/Pull fixes and the «System language» choice.": "图纸中按文档单位显示的尺寸和高程标记、跟随对象的尺寸、推/拉的修复，以及“系统语言”选项。",
  "Fixes for the location map, Move's rotation grips, typed values, the Line tool, snapping, long thin rectangles, .skp thumbnails and the extension manager's downloads on Windows, and DWG conversion with a Cancel button.": "修复了位置地图、移动工具的旋转夹点、输入值、线工具、捕捉、细长矩形、.skp 缩略图以及 Windows 上扩展管理器的下载，并为 DWG 转换加入了取消按钮。",
  "Fixes deep in the modelling core: windows cut at a box's corner, lines over other edges, Follow Me's undo and splitting edges.": "深入建模核心的修复：在盒体角部开洞的窗户、与其他边重叠的线、跟随我的撤销以及边的拆分。",
@@ -3762,5 +3760,9 @@
  "Slight": "轻微",
  "Moderate": "适中",
  "Strong": "强烈",
- "Shadow edges that soften away from what casts them, as in daylight. They cost the graphics card more while the sun casts shadows.": "阴影边缘随着远离投影物体而变得柔和,如同日光下一样。太阳投射阴影时会更多占用显卡。"
+ "Shadow edges that soften away from what casts them, as in daylight. They cost the graphics card more while the sun casts shadows.": "阴影边缘随着远离投影物体而变得柔和,如同日光下一样。太阳投射阴影时会更多占用显卡。",
+ "Architect. The units system, the Browser, Layers 2.0, the Solid Inspector, Fillet 3D bevels, Bridge, Join Segments, Camera ▸ Axes, soft ambient occlusion, round curved surfaces, view layouts, scenes as tabs, cleaner exports and many everyday editing tools. And for 0.6.2: the North tool, camera settings, scene transitions with video and the view as layered SVG.": "建筑师。单位系统、浏览器、图层 2.0、实体检查器、Fillet 3D 倒角、桥接、合并线段、相机 ▸ 坐标轴、柔和环境光遮蔽、圆润曲面、视图布局、标签页形式的场景、更整洁的导出，以及许多日常编辑工具。0.6.2 中还有：指北工具、相机设置、带视频的场景过渡，以及分图层的 SVG 视图导出。",
+ "Korean translation of the interface, and the AI key from an environment variable. In 0.6.2, soft shadows and fixes for macOS.": "界面的韩语翻译，以及从环境变量读取 AI 密钥。0.6.2 中还有柔和阴影和 macOS 修复。",
+ "Exact Move+Ctrl copies, overlapping rotated copies, faster box selection on huge models and the reviewed Indonesian translation.": "精确的移动+Ctrl 复制、相互重叠的旋转复制、在超大模型上更快的框选，以及校订后的印尼语翻译。",
+ "Snapping to the rest of the model from inside a group or component.": "在组或组件内部捕捉到模型其余部分。"
 }

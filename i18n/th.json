@@ -3601,9 +3601,7 @@
  "Drag: move these views' lines together": "ลาก: ย้ายเส้นของมุมมองเหล่านี้พร้อมกัน",
  "Transparent background": "พื้นหลังโปร่งใส",
  "Only PNG images keep transparency.": "เฉพาะภาพ PNG เท่านั้นที่คงความโปร่งใสไว้",
- "Architect. The units system, the Browser, Layers 2.0, the Solid Inspector, Fillet 3D bevels, Bridge, Join Segments, Camera ▸ Axes, soft ambient occlusion, round curved surfaces, view layouts, scenes as tabs, cleaner exports and many everyday editing tools.": "สถาปนิก ระบบหน่วย, เบราว์เซอร์, เลเยอร์ 2.0, เครื่องมือตรวจสอบโซลิด, การลบมุมของ Fillet 3D, เชื่อมสะพาน, รวมเส้นย่อย, กล้อง ▸ แกน, แอมเบียนต์ออคคลูชันแบบนุ่ม, พื้นผิวโค้งที่กลมมน, เลย์เอาต์มุมมอง, ฉากแบบแท็บ, การส่งออกที่สะอาดขึ้น และเครื่องมือแก้ไขที่ใช้ประจำวันอีกมากมาย",
  "Italian translation of the interface, and the 3D mouse's axes and navigation profiles.": "คำแปลภาษาอิตาลีของส่วนติดต่อผู้ใช้ รวมทั้งแกนและโปรไฟล์การนำทางของเมาส์ 3D",
- "Korean translation of the interface, and the AI key from an environment variable.": "คำแปลภาษาเกาหลีของส่วนติดต่อผู้ใช้ และคีย์ AI จากตัวแปรสภาพแวดล้อม",
  "Sheet dimensions and level marks in the document's units, dimensions that follow their object, Push/Pull fixes and the «System language» choice.": "เส้นบอกขนาดและสัญลักษณ์บอกระดับในแผ่นงานตามหน่วยของเอกสาร, เส้นบอกขนาดที่ติดตามวัตถุ, การแก้ไขดัน/ดึง และตัวเลือก «ภาษาของระบบ»",
  "Fixes for the location map, Move's rotation grips, typed values, the Line tool, snapping, long thin rectangles, .skp thumbnails and the extension manager's downloads on Windows, and DWG conversion with a Cancel button.": "การแก้ไขแผนที่ตำแหน่ง, จุดจับหมุนของย้าย, ค่าที่พิมพ์, เครื่องมือเส้น, การสแนป, สี่เหลี่ยมผืนผ้ายาวและบาง, ภาพย่อ .skp และการดาวน์โหลดของตัวจัดการส่วนขยายบน Windows รวมถึงการแปลง DWG ที่มีปุ่มยกเลิก",
  "Fixes deep in the modelling core: windows cut at a box's corner, lines over other edges, Follow Me's undo and splitting edges.": "การแก้ไขลึกถึงแกนกลางการขึ้นรูป: หน้าต่างที่ตัดที่มุมกล่อง, เส้นที่ทับขอบอื่น, การเลิกทำของตามเส้นทาง และการแบ่งขอบ",
@@ -3764,5 +3762,9 @@
  "Slight": "เล็กน้อย",
  "Moderate": "ปานกลาง",
  "Strong": "มาก",
- "Shadow edges that soften away from what casts them, as in daylight. They cost the graphics card more while the sun casts shadows.": "ขอบเงานุ่มลงเมื่ออยู่ห่างจากสิ่งที่ทอดเงา เหมือนแสงกลางวัน ใช้การ์ดจอมากขึ้นขณะที่ดวงอาทิตย์ทอดเงา"
+ "Shadow edges that soften away from what casts them, as in daylight. They cost the graphics card more while the sun casts shadows.": "ขอบเงานุ่มลงเมื่ออยู่ห่างจากสิ่งที่ทอดเงา เหมือนแสงกลางวัน ใช้การ์ดจอมากขึ้นขณะที่ดวงอาทิตย์ทอดเงา",
+ "Architect. The units system, the Browser, Layers 2.0, the Solid Inspector, Fillet 3D bevels, Bridge, Join Segments, Camera ▸ Axes, soft ambient occlusion, round curved surfaces, view layouts, scenes as tabs, cleaner exports and many everyday editing tools. And for 0.6.2: the North tool, camera settings, scene transitions with video and the view as layered SVG.": "สถาปนิก ระบบหน่วย, เบราว์เซอร์, เลเยอร์ 2.0, เครื่องมือตรวจสอบโซลิด, การลบมุมของ Fillet 3D, เชื่อมสะพาน, รวมเส้นย่อย, กล้อง ▸ แกน, แอมเบียนต์ออคคลูชันแบบนุ่ม, พื้นผิวโค้งที่กลมมน, เลย์เอาต์มุมมอง, ฉากแบบแท็บ, การส่งออกที่สะอาดขึ้น และเครื่องมือแก้ไขที่ใช้ประจำวันอีกมากมาย และสำหรับ 0.6.2: เครื่องมือทิศเหนือ การตั้งค่ากล้อง การเปลี่ยนฉากพร้อมวิดีโอ และมุมมองเป็น SVG แบบแยกชั้น",
+ "Korean translation of the interface, and the AI key from an environment variable. In 0.6.2, soft shadows and fixes for macOS.": "คำแปลภาษาเกาหลีของส่วนติดต่อผู้ใช้ และคีย์ AI จากตัวแปรสภาพแวดล้อม ใน 0.6.2 มีเงานุ่มและการแก้ไขสำหรับ macOS",
+ "Exact Move+Ctrl copies, overlapping rotated copies, faster box selection on huge models and the reviewed Indonesian translation.": "การคัดลอกด้วย ย้าย+Ctrl ที่แม่นยำ สำเนาที่หมุนแล้วซ้อนทับกัน การเลือกแบบกรอบที่เร็วขึ้นในโมเดลขนาดใหญ่มาก และคำแปลภาษาอินโดนีเซียที่ปรับปรุงแล้ว",
+ "Snapping to the rest of the model from inside a group or component.": "การสแนปกับส่วนอื่นของโมเดลจากภายในกลุ่มหรือคอมโพเนนต์"
 }

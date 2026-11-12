@@ -3598,9 +3598,7 @@
  "Drag: move these views' lines together": "드래그: 이 뷰들의 선을 함께 이동",
  "Transparent background": "투명 배경",
  "Only PNG images keep transparency.": "PNG 이미지만 투명도를 유지합니다.",
- "Architect. The units system, the Browser, Layers 2.0, the Solid Inspector, Fillet 3D bevels, Bridge, Join Segments, Camera ▸ Axes, soft ambient occlusion, round curved surfaces, view layouts, scenes as tabs, cleaner exports and many everyday editing tools.": "건축가. 단위 시스템, 브라우저, 레이어 2.0, 솔리드 검사기, Fillet 3D 모따기, 브리지, 세그먼트 연결, 카메라 ▸ 축, 부드러운 앰비언트 오클루전, 둥근 곡면, 뷰 레이아웃, 탭으로 된 장면, 더 깔끔한 내보내기 및 다양한 일상 편집 도구.",
  "Italian translation of the interface, and the 3D mouse's axes and navigation profiles.": "인터페이스 이탈리아어 번역, 그리고 3D 마우스의 축과 탐색 프로필.",
- "Korean translation of the interface, and the AI key from an environment variable.": "인터페이스 한국어 번역, 그리고 환경 변수에서 읽는 AI 키.",
  "Sheet dimensions and level marks in the document's units, dimensions that follow their object, Push/Pull fixes and the «System language» choice.": "문서 단위로 표시되는 시트 치수와 레벨 표시, 객체를 따라가는 치수, 밀기/끌기 수정 및 «시스템 언어» 선택.",
  "Fixes for the location map, Move's rotation grips, typed values, the Line tool, snapping, long thin rectangles, .skp thumbnails and the extension manager's downloads on Windows, and DWG conversion with a Cancel button.": "위치 지도, 이동의 회전 그립, 입력 값, 선 도구, 스냅, 길고 가는 사각형, .skp 썸네일, Windows의 확장 기능 관리자 다운로드 수정, 그리고 취소 버튼이 있는 DWG 변환.",
  "Fixes deep in the modelling core: windows cut at a box's corner, lines over other edges, Follow Me's undo and splitting edges.": "모델링 코어 깊숙한 곳의 수정: 상자 모서리에서 잘리는 창, 다른 모서리 위의 선, 따라가기의 실행 취소, 모서리 분할.",
@@ -3761,5 +3759,9 @@
  "Slight": "약하게",
  "Moderate": "보통",
  "Strong": "강하게",
- "Shadow edges that soften away from what casts them, as in daylight. They cost the graphics card more while the sun casts shadows.": "그림자를 드리우는 물체에서 멀어질수록 그림자 가장자리가 부드러워집니다(햇빛 아래처럼). 해가 그림자를 드리우는 동안 그래픽 카드를 더 많이 사용합니다."
+ "Shadow edges that soften away from what casts them, as in daylight. They cost the graphics card more while the sun casts shadows.": "그림자를 드리우는 물체에서 멀어질수록 그림자 가장자리가 부드러워집니다(햇빛 아래처럼). 해가 그림자를 드리우는 동안 그래픽 카드를 더 많이 사용합니다.",
+ "Architect. The units system, the Browser, Layers 2.0, the Solid Inspector, Fillet 3D bevels, Bridge, Join Segments, Camera ▸ Axes, soft ambient occlusion, round curved surfaces, view layouts, scenes as tabs, cleaner exports and many everyday editing tools. And for 0.6.2: the North tool, camera settings, scene transitions with video and the view as layered SVG.": "건축가. 단위 시스템, 브라우저, 레이어 2.0, 솔리드 검사기, Fillet 3D 모따기, 브리지, 세그먼트 연결, 카메라 ▸ 축, 부드러운 앰비언트 오클루전, 둥근 곡면, 뷰 레이아웃, 탭으로 된 장면, 더 깔끔한 내보내기 및 다양한 일상 편집 도구. 0.6.2에서는 북쪽 도구, 카메라 설정, 동영상을 포함한 장면 전환, 레이어별 SVG 보기 내보내기도.",
+ "Korean translation of the interface, and the AI key from an environment variable. In 0.6.2, soft shadows and fixes for macOS.": "인터페이스 한국어 번역, 그리고 환경 변수에서 읽는 AI 키. 0.6.2에서는 부드러운 그림자와 macOS 수정도.",
+ "Exact Move+Ctrl copies, overlapping rotated copies, faster box selection on huge models and the reviewed Indonesian translation.": "정확한 이동+Ctrl 복사, 겹치는 회전 복사, 거대한 모델에서 더 빠른 상자 선택, 그리고 검토된 인도네시아어 번역.",
+ "Snapping to the rest of the model from inside a group or component.": "그룹이나 컴포넌트 안에서 모델의 나머지 부분으로 스냅."
 }

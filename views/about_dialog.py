@@ -46,7 +46,9 @@ CONTRIBUTORS = [
      "Architect. The units system, the Browser, Layers 2.0, the Solid "
      "Inspector, Fillet 3D bevels, Bridge, Join Segments, Camera ▸ Axes, "
      "soft ambient occlusion, round curved surfaces, view layouts, scenes "
-     "as tabs, cleaner exports and many everyday editing tools.",
+     "as tabs, cleaner exports and many everyday editing tools. And for "
+     "0.6.2: the North tool, camera settings, scene transitions with video "
+     "and the view as layered SVG.",
      "https://github.com/canalsecuario-blip"),
     ("Félix Riestra",
      "The macOS package: IngeTrazo for Mac. Components that come apart "
@@ -144,7 +146,7 @@ CONTRIBUTORS = [
      "https://github.com/PRIDA-TAKON"),
     ("ChangWoo Lee",
      "Korean translation of the interface, and the AI key from an "
-     "environment variable.",
+     "environment variable. In 0.6.2, soft shadows and fixes for macOS.",
      "https://github.com/ultracat"),
     ("nonasige-ui",
      "Japanese translation of the interface.",
@@ -260,6 +262,13 @@ CONTRIBUTORS = [
      ".skp components scaled by −1 that keep their front, and nested "
      "groups that wear their nearest painted container.",
      "https://github.com/alteralto"),
+    ("Reza Prama Arviandi",
+     "Exact Move+Ctrl copies, overlapping rotated copies, faster box "
+     "selection on huge models and the reviewed Indonesian translation.",
+     "https://github.com/rezaprama"),
+    ("Francesco Fantoni",
+     "Snapping to the rest of the model from inside a group or component.",
+     "https://github.com/hvfrancesco"),
     ("Aashish — IngeTrazo Tutorials",
      "The IngeTrazo Tutorials channel on YouTube, and nine extensions: "
      "MultiView, Phasing Animator, Kitchen Maker, Taper and more.",

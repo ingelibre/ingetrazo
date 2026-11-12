@@ -51,6 +51,8 @@ reports and the work they carried); they also come first in Help ▸ About.
     snap where an edge pierces a face (#1169), shapes anchored on the face
     under the cursor (#1171), and the Protractor and Rotate disc and plane
     lock (#1208, #1220).
+    For 0.6.2: Align View (#1374), analytic guide circles (#1031) and the
+    planar tools' lock near the horizon (#1171).
 
 ★ Rafael García Rodríguez — "Rafael 3D" (youtube.com/@Rafa3D)
     Draftsman and 3D modelling reviewer.
@@ -135,6 +137,14 @@ dafrobozao <dafrobozao.93@gmail.com>  (github.com/dafrobozao)
     Component on a group that stays on screen (#1150), the wheel's double
     click (#1154), the shortcuts by menu (#1157), GLB pictures the right way
     up (#1159) and Bridge arches that no longer cross (#1164).
+    For 0.6.2: the view exported as layered SVG (#1331), the North tool
+    (#1330), Camera Settings (#1332), scene transitions, Play and video
+    (#1342), cut weight and hatch per layer (#1100), the Scenes tab with
+    folders and thumbnails (#1297), the Slate theme (#1292), icon tabs
+    (#1142), several views each with its own style (#1307), Create Faces
+    (#1143), Push/Pull on several faces (#1298), the Face Centre snap (#736),
+    the 3D text font preview (#1309), centimetres at start and Ctrl+, (#1284,
+    #1285).
 
 José Castro Basso — FADU–UDELAR, Montevideo  (github.com/castrobasso)
     Architect and teacher of architectural representation. Two-point
@@ -252,6 +262,7 @@ vandang890615  (github.com/vandang890615)
 BoneNI  (github.com/bounkirdni-2025)
     Lao translation of the interface.
     Offered again in 0.6.0, now that its marks compose on Windows (#850).
+    For 0.6.2: Noto Sans Lao for Lao on Windows (#1323).
 
 Prida Takon  (github.com/PRIDA-TAKON)
     Thai translation of the interface.
@@ -261,6 +272,11 @@ ChangWoo Lee <ultracat.lcw@gmail.com>  (github.com/ultracat)
     Korean translation of the interface.
     For 0.6.0: the AI key read from an environment variable when the field
     is empty (#998, #1014).
+    For 0.6.2: soft shadows (#1324), the Mac crash on importing a .skp with
+    scenes (#1321, #1322), no shadows from below the ground (#1345), the ramp
+    down a curved edge (#1346), a line that splits a 1 mm face (#1369), the
+    project tabs' height on Mac (#1351), the extension manager's labels
+    (#1352) and tests that pass on macOS (#1350, #1353).
 
 nonasige-ui  (github.com/nonasige-ui)
     Japanese translation of the interface.
@@ -307,11 +323,15 @@ Victor Crespo  (github.com/vicc3d)
     (#966), Move copy keeping a copied face's hole open (#1027), undoing an
     import bringing back what it removed (#1073) and DAE/glTF nodes placed
     twice no longer multiplying the walk (#1001).
+    For 0.6.2: what is hidden inside a group left out of sheets and exports
+    (#1204), the parts tray reading a shared definition once (#1237) and the
+    3D terrain kept in the document (#1238).
 
 APBureauEtude  (github.com/APBureauEtude)
     OBJ and MTL files read and written as UTF-8 on every platform (#523).
     For 0.6.0: the active layer's pencil in the accent colour (#1018) and
     a clearer view of where you are when editing a group (#947).
+    For 0.6.2: snapping to locked groups and components (#1250).
 
 SebWell  (github.com/SebWell)
     The macOS package no longer bundles the Linux dwg2dxf (#515).
@@ -353,6 +373,10 @@ tony1233200  (github.com/tony1233200)
     Move's rotation grips kept inside a group's box (#871, #978), and a
     faster viewer: cheaper dimensions (#439, #976), the still view saved
     once (#944, #973) and boxes without known bounds kept (#952, #972).
+    For 0.6.2: erasing a hole's edge (#1291), .skp dimensions and leader texts
+    inside groups (#1288), autosave and APPDATA on Windows (#1286), a close
+    during the startup open (#1289), the Qt colour picker translated (#1290)
+    and the BIM volume of a set of faces (#1264).
 
 Bogdan Demchenko  (github.com/hamzah1985)
     Extension toolbars back where they were saved after the asynchronous
@@ -387,6 +411,9 @@ BastelBaus  (github.com/BastelBaus)
     tags inside groups (#1035) and Help ▸ Documentation (#1036).
     For 0.6.1: {sheet_name} and title-block fields that read the edited rows
     (#1168).
+    For 0.6.2: sheet dimensions with the label below or flipped, a text gap
+    and snaps to lines (#1249), dimensions on edges (#933) and all sheets to
+    PDF from the command line (#1055).
 
 David  (github.com/Booshdag-io)
     The choice of tool cursor in Preferences: the tool's icon, the classic
@@ -405,6 +432,7 @@ xcd-droid  (github.com/xcd-droid)
 
 Oleksandr Bolotov (https://github.com/bolotov)
     Ukrainian translation of the interface.
+    For 0.6.2: missing Ukrainian strings and fixes (#1295).
 
 Amer Alhlhli (https://github.com/Alhlhli)
     Arabic translation of the interface.
@@ -418,6 +446,8 @@ Alexey Tkachenko  (github.com/alteralto)
     Pieces of a .skp component scaled by −1 keep their front (#1045, #1065).
     For 0.6.1: nested groups that wear their nearest painted container
     (#1156) and layer marks repainted on a theme switch (#1128).
+    For 0.6.2: Hidden Geometry shows the soft edges of curves and bevels
+    (#1363) and a rounded corner rounds again with a larger arc (#1367).
 
 Aashish — IngeTrazo Tutorials  (github.com/aashishzharbade-arch)
     The IngeTrazo Tutorials channel on YouTube, which shows the program,
@@ -443,6 +473,18 @@ KuoYaMu  (github.com/KuoYaMu)
 
 DarkBiscuits  (github.com/DarkBiscuits)
     The .skp component that came in 10 000 times too big, traced (#1196).
+
+Reza Prama Arviandi  (github.com/rezaprama)
+    Engineer, Indonesia.
+    For 0.6.2: Move+Ctrl copies exactly (#1360) and leaves the copies
+    selected (#1359), overlapping Rotate+Ctrl copies cut into one another
+    (#1368), box selection on very large models (#1370) and the reviewed
+    Indonesian translation with its guides and manuals (#1358).
+
+Francesco Fantoni  (github.com/hvfrancesco)
+    Modena, Italy.
+    For 0.6.2: inside a group or component, the rest of the model snaps
+    again (#1327).
 
 ---
 

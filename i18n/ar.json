@@ -3631,9 +3631,7 @@
  "Drag: move these views' lines together": "اسحب: حرّك خطوط هذه العروض معًا",
  "Transparent background": "خلفية شفافة",
  "Only PNG images keep transparency.": "صور PNG وحدها تحتفظ بالشفافية.",
- "Architect. The units system, the Browser, Layers 2.0, the Solid Inspector, Fillet 3D bevels, Bridge, Join Segments, Camera ▸ Axes, soft ambient occlusion, round curved surfaces, view layouts, scenes as tabs, cleaner exports and many everyday editing tools.": "مهندس معماري. نظام الوحدات، والمتصفح، والطبقات 2.0، وفاحص المجسمات المصمتة، وشطفات Fillet 3D، والجسر، والانضمام إلى الشرائح، والكاميرا ▸ المحاور، والإطباق المحيطي الناعم، والأسطح المنحنية المستديرة، وتخطيطات العرض، والمشاهد كعلامات تبويب، وتصدير أنظف، والعديد من أدوات التحرير اليومية.",
  "Italian translation of the interface, and the 3D mouse's axes and navigation profiles.": "الترجمة الإيطالية للواجهة، ومحاور الفأرة ثلاثية الأبعاد وملفات تعريف التنقل الخاصة بها.",
- "Korean translation of the interface, and the AI key from an environment variable.": "الترجمة الكورية للواجهة، ومفتاح الذكاء الاصطناعي من متغير بيئة.",
  "Sheet dimensions and level marks in the document's units, dimensions that follow their object, Push/Pull fixes and the «System language» choice.": "أبعاد اللوحات وعلامات المناسيب بوحدات المستند، وأبعاد تتبع كائنها، وإصلاحات دفع / سحب، وخيار «لغة النظام».",
  "Fixes for the location map, Move's rotation grips, typed values, the Line tool, snapping, long thin rectangles, .skp thumbnails and the extension manager's downloads on Windows, and DWG conversion with a Cancel button.": "إصلاحات لخريطة الموقع، ومقابض الدوران في تحريك، والقيم المكتوبة، وأداة خط، والالتقاط، والمستطيلات الطويلة الرفيعة، والصور المصغرة لملفات .skp، وتنزيلات مدير الإضافات على Windows، وتحويل DWG مع زر إلغاء.",
  "Fixes deep in the modelling core: windows cut at a box's corner, lines over other edges, Follow Me's undo and splitting edges.": "إصلاحات في عمق نواة النمذجة: نوافذ مقطوعة عند زاوية صندوق، وخطوط فوق حواف أخرى، والتراجع في اتبعني، وتقسيم الحواف.",
@@ -3796,5 +3794,9 @@
  "Strong": "قوية",
  "Shadow edges that soften away from what casts them, as in daylight. They cost the graphics card more while the sun casts shadows.": "حواف ظل تلين كلما ابتعدت عمّا يلقيها، كما في ضوء النهار. تُثقل بطاقة الرسوميات أكثر ما دامت الشمس تلقي الظلال.",
  "outside the group": "خارج المجموعة",
- "outside the component": "خارج المكون"
+ "outside the component": "خارج المكون",
+ "Architect. The units system, the Browser, Layers 2.0, the Solid Inspector, Fillet 3D bevels, Bridge, Join Segments, Camera ▸ Axes, soft ambient occlusion, round curved surfaces, view layouts, scenes as tabs, cleaner exports and many everyday editing tools. And for 0.6.2: the North tool, camera settings, scene transitions with video and the view as layered SVG.": "مهندس معماري. نظام الوحدات، والمتصفح، والطبقات 2.0، وفاحص المجسمات المصمتة، وشطفات Fillet 3D، والجسر، والانضمام إلى الشرائح، والكاميرا ▸ المحاور، والإطباق المحيطي الناعم، والأسطح المنحنية المستديرة، وتخطيطات العرض، والمشاهد كعلامات تبويب، وتصدير أنظف، والعديد من أدوات التحرير اليومية. وفي 0.6.2: أداة الشمال، وإعدادات الكاميرا، وانتقالات المشاهد مع الفيديو، والعرض بصيغة SVG بطبقات.",
+ "Korean translation of the interface, and the AI key from an environment variable. In 0.6.2, soft shadows and fixes for macOS.": "الترجمة الكورية للواجهة، ومفتاح الذكاء الاصطناعي من متغير بيئة. وفي 0.6.2: الظلال الناعمة وإصلاحات لنظام macOS.",
+ "Exact Move+Ctrl copies, overlapping rotated copies, faster box selection on huge models and the reviewed Indonesian translation.": "نسخ دقيقة بـ Move+Ctrl، ونسخ مدوَّرة متداخلة، وتحديد بالمربع أسرع في النماذج الضخمة، ومراجعة الترجمة الإندونيسية.",
+ "Snapping to the rest of the model from inside a group or component.": "الالتقاط إلى بقية النموذج من داخل مجموعة أو مكوّن."
 }

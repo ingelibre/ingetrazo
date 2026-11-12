@@ -3601,9 +3601,7 @@
  "Drag: move these views' lines together": "ລາກ: ຍ້າຍເສັ້ນຂອງມຸມມອງເຫຼົ່ານີ້ພ້ອມກັນ",
  "Transparent background": "ພື້ນຫຼັງໂປ່ງໃສ",
  "Only PNG images keep transparency.": "ມີພຽງຮູບ PNG ເທົ່ານັ້ນທີ່ຮັກສາຄວາມໂປ່ງໃສໄວ້.",
- "Architect. The units system, the Browser, Layers 2.0, the Solid Inspector, Fillet 3D bevels, Bridge, Join Segments, Camera ▸ Axes, soft ambient occlusion, round curved surfaces, view layouts, scenes as tabs, cleaner exports and many everyday editing tools.": "ສະຖາປະນິກ. ລະບົບຫົວໜ່ວຍ, ໂປຣແກຣມທ່ອງເບິ່ງ, ຊັ້ນວຽກ 2.0, ຕົວກວດຮູບຊົງຕັນ (Solid Inspector), ການລົບມຸມຂອງ Fillet 3D, ຂົວເຊື່ອມ, ເຊື່ອມຕໍ່ທ່ອນເສັ້ນ, ກ້ອງ ▸ ແກນ, ການບັງແສງລອບຂ້າງແບບອ່ອນ, ພື້ນຜິວໂຄ້ງທີ່ມົນ, ການຈັດວາງມຸມມອງ, ສາກເປັນແຖບ, ການສົ່ງອອກທີ່ສະອາດຂຶ້ນ ແລະ ເຄື່ອງມືແກ້ໄຂປະຈຳວັນອີກຫຼາຍຢ່າງ.",
  "Italian translation of the interface, and the 3D mouse's axes and navigation profiles.": "ການແປສ່ວນຕິດຕໍ່ເປັນພາສາອິຕາລີ, ພ້ອມທັງແກນ ແລະ ໂປຣໄຟລ໌ການນຳທາງຂອງເມົ້າ 3D.",
- "Korean translation of the interface, and the AI key from an environment variable.": "ການແປສ່ວນຕິດຕໍ່ເປັນພາສາເກົາຫຼີ, ແລະ ກະແຈ AI ຈາກຕົວແປສະພາບແວດລ້ອມ.",
  "Sheet dimensions and level marks in the document's units, dimensions that follow their object, Push/Pull fixes and the «System language» choice.": "ເສັ້ນບອກຂະໜາດ ແລະ ສັນຍະລັກບອກລະດັບໃນແຜ່ນງານຕາມຫົວໜ່ວຍຂອງເອກະສານ, ເສັ້ນບອກຂະໜາດທີ່ຕິດຕາມວັດຖຸ, ການແກ້ໄຂ ຍູ້/ດຶງ ແລະ ຕົວເລືອກ «ພາສາຂອງລະບົບ».",
  "Fixes for the location map, Move's rotation grips, typed values, the Line tool, snapping, long thin rectangles, .skp thumbnails and the extension manager's downloads on Windows, and DWG conversion with a Cancel button.": "ການແກ້ໄຂແຜນທີ່ສະຖານທີ່, ຈຸດຈັບໝູນຂອງ ຍ້າຍ, ຄ່າທີ່ພິມ, ເຄື່ອງມືເສັ້ນ, ການດູດຈຸດ, ຮູບສີ່ແຈສາກຍາວ ແລະ ບາງ, ຮູບຫຍໍ້ .skp ແລະ ການດາວໂຫຼດຂອງຕົວຈັດການສ່ວນຂະຫຍາຍໃນ Windows, ພ້ອມການແປງ DWG ທີ່ມີປຸ່ມຍົກເລີກ.",
  "Fixes deep in the modelling core: windows cut at a box's corner, lines over other edges, Follow Me's undo and splitting edges.": "ການແກ້ໄຂເລິກໃນແກນກາງການສ້າງແບບຈຳລອງ: ປ່ອງຢ້ຽມທີ່ຕັດຢູ່ມຸມກ່ອງ, ເສັ້ນທີ່ທັບຂອບອື່ນ, ການຍົກເລີກຂອງ ດຶງຮູບຕາມເສັ້ນ ແລະ ການແບ່ງຂອບ.",
@@ -3764,5 +3762,9 @@
  "Slight": "ເລັກນ້ອຍ",
  "Moderate": "ປານກາງ",
  "Strong": "ຫຼາຍ",
- "Shadow edges that soften away from what casts them, as in daylight. They cost the graphics card more while the sun casts shadows.": "ຂອບເງົາອ່ອນລົງເມື່ອຢູ່ຫ່າງຈາກສິ່ງທີ່ທອດເງົາ ຄືກັບແສງກາງເວັນ. ໃຊ້ກາດຈໍຫຼາຍຂຶ້ນໃນຂະນະທີ່ດວງອາທິດທອດເງົາ."
+ "Shadow edges that soften away from what casts them, as in daylight. They cost the graphics card more while the sun casts shadows.": "ຂອບເງົາອ່ອນລົງເມື່ອຢູ່ຫ່າງຈາກສິ່ງທີ່ທອດເງົາ ຄືກັບແສງກາງເວັນ. ໃຊ້ກາດຈໍຫຼາຍຂຶ້ນໃນຂະນະທີ່ດວງອາທິດທອດເງົາ.",
+ "Architect. The units system, the Browser, Layers 2.0, the Solid Inspector, Fillet 3D bevels, Bridge, Join Segments, Camera ▸ Axes, soft ambient occlusion, round curved surfaces, view layouts, scenes as tabs, cleaner exports and many everyday editing tools. And for 0.6.2: the North tool, camera settings, scene transitions with video and the view as layered SVG.": "ສະຖາປະນິກ. ລະບົບຫົວໜ່ວຍ, ໂປຣແກຣມທ່ອງເບິ່ງ, ຊັ້ນວຽກ 2.0, ຕົວກວດຮູບຊົງຕັນ (Solid Inspector), ການລົບມຸມຂອງ Fillet 3D, ຂົວເຊື່ອມ, ເຊື່ອມຕໍ່ທ່ອນເສັ້ນ, ກ້ອງ ▸ ແກນ, ການບັງແສງລອບຂ້າງແບບອ່ອນ, ພື້ນຜິວໂຄ້ງທີ່ມົນ, ການຈັດວາງມຸມມອງ, ສາກເປັນແຖບ, ການສົ່ງອອກທີ່ສະອາດຂຶ້ນ ແລະ ເຄື່ອງມືແກ້ໄຂປະຈຳວັນອີກຫຼາຍຢ່າງ. ແລະສຳລັບ 0.6.2: ເຄື່ອງມືທິດເໜືອ, ການຕັ້ງຄ່າກ້ອງ, ການປ່ຽນສາກພ້ອມວິດີໂອ ແລະ ມຸມມອງເປັນ SVG ແບບຊັ້ນ.",
+ "Korean translation of the interface, and the AI key from an environment variable. In 0.6.2, soft shadows and fixes for macOS.": "ການແປສ່ວນຕິດຕໍ່ເປັນພາສາເກົາຫຼີ, ແລະ ກະແຈ AI ຈາກຕົວແປສະພາບແວດລ້ອມ. ໃນ 0.6.2, ເງົາອ່ອນ ແລະ ການແກ້ໄຂສຳລັບ macOS.",
+ "Exact Move+Ctrl copies, overlapping rotated copies, faster box selection on huge models and the reviewed Indonesian translation.": "ການສຳເນົາດ້ວຍ ຍ້າຍ+Ctrl ທີ່ຖືກຕ້ອງ, ສຳເນົາທີ່ໝູນແລ້ວຊ້ອນກັນ, ການເລືອກແບບກອບທີ່ໄວຂຶ້ນໃນແບບຈຳລອງຂະໜາດໃຫຍ່ ແລະ ການແປພາສາອິນໂດເນເຊຍທີ່ທົບທວນແລ້ວ.",
+ "Snapping to the rest of the model from inside a group or component.": "ການຍຶດຕິດກັບສ່ວນອື່ນຂອງແບບຈຳລອງຈາກພາຍໃນກຸ່ມ ຫຼື ອົງປະກອບ."
 }

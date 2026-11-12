@@ -3625,9 +3625,7 @@
  "Drag: move these views' lines together": "Kéo: di chuyển các đường của những khung nhìn này cùng nhau",
  "Transparent background": "Nền trong suốt",
  "Only PNG images keep transparency.": "Chỉ ảnh PNG mới giữ được độ trong suốt.",
- "Architect. The units system, the Browser, Layers 2.0, the Solid Inspector, Fillet 3D bevels, Bridge, Join Segments, Camera ▸ Axes, soft ambient occlusion, round curved surfaces, view layouts, scenes as tabs, cleaner exports and many everyday editing tools.": "Kiến trúc sư. Hệ thống đơn vị, Trình duyệt, Các lớp 2.0, Kiểm tra khối đặc, vát cạnh Fillet 3D, Bắc cầu, Nối các đoạn thẳng, Camera ▸ Trục, che khuất môi trường mềm, bề mặt cong bo tròn, bố cục khung nhìn, cảnh dạng thẻ, xuất tệp gọn gàng hơn và nhiều công cụ chỉnh sửa thường ngày.",
  "Italian translation of the interface, and the 3D mouse's axes and navigation profiles.": "Bản dịch giao diện tiếng Ý, cùng các trục và hồ sơ điều hướng của chuột 3D.",
- "Korean translation of the interface, and the AI key from an environment variable.": "Bản dịch giao diện tiếng Hàn, và khóa AI lấy từ biến môi trường.",
  "Sheet dimensions and level marks in the document's units, dimensions that follow their object, Push/Pull fixes and the «System language» choice.": "Kích thước và dấu cao độ trên bản vẽ theo đơn vị của tài liệu, kích thước bám theo đối tượng, sửa lỗi Đẩy/Kéo và tùy chọn «Ngôn ngữ hệ thống».",
  "Fixes for the location map, Move's rotation grips, typed values, the Line tool, snapping, long thin rectangles, .skp thumbnails and the extension manager's downloads on Windows, and DWG conversion with a Cancel button.": "Sửa lỗi bản đồ vị trí, tay nắm xoay của Di chuyển, giá trị nhập, công cụ Đường thẳng, bắt điểm, hình chữ nhật dài và mảnh, ảnh thu nhỏ .skp và tải xuống của trình quản lý tiện ích mở rộng trên Windows, cùng chuyển đổi DWG có nút Hủy.",
  "Fixes deep in the modelling core: windows cut at a box's corner, lines over other edges, Follow Me's undo and splitting edges.": "Sửa lỗi sâu trong lõi dựng hình: cửa sổ cắt tại góc hộp, đường nằm trên các cạnh khác, hoàn tác của Đi theo đường dẫn và việc chia cạnh.",
@@ -3788,5 +3786,9 @@
  "Slight": "Nhẹ",
  "Moderate": "Vừa",
  "Strong": "Mạnh",
- "Shadow edges that soften away from what casts them, as in daylight. They cost the graphics card more while the sun casts shadows.": "Mép bóng mềm dần khi xa vật đổ bóng, như dưới ánh sáng ban ngày. Tốn thêm card đồ họa khi mặt trời đổ bóng."
+ "Shadow edges that soften away from what casts them, as in daylight. They cost the graphics card more while the sun casts shadows.": "Mép bóng mềm dần khi xa vật đổ bóng, như dưới ánh sáng ban ngày. Tốn thêm card đồ họa khi mặt trời đổ bóng.",
+ "Architect. The units system, the Browser, Layers 2.0, the Solid Inspector, Fillet 3D bevels, Bridge, Join Segments, Camera ▸ Axes, soft ambient occlusion, round curved surfaces, view layouts, scenes as tabs, cleaner exports and many everyday editing tools. And for 0.6.2: the North tool, camera settings, scene transitions with video and the view as layered SVG.": "Kiến trúc sư. Hệ thống đơn vị, Trình duyệt, Các lớp 2.0, Kiểm tra khối đặc, vát cạnh Fillet 3D, Bắc cầu, Nối các đoạn thẳng, Camera ▸ Trục, che khuất môi trường mềm, bề mặt cong bo tròn, bố cục khung nhìn, cảnh dạng thẻ, xuất tệp gọn gàng hơn và nhiều công cụ chỉnh sửa thường ngày. Và ở 0.6.2: công cụ Hướng Bắc, cài đặt camera, chuyển cảnh kèm video và xuất khung nhìn thành SVG theo lớp.",
+ "Korean translation of the interface, and the AI key from an environment variable. In 0.6.2, soft shadows and fixes for macOS.": "Bản dịch giao diện tiếng Hàn, và khóa AI lấy từ biến môi trường. Ở 0.6.2, bóng đổ mềm và các bản sửa cho macOS.",
+ "Exact Move+Ctrl copies, overlapping rotated copies, faster box selection on huge models and the reviewed Indonesian translation.": "Bản sao chính xác bằng Di chuyển+Ctrl, bản sao xoay chồng lên nhau, chọn bằng khung nhanh hơn trên mô hình rất lớn và bản dịch tiếng Indonesia đã được rà soát.",
+ "Snapping to the rest of the model from inside a group or component.": "Bắt điểm vào phần còn lại của mô hình từ bên trong nhóm hoặc thành phần."
 }
