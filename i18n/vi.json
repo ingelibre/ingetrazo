@@ -3781,5 +3781,10 @@
  "Video export cancelled.": "Đã huỷ xuất video.",
  "Scenes as Video (.mkv)…": "Các cảnh thành video (.mkv)…",
  "Save the scenes as a video: the camera glides from one to the next, with the times of Camera ▸ Animation.": "Lưu các cảnh thành video: camera lướt từ cảnh này sang cảnh tiếp theo, theo thời gian trong Camera ▸ Hoạt cảnh.",
- "Export Video (.mkv)…": "Xuất video (.mkv)…"
+ "Export Video (.mkv)…": "Xuất video (.mkv)…",
+ "Soft sun shadows": "Bóng nắng mềm",
+ "Slight": "Nhẹ",
+ "Moderate": "Vừa",
+ "Strong": "Mạnh",
+ "Shadow edges that soften away from what casts them, as in daylight. They cost the graphics card more while the sun casts shadows.": "Mép bóng mềm dần khi xa vật đổ bóng, như dưới ánh sáng ban ngày. Tốn thêm card đồ họa khi mặt trời đổ bóng."
 }

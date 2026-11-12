@@ -3757,5 +3757,10 @@
  "Video export cancelled.": "Ekspor video dibatalkan.",
  "Scenes as Video (.mkv)…": "Scene sebagai video (.mkv)…",
  "Save the scenes as a video: the camera glides from one to the next, with the times of Camera ▸ Animation.": "Menyimpan scene sebagai video: kamera meluncur dari satu ke berikutnya, dengan waktu dari Kamera ▸ Animasi.",
- "Export Video (.mkv)…": "Ekspor video (.mkv)…"
+ "Export Video (.mkv)…": "Ekspor video (.mkv)…",
+ "Soft sun shadows": "Bayangan matahari lembut",
+ "Slight": "Ringan",
+ "Moderate": "Sedang",
+ "Strong": "Kuat",
+ "Shadow edges that soften away from what casts them, as in daylight. They cost the graphics card more while the sun casts shadows.": "Tepi bayangan melembut makin jauh dari benda yang menjatuhkannya, seperti di siang hari. Lebih membebani kartu grafis selama matahari menjatuhkan bayangan."
 }

@@ -3757,5 +3757,10 @@
  "Video export cancelled.": "ຍົກເລີກການສົ່ງອອກວິດີໂອແລ້ວ",
  "Scenes as Video (.mkv)…": "ສາກເປັນວິດີໂອ (.mkv)…",
  "Save the scenes as a video: the camera glides from one to the next, with the times of Camera ▸ Animation.": "ບັນທຶກສາກເປັນວິດີໂອ: ກ້ອງເລື່ອນຈາກສາກໜຶ່ງໄປຫາສາກຕໍ່ໄປ ຕາມເວລາໃນ ກ້ອງສ່ອງ ▸ ພາບເຄື່ອນໄຫວ",
- "Export Video (.mkv)…": "ສົ່ງອອກວິດີໂອ (.mkv)…"
+ "Export Video (.mkv)…": "ສົ່ງອອກວິດີໂອ (.mkv)…",
+ "Soft sun shadows": "ເງົາແດດແບບອ່ອນ",
+ "Slight": "ເລັກນ້ອຍ",
+ "Moderate": "ປານກາງ",
+ "Strong": "ຫຼາຍ",
+ "Shadow edges that soften away from what casts them, as in daylight. They cost the graphics card more while the sun casts shadows.": "ຂອບເງົາອ່ອນລົງເມື່ອຢູ່ຫ່າງຈາກສິ່ງທີ່ທອດເງົາ ຄືກັບແສງກາງເວັນ. ໃຊ້ກາດຈໍຫຼາຍຂຶ້ນໃນຂະນະທີ່ດວງອາທິດທອດເງົາ."
 }

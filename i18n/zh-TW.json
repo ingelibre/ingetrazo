@@ -3755,5 +3755,10 @@
  "Video export cancelled.": "已取消匯出影片。",
  "Scenes as Video (.mkv)…": "場景匯出為影片 (.mkv)…",
  "Save the scenes as a video: the camera glides from one to the next, with the times of Camera ▸ Animation.": "將場景儲存為影片：鏡頭從一個場景平滑移動到下一個，時間取自 鏡頭 ▸ 動畫。",
- "Export Video (.mkv)…": "匯出影片 (.mkv)…"
+ "Export Video (.mkv)…": "匯出影片 (.mkv)…",
+ "Soft sun shadows": "柔和的陽光陰影",
+ "Slight": "輕微",
+ "Moderate": "適中",
+ "Strong": "強烈",
+ "Shadow edges that soften away from what casts them, as in daylight. They cost the graphics card more while the sun casts shadows.": "陰影邊緣隨著遠離投影物體而變得柔和,如同日光下一樣。太陽投射陰影時會更多佔用顯示卡。"
 }

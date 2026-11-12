@@ -3754,5 +3754,10 @@
  "Video export cancelled.": "비디오 내보내기를 취소했습니다.",
  "Scenes as Video (.mkv)…": "장면을 비디오로 (.mkv)…",
  "Save the scenes as a video: the camera glides from one to the next, with the times of Camera ▸ Animation.": "장면을 비디오로 저장합니다. 카메라가 한 장면에서 다음 장면으로 부드럽게 이동하며, 시간은 카메라 ▸ 애니메이션을 따릅니다.",
- "Export Video (.mkv)…": "비디오 내보내기 (.mkv)…"
+ "Export Video (.mkv)…": "비디오 내보내기 (.mkv)…",
+ "Soft sun shadows": "부드러운 햇빛 그림자",
+ "Slight": "약하게",
+ "Moderate": "보통",
+ "Strong": "강하게",
+ "Shadow edges that soften away from what casts them, as in daylight. They cost the graphics card more while the sun casts shadows.": "그림자를 드리우는 물체에서 멀어질수록 그림자 가장자리가 부드러워집니다(햇빛 아래처럼). 해가 그림자를 드리우는 동안 그래픽 카드를 더 많이 사용합니다."
 }

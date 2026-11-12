@@ -3754,5 +3754,10 @@
  "Video export cancelled.": "動画の書き出しを取り消しました。",
  "Scenes as Video (.mkv)…": "シーンを動画として (.mkv)…",
  "Save the scenes as a video: the camera glides from one to the next, with the times of Camera ▸ Animation.": "シーンを動画として保存します。カメラはシーンから次のシーンへなめらかに移ります（時間は カメラ ▸ アニメーション）。",
- "Export Video (.mkv)…": "動画の書き出し (.mkv)…"
+ "Export Video (.mkv)…": "動画の書き出し (.mkv)…",
+ "Soft sun shadows": "柔らかい日影",
+ "Slight": "弱",
+ "Moderate": "中",
+ "Strong": "強",
+ "Shadow edges that soften away from what casts them, as in daylight. They cost the graphics card more while the sun casts shadows.": "影を落とす物から離れるほど影の縁がぼやけます(日中の光のように)。太陽が影を落としている間、グラフィックカードの負荷が増えます。"
 }

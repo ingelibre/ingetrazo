@@ -3761,5 +3761,10 @@
  "Video export cancelled.": "Експорт відео скасовано.",
  "Scenes as Video (.mkv)…": "Сцени як відео (.mkv)…",
  "Save the scenes as a video: the camera glides from one to the next, with the times of Camera ▸ Animation.": "Зберігає сцени як відео: камера плавно переходить від однієї до наступної, з часом із Камера ▸ Анімація.",
- "Export Video (.mkv)…": "Експорт відео (.mkv)…"
+ "Export Video (.mkv)…": "Експорт відео (.mkv)…",
+ "Soft sun shadows": "М'які тіні від сонця",
+ "Slight": "Слабка",
+ "Moderate": "Помірна",
+ "Strong": "Сильна",
+ "Shadow edges that soften away from what casts them, as in daylight. They cost the graphics card more while the sun casts shadows.": "Краї тіней м'якшають з віддаленням від того, що їх відкидає, як при денному світлі. Більше навантажують відеокарту, поки сонце відкидає тіні."
 }

@@ -3762,5 +3762,10 @@
  "Video export cancelled.": "Eksport wideo anulowany.",
  "Scenes as Video (.mkv)…": "Sceny jako wideo (.mkv)…",
  "Save the scenes as a video: the camera glides from one to the next, with the times of Camera ▸ Animation.": "Zapisuje sceny jako wideo: kamera płynnie przechodzi od jednej do następnej, z czasami z Kamera ▸ Animacja.",
- "Export Video (.mkv)…": "Eksportuj wideo (.mkv)…"
+ "Export Video (.mkv)…": "Eksportuj wideo (.mkv)…",
+ "Soft sun shadows": "Miękkie cienie słońca",
+ "Slight": "Lekkie",
+ "Moderate": "Umiarkowane",
+ "Strong": "Mocne",
+ "Shadow edges that soften away from what casts them, as in daylight. They cost the graphics card more while the sun casts shadows.": "Krawędzie cieni łagodnieją z odległością od tego, co je rzuca, jak w świetle dnia. Bardziej obciążają kartę graficzną, gdy słońce rzuca cienie."
 }

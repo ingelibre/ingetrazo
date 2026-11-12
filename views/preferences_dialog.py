@@ -268,6 +268,38 @@ class PreferencesDialog(QDialog):
             msaa_now if msaa_now in (0, 2, 4, 8) else 4)))
         form.addRow(tr("Anti-aliasing (MSAA):"), self._msaa)
 
+        # Soft sun shadows (#1281): off by default, they cost the graphics
+        # card more on every frame while the sun casts shadows.
+        from views.viewport import SOFT_SHADOW_SPREAD
+        row = QHBoxLayout()
+        self._soft_shadows = QCheckBox(tr("Soft sun shadows"))
+        self._soft_shadows.setToolTip(tr(
+            "Shadow edges that soften away from what casts them, as in "
+            "daylight. They cost the graphics card more while the sun casts "
+            "shadows."))
+        row.addWidget(self._soft_shadows)
+        self._soft_level = QComboBox()
+        for level, label in ((1, "Slight"), (2, "Moderate"), (3, "Strong")):
+            self._soft_level.addItem(tr(label), level)
+        try:
+            soft_now = int(st.value("display/soft_shadows", 0))
+        except (TypeError, ValueError):
+            soft_now = 0
+        try:
+            level_now = int(st.value("display/soft_shadows_level", 2))
+        except (TypeError, ValueError):
+            level_now = 2
+        if soft_now in SOFT_SHADOW_SPREAD:
+            level_now = soft_now
+        self._soft_level.setCurrentIndex(max(0, self._soft_level.findData(
+            level_now if level_now in SOFT_SHADOW_SPREAD else 2)))
+        self._soft_shadows.setChecked(soft_now in SOFT_SHADOW_SPREAD)
+        self._soft_shadows.toggled.connect(self._soft_level.setEnabled)
+        self._soft_level.setEnabled(self._soft_shadows.isChecked())
+        row.addWidget(self._soft_level)
+        row.addStretch()
+        form.addRow("", row)
+
         from views.icons import TOOLBAR_ICON_SIZES, toolbar_icon_px
         self._icon_px = QComboBox()
         for px, label in TOOLBAR_ICON_SIZES:
@@ -944,6 +976,8 @@ class PreferencesDialog(QDialog):
         self._look_sens.setValue(DEFAULT_LOOK_SENSITIVITY)
         pick(self._cursor_style, "tool")
         pick(self._msaa, 4)
+        self._soft_shadows.setChecked(False)
+        pick(self._soft_level, 2)
         pick(self._icon_px, default_toolbar_icon_px())
         pick(self._ext_menus, "auto")
         pick(self._platform, AUTO)
@@ -1125,6 +1159,17 @@ class PreferencesDialog(QDialog):
                 # Void the FBO size so the next paint rebuilds it at the new
                 # sample count (the rebuild happens with the context current).
                 vp._fbo_size = None
+                update = getattr(vp, "update", None)
+                if callable(update):
+                    update()
+
+        level = int(self._soft_level.currentData())
+        soft = level if self._soft_shadows.isChecked() else 0
+        st.setValue("display/soft_shadows", soft)
+        st.setValue("display/soft_shadows_level", level)
+        for vp in viewports:
+            if getattr(vp, "_soft_shadows", None) != soft:
+                vp._soft_shadows = soft
                 update = getattr(vp, "update", None)
                 if callable(update):
                     update()

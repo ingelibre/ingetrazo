@@ -3757,5 +3757,10 @@
  "Video export cancelled.": "ยกเลิกการส่งออกวิดีโอแล้ว",
  "Scenes as Video (.mkv)…": "ฉากเป็นวิดีโอ (.mkv)…",
  "Save the scenes as a video: the camera glides from one to the next, with the times of Camera ▸ Animation.": "บันทึกฉากเป็นวิดีโอ: กล้องเลื่อนจากฉากหนึ่งไปยังฉากถัดไป ตามเวลาใน กล้อง ▸ แอนิเมชัน",
- "Export Video (.mkv)…": "ส่งออกวิดีโอ (.mkv)…"
+ "Export Video (.mkv)…": "ส่งออกวิดีโอ (.mkv)…",
+ "Soft sun shadows": "เงาแดดแบบนุ่ม",
+ "Slight": "เล็กน้อย",
+ "Moderate": "ปานกลาง",
+ "Strong": "มาก",
+ "Shadow edges that soften away from what casts them, as in daylight. They cost the graphics card more while the sun casts shadows.": "ขอบเงานุ่มลงเมื่ออยู่ห่างจากสิ่งที่ทอดเงา เหมือนแสงกลางวัน ใช้การ์ดจอมากขึ้นขณะที่ดวงอาทิตย์ทอดเงา"
 }
