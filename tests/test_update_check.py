@@ -37,10 +37,21 @@ def settings(monkeypatch):
     return store
 
 
-def _wait(ms=120):
-    loop = QEventLoop()
-    QTimer.singleShot(ms, loop.quit)
-    loop.exec()
+def _wait(ms=120, until=None):
+    """Run the event loop *ms*; with *until*, until it holds (5 s at most):
+    a thread's answer comes when it comes, and a fixed 120 ms ran out with
+    the machine busy (full suite with the Rust engine, 2026-11-12)."""
+    if until is None:
+        loop = QEventLoop()
+        QTimer.singleShot(ms, loop.quit)
+        loop.exec()
+        return
+    import time
+    end = time.monotonic() + 5.0
+    while not until() and time.monotonic() < end:
+        loop = QEventLoop()
+        QTimer.singleShot(20, loop.quit)
+        loop.exec()
 
 
 #: Windows stay alive to the end: a thread's answer may still be on its way.
@@ -113,7 +124,7 @@ def test_when_it_looks_at_start(store, frozen, env, looks):
 def test_a_newer_version_opens_the_window_without_blocking(app, settings):
     win = _window()
     ud._Check(win, True, "0.6.1").run(lambda: RELEASE)
-    _wait()
+    _wait(until=lambda: getattr(win, "_update_dialog", None) is not None)
     dialog = win._update_dialog
     assert dialog is not None and dialog.isVisible()
     assert not dialog.isModal()
@@ -149,7 +160,7 @@ def test_a_skipped_version_stays_quiet_but_the_menu_still_shows_it(app, settings
     _wait()
     assert getattr(win, "_update_dialog", None) is None
     ud._Check(win, False, "0.6.1").run(lambda: RELEASE)
-    _wait()
+    _wait(until=lambda: getattr(win, "_update_dialog", None) is not None)
     assert win._update_dialog is not None
     win._update_dialog.close()
     win.close()
@@ -163,12 +174,12 @@ def test_the_menu_says_when_up_to_date_and_when_offline(app, settings, monkeypat
                         lambda *a: said.append(("warn", a[2])))
     win = _window()
     ud._Check(win, False, "0.6.2").run(lambda: RELEASE)
-    _wait()
+    _wait(until=lambda: len(said) >= 1)
 
     def fails():
         raise uc.UpdateCheckError("offline")
     ud._Check(win, False, "0.6.2").run(fails)
-    _wait()
+    _wait(until=lambda: len(said) >= 2)
     assert [kind for kind, _ in said] == ["info", "warn"]
     assert "0.6.2" in said[0][1]
 
@@ -191,7 +202,7 @@ def test_a_quiet_notice_waits_for_a_modal_question(app, settings, monkeypatch):
     ud.show_release(win, RELEASE, True, "0.6.1")
     assert getattr(win, "_update_dialog", None) is None
     monkeypatch.setattr(QApplication, "activeModalWidget", lambda: None)
-    _wait()
+    _wait(until=lambda: getattr(win, "_update_dialog", None) is not None)
     assert win._update_dialog is not None
     win._update_dialog.close()
     win.close()
