@@ -6,8 +6,9 @@ follow [SemVer](https://semver.org).
 
 ## [Unreleased]
 
-**Exportar la vista como SVG con caras, colores, texturas y sombras, diez
-veces más rápido en modelos grandes y con una barra para cancelar; la
+**Cuatro temas nuevos —Estudio, Solarized, Campbell y Arena—; exportar la
+vista como SVG con caras, colores, texturas y sombras, diez veces más rápido
+en modelos grandes y con una barra para cancelar; la
 herramienta Norte y los ajustes de cámara; el motor Rust hace las caras del
 SVG, la triangulación y las líneas por capa; peso y trama de corte por capa;
 escenas con carpetas y miniaturas, pestañas de iconos y el tema Pizarra;
@@ -15,6 +16,12 @@ secciones que se arrastran sin tirones; y decenas de arreglos.**
 
 ### Añadido
 
+- **Cuatro temas nuevos** en Preferencias ▸ Tema, en todos los idiomas:
+  **Estudio** (barras casi negras sobre paneles gris medio, como las suites
+  3D), **Solarized** (el azul verdoso oscuro de la paleta de terminal),
+  **Campbell** (el negro y gris de la consola clásica) y **Arena** (el claro
+  de Solarized, color papel). En estos temas, un elemento de menú bajo el
+  cursor ya no se pone blanco sobre blanco.
 - **Exportar la vista como SVG en capas** (#1331, @canalsecuario-blip; cierra
   #332): las caras bajo las líneas, con sus colores, texturas y sombras del
   sol, una capa por capa del modelo, en una hoja o al tamaño de la pantalla,
@@ -63,6 +70,19 @@ secciones que se arrastran sin tirones; y decenas de arreglos.**
 
 ### Cambiado
 
+- **Editar un material con textura lo cambia en todo el modelo** (#1308):
+  Aplicar en el panel Materiales cambiaba sólo la textura con que se pinta
+  después y las caras seleccionadas, y un mismo material quedaba en dos
+  colores. Ahora cambia el material: todas las caras, grupos y componentes
+  que lo llevan toman el color o el tamaño nuevo, en un solo paso de
+  deshacer, y una textura ubicada a mano conserva su ubicación.
+- **Varias vistas sin esperas**: partir un documento en cuatro vistas ya no
+  prepara el modelo otra vez por cada vista, y una textura se decodifica una
+  sola vez (la plaza: 16,7 s → 2,4 s la primera vez, 1,4 s → 0,6 s después).
+- **Motor Rust, modelos muy grandes**: una cara cubierta por cientos de
+  otras (el suelo de una casa vista en planta) se resuelve por cuartos. Una
+  villa de 692 000 caras exporta su vista en planta en 106 s en vez de 275,
+  y su silencio más largo baja de 150 s a 14.
 - **Motor Rust**: las caras visibles del SVG, su geometría, la triangulación
   de las caras y las líneas por capa ya se calculan en Rust, con el camino
   Python detrás. La plaza de prueba (1 035 objetos) exporta su vista en
@@ -87,6 +107,16 @@ secciones que se arrastran sin tirones; y decenas de arreglos.**
 
 ### Arreglado
 
+- **Posicionar textura** (#1308): un pin que se suelta cerca de una esquina
+  de la cara o del medio de una arista cae exacto ahí, con la marca de las
+  herramientas de dibujo; Ctrl lo deja libre.
+- **Varias vistas**: Exportar imagen y las exportaciones DXF/SVG de la vista
+  salen de la vista activa, no siempre de la Perspectiva.
+- **Lápiz en Linux (X11/XWayland)** con escala de pantalla mayor que 1: dibuja
+  en su punta, no 15 px arriba a la izquierda.
+- **Las pestañas de los paneles** ya no repintan la ventana sin parar: con
+  el compositor de láminas delante, abrirlo pasa de 38 s a 2 s y añadir un
+  marco de 40 s a un instante.
 - **Empujar/Tirar y dibujar sobre un sólido con muchos rasgos** preguntan al
   modelo una vez; una cara que no puede ir toda la distancia se queda donde
   estaba; mover una curva sobre la de abajo hace una rampa, y una cara de
