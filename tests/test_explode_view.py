@@ -202,3 +202,28 @@ def test_offsets_turn_with_a_pushed_down_matrix():
     turn.rotate(90, 0, 0, 1)
     explode.rotate_offsets(holder, turn)
     assert part.explode_offset == pytest.approx((0.0, 1.0, 0.0), abs=1e-6)
+
+
+def test_plain_groups_pulled_apart_stay_groups():
+    """#1375: the parts of a group of groups are plain groups, with no
+    matrix; the explosion gives each one, and a group with a matrix read
+    as a component — the walls of a building came back components, whose
+    parts could no longer be grouped or exploded."""
+    from core.outliner import in_component
+    kids = [_cube((0, 0, 0)), _cube((3, 0, 0))]
+    for k in kids:
+        k.mesh = world_mesh(k)          # classic groups: world mesh, no matrix
+        k.xform = None
+    real = _cube((0, 0, 3))             # a component part stays a component
+    box = Group(name="building")
+    box.adopt(kids + [real])
+    box.component = False
+    scene = Scene()
+    scene.groups.append(box)
+    assert not any(k.is_component() for k in kids) and real.is_component()
+    ExplodeViewCommand(box, 0.5).do(scene)
+    assert not any(k.is_component() for k in kids)
+    assert not any(in_component(scene.groups, k) for k in kids)
+    assert real.is_component()
+    ExplodeViewCommand(box, 0.0).do(scene)          # reassembled: still groups
+    assert not any(k.is_component() for k in kids)
