@@ -1948,7 +1948,6 @@
   "Click where the component goes.": "Щракнете на мястото за поставяне на компонента.",
   "Drag to orbit. Shift = pan. Wheel = zoom. Middle button orbits from any tool.": "Плъзнете за орбитиране. Shift = панорамиране. Колелцето = мащабиране. Средният бутон орбитира от всеки инструмент.",
   "Drag to pan. Wheel = zoom.": "Плъзнете за панорамиране. Колелцето = мащабиране.",
-  "Drag up to zoom in, down to zoom out. Wheel zooms at the cursor.": "Плъзнете нагоре за приближаване, надолу за отдалечаване. Колелцето мащабира спрямо курсора.",
   "Drag a box to zoom into it.": "Плъзнете правоъгълна област, за да я увеличите.",
   "{name}: Esc cancels.": "{name}: Esc отменя.",
   "Select objects. Shift = add/remove, Ctrl = add. Double-click a group to edit it.": "Изберете обекти. Shift = добавяне/премахване, Ctrl = добавяне. Щракнете двукратно върху група, за да я редактирате.",
@@ -3102,7 +3101,6 @@
   "The extension «{name}» failed in the right-click menu and is left out of it until IngeTrazo restarts. Update it or turn it off in the Extension manager.": "Разширението «{name}» предизвика грешка в контекстното меню и ще бъде изключено от него до рестартиране на IngeTrazo. Актуализирайте го или го изключете от мениджъра на разширения.",
   "Field of View…": "Зрителен ъгъл…",
   "Change the camera's angle of view, like a lens: wider takes more in, narrower keeps the lines calm.": "Промяна на зрителния ъгъл на камерата, подобно на обектив: по-широкият обхваща повече от сцената, а по-тесният намалява перспективните изкривявания.",
-  "Field of view in degrees (10–120):": "Зрителен ъгъл в градуси (10–120):",
   "Field of view applies to perspective; switch to Perspective first.": "Зрителният ъгъл се прилага само при перспективна проекция. Първо превключете на Перспектива.",
   "{name}: every face has its own material, so nothing changed — open it and paint the faces": "{name}: всяка повърхнина има собствен материал, затова нищо не е променено — отворете обекта и оцветете повърхнините",
   "Ambient occlusion": "Околна оклузия",
@@ -3686,7 +3684,6 @@
   "Looks at (X, Y, Z):": "Гледа към (X, Y, Z):",
   "{mm} mm": "{mm} мм",
   "Lens:": "Обектив:",
-  "Focal length (35 mm):": "Фокусно разстояние (35 мм):",
   "Field of view (vertical):": "Зрителен ъгъл (вертикален):",
   "Roll:": "Завъртане:",
   "Slides the picture sideways without turning the camera.": "Измества изображението встрани, без да завърта камерата.",
@@ -3711,5 +3708,13 @@
   "Scene «{name}»: the changes made here are kept in the scene.": "Сцена „{name}“: промените, направени тук, се запазват в сцената.",
   "Show this scene and set its camera: lens, shift, frame and more. The changes are kept in the scene.": "Показва тази сцена и настройва камерата ѝ: обектив, изместване, кадър и още. Промените се запазват в сцената.",
   "Angle, roll and shift": "Ъгъл, завъртане и изместване",
-  "Show every setting: the eye and target by coordinates, the angle in degrees, roll, horizontal shift and clipping.": "Показва всички настройки: окото и целта в координати, ъгъла в градуси, завъртането, хоризонталното изместване и отрязването."
+  "Show every setting: the eye and target by coordinates, the angle in degrees, roll, horizontal shift and clipping.": "Показва всички настройки: окото и целта в координати, ъгъла в градуси, завъртането, хоризонталното изместване и отрязването.",
+  "Focal length:": "Фокусно разстояние:",
+  "Sensor:": "Сензор:",
+  "Sensor size:": "Размер на сензора:",
+  "The camera's sensor: a focal length gives the picture it gives on that sensor. A smaller sensor sees narrower with the same lens.": "Сензорът на камерата: фокусното разстояние дава картината, която дава на този сензор. Със същия обектив по-малък сензор вижда по-тясно.",
+  "Type a focal length like 35mm, or an angle like 60deg.": "Въведете фокусно разстояние като 35mm или ъгъл като 60deg.",
+  "Lens {mm} mm, field of view {deg}°": "Обектив {mm} мм, зрителен ъгъл {deg}°",
+  "Drag up or down to zoom; the wheel zooms at the cursor. Type 35mm or 60deg for the lens.": "Плъзнете нагоре или надолу за мащаб; колелцето – към курсора. Въведете 35mm или 60deg за обектива.",
+  "Field of view in degrees (1–120):": "Зрителен ъгъл в градуси (1–120):"
 }

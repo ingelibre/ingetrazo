@@ -55,11 +55,26 @@ FAR_PER_DISTANCE = 4.0
 #: and guides run past the model, and a dragged object may too.
 PARALLEL_REACH_MARGIN = 4.0
 
-#: Focal lengths are given for the 35 mm film format, by its HEIGHT
-#: (24 mm): the field of view the camera keeps is the vertical one, so a
-#: 24 mm tall frame turns millimetres into degrees whatever shape the
-#: window has.
-SENSOR_HEIGHT_MM = 24.0
+#: The film or sensor a focal length is read for, (width, height) in
+#: millimetres. A lens of so many millimetres gives the picture it gives on
+#: THAT camera: the smaller the sensor, the narrower the same lens sees.
+#: The full frame of 35 mm film is the default, and what a focal length
+#: means when nothing else is said.
+FULL_FRAME = (36.0, 24.0)
+SENSORS = {
+    "full_frame": FULL_FRAME,
+    "aps_c": (23.6, 15.6),
+    "micro_four_thirds": (17.3, 13.0),
+    "super_35": (24.9, 18.7),
+}
+SENSOR_HEIGHT_MM = FULL_FRAME[1]
+
+#: Bounds for a sensor typed by hand, in millimetres.
+SENSOR_RANGE_MM = (1.0, 100.0)
+
+#: The angles of view the camera may take: down to 1° for a long lens (533
+#: mm on full frame is 2.6°; 1° is about 1 375 mm) and up to 120° wide.
+FOV_RANGE = (1.0, 120.0)
 
 #: The lens settings beyond the field of view (Camera ▸ Camera Settings),
 #: each with the value that leaves the view as it always was.
@@ -70,25 +85,41 @@ LENS_DEFAULTS = {
     "clip_near": None,      # metres from the eye, or None = automatic
     "clip_far": None,       # metres from the eye, or None = automatic
     "frame_aspect": None,   # width / height of the frame drawn, or None
+    "sensor": None,         # (width, height) mm, or None = full frame
 }
+
+
+def sensor_picture_height(sensor, aspect: float | None) -> float:
+    """How much of the sensor's height a picture of shape ``aspect`` (width
+    / height) uses, in millimetres — as in a real camera, the picture is
+    the largest rectangle of its shape inside the sensor: a 16:9 picture on
+    a 3:2 sensor takes its whole width and less than its height."""
+    w, h = sensor or FULL_FRAME
+    if aspect and aspect > 0.0 and aspect > w / h:
+        return w / aspect
+    return h
 
 #: How far the frame may slide: a whole view each way is already a picture
 #: taken entirely beside where the camera points.
 MAX_SHIFT = 1.0
 
 
-def focal_from_fov(fov_deg: float) -> float:
-    """The focal length, in millimetres of the 35 mm format, of a lens whose
-    vertical angle of view is ``fov_deg``."""
+def focal_from_fov(fov_deg: float,
+                   picture_height_mm: float = SENSOR_HEIGHT_MM) -> float:
+    """The focal length, in millimetres, of a lens whose vertical angle of
+    view is ``fov_deg`` on a picture ``picture_height_mm`` tall (by default
+    the 24 mm of the 35 mm full frame)."""
     half = math.radians(max(1e-3, min(179.0, float(fov_deg)))) / 2.0
-    return (SENSOR_HEIGHT_MM / 2.0) / math.tan(half)
+    return (float(picture_height_mm) / 2.0) / math.tan(half)
 
 
-def fov_from_focal(focal_mm: float) -> float:
-    """The vertical angle of view, in degrees, of a ``focal_mm`` lens in the
-    35 mm format — the inverse of :func:`focal_from_fov`."""
+def fov_from_focal(focal_mm: float,
+                   picture_height_mm: float = SENSOR_HEIGHT_MM) -> float:
+    """The vertical angle of view, in degrees, of a ``focal_mm`` lens on a
+    picture ``picture_height_mm`` tall — the inverse of
+    :func:`focal_from_fov`."""
     f = max(1e-3, float(focal_mm))
-    return math.degrees(2.0 * math.atan((SENSOR_HEIGHT_MM / 2.0) / f))
+    return math.degrees(2.0 * math.atan((float(picture_height_mm) / 2.0) / f))
 
 
 def frame_rect(width: float, height: float,
@@ -142,6 +173,9 @@ class OrbitCamera:
         self.clip_near = None
         self.clip_far = None
         self.frame_aspect = None
+        #: The SENSOR a focal length is read for, ``(width, height)`` mm,
+        #: or ``None`` for the 35 mm full frame (:data:`SENSORS`).
+        self.sensor = None
 
     # ---- Lens -------------------------------------------------------------
     def lens_dict(self) -> dict:
@@ -150,9 +184,28 @@ class OrbitCamera:
         out = {}
         for k, default in LENS_DEFAULTS.items():
             v = getattr(self, k)
-            if v != default:
+            if k == "sensor":
+                if v is not None and tuple(v) != FULL_FRAME:
+                    out[k] = [float(v[0]), float(v[1])]
+            elif v != default:
                 out[k] = v
         return out
+
+    @staticmethod
+    def _read_sensor(v):
+        """A sensor as given in a lens dict — ``[width, height]`` mm — or
+        ``None`` when it is not one (the full frame then)."""
+        if not isinstance(v, (list, tuple)) or len(v) != 2:
+            return None
+        try:
+            w, h = float(v[0]), float(v[1])
+        except (TypeError, ValueError):
+            return None
+        lo, hi = SENSOR_RANGE_MM
+        if not (math.isfinite(w) and math.isfinite(h)
+                and lo <= w <= hi and lo <= h <= hi):
+            return None
+        return None if (w, h) == FULL_FRAME else (w, h)
 
     def apply_lens(self, raw) -> None:
         """Put back what :meth:`lens_dict` gave; every setting it does not
@@ -164,6 +217,9 @@ class OrbitCamera:
             setattr(self, k, default)
             v = raw.get(k)
             if v is None:
+                continue
+            if k == "sensor":
+                self.sensor = self._read_sensor(v)
                 continue
             try:
                 v = float(v)
@@ -183,13 +239,46 @@ class OrbitCamera:
             self.clip_far = None
 
     def reset_lens(self) -> None:
-        """Every lens setting back to :data:`LENS_DEFAULTS`."""
+        """Shift, roll, clipping and frame back to :data:`LENS_DEFAULTS`.
+        The sensor stays: it is the camera, not a setting of the shot."""
+        sensor = self.sensor
         self.apply_lens({})
+        self.sensor = sensor
+
+    def set_sensor(self, size) -> None:
+        """Read focal lengths for the sensor ``size`` ``(width, height)`` mm
+        (``None``: the full frame). The picture stays as it is — the angle
+        of view is kept; only what it reads in millimetres changes."""
+        self.sensor = None if size is None else self._read_sensor(size)
+
+    def sensor_size(self) -> tuple[float, float]:
+        """The sensor, ``(width, height)`` mm."""
+        return tuple(self.sensor) if self.sensor else FULL_FRAME
+
+    def picture_aspect(self) -> float:
+        """The shape of the picture: the frame's when one is set, else the
+        view's."""
+        return self.frame_aspect or self.aspect
+
+    def picture_height_mm(self) -> float:
+        """The height of the sensor the picture uses (as in a real camera,
+        the largest rectangle of the picture's shape inside the sensor)."""
+        return sensor_picture_height(self.sensor_size(),
+                                     self.picture_aspect())
 
     @property
     def focal_mm(self) -> float:
-        """The field of view as a 35 mm format focal length."""
-        return focal_from_fov(self.fov_deg)
+        """The field of view as a focal length on this camera's sensor."""
+        return focal_from_fov(self.fov_deg, self.picture_height_mm())
+
+    def fov_for_focal(self, focal_mm: float) -> float:
+        """The vertical angle of view of a ``focal_mm`` lens on this
+        camera's sensor and picture."""
+        return fov_from_focal(focal_mm, self.picture_height_mm())
+
+    def focal_for_fov(self, fov_deg: float) -> float:
+        """The focal length that gives ``fov_deg`` on this camera."""
+        return focal_from_fov(fov_deg, self.picture_height_mm())
 
     def place(self, eye: QVector3D, target: QVector3D) -> bool:
         """Put the eye exactly at ``eye`` looking at ``target`` — the

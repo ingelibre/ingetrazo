@@ -1944,7 +1944,6 @@
  "Click where the component goes.": "Klicke, wohin die Komponente soll.",
  "Drag to orbit. Shift = pan. Wheel = zoom. Middle button orbits from any tool.": "Ziehen für Orbit. Umschalt = schwenken. Rad = zoomen. Die mittlere Taste dreht aus jedem Werkzeug.",
  "Drag to pan. Wheel = zoom.": "Ziehen zum Schwenken. Rad = zoomen.",
- "Drag up to zoom in, down to zoom out. Wheel zooms at the cursor.": "Nach oben ziehen zum Hineinzoomen, nach unten zum Herauszoomen. Das Rad zoomt am Cursor.",
  "Drag a box to zoom into it.": "Rahmen aufziehen, um hineinzuzoomen.",
  "{name}: Esc cancels.": "{name}: Esc bricht ab.",
  "Select objects. Shift = add/remove, Ctrl = add. Double-click a group to edit it.": "Objekte auswählen. Umschalt = hinzufügen/entfernen, Strg = hinzufügen. Doppelklick auf eine Gruppe zum Bearbeiten.",
@@ -3102,7 +3101,6 @@
  "The extension «{name}» failed in the right-click menu and is left out of it until IngeTrazo restarts. Update it or turn it off in the Extension manager.": "Die Erweiterung «{name}» ist im Rechtsklickmenü fehlgeschlagen und bleibt bis zum Neustart von IngeTrazo daraus entfernt. Aktualisieren Sie sie oder schalten Sie sie in der Erweiterungsverwaltung ab.",
  "Field of View…": "Sichtfeld…",
  "Change the camera's angle of view, like a lens: wider takes more in, narrower keeps the lines calm.": "Ändert den Bildwinkel der Kamera wie ein Objektiv: weiter zeigt mehr, enger hält die Linien ruhig.",
- "Field of view in degrees (10–120):": "Sichtfeld in Grad (10–120):",
  "Field of view applies to perspective; switch to Perspective first.": "Das Sichtfeld gilt für die Perspektive; wechseln Sie zuerst zu Perspektive.",
  "{name}: every face has its own material, so nothing changed — open it and paint the faces": "{name}: jede Fläche hat ein eigenes Material, daher hat sich nichts geändert – öffnen Sie es und malen Sie die Flächen",
  "Ambient occlusion": "Umgebungsverdeckung",
@@ -3685,7 +3683,6 @@
  "Looks at (X, Y, Z):": "Blickt auf (X, Y, Z):",
  "{mm} mm": "{mm} mm",
  "Lens:": "Objektiv:",
- "Focal length (35 mm):": "Brennweite (35 mm):",
  "Field of view (vertical):": "Sichtfeld (vertikal):",
  "Roll:": "Rollen:",
  "Slides the picture sideways without turning the camera.": "Verschiebt das Bild seitlich, ohne die Kamera zu drehen.",
@@ -3710,5 +3707,13 @@
  "Scene «{name}»: the changes made here are kept in the scene.": "Szene „{name}“: Die Änderungen hier werden in der Szene gespeichert.",
  "Show this scene and set its camera: lens, shift, frame and more. The changes are kept in the scene.": "Zeigt diese Szene und stellt ihre Kamera ein: Objektiv, Verschiebung, Rahmen und mehr. Die Änderungen werden in der Szene gespeichert.",
  "Angle, roll and shift": "Winkel, Rollen und Verschiebung",
- "Show every setting: the eye and target by coordinates, the angle in degrees, roll, horizontal shift and clipping.": "Zeigt alle Einstellungen: Auge und Ziel als Koordinaten, den Winkel in Grad, Rollen, horizontale Verschiebung und Schnittebenen."
+ "Show every setting: the eye and target by coordinates, the angle in degrees, roll, horizontal shift and clipping.": "Zeigt alle Einstellungen: Auge und Ziel als Koordinaten, den Winkel in Grad, Rollen, horizontale Verschiebung und Schnittebenen.",
+ "Focal length:": "Brennweite:",
+ "Sensor:": "Sensor:",
+ "Sensor size:": "Sensorgröße:",
+ "The camera's sensor: a focal length gives the picture it gives on that sensor. A smaller sensor sees narrower with the same lens.": "Der Sensor der Kamera: Eine Brennweite ergibt das Bild, das sie auf diesem Sensor ergibt. Ein kleinerer Sensor sieht mit demselben Objektiv enger.",
+ "Type a focal length like 35mm, or an angle like 60deg.": "Geben Sie eine Brennweite wie 35mm oder einen Winkel wie 60deg ein.",
+ "Lens {mm} mm, field of view {deg}°": "Objektiv {mm} mm, Sichtfeld {deg}°",
+ "Drag up or down to zoom; the wheel zooms at the cursor. Type 35mm or 60deg for the lens.": "Nach oben oder unten ziehen zum Zoomen; das Rad zoomt am Cursor. 35mm oder 60deg für das Objektiv.",
+ "Field of view in degrees (1–120):": "Sichtfeld in Grad (1–120):"
 }

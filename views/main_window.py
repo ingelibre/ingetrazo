@@ -4353,6 +4353,13 @@ class MainWindow(QMainWindow):
         caption = (dynamic() if callable(dynamic)
                    else getattr(tool, "vcb_label", None)) if tool is not None \
             else None
+        live = self._vcb_live
+        if tool is None and getattr(self.viewport, "nav_mode", None) == "zoom":
+            # Zoom takes the lens typed in the box (35mm, 60deg): the box
+            # shows, reading the focal length the view has now.
+            caption = "Field of view"
+            cam = self.viewport.camera
+            live = (f"{cam.focal_mm:.0f} mm" if cam.perspective else "—")
         self._vcb_name.setVisible(caption is not None)
         self._vcb_value.setVisible(caption is not None)
         if caption is None:
@@ -4362,7 +4369,7 @@ class MainWindow(QMainWindow):
             self._vcb_value.setText(f"{self._vcb_buffer}")
             self._vcb_value.setStyleSheet(self._VCB_ACTIVE_STYLE)
         else:
-            self._vcb_value.setText(self._vcb_live)
+            self._vcb_value.setText(live)
             self._vcb_value.setStyleSheet(self._VCB_IDLE_STYLE)
 
     # ---- Tool routing -------------------------------------------------------
@@ -4436,6 +4443,9 @@ class MainWindow(QMainWindow):
 
     def _activate_nav(self, key: str) -> None:
         self.viewport.set_nav_mode(key)
+        # The keys typed next are the view's (Zoom takes «35mm»), wherever
+        # the keyboard was — a panel's list, a field.
+        self.viewport.setFocus(Qt.OtherFocusReason)
         action = self._nav_actions.get(key)
         if action is not None:
             action.setChecked(True)
@@ -7067,9 +7077,9 @@ class MainWindow(QMainWindow):
         cam.apply_lens(home.get("lens"))
         self.viewport.update()
 
-    #: The angles the field of view may take: the composer's frames use the
-    #: same range.
-    FOV_RANGE = (10.0, 120.0)
+    #: The angles the field of view may take — the camera's own range
+    #: (``core.camera.FOV_RANGE``), down to 1° for a long lens.
+    from core.camera import FOV_RANGE
 
     def set_field_of_view(self, degrees: float) -> bool:
         """Give the perspective camera a new angle of view. The eye stays
@@ -7097,8 +7107,8 @@ class MainWindow(QMainWindow):
         lo, hi = self.FOV_RANGE
         value, ok = QInputDialog.getDouble(
             self, tr("Field of view"),
-            tr("Field of view in degrees (10–120):"),
-            float(cam.fov_deg), lo, hi, 0)
+            tr("Field of view in degrees (1–120):"),
+            float(cam.fov_deg), lo, hi, 1)
         if ok:
             self.set_field_of_view(value)
 

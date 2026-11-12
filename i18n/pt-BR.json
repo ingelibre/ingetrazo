@@ -1942,7 +1942,6 @@
  "Click where the component goes.": "Clique onde o componente vai.",
  "Drag to orbit. Shift = pan. Wheel = zoom. Middle button orbits from any tool.": "Arraste para orbitar. Shift = panorâmica. Roda = zoom. Botão do meio orbita de qualquer ferramenta.",
  "Drag to pan. Wheel = zoom.": "Arraste para panorâmica. Roda = zoom.",
- "Drag up to zoom in, down to zoom out. Wheel zooms at the cursor.": "Arraste para cima para aproximar, para baixo para afastar. Roda dá zoom no cursor.",
  "Drag a box to zoom into it.": "Arraste uma caixa para dar zoom nela.",
  "{name}: Esc cancels.": "{name}: Esc cancela.",
  "Select objects. Shift = add/remove, Ctrl = add. Double-click a group to edit it.": "Selecione objetos. Shift = adicionar/remover, Ctrl = adicionar. Clique duplo em um grupo para editá-lo.",
@@ -3109,7 +3108,6 @@
  "The extension «{name}» failed in the right-click menu and is left out of it until IngeTrazo restarts. Update it or turn it off in the Extension manager.": "A extensão «{name}» falhou no menu do clique direito e fica fora dele até o IngeTrazo ser reiniciado. Atualize-a ou desative-a no Gerenciador de extensões.",
  "Field of View…": "Campo de visão…",
  "Change the camera's angle of view, like a lens: wider takes more in, narrower keeps the lines calm.": "Muda o ângulo de visão da câmera, como uma lente: mais aberto abrange mais, mais fechado deixa as linhas calmas.",
- "Field of view in degrees (10–120):": "Campo de visão em graus (10–120):",
  "Field of view applies to perspective; switch to Perspective first.": "O campo de visão é da perspectiva; mude primeiro para Perspectiva.",
  "{name}: every face has its own material, so nothing changed — open it and paint the faces": "{name}: todas as faces têm material próprio, então nada mudou — abra-o e pinte as faces",
  "Ambient occlusion": "Oclusão de ambiente",
@@ -3692,7 +3690,6 @@
  "Looks at (X, Y, Z):": "Olha para (X, Y, Z):",
  "{mm} mm": "{mm} mm",
  "Lens:": "Lente:",
- "Focal length (35 mm):": "Distância focal (35 mm):",
  "Field of view (vertical):": "Campo de visão (vertical):",
  "Roll:": "Giro:",
  "Slides the picture sideways without turning the camera.": "Desloca a imagem para os lados sem girar a câmera.",
@@ -3717,5 +3714,13 @@
  "Scene «{name}»: the changes made here are kept in the scene.": "Cena «{name}»: as alterações feitas aqui são salvas na cena.",
  "Show this scene and set its camera: lens, shift, frame and more. The changes are kept in the scene.": "Mostra esta cena e ajusta sua câmera: lente, deslocamento, quadro e mais. As alterações são salvas na cena.",
  "Angle, roll and shift": "Ângulo, giro e deslocamento",
- "Show every setting: the eye and target by coordinates, the angle in degrees, roll, horizontal shift and clipping.": "Mostra todos os ajustes: o olho e o alvo por coordenadas, o ângulo em graus, o giro, o deslocamento horizontal e o recorte."
+ "Show every setting: the eye and target by coordinates, the angle in degrees, roll, horizontal shift and clipping.": "Mostra todos os ajustes: o olho e o alvo por coordenadas, o ângulo em graus, o giro, o deslocamento horizontal e o recorte.",
+ "Focal length:": "Distância focal:",
+ "Sensor:": "Sensor:",
+ "Sensor size:": "Tamanho do sensor:",
+ "The camera's sensor: a focal length gives the picture it gives on that sensor. A smaller sensor sees narrower with the same lens.": "O sensor da câmera: uma distância focal dá a imagem que dá nesse sensor. Com a mesma lente, um sensor menor vê mais fechado.",
+ "Type a focal length like 35mm, or an angle like 60deg.": "Digite uma focal como 35mm, ou um ângulo como 60deg.",
+ "Lens {mm} mm, field of view {deg}°": "Lente {mm} mm, campo de visão {deg}°",
+ "Drag up or down to zoom; the wheel zooms at the cursor. Type 35mm or 60deg for the lens.": "Arraste para cima ou para baixo para o zoom; a roda, no cursor. Digite 35mm ou 60deg para a lente.",
+ "Field of view in degrees (1–120):": "Campo de visão em graus (1–120):"
 }

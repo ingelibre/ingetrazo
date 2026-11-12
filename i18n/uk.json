@@ -1948,7 +1948,6 @@
  "Click where the component goes.": "Клацніть місце для компонента.",
  "Drag to orbit. Shift = pan. Wheel = zoom. Middle button orbits from any tool.": "Тягніть для орбіти. Shift = панорамування. Колесо = масштабування. Середня кнопка обертає з будь-якого інструмента.",
  "Drag to pan. Wheel = zoom.": "Тягніть для панорамування. Колесо = масштабування.",
- "Drag up to zoom in, down to zoom out. Wheel zooms at the cursor.": "Тягніть вгору, щоб наблизити, вниз — щоб віддалити. Колесо масштабує до курсора.",
  "Drag a box to zoom into it.": "Обведіть рамкою область, щоб наблизити її.",
  "{name}: Esc cancels.": "{name}: Esc — скасувати.",
  "Select objects. Shift = add/remove, Ctrl = add. Double-click a group to edit it.": "Вибір об'єктів. Shift = додати/прибрати, Ctrl = додати. Двічі клацніть групу, щоб редагувати її.",
@@ -3102,7 +3101,6 @@
  "The extension «{name}» failed in the right-click menu and is left out of it until IngeTrazo restarts. Update it or turn it off in the Extension manager.": "Розширення «{name}» дало збій у контекстному меню й виключене з нього до перезапуску IngeTrazo. Оновіть його або вимкніть у Менеджері розширень.",
  "Field of View…": "Поле зору…",
  "Change the camera's angle of view, like a lens: wider takes more in, narrower keeps the lines calm.": "Змінює кут огляду камери, як об'єктив: ширший охоплює більше, вужчий тримає лінії спокійними.",
- "Field of view in degrees (10–120):": "Поле зору в градусах (10–120):",
  "Field of view applies to perspective; switch to Perspective first.": "Поле зору стосується перспективи; спершу перемкніться на перспективу.",
  "{name}: every face has its own material, so nothing changed — open it and paint the faces": "{name}: кожна грань має власний матеріал, тому нічого не змінилося — відкрийте об'єкт і пофарбуйте грані",
  "Ambient occlusion": "Навколишня оклюзія (AO)",
@@ -3685,7 +3683,6 @@
  "Looks at (X, Y, Z):": "Дивиться на (X, Y, Z):",
  "{mm} mm": "{mm} мм",
  "Lens:": "Об’єктив:",
- "Focal length (35 mm):": "Фокусна відстань (35 мм):",
  "Field of view (vertical):": "Кут огляду (вертикальний):",
  "Roll:": "Крен:",
  "Slides the picture sideways without turning the camera.": "Зсуває зображення вбік, не повертаючи камеру.",
@@ -3710,5 +3707,13 @@
  "Scene «{name}»: the changes made here are kept in the scene.": "Сцена «{name}»: зміни, зроблені тут, зберігаються в сцені.",
  "Show this scene and set its camera: lens, shift, frame and more. The changes are kept in the scene.": "Показує цю сцену й налаштовує її камеру: об’єктив, зсув, кадр та інше. Зміни зберігаються в сцені.",
  "Angle, roll and shift": "Кут, крен і зсув",
- "Show every setting: the eye and target by coordinates, the angle in degrees, roll, horizontal shift and clipping.": "Показує всі параметри: око й ціль у координатах, кут у градусах, крен, горизонтальний зсув і відсікання."
+ "Show every setting: the eye and target by coordinates, the angle in degrees, roll, horizontal shift and clipping.": "Показує всі параметри: око й ціль у координатах, кут у градусах, крен, горизонтальний зсув і відсікання.",
+ "Focal length:": "Фокусна відстань:",
+ "Sensor:": "Сенсор:",
+ "Sensor size:": "Розмір сенсора:",
+ "The camera's sensor: a focal length gives the picture it gives on that sensor. A smaller sensor sees narrower with the same lens.": "Сенсор камери: фокусна відстань дає ту картинку, яку дає на цьому сенсорі. З тим самим об’єктивом менший сенсор бачить вужче.",
+ "Type a focal length like 35mm, or an angle like 60deg.": "Введіть фокусну відстань, наприклад 35mm, або кут, наприклад 60deg.",
+ "Lens {mm} mm, field of view {deg}°": "Об’єктив {mm} мм, кут огляду {deg}°",
+ "Drag up or down to zoom; the wheel zooms at the cursor. Type 35mm or 60deg for the lens.": "Тягніть вгору чи вниз для масштабу; колесо — до курсора. Введіть 35mm або 60deg для об’єктива.",
+ "Field of view in degrees (1–120):": "Поле зору в градусах (1–120):"
 }

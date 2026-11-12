@@ -1944,7 +1944,6 @@
  "Click where the component goes.": "Bấm vào nơi thành phần đi.",
  "Drag to orbit. Shift = pan. Wheel = zoom. Middle button orbits from any tool.": "Rê chuột để xoay 3D (Orbit). Shift = lia màn hình (Pan). Lăn chuột = phóng to/thu nhỏ (Zoom). Giữ chuột giữa để xoay 3D từ bất kỳ công cụ nào.",
  "Drag to pan. Wheel = zoom.": "Kéo để xoay. Bánh xe = phóng to.",
- "Drag up to zoom in, down to zoom out. Wheel zooms at the cursor.": "Kéo lên để phóng to, kéo xuống để thu nhỏ. Bánh xe phóng to con trỏ.",
  "Drag a box to zoom into it.": "Quét khung chữ nhật để phóng to vùng chọn.",
  "{name}: Esc cancels.": "{name}: Esc hủy.",
  "Select objects. Shift = add/remove, Ctrl = add. Double-click a group to edit it.": "Chọn các đối tượng. Shift = thêm/xóa, Ctrl = thêm. Bấm đúp vào một nhóm để chỉnh sửa nó.",
@@ -3087,7 +3086,6 @@
  "The extension «{name}» failed in the right-click menu and is left out of it until IngeTrazo restarts. Update it or turn it off in the Extension manager.": "Tiện ích mở rộng «{name}» không thành công trong menu chuột phải và bị loại khỏi nó cho đến khi IngeTrazo khởi động lại. Cập nhật hoặc tắt nó trong Trình quản lý tiện ích mở rộng.",
  "Field of View…": "Trường nhìn…",
  "Change the camera's angle of view, like a lens: wider takes more in, narrower keeps the lines calm.": "Thay đổi góc nhìn của Camera (FOV) tương tự tiêu cự ống kính: góc rộng bao quát nhiều hơn, góc hẹp giữ các nét thẳng song song hơn.",
- "Field of view in degrees (10–120):": "Trường nhìn tính bằng độ (10–120):",
  "Field of view applies to perspective; switch to Perspective first.": "Trường nhìn áp dụng cho phối cảnh; chuyển sang Phối cảnh trước.",
  "{name}: every face has its own material, so nothing changed — open it and paint the faces": "{name}: mỗi mặt đã có vật liệu riêng nên không có gì thay đổi — hãy mở nhóm và sơn trực tiếp lên các mặt",
  "This picture has no transparent background, so it will show as a rectangle with a white background.": "Ảnh này không có nền trong suốt, nên sẽ hiển thị dưới dạng hình chữ nhật nền trắng.",
@@ -3712,7 +3710,6 @@
  "Looks at (X, Y, Z):": "Nhìn về (X, Y, Z):",
  "{mm} mm": "{mm} mm",
  "Lens:": "Ống kính:",
- "Focal length (35 mm):": "Tiêu cự (35 mm):",
  "Field of view (vertical):": "Góc nhìn (dọc):",
  "Roll:": "Xoay nghiêng:",
  "Slides the picture sideways without turning the camera.": "Dịch hình sang ngang mà không xoay camera.",
@@ -3737,5 +3734,13 @@
  "Scene «{name}»: the changes made here are kept in the scene.": "Cảnh «{name}»: các thay đổi ở đây được lưu vào cảnh.",
  "Show this scene and set its camera: lens, shift, frame and more. The changes are kept in the scene.": "Hiện cảnh này và chỉnh camera của nó: ống kính, dịch khung, khung hình và hơn nữa. Các thay đổi được lưu vào cảnh.",
  "Angle, roll and shift": "Góc, xoay nghiêng và dịch khung",
- "Show every setting: the eye and target by coordinates, the angle in degrees, roll, horizontal shift and clipping.": "Hiện mọi thiết lập: mắt và điểm nhìn theo tọa độ, góc theo độ, xoay nghiêng, dịch khung ngang và mặt cắt."
+ "Show every setting: the eye and target by coordinates, the angle in degrees, roll, horizontal shift and clipping.": "Hiện mọi thiết lập: mắt và điểm nhìn theo tọa độ, góc theo độ, xoay nghiêng, dịch khung ngang và mặt cắt.",
+ "Focal length:": "Tiêu cự:",
+ "Sensor:": "Cảm biến:",
+ "Sensor size:": "Kích thước cảm biến:",
+ "The camera's sensor: a focal length gives the picture it gives on that sensor. A smaller sensor sees narrower with the same lens.": "Cảm biến của camera: một tiêu cự cho hình ảnh như trên cảm biến đó. Cùng ống kính, cảm biến nhỏ hơn nhìn hẹp hơn.",
+ "Type a focal length like 35mm, or an angle like 60deg.": "Gõ tiêu cự như 35mm, hoặc góc như 60deg.",
+ "Lens {mm} mm, field of view {deg}°": "Ống kính {mm} mm, góc nhìn {deg}°",
+ "Drag up or down to zoom; the wheel zooms at the cursor. Type 35mm or 60deg for the lens.": "Kéo lên hoặc xuống để thu phóng; bánh xe tại con trỏ. Gõ 35mm hoặc 60deg cho ống kính.",
+ "Field of view in degrees (1–120):": "Trường nhìn tính bằng độ (1–120):"
 }

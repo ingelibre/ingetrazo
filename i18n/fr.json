@@ -1946,7 +1946,6 @@
  "Click where the component goes.": "Cliquez à l'endroit où va le composant.",
  "Drag to orbit. Shift = pan. Wheel = zoom. Middle button orbits from any tool.": "Faites glisser pour orbiter. Maj = panoramique. Molette = zoom. Le bouton central orbite depuis n'importe quel outil.",
  "Drag to pan. Wheel = zoom.": "Faites glisser pour un panoramique. Molette = zoom.",
- "Drag up to zoom in, down to zoom out. Wheel zooms at the cursor.": "Faites glisser vers le haut pour zoomer, vers le bas pour dézoomer. La molette zoome au niveau du curseur.",
  "Drag a box to zoom into it.": "Faites glisser un cadre pour zoomer dessus.",
  "{name}: Esc cancels.": "{name} : Échap annule.",
  "Select objects. Shift = add/remove, Ctrl = add. Double-click a group to edit it.": "Sélectionner des objets. Maj = ajouter/retirer, Ctrl = ajouter. Double-cliquez sur un groupe pour le modifier.",
@@ -3104,7 +3103,6 @@
  "The extension «{name}» failed in the right-click menu and is left out of it until IngeTrazo restarts. Update it or turn it off in the Extension manager.": "L'extension «{name}» a échoué dans le menu du clic droit et en est retirée jusqu'au redémarrage d'IngeTrazo. Mettez-la à jour ou désactivez-la dans le Gestionnaire d'extensions.",
  "Field of View…": "Champ de vision…",
  "Change the camera's angle of view, like a lens: wider takes more in, narrower keeps the lines calm.": "Modifie l'angle de vue de la caméra, comme un objectif : plus large montre davantage, plus serré garde les lignes calmes.",
- "Field of view in degrees (10–120):": "Champ de vision en degrés (10–120) :",
  "Field of view applies to perspective; switch to Perspective first.": "Le champ de vision concerne la perspective ; passez d'abord en Perspective.",
  "{name}: every face has its own material, so nothing changed — open it and paint the faces": "{name} : chaque face a son propre matériau, rien n’a donc changé — ouvrez-le et peignez les faces",
  "Ambient occlusion": "Occlusion ambiante",
@@ -3685,7 +3683,6 @@
  "Looks at (X, Y, Z):": "Regarde vers (X, Y, Z) :",
  "{mm} mm": "{mm} mm",
  "Lens:": "Objectif :",
- "Focal length (35 mm):": "Focale (35 mm) :",
  "Field of view (vertical):": "Champ de vision (vertical) :",
  "Roll:": "Roulis :",
  "Slides the picture sideways without turning the camera.": "Décale l’image sur le côté sans tourner la caméra.",
@@ -3710,5 +3707,13 @@
  "Scene «{name}»: the changes made here are kept in the scene.": "Scène « {name} » : les modifications faites ici sont enregistrées dans la scène.",
  "Show this scene and set its camera: lens, shift, frame and more. The changes are kept in the scene.": "Affiche cette scène et règle sa caméra : objectif, décentrement, cadre et plus. Les modifications sont enregistrées dans la scène.",
  "Angle, roll and shift": "Angle, roulis et décentrement",
- "Show every setting: the eye and target by coordinates, the angle in degrees, roll, horizontal shift and clipping.": "Affiche tous les réglages : l’œil et la cible par coordonnées, l’angle en degrés, le roulis, le décentrement horizontal et les plans de coupe."
+ "Show every setting: the eye and target by coordinates, the angle in degrees, roll, horizontal shift and clipping.": "Affiche tous les réglages : l’œil et la cible par coordonnées, l’angle en degrés, le roulis, le décentrement horizontal et les plans de coupe.",
+ "Focal length:": "Focale :",
+ "Sensor:": "Capteur :",
+ "Sensor size:": "Taille du capteur :",
+ "The camera's sensor: a focal length gives the picture it gives on that sensor. A smaller sensor sees narrower with the same lens.": "Le capteur de la caméra : une focale donne l’image qu’elle donne sur ce capteur. Avec le même objectif, un capteur plus petit voit plus serré.",
+ "Type a focal length like 35mm, or an angle like 60deg.": "Tapez une focale comme 35mm, ou un angle comme 60deg.",
+ "Lens {mm} mm, field of view {deg}°": "Objectif {mm} mm, champ de vision {deg}°",
+ "Drag up or down to zoom; the wheel zooms at the cursor. Type 35mm or 60deg for the lens.": "Glissez vers le haut ou le bas pour zoomer ; la molette, au curseur. Tapez 35mm ou 60deg pour l’objectif.",
+ "Field of view in degrees (1–120):": "Champ de vision en degrés (1–120) :"
 }

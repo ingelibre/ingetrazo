@@ -14,7 +14,7 @@ lens, vertical shift and frame; «Advanced options» opens the rest — the
 eye and target by coordinates, the angle in degrees, roll, horizontal
 shift and clipping. The window remembers which one was left open.
 
-It stays open beside the model (a tool window): what you type changes the
+It stays open beside the model (a non-modal dialog): what you type changes the
 view at once, and what the mouse does to the view shows in the fields —
 a field being typed in is left alone. It works on the active view, so
 with four views it follows the one you are working in.
@@ -34,12 +34,21 @@ from PySide6.QtWidgets import (QCheckBox, QComboBox, QDialog, QDoubleSpinBox,
                                QPushButton, QScrollArea, QStyle, QVBoxLayout,
                                QWidget)
 
-from core.camera import (MAX_SHIFT, fov_from_focal, focal_from_fov)
+from core.camera import (FOV_RANGE, MAX_SHIFT, SENSOR_RANGE_MM, SENSORS,
+                         focal_from_fov)
 from core.i18n import tr
 from views.length_field import LengthSpinBox
 
 #: Lenses offered by name, in millimetres of the 35 mm format.
 LENS_PRESETS = (14, 18, 24, 28, 35, 50, 85, 105, 135)
+
+#: Sensors offered by name, in the order of the list; «Custom» follows.
+SENSOR_CHOICES = (
+    ("full_frame", "Full Frame (36 × 24 mm)"),
+    ("aps_c", "APS-C (23.6 × 15.6 mm)"),
+    ("micro_four_thirds", "Micro 4/3 (17.3 × 13 mm)"),
+    ("super_35", "Super 35 (24.9 × 18.7 mm)"),
+)
 
 #: Picture frames offered, as (width / height, label). ``None`` = no frame.
 FRAMES = (
@@ -109,9 +118,17 @@ class CameraSettingsDialog(QDialog):
         #: camera as this window last left it there.
         self._scene_view = None
         self._bound_state = None
+        #: «Custom» picked in the sensor list: it stays picked even while
+        #: the size typed is still that of a named sensor.
+        self._custom_sensor = False
         self.setWindowTitle(tr("Camera Settings"))
-        self.setWindowFlag(Qt.Tool, True)
+        # An ordinary dialog's title bar and close button, as the other
+        # dialogs have (the layer colour's): a tool window's thin bar and
+        # small cross looked foreign. Non-modal, over the main window.
+        self.setWindowFlag(Qt.WindowContextHelpButtonHint, False)
         self.setModal(False)
+        # Shown without taking the keyboard from the model (see present).
+        self.setAttribute(Qt.WA_ShowWithoutActivating, True)
 
         root = QVBoxLayout(self)
         self.scene_label = QLabel()
@@ -152,15 +169,35 @@ class CameraSettingsDialog(QDialog):
                             ("parallel", tr("Parallel Projection"))):
             self.projection.addItem(label, mode)
         form.addRow(tr("Projection:"), self.projection)
-        lo, hi = getattr(window, "FOV_RANGE", (10.0, 120.0))
+        lo, hi = getattr(window, "FOV_RANGE", FOV_RANGE)
         self.preset = QComboBox()
         self.preset.addItem(tr("Custom"), None)
         for mm in LENS_PRESETS:
-            if lo <= fov_from_focal(mm) <= hi:
-                self.preset.addItem(tr("{mm} mm", mm=mm), float(mm))
-        self.focal = _spin(focal_from_fov(hi), focal_from_fov(lo), 1, " mm")
+            self.preset.addItem(tr("{mm} mm", mm=mm), float(mm))
+        # The range follows the sensor (set in ``refresh``); this one
+        # holds every lens of every sensor offered.
+        self.focal = _spin(1.0, 1000.0, 1, " mm")
         form.addRow(tr("Lens:"), self.preset)
-        form.addRow(tr("Focal length (35 mm):"), self.focal)
+        form.addRow(tr("Focal length:"), self.focal)
+        # The sensor the millimetres are read for: «50 mm» gives the
+        # picture a 50 mm lens gives on that camera.
+        self.sensor = QComboBox()
+        from core.units import localized
+        for key, label in SENSOR_CHOICES:
+            # «23,6 × 15,6» where the document reads with a comma.
+            self.sensor.addItem(localized(label), key)
+        self.sensor.addItem(tr("Custom"), "custom")
+        self.sensor.setToolTip(tr(
+            "The camera's sensor: a focal length gives the picture it gives "
+            "on that sensor. A smaller sensor sees narrower with the same "
+            "lens."))
+        form.addRow(tr("Sensor:"), self.sensor)
+        smin, smax = SENSOR_RANGE_MM
+        self.sensor_w = _spin(smin, smax, 1, " mm")
+        self.sensor_h = _spin(smin, smax, 1, " mm")
+        self._sensor_row = _row(self.sensor_w, QLabel("×"), self.sensor_h)
+        form.addRow(tr("Sensor size:"), self._sensor_row)
+        self._sensor_form = form
         pct = MAX_SHIFT * 100.0
         self.shift_y = _spin(-pct, pct, 1, " %")
         self.shift_y.setToolTip(tr(
@@ -235,6 +272,9 @@ class CameraSettingsDialog(QDialog):
         for box in self.eye + self.target:
             box.valueChanged.connect(self._on_position)
         self.preset.currentIndexChanged.connect(self._on_preset)
+        self.sensor.currentIndexChanged.connect(self._on_sensor)
+        self.sensor_w.valueChanged.connect(self._on_sensor)
+        self.sensor_h.valueChanged.connect(self._on_sensor)
         self.focal.valueChanged.connect(self._on_focal)
         self.fov.valueChanged.connect(self._on_fov)
         for box in (self.roll, self.shift_x, self.shift_y, self.near,
@@ -346,13 +386,20 @@ class CameraSettingsDialog(QDialog):
         screen; already open, it is only raised."""
         opening = not self.isVisible()
         if opening:
+            self._custom_sensor = False      # the list names what it is
+            self._shown = None
+            self.refresh()
             self.fit_on_screen(keep_centre=False)
         self.show()
         if opening:
             # Its title bar is known only once shown: centre it again.
             self.fit_on_screen(keep_centre=False)
         self.raise_()
-        self.activateWindow()
+        # The keyboard stays with the model: Z, then «35mm», still work with
+        # this window open. A click on a field here is what types into it.
+        vp = self._viewport()
+        if vp is not None:
+            vp.setFocus(Qt.OtherFocusReason)
 
     def is_advanced(self) -> bool:
         return self.more.isChecked()
@@ -363,6 +410,10 @@ class CameraSettingsDialog(QDialog):
         made here is kept in it."""
         cam = self._camera()
         self._scene_view = view
+        self._bound_state = None
+        self._custom_sensor = False
+        self._shown = None
+        self.refresh()
         self._bound_state = self._state(cam) if cam is not None else None
         self._show_scene_label()
 
@@ -466,8 +517,21 @@ class CameraSettingsDialog(QDialog):
             i = self.projection.findData(cam.projection_mode())
             self.projection.setCurrentIndex(max(0, i))
             persp = cam.perspective
-            for w in (self.focal, self.fov, self.preset):
+            for w in (self.focal, self.fov, self.preset, self.sensor,
+                      self.sensor_w, self.sensor_h):
                 w.setEnabled(persp)
+            lo, hi = getattr(self._window, "FOV_RANGE", FOV_RANGE)
+            self.focal.setRange(round(cam.focal_for_fov(hi), 1),
+                                round(cam.focal_for_fov(lo), 1))
+            sw, sh = cam.sensor_size()
+            key = next((k for k, size in SENSORS.items()
+                        if size == (sw, sh)), "custom")
+            if self._custom_sensor:
+                key = "custom"
+            self.sensor.setCurrentIndex(self.sensor.findData(key))
+            put(self.sensor_w, sw)
+            put(self.sensor_h, sh)
+            self._show_sensor_size(self.sensor.currentData() == "custom")
             put(self.fov, cam.fov_deg)
             put(self.focal, cam.focal_mm)
             i = self.preset.findData(float(round(cam.focal_mm)))
@@ -521,7 +585,7 @@ class CameraSettingsDialog(QDialog):
         cam = self._camera()
         if cam is None or not cam.perspective:
             return
-        lo, hi = getattr(self._window, "FOV_RANGE", (10.0, 120.0))
+        lo, hi = getattr(self._window, "FOV_RANGE", FOV_RANGE)
         cam.fov_deg = float(min(hi, max(lo, degrees)))
         self._repaint()
 
@@ -530,15 +594,41 @@ class CameraSettingsDialog(QDialog):
             return
         mm = self.preset.currentData()
         if mm is not None:
-            self._set_fov(fov_from_focal(mm))
+            self._set_fov(self._camera().fov_for_focal(mm))
 
     def _on_focal(self, _v=None) -> None:
         if not self._syncing:
-            self._set_fov(fov_from_focal(self.focal.value()))
+            cam = self._camera()
+            if cam is not None:
+                self._set_fov(cam.fov_for_focal(self.focal.value()))
 
     def _on_fov(self, _v=None) -> None:
         if not self._syncing:
             self._set_fov(self.fov.value())
+
+    def _show_sensor_size(self, on: bool) -> None:
+        """The width × height row, only for a sensor typed by hand."""
+        if self._sensor_form.isRowVisible(self._sensor_row) != on:
+            self._sensor_form.setRowVisible(self._sensor_row, on)
+            self._refit_soon()
+
+    def _on_sensor(self, _v=None) -> None:
+        if self._syncing:
+            return
+        cam = self._camera()
+        if cam is None:
+            return
+        key = self.sensor.currentData()
+        self._custom_sensor = key == "custom"
+        if key == "custom":
+            self._show_sensor_size(True)
+            size = (self.sensor_w.value(), self.sensor_h.value())
+        else:
+            self._show_sensor_size(False)
+            size = SENSORS.get(key)
+        # The picture stays; what it reads in millimetres changes.
+        cam.set_sensor(size)
+        self._repaint()
 
     def _on_lens(self, _v=None) -> None:
         if self._syncing:

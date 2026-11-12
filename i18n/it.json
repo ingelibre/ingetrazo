@@ -1926,7 +1926,6 @@
  "Click where the component goes.": "Fai clic dove va il componente.",
  "Drag to orbit. Shift = pan. Wheel = zoom. Middle button orbits from any tool.": "Trascina per orbitare. Maiusc = panoramica. Rotella = zoom. Il tasto centrale orbita da qualsiasi strumento.",
  "Drag to pan. Wheel = zoom.": "Trascina per fare la panoramica. Rotella = zoom.",
- "Drag up to zoom in, down to zoom out. Wheel zooms at the cursor.": "Trascina verso l'alto per ingrandire, verso il basso per ridurre. La rotella zooma sul cursore.",
  "Drag a box to zoom into it.": "Trascina un riquadro per zoomare al suo interno.",
  "{name}: Esc cancels.": "{name}: Esc annulla.",
  "Select objects. Shift = add/remove, Ctrl = add. Double-click a group to edit it.": "Seleziona oggetti. Maiusc = aggiungi/rimuovi, Ctrl = aggiungi. Doppio clic su un gruppo per modificarlo.",
@@ -3103,7 +3102,6 @@
  "The extension «{name}» failed in the right-click menu and is left out of it until IngeTrazo restarts. Update it or turn it off in the Extension manager.": "L'estensione «{name}» non ha funzionato nel menu del clic destro e ne resta esclusa finché IngeTrazo non viene riavviato. Aggiornala o disattivala nel Gestore delle estensioni.",
  "Field of View…": "Campo visivo…",
  "Change the camera's angle of view, like a lens: wider takes more in, narrower keeps the lines calm.": "Cambia l'angolo di visione della fotocamera, come un obiettivo: più ampio inquadra di più, più stretto mantiene le linee calme.",
- "Field of view in degrees (10–120):": "Campo visivo in gradi (10–120):",
  "Field of view applies to perspective; switch to Perspective first.": "Il campo visivo vale per la prospettiva; passa prima a Prospettiva.",
  "{name}: every face has its own material, so nothing changed — open it and paint the faces": "{name}: ogni faccia ha il proprio materiale, quindi non è cambiato nulla — aprilo e dipingi le facce",
  "Ambient occlusion": "Occlusione ambientale",
@@ -3686,7 +3684,6 @@
  "Looks at (X, Y, Z):": "Guarda verso (X, Y, Z):",
  "{mm} mm": "{mm} mm",
  "Lens:": "Obiettivo:",
- "Focal length (35 mm):": "Lunghezza focale (35 mm):",
  "Field of view (vertical):": "Campo visivo (verticale):",
  "Roll:": "Rollio:",
  "Slides the picture sideways without turning the camera.": "Sposta l’immagine di lato senza ruotare la fotocamera.",
@@ -3711,5 +3708,13 @@
  "Scene «{name}»: the changes made here are kept in the scene.": "Scena «{name}»: le modifiche fatte qui vengono salvate nella scena.",
  "Show this scene and set its camera: lens, shift, frame and more. The changes are kept in the scene.": "Mostra questa scena e imposta la sua fotocamera: obiettivo, decentramento, cornice e altro. Le modifiche vengono salvate nella scena.",
  "Angle, roll and shift": "Angolo, rollio e decentramento",
- "Show every setting: the eye and target by coordinates, the angle in degrees, roll, horizontal shift and clipping.": "Mostra tutte le impostazioni: occhio e punto guardato per coordinate, l’angolo in gradi, il rollio, il decentramento orizzontale e il ritaglio."
+ "Show every setting: the eye and target by coordinates, the angle in degrees, roll, horizontal shift and clipping.": "Mostra tutte le impostazioni: occhio e punto guardato per coordinate, l’angolo in gradi, il rollio, il decentramento orizzontale e il ritaglio.",
+ "Focal length:": "Lunghezza focale:",
+ "Sensor:": "Sensore:",
+ "Sensor size:": "Dimensioni del sensore:",
+ "The camera's sensor: a focal length gives the picture it gives on that sensor. A smaller sensor sees narrower with the same lens.": "Il sensore della fotocamera: una focale dà l’immagine che dà su quel sensore. Con lo stesso obiettivo, un sensore più piccolo vede più stretto.",
+ "Type a focal length like 35mm, or an angle like 60deg.": "Digita una focale come 35mm, o un angolo come 60deg.",
+ "Lens {mm} mm, field of view {deg}°": "Obiettivo {mm} mm, campo visivo {deg}°",
+ "Drag up or down to zoom; the wheel zooms at the cursor. Type 35mm or 60deg for the lens.": "Trascina su o giù per lo zoom; la rotella zooma sul cursore. Digita 35mm o 60deg per l’obiettivo.",
+ "Field of view in degrees (1–120):": "Campo visivo in gradi (1–120):"
 }
