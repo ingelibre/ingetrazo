@@ -4,15 +4,19 @@ All notable changes to IngeTrazo are documented here.
 Format inspired by [Keep a Changelog](https://keepachangelog.com); versions
 follow [SemVer](https://semver.org).
 
-## [Unreleased]
+## [0.6.2] — 2026-11-16
 
-**Cuatro temas nuevos —Estudio, Solarized, Campbell y Arena—; exportar la
-vista como SVG con caras, colores, texturas y sombras, diez veces más rápido
-en modelos grandes y con una barra para cancelar; la
-herramienta Norte y los ajustes de cámara; el motor Rust hace las caras del
-SVG, la triangulación y las líneas por capa; peso y trama de corte por capa;
-escenas con carpetas y miniaturas, pestañas de iconos y el tema Pizarra;
-secciones que se arrastran sin tirones; y decenas de arreglos.**
+**Láminas y acotar, como tema de la versión: cotas de lámina que enganchan a
+lo largo de las aristas, se voltean y se separan del texto; el compositor
+abre en segundos aunque el modelo sea enorme, y sus pestañas son iconos.
+Transiciones entre escenas, Reproducir y vídeo; la herramienta Norte y los
+ajustes de cámara; exportar la vista como SVG en capas, con caras, texturas
+y sombras; cuatro temas nuevos y el tema Pizarra; escenas con carpetas y
+miniaturas; varias vistas, cada una con su estilo. El motor Rust abre y
+mueve los modelos enormes en menos tiempo y con mucha menos memoria. Y
+decenas de arreglos, muchos de colaboradores: Ctrl+S con extensiones
+abiertas, la vista explosionada, copias exactas con Mover+Ctrl y el cierre
+en Mac al importar un .skp con escenas.**
 
 ### Añadido
 
@@ -42,10 +46,15 @@ secciones que se arrastran sin tirones; y decenas de arreglos.**
   encuadre; la lente se escribe con Zoom.
 - **Transiciones entre escenas, Reproducir y vídeo** (#1342,
   @canalsecuario-blip): al mostrar una escena la cámara se desliza hasta ella
-  (Cámara ▸ Animación ▸ Transiciones de escena, encendido por defecto; Esc o
-  mover la cámara lo detiene); Reproducir recorre las escenas en bucle, y
-  Archivo ▸ Exportar ▸ Escenas como vídeo (.mkv) graba el recorrido en
-  MPEG-4. Ajustes de duración y pausa en Animación ▸ Ajustes de animación.
+  (Esc o mover la cámara lo detiene); Cámara ▸ Animación ▸ Reproducir
+  recorre las escenas en bucle, y Archivo ▸ Exportar ▸ Escenas como vídeo
+  (.mkv) graba el recorrido en MPEG-4. La duración del deslizamiento y la
+  pausa en cada escena se ajustan en Cámara ▸ Animación ▸ Ajustes de
+  animación.
+  *Para desactivarlas:* desmarca Cámara ▸ Animación ▸ Transiciones de escena
+  y las escenas vuelven a cambiar al instante, como antes. Vienen encendidas
+  por defecto; la casilla se guarda con cada proyecto, así que hay que
+  guardar el archivo para que se quede apagada.
 - **Peso y trama de corte por capa** (#1100, @canalsecuario-blip; cierra #926
   y #281): en las láminas, en el DXF y en la vista 3D.
 - **Escenas** como pestaña propia del panel lateral, con carpetas y
@@ -92,6 +101,11 @@ secciones que se arrastran sin tirones; y decenas de arreglos.**
   memoria de 9 GB a 5,4 GB; mover, seleccionar con caja y empujar ya no
   construyen los grupos que no tocan, y las vistas que se suman a la
   cuadrícula comparten lo ya calculado.
+- **Láminas de modelos grandes sin esperas**: abrir el compositor de la
+  plaza Queñuamarca pasa de 57 s a 2,5 s y las inferencias de la primera
+  cota salen en 0,3 s; con las cotas ancladas al modelo, abrir la lámina de
+  una plaza de 3 400 objetos baja de 5 s a menos de 1 s, porque ya no se
+  construyen las mallas diferidas para buscar sus anclas.
 - **Pestañas del panel lateral de las láminas con iconos** (Diseño,
   Elementos, Propiedades, Vistas): la pestaña abierta muestra icono y
   nombre, las demás solo el icono y su nombre al pasar el ratón.
