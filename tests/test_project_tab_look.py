@@ -50,6 +50,17 @@ def test_an_accent_line_under_the_active_name(win):
         + abs(c.blue() - a.blue()) < 40
 
 
+def test_as_tall_as_a_tab_from_the_start(win):
+    """The bar is built empty and gets its first tab while the window is
+    hidden, when Qt asks for no new size: it opened at its row's height and
+    grew to a tab's a moment later. Where a tab is taller than that row
+    (macOS's fonts) the accent line was cut off until then, and the views
+    under the bar shrank once the user was already looking."""
+    tabs = _tabs(win)
+    assert tabs.height() >= tabs.tabRect(0).height()
+    assert tabs.sizeHint().height() >= tabs._panel_tab_height()
+
+
 def test_narrow_without_cutting_the_name(win, tmp_path):
     from core.scene import Scene
     from formats import igz
