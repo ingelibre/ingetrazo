@@ -261,7 +261,7 @@ def test_arc_midpoints_are_kept_per_mesh_however_many_and_follow_the_content(
         vp._arc_midpoints(0.0, 0.0)
         assert len(calls) == first                 # ...not worked out again
         pts = {(round(p.x(), 6), round(p.y(), 6))
-               for p in vp._arc_mid_cache[1]}
+               for p, _ctx in vp._arc_mid_cache[1]}   # (point, snap context)
         assert (0.0, 9.0) in pts and (5.0, 0.0) not in pts
     finally:
         _close(win)

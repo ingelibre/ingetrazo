@@ -118,6 +118,9 @@ def test_show_scene_brings_the_selected_scene_back(win):
     cam = win.viewport.camera
     view = _add(win, "Planta")
     cam.distance = view.distance * 3
+    # At once, without the glide of scene transitions (#1342), which the
+    # tests of views/scene_player.py check.
+    win.viewport.scene.animation = None
     win._scene_actions["scene_show"].trigger()
     assert cam.distance == pytest.approx(view.distance)
     assert "Planta" in win.statusBar().currentMessage()
