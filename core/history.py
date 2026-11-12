@@ -2835,7 +2835,15 @@ def _weld_landed(mesh, moving: set) -> bool:
     until Make Group copied the geometry, welded on the way, and refused the
     edge whose ends were now one vertex (#341, @pacaeiro). Only a move that
     actually lands pays for the weld: the check is one pass over the
-    vertices, the weld runs when two of them share a point."""
+    vertices, the weld runs when two of them share a point.
+
+    The weld drops a wall left with under three corners. A wall flattened
+    along a curve keeps more (#1294): push/pull merges an arc's nearly flat
+    neighbouring walls, and the end one into the side wall it meets
+    tangentially. Its loop then goes out along the curve and back: a spur,
+    or the whole loop for a wall that was all curve. Spurs reaching a
+    landed vertex are cut off (:func:`_without_spurs`); a wall left with
+    under three corners goes, the rest is rebuilt on what remains."""
     moved_keys = {_key(v.position) for v in mesh.vertices if id(v) in moving}
     if not moved_keys:
         return False
@@ -2843,7 +2851,42 @@ def _weld_landed(mesh, moving: set) -> bool:
                if id(v) not in moving):
         return False
     mesh.weld_coincident()
+    for f in list(mesh.faces):
+        if f.hole_loops or not any(_key(v.position) in moved_keys
+                                   for v in f.loop):
+            continue
+        kept = _without_spurs(f.loop, moved_keys)
+        if len(kept) == len(f.loop):
+            continue
+        attrs = dict(f.attrs)
+        mesh.remove_face(f)
+        if len(kept) >= 3:
+            g = mesh.add_face([QVector3D(v.position) for v in kept])
+            g.attrs = attrs
     return True
+
+
+def _without_spurs(loop, landed: set) -> list:
+    """``loop`` with every spur cut off: a run out to a landed vertex and
+    straight back (``x, tip, x``), as often as one is left. A loop that was
+    only spurs ends with under three corners: it bounded no area."""
+    out = list(loop)
+    changed = True
+    while changed and len(out) >= 3:
+        changed = False
+        n = len(out)
+        for i in range(n):
+            prev, tip, nxt = out[i - 1], out[i], out[(i + 1) % n]
+            if tip is prev:                  # a corner listed twice
+                del out[i]
+                changed = True
+                break
+            if prev is nxt and _key(tip.position) in landed:
+                for j in sorted((i, (i + 1) % n), reverse=True):
+                    del out[j]
+                changed = True
+                break
+    return out
 
 
 def _carried_faces(mesh, moving: set) -> list:
@@ -2921,7 +2964,7 @@ class MoveVerticesCommand(Command):
             t.translate(self.delta)
             _remap_uvws(scene.mesh, t, carried)
         self.welded = _weld_landed(scene.mesh, moving)
-        fold_nonplanar_faces(scene.mesh)
+        fold_nonplanar_faces(scene.mesh, moved=landing)
         if self.welded and before is not None:
             after = defects_near([v for v in scene.mesh.vertices
                                   if _key(v.position) in landing])

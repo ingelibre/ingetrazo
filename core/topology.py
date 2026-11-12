@@ -1822,7 +1822,55 @@ def _fold_pieces(mesh, face) -> list | None:
     return out
 
 
-def fold_nonplanar_faces(mesh, tolerance: float = _PLANAR_TOLERANCE) -> list:
+def _strip_triangles(face, moved: set):
+    """The warped ``face`` cut into a strip of triangles between its moved
+    and its unmoved corners, or ``None`` when that does not apply.
+
+    A move that lowers a curved edge onto the floor (#1294) leaves the top
+    face with a fixed back edge and the whole arc on the ground. Earcut
+    happily joins arc points to arc points, and those triangles, all on the
+    ground, merge into a flat piece lying over the floor: the join is then
+    refused as two faces overlapping. A strip uses, in every triangle, a
+    corner from each side — the ruled surface the drag shows.
+
+    Applies to a face with no holes whose corners, going round, are one run
+    of moved corners (position keys in ``moved``) and one run of unmoved
+    ones; every triangle must keep an area and face the way the face did.
+
+    The usual fold of a modeller: the unmoved side first, from the first moved
+    corner, then ONE fan from the last unmoved corner over every moved one
+    — a flat piece and a cone, not a fan from each end. Returns
+    ``(triangles, apex, rim)``: the fan's apex and the moved corners inside
+    the fan, whose fold edges may be soft (:func:`fold_nonplanar_faces`)."""
+    if face.holes:
+        return None
+    loop = face.vertices
+    n = len(loop)
+    flags = [_key(p) in moved for p in loop]
+    if n < 4 or all(flags) or not any(flags):
+        return None
+    starts = [i for i in range(n) if flags[i] and not flags[i - 1]]
+    if len(starts) != 1:
+        return None
+    i0 = starts[0]
+    order = [loop[(i0 + k) % n] for k in range(n)]
+    m = sum(flags)
+    a = order[:m]                    # moved, in loop order
+    b = order[m:][::-1]              # unmoved, against it: b[0] is next to a[0]
+    normal = face.normal()
+    tris = [(a[0], b[j + 1], b[j]) for j in range(len(b) - 1)]
+    tris += [(a[i], a[i + 1], b[-1]) for i in range(len(a) - 1)]
+    for tri in tris:
+        cross = QVector3D.crossProduct(tri[1] - tri[0], tri[2] - tri[0])
+        if (cross.length() < 1e-12
+                or QVector3D.dotProduct(cross, normal) <= 0.0):
+            return None
+    return ([tuple(QVector3D(p) for p in tri) for tri in tris],
+            QVector3D(b[-1]), [QVector3D(p) for p in a[1:-1]])
+
+
+def fold_nonplanar_faces(mesh, tolerance: float = _PLANAR_TOLERANCE,
+                         moved: set | None = None) -> list:
     """*Autofold*: split every face a move has warped out of its
     plane into planar pieces along fold edges.
 
@@ -1832,7 +1880,15 @@ def fold_nonplanar_faces(mesh, tolerance: float = _PLANAR_TOLERANCE) -> list:
     corner becomes exactly two triangles joined by one fold edge. Merging is
     confined to the pieces of the same source face, so a fold never dissolves
     into a coplanar neighbour across the original boundary. Returns the faces
-    that were folded (the originals, already removed from the mesh)."""
+    that were folded (the originals, already removed from the mesh).
+
+    ``moved``: the position keys the move left its vertices at. A face whose
+    corners are one run of moved and one run of unmoved ones folds as a
+    strip between the two (:func:`_strip_triangles`, #1294). Where the
+    moved corners run along a curve (an arc's segments), the fold edges of
+    its fan are soft, so the cone reads as one smooth surface, as the
+    curve's own wall did; the fold between the flat piece and the cone
+    stays a line."""
     folded = []
     for face in list(mesh.faces):
         pts = list(face.vertices)
@@ -1840,11 +1896,13 @@ def fold_nonplanar_faces(mesh, tolerance: float = _PLANAR_TOLERANCE) -> list:
             pts += list(hole)
         if len(pts) <= 3 or is_planar(pts, tolerance):
             continue
-        tris = face.triangulate()
+        strip = _strip_triangles(face, moved) if moved else None
+        tris = strip[0] if strip else face.triangulate()
+        soft = _curve_fan_edges(mesh, face, *strip[1:]) if strip else []
         if len(tris) < 2:
             continue
         exact = False
-        if (not face.holes and len(face.loop) <= _FOLD_DP_MAX
+        if (not strip and not face.holes and len(face.loop) <= _FOLD_DP_MAX
                 and any(_flat_on_neighbour(mesh, face, t) for t in tris)):
             # Earcut laid a piece flat on a neighbouring face (#1294): a
             # curve lowered onto the one below it left three of its points
@@ -1876,6 +1934,12 @@ def fold_nonplanar_faces(mesh, tolerance: float = _PLANAR_TOLERANCE) -> list:
                     g = e.faces[0] if e.faces[1] is f else e.faces[1]
                     if g is f or g not in pieces:
                         continue
+                    if strip and not is_planar(f.vertices + g.vertices,
+                                               tolerance):
+                        # A strip's neighbours on a fine curve are within
+                        # the angle below yet not in one plane: merging
+                        # them pinched the result. Truly flat runs only.
+                        continue
                     # The exact fold's fan of thin pieces turns a little at
                     # each: merged on nearly parallel normals alone they made
                     # "faces" millimetres out of their plane (#1294). Half
@@ -1898,8 +1962,33 @@ def fold_nonplanar_faces(mesh, tolerance: float = _PLANAR_TOLERANCE) -> list:
                             break
                 if merged:
                     break
+        for apex, rim in soft:
+            e = mesh.find_edge(mesh.vertex_at(apex), mesh.vertex_at(rim))
+            if e is not None and len(e.faces) == 2:
+                e.soft = True
         folded.append(face)
     return folded
+
+
+def _curve_fan_edges(mesh, face, apex, rim) -> list:
+    """The fan edges ``(apex, rim point)`` to soften: those reaching a rim
+    point that sits inside a curve — both of its sides along the face's
+    loop are segments of a curve (an arc or a circle, ``Edge.curve``). A
+    bent line of plain edges keeps its folds as lines."""
+    loop = face.loop
+    n = len(loop)
+    index = {_key(v.position): i for i, v in enumerate(loop)}
+    out = []
+    for p in rim:
+        i = index.get(_key(p))
+        if i is None:
+            continue
+        sides = (mesh.find_edge(loop[i - 1], loop[i]),
+                 mesh.find_edge(loop[i], loop[(i + 1) % n]))
+        if all(e is not None and getattr(e, "curve", None) is not None
+               for e in sides):
+            out.append((QVector3D(apex), QVector3D(p)))
+    return out
 
 
 def _box_grid(lo, hi):
