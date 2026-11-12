@@ -2475,6 +2475,49 @@ def _panel_levels(p, ink):
     p.restore()
 
 
+def _sheet_layout(p, ink):
+    # A sheet: its drawing frame, a view inside, the title block in the
+    # accent at the bottom right (the composer's Layout tab).
+    p.setBrush(Qt.NoBrush)
+    p.drawRect(QRectF(6, 9, 36, 30))
+    p.drawRect(QRectF(10, 13, 20, 16))
+    p.drawPolyline(QPolygonF([QPointF(12, 26), QPointF(18, 19),
+                              QPointF(22, 23), QPointF(28, 16)]))
+    p.save()
+    p.setPen(Qt.NoPen)
+    p.setBrush(_accent())
+    p.drawRect(QRectF(31, 31, 9, 6))
+    p.restore()
+
+
+def _sheet_items(p, ink):
+    # The sheet's elements as a list: a mark and a line per row, the
+    # picked row in the accent (the composer's Items tab).
+    p.setBrush(Qt.NoBrush)
+    for y in (11, 24):
+        p.drawRect(QRectF(8, y - 3, 7, 7))
+        p.drawLine(QPointF(19, y + 0.5), QPointF(40, y + 0.5))
+    p.save()
+    p.setPen(Qt.NoPen)
+    p.setBrush(_accent())
+    p.drawRect(QRectF(8, 34, 7, 7))
+    p.restore()
+    p.drawLine(QPointF(19, 37.5), QPointF(40, 37.5))
+
+
+def _sheet_views(p, ink):
+    # Two sheets, the front one showing a view (the composer's Views and
+    # sheets tab); the view's sun in the accent.
+    p.setBrush(Qt.NoBrush)
+    p.drawPolyline(QPolygonF([QPointF(12, 10), QPointF(12, 6),
+                              QPointF(42, 6), QPointF(42, 32),
+                              QPointF(38, 32)]))
+    p.drawRect(QRectF(6, 12, 32, 30))
+    p.drawPolyline(QPolygonF([QPointF(9, 37), QPointF(17, 27),
+                              QPointF(23, 33), QPointF(35, 21)]))
+    _dot(p, 15, 19, 3.0)
+
+
 _DRAW = {
     **_SOLID_ICONS,
     "select": _select, "line": _line, "freehand": _freehand,
@@ -2527,6 +2570,8 @@ _DRAW = {
     "layers_previous": _layers_previous, "layer_add": _layer_add, "folder_add": _folder_add,
     "scene_add": _scene_add, "scenes_list": _scenes_list,
     "scenes_thumbs": _scenes_thumbs,
+    "sheet_layout": _sheet_layout, "sheet_items": _sheet_items,
+    "sheet_views": _sheet_views,
     "layers_filter": _layers_filter, "layers_filter_on": _layers_filter_on,
     "layers_colour": _layers_colour,
     "layers_expand": _layers_expand, "layers_collapse": _layers_collapse,

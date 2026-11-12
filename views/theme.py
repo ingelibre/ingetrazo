@@ -587,7 +587,7 @@ def _redraw_icons(app) -> None:
     object already deleted») or F3's menu walk segfaulted (extension bench,
     15-10). Its actions are reached anyway from the window that owns it."""
     from PySide6.QtGui import QAction
-    from PySide6.QtWidgets import QAbstractButton, QMenu
+    from PySide6.QtWidgets import QAbstractButton, QMenu, QTabWidget
     from views.icons import tool_icon
     for top in app.topLevelWidgets():
         actions = [] if isinstance(top, QMenu) else top.findChildren(QAction)
@@ -595,6 +595,15 @@ def _redraw_icons(app) -> None:
             key = obj.property("icon_key")
             if key:
                 obj.setIcon(tool_icon(str(key)))
+        if isinstance(top, QMenu):
+            continue
+        # Tabs whose page names its icon (the composer's side panels).
+        for tabs in top.findChildren(QTabWidget):
+            for i in range(tabs.count()):
+                page = tabs.widget(i)
+                key = page.property("tab_icon_key") if page else None
+                if key:
+                    tabs.setTabIcon(i, tool_icon(str(key)))
 
 
 # ---- applying ---------------------------------------------------------------

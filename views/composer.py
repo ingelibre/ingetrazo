@@ -6162,17 +6162,72 @@ class _PanelTabBar(QTabBar):
         event.acceptProposedAction()
 
 
+def _active_name_tab_style(composer):
+    """The style of the composer's side tab bars: the open tab with its
+    icon and name, the others with their icon only (as Inkscape's docked
+    dialogs). One per composer."""
+    style = getattr(composer, "_tab_style", None)
+    if style is not None:
+        return style
+    from PySide6.QtWidgets import QApplication, QProxyStyle, QStyle, \
+        QStyleOptionTab
+    from views.main_window import _IconTabStyle
+
+    class _ActiveNameTabStyle(_IconTabStyle):
+        @staticmethod
+        def _open(option) -> bool:
+            return (isinstance(option, QStyleOptionTab)
+                    and bool(option.state & QStyle.State_Selected))
+
+        def drawControl(self, element, option, painter, widget=None):
+            if element == QStyle.CE_TabBarTabLabel and self._open(option):
+                QProxyStyle.drawControl(self, element, option, painter,
+                                        widget)
+                return
+            super().drawControl(element, option, painter, widget)
+
+        def sizeFromContents(self, kind, option, size, widget=None):
+            if kind == QStyle.CT_TabBarTab and self._open(option):
+                return QProxyStyle.sizeFromContents(self, kind, option,
+                                                    size, widget)
+            return super().sizeFromContents(kind, option, size, widget)
+
+    style = _ActiveNameTabStyle(QApplication.style().name() or "Fusion")
+    style.setParent(composer)
+    composer._tab_style = style
+    return style
+
+
 class _PanelTabs(QTabWidget):
     """A side panel of the composer: tabs on top, as the properties panel
     always had. Empty, it says where its tabs went — and takes them back
     when one is dropped on it."""
 
+    #: The icon of each page's tab. As Inkscape's docked dialogs: the open
+    #: tab shows its icon and name, the others their icon alone (the name
+    #: their tooltip) — so all fit on the bar (Marco, 2026-11-12).
+    PAGE_ICONS = {"layout": "sheet_layout", "items": "sheet_items",
+                  "props": "panel_properties", "views": "sheet_views"}
+
     def __init__(self, composer, side: str) -> None:
         super().__init__()
         self.composer = composer
         self.side = side
-        self.setTabBar(_PanelTabBar(composer, side))
+        bar = _PanelTabBar(composer, side)
+        self.setTabBar(bar)
+        from PySide6.QtCore import QSize
+        from views.main_window import DOCK_TAB_ICON_PX
+        bar.setIconSize(QSize(DOCK_TAB_ICON_PX, DOCK_TAB_ICON_PX))
+        bar.setElideMode(Qt.ElideNone)
+        bar.setStyle(_active_name_tab_style(composer))
+        # The open tab grows to show its name, the others shrink to their
+        # icon: measured again on every change of tab.
+        self.currentChanged.connect(self._remeasure)
         self.setAcceptDrops(True)
+
+    def _remeasure(self, *_a) -> None:
+        bar = self.tabBar()
+        bar.setIconSize(bar.iconSize())
 
     def dragEnterEvent(self, event) -> None:
         if event.mimeData().hasFormat(TAB_MIME):
@@ -14563,7 +14618,15 @@ class ComposerWindow(QMainWindow):
                 other.removeTab(j)
         i = tabs.count() if index is None else max(0, min(index,
                                                           tabs.count()))
-        tabs.insertTab(i, w, self._page_titles[key])
+        from views.icons import tool_icon
+        icon_key = _PanelTabs.PAGE_ICONS.get(key)
+        title = self._page_titles[key]
+        if icon_key:
+            w.setProperty("tab_icon_key", icon_key)  # redrawn with the theme
+            at = tabs.insertTab(i, w, tool_icon(icon_key), title)
+        else:
+            at = tabs.insertTab(i, w, title)
+        tabs.setTabToolTip(at, title)
 
     def _save_tab_layout(self) -> None:
         import json
