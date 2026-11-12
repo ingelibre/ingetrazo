@@ -573,17 +573,20 @@ def test_a_scene_shown_from_views_and_sheets_is_marked_here(win):
 
 # ---- The list or the thumbnails ---------------------------------------------
 
-def _wait(timeout_ms=5000):
+def _wait(timeout_ms=5000, until=None):
     """Until the pictures are drawn, one per tick of the loop: a while,
     then on until the Scenes tab has none left to draw nor an old-picture
-    timer running (a slow machine needs more than a fixed pause)."""
+    timer running (a slow machine needs more than a fixed pause), and
+    ``until()`` holds when given (a loaded machine can leave the queue
+    empty for a moment before the next picture is put in it)."""
     import time
     from PySide6.QtTest import QTest
     QTest.qWait(300)
     panel = _app_panel()
     deadline = time.monotonic() + timeout_ms / 1000
     while (panel is not None and panel.isVisible()
-           and (panel._thumb_queue or panel._old_timer.isActive())
+           and (panel._thumb_queue or panel._old_timer.isActive()
+                or (until is not None and not until()))
            and time.monotonic() < deadline):
         QTest.qWait(20)
 
@@ -626,7 +629,7 @@ def test_each_scene_gets_its_picture_and_a_changed_one_is_drawn_again(
         return QIcon(pm)
     monkeypatch.setattr(ScenesPanel, "_render_thumbnail", fake)
     panel = _scenes(win, "A", "B")
-    _wait()
+    _wait(until=lambda: len(drawn) >= 2)
     assert sorted(drawn) == ["A", "B"]
     row = panel.row_for(_view(win, "A"))
     assert row.icon(0).pixmap(96, 64).toImage().pixelColor(48, 32) == \
@@ -639,7 +642,7 @@ def test_each_scene_gets_its_picture_and_a_changed_one_is_drawn_again(
     win.viewport.camera.distance += 10.0
     panel.select_view(_view(win, "B"))
     panel._on_update()
-    _wait()
+    _wait(until=lambda: bool(drawn))
     assert drawn == ["B"]
 
 
