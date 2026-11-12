@@ -16,6 +16,9 @@ secciones que se arrastran sin tirones; y decenas de arreglos.**
 
 ### Añadido
 
+- **Alinear vista** en el menú contextual de una cara (#1374, @pacaeiro;
+  cierra #1313): la cámara mira de frente la cara elegida, también dentro de
+  grupos y componentes.
 - **Sombras suaves** (#1324, @ultracat; cierra #1281): un nivel de suavidad
   del borde de las sombras del sol en Preferencias.
 - **Cuatro temas nuevos** en Preferencias ▸ Tema, en todos los idiomas:
@@ -121,6 +124,9 @@ secciones que se arrastran sin tirones; y decenas de arreglos.**
 
 ### Arreglado
 
+- **Lo oculto dentro de un grupo ya no sale en las láminas ni en las
+  exportaciones** (#1204, @vicc3d): un grupo anidado oculto, en una capa
+  oculta, o una cara oculta dentro de un grupo, quedan fuera como en la vista.
 - **Mover+Ctrl copia exacto** (#1360, @rezaprama; cierra #1087): la copia de
   una malla grande o importada sale idéntica, sin rehacer caras ni partir lo
   coplanar, y siempre igual.
