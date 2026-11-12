@@ -87,6 +87,9 @@ secciones que se arrastran sin tirones; y decenas de arreglos.**
 
 ### Cambiado
 
+- **Pestañas del panel lateral de las láminas con iconos** (Diseño,
+  Elementos, Propiedades, Vistas): la pestaña abierta muestra icono y
+  nombre, las demás solo el icono y su nombre al pasar el ratón.
 - **Editar un material con textura lo cambia en todo el modelo** (#1308):
   Aplicar en el panel Materiales cambiaba sólo la textura con que se pinta
   después y las caras seleccionadas, y un mismo material quedaba en dos
@@ -124,6 +127,15 @@ secciones que se arrastran sin tirones; y decenas de arreglos.**
 
 ### Arreglado
 
+- **Ctrl+S vuelve a guardar con el panel de una extensión abierto** (cierra
+  #1334): una extensión que usa la misma tecla para lo suyo (el Editor de
+  nodos guarda su grafo con Ctrl+S y Ctrl+Mayús+S) dejaba la tecla sin
+  dueño y no guardaba nadie. Ahora, dentro del panel de la extensión la
+  tecla es de la extensión; en el resto de la ventana, de IngeTrazo.
+- **La vista explosionada ya no vuelve componentes los grupos** (cierra
+  #1375): las piezas que eran grupos salían componentes, y dentro de ellas
+  ya no se podía agrupar ni explotar. Un modelo guardado así se recupera
+  explotando la pieza y agrupándola otra vez.
 - **Lo oculto dentro de un grupo ya no sale en las láminas ni en las
   exportaciones** (#1204, @vicc3d): un grupo anidado oculto, en una capa
   oculta, o una cara oculta dentro de un grupo, quedan fuera como en la vista.
