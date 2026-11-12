@@ -1,5 +1,7 @@
 # Ejemplos
 
+[Bahasa Indonesia](README.id.md)
+
 Cuatro documentos reales, dibujados con IngeTrazo para la remodelación de la
 plaza de Yanque, distrito de Chichas (Arequipa, 2026) por Marco Sumari Tellez. Ábrelos
 con **Archivo ▸ Abrir** (o doble clic si tienes IngeTrazo instalado); tres

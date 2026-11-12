@@ -1,5 +1,7 @@
 # IngeTrazo
 
+[Bahasa Indonesia](README.id.md) · [Español](#en-español)
+
 *Pronounced **EEN-heh-TRAH-soh** — from Spanish* inge(niería) *"engineering"
 +* trazo *"a drawn stroke": the engineer's stroke.*
 

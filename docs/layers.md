@@ -1,5 +1,7 @@
 # Layers
 
+[Bahasa Indonesia](layers.id.md)
+
 Layers organise the model. Every object, face, edge, dimension, text,
 section plane, guide and reference image carries a layer, and with it you
 decide **what is seen**, **what can be touched**, **where new things go**

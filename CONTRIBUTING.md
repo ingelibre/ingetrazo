@@ -1,5 +1,7 @@
 # Contributing to IngeTrazo
 
+[Bahasa Indonesia](CONTRIBUTING.id.md)
+
 Thank you for your interest in IngeTrazo! Contributions of any kind are welcome — code, documentation, translations, bug reports, design feedback.
 
 ## Development setup
