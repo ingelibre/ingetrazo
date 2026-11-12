@@ -168,7 +168,8 @@ def test_the_box_bounds_are_those_of_the_chunk_asked_alone():
         vpmod._pick_warm_take(va)
         for chunk, _s in warm.bounds:
             hit = chunk["_box_bounds"]
-            assert hit[0] is chunk["v0"] and hit[1] is chunk["edges"]
+            # Weakly keyed on the triangle arrays, by the edges themselves.
+            assert hit[0][0]() is chunk["v0"] and hit[1] is chunk["edges"]
             alone = {k: chunk[k] for k in ("v0", "e1", "e2", "edges")}
             want = _local_bounds(alone)
             assert (hit[2][0] == want[0]).all() and (hit[2][1] == want[1]).all()
