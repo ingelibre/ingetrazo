@@ -128,14 +128,16 @@ class ScaleTool(Tool):
         self._last = None
 
     # ---- Box + grips --------------------------------------------------------
-    def _selection_bounds(self, viewport):
+    def _selection_bounds(self, viewport, selection=None):
         """World AABB of the selection: loose vertices, whole groups (their
         nested placements included) and reference images."""
         from core.group import iter_placements
         from core.image_plane import ImagePlane
         from core.mesh import Edge, Face
 
-        self._pick_frame(viewport)
+        if selection is None:
+            selection = viewport.scene.selection
+        self._pick_frame(viewport, selection)
         lo = [float("inf")] * 3
         hi = [float("-inf")] * 3
         seen = False
@@ -150,7 +152,7 @@ class ScaleTool(Tool):
                 if c > hi[i]:
                     hi[i] = c
 
-        for ent in viewport.scene.selection:
+        for ent in selection:
             if isinstance(ent, Edge):
                 absorb(ent.a)
                 absorb(ent.b)
@@ -205,13 +207,13 @@ class ScaleTool(Tool):
         return sum(1 for i in range(3) if ext[i] > _FLAT)
 
     # ---- The box's frame (issue #44) ----------------------------------------
-    def _pick_frame(self, viewport) -> None:
+    def _pick_frame(self, viewport, selection=None) -> None:
         """One group or component selected: its own axes. Anything else:
         the drawing axes. The world frame is kept as ``None`` so every
         number is exactly what it was before the box could turn."""
         from core import axes
         from core.group import Group, frame_axes, group_frame
-        sel = list(viewport.scene.selection)
+        sel = list(viewport.scene.selection if selection is None else selection)
         frame = None
         if len(sel) == 1 and isinstance(sel[0], Group):
             frame = group_frame(sel[0])

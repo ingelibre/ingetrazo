@@ -18590,12 +18590,18 @@ class Viewport(QOpenGLWidget):
         calls this too: it used to carry its own copy of the cascade,
         without the group step, so Esc never left a group (Marco,
         2026-09-14: «he hecho Esc varias veces y no salgo»)."""
+        tool = self.active_tool
+        if tool is not None and getattr(tool, "cancel_before_constraints", False):
+            self._set_value_buffer("")
+            self.release_constraints()
+            tool.on_cancel(self)
+            self._release_linear_mode()
+            return
         if self._value_buffer:
             self._set_value_buffer("")
             return
         if self.release_constraints():
             return
-        tool = self.active_tool
         close = getattr(tool, "close_array_window", None)
         if callable(close) and self._array_pending():
             # Right after a copy the array window is what is open: Esc

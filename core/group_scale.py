@@ -8,6 +8,8 @@ one its selection box follows: a group rotated and then made a component
 has an identity ``xform`` and all its turn in ``axes``."""
 from __future__ import annotations
 
+import math
+
 from PySide6.QtGui import QVector3D
 
 from core.group import frame_axes, group_frame
@@ -75,14 +77,16 @@ def _exact_command(group, center, factor, axes):
     return cmd
 
 
-def scale_command(group, target):
+def scale_command(group, target, center=None):
     """A command taking ``group`` to the scale ``target`` (X, Y, Z), or
-    ``None`` when nothing would change or a value is not usable."""
-    if any(t <= _EPS for t in target):
+    ``None`` when nothing would change or a value is not usable. ``center``
+    is a world-space pivot; ``None`` keeps the group's default pivot."""
+    if any(not math.isfinite(t) or t <= _EPS for t in target):
         return None
     now = group_scale(group)
     factor = tuple(t / n if n > _EPS else 1.0 for t, n in zip(target, now))
     if all(abs(f - 1.0) < 1e-6 for f in factor):
         return None
     axes = frame_axes(_frame(group))[1:]
-    return _exact_command(group, _pivot(group), factor, axes)
+    return _exact_command(group, _pivot(group) if center is None else center,
+                          factor, axes)
