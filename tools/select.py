@@ -134,58 +134,79 @@ def _box_loose_fast(viewport, rect, crossing):
     return edges, faces
 
 
-def _box_payload(viewport, pg):
-    """What the box test reads of one placement: the corners of its
-    triangles (``v0``, ``e1``, ``e2``) and its edges, in world space. A
-    component instance's full chunk transforms EVERY array of its
-    prototype's bake to world -- 1984 of them, 2.2 s of a box over a big
-    model, all of it thrown away: only the corners and the edges are
-    carried here, with the very maps the instance chunk uses. A chunk
-    already made for the instance is taken as it is."""
+# Bound temporary triangle/edge arrays and camera projections independently
+# of the import's size (#1175). Even-sized batches keep edge pairs together.
+_BOX_BATCH_POINTS = 8192
+
+
+def _box_source(viewport, pg):
+    """A placement's cached world chunk, or its prototype and lazy maps.
+
+    An uncached instance must not materialize its entire transformed mesh
+    just to answer a selection rectangle.
+    """
     xf = getattr(pg, "xform", None)
     if xf is None or getattr(pg, "mesh", None) is None:
-        return viewport._group_chunk(pg)
-    import numpy as np
+        return viewport._group_chunk(pg), None, None
     from views.viewport import _paint_of, _placed_maps, _proto_wrapper
     base = viewport._group_chunk(
         _proto_wrapper(viewport, pg.mesh, _paint_of(viewport, pg)))
     cur = (getattr(viewport, "_inst_chunks", None) or {}).get(id(pg))
     if cur is not None and cur["ikey"] == (base["uid"], tuple(xf.data())):
-        return cur
+        return cur, None, None
     _L, tv, tp = _placed_maps(xf)
-    a = np.frombuffer(base["edges"], np.float32).reshape(-1, 3)
-    out = {"v0": None, "e1": None, "e2": None,
-           "edges": tp(a.astype(np.float64)).astype(np.float32).tobytes()}
-    if base["v0"] is not None:
-        out["v0"] = tp(base["v0"])
-        out["e1"] = tv(base["e1"])
-        out["e2"] = tv(base["e2"])
-    return out
+    return base, tv, tp
+
+
+def _box_point_batches(ch, tv=None, tp=None):
+    """Yield ``(points, paired_edges)`` in bounded batches, without writes.
+
+    Match the renderer's term order: transform each triangle's origin and
+    directions separately before adding them. Placed edge buffers round to
+    float32, just as an instance chunk does.
+    """
+    import numpy as np
+    v0, e1, e2 = ch["v0"], ch["e1"], ch["e2"]
+    if v0 is not None:
+        for i in range(0, len(v0), _BOX_BATCH_POINTS):
+            sl = slice(i, i + _BOX_BATCH_POINTS)
+            a = tp(v0[sl]) if tp is not None else v0[sl]
+            yield a, False
+            yield a + (tv(e1[sl]) if tv is not None else e1[sl]), False
+            yield a + (tv(e2[sl]) if tv is not None else e2[sl]), False
+    pair = np.frombuffer(ch["edges"], np.float32).reshape(-1, 3)
+    for i in range(0, len(pair), _BOX_BATCH_POINTS):
+        points = pair[i:i + _BOX_BATCH_POINTS].astype(np.float64)
+        if tp is not None:
+            points = tp(points).astype(np.float32).astype(np.float64)
+        yield points, True
 
 
 def _local_bounds(ch):
     """``(lo, hi)`` of everything the box test reads of chunk ``ch`` (the
     triangle corners and the edges), cached on it; None when empty."""
     import numpy as np
+    import weakref
     # Keyed on the very arrays: a moved chunk gets new ones (a shift
     # rebuilds them), and stale bounds would answer for where it was.
+    key = (ch["v0"], ch["e1"], ch["e2"], ch["edges"])
     hit = ch.get("_box_bounds")
-    if hit is not None and hit[0] is ch["v0"] and hit[1] is ch["edges"]:
+    if (hit is not None and len(hit) == 3 and isinstance(hit[0], tuple)
+            and hit[1] is key[3]
+            and all((ref is None and array is None)
+                    or (array is not None and ref is not None and ref() is array)
+                    for ref, array in zip(hit[0], key[:3]))):
         return hit[2]
-    parts = []
-    if ch["v0"] is not None and len(ch["v0"]):
-        v0, e1, e2 = ch["v0"], ch["e1"], ch["e2"]
-        parts += [v0, v0 + e1, v0 + e2]
-    pair = np.frombuffer(ch["edges"], np.float32).reshape(-1, 3)
-    if len(pair):
-        parts.append(pair.astype(np.float64))
-    if parts:
-        pts = np.concatenate(parts, axis=0)
-        hit = (pts.min(axis=0), pts.max(axis=0))
-    else:
-        hit = None
-    ch["_box_bounds"] = (ch["v0"], ch["edges"], hit)
-    return hit
+    lo = hi = None
+    for points, _paired in _box_point_batches(ch):
+        low, high = points.min(axis=0), points.max(axis=0)
+        lo = low if lo is None else np.minimum(lo, low)
+        hi = high if hi is None else np.maximum(hi, high)
+    bounds = (lo, hi) if lo is not None else None
+    # Do not retain obsolete triangle arrays after a chunk changes.
+    refs = tuple(weakref.ref(a) if a is not None else None for a in key[:3])
+    ch["_box_bounds"] = (refs, key[3], bounds)
+    return bounds
 
 
 def _placement_side(viewport, pg, rect):
@@ -232,14 +253,12 @@ def _box_group_fast(viewport, group, rect, crossing):
             or getattr(viewport, "_group_chunk", None) is None
             or getattr(viewport, "_project_px", None) is None):
         return None
-    import numpy as np
     # A component's geometry lives in the placements it holds, each with its
     # own chunk: reading only the top-level one found an EMPTY array for an
     # imported component and dropped the whole test to the per-vertex Python
     # walk — 1.15M vertices for the hedge.
     expand = getattr(viewport, "_expand_placements", None)
     places = expand(group) if expand is not None else [group]
-    corners, edge_parts = [], []
     seen = False
     try:
         for pg in places:
@@ -259,41 +278,23 @@ def _box_group_fast(viewport, group, rect, crossing):
                 if crossing:
                     return True
                 continue
-            ch = _box_payload(viewport, pg)
-            v0, e1, e2 = ch["v0"], ch["e1"], ch["e2"]
-            if v0 is not None:
-                corners.extend((v0, v0 + e1, v0 + e2))
-            pair = np.frombuffer(ch["edges"], np.float32).reshape(-1, 3)
-            if len(pair):
-                edge_parts.append(pair.astype(np.float64))
+            ch, tv, tp = _box_source(viewport, pg)
+            for points, paired in _box_point_batches(ch, tv, tp):
+                xs, ys, ok = viewport._project_px(points)
+                x0, y0, x1, y1 = rect
+                inside = ok & (xs >= x0) & (xs <= x1) & (ys >= y0) & (ys <= y1)
+                if not crossing:
+                    if not inside.all():
+                        return False
+                elif inside.any():
+                    return True
+                elif paired and _seg_rect_mask(
+                        xs[0::2], ys[0::2], xs[1::2], ys[1::2],
+                        ok[0::2] & ok[1::2], rect, True).any():
+                    return True
     except Exception:  # noqa: BLE001
         return None
-    if not corners and not edge_parts:
-        if not seen:
-            return None
-        # Every placement answered on its box: in window mode none was
-        # out (that returned False), in crossing mode none was in.
-        return not crossing
-    pairs = (np.concatenate(edge_parts, axis=0) if edge_parts
-             else np.empty((0, 3)))
-    if len(pairs):
-        corners.append(pairs)
-    if not corners:
-        return None
-    pts = np.concatenate(corners, axis=0)
-    xs, ys, ok = viewport._project_px(pts)
-    x0, y0, x1, y1 = rect
-    inside = ok & (xs >= x0) & (xs <= x1) & (ys >= y0) & (ys <= y1)
-    if crossing:
-        if inside.any():
-            return True
-        if len(pairs):
-            exs, eys, eok = xs[-len(pairs):], ys[-len(pairs):], ok[-len(pairs):]
-            m = _seg_rect_mask(exs[0::2], eys[0::2], exs[1::2], eys[1::2],
-                               eok[0::2] & eok[1::2], rect, True)
-            return bool(m.any())
-        return False
-    return bool(ok.all() and inside.all())
+    return (not crossing) if seen else None
 
 
 def _frame_projector(viewport):
