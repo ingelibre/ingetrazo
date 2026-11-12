@@ -87,6 +87,11 @@ secciones que se arrastran sin tirones; y decenas de arreglos.**
 
 ### Cambiado
 
+- **Modelos enormes más rápidos con el motor Rust** (#158, #1092): el
+  primer cuadro de un modelo de 21 000 grupos baja de 60 s a 21 s y su
+  memoria de 9 GB a 5,4 GB; mover, seleccionar con caja y empujar ya no
+  construyen los grupos que no tocan, y las vistas que se suman a la
+  cuadrícula comparten lo ya calculado.
 - **Pestañas del panel lateral de las láminas con iconos** (Diseño,
   Elementos, Propiedades, Vistas): la pestaña abierta muestra icono y
   nombre, las demás solo el icono y su nombre al pasar el ratón.
