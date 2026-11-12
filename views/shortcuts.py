@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from functools import lru_cache
 
-from PySide6.QtCore import QSettings, Qt
+from PySide6.QtCore import QEvent, QObject, QSettings, Qt
 from PySide6.QtGui import QAction, QKeySequence
 from PySide6.QtCore import Signal
 from PySide6.QtCore import QKeyCombination
@@ -557,3 +557,105 @@ class ShortcutsPanel(QWidget):
         for act in self._actions:
             act.setShortcuts(default_shortcuts(act))
         self._fill()
+
+
+# ---- Two owners of one key -------------------------------------------------
+# An extension's panel that takes a key of the window's own — the Node
+# Editor's Ctrl+S and Ctrl+Shift+S for its graph — made that key ambiguous
+# to Qt, which then runs neither: Ctrl+S stopped saving the model for those
+# who had the panel (#1334). The owner nearest the focus wins: inside the
+# panel, the panel's; anywhere else, the window's.
+
+def _owner_widgets(obj, window):
+    """The widgets a QShortcut or QAction of ``window`` answers in. A
+    window-wide action of the window answers in the window, whether its
+    menu is open or not."""
+    from PySide6.QtGui import QShortcut
+    from PySide6.QtWidgets import QWidget
+    if isinstance(obj, QShortcut):
+        parent = obj.parent()
+        return [parent] if isinstance(parent, QWidget) else []
+    parent = obj.parent()
+    if (obj.shortcutContext() in (Qt.WindowShortcut, Qt.ApplicationShortcut)
+            and (parent is window or (isinstance(parent, QWidget)
+                                      and window.isAncestorOf(parent)
+                                      and parent.isVisible()))):
+        return [window if parent is window else parent]
+    return [o for o in obj.associatedObjects() if isinstance(o, QWidget)]
+
+
+def _holds(owner, focus) -> bool:
+    return owner is focus or (focus is not None and owner.isAncestorOf(focus))
+
+
+def _depth(widget) -> int:
+    n = 0
+    while widget is not None:
+        widget = widget.parentWidget()
+        n += 1
+    return n
+
+
+def _clash_winner(window, seq, focus):
+    """The QShortcut or QAction of ``window`` that key ``seq`` should run,
+    or None when it has no enabled owner reachable from ``focus``."""
+    from PySide6.QtGui import QAction, QShortcut
+    best, best_depth = None, -1
+    owners = list(window.findChildren(QShortcut)) + list(
+        window.findChildren(QAction))
+    for obj in owners:
+        if not obj.isEnabled():
+            continue
+        keys = obj.keys() if isinstance(obj, QShortcut) else obj.shortcuts()
+        if not any(k.matches(seq) == k.SequenceMatch.ExactMatch
+                   for k in keys):
+            continue
+        for owner in _owner_widgets(obj, window):
+            if not owner.isVisible() or owner.window() is not window:
+                continue
+            # The window's own answer anywhere in it; a panel's only with
+            # the focus inside the panel, and there the deeper one wins.
+            if owner is window:
+                depth = 1
+            elif _holds(owner, focus):
+                depth = _depth(owner)
+            else:
+                continue
+            if depth > best_depth:
+                best, best_depth = obj, depth
+    return best
+
+
+class _ClashResolver(QObject):
+    def eventFilter(self, obj, event):  # noqa: N802 — Qt override
+        if event.type() != QEvent.Shortcut or not event.isAmbiguous():
+            return False
+        from PySide6.QtWidgets import QApplication
+        focus = QApplication.focusWidget()
+        window = focus.window() if focus is not None \
+            else QApplication.activeWindow()
+        if window is None:
+            return False
+        winner = _clash_winner(window, event.key(), focus)
+        if winner is None:
+            return False
+        from PySide6.QtGui import QAction
+        if isinstance(winner, QAction):
+            winner.trigger()
+        else:
+            winner.activated.emit()
+        return True
+
+
+_resolver = None
+
+
+def resolve_shortcut_clashes() -> None:
+    """Install, once, the rule above for every window of the application."""
+    global _resolver
+    from PySide6.QtWidgets import QApplication
+    app = QApplication.instance()
+    if app is None or _resolver is not None:
+        return
+    _resolver = _ClashResolver(app)
+    app.installEventFilter(_resolver)

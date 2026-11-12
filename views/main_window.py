@@ -583,6 +583,8 @@ class MainWindow(QMainWindow):
         from views import shortcuts as _shortcuts
         _shortcuts.remember_defaults(self)
         _shortcuts.apply_user_shortcuts(self)
+        # An extension's panel that takes one of the window's keys (#1334).
+        _shortcuts.resolve_shortcut_clashes()
         self._activate_tool("select")
         self._apply_new_document_units()
         self._insert_scale_figure()
