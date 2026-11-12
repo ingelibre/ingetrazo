@@ -37,6 +37,7 @@ from core.history import (
     AddEdgeCommand,
     AddFaceCommand,
     AddGuideCommand,
+    Command,
     CompoundCommand,
     InsertGroupCommand,
     RotateGroupCommand,
@@ -51,6 +52,58 @@ from core.guide import is_guide
 from tools.base import ToolContext
 from tools.move import copied_guide, gather_targets, guide_ghost_segments
 from tools.protractor import ProtractorBase
+
+
+class _MergeCopiedFaces(Command):
+    """Merge only overlaps between a rotated copy and geometry outside it.
+
+    All copies are stamped first. One lazy snapshot protects their combined
+    mesh edit; undo restores the stamped faces before their add commands
+    remove them. Disjoint copies need no snapshot and retain their topology.
+    """
+
+    keeps_groups = True
+
+    def __init__(self, batches) -> None:
+        self._batches = batches
+        self._before = self._after = None
+        self._selection_before = self._selection_after = None
+        self._context = None
+
+    def do(self, scene) -> None:
+        if self._after is not None:
+            scene.mesh.restore_state(self._after)
+            if scene.edit_group is self._context:
+                scene.selection = set(self._selection_after)
+            scene.version += 1
+            return
+        from core.history import _merge_overlapping_planes
+
+        def checkpoint():
+            if self._before is None:
+                self._before = scene.mesh.capture_state()
+                self._selection_before = set(scene.selection)
+                self._context = scene.edit_group
+
+        pending = {c.face for batch in self._batches for c in batch if c.face is not None}
+        for batch in self._batches:
+            added = {c.face for c in batch if c.face is not None}
+            pending.difference_update(added)
+            # Include earlier array members (and their rebuilt regions), but
+            # never merge the supplied faces of one copy against each other.
+            before = [f for f in scene.mesh.faces if f not in pending and f not in added]
+            _merge_overlapping_planes(scene, before, [c.face for c in batch],
+                                       on_rebuild=checkpoint)
+        if self._before is not None:
+            self._after = scene.mesh.capture_state()
+            self._selection_after = set(scene.selection)
+
+    def undo(self, scene) -> None:
+        if self._before is not None:
+            scene.mesh.restore_state(self._before)
+            if scene.edit_group is self._context:
+                scene.selection = set(self._selection_before)
+            scene.version += 1
 
 
 class RotateTool(ProtractorBase):
@@ -523,7 +576,9 @@ class RotateTool(ProtractorBase):
             cmds: list = []
             if copy:
                 id_map: dict[int, int] = {}
+                face_batches = []
                 for deg in degs:
+                    batch = []
                     m = rotation_matrix(start, axis, deg)
                     for group in groups:
                         g = copy_group(group)  # instance → sibling instance
@@ -532,13 +587,17 @@ class RotateTool(ProtractorBase):
                     for gd in guides:
                         cmds.append(AddGuideCommand(copied_guide(gd, m)))
                     for f in faces:
-                        cmds.append(AddFaceCommand(
+                        face_cmd = AddFaceCommand(
                             [m.map(v) for v in f.vertices],
                             holes=[[m.map(v) for v in h] for h in f.holes]
                             or None,
                             auto=False,
                             attrs=transformed_attrs(f.attrs, m),
-                        ))
+                        )
+                        cmds.append(face_cmd)
+                        batch.append(face_cmd)
+                    if batch:
+                        face_batches.append(batch)
                     for e in edges:
                         curve = getattr(e, "curve", None)
                         # One fresh curve id per (curve, copy): the arms of
@@ -550,6 +609,8 @@ class RotateTool(ProtractorBase):
                             m.map(e.a), m.map(e.b),
                             soft=getattr(e, "soft", False) or None,
                             curve=id_map.get(key)))
+                if face_batches:
+                    cmds.append(_MergeCopiedFaces(face_batches))
             else:
                 # Nothing is copied, so there is only ever one angle.
                 deg = degs[-1]

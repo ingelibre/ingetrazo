@@ -4724,7 +4724,7 @@ class ExplodeGroupCommand(Command):
 
 
 
-def _merge_overlapping_planes(scene, before, added) -> int:
+def _merge_overlapping_planes(scene, before, added, *, on_rebuild=None) -> int:
     """Rebuild, plane by plane, where faces just ``added`` to the mesh
     overlap faces it already had (``before``): each region of the plane
     ends up covered by ONE face, as when a face is drawn or pasted there
@@ -4732,7 +4732,9 @@ def _merge_overlapping_planes(scene, before, added) -> int:
     Faces that only share an edge or a corner are left alone, and so is
     every plane no older face overlaps. Runs inside a command that already
     holds a snapshot of the mesh, so it takes none. Returns how many planes
-    were rebuilt."""
+    were rebuilt. ``on_rebuild`` lets a caller take its snapshot lazily,
+    immediately before the first mutation, only if a rebuild is needed.
+    """
     if not before or not added:
         return 0
     mesh = scene.mesh
@@ -4811,6 +4813,8 @@ def _merge_overlapping_planes(scene, before, added) -> int:
                 entry[3].append(nf)
     if not planes:
         return 0
+    if on_rebuild is not None:
+        on_rebuild()
     keep = set(scene.selection)
     for origin, n, old_faces, new_faces in planes:
         # The new faces on that plane that overlap NO older face stay as
@@ -5373,8 +5377,8 @@ class RebuildPlaneFacesCommand(Command):
     by an existing on-plane face (the freshly drawn loop's face, added by the
     tool before this command, provides coverage for the new regions). Uncovered
     regions stay empty — no resurrecting faces the user deleted. Winding and
-    attrs inherit from the covering face; edges are reused (the planner already
-    split every crossing), so soft/curve flags survive. Snapshot undo."""
+    attrs inherit from the covering face. Reused edges and newly split pieces
+    retain the source edges' flags, including soft/curve contours. Snapshot undo."""
 
     _TOL = 1e-4
     #: False when run inside a command that already snapshotted the mesh
@@ -5402,6 +5406,7 @@ class RebuildPlaneFacesCommand(Command):
     def do(self, scene) -> None:
         from core.arrangement import planar_rebuild
         from core.triangulate import triangulate
+        from core.topology import _point_on_seg_incl
 
         self.snapshot = (scene.mesh.capture_state() if self.take_snapshot
                          else None)
@@ -5439,6 +5444,11 @@ class RebuildPlaneFacesCommand(Command):
         old = [([tuple(t) for t in f.triangulate()], f.normal(), dict(f.attrs))
                for f in plane_faces]
         segments = [(QVector3D(e.a), QVector3D(e.b)) for e in plane_edges]
+        # Copy/Explode can arrive without the drawing planner pre-splitting
+        # crossings. Carry flags onto the arrangement's new sub-edges too.
+        flagged = [(QVector3D(e.a), QVector3D(e.b), edge_flags(e))
+                   for e in plane_edges if not edge_is_plain(e)]
+        near_flagged = _segment_grid([(a, b) for a, b, _flags in flagged])
         _, regions = planar_rebuild(segments, self.origin, self.normal)
 
         def ring(loop):
@@ -5496,10 +5506,24 @@ class RebuildPlaneFacesCommand(Command):
             keep.append((outer, holes or None, attrs))
         for f in plane_faces:
             mesh.remove_face(f)
+        restored = set()
         for outer, holes, attrs in keep:
             f = mesh.add_face(outer, holes)
             if attrs:
                 f.attrs.update(attrs)
+            if flagged:
+                for loop in (f.loop, *f.hole_loops):
+                    for a, b in zip(loop, loop[1:] + loop[:1]):
+                        edge = mesh.find_edge(a, b)
+                        if edge is None or edge in restored:
+                            continue
+                        restored.add(edge)
+                        for i in near_flagged(edge.a):
+                            fa, fb, flags = flagged[i]
+                            if (_point_on_seg_incl(edge.a, fa, fb)
+                                    and _point_on_seg_incl(edge.b, fa, fb)):
+                                stamp_edge_flags(edge, flags)
+                                break
         # AddFaceCommand re-creates a polygon's full-length side even when the
         # planner already split it at a crossing — a border-0 collinear
         # duplicate that fragments the curve contours at resplit (degree-3
