@@ -16,6 +16,8 @@ secciones que se arrastran sin tirones; y decenas de arreglos.**
 
 ### Añadido
 
+- **Sombras suaves** (#1324, @ultracat; cierra #1281): un nivel de suavidad
+  del borde de las sombras del sol en Preferencias.
 - **Cuatro temas nuevos** en Preferencias ▸ Tema, en todos los idiomas:
   **Estudio** (barras casi negras sobre paneles gris medio, como las suites
   3D), **Solarized** (el azul verdoso oscuro de la paleta de terminal),
@@ -119,6 +121,24 @@ secciones que se arrastran sin tirones; y decenas de arreglos.**
 
 ### Arreglado
 
+- **Mover+Ctrl copia exacto** (#1360, @rezaprama; cierra #1087): la copia de
+  una malla grande o importada sale idéntica, sin rehacer caras ni partir lo
+  coplanar, y siempre igual.
+- **Tras copiar con Mover+Ctrl quedan seleccionadas las copias** (#1359,
+  @rezaprama; cierra #1214), también en matrices; Deshacer vuelve a la
+  selección de antes.
+- **Rotar+Ctrl con copias solapadas** (#1368, @rezaprama; cierra #551): se
+  cortan entre sí y quedan como caras editables, sin área contada dos veces.
+- **Bajar una arista curva hasta la de abajo hace una rampa** (#1346,
+  @ultracat; #1294): ya no se rechaza el movimiento; el abanico de la curva
+  queda suave.
+- **Una línea que cruza una cara de 1 mm la divide** en vez de borrarla
+  (#1369, @ultracat; #1294).
+- **Selección por caja en modelos muy grandes** (#1370, @rezaprama; cierra
+  #1175): usa mucha menos memoria y termina antes, sobre todo en Windows.
+- **Indonesio**: traducción revisada de la interfaz y README, guía de
+  contribución y manuales de Capas y Pestañas de proyecto en indonesio
+  (#1358, @rezaprama).
 - **Dentro de un grupo o componente, lo de fuera vuelve a engancharse**
   (#1327, @hvfrancesco): la malla suelta de la raíz —lo que no está
   agrupado— ofrece otra vez «Punto final», «Punto medio» y «En cara» y tapa
