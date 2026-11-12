@@ -2695,6 +2695,25 @@ def _silhouette(src: QPixmap, color: QColor) -> QPixmap:
     return s
 
 
+def cursor_hotspot(hot48, scale: float, dpr: float,
+                   platform: str | None = None) -> tuple[int, int]:
+    """The hotspot to hand QCursor for a cursor drawn at ``dpr``.
+
+    Windows and Wayland read a pixmap cursor's hotspot in logical pixels
+    and scale it with the pixmap themselves. X11 (xcb, which is also any
+    Qt app under XWayland) hands it to the server as it comes, in the
+    pixels of the image: at a scale of 2 the point that drew sat halfway
+    to the pencil's tip, up and to the left of it. There it goes in the
+    image's own pixels."""
+    if platform is None:
+        app = QApplication.instance()
+        platform = app.platformName() if app is not None else ""
+    k = dpr if platform == "xcb" else 1.0
+    top = int(round(_CURSOR_SIZE * k)) - 1
+    return (max(0, min(top, round(hot48[0] * scale * k))),
+            max(0, min(top, round(hot48[1] * scale * k))))
+
+
 def tool_cursor(key: str | None, plus: bool = False) -> QCursor | None:
     """A tool cursor, or ``None`` to keep the standard arrow (unknown keys,
     and Select). Offset keeps an arrow tip with its icon as a small badge.
@@ -2781,8 +2800,7 @@ def tool_cursor(key: str | None, plus: bool = False) -> QCursor | None:
     p.drawPixmap(QPointF(0.0, 0.0), art)
     p.end()
 
-    hx = max(0, min(_CURSOR_SIZE - 1, round(hot48[0] * scale)))
-    hy = max(0, min(_CURSOR_SIZE - 1, round(hot48[1] * scale)))
+    hx, hy = cursor_hotspot(hot48, scale, dpr)
     cursor = QCursor(out, hx, hy)
     _cursor_cache[cache_key] = cursor
     return cursor
