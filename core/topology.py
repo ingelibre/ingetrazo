@@ -26,6 +26,13 @@ _PLANAR_TOLERANCE = 1e-3
 # Two points closer than this weld together; also the gate for deciding a
 # crossing is real (skew lines whose closest approach exceeds it don't touch).
 _SPLIT_TOLERANCE = 1e-4
+# How far a corner must stand off the line through the others for the loop to
+# span a plane, whatever its size. The 1e-6 cross-product floor alone is an
+# area: a 0.5 mm x 1 mm half of a 1 mm square has 5e-7 and was read as "every
+# vertex in one line", so drawing a line across that square deleted its face
+# (#1294). A corner 0.01 mm off the line is a real one: the weld tolerance is
+# ten times that.
+_LINE_GAP = 1e-5
 
 
 def _key(p: QVector3D) -> tuple[float, float, float]:
@@ -210,6 +217,13 @@ def _smallest_cycle(adj, a, b, ka, kb, max_len: int = 32,
     return path
 
 
+def _spans_a_plane(cross: float, reach: float) -> bool:
+    """Whether a corner stands off a line: ``cross`` is |u x v|, ``reach`` the
+    longer of |u| and |v|, so ``cross / reach`` is the corner's distance from
+    the line. What passed the 1e-6 floor passes as before."""
+    return cross > 1e-6 or cross > _LINE_GAP * reach
+
+
 def is_planar(vertices: list[QVector3D], tolerance: float = _PLANAR_TOLERANCE) -> bool:
     """Whether ``vertices`` all lie on a common plane within ``tolerance``."""
     n = len(vertices)
@@ -220,7 +234,8 @@ def is_planar(vertices: list[QVector3D], tolerance: float = _PLANAR_TOLERANCE) -
         # (collinear) triangles so we don't try to face them.
         e1 = vertices[1] - vertices[0]
         e2 = vertices[2] - vertices[0]
-        return QVector3D.crossProduct(e1, e2).length() > 1e-6
+        cross = QVector3D.crossProduct(e1, e2).length()
+        return _spans_a_plane(cross, max(e1.length(), e2.length()))
 
     # The plane is the one through the first vertex and the two that span
     # the widest triangle with it, worked out in double precision. It used
@@ -243,7 +258,7 @@ def is_planar(vertices: list[QVector3D], tolerance: float = _PLANAR_TOLERANCE) -
         if size > best:
             best, nx, ny, nz = size, cx, cy, cz
     length = math.sqrt(best)
-    if length <= 1e-6:
+    if not _spans_a_plane(length, math.sqrt(ux * ux + uy * uy + uz * uz)):
         return False                      # every vertex in one line
     nx, ny, nz = nx / length, ny / length, nz / length
     return all(abs(nx * x + ny * y + nz * z) <= tolerance for x, y, z in rel)
