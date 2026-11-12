@@ -89,6 +89,25 @@ def gather_targets(ctx: ToolContext):
     return groups, _dedup(positions)
 
 
+def groups_ghost_segments(groups) -> list:
+    """Every edge of ``groups`` as a world segment: the wireframe a Ctrl-copy
+    previews. A component's geometry lives in the placements it holds, so the
+    ghost has to swing the whole subtree — the top-level mesh of an imported
+    component is often empty. It reads every mesh, so it waits until a copy is
+    asked for: on the first click of a plain move it built the whole group,
+    seconds and gigabytes on a big one (#1092)."""
+    from core.group import iter_placements
+    segments = []
+    for group in groups:
+        for pg, xf in iter_placements(group):
+            for e in pg.mesh.edges:
+                a, b = QVector3D(e.a), QVector3D(e.b)
+                if xf is not None:
+                    a, b = xf.map(a), xf.map(b)
+                segments.append((a, b))
+    return segments
+
+
 def gather_dimensions(ctx: ToolContext, groups, verts) -> dict:
     """Dimensions Move acts on, each with how: the selected ones, or (with
     nothing selected) the one under the cursor. ``"line"`` — both ends
@@ -437,6 +456,7 @@ class MoveTool(Tool):
         self._sel_faces: list = []             # loose geometry copy mode duplicates
         self._sel_edges: list = []
         self._base_segments: list = []         # wireframe for the copy preview
+        self._groups_ghost_due = False
         self._last: dict | None = None         # the copy just made, for "3x" / "/3"
         # Rotation grips (issue #115): the group they sit on, the grips,
         # the one under the cursor, and — once one is taken — the Rotate
@@ -728,6 +748,8 @@ class MoveTool(Tool):
         if self.grab is None or self.hover_point is None:
             return []
         segments = [(self.grab, self.hover_point)]
+        if self._copy:
+            self._fill_groups_ghost()
         if self._copy and self._base_segments:
             # Copy mode: the original stays put — preview the translated
             # COPY as a wireframe at the cursor offset.
@@ -956,20 +978,19 @@ class MoveTool(Tool):
             return None
         return viewport.scene.mesh.vertex_at(snap.point)
 
+    def _fill_groups_ghost(self) -> None:
+        """The grabbed groups' wireframe, first thing in the copy preview."""
+        if self._groups_ghost_due:
+            self._groups_ghost_due = False
+            self._base_segments[:0] = groups_ghost_segments(self._groups)
+
     def _gather_copy_entities(self, ctx: ToolContext) -> None:
         """The faces/edges copy mode duplicates, and the wireframe segments
         the copy preview carries (group wireframe, or the loose selection).
         Mirrors RotateTool._gather_copy_entities."""
         viewport = ctx.viewport
         self._sel_faces, self._sel_edges, self._base_segments = [], [], []
-        from core.group import iter_placements
-        for group in self._groups:
-            for pg, xf in iter_placements(group):
-                for e in pg.mesh.edges:
-                    a, b = QVector3D(e.a), QVector3D(e.b)
-                    if xf is not None:
-                        a, b = xf.map(a), xf.map(b)
-                    self._base_segments.append((a, b))
+        self._groups_ghost_due = True     # asked of only when copying (#1092)
         cam = getattr(viewport, "camera", None)
         reach = max(float(getattr(cam, "distance", 10.0)), 1e-3)
         self._base_segments.extend(guide_ghost_segments(self._moved_guides, reach))
@@ -1245,5 +1266,6 @@ class MoveTool(Tool):
         self._sel_faces = []
         self._sel_edges = []
         self._base_segments = []
+        self._groups_ghost_due = False
         self._vp_preview = False
         self._copy = False      # the Ctrl modifier arms ONE operation

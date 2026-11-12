@@ -88,10 +88,6 @@ class LineTool(Tool):
         self.hover_point = None
 
     # ---- Spatial input ------------------------------------------------------
-    #: A click takes its point and the snap's kind, no face it could change:
-    #: the viewport's snap need not build the group under it (#1092).
-    click_reads_only = True
-
     def on_click(self, ctx: ToolContext) -> None:
         clicked = ctx.world
         if self.start_point is None:

@@ -50,7 +50,8 @@ from core.mesh import Edge, Face, Mesh
 from core.axes import plane_axes  # drawing axes (#44)
 from core.guide import is_guide
 from tools.base import ToolContext
-from tools.move import copied_guide, gather_targets, guide_ghost_segments
+from tools.move import (
+    copied_guide, gather_targets, groups_ghost_segments, guide_ghost_segments)
 from tools.protractor import ProtractorBase
 
 
@@ -127,6 +128,7 @@ class RotateTool(ProtractorBase):
         self._sel_faces: list = []          # for copy mode (loose geometry)
         self._sel_edges: list = []
         self._base_segments: list = []      # wireframe for the copy preview
+        self._groups_ghost_due = False
         self._preview_deg = 0.0
         self._orig = None                   # the preview's snapshot
         self._copy = False                  # Ctrl: rotate a COPY
@@ -401,6 +403,10 @@ class RotateTool(ProtractorBase):
             deg = self._commit_deg(self.hover_point)
             if deg is not None:
                 segments.extend(self._arc_segments(deg))
+                if self._copy and self._groups_ghost_due:
+                    self._groups_ghost_due = False
+                    self._base_segments[:0] = groups_ghost_segments(
+                        self._groups)
                 if self._copy and self._base_segments:
                     # Copy mode: the original stays put — preview the rotated
                     # COPY as a wireframe at the cursor angle.
@@ -440,17 +446,7 @@ class RotateTool(ProtractorBase):
         the copy preview swings (group wireframe, or the loose selection)."""
         viewport = ctx.viewport
         self._sel_faces, self._sel_edges, self._base_segments = [], [], []
-        from core.group import iter_placements
-        for group in self._groups:
-            # A component's geometry lives in the placements it holds, so the
-            # ghost has to swing the whole subtree — the top-level mesh of an
-            # imported component is often empty.
-            for pg, xf in iter_placements(group):
-                for e in pg.mesh.edges:
-                    a, b = QVector3D(e.a), QVector3D(e.b)
-                    if xf is not None:
-                        a, b = xf.map(a), xf.map(b)
-                    self._base_segments.append((a, b))
+        self._groups_ghost_due = True     # asked of only when copying (#1092)
         cam = getattr(viewport, "camera", None)
         reach = max(float(getattr(cam, "distance", 10.0)), 1e-3)
         self._base_segments.extend(guide_ghost_segments(self._moved_guides, reach))
@@ -668,6 +664,7 @@ class RotateTool(ProtractorBase):
         self._sel_faces = []
         self._sel_edges = []
         self._base_segments = []
+        self._groups_ghost_due = False
         self._preview_deg = 0.0
         self._orig = None       # the preview's snapshot (see _snapshot)
         self._copy = False      # the Ctrl modifier arms ONE operation
