@@ -16,12 +16,14 @@ from __future__ import annotations
 
 import math
 
+import numpy as np
 import pytest
 from PySide6.QtGui import QMatrix4x4, QVector3D as V
 
 import core._native as _native
 from core import mesh as M
-from core.group import Group
+from core import scene as scene_mod
+from core.group import Group, copy_group
 from core.scene import Scene
 from formats import igz
 
@@ -197,3 +199,62 @@ def test_a_circle_edge_of_a_lazy_group_still_gives_its_centre(binary,
     assert want is not None
     assert found[0].toTuple() == want[0].toTuple()
     assert found[1] == want[1]
+
+
+def test_a_copy_inside_the_box_is_not_read(binary, tmp_path):
+    """Copies within what others already reach cannot widen the box: their
+    points are not read, and the box is that of reading them all."""
+    sc = _lazy(tmp_path)
+    g = next(g for g in sc.groups if type(g.mesh) is M.DeferredMesh)
+    # A far copy on each side, then many in between.
+    def place(x):
+        c = copy_group(g)
+        m = QMatrix4x4()
+        m.translate(x, x, x)
+        m.rotate(25.0, 0.0, 0.0, 1.0)
+        c.xform = m * (c.xform if c.xform is not None else QMatrix4x4())
+        sc.groups.insert(0, c)
+        return c
+    for x in [0.01 * i for i in range(30)]:
+        place(x)
+    place(-5000.0)
+    place(5000.0)
+    sc.version += 1
+    # (Inserted at the front: the far ones are read first.)
+    box = _walk(sc)
+    assert len(sc._bounds_parts) < len(list(sc.placements()))
+
+    real = scene_mod._inside
+    scene_mod._inside = lambda *a: False
+    try:
+        assert _walk(sc) == box
+    finally:
+        scene_mod._inside = real
+
+
+@pytest.mark.parametrize("seed", range(20))
+def test_inside_never_cuts_what_the_points_reach(seed):
+    import random
+    rng = random.Random(seed)
+    pts = np.array([[rng.uniform(-3, 3) for _ in range(3)] for _ in range(50)])
+    a, b = pts.min(axis=0), pts.max(axis=0)
+    local = (*((a + b) / 2).tolist(), *((b - a) / 2).tolist())
+    m = QMatrix4x4()
+    m.rotate(rng.uniform(0, 360), rng.random(), rng.random(), rng.random())
+    m.translate(rng.uniform(-9, 9), rng.uniform(-9, 9), rng.uniform(-9, 9))
+    m.scale(rng.choice([1.0, 0.5, -1.0]), 1.0, rng.choice([1.0, 3.0]))
+    d = tuple(m.data())
+    rot = np.array([[d[0], d[4], d[8]], [d[1], d[5], d[9]], [d[2], d[6], d[10]]])
+    world = pts @ rot.T + np.array([d[12], d[13], d[14]])
+    lo, hi = world.min(axis=0), world.max(axis=0)
+    # Exactly its box, or a hair smaller on any side: not inside.
+    assert not scene_mod._inside(local, d, tuple(lo), tuple(hi))
+    assert not scene_mod._inside(local, d, tuple(lo - 1e-3), tuple(hi))
+    # Well around it, and the box of its corners with room: inside.
+    assert scene_mod._inside(local, d, tuple(lo - 100.0), tuple(hi + 100.0))
+
+
+def test_inside_says_no_to_a_nan():
+    nan = float("nan")
+    d = tuple(QMatrix4x4().data())
+    assert not scene_mod._inside((nan, 0, 0, 1, 1, 1), d, (-9, -9, -9), (9, 9, 9))

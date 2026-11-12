@@ -258,11 +258,12 @@ class PaintTool(Tool):
         a whole shows no change."""
         from core.group import iter_placements
         from core.materials import has_own_material
+        from core.mesh import face_attrs
         seen = False
         for g, _m in iter_placements(obj):
-            for f in g.mesh.faces:
+            for attrs in face_attrs(g.mesh):     # builds no lazy mesh (#1092)
                 seen = True
-                if not has_own_material(f.attrs):
+                if not has_own_material(attrs):
                     return False
         return seen
 
@@ -273,7 +274,10 @@ class PaintTool(Tool):
         # marked: a marked face promised a paint the click does not do. The
         # eyedropper samples one face and marks that face.
         if not self._sampling(ctx):
-            _face, group = vp.pick_face_any(x, y)
+            # Whose face it is, no more: a big lazy mesh stays unbuilt (#1092).
+            from views.array_bake import reading_only
+            with reading_only():
+                _face, group = vp.pick_face_any(x, y)
             if self._container_under(vp, group, x, y) is not None:
                 vp.set_hover(None)
                 return
@@ -290,7 +294,14 @@ class PaintTool(Tool):
 
     def on_click(self, ctx: ToolContext) -> None:
         vp = ctx.viewport
-        face, group = vp.pick_face_any(ctx.screen.x(), ctx.screen.y())
+        # A closed container is painted whole, its faces untouched: a big lazy
+        # mesh is not built for that (#1092). A sample or a loose face is real.
+        from views.array_bake import reading_only
+        with reading_only():
+            face, group = vp.pick_face_any(ctx.screen.x(), ctx.screen.y())
+        if (self._sampling(ctx) or self._container_under(
+                vp, group, ctx.screen.x(), ctx.screen.y()) is None):
+            face, group = vp.pick_face_any(ctx.screen.x(), ctx.screen.y())
         if self._sampling(ctx) and self._sample_image(ctx, face):
             return
         if face is None:

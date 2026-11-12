@@ -7719,8 +7719,10 @@ class MainWindow(QMainWindow):
         uploaded the geometry and would skip it — the view came out blank.
         Forget the uploads (while the old context is still valid); the
         geometry and the undo history are not touched — nor the document's
-        bakes, which the views joining it in the grid draw from."""
-        vp.reset_document_caches(keep_bakes=True)
+        bakes and the pick index: redoing them cost seconds, and the extra
+        views that come next share a lazy mesh's bake only while this one
+        still holds it (#1092)."""
+        vp.forget_uploads()
         vp._vbo_parts.clear()
         vp._edges_version = -1
         if vp.isValid():
@@ -8743,6 +8745,8 @@ class MainWindow(QMainWindow):
         self.viewport.notify_scene_changed()
         self._update_title()
         self.settle_heap()
+        # The heavy parts of the pick index, once the document is on screen.
+        self.viewport._pick_warm_due = True
         return True
 
     def _finish_aborted_open(self) -> None:
