@@ -5092,26 +5092,21 @@ class ScenesPanel(QWidget):
         return menu
 
     def activate_view(self, view) -> None:
-        """Show ``view`` — what a double-click on its row does."""
-        row = self.row_for(view)
-        if row is None:
+        """Show ``view`` at once, without a glide (the Outliner, the view
+        put back after an export, the end of ``show_view``). It may be no
+        scene of the list: the view as it was before an export."""
+        if self.row_for(view) is None:
             self._shape = None
             self.refresh()
-            row = self.row_for(view)
-        if row is not None:
-            self._on_activate(row)
-        else:
-            # A view that is no scene of the list (the view as it was,
-            # put back after an export showed another scene).
-            self._show(view)
+        self._show(view)
 
     def _on_activate(self, item, _column=0) -> None:
         kind, view = item.data(0, Qt.UserRole)
         if kind != "scene" or view is None:
             return
-        self._show(view)
+        self.show_view(view)
 
-    def _show(self, view) -> None:
+    def _show(self, view, camera: bool = True) -> None:
         scene = self._scene()
         self._begin_own()
         from core.saved_views import shown_state
@@ -5125,7 +5120,10 @@ class ScenesPanel(QWidget):
             keep = getattr(w, "keep_other_views_style", None)
             if keep is not None:          # the others keep their style
                 keep()
-            view.apply(scene, vp.camera)
+            if camera:
+                view.apply(scene, vp.camera)
+            else:                         # a glide took the camera there
+                view.apply_state(scene)
         else:
             def own(style, vp=vp):
                 vp.view_style = style
@@ -5213,11 +5211,45 @@ class ScenesPanel(QWidget):
         if ok:
             self.rename_view(view, name)
 
-    def show_view(self, view) -> None:
-        """Show the saved ``view`` (a click on a scene tab, Camera ▸
-        Scenes ▸ Show): what a double-click on its row does."""
-        if view is not None:
-            self.activate_view(view)
+    def show_view(self, view, animate: bool = True) -> None:
+        """Show the saved ``view`` (a double-click on its row, a click on a
+        scene tab, Camera ▸ Scenes ▸ Show). With the document's transitions
+        on (``scene.animation``) the camera glides there first, and the
+        rest of the scene comes in when it arrives (views/scene_player.py).
+        The glide moves the main viewport; with another view the one worked
+        in, the scene comes in at once there."""
+        if view is None:
+            return
+        w = self._window
+        player = getattr(w, "scene_player", None)
+        if player is not None:
+            player.cancel()
+        anim = getattr(self._scene(), "animation", None)
+        seconds = anim.glide_seconds() if (animate and anim) else 0.0
+        pick = getattr(w, "_active_view", None)
+        main = pick is None or pick() is w.viewport
+        if (player is not None and seconds > 0.0 and main
+                and w.viewport.isVisible()
+                and player.glide_to(view, seconds,
+                                    lambda v: self.finish_view(v, False))):
+            row = getattr(w, "_scene_tabs", None)
+            if row is not None:
+                row.mark_view(view)
+            # The keyboard goes back to the model now, not on arrival (see
+            # the end of ``_show``): a key pressed mid-glide stops it there.
+            w.viewport.setFocus(Qt.OtherFocusReason)
+            return
+        self.finish_view(view)
+
+    def finish_view(self, view, camera: bool = True) -> None:
+        """Recall ``view``: its camera (unless a glide already took the
+        camera there, ``camera=False``), layers, style, section…"""
+        if view is None:
+            return
+        if not camera:
+            self._show(view, camera=False)
+            return
+        self.activate_view(view)
 
     def rename(self, view, name: str) -> bool:
         """Rename ``view`` undoably; a name another scene has is refused

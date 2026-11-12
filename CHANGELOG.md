@@ -35,6 +35,12 @@ secciones que se arrastran sin tirones; y decenas de arreglos.**
 - **Cámara ▸ Ajustes de cámara** (#1332, @canalsecuario-blip): distancia
   focal sobre un sensor elegido, desplazamiento de lente, giro, recorte y
   encuadre; la lente se escribe con Zoom.
+- **Transiciones entre escenas, Reproducir y vídeo** (#1342,
+  @canalsecuario-blip): al mostrar una escena la cámara se desliza hasta ella
+  (Cámara ▸ Animación ▸ Transiciones de escena, encendido por defecto; Esc o
+  mover la cámara lo detiene); Reproducir recorre las escenas en bucle, y
+  Archivo ▸ Exportar ▸ Escenas como vídeo (.mkv) graba el recorrido en
+  MPEG-4. Ajustes de duración y pausa en Animación ▸ Ajustes de animación.
 - **Peso y trama de corte por capa** (#1100, @canalsecuario-blip; cierra #926
   y #281): en las láminas, en el DXF y en la vista 3D.
 - **Escenas** como pestaña propia del panel lateral, con carpetas y

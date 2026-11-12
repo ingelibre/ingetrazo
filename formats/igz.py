@@ -838,6 +838,9 @@ def save_scene(scene, path: Path) -> dict:
         d = shadows.to_dict()
         if d != ShadowSettings().to_dict():
             payload["shadows"] = d
+    animation = getattr(scene, "animation", None)
+    if animation is not None and animation.to_dict():
+        payload["scene_animation"] = animation.to_dict()
     # Georeferencing datum (Track G) — optional block, written only when set so
     # ungeoreferenced documents stay terse and older readers ignore it.
     datum = getattr(scene, "georef", None)
@@ -1493,6 +1496,9 @@ def _load_into_inner(scene, path: Path, progress=None) -> None:
     shadows = payload.get("shadows")
     scene.shadows = (ShadowSettings.from_dict(shadows)
                      if isinstance(shadows, dict) else ShadowSettings())
+
+    from core.scene_animation import SceneAnimation
+    scene.animation = SceneAnimation.from_dict(payload.get("scene_animation"))
 
     raw_planes = payload.get("section_planes")
     if isinstance(raw_planes, list):

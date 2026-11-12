@@ -152,6 +152,12 @@ class SavedView:
         The caller bumps ``scene.version`` / repaints (tray convention).
         ``put_style``: where the style goes, for a view with its own (one
         of several views); else it becomes the scene's."""
+        self.apply_camera(camera)
+        self.apply_state(scene, put_style)
+
+    def apply_camera(self, camera) -> None:
+        """Only the camera, its lens included (a scene transition glides it
+        there first)."""
         from PySide6.QtGui import QVector3D
         camera.target = QVector3D(*self.target)
         camera.distance = self.distance
@@ -162,6 +168,10 @@ class SavedView:
         camera.two_point = self.two_point
         if hasattr(camera, "apply_lens"):
             camera.apply_lens(self.lens)
+
+    def apply_state(self, scene, put_style=None) -> None:
+        """Everything but the camera: layers, style, section, geographic
+        layers, shadows, hidden objects. ``put_style`` as in :meth:`apply`."""
         hidden = set(self.hidden_layers)
         for ly in scene.layers:
             ly.visible = ly.name not in hidden
