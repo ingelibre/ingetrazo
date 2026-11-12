@@ -119,6 +119,25 @@ secciones que se arrastran sin tirones; y decenas de arreglos.**
 
 ### Arreglado
 
+- **Mac: importar un .skp con escenas cerraba la 0.6.1** (#1321 y #1322,
+  @ultracat; cierra #1316): la fila de pestañas de escena se mostraba en
+  medio del dibujo de la vista; ahora la versión de la escena se anuncia
+  cuando el cuadro ya salió.
+- **Sombras vistas desde debajo del suelo** (#1345, @ultracat; cierra
+  #1301): con la cámara bajo el plano del suelo ya no se dibujan.
+- **Geometría oculta muestra las aristas suaves** de superficies curvas y
+  biseles (#1363, @alteralto; cierra #1361).
+- **Arco: redondear otra vez una esquina ya redondeada** con un arco mayor
+  engancha la tangente (#1367, @alteralto; cierra #1354).
+- **Las pestañas de proyecto** nacen con la altura de una pestaña: en Mac la
+  línea de acento ya no sale cortada al abrir (#1351, @ultracat).
+- **Gestor de extensiones**: una etiqueta queda en una línea salvo que no
+  quepa en la tarjeta (#1352, @ultracat).
+- **Lao en Windows**: se prefiere Noto Sans Lao para la escritura lao
+  (#1323, @bounkirdni-2025).
+- Pruebas: el atajo se espera como lo escribe cada sistema (⌘ en Mac) y una
+  prueba de Empujar/Tirar que dependía del redondeo (#1350 y #1353,
+  @ultracat).
 - **Posicionar textura** (#1308): un pin que se suelta cerca de una esquina
   de la cara o del medio de una arista cae exacto ahí, con la marca de las
   herramientas de dibujo; Ctrl lo deja libre.
