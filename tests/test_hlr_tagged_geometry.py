@@ -241,7 +241,7 @@ def test_a_hidden_face_inside_an_object_hides_nothing():
         return int(np.sum(np.all(np.abs(d.world[:, :, 2] - 1.0) < 1e-6,
                                  axis=1)))
     assert at_top(arrays) >= 4
-    # The walk hid them behind the hidden face: the two differ there.
-    assert at_top(walked) == 0
-    assert _canon(arrays) != _canon(walked)
+    # The walk leaves the hidden face out too (#1204): it no longer hides
+    # them, and both agree.
+    assert at_top(walked) >= 4
     vp.close()
