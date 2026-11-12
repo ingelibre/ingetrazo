@@ -36,12 +36,15 @@ Tool input (when a tool is active):
 from __future__ import annotations
 
 import copy
+import importlib
 import itertools
 import math
 import os
 import inspect
 import re
+import sys
 import time as _time_mod
+import types
 from array import array
 from pathlib import Path
 from typing import Optional
@@ -121,14 +124,15 @@ from PySide6.QtOpenGLWidgets import QOpenGLWidget
 
 from core.camera import OrbitCamera
 from core.i18n import tr
-from core.group import Group, copy_group, world_mesh
+from core.group import Group, copy_group, effective_material, world_mesh
+from core import layers as _layers
 from core.mesh import Edge, Face
 from core.history import EraseSelectionCommand, History
 from core.scene import Scene
 from core.style import (DEFAULT_BACK_COLOR, DEFAULT_FACE_COLOR,
                         MONOCHROME_GLASS_RGB,
                         effective_back_color)
-from core.materials import material_sig as _material_sig
+from core.materials import effective_attrs, material_sig as _material_sig
 from core.snap import SnapResult, _AXIS_VECTORS
 from core.texture import face_uv_axes
 from core.triangulate import plane_axes
@@ -300,6 +304,102 @@ SHADER_DIR = app_root() / "resources" / "shaders"
 #: ~a dozen times per hover, and an exploded medium import (9k faces =
 #: ~20k edges) froze every mouse move (user report, piscina.igz).
 _LOOSE_SNAP_CAP = 3000
+
+
+def _inst_proto_of(mod, base):
+    """core._native's InstanceProto of a prototype's local bake."""
+    import numpy as np
+    z = np.zeros((0, 3))
+    v0 = base.get("v0")
+    edges = (np.frombuffer(base["edges"], dtype=np.float32)
+             .reshape(-1, 6).astype(np.float64)
+             if base.get("edges") else np.zeros((0, 6)))
+    return mod.InstanceProto(
+        np.ascontiguousarray(v0) if v0 is not None else z,
+        np.ascontiguousarray(base["e1"]) if v0 is not None else z,
+        np.ascontiguousarray(base["e2"]) if v0 is not None else z, edges)
+
+
+class _PickWarm:
+    """The pick index's heavy pure parts, worked out behind the document just
+    opened (Viewport.start_pick_warmup): threads that touch nothing but their
+    own copies of the arrays' references. What they made reaches the viewport
+    in _pick_warm_take, on the GUI thread, and only if it still applies."""
+
+    def __init__(self, mod, protos, grids, bounds=()):
+        import queue
+        import threading
+        from tools.select import _local_bounds as local_bounds
+        self.protos: dict = {}
+        self.grids: list = []
+        self.bounds: list = []
+        jobs: queue.SimpleQueue = queue.SimpleQueue()
+        for ckey, base in protos:
+            jobs.put(("proto", ckey, base))
+        for chunk in grids:
+            jobs.put(("grid", chunk, {
+                "v0": chunk["v0"], "e1": chunk["e1"], "e2": chunk["e2"],
+                "tri_ent": chunk["tri_ent"], "rev": chunk.get("rev")}))
+        for chunk in bounds:
+            jobs.put(("bounds", chunk, {
+                "v0": chunk["v0"], "e1": chunk["e1"], "e2": chunk["e2"],
+                "edges": chunk["edges"]}))
+
+        def work():
+            while True:
+                try:
+                    kind, a, b = jobs.get_nowait()
+                except queue.Empty:
+                    return
+                try:
+                    if kind == "proto":
+                        self.protos[a] = _inst_proto_of(mod, b)
+                    elif kind == "grid":
+                        _split_chunk_spans(b)
+                        self.grids.append((a, b))
+                    else:
+                        local_bounds(b)
+                        self.bounds.append((a, b))
+                except Exception:      # noqa: BLE001 — the hover will retry
+                    pass
+        # Daemons: closing the window does not wait for them.
+        self.threads = [threading.Thread(target=work, daemon=True)
+                        for _ in range(min(8, os.cpu_count() or 2))]
+        for t in self.threads:
+            t.start()
+
+    def join(self):
+        for t in self.threads:
+            t.join()
+
+
+def _pick_warm_take(vp) -> None:
+    """Wait for what the warm-up has left and take it: its prototypes for the
+    next InstanceSet, its grids for the chunks that have not moved since."""
+    warm = getattr(vp, "_pick_warm", None)
+    if warm is None:
+        return
+    vp._pick_warm = None
+    warm.join()
+    cache = getattr(vp, "_inst_proto_cache", None)
+    if cache is None:
+        cache = vp._inst_proto_cache = {}
+    cache.update(warm.protos)
+    for chunk, snap in warm.grids:
+        if ("_span_grid" not in chunk and chunk.get("rev") == snap["rev"]
+                and chunk["v0"] is snap["v0"]):
+            chunk["_span_grid"] = snap["_span_grid"]
+    # (Keyed on the very arrays: a chunk that has moved on just misses it.)
+    for chunk, snap in warm.bounds:
+        if "_box_bounds" not in chunk:
+            chunk["_box_bounds"] = snap["_box_bounds"]
+
+
+def _entity_owner(entities, i):
+    """The owner half of pick-index entity ``i``: a lazy piece of the index
+    answers it without building its faces (see views.array_bake)."""
+    at = getattr(entities, "owner_at", None)
+    return at(i) if at is not None else entities[i][1]
 
 
 def _split_chunk_spans(chunk, depth=0, force=False):
@@ -540,6 +640,9 @@ _INSTANCE_FILTER = True
 #: The engine answers the corner and occlusion queries for the lazy
 #: placements without baking them (tests compare both ways).
 _LAZY_NATIVE = True
+#: A big document's pick index starts behind it as soon as it opens (see
+#: Viewport.start_pick_warmup; the switch is for measuring and for tests).
+_PICK_WARM = os.environ.get("INGETRAZO_NO_PICK_WARM", "") != "1"
 #: A pointer move over a still view reuses the model as the last frame
 #: drew it (Viewport._frame_cache_key); INGETRAZO_FRAME_CACHE=0 turns it
 #: off, and every frame draws everything as before.
@@ -760,22 +863,27 @@ def _decoded_texture(path: str):
     return out
 
 
+def _array_bake():
+    """views.array_bake, which imports back here (its import statement ran
+    per placement, per frame pass)."""
+    return sys.modules.get("views.array_bake") or importlib.import_module(
+        "views.array_bake")
+
+
 def _proto_wrapper(vp, mesh, paint=None):
     """The stable stand-in a prototype mesh is baked through, one per
     (mesh, container paint): ``_group_chunk`` caches by the wrapper's id,
     so the same object must come back for the same mesh — and a painted
     instance (issue #47) gets a wrapper of its own. Module-level so the
     stub viewports in tests reach it too."""
-    from types import SimpleNamespace
-    from core.materials import material_sig
     wrappers = getattr(vp, "_proto_wrappers", None)
     if wrappers is None:
         wrappers = vp._proto_wrappers = {}
-    wkey = (id(mesh), material_sig(paint))
+    wkey = (id(mesh), _material_sig(paint))
     w = wrappers.get(wkey)
     if w is None:
-        w = wrappers[wkey] = SimpleNamespace(mesh=mesh, xform=None,
-                                             material=paint)
+        w = wrappers[wkey] = types.SimpleNamespace(mesh=mesh, xform=None,
+                                                   material=paint)
     else:
         w.material = paint
     return w
@@ -867,8 +975,9 @@ def _paint_of(vp, group):
     (issue #47), or — with Colour by layer on — the layer colours
     (core.layers.layer_paint). ``group`` None is the loose model; a
     prototype stand-in (``_proto_wrapper``) already carries its paint.
-    Module-level, like ``_proto_wrapper``, so stub viewports reach it."""
-    from core.group import Group, effective_material
+    Module-level, like ``_proto_wrapper``, so stub viewports reach it.
+    (Its names are the module's: asked 240 000 times to open the plant of
+    #158, an import statement each time was a second of it.)"""
     if group is not None and not isinstance(group, Group):
         return effective_material(group)
     scene = getattr(vp, "scene", None)
@@ -884,20 +993,18 @@ def _paint_of(vp, group):
              or getattr(scene, "display_style", None))
     by_layer = bool(getattr(style, "color_by_layer", False)
                     and style.face_mode in _BY_LAYER_MODES)
-    from core.layers import layer_fx, layer_look, layer_paint, object_layer
-    from core.materials import material_sig
     memo = getattr(vp, "_layer_paints", None)
     if memo is None or memo[0] != scene.version:
-        memo = vp._layer_paints = (scene.version, {}, layer_fx(scene))
+        memo = vp._layer_paints = (scene.version, {}, _layers.layer_fx(scene))
     fx = memo[2]
     if not by_layer and not fx:
         return _with_front_tint(worn, style)
     own = None if by_layer else _with_front_tint(worn, style)
-    key = (by_layer, object_layer(group), material_sig(own))
+    key = (by_layer, _layers.object_layer(group), _material_sig(own))
     paint = memo[1].get(key)
     if paint is None:
-        base = layer_paint(scene, group) if by_layer else own
-        paint = memo[1][key] = layer_look(scene, group, base, fx)
+        base = _layers.layer_paint(scene, group) if by_layer else own
+        paint = memo[1][key] = _layers.layer_look(scene, group, base, fx)
     return paint
 
 
@@ -2777,6 +2884,11 @@ class Viewport(QOpenGLWidget):
     painting = 0
 
     def paintGL(self) -> None:
+        if getattr(self, "_pick_warm_due", False):
+            # After this first frame of a new document, not beside it.
+            self._pick_warm_due = False
+            from PySide6.QtCore import QTimer
+            QTimer.singleShot(0, self, self.start_pick_warmup)
         Viewport.painting += 1
         try:
             if getattr(self, "tool_preview", True):
@@ -4569,6 +4681,11 @@ class Viewport(QOpenGLWidget):
         n = max(1, len(groups))
         from views import array_bake
         array_bake.prefetch(g.mesh for g in groups)
+        from core.materials import material_sig
+        painted = [(g, _paint_of(self, g)) for g in groups
+                   if not getattr(g, "billboard", False)]
+        array_bake.prebake(self, ((g.mesh, p, material_sig(p))
+                                  for g, p in painted))
         last = time.monotonic()
         done: set = set()
         for i, g in enumerate(groups):
@@ -4590,6 +4707,7 @@ class Viewport(QOpenGLWidget):
             if progress is not None and now - last > 0.25:
                 progress(i / n, "Preparing the drawing…")
                 last = now
+        self._prebaked = None                # those no placement asked for
 
     def _placement_bbox(self, g):
         """World AABB of an instanced placement from its PROTOTYPE's local
@@ -5830,7 +5948,7 @@ class Viewport(QOpenGLWidget):
         front = Viewport._smallest_at_front(self, hits, origin, direction)
         if not len(front):
             return None
-        owner = hits.ent(int(front[0]))[1]
+        owner = hits.owner(int(front[0]))
         for g in (owner, getattr(owner, "owner", None)):
             if (g is not None and getattr(g, "locked", False)
                     and hasattr(g, "children")):
@@ -6135,6 +6253,9 @@ class Viewport(QOpenGLWidget):
         document also slowed down reopen after reopen (the garbage collector
         walking the dead ones). And a CPython id() reused by a new group
         could meet an old entry — the composer's lesson with frames."""
+        self._pick_warm = None               # its threads end on their own
+        self._inst_obb = None
+        self._pick_warm_due = False
         draws = getattr(self, "_proto_draw", None)
         if draws and self.context() is not None:
             self.makeCurrent()                # GPU objects need the context
@@ -12053,7 +12174,8 @@ class Viewport(QOpenGLWidget):
                     pidx = getattr(idx, "ent_place_idx", None)
                     place = (idx.ent_placements[int(pidx[i])]
                              if pidx is not None and i < len(pidx)
-                             and pidx[i] >= 0 else idx.entities[i][1])
+                             and pidx[i] >= 0
+                             else _entity_owner(idx.entities, i))
                     best = (idx.entities[i][0], place)
         if which == "sel":
             rows = Viewport._lazy_sel_rows(self, nat)
@@ -13191,9 +13313,8 @@ class Viewport(QOpenGLWidget):
         # The container's paint (issue #47) changes what default faces
         # bake to without touching the mesh, so no serial or sample can
         # notice it: it is part of the entry's identity instead.
-        from core.materials import effective_attrs, material_sig
         paint = _paint_of(self, group)
-        msig = material_sig(paint)
+        msig = _material_sig(paint)
         if entry is not None and entry.get("msig") != msig:
             entry = None
         # The entry answers for ONE mesh object. Explode hands every lifted
@@ -13211,7 +13332,7 @@ class Viewport(QOpenGLWidget):
         # been baked in a paint of its own).
         behind = (entry is not None
                   and entry.get("flags_gen", 0) != getattr(mesh, "_flags_gen", 0))
-        from views import array_bake
+        array_bake = _array_bake()
         if array_bake.can_bake(mesh):
             # A lazy mesh (experimental engine) is baked from its arrays,
             # and stays unbuilt; while it is, it cannot have changed.
@@ -13965,6 +14086,7 @@ class Viewport(QOpenGLWidget):
         if memo is not None and memo[0] is table:
             return memo[1]
         import numpy as np
+        _pick_warm_take(self)
         groups = table[0]
         cache = getattr(self, "_inst_proto_cache", None) or {}
         keep: dict = {}
@@ -13972,6 +14094,7 @@ class Viewport(QOpenGLWidget):
         protos: list = []
         proto_of = np.empty(len(groups), dtype=np.int64)
         mats = np.empty((len(groups), 16), dtype=np.float64)
+        todo: list = []                       # (position in protos, key, bake)
         for i, g in enumerate(groups):
             k = by_mesh.get(id(g.mesh))
             if k is None:
@@ -13981,28 +14104,74 @@ class Viewport(QOpenGLWidget):
                 ckey = (base.get("uid"), base.get("rev"))
                 ip = cache.get(ckey)
                 if ip is None:
-                    z = np.zeros((0, 3))
-                    v0 = base.get("v0")
-                    edges = (np.frombuffer(base["edges"], dtype=np.float32)
-                             .reshape(-1, 6).astype(np.float64)
-                             if base.get("edges") else np.zeros((0, 6)))
-                    ip = mod.InstanceProto(
-                        np.ascontiguousarray(v0) if v0 is not None else z,
-                        np.ascontiguousarray(base["e1"]) if v0 is not None
-                        else z,
-                        np.ascontiguousarray(base["e2"]) if v0 is not None
-                        else z, edges)
+                    todo.append((len(protos), ckey, base))
                 keep[ckey] = ip
                 k = by_mesh[id(g.mesh)] = len(protos)
                 protos.append(ip)
             proto_of[i] = k
             mats[i] = g.xform.data()
+
+        def build(job):
+            pos, ckey, base = job
+            ip = _inst_proto_of(mod, base)
+            protos[pos] = ip
+            keep[ckey] = ip
+        # The engine lets go of the GIL for each tree: side by side, not the
+        # 2.4 s of a big model's first hover one after another (#1092).
+        if len(todo) > 1:
+            import os
+            from concurrent.futures import ThreadPoolExecutor
+            with ThreadPoolExecutor(
+                    max_workers=min(8, os.cpu_count() or 2)) as ex:
+                list(ex.map(build, todo))
+        else:
+            for job in todo:
+                build(job)
         self._inst_proto_cache = keep
         iset = mod.InstanceSet(protos, proto_of, mats,
                                np.ascontiguousarray(table[1], np.float64),
                                np.ascontiguousarray(table[2], np.float64))
         self._inst_set_memo = (table, iset)
         return iset
+
+    def start_pick_warmup(self) -> None:
+        """A big document is on screen: work out the heavy parts of the pick
+        index behind it, so the first move of the pointer does not wait for
+        them (4 s on a model of 5 M faces, #1092). Whoever moves the mouse
+        needs them, whatever the tool, and the answers cannot change: the
+        same calls with the same arrays, only sooner. Only with the engine
+        and on a model big enough for lazy placements."""
+        if not _PICK_WARM or not _INSTANCE_FILTER:
+            return
+        from core import _native
+        mod = _native.native
+        if mod is None or not hasattr(mod, "InstanceSet"):
+            return
+        table = self._pick_lazy_table()
+        if table is None:
+            return
+        memo = getattr(self, "_inst_set_memo", None)
+        if memo is not None and memo[0] is table:
+            return                       # the pointer got there first
+        seen: set = set()
+        protos: list = []
+        for g in table[0]:
+            if id(g.mesh) not in seen:
+                seen.add(id(g.mesh))
+                base = self._proto_base_chunk(g.mesh, _paint_of(self, g))
+                protos.append(((base.get("uid"), base.get("rev")), base))
+        grids: list = []
+        if not _NO_SPAN_GRID:
+            fixed = Viewport._pick_candidates(self, False, table)[1]
+            for g in fixed:
+                if not getattr(g, "billboard", False):
+                    c = self._group_chunk(g)
+                    if (c["v0"] is not None and len(c["v0"]) > _SPAN_GRID_MIN
+                            and "_span_grid" not in c):
+                        grids.append(c)
+        # What a box selection asks of each, the first time (2 s over 257).
+        bounds = [base for _k, base in protos]
+        self._pick_warm = _PickWarm(mod, protos, grids, bounds)
 
     def _static_occluders(self, idx):
         """core._native's InstanceSet over the pick index's own triangles
@@ -14529,6 +14698,19 @@ class Viewport(QOpenGLWidget):
             # answering "the plaza" for the arch inside (Marco,
             # 2026-09-14).
             chunks.append((g, chunk, gvis, gsel, gsnap))
+        _pick_warm_take(self)
+        # Each big chunk's grid is its own work, mostly NumPy: side by side
+        # (0.9 s of a big model's first hover one after another, #1092). Each
+        # keeps it on its chunk, where the loop below finds it.
+        big = [c for g, c, _v, _s, _n in chunks
+               if c["v0"] is not None and id(g) not in lazy_set
+               and len(c["v0"]) > _SPAN_GRID_MIN and "_span_grid" not in c]
+        if len(big) > 1 and not _NO_SPAN_GRID:
+            import os
+            from concurrent.futures import ThreadPoolExecutor
+            with ThreadPoolExecutor(
+                    max_workers=min(8, os.cpu_count() or 2)) as ex:
+                list(ex.map(_split_chunk_spans, big))
         n_ent = base["n_ent"] if base else 0
         n_plist = base["n_plist"] if base else 0
         b_tri_off = base["n_tri"] if base else 0
@@ -15335,12 +15517,17 @@ class Viewport(QOpenGLWidget):
                 return idx.entities[int(rows[k])]
             return lazy[3](k - n)
 
+        def owner(k):
+            if k < n:
+                return _entity_owner(idx.entities, int(rows[k]))
+            return lazy[5](k - n)
+
         def place(k):
             if k < n:
                 i = int(rows[k])
                 if pidx is not None and i < len(pidx) and pidx[i] >= 0:
                     return idx.ent_placements[int(pidx[i])]
-                return idx.entities[i][1]
+                return _entity_owner(idx.entities, i)
             return lazy[4](k - n)
         t = face_t[rows] if n else np.empty(0)
         area = idx.ent_area[rows] if n else np.empty(0)
@@ -15350,7 +15537,7 @@ class Viewport(QOpenGLWidget):
             area = np.concatenate([area, lazy[1]])
             loose = np.concatenate([loose, np.zeros(len(lazy[0]), bool)])
         return SimpleNamespace(t=t, area=area, loose=loose, ent=ent,
-                               place=place)
+                               owner=owner, place=place)
 
     def _lazy_sel_rows(self, nat):
         """The rows of the lazy table whose faces a pick may land on (see
@@ -15429,7 +15616,10 @@ class Viewport(QOpenGLWidget):
 
         def place(m):
             return groups[keys[m][0]]
-        return tt, area, keys, ent, place
+
+        def owner(m):
+            return self._owner_of(groups[keys[m][0]])
+        return tt, area, keys, ent, place, owner
 
     def _hover_hits(self, idx, origin, direction):
         """:meth:`_face_hits` of the selectable faces, memoised for the
@@ -16502,13 +16692,34 @@ class Viewport(QOpenGLWidget):
                 cache.clear()
             cache[id(group)] = (key, obb)
             return obb
-        entry = self._group_chunk(group)
         # The box follows the group's axes (issue #44), and Change Axes can
         # turn them without touching one vertex — so the cached box is only
         # good for the frame it was measured on.
         from core.group import group_frame
         fr = group_frame(group)
         fkey = tuple(fr.data()) if fr is not None else None
+        xf = getattr(group, "xform", None)
+        if xf is not None and id(group) not in (
+                getattr(self, "_inst_chunks", None) or ()):
+            # A placement nobody has baked to the world: the box is measured
+            # on the points, the bake would only have carried it. Selecting
+            # the 590 objects of a big model baked them all (#1092). Good for
+            # what its bake would have been good for.
+            base = self._group_chunk(
+                _proto_wrapper(self, group.mesh, _paint_of(self, group)))
+            key = (base["uid"], tuple(xf.data()), base.get("rev"), fkey)
+            memo = getattr(self, "_inst_obb", None)
+            if memo is None:
+                memo = self._inst_obb = {}
+            hit = memo.get(id(group))
+            if hit is not None and hit[0] == key:
+                return hit[1]
+            obb = self._compute_obb(group)
+            if len(memo) > 65536:          # ids of placements long gone
+                memo.clear()
+            memo[id(group)] = (key, obb)
+            return obb
+        entry = self._group_chunk(group)
         obb = entry.get("obb")
         if obb is not None and entry.get("obb_frame") == fkey:
             return obb
@@ -16760,6 +16971,10 @@ class Viewport(QOpenGLWidget):
             return ref
         src, mesh, group = ref[4], ref[5], ref[6]
         fresh = None
+        real = getattr(src, "real", None)
+        if real is not None:
+            # Found over a lazy mesh's light face: an edit asks of the real one.
+            src = real()
         if isinstance(src, Face):
             if src in mesh.faces:
                 # the same arc of the face, wherever it is now
@@ -17922,10 +18137,11 @@ class Viewport(QOpenGLWidget):
                else None)
         try:
             cam = self.camera
+            from views.array_bake import reading_now
             key = (which, round(screen_x, 2), round(screen_y, 2), id(idx),
                    cam.yaw, cam.pitch, cam.distance, cam.perspective,
                    cam.target.x(), cam.target.y(), cam.target.z(),
-                   self.width(), self.height())
+                   self.width(), self.height(), reading_now())
         except AttributeError:            # a bare stand-in (tests): no memo
             key = None
         slot = ("_face_any_memo" if which == "sel"
@@ -18031,7 +18247,7 @@ class Viewport(QOpenGLWidget):
                                                         direction)
                     best = (float(hits.t[front].min()),
                             None if hits.loose[front].any()
-                            else hits.ent(int(front[0]))[1])
+                            else hits.owner(int(front[0])))
             faces_answer = best
             for g in self._context_placements():
                 # The figure test first: it is an attribute, the layer test
@@ -18973,10 +19189,18 @@ class Viewport(QOpenGLWidget):
         had_plane = getattr(self.active_tool, "work_plane", None) is not None
         face_at_click = None
         group_at_click = None
+        from views.array_bake import reading_only
         if not had_start and not had_plane:
-            face_at_click, group_at_click = self.pick_face_placement(
-                ev.position().x(), ev.position().y())
-        ctx = self._build_ctx(ev)
+            # Only its plane is read, below: no need to build a big group's
+            # mesh for that (seconds and gigabytes, #1092).
+            with reading_only():
+                face_at_click, group_at_click = self.pick_face_placement(
+                    ev.position().x(), ev.position().y())
+        if getattr(self.active_tool, "click_reads_only", False):
+            with reading_only():
+                ctx = self._build_ctx(ev)
+        else:
+            ctx = self._build_ctx(ev)
         if ctx is not None:
             # The tool hears the cursor's snap KIND before it is called, as on
             # every hover (``_note_snap``): a click that never had its own
@@ -19377,12 +19601,17 @@ class Viewport(QOpenGLWidget):
         win = self.window()
         if hasattr(win, "on_viewport_hover"):
             win.on_viewport_hover(ev.position().x(), ev.position().y())
-        self.inference.acquire(ev.position().x(), ev.position().y())
+        # What the snap reads of a face under the cursor builds no lazy mesh
+        # (#1092); a tool's on_hover below may keep what it picks, and a click
+        # gets the real faces.
+        from views.array_bake import reading_only
+        with reading_only():
+            self.inference.acquire(ev.position().x(), ev.position().y())
 
-        if self.active_tool is None:
-            return
-        _hmark("acquire")
-        ctx = self._build_ctx(ev)
+            if self.active_tool is None:
+                return
+            _hmark("acquire")
+            ctx = self._build_ctx(ev)
         _hmark("ctx")
         if ctx is None:
             return

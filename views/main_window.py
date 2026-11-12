@@ -8741,6 +8741,8 @@ class MainWindow(QMainWindow):
         self.viewport.notify_scene_changed()
         self._update_title()
         self.settle_heap()
+        # The heavy parts of the pick index, once the document is on screen.
+        self.viewport._pick_warm_due = True
         return True
 
     def _finish_aborted_open(self) -> None:

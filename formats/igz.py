@@ -97,6 +97,8 @@ _LARGE_DOCUMENT = 20_000
 # would take the bulk pass, so either way it reopens the same.
 _GEOM_PREFIX = "geom/"
 _BULK_MIN = 1024
+#: A document this long has its mesh blocks read by the engine (_parse_native).
+_NATIVE_JSON_MIN = 32 << 20
 #: The dtypes a geometry block may declare — anything else is refused, so a
 #: crafted document cannot make the reader build arbitrary objects.
 _GEOM_DTYPES = frozenset(("<f4", "<i4", "<i8", "|u1"))
@@ -523,17 +525,21 @@ def _pack_plan(mesh, plan, sink: dict) -> dict:
     # Faces with more than one hole drop the nested ones, as the object
     # writer does (by their positions).
     if len(counts) and (counts > 2).any():
-        rs = np.concatenate([[0], np.cumsum(sizes)])
-        fr = np.concatenate([[0], np.cumsum(counts)])
-        keep_ring = np.ones(len(sizes), dtype=bool)
-        for f in np.flatnonzero(counts > 2).tolist():
-            hk = list(range(int(fr[f]) + 1, int(fr[f + 1])))
-            pos = [[QVector3D(*plan.pos[i]) for i in
-                    corners_v[int(rs[k]):int(rs[k + 1])].tolist()]
-                   for k in hk]
-            kept = {id(x) for x in _maximal_holes(pos)}
-            for k, p in zip(hk, pos):
-                keep_ring[k] = id(p) in kept
+        # A plan does not change: the next save (the autosave) has it.
+        keep_ring = plan.extra.get("keep_ring")
+        if keep_ring is None:
+            rs = np.concatenate([[0], np.cumsum(sizes)])
+            fr = np.concatenate([[0], np.cumsum(counts)])
+            keep_ring = np.ones(len(sizes), dtype=bool)
+            for f in np.flatnonzero(counts > 2).tolist():
+                hk = list(range(int(fr[f]) + 1, int(fr[f + 1])))
+                pos = [[QVector3D(*p) for p in plan.pos[
+                    corners_v[int(rs[k]):int(rs[k + 1])]].tolist()]
+                    for k in hk]
+                kept = {id(x) for x in _maximal_holes(pos)}
+                for k, p in zip(hk, pos):
+                    keep_ring[k] = id(p) in kept
+            plan.extra["keep_ring"] = keep_ring
         if not keep_ring.all():
             corners_v = corners_v[np.repeat(keep_ring, sizes)]
             ring_face = np.repeat(np.arange(len(counts)), counts)
@@ -587,11 +593,12 @@ def _pack_plan(mesh, plan, sink: dict) -> dict:
     }
     flags = (plan.soft.astype(np.uint8) | (plan.hidden.astype(np.uint8) << 1))
     arrays["edge_flags"] = flags
-    if any(c is not None for c in plan.curve):
+    # (list.count: a generator over millions of edges took seconds to say no.)
+    if plan.curve.count(None) != len(plan.curve):
         arrays["edge_curve"] = np.array(
             [-1 if c is None else c for c in plan.curve], dtype=np.int64)
     layer_table: list = []
-    if any(l is not None for l in plan.layer):
+    if plan.layer.count(None) != len(plan.layer):
         layer_index: dict = {}
         layers = np.full(ne, -1, dtype=np.int32)
         for i, l in enumerate(plan.layer):
@@ -1009,22 +1016,23 @@ def _write_container(path: Path, doc: str, blobs: dict,
     _write_atomic(path, buf.getvalue())
 
 
-def _parse_json(text, pump=None):
-    """``json.loads`` — in a worker thread while ``pump`` keeps the window
-    answering, when given. A 3.3 GB document took 24 s in one call, and the
-    desktop flagged IngeTrazo as «not responding» after five (Marco, 01-10,
-    the model of #158); the parser lets the main thread in every ~0.4 s."""
+def _in_worker(work, pump=None):
+    """``work()`` — in a worker thread while ``pump`` keeps the window
+    answering, when given. Reading a 3.3 GB document took 24 s in one call,
+    and the desktop flagged IngeTrazo as «not responding» after five (Marco,
+    01-10, the model of #158); the JSON parser and zlib let the main thread
+    in."""
     if pump is None:
-        return json.loads(text, parse_constant=_note_constant)
+        return work()
     import threading
     box: dict = {}
 
-    def work():
+    def run():
         try:
-            box["data"] = json.loads(text, parse_constant=_note_constant)
+            box["data"] = work()
         except BaseException as exc:  # noqa: BLE001 — re-raised below
             box["error"] = exc
-    th = threading.Thread(target=work, daemon=True)
+    th = threading.Thread(target=run, daemon=True)
     th.start()
     while th.is_alive():
         th.join(0.1)
@@ -1034,13 +1042,204 @@ def _parse_json(text, pump=None):
     return box["data"]
 
 
+def _native_blocks(meta) -> dict:
+    """What :func:`_json_arrays` makes of a mesh block, from what the engine
+    read of it (ingetrazo_core.json_mesh_blocks): the same arrays, the same
+    attribute table in the same order."""
+    import numpy as np
+    from core.topology import _maximal_holes
+    pos, flags, curves, layers, raw_names, sizes, counts, face_attr, \
+        raw_attrs, multi = meta
+    ne = len(flags)
+    n_edge_pts = 2 * ne
+    nf = len(counts)
+    small = not _bulk_sized(ne, nf)
+    # The names kept, numbered in the order they first come. Two spellings
+    # of one name are one layer.
+    names: dict = {}
+    lut = []
+    for text in raw_names:
+        lay = json.loads(text)
+        lut.append(-1 if small and not lay else names.setdefault(lay, len(names)))
+    if names:
+        layers = np.asarray(lut + [-1], dtype=np.int32)[layers]
+    table = [json.loads(text, parse_constant=_note_constant)
+             for text in raw_attrs]
+    if len(multi):
+        # Nested holes dropped, in Python like every other reader: only
+        # these few faces pay for it.
+        first_ring = np.cumsum(counts) - counts
+        starts = n_edge_pts + np.cumsum(sizes) - sizes
+        pieces = []
+        keep_rings = np.ones(len(sizes), dtype=bool)
+        new_counts = counts.copy()
+        new_sizes = sizes.copy()
+        at = 0
+        for f in multi.tolist():
+            r0 = int(first_ring[f])
+            nr = int(counts[f])
+            ends = starts[r0 + 1:r0 + nr] + sizes[r0 + 1:r0 + nr]
+            lo, hi = int(starts[r0 + 1]), int(ends[-1])
+            loops = [[QVector3D(*v) for v in pos[int(a):int(b)].tolist()]
+                     for a, b in zip(starts[r0 + 1:r0 + nr].tolist(),
+                                     ends.tolist())]
+            kept = _maximal_holes(loops)
+            pieces.append(pos[at:lo])
+            flat = [(p.x(), p.y(), p.z()) for loop in kept for p in loop]
+            if flat:
+                pieces.append(np.asarray(flat, dtype=np.float64))
+            at = hi
+            keep_rings[r0 + 1 + len(kept):r0 + nr] = False
+            new_sizes[r0 + 1:r0 + 1 + len(kept)] = [len(k) for k in kept]
+            new_counts[f] = 1 + len(kept)
+        pieces.append(pos[at:])
+        pos = np.concatenate(pieces)
+        sizes = new_sizes[keep_rings]
+        counts = new_counts
+    meta_out: dict = {"face_attrs": table}
+    if names:
+        meta_out["edge_layers"] = list(names)
+    # In the dtypes of a format-3 block, for the arrays this stays alive as:
+    # a saved point is a float32 written out in full, so nothing is lost
+    # (hundreds of MB on the plant of #158). A value that is not one keeps
+    # its double.
+    pos32 = pos.astype(np.float32)
+    if pos32.astype(np.float64).tobytes() == pos.tobytes():
+        pos = pos32
+    index = np.int32 if len(pos) < 2 ** 31 else np.int64
+    return dict(
+        meta=meta_out,
+        pos=pos,
+        edges=np.arange(n_edge_pts, dtype=index).reshape(-1, 2),
+        flags=flags,
+        curves=curves if (curves >= 0).any() else None,
+        layers=layers if names else None,
+        rings=np.arange(n_edge_pts, len(pos), dtype=index),
+        sizes=sizes.astype(np.int32),
+        counts=counts.astype(np.int32),
+        face_attr=face_attr,
+        sequential=small)
+
+
+def _merge_native_attrs(src) -> None:
+    """The last of :func:`_json_arrays` for an engine-read block: equal
+    attributes are one table entry, and those that say nothing none. Run
+    when the mesh is read, as _json_arrays is: textures unpacked by then."""
+    import numpy as np
+    table: list = []
+    table_index: dict = {}
+    lut = []
+    for attrs in src["meta"]["face_attrs"]:
+        if _face_attrs_from_json(attrs):
+            key = json.dumps(attrs, sort_keys=True, default=str)
+            k = table_index.get(key)
+            if k is None:
+                k = table_index[key] = len(table)
+                table.append(attrs)
+            lut.append(k)
+        else:
+            lut.append(-1)
+    src["face_attr"] = np.asarray(lut + [-1], dtype=np.int32)[src["face_attr"]]
+    src["meta"]["face_attrs"] = table
+
+
+def _adopt_native_blocks(data, blocks) -> None:
+    """Hang each block's arrays where the document left its number. The very
+    places the engine looked (jsondoc.rs), no deeper."""
+    def walk_group(raw):
+        adopt(raw)
+        for c in raw.get("children") if isinstance(raw.get("children"),
+                                                   list) else ():
+            if isinstance(c, dict):
+                walk_group(c)
+
+    def adopt(raw):
+        n = raw.pop("_njb", None)
+        if n is not None:
+            raw["_arrays"] = _native_blocks(blocks[n])
+    scene = data.get("scene")
+    if not isinstance(scene, dict):
+        return
+    adopt(scene)
+    for key, walk in (("protos", adopt), ("groups", walk_group),
+                      ("kept_components", walk_group)):
+        items = scene.get(key)
+        for raw in items if isinstance(items, list) else ():
+            if isinstance(raw, dict):
+                walk(raw)
+
+
+def _parse_native(raw: bytes):
+    """A document's tree with its mesh blocks' arrays read by the engine
+    (under ``"_arrays"``, for :func:`_load_mesh`), or ``None`` when it should
+    go through the plain parser: the engine is off, the document is small, or
+    anything in it is not plain enough (jsondoc.rs). The tree of a 3.3 GB
+    document was 8.8 GB, for the loader to flatten into arrays and drop."""
+    if len(raw) < _NATIVE_JSON_MIN:
+        return None
+    from core import _native
+    mod = _native.native
+    if mod is None or not hasattr(mod, "json_mesh_blocks"):
+        return None
+    got = mod.json_mesh_blocks(raw)
+    if got is None:
+        return None
+    text, blocks = got
+    was = _saw_nonfinite[0]
+    try:
+        data = json.loads(text.decode("utf-8"), parse_constant=_note_constant)
+        _adopt_native_blocks(data, blocks)
+    except Exception:  # noqa: BLE001 — the plain parser says what is wrong
+        _saw_nonfinite[0] = was
+        return None
+    if _saw_nonfinite[0]:
+        return None                      # _without_nonfinite reads the tree
+    return data
+
+
+def _parse_document(read, pump=None):
+    """The tree of the document ``read()`` returns the bytes of (read in the
+    worker too: inflating is most of the wait)."""
+    def work():
+        raw = read()
+        data = _parse_native(raw)
+        if data is not None:
+            return data
+        text = raw.decode("utf-8")
+        del raw
+        return json.loads(text, parse_constant=_note_constant)
+    return _in_worker(work, pump)
+
+
+def _read_member_flat(archive, name):
+    """``archive.read(name)``. A long member goes into a buffer of its size,
+    a piece at a time: read() grows its result as it inflates, and for an
+    instant holds the whole of it twice (6.6 GB for the document of #158)."""
+    info = archive.getinfo(name)
+    if info.file_size < _NATIVE_JSON_MIN:
+        return archive.read(name)
+    buf = bytearray(info.file_size)
+    view = memoryview(buf)
+    at = 0
+    with archive.open(info) as f:
+        while at < len(buf):
+            got = f.readinto(view[at:at + (1 << 24)])
+            if not got:
+                break
+            at += got
+    view.release()
+    if at < len(buf):
+        del buf[at:]
+    return buf
+
+
 def _read_document(path: Path, pump=None):
     """``(data, archive)`` for a document of either shape — the archive is
     ``None`` for a plain-JSON one, and stays open while the caller extracts
     embedded images."""
     raw = path.read_bytes()
     if not raw.startswith(_ZIP_MAGIC):
-        return _parse_json(raw.decode("utf-8"), pump), None
+        return _parse_document(lambda: raw, pump), None
     import zipfile
     from core import zip_limits
     archive = zipfile.ZipFile(path)
@@ -1052,12 +1251,25 @@ def _read_document(path: Path, pump=None):
         archive.close()
         raise
     try:
-        data = _parse_json(archive.read(_DOC_ENTRY).decode("utf-8"), pump)
+        data = _parse_document(lambda: _read_member_flat(archive, _DOC_ENTRY),
+                               pump)
     except KeyError:
         archive.close()
         raise ValueError(
             f"{path.name} is not an IngeTrazo document (no {_DOC_ENTRY}).")
     return data, archive
+
+
+def _read_members(archive, names: list) -> dict:
+    """``{name: bytes}``, inflated side by side (zlib lets go of the
+    interpreter; a big document has hundreds of blocks). A damaged member
+    raises what it raises read alone, the first in ``names`` first."""
+    if len(names) < 2:
+        return {n: archive.read(n) for n in names}
+    import os
+    from concurrent.futures import ThreadPoolExecutor
+    with ThreadPoolExecutor(max_workers=min(8, os.cpu_count() or 2)) as ex:
+        return dict(zip(names, ex.map(archive.read, names)))
 
 
 def _unpack_photo_mesh(payload: dict, archive):
@@ -1210,8 +1422,8 @@ def _load_into_inner(scene, path: Path, progress=None) -> None:
         if archive is not None:
             # Format 3's binary geometry blocks, read while the archive is
             # open (it closes below).
-            geom = {n: archive.read(n) for n in archive.namelist()
-                    if n.startswith(_GEOM_PREFIX)}
+            geom = _read_members(archive, [n for n in archive.namelist()
+                                           if n.startswith(_GEOM_PREFIX)])
             tick(0.2, "Unpacking textures…")
             _unpack_textures(data.get("scene", {}), archive)
             # Rebuilt here, while the archive is still open — it closes below
@@ -1690,12 +1902,17 @@ def _load_mesh(mesh, payload, geom=None) -> None:
         _load_geometry(mesh, payload["geom"], geom or {})
         return
 
-    payload = _without_nonfinite(payload)
+    src = payload.get("_arrays")
+    if src is not None:
+        _merge_native_attrs(src)
+    else:
+        payload = _without_nonfinite(payload)
     from core import _native
-    if _native.wanted() and type(mesh) is _mesh_mod.Mesh:
+    if src is not None or (_native.wanted() and type(mesh) is _mesh_mod.Mesh):
         # A lazy mesh (experimental engine): its arrays now, its objects —
         # built by the very walk below — on first touch.
-        src = _json_arrays(payload)
+        if src is None:
+            src = _json_arrays(payload)
         if src is not None:
             curves = src["curves"]
             if curves is not None and curves.size and \
@@ -1710,6 +1927,8 @@ def _load_mesh(mesh, payload, geom=None) -> None:
             if _mesh_mod.DeferredMesh.defer(mesh, build, len(src["counts"]),
                                             src):
                 return
+            if "_arrays" in payload:
+                payload = _payload_from_arrays(src)
     _load_mesh_json(mesh, payload)
 
 

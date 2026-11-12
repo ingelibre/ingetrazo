@@ -144,3 +144,48 @@ def test_screen_filter_never_drops_something_near(seed):
             near |= bool(inside.any()) or bool((~front).any())
             if near:
                 assert i in kept, i
+
+
+@pytest.mark.parametrize("seed", range(3))
+def test_a_big_prototype_split_in_parallel_drops_nothing(seed):
+    """Past the size the engine splits a tree in parallel (#1092) the walk
+    goes by the same links: every triangle a ray meets comes back, and few
+    others do."""
+    rng = np.random.default_rng(seed)
+    n = 40_000
+    v0 = rng.uniform(-50, 50, (n, 3))
+    e1 = rng.uniform(-0.2, 0.2, (n, 3))
+    e2 = rng.uniform(-0.2, 0.2, (n, 3))
+    a = rng.uniform(-50, 50, (n, 3))
+    edges = np.concatenate([a, a + rng.uniform(-0.2, 0.2, (n, 3))], axis=1)
+    proto = mod.InstanceProto(v0, e1, e2, edges)
+    iset = mod.InstanceSet([proto], np.array([0], dtype=np.int64),
+                           np.eye(4).reshape(1, 16))
+    rows = np.array([0], dtype=np.int64)
+    seen = 0
+    for _ in range(200):
+        # Aimed at a triangle: most rays would miss them all otherwise.
+        k = int(rng.integers(n))
+        target = v0[k] + (e1[k] + e2[k]) / 3.0
+        o = rng.uniform(-80, 80, 3)
+        d = target - o
+        d /= np.linalg.norm(d)
+        _pl, tr, _a, _b, _c = iset.ray_cands(rows, tuple(o), tuple(d),
+                                             float("inf"))
+        got = set(tr.tolist())
+        h = np.cross(d, e2)
+        a_ = np.einsum("ij,ij->i", e1, h)
+        ok = np.abs(a_) >= 1e-6
+        f = np.where(ok, 1.0 / np.where(ok, a_, 1.0), 0.0)
+        s = o - v0
+        u = f * np.einsum("ij,ij->i", s, h)
+        q = np.cross(s, e1)
+        v = f * (q @ d)
+        t = f * np.einsum("ij,ij->i", e2, q)
+        want = np.flatnonzero(ok & (u >= 0) & (u <= 1) & (v >= 0)
+                              & (u + v <= 1) & (t >= 1e-6))
+        assert set(want.tolist()) <= got
+        assert k in got
+        assert len(got) < n // 10, "the tree skipped next to nothing"
+        seen += len(want)
+    assert seen
