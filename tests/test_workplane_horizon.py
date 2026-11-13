@@ -115,7 +115,7 @@ def test_si_hay_una_cara_bajo_el_cursor_el_punto_cae_en_ella(viewport, monkeypat
     # Un muro de 4 m de alto atravesado por la mirada, a 30 m del objetivo.
     cara = mesh.add_face([QVector3D(-10, 30, 0), QVector3D(10, 30, 0),
                           QVector3D(10, 30, 4), QVector3D(-10, 30, 4)])
-    monkeypatch.setattr(viewport, "pick_face_any", lambda x, y: (cara, None))
+    monkeypatch.setattr(viewport, "pick_face_inference", lambda x, y: (cara, None))
     punto = viewport._world_from_pixel(800, 200)
     assert punto is not None, "había una cara justo ahí"
     assert abs(punto.y() - 30.0) < 1e-3, f"no cayó en la cara: {punto}"
