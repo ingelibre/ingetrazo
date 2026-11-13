@@ -1607,9 +1607,11 @@ class Mesh:
         return {"kind": "merge_pair", "face_a": face_a, "face_b": face_b,
                 "edges": [e for e in shared_edges if e is not None], "merged": merged}
 
-    def dissolve_coplanar_region(self, faces: Iterable["Face"]) -> Optional["Face"]:
+    def dissolve_coplanar_region(self, faces: Iterable["Face"],
+                                 keep: Iterable[Edge] = ()) -> Optional["Face"]:
         """Merge a set of mutually-coplanar, edge-connected faces into one face
-        spanning the boundary of their union, removing every interior edge.
+        spanning the boundary of their union, removing every interior edge
+        except those in ``keep`` (they stay as free edges on the merged face).
 
         Pairwise merging is order-dependent — fusing two of three faces can leave
         a valence-3 junction the third can't bridge — so the stitch merges the
@@ -1659,10 +1661,11 @@ class Mesh:
         _orient_union_loops(outer, holes, n0)
         interior = [self.find_edge(by_id[tuple(k)[0]], by_id[tuple(k)[-1]])
                     for k, c in counts.items() if c >= 2]
+        kept = {id(e) for e in keep}
         for f in faces:
             self.remove_face(f)
         for e in interior:
-            if e is not None and not e.faces:
+            if e is not None and not e.faces and id(e) not in kept:
                 self.remove_edge(e)
         merged = self.add_face([v.position for v in outer],
                                [[v.position for v in h] for h in holes] or None)

@@ -499,11 +499,32 @@ def _single_coplanar_pair(faces) -> Optional[tuple]:
     return pairs[0]
 
 
+def _on_one_plane(faces) -> bool:
+    """Every vertex of ``faces``, holes included, lies on one plane within the
+    plane rebuild's tolerance."""
+    from core.arrangement import coplanar_plane
+
+    pts = [p for f in faces for loop in (f.vertices, *f.holes) for p in loop]
+    return coplanar_plane(pts, RebuildPlaneFacesCommand._TOL) is not None
+
+
+def _shared_edges(mesh, face_a, face_b) -> list:
+    """The edges bounding both ``face_a`` and ``face_b``."""
+    out = []
+    for lp in (face_a.loop, *face_a.hole_loops):
+        n = len(lp)
+        for i in range(n):
+            e = mesh.find_edge(lp[i], lp[(i + 1) % n])
+            if e is not None and face_b in e.faces:
+                out.append(e)
+    return out
+
+
 class EraseSelectionCommand(Command):
     """Erase selected edges and faces, the usual way.
 
-    An edge that divides two *coplanar* faces is dissolved and the faces merge
-    back into one (rubbing out a face's split line reunites it). Any other erased
+    An edge that divides two *coplanar* faces goes alone and the faces merge
+    into one (rubbing out a face's split line reunites it). Any other erased
     edge takes the faces it bounds with it (a non-planar pair can't become one
     face). Undo restores an identity-preserving snapshot — the merge restructures
     connectivity too much for a clean per-edge inverse."""
@@ -543,7 +564,7 @@ class EraseSelectionCommand(Command):
         for f in m.faces:
             _index_face(f)
         dead_faces: set = set()
-        slit_planes: list = []
+        rebuild_planes: list = []
         across: list = []
         for a, b in self._edge_endpoints:
             v0 = m.vertex_at(a)
@@ -562,17 +583,35 @@ class EraseSelectionCommand(Command):
                 # regions below (the ring comes back as outer + hole; other
                 # fence pieces survive as free edges).
                 f = faces[0]
-                slit_planes.append((QVector3D(f.vertices[0]), f.normal()))
+                rebuild_planes.append((QVector3D(f.vertices[0]), f.normal()))
                 m.remove_edge(edge)
                 scene.selection.discard(edge)
                 continue
             if len(faces) == 2 and QVector3D.dotProduct(
                 faces[0].normal(), faces[1].normal()
             ) > 0.999:
-                merged = m.dissolve_coplanar_region(faces)  # reunite the split
+                # Coplanar pair: it becomes one face. On one true plane only
+                # this edge goes and the other edges the pair shares stay as
+                # free edges — dissolving all of them took the whole outline
+                # of a rectangle drawn on a face (#631). Normals up to ~2.5°
+                # apart pass the test above; such a pair keeps the full
+                # dissolve, as the plane rebuild can't see it as one region
+                # and would drop one of the faces.
+                planar = _on_one_plane(faces)
+                keep = ([e for e in _shared_edges(m, *faces) if e is not edge]
+                        if planar else ())
+                merged = m.dissolve_coplanar_region(faces, keep=keep)
                 if merged is not None:
                     dead_faces.update(id(f) for f in faces)
                     _index_face(merged)
+                elif planar:
+                    # The union isn't simple: drop the edge and let the
+                    # plane rebuild below re-derive the regions.
+                    f = faces[0]
+                    rebuild_planes.append((QVector3D(f.vertices[0]), f.normal()))
+                    m.remove_edge(edge)
+                    scene.selection.discard(edge)
+                    continue
             elif len(faces) > 2:
                 # A wall raised against a taller neighbour leaves its inner
                 # side faces on the line too, so the front's split line had
@@ -601,11 +640,12 @@ class EraseSelectionCommand(Command):
                     scene.selection.discard(f)
                 m.remove_edge(edge)
             scene.selection.discard(edge)
-        # Slit removals re-derive their plane from the arrangement while the
-        # cut-ring face is still present to provide coverage (it re-emits as
-        # outer + hole, attrs intact; uncovered regions stay empty).
+        # Slit and coplanar removals re-derive their plane from the
+        # arrangement while the faces are still present to provide coverage
+        # (a cut ring re-emits as outer + hole, a split face as one, attrs
+        # intact; uncovered regions stay empty).
         done_planes: list = []
-        for origin, normal in slit_planes:
+        for origin, normal in rebuild_planes:
             nn = normal.normalized()
             if any(abs(QVector3D.dotProduct(nn, n)) > 0.999 and
                    abs(QVector3D.dotProduct(origin - o, n)) < 1e-4
