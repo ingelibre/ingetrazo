@@ -74,7 +74,8 @@ def test_the_sheet_inks_them_dashed_and_the_dxf_puts_them_apart(tmp_path):
     path = tmp_path / "v.dxf"
     save_dxf_layers(path, [("V", [(0, 0, 1, 0)]),
                            ("V-OCULTAS", [(0, 1, 1, 1)], "DASHED")])
-    text = path.read_text()
-    assert "LTYPE" in text and "\nDASHED\n" in text
-    assert "V-OCULTAS\n70\n0\n62\n7\n6\nDASHED" in text
-    assert "\nV\n70\n0\n62\n7\n6\nCONTINUOUS" in text
+    import ezdxf
+    doc = ezdxf.readfile(str(path))
+    assert "DASHED" in doc.linetypes
+    assert doc.layers.get("V-OCULTAS").dxf.linetype == "DASHED"
+    assert doc.layers.get("V").dxf.linetype == "CONTINUOUS"
