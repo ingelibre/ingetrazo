@@ -128,17 +128,16 @@ def _mesh_paint_areas(mesh, cache=None):
 
 def part_material(part, cache=None) -> str:
     """The material covering most of ``part``'s surface ('' when none).
-    A default face shows its container's paint, as it draws.
+    A default face shows its nearest painted container's paint, as it
+    draws.
 
     Areas are read in each mesh's own coordinates (as they always were),
     so with a ``cache`` kept for one pass the copies of a shared
     definition are read once: 300 copies of a 3 000-face tree were
     300 × 3 000 face areas, 14 s with the container selected."""
-    from core.group import iter_placements
+    from core.group import iter_painted_placements
     area: dict = {}
-    for g, _m in iter_placements(part):
-        inherited = getattr(g, "material", None) or getattr(
-            part, "material", None)
+    for g, _m, inherited in iter_painted_placements(part):
         own, default = _mesh_paint_areas(g.mesh, cache)
         for label, a in own.items():
             area[label] = area.get(label, 0.0) + a
