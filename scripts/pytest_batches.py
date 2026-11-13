@@ -27,6 +27,14 @@ _COUNT = re.compile(r"(\d+) (passed|failed|skipped|errors?|xfailed|xpassed|"
                     r"deselected|warnings?)")
 
 
+def _switches_theme(path: str) -> bool:
+    try:
+        text = Path(path).read_text(encoding="utf-8")
+    except OSError:
+        return False
+    return "apply_theme(" in text or "apply_accent(" in text
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("-m", dest="marker", default=None)
@@ -35,8 +43,19 @@ def main() -> int:
     args = ap.parse_args()
 
     files = sorted(str(p) for p in Path(args.path).glob("test_*.py"))
+    # The files that switch the app's theme run first, in a process of
+    # their own. A theme switch makes Qt walk every widget alive, and a
+    # batch's earlier files leave ~385 000 behind (their MainWindows are
+    # never destroyed, see above): test_theme_slate segfaulted inside
+    # QApplication::setStyleSheet mid-batch, on Linux and Windows, while
+    # 250 switches with the app's own windows never did (13-11).
+    themed = [f for f in files if _switches_theme(f)]
+    files = [f for f in files if f not in themed]
     n = max(1, min(args.batches, len(files)))
     chunks = [files[i::n] for i in range(n)]   # interleaved: even weights
+    if themed:
+        chunks.insert(0, themed)
+        n += 1
     totals: dict[str, int] = {}
     crashed = []
     t0 = time.monotonic()
