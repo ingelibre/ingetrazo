@@ -71,10 +71,14 @@ def test_native_formula_bits(kind, col):
 
 
 def test_this_qt_is_known():
-    """On Linux (libstdc++) and Windows (MSVC) Qt's length is one of the
-    formulas, so the vectorised rays are not lost to the slow path."""
+    """On Linux (libstdc++), Windows (MSVC) and Apple Silicon (libc++, as
+    Clang contracts it) Qt's length is one of the formulas, so the
+    vectorised rays are not lost to the slow path."""
+    import platform
     import sys
     want = {"linux": "libstdc++", "win32": "msvc"}.get(sys.platform)
+    if sys.platform == "darwin" and platform.machine() == "arm64":
+        want = "libc++"
     if want is None:
         pytest.skip("no formula for this platform's C++ library yet")
     assert V._qv_hypot3() == want

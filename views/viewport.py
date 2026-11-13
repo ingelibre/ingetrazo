@@ -955,7 +955,7 @@ _NEAR_SEEN_NATIVE = os.environ.get("INGETRAZO_NEAR_SEEN", "1") != "0"
 #: _unit_rays reproduces ("": none; None: not checked yet).
 _QV_HYPOT3 = None
 #: The C++ libraries whose ``std::hypot(x, y, z)`` _hypot3_f32 knows.
-_QV_HYPOTS = ("libstdc++", "msvc")
+_QV_HYPOTS = ("libstdc++", "msvc", "libc++")
 
 
 def _hypot3_f32(a, kind="libstdc++"):
@@ -966,6 +966,18 @@ def _hypot3_f32(a, kind="libstdc++"):
     it when the other two are below its epsilon and adds the other two
     ratios' squares to 1 in the order the swaps left them."""
     import numpy as np
+    if kind == "libc++":
+        # Apple libc++ as Clang contracts it: fma(z, z, fma(x, x, y*y)),
+        # unscaled (Qt on macOS). The product of two floats is exact in a
+        # double; the sum rounds to a double before the float, which could
+        # differ from one fused rounding only on an exact tie — none in
+        # 200 000 random vectors, and the probe above still decides.
+        a = np.asarray(a, dtype=np.float32)
+        x, y, z = (a[:, i].astype(np.float64) for i in range(3))
+        yy = (y * y).astype(np.float32).astype(np.float64)
+        t = (x * x + yy).astype(np.float32).astype(np.float64)
+        with np.errstate(over="ignore", invalid="ignore"):
+            return np.sqrt((z * z + t).astype(np.float32))
     a = np.abs(a)
     if kind == "msvc":
         x, y, z = a[:, 0], a[:, 1], a[:, 2]
