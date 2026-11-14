@@ -100,6 +100,79 @@ def test_close_during_the_load_unwinds_it_and_closes(doc, monkeypatch):
     assert not win.isVisible()
 
 
+def test_closing_the_bar_during_the_load_closes_the_window(doc, monkeypatch):
+    """The bar is window-modal, and Qt drops a close of a window a modal
+    dialog blocks: the main window's X did nothing while the bar showed
+    (Windows round 0.6.2, secador4). The bar's own X is the way out."""
+    import formats.igz as igz
+    from views.main_window import MainWindow
+
+    win = MainWindow(defer_extensions=True)
+    milestones = []
+
+    def fake_load(scene, path, progress=None):
+        for i in range(10):
+            scene.version += 1
+            milestones.append(i)
+            if progress is not None:
+                progress(i / 10.0, "Loading")
+            if i == 1:
+                win._progress_dlg.close()     # the bar's X (or Esc)
+
+    monkeypatch.setattr(igz, "load_into", fake_load)
+    try:
+        assert win.open_path(doc) is False
+    finally:
+        monkeypatch.undo()
+    assert milestones == [0, 1, 2]
+    _app.processEvents()
+    assert win._closed
+    assert not win.isVisible()
+
+
+def test_the_bar_closing_after_the_load_leaves_the_window_open(doc):
+    """The bar closes itself once the document is in: that is no close."""
+    from views.main_window import MainWindow
+
+    win = MainWindow(defer_extensions=True)
+    try:
+        assert win.open_path(doc) is True
+        win._progress_dlg.close()
+        _app.processEvents()
+        assert not win._closed and not win._open_aborted
+        assert win.open_path(doc) is True        # the next open is not cut
+    finally:
+        win._saved_version = win.viewport.scene.version
+        win.close()
+
+
+def test_a_failed_open_does_not_cut_the_next_one(doc, monkeypatch):
+    """A failed open closes its bar while the load still counts as running;
+    that must not unwind the next open."""
+    import formats.igz as igz
+    from views.main_window import MainWindow
+
+    win = MainWindow(defer_extensions=True)
+    monkeypatch.setattr("views.main_window.QMessageBox.critical",
+                        lambda *a, **k: None)
+    real = igz.load_into
+
+    def broken(scene, path, progress=None):
+        if progress is not None:
+            progress(0.5, "Loading")
+        raise ValueError("corrupt")
+
+    monkeypatch.setattr(igz, "load_into", broken)
+    try:
+        assert win.open_path(doc) is False
+        monkeypatch.setattr(igz, "load_into", real)
+        assert win.open_path(doc) is True
+        assert not win._closed
+    finally:
+        win._saved_version = win.viewport.scene.version
+        win.close()
+
+
 def test_a_normal_open_still_opens(doc):
     from views.main_window import MainWindow
 

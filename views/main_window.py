@@ -8642,6 +8642,11 @@ class MainWindow(QMainWindow):
         # seconds with nothing on screen, «feeling of freeze». Small ones
         # never show it (the dialog waits 400 ms before appearing).
         dlg, cb = self._import_progress(tr("Opening {name}…", name=path.name))
+        # The bar is window-modal: while it shows, Qt drops a close of the
+        # main window before closeEvent ever hears it (a blocked window
+        # takes no close), so the X there did nothing (Windows round
+        # 0.6.2). Closing the bar itself is the user's close, then.
+        dlg.canceled.connect(self._on_open_bar_closed)
 
         def guarded_cb(frac, text):
             # A close that landed while the file was still coming in
@@ -8655,6 +8660,9 @@ class MainWindow(QMainWindow):
         # progress tick lets the window repaint, and a paint over a model
         # half loaded built every drawing chunk in one go — 61 s without
         # answering the desktop on the model of #158.
+        # Fresh for this open: a failed one closes its bar while the load
+        # still counts as running, which would leave the flag up.
+        self._open_aborted = False
         self._open_in_progress = True
         self.viewport.setUpdatesEnabled(False)
         try:
@@ -8755,6 +8763,14 @@ class MainWindow(QMainWindow):
         # The heavy parts of the pick index, once the document is on screen.
         self.viewport._pick_warm_due = True
         return True
+
+    def _on_open_bar_closed(self) -> None:
+        """The progress bar of an .igz open was closed (its X, Esc) while
+        the file was coming in: the same as closing the window then (#1269)
+        — the load unwinds and the window closes. Once the load is over,
+        the bar closing on its own means nothing."""
+        if getattr(self, "_open_in_progress", False):
+            self._open_aborted = True
 
     def _finish_aborted_open(self) -> None:
         """The user closed the window while a file was loading (#1269)
