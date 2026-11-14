@@ -445,6 +445,8 @@
  "Explode Group": "ແຍກກຸ່ມ (Explode)",
  "Export": "ສົ່ງອອກ",
  "Export CSV…": "ສົ່ງອອກ CSV…",
+ "Export materials CSV": "Export materials CSV",
+ "Export materials CSV…": "Export materials CSV…",
  "Export IFC": "ສົ່ງອອກ IFC",
  "Export IFC failed": "ການສົ່ງອອກ IFC ຫຼົ້ມເຫຼວ",
  "Export Image": "ສົ່ງອອກຮູບພາບ",

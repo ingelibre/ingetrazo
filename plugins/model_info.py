@@ -21,6 +21,8 @@ with the rest of the application because they come from the same sources:
 """
 from __future__ import annotations
 
+import csv
+import io
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QTimer
@@ -161,6 +163,46 @@ def _collect_stats(scene) -> dict:
     }
 
 
+def _material_rows(stats: dict) -> list[dict]:
+    """The materials-in-use table as rows, in the order the tab shows:
+    named materials first, then by painted area, largest first.
+
+    One row per entry of ``stats["textures"]`` / ``stats["colors"]``:
+    ``label`` (the registry name, the texture's name, or ``rgb(r,g,b)``
+    for an anonymous colour), ``faces``, ``area`` (raw square metres)
+    and ``rgb`` (the colour's floats 0-1, or ``None`` for a texture).
+    Shared by the table itself and :func:`materials_csv`, so the
+    spreadsheet a user takes to a budget is the table they saw."""
+    rows = []
+    for m in stats["textures"]:
+        rows.append({"label": m.get("mat") or m["name"],
+                     "faces": m["faces"], "area": m["area"],
+                     "rgb": None, "mat": m.get("mat")})
+    for m in stats["colors"]:
+        r, g, b = (int(round(c * 255)) for c in m["rgb"][:3])
+        rows.append({"label": m.get("mat") or f"rgb({r},{g},{b})",
+                     "faces": m["faces"], "area": m["area"],
+                     "rgb": m["rgb"], "mat": m.get("mat")})
+    rows.sort(key=lambda m: (0 if m.get("mat") else 1, -m["area"]))
+    return rows
+
+
+def materials_csv(stats: dict) -> str:
+    """The materials-in-use table as CSV — its spreadsheet form (#1277).
+
+    The columns mirror the tab (material, faces, area); the area is the
+    raw square-metre number, not the document-unit text the tab shows,
+    so a spreadsheet can sum it straight into a budget. Names go through
+    the csv module: a material called ``Paint, white`` must not split
+    into two columns."""
+    out = io.StringIO()
+    writer = csv.writer(out, lineterminator="\n")
+    writer.writerow(["material", "faces", "area_m2"])
+    for m in _material_rows(stats):
+        writer.writerow([m["label"], m["faces"], f"{m['area']:.4f}"])
+    return out.getvalue()
+
+
 def _stats_to_text(stats: dict) -> str:
     """Plain-text summary (the Copy to Clipboard payload)."""
     s, style = stats, stats["style"]
@@ -280,6 +322,11 @@ class ModelInfoDialog(QDialog):
         self._mat_table = _make_table(
             [tr("Material"), tr("Faces"), tr("Area")])
         ml.addWidget(self._mat_table, stretch=1)
+        self._export_materials_btn = QPushButton(
+            tr("Export materials CSV…"))
+        self._export_materials_btn.clicked.connect(
+            self._export_materials_csv)
+        ml.addWidget(self._export_materials_btn)
         ml.addWidget(QLabel(tr("Layers")))
         self._layer_table = _make_table(
             [tr("Layer"), tr("Visible"), tr("Locked")])
@@ -363,13 +410,10 @@ class ModelInfoDialog(QDialog):
 
     def _populate_materials(self) -> None:
         s = self._stats
-        mats = ([{"label": m.get("mat") or m["name"], "swatch": None, **m}
-                 for m in s["textures"]]
-                + [{"label": m.get("mat") or "", "swatch": m["rgb"], **m}
-                   for m in s["colors"]])
         # Named materials first, biggest painted area first — the order a
-        # finishes takeoff reads in.
-        mats.sort(key=lambda m: (0 if m.get("mat") else 1, -m["area"]))
+        # finishes takeoff reads in (see _material_rows).
+        mats = _material_rows(s)
+        self._export_materials_btn.setEnabled(bool(mats))
         self._mat_table.setRowCount(max(len(mats), 1))
         if not mats:
             self._mat_table.setItem(
@@ -378,12 +422,9 @@ class ModelInfoDialog(QDialog):
             self._mat_table.setItem(0, 2, QTableWidgetItem(""))
         for i, m in enumerate(mats):
             name_item = QTableWidgetItem(m["label"])
-            if m["swatch"] is not None:
-                rgb = m["swatch"][:3]
+            if m["rgb"] is not None:
+                rgb = m["rgb"][:3]
                 name_item.setBackground(QColor.fromRgbF(*rgb))
-                if not m["label"]:
-                    r, g, b = (int(round(c * 255)) for c in rgb)
-                    name_item.setText(f"rgb({r},{g},{b})")
                 # Legible over any swatch colour.
                 lum = 0.299 * rgb[0] + 0.587 * rgb[1] + 0.114 * rgb[2]
                 name_item.setForeground(
@@ -426,6 +467,19 @@ class ModelInfoDialog(QDialog):
                    else tr("(not watertight)"))
             self._bim_table.setItem(i, 3, QTableWidgetItem(vol))
         self._bim_table.resizeRowsToContents()
+
+    # ---- Export ------------------------------------------------------------
+    def _export_materials_csv(self) -> None:
+        """Save the materials-in-use table as a CSV spreadsheet (#1277):
+        the takeoff a user asked to carry into their budget."""
+        from views.filedialogs import file_dialogs
+        path, _ = file_dialogs.getSaveFileName(
+            self, tr("Export materials CSV"), "materials.csv",
+            tr("CSV (*.csv);;All files (*)"))
+        if not path:
+            return
+        with open(path, "w", encoding="utf-8", newline="") as fh:
+            fh.write(materials_csv(self._stats))
 
     # ---- Clipboard ---------------------------------------------------------
     def _copy_to_clipboard(self) -> None:
