@@ -3780,8 +3780,10 @@ class Viewport(QOpenGLWidget):
 
         # Profile (silhouette) edges: soft seams of a curved surface are hidden,
         # except where the surface turns away from the viewer — the cylinder's
-        # outline. View-dependent, so rebuilt every frame.
-        if show_edges and style.profiles:
+        # outline. View-dependent, so rebuilt every frame. An independent
+        # style option, not part of Edges: with Edges off and Profiles on a
+        # curved surface still shows its outline (#1253).
+        if style.profiles:
             sil_count = self._upload_silhouette_edges()
             if sil_count > 0:
                 self._set_color(ec[0], ec[1], ec[2], 1.0)
