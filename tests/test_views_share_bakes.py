@@ -31,6 +31,26 @@ from views import array_bake                             # noqa: E402
 from views import viewport as VPM                        # noqa: E402
 
 
+def _gl_usable() -> bool:
+    """A GL context that can be made current. The offscreen platform on
+    Windows has none: no view ever bakes there, and QOpenGLTexture without
+    a current context is an access violation (ronda Windows 0.6.2)."""
+    from PySide6.QtGui import QOffscreenSurface, QOpenGLContext
+    ctx = QOpenGLContext()
+    if not ctx.create():
+        return False
+    surface = QOffscreenSurface()
+    surface.create()
+    ok = surface.isValid() and ctx.makeCurrent(surface)
+    if ok:
+        ctx.doneCurrent()
+    return ok
+
+
+pytestmark = pytest.mark.skipif(not _gl_usable(),
+                                reason="no usable OpenGL context")
+
+
 def _box(mesh, x0, y0, z0, s=1.0):
     x1, y1, z1 = x0 + s, y0 + s, z0 + s
     for loop in (
