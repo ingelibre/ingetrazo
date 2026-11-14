@@ -443,6 +443,8 @@
  "Explode Group": "グループを分解",
  "Export": "書き出し",
  "Export CSV…": "CSV を書き出し…",
+ "Export materials CSV": "Export materials CSV",
+ "Export materials CSV…": "Export materials CSV…",
  "Export IFC": "IFC を書き出し",
  "Export IFC failed": "IFC の書き出しに失敗しました",
  "Export Image": "画像を書き出し",

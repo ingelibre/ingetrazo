@@ -30,7 +30,7 @@ from core.group import Group                                      # noqa: E402
 from core.mesh import Mesh                                        # noqa: E402
 from core.scene import Scene                                      # noqa: E402
 from plugins.model_info import (                                  # noqa: E402
-    ModelInfoTool, _collect_stats, _stats_to_text)
+    ModelInfoTool, _collect_stats, _stats_to_text, materials_csv)
 
 
 def _quad(mesh, z=0.0, o=0.0, size=4.0):
@@ -202,3 +202,42 @@ def test_a_painted_slab_with_an_opening_counts_its_net_area():
     f.attrs["color"] = (0.8, 0.1, 0.1)
     red = _collect_stats(scene)["colors"][0]
     assert abs(red["area"] - 15.0) < 1e-6
+
+
+# ---- Materials CSV export (#1277) ------------------------------------------
+
+def test_materials_csv_rows_match_the_table():
+    """The spreadsheet is the Materials tab, row for row: named materials
+    first, then biggest area first; anonymous colours keep their rgb()
+    label; the area is the raw m2 number a budget can sum."""
+    scene = Scene()
+    f = _quad(scene.mesh)                            # named, 16 m2
+    f.attrs["color"] = (0.62, 0.60, 0.58)
+    f.attrs["mat"] = "Concreto visto"
+    for z in (1.0, 2.0):                             # anonymous red, 32 m2
+        f = _quad(scene.mesh, z=z)
+        f.attrs["color"] = (0.8, 0.1, 0.1)
+    f = _quad(scene.mesh, z=3.0, size=2.0)           # textured, 4 m2
+    f.attrs["texture"] = {"path": "/tex/ladrillo.png", "sw": 1.0}
+
+    assert materials_csv(_collect_stats(scene)).splitlines() == [
+        "material,faces,area_m2",
+        "Concreto visto,1,16.0000",
+        '"rgb(204,26,26)",2,32.0000',
+        "ladrillo,1,4.0000",
+    ]
+
+
+def test_materials_csv_empty_model_is_header_only():
+    assert materials_csv(_collect_stats(Scene())) == "material,faces,area_m2\n"
+
+
+def test_materials_csv_quotes_a_name_with_a_comma():
+    """A registry name with a comma is ONE column, not two."""
+    stats = {"textures": [], "colors": [
+        {"rgb": (1.0, 0.0, 0.0), "faces": 1, "area": 2.5,
+         "mat": "Paint, white"}]}
+    assert materials_csv(stats).splitlines() == [
+        "material,faces,area_m2",
+        '"Paint, white",1,2.5000',
+    ]

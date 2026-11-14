@@ -445,6 +445,8 @@
  "Explode Group": "그룹 분해",
  "Export": "내보내기",
  "Export CSV…": "CSV 내보내기…",
+ "Export materials CSV": "Export materials CSV",
+ "Export materials CSV…": "Export materials CSV…",
  "Export IFC": "IFC 내보내기",
  "Export IFC failed": "IFC 내보내기 실패",
  "Export Image": "이미지 내보내기",
