@@ -3952,6 +3952,10 @@ class Viewport(QOpenGLWidget):
                 len(getattr(self, "_tex_cache", None) or ()),
                 id(getattr(self, "_frame_shadow", None)),
                 getattr(self, "_shadow_key", None),
+                # Soft shadows (#1281): set from Preferences, a still view
+                # kept the old level until the camera moved (Windows round
+                # 0.6.2).
+                getattr(self, "_soft_shadows", 0),
                 self._faces_count, self._edges_count, self._sel_faces_count,
                 self._selected_count, self.camera.fov_deg,
                 self.camera.perspective)
