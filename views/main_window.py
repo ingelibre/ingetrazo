@@ -6524,6 +6524,13 @@ class MainWindow(QMainWindow):
         """Esc, escalating like the viewport: release a sticky constraint
         (axis lock / reference) first, then cancel an in-progress action;
         with nothing in progress, clear the selection."""
+        # A scene glide or a run is stopped first, and alone: the player's
+        # filter sits on the viewport, but this window shortcut takes Esc
+        # before the viewport ever sees it, so the camera went on to the
+        # scene (Windows round 0.6.2, #1342).
+        if self.scene_player.is_active():
+            self.scene_player.stop()
+            return
         # One cascade, the viewport's — this action's shortcut fires before
         # the viewport ever sees the key, and its own copy lacked the
         # «step out of the group» stop.

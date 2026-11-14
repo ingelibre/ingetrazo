@@ -494,6 +494,39 @@ def test_play_from_the_menu_and_stop_follows_the_menu(win):
     assert not win._act_play_scenes.isChecked()
 
 
+def _esc_action(win):
+    from PySide6.QtGui import QAction, QKeySequence
+    return next(a for a in win.findChildren(QAction)
+                if a.shortcut() == QKeySequence("Esc"))
+
+
+def test_the_window_s_esc_stops_a_glide_and_keeps_the_selection(win):
+    """Esc reaches the window's «Cancel current tool» shortcut, never the
+    viewport the player filters: the camera glided on to the scene
+    (Windows round 0.6.2). It stops the glide and does nothing else."""
+    _scenes(win, ("Planta", "top", set()), ("Alzado", "front", set()))
+    _visible(win)
+    win.viewport.camera.set_view("iso")
+    win._scene_tabs.tabs.tabBarClicked.emit(1)
+    assert win.scene_player.is_active()
+    cleared = []
+    win.viewport.escape = lambda: cleared.append(True)
+    _esc_action(win).trigger()
+    assert not win.scene_player.is_active()
+    assert cleared == []                     # the selection stays
+    _esc_action(win).trigger()               # nothing moving: the cascade
+    assert cleared == [True]
+
+
+def test_the_window_s_esc_stops_play(win):
+    _scenes(win, ("A", "top", set()), ("B", "front", set()))
+    win.play_scenes(True)
+    assert win.scene_player.is_playing()
+    _esc_action(win).trigger()
+    assert not win.scene_player.is_active()
+    assert not win._act_play_scenes.isChecked()
+
+
 def test_play_without_scenes_says_why(win):
     win.play_scenes(True)
     assert not win.scene_player.is_active()
