@@ -1017,6 +1017,8 @@
  "Raw pine": "Pin brut",
  "Re-read the visible layers of the model.": "Relit les calques visibles du modèle.",
  "Reading file…": "Lecture du fichier…",
+ "Merging flat surfaces…": "Fusion des surfaces planes…",
+ "Joining triangles…": "Assemblage des triangles…",
  "Real height (m):": "Hauteur réelle (m) :",
  "Real tile size (meters):": "Taille réelle d'une tuile (mètres) :",
  "Rebuild Faces (Planar)": "Reconstruire les faces (plan)",

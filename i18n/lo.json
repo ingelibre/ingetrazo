@@ -1016,6 +1016,8 @@
  "Raw pine": "ໄມ້ສົນດິບ",
  "Re-read the visible layers of the model.": "ອ່ານຊັ້ນວຽກທີ່ສະແດງຜົນຂອງໂມເດວຄືນໃໝ່.",
  "Reading file…": "ກຳລັງອ່ານໄຟລ໌…",
+ "Merging flat surfaces…": "ກຳລັງລວມພື້ນຜິວຮາບ…",
+ "Joining triangles…": "ກຳລັງເຊື່ອມສາມຫຼ່ຽມ…",
  "Real height (m):": "ຄວາມສູງຕົວຈິງ (ມ):",
  "Real tile size (meters):": "ຂະໜາດດິນຈີ່ປູພື້ນຕົວຈິງ (ແມັດ):",
  "Rebuild Faces (Planar)": "ສ້າງໜ້າພຽງຄືນໃໝ່ (ແບບແຜ່ນພຽງ)",

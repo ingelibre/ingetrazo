@@ -1015,6 +1015,8 @@
  "Raw pine": "ไม้สนดิบ",
  "Re-read the visible layers of the model.": "อ่านชั้นงานที่มองเห็นของโมเดลใหม่อีกครั้ง",
  "Reading file…": "กำลังอ่านไฟล์…",
+ "Merging flat surfaces…": "กำลังรวมพื้นผิวเรียบ…",
+ "Joining triangles…": "กำลังเชื่อมสามเหลี่ยม…",
  "Real height (m):": "ความสูงจริง (ม.):",
  "Real tile size (meters):": "ขนาดกระเบื้องจริง (เมตร):",
  "Rebuild Faces (Planar)": "สร้างระนาบใหม่ (ระนาบราบ)",

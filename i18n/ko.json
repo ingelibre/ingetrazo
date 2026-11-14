@@ -1015,6 +1015,8 @@
  "Raw pine": "원목 소나무",
  "Re-read the visible layers of the model.": "모델의 표시 레이어를 다시 읽습니다.",
  "Reading file…": "파일 읽는 중…",
+ "Merging flat surfaces…": "평평한 면 병합 중…",
+ "Joining triangles…": "삼각형 연결 중…",
  "Real height (m):": "실제 높이 (m):",
  "Real tile size (meters):": "실제 타일 크기 (미터):",
  "Rebuild Faces (Planar)": "면 재구성 (평면)",

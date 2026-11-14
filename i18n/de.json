@@ -1016,6 +1016,8 @@
  "Raw pine": "Rohe Kiefer",
  "Re-read the visible layers of the model.": "Die sichtbaren Ebenen des Modells neu einlesen.",
  "Reading file…": "Datei wird gelesen…",
+ "Merging flat surfaces…": "Ebene Flächen werden zusammengeführt…",
+ "Joining triangles…": "Dreiecke werden verbunden…",
  "Real height (m):": "Reale Höhe (m):",
  "Real tile size (meters):": "Reale Kachelgröße (Meter):",
  "Rebuild Faces (Planar)": "Flächen neu aufbauen (planar)",

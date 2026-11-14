@@ -1007,6 +1007,8 @@
  "Raw pine": "未加工の松材",
  "Re-read the visible layers of the model.": "モデルの表示中レイヤーを再読み込みします。",
  "Reading file…": "ファイルを読み込み中…",
+ "Merging flat surfaces…": "平らな面を結合中…",
+ "Joining triangles…": "三角形をつないでいます…",
  "Real height (m):": "実際の高さ（m）:",
  "Real tile size (meters):": "タイルの実寸（メートル）:",
  "Rebuild Faces (Planar)": "面を再構築（平面）",

@@ -1017,6 +1017,8 @@
  "Raw pine": "原木松",
  "Re-read the visible layers of the model.": "重新读取模型的可见图层。",
  "Reading file…": "正在读取文件…",
+ "Merging flat surfaces…": "正在合并平面…",
+ "Joining triangles…": "正在连接三角形…",
  "Real height (m):": "实际高度 (m):",
  "Real tile size (meters):": "真实瓷砖尺寸 (米):",
  "Rebuild Faces (Planar)": "重建面 (平面)",

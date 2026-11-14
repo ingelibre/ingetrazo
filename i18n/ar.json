@@ -1073,6 +1073,8 @@
  "Raw pine": "الصنوبر الخام",
  "Re-read the visible layers of the model.": "أعد قراءة الطبقات المرئية للنموذج.",
  "Reading file…": "قراءة الملف...",
+ "Merging flat surfaces…": "دمج الأسطح المستوية…",
+ "Joining triangles…": "ربط المثلثات…",
  "Real height (m):": "الارتفاع الحقيقي (م):",
  "Real tile size (meters):": "حجم البلاط الحقيقي (متر):",
  "Rebuild Faces (Planar)": "إعادة بناء الوجوه (مستو)",

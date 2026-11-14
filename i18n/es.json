@@ -1017,6 +1017,8 @@
  "Raw pine": "Pino sin tratar",
  "Re-read the visible layers of the model.": "Vuelve a leer las capas visibles del modelo.",
  "Reading file…": "Leyendo archivo…",
+ "Merging flat surfaces…": "Uniendo superficies planas…",
+ "Joining triangles…": "Uniendo triángulos…",
  "Real height (m):": "Altura real (m):",
  "Real tile size (meters):": "Tamaño real de un tile (metros):",
  "Rebuild Faces (Planar)": "Reconstruir caras (plano)",

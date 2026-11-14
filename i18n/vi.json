@@ -1016,6 +1016,8 @@
  "Raw pine": "Thông thô",
  "Re-read the visible layers of the model.": "Đọc lại các lớp hiển thị của mô hình.",
  "Reading file…": "Đang đọc tệp…",
+ "Merging flat surfaces…": "Đang gộp các mặt phẳng…",
+ "Joining triangles…": "Đang nối các tam giác…",
  "Real height (m):": "Chiều cao thực (m):",
  "Real tile size (meters):": "Kích thước gạch thật (mét):",
  "Rebuild Faces (Planar)": "Tạo lại mặt phẳng",

@@ -1017,6 +1017,8 @@
  "Raw pine": "Необработанная сосна",
  "Re-read the visible layers of the model.": "Перечитать видимые слои модели.",
  "Reading file…": "Чтение файла…",
+ "Merging flat surfaces…": "Объединение плоских поверхностей…",
+ "Joining triangles…": "Соединение треугольников…",
  "Real height (m):": "Реальная высота (м):",
  "Real tile size (meters):": "Реальный размер плитки (м):",
  "Rebuild Faces (Planar)": "Перестроить грани (на плоскости)",
