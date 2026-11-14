@@ -265,7 +265,9 @@ def collect_geometry(scene, face_me=None):
 
     ``key`` is ``("color", rgb)`` or ``("tex", basename)`` (see
     :func:`material_key`) — identical to the OBJ exporter's material keys,
-    so painted colours and textures survive.
+    so painted colours and textures survive. A face painted on both sides
+    with its own materials adds its back under a single-sided variant of
+    the back's key (see :func:`_add_face`).
     """
     materials: dict[tuple, dict] = {}
     prims: dict[tuple, list] = {}
@@ -455,24 +457,77 @@ def _worn_outright(attrs: dict) -> dict:
     return attrs
 
 
+#: Element appended to a material key for the single-sided copy of a
+#: material: one side of a face painted differently on its two sides
+#: (#1270). A plain material key never ends in a bare string, so the
+#: marker cannot collide with one.
+_SINGLE_SIDED = "single-sided"
+
+
+def base_material_key(key: tuple) -> tuple:
+    """``key`` without its single-sided marker (see :func:`_add_face`)."""
+    if key and key[-1] == _SINGLE_SIDED:
+        return key[:-1]
+    return key
+
+
 def _add_face(face, materials, prims, attrs=None, smoother=None) -> None:
     """One face's triangles into ``prims`` under its material's key, each
     corner with its normal: the face's own, or the surface's at a corner on
     a soft edge (:class:`SmoothNormals`). ``attrs`` is what the face shows
-    (:func:`world_faces_painted`), its own by default."""
+    (:func:`world_faces_painted`), its own by default.
+
+    A face painted on both sides, each side with its OWN material, goes
+    out as two copies (#1270): the front as it is, and the back turned
+    round — winding reversed, normals negated — under the back's own key.
+    Both copies sit under single-sided variants of their keys and their
+    material entries are flagged ``"single_sided"``, so the glTF writer
+    gives them ``doubleSided: false`` materials while the same paint on a
+    one-sided face keeps the classic double-sided one. The front must be
+    the face's own paint: a front that only shows a container's paint
+    keeps the one-material rule, the container's look on both sides, as
+    in 0.6.1. Every other face follows :func:`_worn_outright`."""
+    from core.materials import has_own_material
+    shown = (face.attrs if attrs is None else attrs) or {}
+    back = shown.get("back")
+    if (isinstance(back, dict) and has_own_material(back)
+            and has_own_material(face.attrs or {})):
+        front_key = material_key(shown)
+        back_key = material_key(back)
+        if front_key != back_key:
+            sides = ((shown, front_key, False), (back, back_key, True))
+            for side, side_key, turned in sides:
+                key = side_key + (_SINGLE_SIDED,)
+                _add_side(face, side, materials, prims, smoother, key=key,
+                          reverse=turned)
+                materials[key]["single_sided"] = True
+            return
+    _add_side(face, _worn_outright(shown), materials, prims, smoother)
+
+
+def _add_side(face, attrs, materials, prims, smoother=None, key=None,
+              reverse: bool = False) -> None:
+    """One side of ``face`` into ``prims``: its triangles under ``key``
+    (the side's own material key by default), textured or plain as
+    ``attrs`` says. ``reverse`` turns the copy round — corners in the
+    opposite order, every normal negated — for the back of a two-sided
+    face; its UVs are still projected from the front, as the viewport
+    draws the back's picture."""
     from core.texture import affine_uv, planar_uv
-    attrs = _worn_outright(face.attrs if attrs is None else attrs)
     smoother = smoother or SmoothNormals()
-    n = smoother.flat(face)
+    flat = smoother.flat(face)
     smooth = smoother.corners(face)
+    out_flat = -flat if reverse else flat
 
     def nrm(p):
-        return smooth.get(_corner(p), n) if smooth else n
+        base = smooth.get(_corner(p), flat) if smooth else flat
+        return -base if reverse else base
 
     op = attrs.get("opacity")
     op = None if op is None or float(op) >= 0.999 else round(float(op), 3)
     tex = attrs.get("texture")
-    key = material_key(attrs)
+    if key is None:
+        key = material_key(attrs)
     if tex is not None and tex.get("path"):
         src = Path(tex["path"])
         materials.setdefault(key, {"color": (1.0, 1.0, 1.0),
@@ -486,10 +541,13 @@ def _add_face(face, materials, prims, attrs=None, smoother=None) -> None:
         uvw = tex.get("uvw")
         for tri in export_triangles(face):
             pts = list(tri)
-            uv = affine_uv(uvw, pts) if uvw else planar_uv(n, pts, sw, sh, rot)
-            prims.setdefault(key, []).append(
-                (n, [(pts[k], (uv[k][0], uv[k][1]), nrm(pts[k]))
-                     for k in range(3)]))
+            uv = affine_uv(uvw, pts) if uvw else planar_uv(
+                flat, pts, sw, sh, rot)
+            corners = [(pts[k], (uv[k][0], uv[k][1]), nrm(pts[k]))
+                       for k in range(3)]
+            if reverse:
+                corners.reverse()
+            prims.setdefault(key, []).append((out_flat, corners))
     else:
         # RGB: the AI recipes paint (r, g, b, 1.0) and every writer reads
         # three channels (transparency is attrs["opacity"], above).
@@ -500,8 +558,10 @@ def _add_face(face, materials, prims, attrs=None, smoother=None) -> None:
             materials[key]["mat"] = attrs["mat"]
         for tri in export_triangles(face):
             pts = list(tri)
-            prims.setdefault(key, []).append(
-                (n, [(pts[k], None, nrm(pts[k])) for k in range(3)]))
+            corners = [(pts[k], None, nrm(pts[k])) for k in range(3)]
+            if reverse:
+                corners.reverse()
+            prims.setdefault(key, []).append((out_flat, corners))
 
 
 def _resolve_finishes(scene, materials) -> None:
