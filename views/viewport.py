@@ -823,6 +823,28 @@ def _bind_bake_store(vp) -> None:
         store = {}
     for name in _SHARED_BAKES:
         setattr(vp, name, store.setdefault(name, {}))
+    try:
+        _LIVE_VIEWS.add(vp)
+    except TypeError:
+        pass
+
+
+#: Every viewport made, weakly: the decoded textures are kept only while
+#: more than one of them is on screen (:func:`_several_views_shown`).
+_LIVE_VIEWS: "weakref.WeakSet" = weakref.WeakSet()
+
+
+def _several_views_shown() -> bool:
+    shown = 0
+    for vp in list(_LIVE_VIEWS):
+        try:
+            if vp.isVisible():
+                shown += 1
+        except RuntimeError:              # its C++ side already gone
+            continue
+        if shown > 1:
+            return True
+    return False
 
 
 #: Texture images decoded once per file, for every GL context that
@@ -864,6 +886,13 @@ def _decoded_texture(path: str):
         cutout = (float((al > 128).mean()) if len(al) else 1.0) < 0.6
     out = (img.mirrored(), cutout)          # OBJ/.skp V is bottom-up
     _DECODED_TEXTURES.pop(path, None)
+    if not _several_views_shown():
+        # One view uploads each texture once: keeping the decoded images
+        # only held their memory — ~65 MB on the plaza, all the time
+        # (release check, 14-11). A view that joins decodes again, once,
+        # and from then on the views share the decodings.
+        _DECODED_TEXTURES.clear()
+        return out
     _DECODED_TEXTURES[path] = (stamp, out)
     total = sum(v[1][0].sizeInBytes() for v in _DECODED_TEXTURES.values())
     for old in list(_DECODED_TEXTURES):
