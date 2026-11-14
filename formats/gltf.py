@@ -24,7 +24,8 @@ import struct
 from pathlib import Path
 
 from core.texture import is_image_bytes
-from .meshexport import collect_geometry, export_names, geolocation
+from .meshexport import (base_material_key, collect_geometry, export_names,
+                        geolocation)
 
 _F32 = 5126          # accessor componentType FLOAT
 _U32 = 5125          # accessor componentType UNSIGNED_INT
@@ -234,11 +235,18 @@ def save_glb(scene, path, face_me=None, only=None) -> None:
     tex_for_image: dict[str, int] = {}
 
     names = export_names(materials_in)
+    # A single-sided copy of a material (one side of a two-sided face,
+    # #1270) is the same paint, only culled to its own side: it keeps the
+    # material's name instead of taking a suffixed one.
+    for key in names:
+        base = base_material_key(key)
+        if base != key and base in names:
+            names[key] = names[base]
     used_ext: set = set()
     for key in keys:
         info = materials_in[key]
         mat: dict = {"name": names[key],
-                     "doubleSided": True,
+                     "doubleSided": not info.get("single_sided", False),
                      "pbrMetallicRoughness": {"metallicFactor": 0.0,
                                               "roughnessFactor": 1.0}}
         if info.get("map"):
