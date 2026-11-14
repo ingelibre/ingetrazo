@@ -81,6 +81,8 @@ FOV_RANGE = (1.0, 120.0)
 LENS_DEFAULTS = {
     "shift_x": 0.0,         # frame slid sideways, in view widths
     "shift_y": 0.0,         # frame slid up, in view heights
+    "pan_shift_x": 0.0,     # two-point canvas pan, in view widths
+    "pan_shift_y": 0.0,     # two-point canvas pan, in view heights
     "roll_deg": 0.0,        # turn about the sight line, degrees
     "clip_near": None,      # metres from the eye, or None = automatic
     "clip_far": None,       # metres from the eye, or None = automatic
@@ -169,6 +171,8 @@ class OrbitCamera:
         #: is the shape of the picture, drawn over the view.
         self.shift_x = 0.0
         self.shift_y = 0.0
+        self.pan_shift_x = 0.0
+        self.pan_shift_y = 0.0
         self.roll_deg = 0.0
         self.clip_near = None
         self.clip_far = None
@@ -227,7 +231,7 @@ class OrbitCamera:
                 continue
             if not math.isfinite(v):
                 continue
-            if k in ("shift_x", "shift_y"):
+            if k in ("shift_x", "shift_y", "pan_shift_x", "pan_shift_y"):
                 v = max(-MAX_SHIFT, min(MAX_SHIFT, v))
             elif k == "roll_deg":
                 v = math.remainder(v, 360.0)
@@ -429,6 +433,8 @@ class OrbitCamera:
                 depth = QVector3D.dotProduct(rel, level)
                 shift = rel.z() * near / depth
                 sx, sy = self._shift(half_w, half_h)
+                sx += self.pan_shift_x * 2.0 * half_w
+                sy += self.pan_shift_y * 2.0 * half_h
                 m.frustum(-half_w + sx, half_w + sx,
                           -half_h + shift + sy, half_h + shift + sy,
                           near, self.far_plane())
@@ -593,6 +599,17 @@ class OrbitCamera:
         the orbit target, which zooming in shrinks to 2 cm: at full zoom a
         wall metres away barely moved (Alejandro Limón, #184). Parallel
         views scale the same at every depth and ignore it."""
+        if self._level_forward() is not None:
+            # In two-point mode, move the picture across the frame like a
+            # drafting canvas. The eye and target stay fixed, so perspective
+            # does not change. Offsets are fractions of the frame dimensions.
+            h = max(viewport_h, 1)
+            w = max(h * self.aspect, 1.0)
+            self.pan_shift_x = max(
+                -MAX_SHIFT, min(MAX_SHIFT, self.pan_shift_x - dx_pixels / w))
+            self.pan_shift_y = max(
+                -MAX_SHIFT, min(MAX_SHIFT, self.pan_shift_y + dy_pixels / h))
+            return
         cp = math.cos(self.pitch)
         sp = math.sin(self.pitch)
         cy = math.cos(self.yaw)
