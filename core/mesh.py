@@ -1510,7 +1510,15 @@ class Mesh:
             return False
         if QVector3D.dotProduct(d1.normalized(), d2.normalized()) < 0.999:
             return False
-        return set(e1.faces) == set(e2.faces)
+        if set(e1.faces) != set(e2.faces):
+            return False
+        # A loop of three keeps its corners, however thin: a sliver hole in
+        # an STL import lost one and became a hole of two, and the model
+        # could no longer be saved (IndexError in _maximal_holes; Windows
+        # round 0.6.2, already in 0.6.1).
+        return not any(len(loop) <= 3 and v in loop
+                       for face in e1.faces
+                       for loop in (face.loop, *face.hole_loops))
 
     def collapse_vertex(self, v: Vertex) -> dict:
         """Remove the redundant valence-2 collinear vertex ``v`` (see
