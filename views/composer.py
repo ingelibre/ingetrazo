@@ -9939,8 +9939,20 @@ class ComposerWindow(QMainWindow):
 
     @staticmethod
     def _item_box(it) -> tuple:
-        w, h = it.size_mm()
         m = it.model
+        if isinstance(m, CotaItem):
+            # What Align / Distribute line up for a cota is its DIMENSION
+            # LINE, not the two measured points (#1089): a vertical cota's
+            # line sits at ``x_mm + sep_mm`` whatever ``x_mm`` says, so
+            # two cotas sharing ``x_mm`` with different ``sep_mm`` looked
+            # already aligned while their lines stood millimetres apart.
+            # The box is the line's own box (its ends from line_points(),
+            # so a negative dx/dy puts it on the side it is drawn on).
+            (ax, ay), (bx, by) = m.line_points()
+            x0 = float(m.x_mm) + min(ax, bx)
+            y0 = float(m.y_mm) + min(ay, by)
+            return (x0, y0, abs(bx - ax), abs(by - ay))
+        w, h = it.size_mm()
         return (float(m.x_mm), float(m.y_mm), float(w), float(h))
 
     def nudge_selected(self, dx_mm: float, dy_mm: float) -> bool:
@@ -9994,16 +10006,36 @@ class ComposerWindow(QMainWindow):
         return True
 
     def _apply_moves(self, moves: list) -> None:
-        """``moves`` = [(item, new_x, new_y)] → one undo step, rebuilt canvas,
-        selection kept."""
+        """``moves`` = [(item, new_box_x, new_box_y)] → one undo step,
+        rebuilt canvas, selection kept.
+
+        The targets are _item_box() positions. For a cota the box is its
+        dimension line (#1089), and a move ACROSS the line — sideways for
+        a vertical cota, up/down for a horizontal one — is done by
+        changing ``sep_mm``, never by dragging the measured points off
+        the geometry they measure: ``x_mm``/``y_mm`` stay put, and an
+        anchored cota keeps its anchor (reprojection only rewrites the
+        points, never ``sep_mm``, so the alignment survives the rebuild
+        this method triggers). A move ALONG the line still slides the
+        points, as for any other item."""
         cmds = []
         for it, nx, ny in moves:
             m = it.model
+            bx, by, _w, _h = self._item_box(it)
+            dx, dy = nx - bx, ny - by
             changes = {}
-            if abs(nx - m.x_mm) > 1e-9:
-                changes["x_mm"] = nx
-            if abs(ny - m.y_mm) > 1e-9:
-                changes["y_mm"] = ny
+            if isinstance(m, CotaItem) and m.axis == "v" \
+                    and abs(dx) > 1e-9:
+                changes["sep_mm"] = float(m.sep_mm) + dx
+                dx = 0.0
+            elif isinstance(m, CotaItem) and m.axis == "h" \
+                    and abs(dy) > 1e-9:
+                changes["sep_mm"] = float(m.sep_mm) + dy
+                dy = 0.0
+            if abs(dx) > 1e-9:
+                changes["x_mm"] = float(m.x_mm) + dx
+            if abs(dy) > 1e-9:
+                changes["y_mm"] = float(m.y_mm) + dy
             if changes:
                 cmds.append(EditItemCommand(m, changes))
         if not cmds:
@@ -10018,7 +10050,8 @@ class ComposerWindow(QMainWindow):
 
     def align_selected(self, mode: str) -> None:
         """left | right | top | bottom | hcenter | vcenter, against the
-        selection's bounding box (QGIS)."""
+        selection's bounding box (QGIS). A cota counts by its dimension
+        line, and lines up by ``sep_mm`` across it (#1089)."""
         items = self._selected_sheet_items()
         if len(items) < 2:
             return
@@ -10047,7 +10080,8 @@ class ComposerWindow(QMainWindow):
         self._apply_moves(moves)
 
     def distribute_selected(self, axis: str) -> None:
-        """Equal gaps between the selected items along ``x`` or ``y``."""
+        """Equal gaps between the selected items along ``x`` or ``y``.
+        Cotas take part by their dimension lines, as in align (#1089)."""
         items = self._selected_sheet_items()
         if len(items) < 3:
             return
