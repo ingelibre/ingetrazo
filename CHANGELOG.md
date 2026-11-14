@@ -6,17 +6,18 @@ follow [SemVer](https://semver.org).
 
 ## [0.6.2] — 2026-11-14
 
-**Láminas y acotar, como tema de la versión: cotas de lámina que enganchan a
-lo largo de las aristas, se voltean y se separan del texto; el compositor
-abre en segundos aunque el modelo sea enorme, y sus pestañas son iconos.
-Transiciones entre escenas, Reproducir y vídeo; la herramienta Norte y los
-ajustes de cámara; exportar la vista como SVG en capas, con caras, texturas
-y sombras; cuatro temas nuevos y el tema Pizarra; escenas con carpetas y
-miniaturas; varias vistas, cada una con su estilo. El motor Rust abre y
-mueve los modelos enormes en menos tiempo y con mucha menos memoria. Y
-decenas de arreglos, muchos de colaboradores: Ctrl+S con extensiones
-abiertas, la vista explosionada, copias exactas con Mover+Ctrl y el cierre
-en Mac al importar un .skp con escenas.**
+**Mejoramos las láminas y el acotar: las cotas de lámina enganchan a lo
+largo de las aristas, se voltean y se separan del texto, y el compositor
+abre en segundos aunque el modelo sea enorme. En la interfaz, el tema
+Oscuro está mejorado, los iconos son más finos y hay cuatro temas nuevos
+para elegir (Estudio, Solarized, Campbell y Arena). Además: transiciones
+entre escenas, Reproducir y vídeo; la herramienta Norte y los ajustes de
+cámara; exportar la vista como SVG en capas, con caras, texturas y sombras;
+escenas con carpetas y miniaturas; varias vistas, cada una con su estilo. El
+motor Rust abre y mueve los modelos enormes en menos tiempo y con mucha
+menos memoria. Y decenas de arreglos, muchos de colaboradores: Ctrl+S con
+extensiones abiertas, la vista explosionada, copias exactas con Mover+Ctrl y
+el cierre en Mac al importar un .skp con escenas.**
 
 ### Añadido
 
