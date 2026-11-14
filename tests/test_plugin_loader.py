@@ -321,3 +321,60 @@ def test_a_tool_with_optional_arguments_is_still_listed(tmp_path):
     plugins, errors = discover_plugins([tmp_path])
     assert errors == [] and [type(t).__name__ for t in plugins[0].tools] == [
         "OptTool"]
+
+
+# ---- Load errors that name the real problem (#1276) -----------------------
+
+def _catalogue_with(monkeypatch, *entries):
+    """Stub the cached catalogue the loader consults for version hints."""
+    import core.extension_manager as manager
+
+    def ext(ident, minimum):
+        return manager.Extension(
+            id=ident, version="1.0", author="A", license="MIT",
+            repository="https://example.com/r",
+            download="https://example.com/x.zip", sha256="a" * 64,
+            minimum_version=minimum, name={"en": ident},
+            summary={"en": "s"}, tags=())
+
+    snap = manager.CatalogSnapshot(
+        extensions=[ext(i, m) for i, m in entries], reviewed={},
+        fetched_at="2026-11-14", from_cache=True)
+    monkeypatch.setattr(manager, "load_cached_catalog", lambda: snap)
+
+
+def test_load_error_names_newer_ingetrazo_when_catalogue_requires_it(
+        tmp_path, monkeypatch):
+    _catalogue_with(monkeypatch, ("future_tool", "99.0.0"))
+    _write(tmp_path, "future_tool.py",
+           "import some_api_only_in_newer_ingetrazo\n")
+    plugins, errors = discover_plugins([tmp_path])
+    assert plugins == []
+    (error,) = errors
+    assert error.stem == "future_tool"
+    assert error.error.startswith(
+        "Needs IngeTrazo 99.0.0 or newer — please update.")
+    assert "ModuleNotFoundError" in error.error   # the raw error stays
+
+
+def test_load_error_stays_generic_when_catalogue_is_compatible(
+        tmp_path, monkeypatch):
+    _catalogue_with(monkeypatch, ("old_tool", "0.1.0"))
+    _write(tmp_path, "old_tool.py",
+           "import some_module_that_never_existed\n")
+    plugins, errors = discover_plugins([tmp_path])
+    assert plugins == []
+    (error,) = errors
+    assert error.error.startswith("ModuleNotFoundError")
+
+
+def test_load_error_stays_generic_without_a_cached_catalogue(
+        tmp_path, monkeypatch):
+    import core.extension_manager as manager
+    monkeypatch.setattr(manager, "load_cached_catalog", lambda: None)
+    _write(tmp_path, "future_tool.py",
+           "import some_api_only_in_newer_ingetrazo\n")
+    plugins, errors = discover_plugins([tmp_path])
+    assert plugins == []
+    (error,) = errors
+    assert error.error.startswith("ModuleNotFoundError")

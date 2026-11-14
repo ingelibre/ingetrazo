@@ -181,6 +181,24 @@ def _import_by_path(stem: str, file: Path):
     return mod
 
 
+def _incompatible_catalogue_versions() -> dict[str, str]:
+    """Catalogue entries asking for a newer IngeTrazo than the running
+    one, as ``{extension id: minimum version}``, from the cached
+    catalogue (no network). Best-effort: any problem — no cache, an
+    unreadable one, a broken manager — means no hints, because a hint
+    must never break plugin loading."""
+    try:
+        from core.extension_manager import (compatible_with_current,
+                                            load_cached_catalog)
+        snap = load_cached_catalog()
+    except Exception:  # noqa: BLE001 — best-effort hint
+        return {}
+    if snap is None:
+        return {}
+    return {ext.id: ext.minimum_version for ext in snap.extensions
+            if not compatible_with_current(ext)}
+
+
 def discover_plugins(dirs=None):
     """Scan ``dirs`` (default :func:`plugin_dirs`) and load every plugin.
 
@@ -193,6 +211,7 @@ def discover_plugins(dirs=None):
     plugins: list[LoadedPlugin] = []
     errors: list[PluginError] = []
     seen: set[str] = set()
+    version_hints: dict[str, str] | None = None
 
     for p_dir in (list(dirs) if dirs is not None else plugin_dirs()):
         if not os.path.isdir(p_dir):
@@ -223,8 +242,18 @@ def discover_plugins(dirs=None):
             except (Exception, SystemExit) as exc:  # noqa: BLE001 — contract
                 log.exception("failed to load plugin %r from %s", stem, file)
                 note_failure(f"failed to load plugin {stem!r} from {file}")
-                errors.append(PluginError(
-                    stem, file, f"{type(exc).__name__}: {exc}"))
+                message = f"{type(exc).__name__}: {exc}"
+                # A hand-copied extension built for a newer IngeTrazo
+                # fails here with a generic import error; when the
+                # catalogue says that is exactly the problem, say so
+                # instead of leaving the user with the raw error (#1276).
+                if version_hints is None:
+                    version_hints = _incompatible_catalogue_versions()
+                minimum = version_hints.get(stem)
+                if minimum is not None:
+                    message = (f"Needs IngeTrazo {minimum} or newer — "
+                               f"please update. ({message})")
+                errors.append(PluginError(stem, file, message))
                 continue
             if not callable(setup):
                 setup = None
