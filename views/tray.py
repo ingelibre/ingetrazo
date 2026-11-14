@@ -4770,16 +4770,25 @@ class ScenesPanel(QWidget):
             QTimer.singleShot(20, self._next_thumbnail)
 
     def _render_thumbnail(self, view):
-        """A picture of ``view`` — the render a sheet frame gets, through
-        the (hidden) composer — or ``None``."""
-        ensure = getattr(self._window, "_ensure_composer", None)
-        if ensure is None:
+        """A picture of ``view`` — the render a sheet frame gets — or
+        ``None``. Through the composer when it is already built, else
+        through a :class:`views.composer.SceneThumbnailer`: asking for the
+        composer built it, hidden, on every document with scenes (+2.2 s
+        and ~140 MB on the plaza, 14-11)."""
+        window = self._window
+        if getattr(window, "viewport", None) is None:
             return None
         try:
-            composer = ensure()
+            painter = getattr(window, "_composer", None)
+            if painter is None:
+                painter = window.__dict__.get("_scene_thumbnailer")
+                if painter is None:
+                    from views.composer import SceneThumbnailer
+                    painter = SceneThumbnailer(window)
+                    window.__dict__["_scene_thumbnailer"] = painter
             # Its own pictures are kept by name: this one may have changed.
-            composer.__dict__.get("_thumbs", {}).pop(view.name, None)
-            return composer.scene_thumbnail(view.name)
+            painter.__dict__.get("_thumbs", {}).pop(view.name, None)
+            return painter.scene_thumbnail(view.name)
         except Exception:                          # noqa: BLE001
             return None
 

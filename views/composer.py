@@ -14936,3 +14936,36 @@ class ComposerWindow(QMainWindow):
         # First impression: the whole page in view, whatever the paper size.
         self._view.fitInView(self.canvas.sceneRect(), Qt.KeepAspectRatio)
         self.update_zoom_label()
+
+
+class SceneThumbnailer:
+    """The pictures of the Scenes tab without the composer window.
+
+    The tab drew each scene through ``ComposerWindow.scene_thumbnail``, and
+    asking for the composer BUILT it — hidden, with its canvas and its
+    sheet's frames — on every document with scenes, since the tab shows by
+    default: the plaza opened 2.2 s slower and kept ~140 MB more than in
+    0.6.1 (release check, 14-11). A picture needs none of that: only the
+    frame camera and the live viewport's render, which this borrows from
+    the composer, so the picture is the one a sheet frame gets."""
+
+    render_frame = ComposerWindow.render_frame
+    scene_thumbnail = ComposerWindow.scene_thumbnail
+    forget_thumbnails = ComposerWindow.forget_thumbnails
+    missing_scene = ComposerWindow.missing_scene
+    frame_is_perspective = ComposerWindow.frame_is_perspective
+    _with_frame_camera = ComposerWindow._with_frame_camera
+    _scene = ComposerWindow._scene
+
+    def __init__(self, window) -> None:
+        self._window = window
+        self.render_cache: dict = {}
+        self.hlr_cache: dict = {}
+        self.annot_cache: dict = {}
+        self._stale: set = set()
+
+    def compute_annotations(self, frame):
+        return []                     # a list picture carries no paper text
+
+    def compute_hlr(self, frame):
+        return None                   # pictures are shaded, never vector

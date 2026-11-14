@@ -30,6 +30,10 @@ else:
 
 import core.extensions as extensions                              # noqa: E402
 from core import scene_folders as SF                              # noqa: E402
+from views.tray import ScenesPanel as _ScenesPanel                 # noqa: E402
+
+#: The real picture painter, before the fixture swaps it for a no-op.
+_REAL_THUMBNAIL = _ScenesPanel._render_thumbnail
 
 
 @pytest.fixture
@@ -644,6 +648,25 @@ def test_each_scene_gets_its_picture_and_a_changed_one_is_drawn_again(
     panel._on_update()
     _wait(until=lambda: bool(drawn))
     assert drawn == ["B"]
+
+
+def test_the_pictures_do_not_build_the_composer(win, monkeypatch):
+    """The tab shows by default, and asking the composer for a picture
+    built it, hidden, on every document with scenes: the plaza opened
+    2.2 s slower and kept ~140 MB more than in 0.6.1 (14-11)."""
+    monkeypatch.setattr(_ScenesPanel, "_render_thumbnail", _REAL_THUMBNAIL)
+    panel = _scenes(win, "A")
+    cam = win.viewport.camera
+    before = (cam.target, cam.distance, cam.yaw, cam.pitch, cam.perspective)
+    cam.distance += 7.0                   # the picture is the scene's view
+    moved = (cam.target, cam.distance, cam.yaw, cam.pitch, cam.perspective)
+    icon = panel._render_thumbnail(_view(win, "A"))
+    assert getattr(win, "_composer", None) is None
+    assert (cam.target, cam.distance, cam.yaw, cam.pitch,
+            cam.perspective) == moved     # the live camera comes back
+    assert moved != before
+    if win.viewport._gl is not None:      # no GL (Windows offscreen): None
+        assert icon is not None and not icon.isNull()
 
 
 def _painter(monkeypatch, drawn, colour):
