@@ -4,7 +4,7 @@ All notable changes to IngeTrazo are documented here.
 Format inspired by [Keep a Changelog](https://keepachangelog.com); versions
 follow [SemVer](https://semver.org).
 
-## [0.6.2] — 2026-11-16
+## [0.6.2] — 2026-11-14
 
 **Láminas y acotar, como tema de la versión: cotas de lámina que enganchan a
 lo largo de las aristas, se voltean y se separan del texto; el compositor
@@ -151,6 +151,14 @@ en Mac al importar un .skp con escenas.**
   nodos guarda su grafo con Ctrl+S y Ctrl+Mayús+S) dejaba la tecla sin
   dueño y no guardaba nadie. Ahora, dentro del panel de la extensión la
   tecla es de la extensión; en el resto de la ventana, de IngeTrazo.
+- **Un STL importado vuelve a guardarse** (ronda Windows 0.6.2; ya pasaba
+  en la 0.6.1): con «unir triángulos coplanares» (la opción por defecto),
+  algunos modelos daban «list index out of range» al guardar. La limpieza
+  final quitaba una esquina de un agujero triangular muy delgado.
+- **Menos memoria con modelos grandes**: las miniaturas de la pestaña
+  Escenas ya no construyen el compositor de láminas oculto, y las texturas
+  decodificadas solo se guardan mientras hay varias vistas en pantalla. En
+  la plaza de prueba, 903 MB → 728 MB, y abre algo antes.
 - **La vista explosionada ya no vuelve componentes los grupos** (cierra
   #1375): las piezas que eran grupos salían componentes, y dentro de ellas
   ya no se podía agrupar ni explotar. Un modelo guardado así se recupera

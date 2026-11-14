@@ -75,6 +75,23 @@
   <url type="vcs-browser">https://github.com/ingelibre/ingetrazo</url>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="0.6.2" date="2026-11-14">
+      <description>
+        <p>Sheets and dimensions: sheet dimensions that snap along edges, flip
+        and keep a gap from their text, and a composer that opens in seconds
+        on huge models. Scene transitions, Play and video export, the North
+        tool, Camera Settings, layered SVG export, scenes with folders and
+        pictures, four new themes, a style per view, a faster and lighter Rust
+        engine, and dozens of fixes, many from contributors.</p>
+        <p xml:lang="es">Láminas y acotar: cotas de lámina que enganchan a lo
+        largo de las aristas, se voltean y se separan del texto, y un
+        compositor que abre en segundos con modelos enormes. Transiciones
+        entre escenas, Reproducir y vídeo, la herramienta Norte, ajustes de
+        cámara, SVG en capas, escenas con carpetas y miniaturas, cuatro temas
+        nuevos, un estilo por vista, un motor Rust más rápido y ligero, y
+        decenas de arreglos, muchos de colaboradores.</p>
+      </description>
+    </release>
     <release version="0.6.1" date="2026-11-08">
       <description>
         <p>Up to four views in one tab, scenes as tabs, a notice when a newer
