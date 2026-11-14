@@ -110,11 +110,10 @@ def test_new_groups_go_to_the_active_layer_and_their_insides_do_not():
     assert layer_of(scene.groups[-1]) == "Muebles"
 
 
-def test_loose_lines_and_faces_stay_on_layer_0_and_their_group_does_not():
-    """With a layer active, what is drawn loose stays on Layer 0 — a layer
-    hidden never leaves half a solid (a box pushed up with another layer
-    active would have had its sides there). Grouping it puts the group on
-    the active layer, which is how drawing «on» a layer works."""
+def test_loose_lines_and_faces_go_to_the_active_layer_and_so_does_their_group():
+    """With a layer active, what is drawn loose goes onto it (#1366), and
+    grouping it puts the group there too. What a drawn line only splits —
+    the pieces of an old edge or face — keeps the layer it had."""
     from core.edits import build_add_edge
     from core.history import AddEdgeCommand, AddFaceCommand
     scene = Scene()
@@ -124,7 +123,7 @@ def test_loose_lines_and_faces_stay_on_layer_0_and_their_group_does_not():
     history.execute(AddEdgeCommand(V(0, 0), V(5, 0)))
     history.execute(AddFaceCommand([V(10, 0), V(12, 0), V(12, 2), V(10, 2)]))
     history.execute(build_add_edge(scene, V(11, 0), V(11, 2)))   # a split
-    assert all(layer_of(x) == DEFAULT_LAYER
+    assert all(layer_of(x) == "Muros"
                for x in list(scene.mesh.edges) + list(scene.mesh.faces))
     history.execute(MakeGroupCommand(list(scene.mesh.faces),
                                      list(scene.mesh.edges)))

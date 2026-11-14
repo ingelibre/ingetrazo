@@ -1471,19 +1471,74 @@ def _release_active(scene) -> bool:
     return False
 
 
+class _IdsBefore(set):
+    """The ids :func:`object_ids` returns, with the loose mesh's geometry
+    alongside (``segments``, ``tris``, ``face_edges``). Loose faces and
+    edges are rebuilt from scratch by some commands (a planar rebuild
+    clears the mesh and draws it again), so identity alone cannot tell a
+    redrawn old line from a new one — the geometry can."""
+
+    segments: tuple = ()
+    tris: tuple = ()
+    face_edges: frozenset = frozenset()
+
+
+def _xyz(point) -> tuple:
+    return (point.x(), point.y(), point.z())
+
+
+def _pair_key(a: tuple, b: tuple) -> tuple:
+    """An edge's endpoints as a set-like key (direction does not matter),
+    rounded so a rebuilt edge still matches the one it replaces."""
+    ra = tuple(round(c, 4) for c in a)
+    rb = tuple(round(c, 4) for c in b)
+    return (ra, rb) if ra <= rb else (rb, ra)
+
+
+def _loose_mesh(scene):
+    """The scene's loose mesh (never an open group's), or None."""
+    try:
+        mesh = getattr(scene, "loose_mesh", None)
+    except Exception:  # noqa: BLE001 — a stub scene must not break tagging
+        mesh = None
+    return mesh if mesh is not None else getattr(scene, "mesh", None)
+
+
 def object_ids(scene) -> set:
     """Identity of every object in the document — groups and components at
     any depth (by ``id`` and by ``uid``), dimensions, leader texts,
-    guides. Compared before and after a command to find what it created
-    (:func:`tag_new_objects`)."""
+    guides, and the loose mesh's faces and edges. Compared before and
+    after a command to find what it created (:func:`tag_new_objects`)."""
     from core.purge import iter_groups
-    ids: set = set()
+    ids = _IdsBefore()
     for g in iter_groups(getattr(scene, "groups", None) or ()):
         ids.add(id(g))
         if getattr(g, "uid", None):
             ids.add(g.uid)
     for coll in ("dimensions", "text_labels", "guides"):
         ids.update(id(o) for o in getattr(scene, coll, None) or ())
+    mesh = _loose_mesh(scene)
+    if mesh is not None:
+        segments = []
+        for e in getattr(mesh, "edges", None) or ():
+            ids.add(id(e))
+            segments.append((_xyz(e.a), _xyz(e.b), layer_of(e)))
+        ids.segments = tuple(segments)
+        tris = []
+        face_edges = set()
+        for f in getattr(mesh, "faces", None) or ():
+            ids.add(id(f))
+            loops = [f.vertices] + list(f.holes)
+            for loop in loops:
+                for i in range(len(loop)):
+                    face_edges.add(_pair_key(_xyz(loop[i]),
+                                             _xyz(loop[(i + 1) % len(loop)])))
+            try:
+                tris += [tuple(_xyz(p) for p in t) for t in f.triangulate()]
+            except Exception:  # noqa: BLE001 — a face that will not
+                continue          # triangulate simply covers nothing
+        ids.tris = tuple(tris)
+        ids.face_edges = frozenset(face_edges)
     return ids
 
 
@@ -1543,17 +1598,224 @@ def _tag_automatic(scene, before: set) -> int:
     return n
 
 
+def _sub(a: tuple, b: tuple) -> tuple:
+    return (a[0] - b[0], a[1] - b[1], a[2] - b[2])
+
+
+def _dot(a: tuple, b: tuple) -> float:
+    return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
+
+
+def _cross(a: tuple, b: tuple) -> tuple:
+    return (a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2],
+            a[0] * b[1] - a[1] * b[0])
+
+
+#: How far (in model units) a rebuilt point may drift from the geometry it
+#: replaces and still read as that geometry — the planar arrangement keys
+#: its points on a 0.1 mm grid, well inside this.
+_GEOMETRY_TOL = 1e-3
+
+
+def _on_segment(p: tuple, a: tuple, b: tuple) -> bool:
+    """Whether ``p`` lies on segment ``a``–``b``, endpoints included."""
+    ab = _sub(b, a)
+    length_sq = _dot(ab, ab)
+    if length_sq < _GEOMETRY_TOL * _GEOMETRY_TOL:
+        return _dot(_sub(p, a), _sub(p, a)) < _GEOMETRY_TOL ** 2
+    t = _dot(_sub(p, a), ab) / length_sq
+    if t < -1e-9 or t > 1.0 + 1e-9:
+        return False
+    near = (a[0] + ab[0] * t, a[1] + ab[1] * t, a[2] + ab[2] * t)
+    return _dot(_sub(p, near), _sub(p, near)) < _GEOMETRY_TOL ** 2
+
+
+def _line_key(a: tuple, b: tuple):
+    """The infinite line through ``a`` and ``b`` as a hashable key, so the
+    segments that lie on one line can be found without scanning them all."""
+    d = _sub(b, a)
+    length = _dot(d, d) ** 0.5
+    if length < _GEOMETRY_TOL:
+        return None
+    d = (d[0] / length, d[1] / length, d[2] / length)
+    for c in d:                       # one canonical direction per line
+        if abs(c) > 1e-9:
+            if c < 0:
+                d = (-d[0], -d[1], -d[2])
+            break
+    proj = _dot(a, d)
+    foot = (a[0] - d[0] * proj, a[1] - d[1] * proj, a[2] - d[2] * proj)
+    return (tuple(round(c, 6) for c in d),
+            tuple(round(c, 3) for c in foot))
+
+
+class _BeforeGeometry:
+    """The loose mesh's geometry before a command, indexed for the
+    «is this new?» questions :func:`_tag_loose` asks: an edge is new when
+    it neither is nor lies on an old edge, a face when it is bounded by
+    new edges or its inside was not already covered by an old face."""
+
+    def __init__(self, before: set) -> None:
+        self.segments = getattr(before, "segments", ()) or ()
+        self.tris = getattr(before, "tris", ()) or ()
+        self.face_edges = getattr(before, "face_edges", frozenset())
+        self.pairs = {_pair_key(a, b) for a, b, _layer in self.segments}
+        self.by_line: dict = {}
+        self.by_point: dict = {}
+        for seg in self.segments:
+            key = _line_key(seg[0], seg[1])
+            if key is not None:
+                self.by_line.setdefault(key, []).append(seg)
+            for p in seg[:2]:
+                self.by_point.setdefault(tuple(round(c, 4) for c in p),
+                                         []).append(seg)
+        # The triangles bucketed by the cells their box overlaps, so a
+        # probe only tests the triangles that can contain it. The cell is
+        # the largest triangle's diagonal: no box spans more than two
+        # cells per axis.
+        self.cell = 1.0
+        self.grid: dict = {}
+        if self.tris:
+            self.cell = max(
+                max(_dot(_sub(p, q), _sub(p, q)) ** 0.5
+                    for p, q in ((t[0], t[1]), (t[1], t[2]), (t[2], t[0])))
+                for t in self.tris) or 1.0
+            for tri in self.tris:
+                for cell in self._cells(tri):
+                    self.grid.setdefault(cell, []).append(tri)
+
+    def _cells(self, points) -> set:
+        axes = []
+        for axis in range(3):
+            lo = min(p[axis] for p in points)
+            hi = max(p[axis] for p in points)
+            axes.append(range(int(lo // self.cell), int(hi // self.cell) + 1))
+        return {(x, y, z) for x in axes[0] for y in axes[1] for z in axes[2]}
+
+    def _covering(self, a: tuple, b: tuple) -> list:
+        """The old segments that wholly contain segment ``a``–``b``."""
+        candidates = list(self.by_point.get(tuple(round(c, 4) for c in a), ()))
+        candidates += self.by_point.get(tuple(round(c, 4) for c in b), ())
+        key = _line_key(a, b)
+        if key is not None:
+            candidates += self.by_line.get(key, ())
+        return [seg for seg in candidates
+                if _on_segment(a, seg[0], seg[1])
+                and _on_segment(b, seg[0], seg[1])]
+
+    def edge_is_new(self, a: tuple, b: tuple) -> bool:
+        """Whether segment ``a``–``b`` is drawn geometry, not an old edge
+        or a piece of one (an old edge split by a crossing, or an edge a
+        planar rebuild drew again, is the old edge still)."""
+        if _pair_key(a, b) in self.pairs:
+            return False
+        return not self._covering(a, b)
+
+    def inherited_layer(self, a: tuple, b: tuple):
+        """The layer of the old edge ``a``–``b`` is a piece of, when every
+        old edge covering it agrees — the piece a split made of a tagged
+        edge, recreated without its layer by the split, takes it back.
+        None when there is no such edge or they disagree."""
+        layers = {seg[2] for seg in self._covering(a, b)}
+        return layers.pop() if len(layers) == 1 else None
+
+    def covered(self, probe: tuple) -> bool:
+        """Whether ``probe`` lies inside a face that was already there."""
+        cell = tuple(int(probe[axis] // self.cell) for axis in range(3))
+        for tri in self.grid.get(cell, ()):
+            if _in_tri(probe, *tri):
+                return True
+        return False
+
+
+def _in_tri(p: tuple, a: tuple, b: tuple, c: tuple) -> bool:
+    """Whether coplanar ``p`` lies in triangle ``a``–``b``–``c``."""
+    n = _cross(_sub(b, a), _sub(c, a))
+    nl = _dot(n, n) ** 0.5
+    if nl < 1e-12:
+        return False
+    if abs(_dot(_sub(p, a), n)) / nl > _GEOMETRY_TOL:
+        return False                      # another plane, above or below
+    v0, v1, v2 = _sub(b, a), _sub(c, a), _sub(p, a)
+    d00, d01, d11 = _dot(v0, v0), _dot(v0, v1), _dot(v1, v1)
+    d20, d21 = _dot(v2, v0), _dot(v2, v1)
+    denom = d00 * d11 - d01 * d01
+    if abs(denom) < 1e-18:
+        return False
+    v = (d11 * d20 - d01 * d21) / denom
+    w = (d00 * d21 - d01 * d20) / denom
+    return v >= -1e-9 and w >= -1e-9 and v + w <= 1.0 + 1e-9
+
+
+def _face_is_new(face, geo: _BeforeGeometry) -> bool:
+    """Whether a loose face is one the command drew: bounded only by new
+    edges (a disc drawn inside a square, a rectangle carved out of a
+    wall), or standing where no face was (a pushed-up side, an offset's
+    ring). A piece of a split old face is neither — it keeps its layer."""
+    loops = [face.vertices] + list(face.holes)
+    pairs = [(_xyz(loop[i]), _xyz(loop[(i + 1) % len(loop)]))
+             for loop in loops for i in range(len(loop))]
+    if pairs and all(geo.edge_is_new(a, b) for a, b in pairs):
+        return True
+    if {_pair_key(a, b) for a, b in pairs} <= geo.face_edges:
+        return False                      # an old face, redrawn as it was
+    try:
+        tris = face.triangulate()
+    except Exception:  # noqa: BLE001 — an untriangulable face is no proof
+        return False                      # of anything new
+    if not tris:
+        return False
+    tri = tuple(_xyz(p) for p in tris[0])
+    probe = tuple((tri[0][k] + tri[1][k] + tri[2][k]) / 3.0 for k in range(3))
+    return not geo.covered(probe)
+
+
+def _tag_loose(scene, before: set, name: str) -> int:
+    """Put the loose lines and faces a command drew on the active layer
+    (#1366). Only the loose mesh: geometry inside a group follows its
+    container, and what a group holds is not loose. Edges and faces that
+    only changed shape or were split off an old one keep their layer, as
+    does anything that already carries one — a split edge's pieces are
+    recreated without the layer the split edge had, so they take it back
+    from the old edge they lie on."""
+    mesh = _loose_mesh(scene)
+    if mesh is None:
+        return 0
+    geo = _BeforeGeometry(before)
+    n = 0
+    for e in getattr(mesh, "edges", None) or ():
+        if id(e) in before or layer_of(e) != DEFAULT_LAYER:
+            continue
+        a, b = _xyz(e.a), _xyz(e.b)
+        if geo.edge_is_new(a, b):
+            assign_layer(e, name)
+            n += 1
+        else:
+            inherited = geo.inherited_layer(a, b)
+            if inherited and inherited != DEFAULT_LAYER:
+                assign_layer(e, inherited)
+                n += 1
+    for f in getattr(mesh, "faces", None) or ():
+        if id(f) in before or layer_of(f) != DEFAULT_LAYER:
+            continue
+        if _face_is_new(f, geo):
+            assign_layer(f, name)
+            n += 1
+    return n
+
+
 def tag_new_objects(scene, before: set) -> int:
     """Put the objects a command created on the active layer.
 
-    A group, a component, a dimension, a leader text or a guide made while
-    a layer is active goes onto it; loose lines and faces stay on the default
-    layer (a layer hidden never leaves half a solid). Only the outermost
-    new object is tagged: a new group's own children follow it. One that
-    already carries a layer (a copy, a pasted object) keeps its own. With
-    no layer active, guides, dimensions and texts go to their automatic
-    layers (:data:`AUTO_LAYERS`) — ``before`` is then :func:`auto_ids`.
-    Returns how many objects were tagged."""
+    A group, a component, a dimension, a leader text, a guide or a loose
+    line or face made while a layer is active goes onto it (#1366: what
+    is drawn is drawn on the active layer). Only the outermost new object
+    is tagged: a new group's own children follow it. One that already
+    carries a layer (a copy, a pasted object) keeps its own, and geometry
+    a command merely split or rebuilt out of an old object keeps the
+    layer it had. With no layer active, guides, dimensions and texts go
+    to their automatic layers (:data:`AUTO_LAYERS`) — ``before`` is then
+    :func:`auto_ids`. Returns how many objects were tagged."""
     from core.purge import iter_groups
     name = active_layer(scene)
     if name == DEFAULT_LAYER:
@@ -1575,7 +1837,7 @@ def tag_new_objects(scene, before: set) -> int:
         if layer_of(obj) == DEFAULT_LAYER:
             assign_layer(obj, name)
             n += 1
-    return n
+    return n + _tag_loose(scene, before, name)
 
 
 def layer_of(entity) -> str:
