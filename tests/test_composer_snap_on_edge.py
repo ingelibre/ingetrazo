@@ -22,7 +22,7 @@ _app = QApplication.instance() or QApplication([])
 V = QVector3D
 
 
-def _composer(perspective=False):
+def _composer(perspective=False, rot_deg=0.0):
     host = QWidget()
     host.viewport = _FakeViewport()
     # A wall 6 x 3 m, seen from the front.
@@ -32,6 +32,7 @@ def _composer(perspective=False):
     frame = composer.comp.frames[0]
     frame.view_key = "std:front"
     frame.scale_n = 100.0
+    frame.rot_deg = rot_deg
     if perspective:
         frame.perspective = True
     composer.snap_cache.clear()
@@ -80,6 +81,48 @@ def test_points_only_asks_for_no_edge():
     composer, _host, frame = _composer()
     x, y = _page(composer, frame, 1.7, 0.0, 0.0)
     assert composer.nearest_snap_point(x, y, 1.0, edges=False) is None
+
+
+def test_an_edge_catches_in_a_rotated_frame():
+    composer, _host, frame = _composer(rot_deg=90.0)
+    x, y = _page(composer, frame, 1.7, 0.0, 0.0)
+    hit = composer.nearest_snap_point(x, y, 1.0)
+    assert hit is not None and hit.on_edge
+    assert hit[2] == pytest.approx((1.7, 0.0, 0.0), abs=1e-6)
+    # A corner still wins in the turned frame.
+    x, y = _page(composer, frame, 0.0, 0.0, 0.0)
+    hit = composer.nearest_snap_point(x + 0.5, y + 0.3, 1.0)
+    assert not getattr(hit, "on_edge", False)
+    assert hit[2] == pytest.approx((0.0, 0.0, 0.0), abs=1e-6)
+
+
+def test_an_edge_catches_in_a_frame_turned_to_an_angle():
+    composer, _host, frame = _composer(rot_deg=-37.5)
+    x, y = _page(composer, frame, 1.7, 0.0, 0.0)
+    hit = composer.nearest_snap_point(x, y, 1.0)
+    assert hit is not None and hit.on_edge
+    assert hit[2] == pytest.approx((1.7, 0.0, 0.0), abs=1e-6)
+
+
+def test_dragging_a_measured_end_back_onto_an_edge_anchors_it():
+    """The drag of a measured point back onto the model (#1053) goes
+    through the same lookup: an end let go and dragged onto the middle of
+    an edge anchors there, not on the nearest corner, and stays on the
+    edge when the wall stretches past it."""
+    from tests.test_composer_canvas import (TestAnchoredEndToEnd,
+                                            TestReanchorByDraggingBack1053)
+    rig = TestReanchorByDraggingBack1053()
+    composer, frame, cota, item, _a, b = rig._setup()
+    rig._drag_end(item, (b[0] + 15.0, b[1] + 9.0))     # off the model
+    assert not cota.anchored
+    x, y = _page(composer, frame, 1.7, 0.0, 0.0)
+    rig._drag_end(item, (x, y))
+    assert cota.anchored and cota.anchor_uid == frame.uid
+    assert cota.a_world == pytest.approx([0.0, 0.0, 0.0], abs=1e-6)
+    assert cota.b_world == pytest.approx([1.7, 0.0, 0.0], abs=1e-6)
+    TestAnchoredEndToEnd._stretch(rig, composer, 6.0, 8.0)
+    assert cota.b_world == pytest.approx([1.7, 0.0, 0.0], abs=1e-6)
+    assert cota.label() == "1.70 m"
 
 
 def test_a_point_outside_the_frame_does_not_catch():
