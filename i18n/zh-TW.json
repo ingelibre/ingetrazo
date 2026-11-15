@@ -3272,6 +3272,8 @@
  "Crosshair": "十字游標",
  "Documentation": "說明文件",
  "Open the IngeTrazo documentation in the web browser.": "在網頁瀏覽器中開啟 IngeTrazo 說明文件。",
+ "What's New": "新功能",
+ "See what changed in each version of IngeTrazo.": "查看 IngeTrazo 每個版本的變更內容。",
  "Front color saved — Wireframe draws no faces.": "正面顏色已儲存 — 線框模式不繪製表面。",
  "Front color — paints the faces with no material (every face in Hidden line and Monochrome)": "正面顏色 — 用於沒有材料的表面（在隱藏線與單色模式中則為所有表面）",
  "Brazilian Portuguese translation of the interface.": "界面的巴西葡萄牙文翻譯。",
