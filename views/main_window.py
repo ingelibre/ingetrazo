@@ -7193,6 +7193,7 @@ class MainWindow(QMainWindow):
             setattr(cam, k, getattr(fresh, k))
         cam.reset_lens()
         cam.composition_guide = None        # nor the last one's guides
+        cam.composition_turn = 0
         self.viewport.update()
 
     @staticmethod

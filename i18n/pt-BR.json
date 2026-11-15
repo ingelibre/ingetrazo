@@ -3778,5 +3778,13 @@
  "Show in all views": "Mostrar em todas as vistas",
  "Hide in all views": "Ocultar em todas as vistas",
  "The composition guide chosen, in every view shown.": "A guia de composição escolhida, em todas as vistas exibidas.",
- "No composition guides in any view shown.": "Nenhuma guia de composição nas vistas exibidas."
+ "No composition guides in any view shown.": "Nenhuma guia de composição nas vistas exibidas.",
+ "Golden triangle": "Triângulo áureo",
+ "Golden spiral": "Espiral áurea",
+ "Flip horizontally": "Espelhar horizontalmente",
+ "Flip vertically": "Espelhar verticalmente",
+ "Rotate 90°": "Girar 90°",
+ "Flip the golden triangle or spiral left to right.": "Espelha o triângulo ou a espiral áurea da esquerda para a direita.",
+ "Flip the golden triangle or spiral top to bottom.": "Espelha o triângulo ou a espiral áurea de cima para baixo.",
+ "Turn the golden spiral a quarter turn: it starts from the top or the side.": "Gira a espiral áurea um quarto de volta: ela começa por cima ou pelo lado."
 }

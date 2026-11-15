@@ -3772,5 +3772,13 @@
  "Show in all views": "在所有视图中显示",
  "Hide in all views": "在所有视图中隐藏",
  "The composition guide chosen, in every view shown.": "在显示的所有视图中显示所选构图参考线。",
- "No composition guides in any view shown.": "显示的视图中均不显示构图参考线。"
+ "No composition guides in any view shown.": "显示的视图中均不显示构图参考线。",
+ "Golden triangle": "黄金三角",
+ "Golden spiral": "黄金螺旋",
+ "Flip horizontally": "水平翻转",
+ "Flip vertically": "垂直翻转",
+ "Rotate 90°": "旋转 90°",
+ "Flip the golden triangle or spiral left to right.": "将黄金三角或黄金螺旋左右翻转。",
+ "Flip the golden triangle or spiral top to bottom.": "将黄金三角或黄金螺旋上下翻转。",
+ "Turn the golden spiral a quarter turn: it starts from the top or the side.": "将黄金螺旋旋转四分之一圈：从上方或侧面开始。"
 }

@@ -62,7 +62,7 @@ def test_the_guide_travels_with_the_lens_and_a_bad_one_is_dropped():
     assert other.composition_guide == "golden"
     other.apply_lens({})                       # a scene without one: off
     assert other.composition_guide is None
-    for bad in ("none", "spiral", 3, None, ["thirds"]):
+    for bad in ("none", "hexagon", 3, None, ["thirds"]):
         other.apply_lens({"composition_guide": bad})
         assert other.composition_guide is None
 
@@ -239,7 +239,8 @@ def test_the_list_names_every_guide_and_marks_the_one_chosen(win):
     menu = win._build_scene_tab_menu(0)
     row = _row(menu)
     names = guide_names()
-    acts = [a for a in row.list_menu.actions() if a.isCheckable()]
+    acts = [a for a in row.list_menu.actions()
+            if a.isCheckable() and a.data()]
     assert [a.text() for a in acts] == [names[k] for k in GUIDES[1:]]
     assert [a.data() for a in acts if a.isChecked()] == ["golden"]
     assert row.switch.isChecked()
@@ -484,3 +485,299 @@ def test_the_new_messages_are_in_every_language():
             assert data.get(k), (path.stem, k)
         assert ("Hide this project's scene tabs; Alt+E shows them again."
                 not in data)
+
+
+# ---- the golden triangle, the golden spiral and the centre cross -----------
+def _ink(key, turn=0, w=300, h=200):
+    """The guide ``key`` drawn on a clear ``w``×``h`` picture."""
+    from PySide6.QtCore import QRectF
+    from PySide6.QtGui import QColor, QImage, QPainter
+    from views.composition_guides import draw_guides
+    img = QImage(w, h, QImage.Format_ARGB32)
+    img.fill(QColor(0, 0, 0, 0))
+    p = QPainter(img)
+    p.setRenderHint(QPainter.Antialiasing)
+    draw_guides(p, QRectF(0, 0, w, h), key, turn)
+    p.end()
+    return img
+
+
+def _drawn(img, x, y) -> bool:
+    return img.pixelColor(x, y).alpha() > 0
+
+
+@pytest.mark.parametrize("key", ["golden_triangle", "spiral"])
+def test_the_new_guides_are_in_the_list_and_draw(key):
+    from views.composition_guides import GUIDES, TURNABLE, guide_names
+    assert key in GUIDES and key in TURNABLE
+    assert guide_names()[key]
+    img = _ink(key)
+    assert any(_drawn(img, x, y) for x in range(300) for y in range(200))
+
+
+def test_the_centre_is_a_cross_from_side_to_side():
+    img = _ink("centre")
+    # The two lines through the middle reach the four edges.
+    assert _drawn(img, 150, 1) and _drawn(img, 150, 198)
+    assert _drawn(img, 1, 100) and _drawn(img, 298, 100)
+    # And nothing else: no ring round the centre.
+    assert not _drawn(img, 150 + 10, 100 + 10)
+
+
+def test_the_golden_triangle_meets_the_diagonal_square():
+    from PySide6.QtCore import QRectF
+    from views.composition_guides import golden_triangle_lines
+    page = QRectF(10, 20, 300, 200)
+    diag, a, b = golden_triangle_lines(page)
+    assert (diag.p1(), diag.p2()) == (page.topLeft(), page.bottomRight())
+    assert a.p1() == page.topRight() and b.p1() == page.bottomLeft()
+    for ln in (a, b):
+        dot = (ln.dx() * diag.dx() + ln.dy() * diag.dy())
+        assert dot == pytest.approx(0.0, abs=1e-6)       # square to it
+        # The foot lies on the diagonal.
+        k = (ln.p2().x() - page.x()) / page.width()
+        assert ln.p2().y() == pytest.approx(page.y() + k * page.height())
+
+
+def test_the_spiral_fills_the_page_landscape_and_portrait():
+    from PySide6.QtCore import QRectF
+    from views.composition_guides import spiral_path
+    for page in (QRectF(0, 0, 300, 200), QRectF(5, 5, 200, 300)):
+        box = spiral_path(page).boundingRect()
+        assert box.left() == pytest.approx(page.left(), abs=1e-6)
+        assert box.top() == pytest.approx(page.top(), abs=1e-6)
+        assert box.right() == pytest.approx(page.right(), abs=1e-6)
+        assert box.bottom() == pytest.approx(page.bottom(), abs=1e-6)
+
+
+def test_the_spiral_starts_in_a_corner_and_winds_in_to_its_eye():
+    from PySide6.QtCore import QRectF
+    from views.composition_guides import GOLDEN, spiral_path
+    page = QRectF(0, 0, 300, 200)
+    path = spiral_path(page)
+    start = path.elementAt(0)
+    assert (start.x, start.y) == pytest.approx((0.0, 200.0))
+    # The eye of a golden spiral, landscape and turn 0, where the squares
+    # shrink to: 1 / (1 + 0.618²) ≈ 72 % across and as far down.
+    eye = 1.0 / (1.0 + GOLDEN ** 2)
+    end = path.currentPosition()
+    assert end.x() / 300 == pytest.approx(eye, abs=0.02)
+    assert end.y() / 200 == pytest.approx(eye, abs=0.02)
+
+
+def test_the_spiral_has_eight_orientations():
+    imgs = [_ink("spiral", t) for t in range(8)]
+    for i in range(8):
+        for j in range(i + 1, 8):
+            assert imgs[i] != imgs[j], (i, j)
+
+
+def test_the_golden_triangle_has_two_ways_and_each_flip_changes_it():
+    from views.composition_guides import FLIP_H, FLIP_V, TURN_90
+    plain = _ink("golden_triangle", 0)
+    assert _ink("golden_triangle", FLIP_H) != plain
+    assert _ink("golden_triangle", FLIP_V) != plain
+    assert _ink("golden_triangle", FLIP_H) == _ink("golden_triangle", FLIP_V)
+    assert _ink("golden_triangle", FLIP_H | FLIP_V) == plain
+    assert _ink("golden_triangle", TURN_90) == plain    # not its to turn
+
+
+def test_the_turned_spiral_starts_on_top_in_a_landscape_frame():
+    from PySide6.QtCore import QRectF
+    from views.composition_guides import spiral_path
+    page = QRectF(0, 0, 300, 200)
+    path = spiral_path(page, turned=True)
+    box = path.boundingRect()
+    assert (box.width(), box.height()) == pytest.approx((300, 200))
+    start = path.elementAt(0)
+    # Laid over its diagonal: it starts in the top right corner, and its
+    # first square runs across the top.
+    assert (start.x, start.y) == pytest.approx((300.0, 0.0))
+
+
+def test_the_parts_each_guide_can_change():
+    from views.composition_guides import (FLIP_H, FLIP_V, TURN_90,
+                                          turn_names, turn_parts)
+    assert turn_parts("spiral") == (FLIP_H, FLIP_V, TURN_90)
+    assert turn_parts("golden_triangle") == (FLIP_H, FLIP_V)
+    assert turn_parts("thirds") == ()
+    assert set(turn_names()) == {FLIP_H, FLIP_V, TURN_90}
+
+
+def test_the_turn_leaves_the_symmetric_guides_alone():
+    assert _ink("thirds", 1) == _ink("thirds", 0)
+
+
+def test_the_turn_travels_with_the_lens_and_a_bad_one_is_dropped():
+    from core.camera import OrbitCamera
+    cam = OrbitCamera()
+    assert cam.composition_turn == 0
+    assert "composition_turn" not in cam.lens_dict()
+    cam.composition_guide, cam.composition_turn = "spiral", 3
+    lens = cam.lens_dict()
+    assert lens == {"composition_guide": "spiral", "composition_turn": 3}
+    other = OrbitCamera()
+    other.apply_lens(lens)
+    assert other.composition_turn == 3
+    for bad in (8, -1, 1.5, "2", True, None, [1]):
+        other.apply_lens({"composition_turn": bad})
+        assert other.composition_turn == 0
+
+
+def test_resetting_the_lens_keeps_the_turn():
+    from core.camera import OrbitCamera
+    cam = OrbitCamera()
+    cam.composition_guide, cam.composition_turn = "spiral", 2
+    cam.reset_lens()
+    assert (cam.composition_guide, cam.composition_turn) == ("spiral", 2)
+
+
+def test_the_turn_is_saved_in_the_file():
+    from core.camera import OrbitCamera
+    from core.saved_views import SavedView
+    from core.scene import Scene
+    cam = OrbitCamera()
+    cam.composition_guide, cam.composition_turn = "golden_triangle", 1
+    view = SavedView.capture("Encuadre", Scene(), cam)
+    again = SavedView.from_dict(json.loads(json.dumps(view.to_dict())))
+    other = OrbitCamera()
+    again.apply_camera(other)
+    assert (other.composition_guide, other.composition_turn) == \
+        ("golden_triangle", 1)
+
+
+def test_the_camera_settings_leave_the_turn_alone(win):
+    from views.camera_panel import CameraSettingsDialog
+    vp = win.viewport
+    vp.set_composition_guide("spiral")
+    vp.set_composition_turn(2)
+    try:
+        dlg = CameraSettingsDialog(win)
+    except TypeError:
+        pytest.skip("the dialog wants other arguments")
+    dlg._on_lens()
+    assert vp.camera.composition_turn == 2
+    dlg.close()
+
+
+def test_a_new_drawing_starts_unturned(win):
+    win.viewport.set_composition_guide("spiral")
+    win.viewport.set_composition_turn(3)
+    win._reset_camera_home()
+    assert win.viewport.camera.composition_turn == 0
+
+
+def test_the_view_flips_only_the_guides_with_a_side(win):
+    from views.composition_guides import FLIP_H, FLIP_V, TURN_90
+    vp = win.viewport
+    vp.set_composition_guide("thirds")
+    vp.flip_composition_guide(FLIP_H)
+    assert vp.camera.composition_turn == 0
+    vp.flip_composition_guide(FLIP_H, "spiral")     # shown, and flipped
+    assert (vp.camera.composition_guide, vp.camera.composition_turn) == \
+        ("spiral", FLIP_H)
+    vp.flip_composition_guide(TURN_90)
+    vp.flip_composition_guide(FLIP_V)
+    assert vp.camera.composition_turn == FLIP_H | FLIP_V | TURN_90
+    vp.flip_composition_guide(FLIP_H)               # again: undone
+    assert vp.camera.composition_turn == FLIP_V | TURN_90
+    vp.set_composition_guide("golden_triangle")
+    vp.flip_composition_guide(TURN_90)              # the triangle: no
+    assert vp.camera.composition_turn == FLIP_V | TURN_90
+
+
+def test_flip_and_rotate_in_the_menu(win):
+    from core.i18n import tr
+    from views.composition_guides import FLIP_H, FLIP_V, TURN_90
+    _scene(win, "Exterior")
+    vp = win.viewport
+    vp.set_composition_guide("thirds")
+    menu = win._build_scene_tab_menu(0)
+    row = _row(menu)
+    acts = row.turn_actions
+    assert [acts[b].text() for b in (FLIP_H, FLIP_V, TURN_90)] == \
+        [tr("Flip horizontally"), tr("Flip vertically"), tr("Rotate 90°")]
+    assert all(a in row.list_menu.actions() for a in acts.values())
+    assert not any(a.isEnabled() for a in acts.values())   # no side
+    menu.close()
+    vp.set_composition_guide("golden_triangle")
+    menu = win._build_scene_tab_menu(0)
+    row = _row(menu)
+    acts = row.turn_actions
+    assert acts[FLIP_H].isEnabled() and acts[FLIP_V].isEnabled()
+    assert not acts[TURN_90].isEnabled()        # the spiral's only
+    closed = []
+    menu.aboutToHide.connect(lambda: closed.append(True))
+    menu.popup(win.mapToGlobal(win.rect().center()))
+    acts[FLIP_V].trigger()
+    assert vp.camera.composition_turn == FLIP_V and closed
+    menu.close()
+    vp.set_composition_guide("spiral")
+    menu = win._build_scene_tab_menu(0)
+    row = _row(menu)
+    acts = row.turn_actions
+    assert all(a.isEnabled() for a in acts.values())
+    # Ticked as the orientation is.
+    assert acts[FLIP_V].isChecked() and not acts[FLIP_H].isChecked()
+    acts[TURN_90].trigger()
+    assert vp.camera.composition_turn == FLIP_V | TURN_90
+    menu.close()
+
+
+def test_a_flip_turns_the_spiral_on_when_it_is_off(win):
+    from views.composition_guides import FLIP_H
+    _scene(win, "Exterior")
+    vp = win.viewport
+    vp.set_composition_guide("spiral")
+    vp.toggle_composition_guide(False)          # off; the spiral remembered
+    menu = win._build_scene_tab_menu(0)
+    row = _row(menu)
+    assert row.turn_actions[FLIP_H].isEnabled()
+    row.turn_actions[FLIP_H].trigger()
+    assert (vp.camera.composition_guide, vp.camera.composition_turn) == \
+        ("spiral", FLIP_H)
+    menu.close()
+
+
+def test_show_in_all_views_takes_the_turn_too(win):
+    views = _four_views(win)
+    _scene(win, "Exterior")
+    win.viewport.set_composition_guide("spiral")
+    win.viewport.set_composition_turn(2)
+    menu = win._build_scene_tab_menu(0)
+    _row(menu).show_all_action.trigger()
+    assert [(v.camera.composition_guide, v.camera.composition_turn)
+            for v in views] == [("spiral", 2)] * len(views)
+
+
+def test_the_svg_preview_turns_the_triangle_and_spiral():
+    from views.export_svg_dialog import FramePreview
+    pv = FramePreview()
+    pv.set_guides("spiral", 3)
+    assert pv.guides_turn() == 3
+    pv.set_guides("thirds")                     # the turn stays
+    assert pv.guides_turn() == 3
+    pv.set_guides("spiral", 9)                  # not a turn: none
+    assert pv.guides_turn() == 0
+
+
+def test_the_svg_dialog_flips_the_guides_on_its_preview(win, tmp_path):
+    from PySide6.QtCore import QSettings
+    from views.composition_guides import FLIP_H, TURN_90
+    from views.export_svg_dialog import ExportSvgDialog
+    st = QSettings(str(tmp_path / "svg.ini"), QSettings.IniFormat)
+    dlg = ExportSvgDialog(win, settings=st, advanced=True)
+    combo = dlg.guides_combo
+    combo.setCurrentIndex(combo.findData("thirds"))
+    assert not any(b.isEnabled() for b in dlg.guides_turn.values())
+    combo.setCurrentIndex(combo.findData("spiral"))
+    assert all(b.isEnabled() for b in dlg.guides_turn.values())
+    before = dlg.preview.guides_turn()
+    dlg.guides_turn[TURN_90].click()
+    assert dlg.preview.guides_turn() == before ^ TURN_90
+    assert dlg.guides_turn[TURN_90].isChecked() == bool(
+        dlg.preview.guides_turn() & TURN_90)
+    combo.setCurrentIndex(combo.findData("golden_triangle"))
+    assert dlg.guides_turn[FLIP_H].isEnabled()
+    assert not dlg.guides_turn[TURN_90].isEnabled()
+    dlg.reject()

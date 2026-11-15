@@ -91,7 +91,16 @@ LENS_DEFAULTS = {
 #: The composition guides a camera may show over its picture, ``"none"``
 #: first (no lines); ``views.composition_guides`` draws them.
 COMPOSITION_GUIDES = ("none", "thirds", "golden", "grid", "diagonals",
-                      "centre")
+                      "golden_triangle", "spiral", "centre")
+#: The guides with a side, which the camera's ``composition_turn`` flips
+#: so their strong point falls in another corner.
+TURNABLE_GUIDES = ("golden_triangle", "spiral")
+#: The ``composition_turn`` is made of these: flipped left↔right, flipped
+#: top↔bottom, turned 90° (the spiral only; a turned spiral winds the
+#: other way round, its first square on top).
+FLIP_H, FLIP_V, TURN_90 = 1, 2, 4
+#: How many orientations there are (every mix of the three).
+COMPOSITION_TURNS = 8
 
 
 def read_composition_guide(value):
@@ -99,6 +108,19 @@ def read_composition_guide(value):
     file may hold anything)."""
     return (value if isinstance(value, str) and value in COMPOSITION_GUIDES[1:]
             else None)
+
+
+def read_composition_turn(value) -> int:
+    """``value`` as a guide's orientation, 0–7 (:data:`FLIP_H`,
+    :data:`FLIP_V`, :data:`TURN_90` added up; 0 when a file holds anything
+    else)."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return 0
+    try:
+        v = int(value)
+    except (OverflowError, ValueError):
+        return 0
+    return v if 0 <= v < COMPOSITION_TURNS and v == value else 0
 
 
 def sensor_picture_height(sensor, aspect: float | None) -> float:
@@ -190,6 +212,11 @@ class OrbitCamera:
         #: ``None``. Only drawn, never rendered; kept with the lens, so a
         #: scene brings its own.
         self.composition_guide = None
+        #: How the golden triangle and spiral are TURNED (0–7: flipped
+        #: either way and turned 90°, :data:`FLIP_H` and the rest): which
+        #: corner their strong point falls in. Kept even while another
+        #: guide is shown.
+        self.composition_turn = 0
         #: The SENSOR a focal length is read for, ``(width, height)`` mm,
         #: or ``None`` for the 35 mm full frame (:data:`SENSORS`).
         self.sensor = None
@@ -208,6 +235,8 @@ class OrbitCamera:
                 out[k] = v
         if self.composition_guide:
             out["composition_guide"] = self.composition_guide
+        if self.composition_turn:
+            out["composition_turn"] = self.composition_turn
         return out
 
     @staticmethod
@@ -234,6 +263,8 @@ class OrbitCamera:
         raw = raw if isinstance(raw, dict) else {}
         self.composition_guide = read_composition_guide(
             raw.get("composition_guide"))
+        self.composition_turn = read_composition_turn(
+            raw.get("composition_turn"))
         for k, default in LENS_DEFAULTS.items():
             setattr(self, k, default)
             v = raw.get(k)
@@ -264,8 +295,10 @@ class OrbitCamera:
         The sensor stays: it is the camera, not a setting of the shot; so
         does the composition guide, which is not the lens's either."""
         sensor, guide = self.sensor, self.composition_guide
+        turn = self.composition_turn
         self.apply_lens({})
         self.sensor, self.composition_guide = sensor, guide
+        self.composition_turn = turn
 
     def set_sensor(self, size) -> None:
         """Read focal lengths for the sensor ``size`` ``(width, height)`` mm

@@ -105,7 +105,7 @@ same scenes as in the **Scenes** panel.
 |---|---|
 | Update | Keeps the current view in this scene. |
 | Rename… | Asks for its new name; the sheet views that show it follow. Ctrl+Z puts the old one back. |
-| Composition Guides | Lines to frame the picture by, over the active view: rule of thirds, golden ratio, grid, diagonals or centre. Rest on the name (or click it) for the list; its tick box shows or hides them in the active view. With several views each keeps its own; **Show in all views** and **Hide in all views**, at the foot of the list, act on all of them at once. With a camera frame (Camera Settings ▸ Frame) they fall inside it. They are never exported, and each scene keeps its own. |
+| Composition Guides | Lines to frame the picture by, over the active view: rule of thirds, golden ratio, grid, diagonals, golden triangle, golden spiral or centre (a cross from side to side). **Flip horizontally** and **Flip vertically** turn the golden triangle or spiral over, and **Rotate 90°** makes the spiral start from the top or the side, so its strong point falls where the picture needs it. Rest on the name (or click it) for the list; its tick box shows or hides them in the active view. With several views each keeps its own; **Show in all views** and **Hide in all views**, at the foot of the list, act on all of them at once. With a camera frame (Camera Settings ▸ Frame) they fall inside it. They are never exported, and each scene keeps its own. |
 | Hide scenes | Hides the scene row (Ctrl+E brings it back). |
 | Delete | Deletes the scene; Ctrl+Z brings it back. |
 

@@ -395,6 +395,18 @@ class CompositionGuidesRow(QWidget):
             group.addAction(act)
             act.triggered.connect(lambda _c=False, k=key: self.choose(k))
             self.guide_actions[key] = act
+        # The golden triangle and spiral have a side: these flip them (and
+        # turn the spiral) so their strong point falls where it should.
+        # Ticked when that part of the orientation is on.
+        from views.composition_guides import turn_names
+        sub.addSeparator()
+        self.turn_actions = {}
+        for part, (name, tip) in turn_names().items():
+            act = sub.addAction(name)
+            act.setCheckable(True)
+            act.setStatusTip(tip)
+            act.triggered.connect(lambda _c=False, b=part: self.flip(b))
+            self.turn_actions[part] = act
         # With several views, each keeps its own guides; these two put
         # them on or off in all of them at once.
         sub.addSeparator()
@@ -434,6 +446,12 @@ class CompositionGuidesRow(QWidget):
         act = self.guide_actions.get(self.chosen())
         if act is not None:
             act.setChecked(True)
+        from views.composition_guides import turn_parts
+        parts = turn_parts(self.chosen())
+        turn = getattr(self.viewport.camera, "composition_turn", 0)
+        for part, act in self.turn_actions.items():
+            act.setEnabled(part in parts)
+            act.setChecked(part in parts and bool(turn & part))
         several = len(self.views()) > 1
         self.show_all_action.setEnabled(several)
         self.hide_all_action.setEnabled(several)
@@ -448,12 +466,23 @@ class CompositionGuidesRow(QWidget):
         self.sync()
         self.menu.close()
 
+    def flip(self, part: int) -> None:
+        """«Flip horizontally», «Flip vertically» or «Rotate 90°»: the
+        golden triangle or spiral chosen, shown in the active view with
+        that part of its orientation changed; then close the menu."""
+        self.viewport.flip_composition_guide(part, self.chosen())
+        self.sync()
+        self.menu.close()
+
     def set_all(self, on: bool) -> None:
         """The guide chosen in every view shown (on), or none in any (off);
         then close the menu."""
         key = self.chosen() if on else None
+        turn = getattr(self.viewport.camera, "composition_turn", 0)
         for vp in self.views():
             vp.set_composition_guide(key)
+            if on and hasattr(vp, "set_composition_turn"):
+                vp.set_composition_turn(turn)
         self.sync()
         self.menu.close()
 

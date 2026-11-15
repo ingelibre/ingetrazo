@@ -3778,5 +3778,13 @@
  "Show in all views": "Показати в усіх видах",
  "Hide in all views": "Сховати в усіх видах",
  "The composition guide chosen, in every view shown.": "Вибрані напрямні композиції в кожному показаному виді.",
- "No composition guides in any view shown.": "Без напрямних композиції в показаних видах."
+ "No composition guides in any view shown.": "Без напрямних композиції в показаних видах.",
+ "Golden triangle": "Золотий трикутник",
+ "Golden spiral": "Золота спіраль",
+ "Flip horizontally": "Віддзеркалити горизонтально",
+ "Flip vertically": "Віддзеркалити вертикально",
+ "Rotate 90°": "Повернути на 90°",
+ "Flip the golden triangle or spiral left to right.": "Віддзеркалює золотий трикутник або спіраль зліва направо.",
+ "Flip the golden triangle or spiral top to bottom.": "Віддзеркалює золотий трикутник або спіраль згори донизу.",
+ "Turn the golden spiral a quarter turn: it starts from the top or the side.": "Повертає золоту спіраль на чверть оберту: вона починається згори або збоку."
 }

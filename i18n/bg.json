@@ -3772,5 +3772,13 @@
  "Show in all views": "Показване във всички изгледи",
  "Hide in all views": "Скриване във всички изгледи",
  "The composition guide chosen, in every view shown.": "Избраните помощни линии за композиция във всички показани изгледи.",
- "No composition guides in any view shown.": "Без помощни линии за композиция в показаните изгледи."
+ "No composition guides in any view shown.": "Без помощни линии за композиция в показаните изгледи.",
+ "Golden triangle": "Златен триъгълник",
+ "Golden spiral": "Златна спирала",
+ "Flip horizontally": "Обърни хоризонтално",
+ "Flip vertically": "Обърни вертикално",
+ "Rotate 90°": "Завърти на 90°",
+ "Flip the golden triangle or spiral left to right.": "Обръща златния триъгълник или спирала отляво надясно.",
+ "Flip the golden triangle or spiral top to bottom.": "Обръща златния триъгълник или спирала отгоре надолу.",
+ "Turn the golden spiral a quarter turn: it starts from the top or the side.": "Завърта златната спирала на четвърт оборот: започва отгоре или отстрани."
 }

@@ -3774,5 +3774,13 @@
  "Show in all views": "Tampilkan di semua tampilan",
  "Hide in all views": "Sembunyikan di semua tampilan",
  "The composition guide chosen, in every view shown.": "Panduan komposisi yang dipilih, di setiap tampilan yang terlihat.",
- "No composition guides in any view shown.": "Tanpa panduan komposisi di tampilan yang terlihat."
+ "No composition guides in any view shown.": "Tanpa panduan komposisi di tampilan yang terlihat.",
+ "Golden triangle": "Segitiga emas",
+ "Golden spiral": "Spiral emas",
+ "Flip horizontally": "Balik horizontal",
+ "Flip vertically": "Balik vertikal",
+ "Rotate 90°": "Putar 90°",
+ "Flip the golden triangle or spiral left to right.": "Membalik segitiga atau spiral emas dari kiri ke kanan.",
+ "Flip the golden triangle or spiral top to bottom.": "Membalik segitiga atau spiral emas dari atas ke bawah.",
+ "Turn the golden spiral a quarter turn: it starts from the top or the side.": "Memutar spiral emas seperempat putaran: dimulai dari atas atau samping."
 }

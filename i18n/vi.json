@@ -3798,5 +3798,13 @@
  "Show in all views": "Hiện trong mọi khung nhìn",
  "Hide in all views": "Ẩn trong mọi khung nhìn",
  "The composition guide chosen, in every view shown.": "Đường chỉ dẫn bố cục đã chọn, trong mọi khung nhìn đang hiện.",
- "No composition guides in any view shown.": "Không có đường chỉ dẫn bố cục trong các khung nhìn đang hiện."
+ "No composition guides in any view shown.": "Không có đường chỉ dẫn bố cục trong các khung nhìn đang hiện.",
+ "Golden triangle": "Tam giác vàng",
+ "Golden spiral": "Xoắn ốc vàng",
+ "Flip horizontally": "Lật ngang",
+ "Flip vertically": "Lật dọc",
+ "Rotate 90°": "Xoay 90°",
+ "Flip the golden triangle or spiral left to right.": "Lật tam giác hoặc xoắn ốc vàng từ trái sang phải.",
+ "Flip the golden triangle or spiral top to bottom.": "Lật tam giác hoặc xoắn ốc vàng từ trên xuống dưới.",
+ "Turn the golden spiral a quarter turn: it starts from the top or the side.": "Xoay xoắn ốc vàng một phần tư vòng: bắt đầu từ trên hoặc từ cạnh."
 }

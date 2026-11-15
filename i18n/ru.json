@@ -3771,5 +3771,13 @@
  "Show in all views": "Показать во всех видах",
  "Hide in all views": "Скрыть во всех видах",
  "The composition guide chosen, in every view shown.": "Выбранные направляющие композиции во всех показанных видах.",
- "No composition guides in any view shown.": "Без направляющих композиции в показанных видах."
+ "No composition guides in any view shown.": "Без направляющих композиции в показанных видах.",
+ "Golden triangle": "Золотой треугольник",
+ "Golden spiral": "Золотая спираль",
+ "Flip horizontally": "Отразить по горизонтали",
+ "Flip vertically": "Отразить по вертикали",
+ "Rotate 90°": "Повернуть на 90°",
+ "Flip the golden triangle or spiral left to right.": "Отражает золотой треугольник или спираль слева направо.",
+ "Flip the golden triangle or spiral top to bottom.": "Отражает золотой треугольник или спираль сверху вниз.",
+ "Turn the golden spiral a quarter turn: it starts from the top or the side.": "Поворачивает золотую спираль на четверть оборота: она начинается сверху или сбоку."
 }

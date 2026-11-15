@@ -3774,5 +3774,13 @@
  "Show in all views": "แสดงในทุกมุมมอง",
  "Hide in all views": "ซ่อนในทุกมุมมอง",
  "The composition guide chosen, in every view shown.": "เส้นช่วยจัดองค์ประกอบที่เลือก ในทุกมุมมองที่แสดงอยู่",
- "No composition guides in any view shown.": "ไม่มีเส้นช่วยจัดองค์ประกอบในมุมมองที่แสดงอยู่"
+ "No composition guides in any view shown.": "ไม่มีเส้นช่วยจัดองค์ประกอบในมุมมองที่แสดงอยู่",
+ "Golden triangle": "สามเหลี่ยมทองคำ",
+ "Golden spiral": "เกลียวทองคำ",
+ "Flip horizontally": "พลิกแนวนอน",
+ "Flip vertically": "พลิกแนวตั้ง",
+ "Rotate 90°": "หมุน 90°",
+ "Flip the golden triangle or spiral left to right.": "พลิกสามเหลี่ยมหรือเกลียวทองคำจากซ้ายไปขวา",
+ "Flip the golden triangle or spiral top to bottom.": "พลิกสามเหลี่ยมหรือเกลียวทองคำจากบนลงล่าง",
+ "Turn the golden spiral a quarter turn: it starts from the top or the side.": "หมุนเกลียวทองคำหนึ่งในสี่รอบ: เริ่มจากด้านบนหรือด้านข้าง"
 }

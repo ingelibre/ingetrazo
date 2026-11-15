@@ -62,8 +62,10 @@ RATIOS = (("free", None), ("screen", "screen"), ("1:1", 1.0),
 
 #: The composition guides the preview can show (views/composition_guides.py:
 #: the 3D view draws the same ones) — only to frame by; never in the file.
-from views.composition_guides import (DEFAULT_GUIDES, GOLDEN,  # noqa: E402,F401
-                                      GUIDES, draw_guides, guide_names)
+from views.composition_guides import (DEFAULT_GUIDES, FLIP_H,  # noqa: E402,F401
+                                      FLIP_V, GOLDEN, GUIDES, TURN_90,
+                                      draw_guides, guide_names, read_turn,
+                                      turn_names, turn_parts)
 
 #: The basic dialog's choices of what to export (all but lines only), and
 #: the one it begins with.
@@ -440,11 +442,25 @@ class ExportSvgDialog(QDialog):
             "Lines over the preview to frame the drawing by, as a camera's "
             "viewfinder shows them. They are not exported."))
         self.guides_combo.currentIndexChanged.connect(
-            lambda *_a: self.preview.set_guides(
-                self.guides_combo.currentData()))
+            lambda *_a: self._show_guides())
+        # The golden triangle and spiral have a side: one button per part
+        # of their orientation (flip either way, turn the spiral 90°).
+        self.guides_turn = {}
+        turn_row = QHBoxLayout()
+        turn_row.setSpacing(2)
+        for part, (name, tip) in turn_names().items():
+            b = QToolButton()
+            b.setText({FLIP_H: "⇆", FLIP_V: "⇅", TURN_90: "↻"}[part])
+            b.setCheckable(True)
+            b.setToolTip(f"<b>{name}</b><br>{tip}")
+            b.setAccessibleName(name)
+            b.clicked.connect(lambda _c=False, p=part: self._turn_guides(p))
+            turn_row.addWidget(b)
+            self.guides_turn[part] = b
         guides_row = QHBoxLayout()
         guides_row.addWidget(QLabel(tr("Guides:")))
         guides_row.addWidget(self.guides_combo, 1)
+        guides_row.addLayout(turn_row)
         preview_lay.addLayout(guides_row)
         preview_lay.addWidget(self.preview_box)
         preview_lay.addStretch(1)
@@ -760,7 +776,13 @@ class ExportSvgDialog(QDialog):
         i = self.guides_combo.findData(str(st.value(_KEY + "guides",
                                                     DEFAULT_GUIDES)))
         self.guides_combo.setCurrentIndex(max(0, i))
-        self.preview.set_guides(self.guides_combo.currentData())
+        try:
+            turn = int(st.value(_KEY + "guides_turn", 0))
+        except (TypeError, ValueError):
+            turn = 0
+        self.preview.set_guides(self.guides_combo.currentData(),
+                                read_turn(turn))
+        self._show_guides()
         i = self.area_combo.findData(str(st.value(_KEY + "area",
                                                   DEFAULT_AREA)))
         self.area_combo.setCurrentIndex(max(0, i))
@@ -786,6 +808,22 @@ class ExportSvgDialog(QDialog):
         if self._size_mode() == "screen":
             self._set_measures(*self._screen_mm)
 
+    def _show_guides(self) -> None:
+        """The guides chosen over the preview; the flip buttons only for
+        those with a side, pressed as their orientation is."""
+        key = self.guides_combo.currentData()
+        self.preview.set_guides(key)
+        parts, turn = turn_parts(key), self.preview.guides_turn()
+        for part, b in self.guides_turn.items():
+            b.setEnabled(part in parts)
+            b.setChecked(part in parts and bool(turn & part))
+
+    def _turn_guides(self, part: int) -> None:
+        """A flip (or the spiral's 90° turn) of the guides on the preview."""
+        self.preview.set_guides(self.guides_combo.currentData(),
+                                self.preview.guides_turn() ^ part)
+        self._show_guides()
+
     def accept(self) -> None:
         st = self._settings
         st.setValue(_KEY + "faces", self._mode())
@@ -794,6 +832,7 @@ class ExportSvgDialog(QDialog):
         st.setValue(_KEY + "hide_axes", self.axes_box.isChecked())
         st.setValue(_KEY + "preview", self.preview_box.isChecked())
         st.setValue(_KEY + "guides", self.guides_combo.currentData())
+        st.setValue(_KEY + "guides_turn", self.preview.guides_turn())
         st.setValue(_KEY + "area", self._area())
         st.setValue(_KEY + "size", self.size_combo.currentData())
         st.setValue(_KEY + "turn", self._turn())
@@ -1131,6 +1170,7 @@ class FramePreview(QLabel):
         self._shift = QPointF()         # how far the picture follows it
         self._scale = 1.0               # the wheel's zoom not yet worked out
         self._guides = "none"           # the composition guides on top
+        self._guides_turn = 0           # how the triangle / spiral are turned
 
     def set_framing(self, on: bool) -> None:
         self._framing = on
@@ -1181,16 +1221,23 @@ class FramePreview(QLabel):
         self._draw_moved()
         self.zoomed.emit(factor)
 
-    def set_guides(self, key: str) -> None:
+    def set_guides(self, key: str, turn: int | None = None) -> None:
+        """The guides ``key`` on top, in the turn ``turn`` (the one they
+        had when ``None``)."""
         self._guides = key if key in GUIDES else "none"
+        if turn is not None:
+            self._guides_turn = read_turn(turn)
         self.update()
+
+    def guides_turn(self) -> int:
+        return self._guides_turn
 
     def paintEvent(self, event) -> None:
         super().paintEvent(event)
         if self._guides != "none" and not self._page.isEmpty():
             p = QPainter(self)
             p.setRenderHint(QPainter.Antialiasing)
-            draw_guides(p, self._page, self._guides)
+            draw_guides(p, self._page, self._guides, self._guides_turn)
             p.end()
 
     def _draw_moved(self) -> None:

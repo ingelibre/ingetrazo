@@ -3771,5 +3771,13 @@
  "Show in all views": "In allen Ansichten zeigen",
  "Hide in all views": "In allen Ansichten ausblenden",
  "The composition guide chosen, in every view shown.": "Die gewählte Kompositionshilfe in jeder angezeigten Ansicht.",
- "No composition guides in any view shown.": "Keine Kompositionshilfen in den angezeigten Ansichten."
+ "No composition guides in any view shown.": "Keine Kompositionshilfen in den angezeigten Ansichten.",
+ "Golden triangle": "Goldenes Dreieck",
+ "Golden spiral": "Goldene Spirale",
+ "Flip horizontally": "Horizontal spiegeln",
+ "Flip vertically": "Vertikal spiegeln",
+ "Rotate 90°": "Um 90° drehen",
+ "Flip the golden triangle or spiral left to right.": "Spiegelt das goldene Dreieck oder die Spirale von links nach rechts.",
+ "Flip the golden triangle or spiral top to bottom.": "Spiegelt das goldene Dreieck oder die Spirale von oben nach unten.",
+ "Turn the golden spiral a quarter turn: it starts from the top or the side.": "Dreht die goldene Spirale um eine Vierteldrehung: Sie beginnt oben oder seitlich."
 }

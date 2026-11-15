@@ -9821,7 +9821,8 @@ class Viewport(QOpenGLWidget):
         key = getattr(self.camera, "composition_guide", None)
         if key:
             from views.composition_guides import draw_guides
-            draw_guides(painter, self.composition_rect(), key)
+            draw_guides(painter, self.composition_rect(), key,
+                        getattr(self.camera, "composition_turn", 0))
 
     def set_composition_guide(self, key) -> None:
         """Show the composition guide ``key`` over this view, or none
@@ -9834,6 +9835,27 @@ class Viewport(QOpenGLWidget):
         if key != self.camera.composition_guide:
             self.camera.composition_guide = key
             self.update()
+
+    def set_composition_turn(self, turn) -> None:
+        """Orient the golden triangle and spiral of this view: ``turn`` is
+        0–7, its flips and 90° turn (see views/composition_guides.py)."""
+        from views.composition_guides import read_turn
+        turn = read_turn(turn)
+        if turn != self.camera.composition_turn:
+            self.camera.composition_turn = turn
+            self.update()
+
+    def flip_composition_guide(self, part: int, key=None) -> None:
+        """«Flip horizontally», «Flip vertically» or «Rotate 90°» (``part``,
+        one of FLIP_H, FLIP_V, TURN_90): the golden triangle or spiral
+        ``key`` (the one shown when ``None``) on, with that part of its
+        orientation changed. A part the guide does not have does nothing."""
+        from views.composition_guides import turn_parts
+        key = key or self.camera.composition_guide
+        if part not in turn_parts(key):
+            return
+        self.set_composition_guide(key)
+        self.set_composition_turn(self.camera.composition_turn ^ part)
 
     def toggle_composition_guide(self, on: bool | None = None) -> None:
         """The composition guide on (the last one chosen; the rule of thirds
