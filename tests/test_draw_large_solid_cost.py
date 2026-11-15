@@ -176,4 +176,7 @@ def test_a_circle_drawn_on_the_solid_lands_as_before():
     assert len(cap.hole_loops) == holes_before + 1
     assert is_closed(scene.mesh)
     assert not any(f.interior for f in scene.mesh.faces)
-    assert abs(signed_volume(scene.mesh) - volume) < 1e-6
+    # signed_volume adds in float32, and the cap cut into other triangles
+    # rounds differently: a few millionths on a volume of 300, more on
+    # some platforms than on others. Relative, well above that.
+    assert abs(signed_volume(scene.mesh) - volume) < 1e-7 * abs(volume)
