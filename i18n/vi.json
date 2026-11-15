@@ -3595,7 +3595,7 @@
  "Close Projects to the Left": "Đóng các dự án bên trái",
  "Close All Projects": "Đóng tất cả dự án",
  "Hide scenes": "Ẩn các cảnh",
- "Hide this project's scene tabs; Alt+E shows them again.": "Ẩn các thẻ cảnh của dự án này; Alt+E hiện lại.",
+ "Hide this project's scene tabs; Ctrl+E shows them again.": "Ẩn các thẻ cảnh của dự án này; Ctrl+E hiện lại.",
  "Show a picture of the project on hover over its tab": "Hiện hình ảnh của dự án khi di chuột lên thẻ của nó",
  "Show project tabs": "Hiện các thẻ dự án",
  "The tabs of the open projects above the view; hidden, the projects stay open: Ctrl+PgDown goes through them.": "Các thẻ của dự án đang mở phía trên khung nhìn; khi ẩn, các dự án vẫn mở: Ctrl+PgDown chuyển giữa chúng.",
@@ -3792,5 +3792,11 @@
  "Architect. The units system, the Browser, Layers 2.0, the Solid Inspector, Fillet 3D bevels, Bridge, Join Segments, Camera ▸ Axes, soft ambient occlusion, round curved surfaces, view layouts, scenes as tabs, cleaner exports and many everyday editing tools. And for 0.6.2: the North tool, camera settings, scene transitions with video and the view as layered SVG.": "Kiến trúc sư. Hệ thống đơn vị, Trình duyệt, Các lớp 2.0, Kiểm tra khối đặc, vát cạnh Fillet 3D, Bắc cầu, Nối các đoạn thẳng, Camera ▸ Trục, che khuất môi trường mềm, bề mặt cong bo tròn, bố cục khung nhìn, cảnh dạng thẻ, xuất tệp gọn gàng hơn và nhiều công cụ chỉnh sửa thường ngày. Và ở 0.6.2: công cụ Hướng Bắc, cài đặt camera, chuyển cảnh kèm video và xuất khung nhìn thành SVG theo lớp.",
  "Korean translation of the interface, and the AI key from an environment variable. In 0.6.2, soft shadows and fixes for macOS.": "Bản dịch giao diện tiếng Hàn, và khóa AI lấy từ biến môi trường. Ở 0.6.2, bóng đổ mềm và các bản sửa cho macOS.",
  "Exact Move+Ctrl copies, overlapping rotated copies, faster box selection on huge models and the reviewed Indonesian translation.": "Bản sao chính xác bằng Di chuyển+Ctrl, bản sao xoay chồng lên nhau, chọn bằng khung nhanh hơn trên mô hình rất lớn và bản dịch tiếng Indonesia đã được rà soát.",
- "Snapping to the rest of the model from inside a group or component.": "Bắt điểm vào phần còn lại của mô hình từ bên trong nhóm hoặc thành phần."
+ "Snapping to the rest of the model from inside a group or component.": "Bắt điểm vào phần còn lại của mô hình từ bên trong nhóm hoặc thành phần.",
+ "Composition Guides": "Đường chỉ dẫn bố cục",
+ "Show or hide the composition guides in the active view": "Hiện hoặc ẩn đường chỉ dẫn bố cục trong khung nhìn đang dùng",
+ "Show in all views": "Hiện trong mọi khung nhìn",
+ "Hide in all views": "Ẩn trong mọi khung nhìn",
+ "The composition guide chosen, in every view shown.": "Đường chỉ dẫn bố cục đã chọn, trong mọi khung nhìn đang hiện.",
+ "No composition guides in any view shown.": "Không có đường chỉ dẫn bố cục trong các khung nhìn đang hiện."
 }

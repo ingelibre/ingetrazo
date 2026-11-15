@@ -3568,7 +3568,7 @@
  "Close Projects to the Left": "Закрити проєкти ліворуч",
  "Close All Projects": "Закрити всі проєкти",
  "Hide scenes": "Приховати сцени",
- "Hide this project's scene tabs; Alt+E shows them again.": "Приховати вкладки сцен цього проєкту; Alt+E знову їх показує.",
+ "Hide this project's scene tabs; Ctrl+E shows them again.": "Приховати вкладки сцен цього проєкту; Ctrl+E знову їх показує.",
  "Show a picture of the project on hover over its tab": "Показувати зображення проєкту при наведенні на його вкладку",
  "Show project tabs": "Показувати вкладки проєктів",
  "The tabs of the open projects above the view; hidden, the projects stay open: Ctrl+PgDown goes through them.": "Вкладки відкритих проєктів над видом; якщо їх приховано, проєкти лишаються відкритими: Ctrl+PgDown перемикає між ними.",
@@ -3772,5 +3772,11 @@
  "Architect. The units system, the Browser, Layers 2.0, the Solid Inspector, Fillet 3D bevels, Bridge, Join Segments, Camera ▸ Axes, soft ambient occlusion, round curved surfaces, view layouts, scenes as tabs, cleaner exports and many everyday editing tools. And for 0.6.2: the North tool, camera settings, scene transitions with video and the view as layered SVG.": "Архітектор. Система одиниць виміру, Навігатор, «Шари 2.0», Інспектор тіл, фаски у «Заокругленні 3D», «Місток», «Об'єднати сегменти», Камера ▸ Осі, м'яка навколишня оклюзія, округлі криволінійні поверхні, розкладки видів, сцени у вигляді вкладок, охайніший експорт і багато повсякденних інструментів редагування. А в 0.6.2: інструмент «Північ», налаштування камери, переходи між сценами з відео та вигляд у SVG за шарами.",
  "Korean translation of the interface, and the AI key from an environment variable. In 0.6.2, soft shadows and fixes for macOS.": "Переклад інтерфейсу корейською, а також ключ ШІ зі змінної середовища. У 0.6.2 — м’які тіні та виправлення для macOS.",
  "Exact Move+Ctrl copies, overlapping rotated copies, faster box selection on huge models and the reviewed Indonesian translation.": "Точні копії через Переміщення+Ctrl, повернуті копії, що перекриваються, швидший вибір рамкою у величезних моделях і вивірений індонезійський переклад.",
- "Snapping to the rest of the model from inside a group or component.": "Прив’язка до решти моделі зсередини групи чи компонента."
+ "Snapping to the rest of the model from inside a group or component.": "Прив’язка до решти моделі зсередини групи чи компонента.",
+ "Composition Guides": "Напрямні композиції",
+ "Show or hide the composition guides in the active view": "Показати або сховати напрямні композиції в активному виді",
+ "Show in all views": "Показати в усіх видах",
+ "Hide in all views": "Сховати в усіх видах",
+ "The composition guide chosen, in every view shown.": "Вибрані напрямні композиції в кожному показаному виді.",
+ "No composition guides in any view shown.": "Без напрямних композиції в показаних видах."
 }

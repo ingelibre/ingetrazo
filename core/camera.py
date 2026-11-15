@@ -88,6 +88,18 @@ LENS_DEFAULTS = {
     "sensor": None,         # (width, height) mm, or None = full frame
 }
 
+#: The composition guides a camera may show over its picture, ``"none"``
+#: first (no lines); ``views.composition_guides`` draws them.
+COMPOSITION_GUIDES = ("none", "thirds", "golden", "grid", "diagonals",
+                      "centre")
+
+
+def read_composition_guide(value):
+    """``value`` as a composition guide that draws lines, or ``None`` (a
+    file may hold anything)."""
+    return (value if isinstance(value, str) and value in COMPOSITION_GUIDES[1:]
+            else None)
+
 
 def sensor_picture_height(sensor, aspect: float | None) -> float:
     """How much of the sensor's height a picture of shape ``aspect`` (width
@@ -173,6 +185,11 @@ class OrbitCamera:
         self.clip_near = None
         self.clip_far = None
         self.frame_aspect = None
+        #: The COMPOSITION GUIDE drawn over the picture (the rule of
+        #: thirds, the golden ratio… — ``views.composition_guides``), or
+        #: ``None``. Only drawn, never rendered; kept with the lens, so a
+        #: scene brings its own.
+        self.composition_guide = None
         #: The SENSOR a focal length is read for, ``(width, height)`` mm,
         #: or ``None`` for the 35 mm full frame (:data:`SENSORS`).
         self.sensor = None
@@ -189,6 +206,8 @@ class OrbitCamera:
                     out[k] = [float(v[0]), float(v[1])]
             elif v != default:
                 out[k] = v
+        if self.composition_guide:
+            out["composition_guide"] = self.composition_guide
         return out
 
     @staticmethod
@@ -213,6 +232,8 @@ class OrbitCamera:
         lens takes off a shift or a roll left by the one before. Values
         that are not numbers are ignored (the default stays)."""
         raw = raw if isinstance(raw, dict) else {}
+        self.composition_guide = read_composition_guide(
+            raw.get("composition_guide"))
         for k, default in LENS_DEFAULTS.items():
             setattr(self, k, default)
             v = raw.get(k)
@@ -240,10 +261,11 @@ class OrbitCamera:
 
     def reset_lens(self) -> None:
         """Shift, roll, clipping and frame back to :data:`LENS_DEFAULTS`.
-        The sensor stays: it is the camera, not a setting of the shot."""
-        sensor = self.sensor
+        The sensor stays: it is the camera, not a setting of the shot; so
+        does the composition guide, which is not the lens's either."""
+        sensor, guide = self.sensor, self.composition_guide
         self.apply_lens({})
-        self.sensor = sensor
+        self.sensor, self.composition_guide = sensor, guide
 
     def set_sensor(self, size) -> None:
         """Read focal lengths for the sensor ``size`` ``(width, height)`` mm

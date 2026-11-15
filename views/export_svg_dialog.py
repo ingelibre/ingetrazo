@@ -15,7 +15,7 @@ import re
 import time
 from contextlib import contextmanager
 
-from PySide6.QtCore import (QByteArray, QLineF, QPoint, QPointF, QRectF,
+from PySide6.QtCore import (QByteArray, QPoint, QPointF, QRectF,
                             QSettings, Qt, QTimer, Signal)
 from PySide6.QtGui import QColor, QIcon, QPainter, QPen, QPixmap, QPolygonF
 from PySide6.QtWidgets import (QApplication, QButtonGroup, QCheckBox,
@@ -60,14 +60,10 @@ RATIOS = (("free", None), ("screen", "screen"), ("1:1", 1.0),
           ("16:9", 16.0 / 9.0), ("4:3", 4.0 / 3.0), ("3:2", 1.5),
           ("2:1", 2.0))
 
-#: The composition guides the preview can show, as a camera's viewfinder
-#: does — only to frame by; they never go into the file.
-GUIDES = ("none", "thirds", "golden", "grid", "diagonals", "centre")
-#: The guides the preview begins with.
-DEFAULT_GUIDES = "thirds"
-
-#: The golden section of a side: where the golden ratio's lines fall.
-GOLDEN = (5.0 ** 0.5 - 1.0) / 2.0         # 0.618…
+#: The composition guides the preview can show (views/composition_guides.py:
+#: the 3D view draws the same ones) — only to frame by; never in the file.
+from views.composition_guides import (DEFAULT_GUIDES, GOLDEN,  # noqa: E402,F401
+                                      GUIDES, draw_guides, guide_names)
 
 #: The basic dialog's choices of what to export (all but lines only), and
 #: the one it begins with.
@@ -437,11 +433,9 @@ class ExportSvgDialog(QDialog):
         frame_row.addWidget(self.frame_reset)
         preview_lay.addLayout(frame_row)
         self.guides_combo = UpwardComboBox()
-        guide_names = {"none": tr("No guides"), "thirds": tr("Rule of thirds"),
-                       "golden": tr("Golden ratio"), "grid": tr("Grid"),
-                       "diagonals": tr("Diagonals"), "centre": tr("Centre")}
+        names = guide_names()
         for key in GUIDES:
-            self.guides_combo.addItem(guide_names[key], key)
+            self.guides_combo.addItem(names[key], key)
         self.guides_combo.setToolTip(tr(
             "Lines over the preview to frame the drawing by, as a camera's "
             "viewfinder shows them. They are not exported."))
@@ -1215,46 +1209,6 @@ class FramePreview(QLabel):
         p.drawPixmap(0, 0, self._sheet)
         p.end()
         self.setPixmap(out)
-
-
-def draw_guides(p: QPainter, page: QRectF, key: str) -> None:
-    """The composition guides ``key`` over the sheet ``page``: a light
-    line over a dark one, so they read on paper and on a picture alike."""
-    x0, y0, w, h = page.x(), page.y(), page.width(), page.height()
-    lines = []
-
-    def across(fracs):
-        for f in fracs:
-            lines.append(QLineF(x0 + f * w, y0, x0 + f * w, y0 + h))
-            lines.append(QLineF(x0, y0 + f * h, x0 + w, y0 + f * h))
-
-    if key == "thirds":
-        across((1.0 / 3.0, 2.0 / 3.0))
-    elif key == "golden":
-        across((1.0 - GOLDEN, GOLDEN))
-    elif key == "grid":
-        across((0.25, 0.5, 0.75))
-    elif key == "diagonals":
-        lines.append(QLineF(page.topLeft(), page.bottomRight()))
-        lines.append(QLineF(page.bottomLeft(), page.topRight()))
-    elif key == "centre":
-        c = page.center()
-        arm = min(w, h) * 0.12
-        lines.append(QLineF(c.x() - arm, c.y(), c.x() + arm, c.y()))
-        lines.append(QLineF(c.x(), c.y() - arm, c.x(), c.y() + arm))
-    if not lines:
-        return
-    ring = min(w, h) * 0.04 if key == "centre" else 0.0
-    p.save()
-    p.setClipRect(page)
-    p.setBrush(Qt.NoBrush)
-    for pen in (QPen(QColor(0, 0, 0, 90), 2.2),
-                QPen(QColor(255, 255, 255, 200), 1.0)):
-        p.setPen(pen)
-        p.drawLines(lines)
-        if ring:
-            p.drawEllipse(page.center(), ring, ring)
-    p.restore()
 
 
 class UpwardComboBox(QComboBox):

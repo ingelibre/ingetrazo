@@ -3569,7 +3569,7 @@
  "Close Projects to the Left": "关闭左侧的项目",
  "Close All Projects": "关闭所有项目",
  "Hide scenes": "隐藏场景",
- "Hide this project's scene tabs; Alt+E shows them again.": "隐藏此项目的场景标签页；按 Alt+E 重新显示。",
+ "Hide this project's scene tabs; Ctrl+E shows them again.": "隐藏此项目的场景标签页；按 Ctrl+E 重新显示。",
  "Show a picture of the project on hover over its tab": "将鼠标悬停在标签页上时显示项目图片",
  "Show project tabs": "显示项目标签页",
  "The tabs of the open projects above the view; hidden, the projects stay open: Ctrl+PgDown goes through them.": "视图上方已打开项目的标签页；隐藏后项目仍保持打开：Ctrl+PgDown 可在其间切换。",
@@ -3766,5 +3766,11 @@
  "Architect. The units system, the Browser, Layers 2.0, the Solid Inspector, Fillet 3D bevels, Bridge, Join Segments, Camera ▸ Axes, soft ambient occlusion, round curved surfaces, view layouts, scenes as tabs, cleaner exports and many everyday editing tools. And for 0.6.2: the North tool, camera settings, scene transitions with video and the view as layered SVG.": "建筑师。单位系统、浏览器、图层 2.0、实体检查器、Fillet 3D 倒角、桥接、合并线段、相机 ▸ 坐标轴、柔和环境光遮蔽、圆润曲面、视图布局、标签页形式的场景、更整洁的导出，以及许多日常编辑工具。0.6.2 中还有：指北工具、相机设置、带视频的场景过渡，以及分图层的 SVG 视图导出。",
  "Korean translation of the interface, and the AI key from an environment variable. In 0.6.2, soft shadows and fixes for macOS.": "界面的韩语翻译，以及从环境变量读取 AI 密钥。0.6.2 中还有柔和阴影和 macOS 修复。",
  "Exact Move+Ctrl copies, overlapping rotated copies, faster box selection on huge models and the reviewed Indonesian translation.": "精确的移动+Ctrl 复制、相互重叠的旋转复制、在超大模型上更快的框选，以及校订后的印尼语翻译。",
- "Snapping to the rest of the model from inside a group or component.": "在组或组件内部捕捉到模型其余部分。"
+ "Snapping to the rest of the model from inside a group or component.": "在组或组件内部捕捉到模型其余部分。",
+ "Composition Guides": "构图参考线",
+ "Show or hide the composition guides in the active view": "在活动视图中显示或隐藏构图参考线",
+ "Show in all views": "在所有视图中显示",
+ "Hide in all views": "在所有视图中隐藏",
+ "The composition guide chosen, in every view shown.": "在显示的所有视图中显示所选构图参考线。",
+ "No composition guides in any view shown.": "显示的视图中均不显示构图参考线。"
 }
