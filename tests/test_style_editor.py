@@ -297,6 +297,10 @@ def test_a_swatch_tooltip_keeps_the_tooltip_colours(settings_file):
     panel = StylesPanel(win)
     swatch = panel._front_c                          # white (255,255,255)
     swatch.show()
+    # Deliver what earlier tests left queued first: a window activation or
+    # focus change still pending (the composer of test_sheet_shortcuts, in
+    # the same batch on CI) hides a tooltip the moment it is shown.
+    QApplication.processEvents()
     QToolTip.showText(QPoint(10, 10), "tip", swatch)
     QApplication.processEvents()
     labels = [w for w in QApplication.topLevelWidgets()

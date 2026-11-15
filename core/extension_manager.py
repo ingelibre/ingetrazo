@@ -7,10 +7,10 @@ import hashlib
 import io
 import json
 import logging
+import os
 import re
 import shutil
 import stat
-import tempfile
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -37,6 +37,9 @@ MAX_ARCHIVE_FILES = 2000
 MAX_EXTRACTED_BYTES = 128 * 1024 * 1024
 _ID_RE = re.compile(r"^[a-zA-Z0-9_-]+$")
 _SHA_RE = re.compile(r"^[0-9a-fA-F]{64}$")
+#: The catalog's short print of a screenshot: 16 hex of its SHA-256.
+_SHOT_SHA_RE = re.compile(r"^[0-9a-f]{16}$")
+_IMAGE_SUFFIXES = (".png", ".jpg", ".jpeg", ".webp")
 
 
 class ExtensionManagerError(Exception):
@@ -58,6 +61,12 @@ class Extension:
     tags: tuple[str, ...]
     screenshot: str | None = None
     updated_at: str | None = None
+    #: The catalog's small copy of the screenshot (``thumbs/<thumb>``),
+    #: what a card shows; None when the catalog has none.
+    thumb: str | None = None
+    #: 16 hex of the screenshot's SHA-256: a new one means a new picture
+    #: under the same name, so the cached copy is fetched again.
+    screenshot_sha: str | None = None
     #: An extension that ships inside IngeTrazo (``examples/extensions``):
     #: the local file or folder it installs from — nothing is downloaded.
     bundled: str | None = None
@@ -96,6 +105,12 @@ def _text_map(value, field: str) -> dict[str, str]:
     return value
 
 
+def _safe_image_name(name: object) -> bool:
+    return (isinstance(name, str) and bool(name)
+            and "/" not in name and "\\" not in name
+            and PurePosixPath(name).suffix.lower() in _IMAGE_SUFFIXES)
+
+
 def _parse_extension(raw: object) -> Extension:
     if not isinstance(raw, dict):
         raise ExtensionManagerError("Invalid extension entry in catalog.")
@@ -118,13 +133,21 @@ def _parse_extension(raw: object) -> Extension:
     if not isinstance(tags, list) or not all(isinstance(t, str) for t in tags):
         raise ExtensionManagerError(f"Extension {ident!r} has invalid tags.")
     screenshot = raw.get("screenshot")
-    if screenshot is not None and (
-            not isinstance(screenshot, str)
-            or "/" in screenshot or "\\" in screenshot
-            or PurePosixPath(screenshot).suffix.lower() not in (
-                ".png", ".jpg", ".jpeg", ".webp")):
+    if screenshot is not None and not (
+            isinstance(screenshot, str)
+            and "/" not in screenshot and "\\" not in screenshot
+            and PurePosixPath(screenshot).suffix.lower() in _IMAGE_SUFFIXES):
         raise ExtensionManagerError(
             f"Extension {ident!r} has an invalid screenshot filename.")
+    # Both only speed up the cards: a bad one is dropped, never the
+    # extension.
+    thumb = raw.get("thumb")
+    if thumb is not None and not _safe_image_name(thumb):
+        thumb = None
+    screenshot_sha = raw.get("screenshot_sha")
+    if not (isinstance(screenshot_sha, str)
+            and _SHOT_SHA_RE.fullmatch(screenshot_sha)):
+        screenshot_sha = None
     updated_at = raw.get("updated_at")
     if updated_at is not None and not isinstance(updated_at, str):
         raise ExtensionManagerError(
@@ -143,6 +166,8 @@ def _parse_extension(raw: object) -> Extension:
         tags=tuple(tags),
         screenshot=screenshot,
         updated_at=updated_at,
+        thumb=thumb,
+        screenshot_sha=screenshot_sha,
     )
 
 
@@ -268,31 +293,33 @@ def is_reviewed(extension: Extension, reviewed: dict[str, dict]) -> bool:
             and str(entry.get("sha256", "")).lower() == extension.sha256)
 
 
+# ``os.path`` below, not ``Path.exists``/``is_file``: up to Python 3.13 those
+# RAISE on what cannot be read, and one unreadable extension folder kept the
+# whole manager from opening (#1152).
+
 def _managed_target(ident: str) -> tuple[Path, bool]:
     root = user_plugins_dir()
     folder = root / ident
     flat = root / f"{ident}.py"
-    if folder.exists():
+    if os.path.lexists(folder):
         if folder.is_symlink():
             return folder, False
         metadata = folder / "extension.json"
-        if not folder.is_dir() or not metadata.is_file():
+        if not os.path.isdir(folder) or not os.path.isfile(metadata):
             return folder, False
         try:
             data = json.loads(metadata.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             return folder, False
         return folder, isinstance(data, dict) and data.get("id") == ident
-    if flat.exists():
-        if flat.is_symlink():
-            return flat, False
+    if os.path.lexists(flat):
         return flat, False
     return folder, True
 
 
 def installed_info(ident: str) -> dict | None:
     target, managed = _managed_target(ident)
-    if not target.exists() or not managed or target.is_file():
+    if not managed or not os.path.isdir(target):
         return None
     try:
         data = json.loads((target / "extension.json").read_text(
@@ -353,7 +380,7 @@ def restart_required(ident: str, startup_state: dict[str, dict]) -> bool:
 
 def installation_conflict(ident: str) -> bool:
     target, managed = _managed_target(ident)
-    return target.exists() and not managed
+    return os.path.lexists(target) and not managed
 
 
 def uninstall_extension(ident: str) -> None:
@@ -382,7 +409,7 @@ def _python_fingerprint(path: Path) -> tuple[str | None, frozenset[str]]:
             data = data[len(b"\xef\xbb\xbf"):]
         data = data.replace(b"\r\n", b"\n").replace(b"\r", b"\n")
         return hashlib.sha256(data).hexdigest()
-    if path.is_file():
+    if os.path.isfile(path):
         return digest(path), frozenset()
     modules = frozenset(
         p.relative_to(path).as_posix() for p in path.rglob("*.py")
@@ -425,10 +452,10 @@ def manual_copies(ident: str, package: Path,
         if (path.name.startswith(("_", ".")) or path.is_symlink()
                 or path.name in (ident, f"{ident}.py")):
             continue
-        if path.is_dir():
-            managed = (path / "extension.json").is_file()
+        if os.path.isdir(path):
+            managed = os.path.isfile(path / "extension.json")
             if ((managed and path not in retired_paths)
-                    or not (path / "__init__.py").is_file()):
+                    or not os.path.isfile(path / "__init__.py")):
                 continue
         elif path.suffix != ".py":
             continue
@@ -469,11 +496,14 @@ def _example_entries() -> list[tuple[Path, str, str, str]]:
     out = []
     # A single ``x.py`` or a package ``x/__init__.py`` — a bigger
     # extension (CAM, PR #132) is a folder, and the loader takes both.
-    entries = sorted(folder.iterdir()) if folder.is_dir() else []
+    try:
+        entries = sorted(folder.iterdir())
+    except OSError:
+        entries = []
     for path in entries:
-        if path.suffix == ".py" and path.is_file():
+        if path.suffix == ".py" and os.path.isfile(path):
             src = path
-        elif path.is_dir() and (path / "__init__.py").is_file():
+        elif os.path.isfile(path / "__init__.py"):
             src = path / "__init__.py"
         else:
             continue
@@ -543,11 +573,22 @@ def bundled_extensions() -> list[Extension]:
     return out
 
 
+def _unreadable(path: Path) -> bool:
+    try:
+        os.listdir(path)
+    except OSError:
+        return True
+    return False
+
+
 def hand_installed_plugins() -> list[Path]:
     """Plugins in the user folder that the manager did not install: a
     package folder without ``extension.json`` or a loose ``x.py``. Until
     0.5.8 copying the folder by hand was the only way to install one, so
-    every extension a user had then shows up here."""
+    every extension a user had then shows up here. A folder this user cannot
+    read counts too, whoever put it there: nothing else can be said about
+    it, and setting it aside is a rename in the user's own folder, which
+    works and is the way out without administrator rights (#1152)."""
     try:
         candidates = sorted(user_plugins_dir().iterdir())
     except OSError:
@@ -556,9 +597,10 @@ def hand_installed_plugins() -> list[Path]:
     for path in candidates:
         if path.name.startswith(("_", ".")):
             continue                      # __pycache__, set-aside copies
-        if path.is_dir():
-            if ((path / "extension.json").is_file()
-                    or not (path / "__init__.py").is_file()):
+        if os.path.isdir(path):
+            if not _unreadable(path) and (
+                    os.path.isfile(path / "extension.json")
+                    or not os.path.isfile(path / "__init__.py")):
                 continue
         elif path.suffix != ".py":
             continue
@@ -646,7 +688,14 @@ def install_extension(extension: Extension,
     root.mkdir(parents=True, exist_ok=True)
     keep_disabled = (target.is_dir()
                      and (target / ".disabled").is_file())
-    stage = Path(tempfile.mkdtemp(prefix=f".{extension.id}-", dir=root))
+    # Not tempfile.mkdtemp: its 0o700 becomes, on Windows since Python 3.12.4,
+    # a private ACL that admits only SYSTEM, the Administrators and the
+    # owner — and this folder IS the installed extension. From a run as
+    # administrator the owner is the Administrators group, so the same user
+    # running normally later could not read it (#1152). A plain mkdir
+    # inherits the permissions of the user's plugin folder.
+    stage = root / f".{extension.id}-{uuid.uuid4().hex}"
+    stage.mkdir()
     backup = root / f".{extension.id}-backup-{uuid.uuid4().hex}"
     try:
         if archive_data is None:            # a bundled package folder

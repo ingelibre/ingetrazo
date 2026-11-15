@@ -186,6 +186,24 @@ def test_theme_choice_applies_at_once(settings_file):
         theme.apply_theme(app, theme.DARK)
 
 
+def test_slate_is_offered_and_applies(settings_file):
+    from views import theme
+    app = QApplication.instance()
+    before = theme.saved_theme()
+    try:
+        win = _Win()
+        dlg = PreferencesDialog(win)
+        assert dlg._theme.findData(theme.SLATE) >= 0
+        dlg._theme.setCurrentIndex(dlg._theme.findData(theme.SLATE))
+        dlg.accept()
+        assert theme.saved_theme() == theme.SLATE
+        assert "QPushButton" in app.styleSheet()
+    finally:
+        theme.save_theme(before)
+        theme.apply_theme(app, theme.DARK)
+    assert app.styleSheet() == ""
+
+
 def test_the_3d_mouse_page_shows_the_device_live(settings_file, monkeypatch):
     """Nobody on the team has a SpaceMouse: the page shows the six numbers
     as the device sends them and how IngeTrazo reads them, so an owner can
@@ -222,3 +240,26 @@ def test_the_tool_cursor_is_chosen_in_preferences(settings_file):
     assert _fresh(settings_file).value("General/cursor_style") == "crosshair"
     assert applied == [True]
     assert PreferencesDialog(win)._cursor_style.currentData() == "crosshair"
+
+
+def test_the_graphics_server_is_asked_only_where_there_is_a_choice(
+        settings_file, monkeypatch):
+    """Wayland or X11: Linux. On Windows the row spoke of KDE (#1179)."""
+    from PySide6.QtWidgets import QLabel
+    assert prefs_mod.graphics_server_applies("linux")
+    assert not prefs_mod.graphics_server_applies("win32")
+    assert not prefs_mod.graphics_server_applies("darwin")
+
+    def rows(dlg):
+        return [w.text() for w in dlg.findChildren(QLabel)]
+
+    monkeypatch.setattr(prefs_mod, "graphics_server_applies", lambda: True)
+    dlg = PreferencesDialog(_Win())
+    assert "Graphics server:" in rows(dlg)
+    dlg.close()
+    monkeypatch.setattr(prefs_mod, "graphics_server_applies", lambda: False)
+    dlg = PreferencesDialog(_Win())
+    assert "Graphics server:" not in rows(dlg)
+    assert dlg._platform.isHidden()
+    dlg.accept()                       # saving still goes through the box
+    assert _fresh(settings_file).value("general/platform", "auto") == "auto"

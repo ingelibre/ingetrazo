@@ -66,6 +66,12 @@ _DEFAULTS_NOTE = (
     "they are.")
 
 
+def graphics_server_applies(platform: str | None = None) -> bool:
+    """Whether choosing the display server means anything here: on Linux."""
+    import sys
+    return (platform or sys.platform).startswith("linux")
+
+
 class PreferencesDialog(QDialog):
     def __init__(self, window) -> None:
         super().__init__(window)
@@ -89,9 +95,14 @@ class PreferencesDialog(QDialog):
         self._lang.setCurrentIndex(max(0, self._lang.findData(pending)))
         form.addRow(tr("Language:"), self._lang)
 
-        from views.theme import DARK, LIGHT, SYSTEM, saved_theme
+        from views.theme import (CAMPBELL, DARK, LIGHT, SAND, SLATE,
+                                 SOLARIZED, STUDIO, SYSTEM, saved_theme)
         self._theme = QComboBox()
-        for key, label in ((DARK, tr("Dark")), (LIGHT, tr("Light")),
+        for key, label in ((DARK, tr("Dark")), (SLATE, tr("Slate")),
+                           (STUDIO, tr("Studio")), (SOLARIZED, tr("Solarized")),
+                           (CAMPBELL, tr("Campbell")),
+                           (LIGHT, tr("Light")),
+                           (SAND, tr("Sand")),
                            (SYSTEM, tr("Same as the system"))):
             self._theme.addItem(label, key)
         self._theme.setCurrentIndex(max(0, self._theme.findData(
@@ -192,6 +203,23 @@ class PreferencesDialog(QDialog):
             str(st.value("section/ask_name", "1")) != "0")
         form.addRow("", self._ask_section)
 
+        self._hover_picture = QCheckBox(tr(
+            "Show a picture of the project on hover over its tab"))
+        self._hover_picture.setChecked(
+            str(st.value("tabs/hover_picture", "1")) != "0")
+        form.addRow("", self._hover_picture)
+
+        from core.update_check import auto_enabled, store_managed
+        self._check_updates = QCheckBox(tr("Check for new versions at startup"))
+        self._check_updates.setToolTip(tr(
+            "Once a day, IngeTrazo asks GitHub for the latest version number. "
+            "Nothing about you or your files is sent."))
+        self._check_updates.setChecked(auto_enabled(st))
+        # Into the form, or nowhere: setVisible(True) while it had no
+        # parent yet showed it for an instant as a window of its own.
+        if not store_managed():
+            form.addRow("", self._check_updates)
+
         # A new document starts with the 1.70 m scale figure; someone who
         # models parts for a 3D printer starts on an empty sheet (#221).
         self._scale_figure = QCheckBox(tr(
@@ -240,6 +268,38 @@ class PreferencesDialog(QDialog):
             msaa_now if msaa_now in (0, 2, 4, 8) else 4)))
         form.addRow(tr("Anti-aliasing (MSAA):"), self._msaa)
 
+        # Soft sun shadows (#1281): off by default, they cost the graphics
+        # card more on every frame while the sun casts shadows.
+        from views.viewport import SOFT_SHADOW_SPREAD
+        row = QHBoxLayout()
+        self._soft_shadows = QCheckBox(tr("Soft sun shadows"))
+        self._soft_shadows.setToolTip(tr(
+            "Shadow edges that soften away from what casts them, as in "
+            "daylight. They cost the graphics card more while the sun casts "
+            "shadows."))
+        row.addWidget(self._soft_shadows)
+        self._soft_level = QComboBox()
+        for level, label in ((1, "Slight"), (2, "Moderate"), (3, "Strong")):
+            self._soft_level.addItem(tr(label), level)
+        try:
+            soft_now = int(st.value("display/soft_shadows", 0))
+        except (TypeError, ValueError):
+            soft_now = 0
+        try:
+            level_now = int(st.value("display/soft_shadows_level", 2))
+        except (TypeError, ValueError):
+            level_now = 2
+        if soft_now in SOFT_SHADOW_SPREAD:
+            level_now = soft_now
+        self._soft_level.setCurrentIndex(max(0, self._soft_level.findData(
+            level_now if level_now in SOFT_SHADOW_SPREAD else 2)))
+        self._soft_shadows.setChecked(soft_now in SOFT_SHADOW_SPREAD)
+        self._soft_shadows.toggled.connect(self._soft_level.setEnabled)
+        self._soft_level.setEnabled(self._soft_shadows.isChecked())
+        row.addWidget(self._soft_level)
+        row.addStretch()
+        form.addRow("", row)
+
         from views.icons import TOOLBAR_ICON_SIZES, toolbar_icon_px
         self._icon_px = QComboBox()
         for px, label in TOOLBAR_ICON_SIZES:
@@ -278,7 +338,15 @@ class PreferencesDialog(QDialog):
             "125 % / 150 % display scale the viewport stutters; X11 "
             "(XWayland) draws smoothly and stays crisp. Takes effect at the "
             "next start."))
-        form.addRow(tr("Graphics server:"), self._platform)
+        # Wayland or X11 is a question only Linux asks: on Windows and
+        # macOS the row spoke of KDE and XWayland to someone with neither
+        # (#1179). The box is still made — reading and saving go through
+        # it — only not shown.
+        if graphics_server_applies():
+            form.addRow(tr("Graphics server:"), self._platform)
+        else:
+            self._platform.setParent(general)
+            self._platform.hide()
 
         # The Rust engine (core._native): on by default, read
         # once at start. Greyed out in a build that does not carry it.
@@ -899,6 +967,8 @@ class PreferencesDialog(QDialog):
         self._backup.setChecked(True)
         self._undo_steps.setValue(200)
         self._ask_section.setChecked(True)
+        self._hover_picture.setChecked(True)
+        self._check_updates.setChecked(True)
         self._scale_figure.setChecked(True)
         pick(self._figure, sf.DEFAULT_PICK)
         self._invert.setChecked(False)
@@ -906,6 +976,8 @@ class PreferencesDialog(QDialog):
         self._look_sens.setValue(DEFAULT_LOOK_SENSITIVITY)
         pick(self._cursor_style, "tool")
         pick(self._msaa, 4)
+        self._soft_shadows.setChecked(False)
+        pick(self._soft_level, 2)
         pick(self._icon_px, default_toolbar_icon_px())
         pick(self._ext_menus, "auto")
         pick(self._platform, AUTO)
@@ -1010,6 +1082,10 @@ class PreferencesDialog(QDialog):
         _gs.set_value("backup", "1" if self._backup.isChecked() else "0", st)
         st.setValue("section/ask_name",
                     "1" if self._ask_section.isChecked() else "0")
+        st.setValue("tabs/hover_picture",
+                    "1" if self._hover_picture.isChecked() else "0")
+        from core.update_check import KEY_AUTO
+        st.setValue(KEY_AUTO, "1" if self._check_updates.isChecked() else "0")
         st.setValue("new_document/scale_figure",
                     "1" if self._scale_figure.isChecked() else "0")
         self._save_figure(st)
@@ -1022,6 +1098,7 @@ class PreferencesDialog(QDialog):
         if self._rust.isEnabled() and rust != str(
                 _gs.value(_native.SETTING, _native.DEFAULT, st)):
             _gs.set_value(_native.SETTING, rust, st)
+            _native.chosen_by_user(st)
             QMessageBox.information(
                 self, tr("Rust engine"),
                 tr("Restart IngeTrazo to switch the engine."))
@@ -1082,6 +1159,17 @@ class PreferencesDialog(QDialog):
                 # Void the FBO size so the next paint rebuilds it at the new
                 # sample count (the rebuild happens with the context current).
                 vp._fbo_size = None
+                update = getattr(vp, "update", None)
+                if callable(update):
+                    update()
+
+        level = int(self._soft_level.currentData())
+        soft = level if self._soft_shadows.isChecked() else 0
+        st.setValue("display/soft_shadows", soft)
+        st.setValue("display/soft_shadows_level", level)
+        for vp in viewports:
+            if getattr(vp, "_soft_shadows", None) != soft:
+                vp._soft_shadows = soft
                 update = getattr(vp, "update", None)
                 if callable(update):
                     update()

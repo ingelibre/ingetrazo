@@ -9,14 +9,19 @@
 
 use numpy::{PyArray1, PyArray2, PyReadonlyArray2, PyReadonlyArray3, PyReadonlyArray1};
 use pyo3::prelude::*;
+use pyo3::types::PyBytes;
 
 mod boxes;
+mod earcut;
 mod facegeom;
+mod facesview;
 mod gltape;
 mod hlr;
 mod instances;
+mod jsondoc;
 mod occlusion;
 mod parity;
+mod visible;
 mod weld;
 
 #[pymodule]
@@ -30,10 +35,14 @@ fn ingetrazo_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(face_geometry, m)?)?;
     m.add_function(wrap_pyfunction!(qt_vector_probe, m)?)?;
     m.add_function(wrap_pyfunction!(weld_points, m)?)?;
+    m.add_function(wrap_pyfunction!(json_mesh_blocks, m)?)?;
     m.add_function(wrap_pyfunction!(boxes_near_px, m)?)?;
     m.add_function(wrap_pyfunction!(points_near_px, m)?)?;
     m.add_function(wrap_pyfunction!(segment_distances, m)?)?;
     m.add_function(wrap_pyfunction!(nearest_within, m)?)?;
+    m.add_function(wrap_pyfunction!(visible_parts, m)?)?;
+    m.add_function(wrap_pyfunction!(earcut_indices, m)?)?;
+    m.add_function(wrap_pyfunction!(faces_view, m)?)?;
     m.add_class::<GlReplay>()?;
     m.add_class::<InstanceProto>()?;
     m.add_class::<InstanceSet>()?;
@@ -429,6 +438,14 @@ fn segment_distances<'py>(py: Python<'py>, ax: PyReadonlyArray1<'py, f64>,
     Ok(PyArray1::from_vec(py, out))
 }
 
+/// ``flat`` (3 values a row) as an (N,3) array, without a Vec per row: making
+/// those was most of what a big mesh held the interpreter for (#1092).
+fn flat3<'py, T: numpy::Element>(py: Python<'py>, flat: Vec<T>) -> PyResult<Bound<'py, PyArray2<T>>> {
+    let n = flat.len() / 3;
+    use numpy::PyArrayMethods;
+    PyArray1::from_vec(py, flat).reshape([n, 3])
+}
+
 /// QVector3D's own arithmetic on each row of ``v`` (N,3) float32, for the
 /// start-up check that ``hypot`` is this Qt's: ``(length (N,), normalized
 /// (N,3), plane u (N,3), plane v (N,3))`` — core.triangulate.plane_axes.
@@ -442,18 +459,23 @@ fn qt_vector_probe<'py>(
     let h = hypot_of(hypot)?;
     let v = v.as_array();
     let n = v.shape()[0];
-    let (mut ln, mut nz, mut pu, mut pv) = (Vec::with_capacity(n), Vec::new(), Vec::new(), Vec::new());
-    for i in 0..n {
-        let x = facegeom::V3(v[[i, 0]], v[[i, 1]], v[[i, 2]]);
-        ln.push(facegeom::length(x, h));
-        let m = facegeom::normalized(x, h);
-        nz.push(vec![m.0, m.1, m.2]);
-        let (a, b) = facegeom::plane_axes(x, h);
-        pu.push(vec![a.0, a.1, a.2]);
-        pv.push(vec![b.0, b.1, b.2]);
-    }
-    Ok((PyArray1::from_vec(py, ln), PyArray2::from_vec2(py, &nz)?,
-        PyArray2::from_vec2(py, &pu)?, PyArray2::from_vec2(py, &pv)?))
+    // With the interpreter let go: the bakes of a big model run side by side,
+    // one of these for each (#1092).
+    let (ln, nz, pu, pv) = py.detach(|| {
+        let mut ln = Vec::with_capacity(n);
+        let (mut nz, mut pu, mut pv) = (Vec::with_capacity(3 * n), Vec::with_capacity(3 * n), Vec::with_capacity(3 * n));
+        for i in 0..n {
+            let x = facegeom::V3(v[[i, 0]], v[[i, 1]], v[[i, 2]]);
+            ln.push(facegeom::length(x, h));
+            let m = facegeom::normalized(x, h);
+            nz.extend_from_slice(&[m.0, m.1, m.2]);
+            let (a, b) = facegeom::plane_axes(x, h);
+            pu.extend_from_slice(&[a.0, a.1, a.2]);
+            pv.extend_from_slice(&[b.0, b.1, b.2]);
+        }
+        (ln, nz, pu, pv)
+    });
+    Ok((PyArray1::from_vec(py, ln), flat3(py, nz)?, flat3(py, pu)?, flat3(py, pv)?))
 }
 
 /// views.viewport._face_geometry for every face of a mesh given as arrays:
@@ -482,86 +504,78 @@ fn face_geometry<'py>(
     use rayon::prelude::*;
     let h = hypot_of(hypot)?;
     let p = pos.as_array();
-    let pts: Vec<facegeom::V3> = (0..p.shape()[0])
-        .map(|i| facegeom::V3(p[[i, 0]], p[[i, 1]], p[[i, 2]])).collect();
-    let nv = pts.len() as i64;
-    let corners: Vec<u32> = corners.as_array().iter().map(|&c| {
-        if c < 0 || c >= nv { u32::MAX } else { c as u32 }
-    }).collect();
-    if corners.iter().any(|&c| c == u32::MAX) {
-        return Err(pyo3::exceptions::PyValueError::new_err("corner out of range"));
-    }
-    let sizes = ring_sizes.as_array().to_vec();
-    let counts = ring_counts.as_array().to_vec();
-    // Each face's first ring, and each ring's first corner.
-    let mut ring_start = Vec::with_capacity(sizes.len() + 1);
-    let mut acc = 0usize;
-    for &s in &sizes {
+    let corners = corners.as_array();
+    let sizes = ring_sizes.as_array();
+    let counts = ring_counts.as_array();
+    let done = py.detach(|| -> Result<_, &'static str> {
+        let pts: Vec<facegeom::V3> = (0..p.shape()[0])
+            .map(|i| facegeom::V3(p[[i, 0]], p[[i, 1]], p[[i, 2]])).collect();
+        let nv = pts.len() as i64;
+        let corners: Vec<u32> = corners.iter().map(|&c| {
+            if c < 0 || c >= nv { u32::MAX } else { c as u32 }
+        }).collect();
+        if corners.iter().any(|&c| c == u32::MAX) {
+            return Err("corner out of range");
+        }
+        // Each face's first ring, and each ring's first corner.
+        let mut ring_start = Vec::with_capacity(sizes.len() + 1);
+        let mut acc = 0usize;
+        for &s in sizes.iter() {
+            ring_start.push(acc);
+            acc += s as usize;
+        }
         ring_start.push(acc);
-        acc += s as usize;
-    }
-    ring_start.push(acc);
-    if acc != corners.len() {
-        return Err(pyo3::exceptions::PyValueError::new_err("ring sizes"));
-    }
-    let mut face_ring = Vec::with_capacity(counts.len() + 1);
-    let mut r = 0usize;
-    for &c in &counts {
+        if acc != corners.len() {
+            return Err("ring sizes");
+        }
+        let mut face_ring = Vec::with_capacity(counts.len() + 1);
+        let mut r = 0usize;
+        for &c in counts.iter() {
+            face_ring.push(r);
+            r += c as usize;
+        }
         face_ring.push(r);
-        r += c as usize;
-    }
-    face_ring.push(r);
-    if r != sizes.len() {
-        return Err(pyo3::exceptions::PyValueError::new_err("ring counts"));
-    }
-    let geoms: Vec<facegeom::FaceGeom> = py.detach(|| {
-        (0..counts.len()).into_par_iter().map(|f| {
+        if r != sizes.len() {
+            return Err("ring counts");
+        }
+        let geoms: Vec<facegeom::FaceGeom> = (0..counts.len()).into_par_iter().map(|f| {
             let rings: Vec<&[u32]> = (face_ring[f]..face_ring[f + 1])
                 .map(|k| &corners[ring_start[k]..ring_start[k + 1]]).collect();
             facegeom::face_geometry(&pts, &rings, h, compensated_sum)
-        }).collect()
+        }).collect();
+        let nf = geoms.len();
+        let mut normal = Vec::with_capacity(3 * nf);
+        let mut ln = Vec::with_capacity(nf);
+        let mut cen = Vec::with_capacity(3 * nf);
+        let mut tris = Vec::new();
+        let mut tri_face = Vec::new();
+        let mut unit = Vec::with_capacity(3 * nf);
+        let mut tris_u = Vec::new();
+        let mut tri_face_u = Vec::new();
+        for (f, g) in geoms.into_iter().enumerate() {
+            unit.extend_from_slice(&[g.unit.0, g.unit.1, g.unit.2]);
+            for t in g.tris_unit.as_ref().unwrap_or(&g.tris) {
+                tris_u.extend_from_slice(&t[..]);
+                tri_face_u.push(f as u32);
+            }
+            normal.extend_from_slice(&[g.normal.0, g.normal.1, g.normal.2]);
+            ln.push(g.ln);
+            match g.centroid {
+                Some(c) => cen.extend_from_slice(&[c.0, c.1, c.2]),
+                None => cen.extend_from_slice(&[f32::NAN; 3]),
+            }
+            for t in g.tris {
+                tris.extend_from_slice(&t[..]);
+                tri_face.push(f as u32);
+            }
+        }
+        Ok((normal, ln, cen, tris, tri_face, unit, tris_u, tri_face_u))
     });
-    let nf = geoms.len();
-    let mut normal = Vec::with_capacity(nf);
-    let mut ln = Vec::with_capacity(nf);
-    let mut cen = Vec::with_capacity(nf);
-    let mut tris = Vec::new();
-    let mut tri_face = Vec::new();
-    let mut unit = Vec::with_capacity(nf);
-    let mut tris_u = Vec::new();
-    let mut tri_face_u = Vec::new();
-    for (f, g) in geoms.into_iter().enumerate() {
-        unit.push(vec![g.unit.0, g.unit.1, g.unit.2]);
-        for t in g.tris_unit.as_ref().unwrap_or(&g.tris) {
-            tris_u.push(t.to_vec());
-            tri_face_u.push(f as u32);
-        }
-        normal.push(vec![g.normal.0, g.normal.1, g.normal.2]);
-        ln.push(g.ln);
-        cen.push(match g.centroid {
-            Some(c) => vec![c.0, c.1, c.2],
-            None => vec![f32::NAN; 3],
-        });
-        for t in g.tris {
-            tris.push(t.to_vec());
-            tri_face.push(f as u32);
-        }
-    }
-    let tris_arr = if tris.is_empty() {
-        PyArray2::zeros(py, [0, 3], false)
-    } else {
-        PyArray2::from_vec2(py, &tris)?
-    };
-    let normal_arr = if nf == 0 { PyArray2::zeros(py, [0, 3], false) } else { PyArray2::from_vec2(py, &normal)? };
-    let cen_arr = if nf == 0 { PyArray2::zeros(py, [0, 3], false) } else { PyArray2::from_vec2(py, &cen)? };
-    let unit_arr = if nf == 0 { PyArray2::zeros(py, [0, 3], false) } else { PyArray2::from_vec2(py, &unit)? };
-    let tris_u_arr = if tris_u.is_empty() {
-        PyArray2::zeros(py, [0, 3], false)
-    } else {
-        PyArray2::from_vec2(py, &tris_u)?
-    };
-    Ok((normal_arr, PyArray1::from_vec(py, ln), cen_arr, tris_arr, PyArray1::from_vec(py, tri_face),
-        unit_arr, tris_u_arr, PyArray1::from_vec(py, tri_face_u)))
+    let (normal, ln, cen, tris, tri_face, unit, tris_u, tri_face_u) =
+        done.map_err(pyo3::exceptions::PyValueError::new_err)?;
+    Ok((flat3(py, normal)?, PyArray1::from_vec(py, ln), flat3(py, cen)?, flat3(py, tris)?,
+        PyArray1::from_vec(py, tri_face), flat3(py, unit)?, flat3(py, tris_u)?,
+        PyArray1::from_vec(py, tri_face_u)))
 }
 
 /// core.lazy_mesh.weld (Mesh.bulk_weld on an empty mesh): ``pos`` (N,3)
@@ -577,11 +591,53 @@ fn weld_points<'py>(
 ) -> PyResult<(Bound<'py, PyArray2<f32>>, Bound<'py, PyArray1<i64>>,
                Bound<'py, PyArray1<i64>>)> {
     let p = pos.as_array();
-    let pts: Vec<[f32; 3]> = (0..p.shape()[0]).map(|i| [p[[i, 0]], p[[i, 1]], p[[i, 2]]]).collect();
-    let (vpos, ids, origin) = py.detach(|| weld::weld(&pts, scale, tol2));
-    let rows: Vec<Vec<f32>> = vpos.iter().map(|v| v.to_vec()).collect();
-    let arr = if rows.is_empty() { PyArray2::zeros(py, [0, 3], false) } else { PyArray2::from_vec2(py, &rows)? };
-    Ok((arr, PyArray1::from_vec(py, ids), PyArray1::from_vec(py, origin)))
+    let (flat, ids, origin) = py.detach(|| {
+        let pts: Vec<[f32; 3]> = (0..p.shape()[0]).map(|i| [p[[i, 0]], p[[i, 1]], p[[i, 2]]]).collect();
+        let (vpos, ids, origin) = weld::weld(&pts, scale, tol2);
+        let flat: Vec<f32> = vpos.iter().flatten().copied().collect();
+        (flat, ids, origin)
+    });
+    Ok((flat3(py, flat)?, PyArray1::from_vec(py, ids), PyArray1::from_vec(py, origin)))
+}
+
+/// `formats.igz._parse_native`'s kernel: ``(the document without its mesh
+/// arrays, [(pos (N,3) float64, flags, curves, layers, layer names, ring
+/// sizes, rings per face, face → attrs, attrs, faces with several holes), …])``,
+/// or ``None`` when the document is one for the old parser (jsondoc.rs).
+#[pyfunction]
+#[allow(clippy::type_complexity)]
+fn json_mesh_blocks<'py>(py: Python<'py>, doc: &Bound<'py, PyAny>) -> PyResult<Option<(Bound<'py, PyBytes>, Vec<Bound<'py, pyo3::types::PyTuple>>)>> {
+    use numpy::PyArrayMethods;
+    use pyo3::types::{PyByteArray, PyByteArrayMethods, PyBytesMethods};
+    let d: &[u8] = if let Ok(b) = doc.cast::<PyBytes>() {
+        b.as_bytes()
+    } else {
+        // SAFETY: the caller's own buffer, which nobody touches meanwhile.
+        unsafe { doc.cast::<PyByteArray>()?.as_bytes() }
+    };
+    let Ok((text, blocks)) = py.detach(|| jsondoc::mesh_blocks(d)) else {
+        return Ok(None);
+    };
+    let mut out = Vec::with_capacity(blocks.len());
+    for b in blocks {
+        let n = b.pos.len() / 3;
+        let pos = PyArray1::from_vec(py, b.pos).reshape([n, 3])?;
+        let names: Vec<Bound<'py, PyBytes>> = b.layer_names.iter().map(|x| PyBytes::new(py, x)).collect();
+        let attrs: Vec<Bound<'py, PyBytes>> = b.attrs.iter().map(|x| PyBytes::new(py, x)).collect();
+        out.push(pyo3::types::PyTuple::new(py, [
+            pos.into_any(),
+            PyArray1::from_vec(py, b.flags).into_any(),
+            PyArray1::from_vec(py, b.curves).into_any(),
+            PyArray1::from_vec(py, b.layers).into_any(),
+            pyo3::types::PyList::new(py, names)?.into_any(),
+            PyArray1::from_vec(py, b.sizes).into_any(),
+            PyArray1::from_vec(py, b.counts).into_any(),
+            PyArray1::from_vec(py, b.face_attr).into_any(),
+            pyo3::types::PyList::new(py, attrs)?.into_any(),
+            PyArray1::from_vec(py, b.multi).into_any(),
+        ])?);
+    }
+    Ok(Some((PyBytes::new(py, &text), out)))
 }
 
 /// A recorded run of OpenGL calls, replayed through the current context's
@@ -1211,4 +1267,222 @@ fn occlusion_span<'py>(
     let (a, x, y) = (rows3(&v0.as_array()), rows3(&e1.as_array()), rows3(&e2.as_array()));
     let (nb, doubt) = py.detach(|| occlusion::span(o, &d, &b, &l, &a, &x, &y));
     Ok((PyArray1::from_vec(py, nb), PyArray1::from_vec(py, doubt)))
+}
+
+/// Each face of a view cut down to what nothing in front of it covers —
+/// `core.vista_caras._visible_parts` (see `visible.rs`). The rings of all
+/// faces come flat: `coords` (M, 2), `ring_off` (R + 1) the start of each
+/// ring in `coords`, `face_off` (n + 1) the first ring of each face; `near`
+/// (n, 3) the nearness planes, `opaque` (n,). Back the same way: the
+/// visible rings of every face, in the faces' order. `progress(done)` is
+/// called between batches of faces with how far the pass has come (0 to 1);
+/// if it raises, the pass stops there and the error comes out.
+#[pyfunction]
+#[pyo3(signature = (coords, ring_off, face_off, near, opaque, min_area, progress=None, batch=64, grid=visible::GRID))]
+#[allow(clippy::too_many_arguments)]
+fn visible_parts<'py>(
+    py: Python<'py>,
+    coords: PyReadonlyArray2<'py, f64>,
+    ring_off: PyReadonlyArray1<'py, i64>,
+    face_off: PyReadonlyArray1<'py, i64>,
+    near: PyReadonlyArray2<'py, f64>,
+    opaque: PyReadonlyArray1<'py, bool>,
+    min_area: f64,
+    progress: Option<Bound<'py, PyAny>>,
+    batch: usize,
+    grid: f64,
+) -> PyResult<(Bound<'py, PyArray2<f64>>, Bound<'py, PyArray1<i64>>, Bound<'py, PyArray1<i64>>)> {
+    let c = coords.as_array();
+    let ro = ring_off.as_slice()?;
+    let fo = face_off.as_slice()?;
+    let nr = near.as_array();
+    let op = opaque.as_slice()?;
+    let n = fo.len().saturating_sub(1);
+    let mut faces: Vec<visible::Face> = Vec::with_capacity(n);
+    for i in 0..n {
+        let mut rings = Vec::new();
+        for r in fo[i] as usize..fo[i + 1] as usize {
+            let (a, b) = (ro[r] as usize, ro[r + 1] as usize);
+            rings.push((a..b).map(|k| [c[[k, 0]], c[[k, 1]]]).collect::<Vec<[f64; 2]>>());
+        }
+        faces.push(visible::Face {
+            rings,
+            near: [nr[[i, 0]], nr[[i, 1]], nr[[i, 2]]],
+            opaque: op[i],
+        });
+    }
+    let setup = visible::Setup::new(&faces, min_area, grid);
+    let batch = batch.max(1);
+    let mut out: Vec<Vec<visible::Ring>> = Vec::with_capacity(n);
+    let mut start = 0usize;
+    while start < n {
+        if let Some(p) = &progress {
+            p.call1((start as f64 / n as f64,))?;
+        }
+        let end = (start + batch).min(n);
+        let got = py.detach(|| setup.chunk(start..end));
+        out.extend(got);
+        start = end;
+    }
+    let mut flat: Vec<Vec<f64>> = Vec::new();
+    let mut ring_out: Vec<i64> = vec![0];
+    let mut face_out: Vec<i64> = vec![0];
+    for rings in &out {
+        for r in rings {
+            for p in r {
+                flat.push(vec![p[0], p[1]]);
+            }
+            ring_out.push(flat.len() as i64);
+        }
+        face_out.push(ring_out.len() as i64 - 1);
+    }
+    let arr = if flat.is_empty() { PyArray2::zeros(py, [0, 2], false) } else { PyArray2::from_vec2(py, &flat)? };
+    Ok((arr, PyArray1::from_vec(py, ring_out), PyArray1::from_vec(py, face_out)))
+}
+
+/// `core.triangulate.earcut` (see `earcut.rs`): `points` (N, 2), the outer
+/// ring then each hole's points, `holes` where each hole starts; the
+/// triangles as an (M, 3) array of indices into `points`, the same ones
+/// the Python port gives, in the same order.
+#[pyfunction]
+#[pyo3(name = "earcut", signature = (points, holes=Vec::new()))]
+fn earcut_indices<'py>(
+    py: Python<'py>,
+    points: PyReadonlyArray2<'py, f64>,
+    holes: Vec<usize>,
+) -> PyResult<Bound<'py, PyArray2<i64>>> {
+    let p = points.as_array();
+    let pts: Vec<[f64; 2]> = (0..p.shape()[0]).map(|k| [p[[k, 0]], p[[k, 1]]]).collect();
+    let tris = py.detach(|| earcut::earcut(&pts, &holes));
+    let rows: Vec<Vec<i64>> = tris.iter().map(|t| vec![t[0] as i64, t[1] as i64, t[2] as i64]).collect();
+    if rows.is_empty() {
+        Ok(PyArray2::zeros(py, [0, 3], false))
+    } else {
+        Ok(PyArray2::from_vec2(py, &rows)?)
+    }
+}
+
+/// The geometry of every face of a view (see `facesview.rs`), for
+/// `core.vista_caras.view_faces`. In: the faces' rings flat in their
+/// meshes' coordinates — `coords` (M, 3), `ring_off` (R + 1), `face_off`
+/// (n + 1) — `xf_index` (n,) the placement of each face into `xforms`
+/// (K, 16, row major; -1: none), the camera (`perspective`, and `cam`: a
+/// parallel one's eye, right, up, fwd — 12 numbers — or a perspective
+/// one's clip matrix row major, eye and picture scale — 21) and the
+/// section's kept side `(nx, ny, nz, c)` or none. Out, per face: `kept`
+/// (0: skipped, 1: a caster only, 2: drawn), `back`, `normal` (n, 3),
+/// `near` (n, 3), `depth` (n,); the world rings flat (`w_coords`,
+/// `w_ring_off`, `w_face_off`) and the drawn rings flat with their depths
+/// (`p_coords`, `p_depth`, `p_ring_off`, `p_face_off`).
+#[pyfunction]
+#[pyo3(signature = (coords, ring_off, face_off, xf_index, xforms, perspective, cam, section=None))]
+#[allow(clippy::too_many_arguments, clippy::type_complexity)]
+fn faces_view<'py>(
+    py: Python<'py>,
+    coords: PyReadonlyArray2<'py, f64>,
+    ring_off: PyReadonlyArray1<'py, i64>,
+    face_off: PyReadonlyArray1<'py, i64>,
+    xf_index: PyReadonlyArray1<'py, i64>,
+    xforms: PyReadonlyArray2<'py, f64>,
+    perspective: bool,
+    cam: Vec<f64>,
+    section: Option<Vec<f64>>,
+) -> PyResult<(
+    Bound<'py, PyArray1<i8>>, Bound<'py, PyArray1<bool>>, Bound<'py, PyArray2<f64>>,
+    Bound<'py, PyArray2<f64>>, Bound<'py, PyArray1<f64>>,
+    Bound<'py, PyArray2<f64>>, Bound<'py, PyArray1<i64>>, Bound<'py, PyArray1<i64>>,
+    Bound<'py, PyArray2<f64>>, Bound<'py, PyArray1<f64>>, Bound<'py, PyArray1<i64>>, Bound<'py, PyArray1<i64>>,
+)> {
+    use pyo3::exceptions::PyValueError;
+    let c = coords.as_array();
+    let ro = ring_off.as_slice()?;
+    let fo = face_off.as_slice()?;
+    let xi = xf_index.as_slice()?;
+    let xf = xforms.as_array();
+    let n = fo.len().saturating_sub(1);
+    let mut faces: Vec<facesview::FaceIn> = Vec::with_capacity(n);
+    for i in 0..n {
+        let mut rings = Vec::new();
+        for r in fo[i] as usize..fo[i + 1] as usize {
+            let (a, b) = (ro[r] as usize, ro[r + 1] as usize);
+            rings.push((a..b).map(|k| [c[[k, 0]], c[[k, 1]], c[[k, 2]]]).collect::<Vec<[f64; 3]>>());
+        }
+        faces.push(facesview::FaceIn { rings, xform: if xi[i] < 0 { None } else { Some(xi[i] as usize) } });
+    }
+    let mats: Vec<[[f64; 4]; 4]> = (0..xf.shape()[0])
+        .map(|k| {
+            let mut m = [[0.0f64; 4]; 4];
+            for r in 0..4 {
+                for q in 0..4 {
+                    m[r][q] = xf[[k, r * 4 + q]];
+                }
+            }
+            m
+        })
+        .collect();
+    let v3 = |at: usize| [cam[at], cam[at + 1], cam[at + 2]];
+    let camera = if perspective {
+        if cam.len() != 21 {
+            return Err(PyValueError::new_err("perspective camera: 21 numbers"));
+        }
+        let mut m = [[0.0f64; 4]; 4];
+        for r in 0..4 {
+            for q in 0..4 {
+                m[r][q] = cam[r * 4 + q];
+            }
+        }
+        facesview::Camera::Perspective { m, eye: v3(16), scale: [cam[19], cam[20]] }
+    } else {
+        if cam.len() != 12 {
+            return Err(PyValueError::new_err("parallel camera: 12 numbers"));
+        }
+        facesview::Camera::Parallel { eye: v3(0), right: v3(3), up: v3(6), fwd: v3(9) }
+    };
+    let sec = section.map(|s| facesview::Section { n: [s[0], s[1], s[2]], c: s[3] });
+    let out = py.detach(|| facesview::faces_view(&faces, &mats, &camera, sec.as_ref()));
+    let mut kept = vec![0i8; n];
+    let mut back = vec![false; n];
+    let mut normal = vec![vec![0.0f64; 3]; n];
+    let mut near = vec![vec![f64::NAN; 3]; n];
+    let mut depth = vec![f64::NAN; n];
+    let mut wc: Vec<Vec<f64>> = Vec::new();
+    let mut wro: Vec<i64> = vec![0];
+    let mut wfo: Vec<i64> = vec![0];
+    let mut pc: Vec<Vec<f64>> = Vec::new();
+    let mut pd: Vec<f64> = Vec::new();
+    let mut pro: Vec<i64> = vec![0];
+    let mut pfo: Vec<i64> = vec![0];
+    for (i, f) in out.iter().enumerate() {
+        if let Some(f) = f {
+            kept[i] = if f.drawn.is_empty() { 1 } else { 2 };
+            back[i] = f.back;
+            normal[i] = f.normal.to_vec();
+            near[i] = f.near.to_vec();
+            depth[i] = f.depth;
+            for r in &f.world {
+                for p in r {
+                    wc.push(p.to_vec());
+                }
+                wro.push(wc.len() as i64);
+            }
+            for (r, d) in f.drawn.iter().zip(&f.depths) {
+                for (p, &z) in r.iter().zip(d) {
+                    pc.push(p.to_vec());
+                    pd.push(z);
+                }
+                pro.push(pc.len() as i64);
+            }
+        }
+        wfo.push(wro.len() as i64 - 1);
+        pfo.push(pro.len() as i64 - 1);
+    }
+    let arr2 = |py: Python<'py>, v: &Vec<Vec<f64>>, w: usize| -> PyResult<Bound<'py, PyArray2<f64>>> {
+        if v.is_empty() { Ok(PyArray2::zeros(py, [0, w], false)) } else { Ok(PyArray2::from_vec2(py, v)?) }
+    };
+    Ok((
+        PyArray1::from_vec(py, kept), PyArray1::from_vec(py, back), arr2(py, &normal, 3)?,
+        arr2(py, &near, 3)?, PyArray1::from_vec(py, depth),
+        arr2(py, &wc, 3)?, PyArray1::from_vec(py, wro), PyArray1::from_vec(py, wfo),
+        arr2(py, &pc, 2)?, PyArray1::from_vec(py, pd), PyArray1::from_vec(py, pro), PyArray1::from_vec(py, pfo),
+    ))
 }

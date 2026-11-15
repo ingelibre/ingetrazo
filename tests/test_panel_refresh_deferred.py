@@ -56,6 +56,11 @@ def test_hidden_material_swatches_wait_until_shown(win, monkeypatch):
     """Its tab not shown, the Materials panel scanned every face paint
     after each edit anyway (~0.15 s on the plant of #158)."""
     panel = win.tray.materials
+    # The refresh the opening asked for (300 ms) is not the edits': on a
+    # fast machine it was still pending when the test looked.
+    pending = getattr(win.tray, "_mat_refresh_timer", None)
+    if pending is not None:
+        pending.stop()
     panel.hide()
     calls = _count_calls(monkeypatch, panel, "refresh_in_model")
     for _ in range(3):

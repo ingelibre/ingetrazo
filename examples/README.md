@@ -1,5 +1,7 @@
 # Ejemplos
 
+[Bahasa Indonesia](README.id.md)
+
 Cuatro documentos reales, dibujados con IngeTrazo para la remodelación de la
 plaza de Yanque, distrito de Chichas (Arequipa, 2026) por Marco Sumari Tellez. Ábrelos
 con **Archivo ▸ Abrir** (o doble clic si tienes IngeTrazo instalado); tres
@@ -25,6 +27,15 @@ vacías para purgar, escenas y una lámina con la leyenda. Es el que siguen el
 manual [`docs/layers.md`](../docs/layers.md) y sus capturas. Lo genera
 `capas-prueba.py` (`python examples/capas-prueba.py` desde la carpeta de
 IngeTrazo), que lo deja como nuevo si lo has modificado al probar.
+
+## Pestañas, escenas y vistas
+
+`pestanas-prueba.igz` — una casa sencilla con cuatro escenas (Exterior,
+Planta, Alzado, Lateral) que salen como pestañas bajo la vista; sirve
+también para probar las distribuciones de vistas. Es el que sigue el manual
+[`docs/project-tabs.md`](../docs/project-tabs.md). Lo genera
+`pestanas-prueba.py` (`python examples/pestanas-prueba.py` desde la carpeta
+de IngeTrazo).
 
 ## Extensiones
 

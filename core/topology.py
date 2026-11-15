@@ -26,6 +26,13 @@ _PLANAR_TOLERANCE = 1e-3
 # Two points closer than this weld together; also the gate for deciding a
 # crossing is real (skew lines whose closest approach exceeds it don't touch).
 _SPLIT_TOLERANCE = 1e-4
+# How far a corner must stand off the line through the others for the loop to
+# span a plane, whatever its size. The 1e-6 cross-product floor alone is an
+# area: a 0.5 mm x 1 mm half of a 1 mm square has 5e-7 and was read as "every
+# vertex in one line", so drawing a line across that square deleted its face
+# (#1294). A corner 0.01 mm off the line is a real one: the weld tolerance is
+# ten times that.
+_LINE_GAP = 1e-5
 
 
 def _key(p: QVector3D) -> tuple[float, float, float]:
@@ -121,11 +128,58 @@ def _cycle_adjacency(edges, ka, kb, key=_key) -> dict:
     return adj
 
 
+class CycleGraph:
+    """The edge graph ``find_cycles_through`` searches, kept for a whole
+    plan instead of built again for each segment of the stroke: a circle
+    of 32 sides drawn on a solid of 6000 edges walked them 32 times.
+
+    Unlike :func:`_cycle_adjacency` it holds every edge, the segment asked
+    about included; the search leaves that one out as it goes (``direct``
+    in :func:`_smallest_cycle`). ``add`` and ``remove`` follow the plan's
+    edge list, so each node's neighbours stay in that list's order — the
+    order the search's answer depends on."""
+
+    __slots__ = ("adj", "_key")
+
+    def __init__(self, edges, key=_key) -> None:
+        self.adj: dict = {}
+        self._key = key
+        for edge in edges:
+            self.add(edge)
+
+    def add(self, edge) -> None:
+        ea, eb = self._key(edge.a), self._key(edge.b)
+        if ea == eb:
+            return
+        self.adj.setdefault(ea, []).append((eb, edge.b))
+        self.adj.setdefault(eb, []).append((ea, edge.a))
+
+    def remove(self, edge) -> bool:
+        """Take ``edge`` out. False if it was not found as it was added —
+        the graph is then not to be trusted and the caller drops it."""
+        ea, eb = self._key(edge.a), self._key(edge.b)
+        if ea == eb:
+            return True
+        for u, v, pos in ((ea, eb, edge.b), (eb, ea, edge.a)):
+            row = self.adj.get(u, ())
+            for i, (v_key, v_pos) in enumerate(row):
+                if v_pos is pos and v_key == v:
+                    del row[i]
+                    break
+            else:
+                return False
+        return True
+
+
 def _smallest_cycle(adj, a, b, ka, kb, max_len: int = 32,
-                    skip=frozenset()):
+                    skip=frozenset(), direct: bool = False):
     """Breadth-first search from ``b`` to ``a`` over ``adj``, never entering a
     node of ``skip`` — the same search ``adj`` built without the edges that
-    touch those nodes would make (adjacency lists keep the edge order)."""
+    touch those nodes would make (adjacency lists keep the edge order).
+
+    ``direct``: ``adj`` still holds segment ``a``–``b`` itself (a
+    :class:`CycleGraph`), and the search must not take it — the step from
+    ``b`` straight to ``a`` is the only place it could."""
     if ka not in adj or kb not in adj:
         return None
     if skip and not (any(v not in skip for v, _p in adj[ka])
@@ -142,6 +196,8 @@ def _smallest_cycle(adj, a, b, ka, kb, max_len: int = 32,
             found = True
             break
         for v_key, v_pos in adj.get(u, ()):
+            if direct and u == kb and v_key == ka:
+                continue
             if v_key not in parent and v_key not in skip:
                 parent[v_key] = u
                 parent_pos[v_key] = v_pos
@@ -161,6 +217,13 @@ def _smallest_cycle(adj, a, b, ka, kb, max_len: int = 32,
     return path
 
 
+def _spans_a_plane(cross: float, reach: float) -> bool:
+    """Whether a corner stands off a line: ``cross`` is |u x v|, ``reach`` the
+    longer of |u| and |v|, so ``cross / reach`` is the corner's distance from
+    the line. What passed the 1e-6 floor passes as before."""
+    return cross > 1e-6 or cross > _LINE_GAP * reach
+
+
 def is_planar(vertices: list[QVector3D], tolerance: float = _PLANAR_TOLERANCE) -> bool:
     """Whether ``vertices`` all lie on a common plane within ``tolerance``."""
     n = len(vertices)
@@ -171,7 +234,8 @@ def is_planar(vertices: list[QVector3D], tolerance: float = _PLANAR_TOLERANCE) -
         # (collinear) triangles so we don't try to face them.
         e1 = vertices[1] - vertices[0]
         e2 = vertices[2] - vertices[0]
-        return QVector3D.crossProduct(e1, e2).length() > 1e-6
+        cross = QVector3D.crossProduct(e1, e2).length()
+        return _spans_a_plane(cross, max(e1.length(), e2.length()))
 
     # The plane is the one through the first vertex and the two that span
     # the widest triangle with it, worked out in double precision. It used
@@ -194,7 +258,7 @@ def is_planar(vertices: list[QVector3D], tolerance: float = _PLANAR_TOLERANCE) -
         if size > best:
             best, nx, ny, nz = size, cx, cy, cz
     length = math.sqrt(best)
-    if length <= 1e-6:
+    if not _spans_a_plane(length, math.sqrt(ux * ux + uy * uy + uz * uz)):
         return False                      # every vertex in one line
     nx, ny, nz = nx / length, ny / length, nz / length
     return all(abs(nx * x + ny * y + nz * z) <= tolerance for x, y, z in rel)
@@ -413,8 +477,20 @@ def loop_inside_face(mother: Face, loop: list[QVector3D],
         return False
     if outside_holes:
         loop2 = [proj(v) for v in loop]
+        lx = [q[0] for q in loop2]
+        ly = [q[1] for q in loop2]
+        lx0, lx1, ly0, ly1 = min(lx), max(lx), min(ly), max(ly)
+        gap = 1e-6
         for hole in mother.holes:
             hole2 = [proj(p) for p in hole]
+            # An opening whose box stands clear of the loop's neither holds
+            # a corner of it, nor has one inside it, nor crosses it.
+            hx = [q[0] for q in hole2]
+            if min(hx) > lx1 + gap or max(hx) < lx0 - gap:
+                continue
+            hy = [q[1] for q in hole2]
+            if min(hy) > ly1 + gap or max(hy) < ly0 - gap:
+                continue
             if any(_strictly_inside_2d(q, hole2) for q in loop2):
                 return False
             # A loop that wraps or straddles the hole without a corner in
@@ -434,6 +510,19 @@ def _loops_cross_2d(a: list, b: list) -> bool:
         return (q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0])
 
     eps = 1e-12
+    # Two outlines whose boxes stand apart have no edges that cross: said
+    # before every edge of one is tried against every edge of the other (a
+    # circle drawn on a face with sixty openings was 60 000 pairs).
+    if a and b:
+        gap = 1e-9
+        ax = [p[0] for p in a]
+        bx = [p[0] for p in b]
+        if min(ax) > max(bx) + gap or min(bx) > max(ax) + gap:
+            return False
+        ay = [p[1] for p in a]
+        by = [p[1] for p in b]
+        if min(ay) > max(by) + gap or min(by) > max(ay) + gap:
+            return False
     for i in range(len(a)):
         p1, p2 = a[i], a[(i + 1) % len(a)]
         for j in range(len(b)):
@@ -472,7 +561,12 @@ def hole_merged_with_loop(face: Face, loop: list[QVector3D]):
             out.append(xy)
         return out
 
+    # An opening whose box stands clear of the loop's shares no stretch of
+    # rim with it (the clearance is a hundred times the welding distance).
+    loop_box = _points_box(loop)
     for idx, hole in enumerate(face.holes):
+        if _boxes_apart(loop_box, _points_box(hole), _BOX_PAD):
+            continue
         h3 = refine_loop_with_points(list(hole), loop)
         l3 = refine_loop_with_points(list(loop), hole)
         shared = set(_loop_edges(h3)) & set(_loop_edges(l3))
@@ -490,6 +584,45 @@ def hole_merged_with_loop(face: Face, loop: list[QVector3D]):
     return None
 
 
+def _points_box(pts) -> tuple:
+    """``(lox, loy, loz, hix, hiy, hiz)`` of a list of points."""
+    xyz = [p.toTuple() for p in pts]
+    if not xyz:
+        return (0.0,) * 6
+    xs, ys, zs = zip(*xyz)
+    return (min(xs), min(ys), min(zs), max(xs), max(ys), max(zs))
+
+
+def _boxes_apart(a: tuple, b: tuple, pad: float) -> bool:
+    """Whether two boxes are further than ``pad`` from each other."""
+    return (a[0] > b[3] + pad or b[0] > a[3] + pad
+            or a[1] > b[4] + pad or b[1] > a[4] + pad
+            or a[2] > b[5] + pad or b[2] > a[5] + pad)
+
+
+def _box_holds(face, px, py, pz, pad) -> bool:
+    """Whether the point is inside the box of ``face``'s outer loop, grown
+    by ``pad``."""
+    lox = loy = loz = math.inf
+    hix = hiy = hiz = -math.inf
+    for v in face.vertices:          # a mesh face or a plain one
+        x, y, z = v.toTuple()
+        if x < lox:
+            lox = x
+        if x > hix:
+            hix = x
+        if y < loy:
+            loy = y
+        if y > hiy:
+            hiy = y
+        if z < loz:
+            loz = z
+        if z > hiz:
+            hiz = z
+    return (lox - pad <= px <= hix + pad and loy - pad <= py <= hiy + pad
+            and loz - pad <= pz <= hiz + pad)
+
+
 def find_containing_face(
     faces: Iterable[Face], loop: list[QVector3D], exclude: Optional[Face] = None
 ) -> Optional[Face]:
@@ -503,8 +636,15 @@ def find_containing_face(
     ``exclude`` skips the face being added.
     """
     best: Optional[Face] = None
+    # A face that holds the loop strictly inside it holds the loop's first
+    # corner inside its box: the rest are passed over without working out
+    # their plane (every face of the model is asked, at every face drawn).
+    px, py, pz = (loop[0].x(), loop[0].y(), loop[0].z()) if loop else (0, 0, 0)
+    pad = _PLANAR_TOLERANCE + 1e-6 * max(abs(px), abs(py), abs(pz), 1.0)
     for face in faces:
         if face is exclude:
+            continue
+        if loop and not _box_holds(face, px, py, pz, pad):
             continue
         if loop_inside_face(face, loop, outside_holes=True):
             if best is None or len(face.vertices) < len(best.vertices):
@@ -652,7 +792,8 @@ def refine_loop_with_points(
 
 
 def classify_push_edge(
-    face: Face, a: QVector3D, b: QVector3D, faces: Iterable[Face]
+    face: Face, a: QVector3D, b: QVector3D, faces: Iterable[Face],
+    memo: Optional[dict] = None,
 ) -> tuple[str, Optional[Face]]:
     """How a push/pull side edge ``a``–``b`` of ``face`` attaches to the model.
 
@@ -667,20 +808,35 @@ def classify_push_edge(
     vertex — the colinear-overlap case). Without this, a block flush against a
     wider wall reads its shared edge as ``free`` and the push becomes a stray
     free extrusion that leaves the base as an internal partition.
+
+    ``memo`` (a dict the caller keeps while it asks about the edges of ONE
+    face against an unchanged model) remembers which faces are coplanar
+    with ``face`` and the edge set of each: a cap holed by sixty cylinders
+    has 2000 edges, and listing them again for each of the 32 edges of a
+    circle pushed on it was a third of the push.
     """
-    fn = face.normal()
+    if memo is None:
+        memo = {}
+    split = memo.get("split")
+    if split is None or split[0] is not face:
+        fn = face.normal()
+        coplanar, others = [], []
+        for g in faces:
+            if g is face:
+                continue
+            (coplanar if _faces_coplanar(fn, g.normal()) else others).append(g)
+        split = memo["split"] = (face, coplanar, others)
+        memo["edges"] = {}
+    _, coplanar, others = split
+    edges = memo["edges"]
     eset = frozenset((_key(a), _key(b)))
-    faces = list(faces)
-    for g in faces:
-        if g is face:
-            continue
-        if _faces_coplanar(fn, g.normal()) and (
-            eset in _face_all_edges(g) or _segment_on_face_boundary(a, b, g)
-        ):
+    for g in coplanar:
+        all_edges = edges.get(g)
+        if all_edges is None:
+            all_edges = edges[g] = _face_all_edges(g)
+        if eset in all_edges or _segment_on_face_boundary(a, b, g):
             return ("coplanar", g)
-    for s in faces:
-        if s is face or _faces_coplanar(fn, s.normal()):
-            continue
+    for s in others:
         if _segment_on_face_boundary(a, b, s):
             return ("perp", s)
     return ("free", None)
@@ -1086,7 +1242,7 @@ def _same_cycle(c1: list[QVector3D], c2: list[QVector3D]) -> bool:
 
 def find_cycles_through(
     edges: Iterable[Edge], a: QVector3D, b: QVector3D, max_results: int = 2,
-    key=None,
+    key=None, graph: Optional["CycleGraph"] = None,
 ) -> list[list[QVector3D]]:
     """Up to ``max_results`` distinct minimal cycles through segment ``a``–``b``.
 
@@ -1105,15 +1261,19 @@ def find_cycles_through(
     ka, kb = _key(a), _key(b)
     if ka == kb:
         return []
-    adj = _cycle_adjacency(edges, ka, kb, key)
-    first = _smallest_cycle(adj, a, b, ka, kb)
+    # ``graph`` is ``edges`` already laid out, by a caller that asks about
+    # one segment after another over the same list.
+    direct = graph is not None
+    adj = graph.adj if direct else _cycle_adjacency(edges, ka, kb, key)
+    first = _smallest_cycle(adj, a, b, ka, kb, direct=direct)
     if first is None:
         return []
     cycles = [first]
     if max_results >= 2:
         interior = {_key(v) for v in first} - {ka, kb}
         if interior:
-            second = _smallest_cycle(adj, a, b, ka, kb, skip=interior)
+            second = _smallest_cycle(adj, a, b, ka, kb, skip=interior,
+                                     direct=direct)
             if second is not None and not _same_cycle(second, first):
                 cycles.append(second)
     return cycles
@@ -1286,6 +1446,7 @@ def _maximal_holes(holes: list) -> list:
 
     areas = [area(h) for h in holes]
     keep = []
+    apart = None
     for i, h in enumerate(holes):
         # The plane normal from the hole itself (any 3 non-collinear points).
         nrm = QVector3D.crossProduct(h[1] - h[0], h[2] - h[0])
@@ -1293,14 +1454,56 @@ def _maximal_holes(holes: list) -> list:
             keep.append(h)
             continue
         nrm = nrm.normalized()
-        nested = any(
-            j != i and areas[j] > areas[i] + 1e-6
-            and _loop_inside_loop(h, holes[j], nrm)
-            for j in range(len(holes))
-        )
+        nested = False
+        bigger = [j for j in range(len(holes))
+                  if j != i and areas[j] > areas[i] + 1e-6]
+        if bigger:
+            apart = apart or _HolesApart(holes)
+            nested = any(_loop_inside_loop(h, holes[j], nrm)
+                         for j in apart.maybe_around(i, nrm, bigger))
         if not nested:
             keep.append(h)
     return keep
+
+
+class _HolesApart:
+    """Which of a face's holes cannot hold a given one, without asking
+    :func:`_loop_inside_loop` — which triangulates the inner loop in Python
+    to say no, 15 000 times on the plant of #158 (half of saving it), most
+    of them for holes side by side in a plate.
+
+    That test looks at a point of the inner loop's hull, seen along ``nrm``,
+    in the outer loop's outline. Everything seen along ``nrm`` moves by at
+    most its distance to the inner loop's plane, so the answer is no when the
+    two loops' boxes are further apart than twice the largest such distance
+    — plus a margin well over the float32 rounding of that test."""
+
+    def __init__(self, holes) -> None:
+        import numpy as np
+        sizes = [len(h) for h in holes]
+        self.pts = None
+        if not all(sizes):
+            return                       # nothing to say about an empty loop
+        self.pts = np.array([(p.x(), p.y(), p.z()) for h in holes for p in h],
+                            dtype=np.float64).reshape(-1, 3)
+        starts = np.cumsum([0] + sizes[:-1])
+        self.first = starts
+        self.lo = np.minimum.reduceat(self.pts, starts, axis=0)
+        self.hi = np.maximum.reduceat(self.pts, starts, axis=0)
+        self.margin = 1e-3 + 1e-5 * float(np.abs(self.pts).max())
+
+    def maybe_around(self, i: int, nrm: QVector3D, others: list) -> list:
+        """Those of ``others`` that may hold hole ``i``, in order."""
+        import numpy as np
+        if self.pts is None:
+            return others
+        n = np.array((nrm.x(), nrm.y(), nrm.z()), dtype=np.float64)
+        off = float(np.abs((self.pts - self.pts[self.first[i]]) @ n).max())
+        gap = 2.0 * off + self.margin
+        at = np.asarray(others)
+        away = ((self.lo[at] > self.hi[i] + gap)
+                | (self.hi[at] < self.lo[i] - gap)).any(axis=1)
+        return at[~away].tolist()
 
 
 def _g_inside_a_hole(face: Face, loop: list[QVector3D]) -> bool:
@@ -1589,7 +1792,128 @@ def resolve_tjunctions(mesh, max_iter: int = 1000) -> None:
     sweep_tjunctions(mesh)
 
 
-def fold_nonplanar_faces(mesh, tolerance: float = _PLANAR_TOLERANCE) -> list:
+#: The largest warped face folded by the exact search below (O(n³)); a
+#: bigger one keeps earcut's pieces.
+_FOLD_DP_MAX = 96
+
+
+def _flat_on_neighbour(mesh, face, tri) -> bool:
+    """Whether a fold piece of ``face`` would have all three corners on
+    another face — lying in that face's plane, doubling it."""
+    common = None
+    for p in tri:
+        v = mesh.vertex_at(p)
+        if v is None:
+            return False
+        at = mesh.faces_at(v)
+        common = set(at) if common is None else common & at
+        common.discard(face)
+        if not common:
+            return False
+    return bool(common)
+
+
+def _fold_pieces(mesh, face) -> list | None:
+    """The triangles of the least total area that cover ``face`` (a
+    polygon without holes) with no piece flat on another face — the
+    smoothest fold, as a lowered curve makes a ruled ramp. Every piece
+    faces the way the warped face does: one turned over would cut through
+    the solid (a box's corner moved through it onto the far corner) and
+    must stay refused. ``None`` when no such triangulation exists."""
+    pts = [QVector3D(p) for p in face.vertices]
+    n = len(pts)
+    inf = float("inf")
+    facing = face.normal()
+
+    def area(i, k, j):
+        a, b, c = pts[i], pts[k], pts[j]
+        cross = QVector3D.crossProduct(b - a, c - a)
+        if QVector3D.dotProduct(cross, facing) <= 0.0:
+            return 0.0          # turned over: never a piece
+        return cross.length() * 0.5
+
+    cost = [[0.0] * n for _ in range(n)]
+    pick = [[-1] * n for _ in range(n)]
+    for gap in range(2, n):
+        for i in range(0, n - gap):
+            j = i + gap
+            best, at = inf, -1
+            for k in range(i + 1, j):
+                sub = cost[i][k] + cost[k][j]
+                if sub >= best:
+                    continue
+                tri_area = area(i, k, j)
+                if tri_area < 1e-12:
+                    continue
+                if _flat_on_neighbour(mesh, face, (pts[i], pts[k], pts[j])):
+                    continue
+                if sub + tri_area < best:
+                    best, at = sub + tri_area, k
+            cost[i][j], pick[i][j] = best, at
+    if cost[0][n - 1] == inf:
+        return None
+    out = []
+    stack = [(0, n - 1)]
+    while stack:
+        i, j = stack.pop()
+        if j - i < 2:
+            continue
+        k = pick[i][j]
+        out.append((pts[i], pts[k], pts[j]))
+        stack.append((i, k))
+        stack.append((k, j))
+    return out
+
+
+def _strip_triangles(face, moved: set):
+    """The warped ``face`` cut into a strip of triangles between its moved
+    and its unmoved corners, or ``None`` when that does not apply.
+
+    A move that lowers a curved edge onto the floor (#1294) leaves the top
+    face with a fixed back edge and the whole arc on the ground. Earcut
+    happily joins arc points to arc points, and those triangles, all on the
+    ground, merge into a flat piece lying over the floor: the join is then
+    refused as two faces overlapping. A strip uses, in every triangle, a
+    corner from each side — the ruled surface the drag shows.
+
+    Applies to a face with no holes whose corners, going round, are one run
+    of moved corners (position keys in ``moved``) and one run of unmoved
+    ones; every triangle must keep an area and face the way the face did.
+
+    The usual fold of a modeller: the unmoved side first, from the first moved
+    corner, then ONE fan from the last unmoved corner over every moved one
+    — a flat piece and a cone, not a fan from each end. Returns
+    ``(triangles, apex, rim)``: the fan's apex and the moved corners inside
+    the fan, whose fold edges may be soft (:func:`fold_nonplanar_faces`)."""
+    if face.holes:
+        return None
+    loop = face.vertices
+    n = len(loop)
+    flags = [_key(p) in moved for p in loop]
+    if n < 4 or all(flags) or not any(flags):
+        return None
+    starts = [i for i in range(n) if flags[i] and not flags[i - 1]]
+    if len(starts) != 1:
+        return None
+    i0 = starts[0]
+    order = [loop[(i0 + k) % n] for k in range(n)]
+    m = sum(flags)
+    a = order[:m]                    # moved, in loop order
+    b = order[m:][::-1]              # unmoved, against it: b[0] is next to a[0]
+    normal = face.normal()
+    tris = [(a[0], b[j + 1], b[j]) for j in range(len(b) - 1)]
+    tris += [(a[i], a[i + 1], b[-1]) for i in range(len(a) - 1)]
+    for tri in tris:
+        cross = QVector3D.crossProduct(tri[1] - tri[0], tri[2] - tri[0])
+        if (cross.length() < 1e-12
+                or QVector3D.dotProduct(cross, normal) <= 0.0):
+            return None
+    return ([tuple(QVector3D(p) for p in tri) for tri in tris],
+            QVector3D(b[-1]), [QVector3D(p) for p in a[1:-1]])
+
+
+def fold_nonplanar_faces(mesh, tolerance: float = _PLANAR_TOLERANCE,
+                         moved: set | None = None) -> list:
     """*Autofold*: split every face a move has warped out of its
     plane into planar pieces along fold edges.
 
@@ -1599,7 +1923,15 @@ def fold_nonplanar_faces(mesh, tolerance: float = _PLANAR_TOLERANCE) -> list:
     corner becomes exactly two triangles joined by one fold edge. Merging is
     confined to the pieces of the same source face, so a fold never dissolves
     into a coplanar neighbour across the original boundary. Returns the faces
-    that were folded (the originals, already removed from the mesh)."""
+    that were folded (the originals, already removed from the mesh).
+
+    ``moved``: the position keys the move left its vertices at. A face whose
+    corners are one run of moved and one run of unmoved ones folds as a
+    strip between the two (:func:`_strip_triangles`, #1294). Where the
+    moved corners run along a curve (an arc's segments), the fold edges of
+    its fan are soft, so the cone reads as one smooth surface, as the
+    curve's own wall did; the fold between the flat piece and the cone
+    stays a line."""
     folded = []
     for face in list(mesh.faces):
         pts = list(face.vertices)
@@ -1607,9 +1939,22 @@ def fold_nonplanar_faces(mesh, tolerance: float = _PLANAR_TOLERANCE) -> list:
             pts += list(hole)
         if len(pts) <= 3 or is_planar(pts, tolerance):
             continue
-        tris = face.triangulate()
+        strip = _strip_triangles(face, moved) if moved else None
+        tris = strip[0] if strip else face.triangulate()
+        soft = _curve_fan_edges(mesh, face, *strip[1:]) if strip else []
         if len(tris) < 2:
             continue
+        exact = False
+        if (not strip and not face.holes and len(face.loop) <= _FOLD_DP_MAX
+                and any(_flat_on_neighbour(mesh, face, t) for t in tris)):
+            # Earcut laid a piece flat on a neighbouring face (#1294): a
+            # curve lowered onto the one below it left three of its points
+            # in the floor's plane, the piece doubled the floor and the
+            # join guard refused the whole move. Fold so no piece does.
+            better = _fold_pieces(mesh, face)
+            if better:
+                tris = better
+                exact = True
         mesh.remove_face(face)
         pieces = {
             mesh.add_face([QVector3D(a), QVector3D(b), QVector3D(c)])
@@ -1632,8 +1977,24 @@ def fold_nonplanar_faces(mesh, tolerance: float = _PLANAR_TOLERANCE) -> list:
                     g = e.faces[0] if e.faces[1] is f else e.faces[1]
                     if g is f or g not in pieces:
                         continue
-                    if QVector3D.dotProduct(f.normal().normalized(),
-                                            g.normal().normalized()) > 0.999:
+                    if strip and not is_planar(f.vertices + g.vertices,
+                                               tolerance):
+                        # A strip's neighbours on a fine curve are within
+                        # the angle below yet not in one plane: merging
+                        # them pinched the result. Truly flat runs only.
+                        continue
+                    # The exact fold's fan of thin pieces turns a little at
+                    # each: merged on nearly parallel normals alone they made
+                    # "faces" millimetres out of their plane (#1294). Half
+                    # the tolerance: is_planar measures from a plane through
+                    # three corners, and which three depends on the merge
+                    # order. Earcut's pieces keep the old rule for now.
+                    if (QVector3D.dotProduct(f.normal().normalized(),
+                                             g.normal().normalized()) > 0.999
+                            and (not exact
+                                 or is_planar(list(f.vertices)
+                                              + list(g.vertices),
+                                              tolerance * 0.5))):
                         region = mesh.dissolve_edge(e)
                         if region is not None:
                             region.attrs = dict(face.attrs)
@@ -1644,8 +2005,33 @@ def fold_nonplanar_faces(mesh, tolerance: float = _PLANAR_TOLERANCE) -> list:
                             break
                 if merged:
                     break
+        for apex, rim in soft:
+            e = mesh.find_edge(mesh.vertex_at(apex), mesh.vertex_at(rim))
+            if e is not None and len(e.faces) == 2:
+                e.soft = True
         folded.append(face)
     return folded
+
+
+def _curve_fan_edges(mesh, face, apex, rim) -> list:
+    """The fan edges ``(apex, rim point)`` to soften: those reaching a rim
+    point that sits inside a curve — both of its sides along the face's
+    loop are segments of a curve (an arc or a circle, ``Edge.curve``). A
+    bent line of plain edges keeps its folds as lines."""
+    loop = face.loop
+    n = len(loop)
+    index = {_key(v.position): i for i, v in enumerate(loop)}
+    out = []
+    for p in rim:
+        i = index.get(_key(p))
+        if i is None:
+            continue
+        sides = (mesh.find_edge(loop[i - 1], loop[i]),
+                 mesh.find_edge(loop[i], loop[(i + 1) % n]))
+        if all(e is not None and getattr(e, "curve", None) is not None
+               for e in sides):
+            out.append((QVector3D(apex), QVector3D(p)))
+    return out
 
 
 def _box_grid(lo, hi):
@@ -1812,6 +2198,37 @@ _HEAL_FACE_CAP = 3000
 _BOX_PAD = 1e-2
 
 
+def _heal_partners(N, A, LO, HI) -> dict:
+    """``{i: rows}``: for each face, the smaller faces parallel to it whose
+    box lies inside its own — the only ones that can be lying on top of it.
+    Faces with none are left out.
+
+    The same test, asked for a block of faces at a time: asked face by
+    face it was four array passes over the whole model per face, and with
+    2000 faces that alone was a fifth of a second after every stroke."""
+    import numpy as np
+    out: dict = {}
+    n = len(A)
+    for start in range(0, n, 512):
+        rows = slice(start, min(start + 512, n))
+        # Parallel and smaller first: few pairs pass, and only those have
+        # their boxes compared.
+        ii, jj = np.nonzero((np.abs(N[rows] @ N.T) > 0.999)
+                            & (A[None, :] < A[rows, None]))
+        if not len(ii):
+            continue
+        gi = ii + start
+        ok = ((LO[jj] >= LO[gi] - _BOX_PAD).all(axis=1)
+              & (HI[jj] <= HI[gi] + _BOX_PAD).all(axis=1))
+        gi, jj = gi[ok], jj[ok]
+        if not len(gi):
+            continue
+        cuts = np.flatnonzero(np.diff(gi)) + 1
+        for block_i, block_j in zip(np.split(gi, cuts), np.split(jj, cuts)):
+            out[int(block_i[0])] = block_j
+    return out
+
+
 def _outer_boxes(faces):
     """``(lo, hi)``: per face, the bounding box of its outer loop."""
     import numpy as np
@@ -1906,6 +2323,7 @@ def heal_overlapping_faces(mesh, coverage: float = 0.5, partial=None,
     A = np.array([f.area() for f in snap], dtype=np.float64)
     LO, HI = _outer_boxes(snap)
     gone: set = set()
+    partners = _heal_partners(N, A, LO, HI)
     for i, face in enumerate(snap):
         a_face = A[i]
         if a_face < _SPLIT_TOLERANCE:
@@ -1917,9 +2335,7 @@ def heal_overlapping_faces(mesh, coverage: float = 0.5, partial=None,
         # inside the face sits inside its box too: on a flat plan every face
         # is coplanar with every other, and the box test is what keeps an
         # exploded DWG of 700 faces from testing them all (#491).
-        cand = np.flatnonzero((np.abs(N @ N[i]) > 0.999) & (A < a_face)
-                              & (LO >= LO[i] - _BOX_PAD).all(axis=1)
-                              & (HI <= HI[i] + _BOX_PAD).all(axis=1))
+        cand = partners.get(i, ())
         covered = 0.0
         for j in cand:
             g = snap[j]

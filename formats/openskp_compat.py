@@ -54,6 +54,28 @@ and the file did not open («implausible def entity count», #157). The
 words between layers and around their counts there; only 2019 files take
 the two extra bytes here.
 
+**Annotations in 2021+ (VFF) files** (#1226). The VFF reader's annotation
+handling lags the other ports in three ways. (1) A dimension drawn inside
+a group/component is returned among the MODEL-level dimensions with its
+endpoints still in the definition's local space (its connection names no
+instance to lift by), so it lands displaced from the geometry the import
+did transform. (2) The dimension's constraint axis (``5BD1``) is never
+read, and the frame fields are taken the wrong way round — ``5BCF`` is
+the plane's NORMAL and ``5BD0`` its X axis, as upstream's C++ port
+settled in openskp#481: the offset vector is ``(N × X) · offset`` for
+axis 1 and ``−X · offset`` for axis 2. Without the axis the importer
+guessed ``cross(normal, segment)``, which for most of a staircase's
+dimensions points out of the dimension plane entirely. (3) Text records
+(``55F0``) are not parsed at all, so leader texts vanish.
+:func:`resolve_vff_annotations` re-reads the two record kinds from the
+parse's own inputs (kept by wrapping ``_parse_dimensions``, the one
+place they meet), gives each dimension its axis, moves the
+definition-owned dimensions onto their definition (marked ``vff_owned``
+so the adapter places them per instance), and rebuilds the texts on
+their owning definition or the model root (marked ``vff_recovered``).
+A text whose connection type the reader cannot resolve (e.g. type 4)
+keeps its label position but no anchor.
+
 All patches are detected by BEHAVIOUR, not by version: once the upstream
 reader carries ``_connection_paths`` the first is left alone, the second
 only touches a face layer that is still a number, the anchor and list
@@ -82,13 +104,14 @@ def apply() -> bool:
         return False
     _applied = True
     layers = _keep_layer_table()
+    ann = _keep_vff_annotation_inputs()
     texts = _fix_anchored_texts(L)
     lists = _fix_definition_list_end(L)
     groups = _note_legacy_groups(L)
     kinds = _note_definition_kinds()
     tails = _fix_layer_tail_2019(L)
     return _fix_legacy_dimensions(L) or layers or texts or lists \
-        or groups or kinds or tails
+        or groups or kinds or tails or ann
 
 
 def _note_legacy_groups(L) -> bool:
@@ -177,6 +200,7 @@ def reset_group_definitions() -> None:
     """Forget the groups of the previous parse — call before parsing."""
     _parse_tables.groups = set()
     _parse_tables.kinds = False
+    _parse_tables.vff = None
 
 
 def _keep_layer_table() -> bool:
@@ -229,6 +253,270 @@ def resolve_face_layers(model) -> int:
             face.layer = "" if name in _DEFAULT_TAGS else name
             changed += 1
     return changed
+
+
+def _keep_vff_annotation_inputs() -> bool:
+    """Wrap ``openskp._core._parse_dimensions`` so the VFF annotation
+    records can be re-read after the parse: it is the one call that sees
+    the raw model bytes together with both resolution tables (vertex
+    positions and instance world transforms)."""
+    try:
+        from openskp import _core
+    except Exception:  # noqa: BLE001
+        return False
+    original = getattr(_core, "_parse_dimensions", None)
+    if original is None or getattr(original, "_keeps_vff", False):
+        return False
+
+    def _parse_dimensions(model_dat, id2pos, inst_world):
+        _parse_tables.vff = (model_dat, id2pos, inst_world)
+        return original(model_dat, id2pos, inst_world)
+
+    _parse_dimensions._keeps_vff = True
+    _core._parse_dimensions = _parse_dimensions
+    return True
+
+
+def _vff_point(block_payload, id2pos, inst_world):
+    """One connection point of a VFF annotation record — the pinned
+    reader's own resolution (``_parse_dimensions``' closure, which is not
+    importable): type 1 is a free point, anything else resolves the
+    ``520B → 53FC`` vertex reference, lifted by the named instance's
+    world transform when the reference carries one."""
+    from openskp import _core
+    blk = _core._tlv_find(_core._tlv_items(block_payload) or [], 0x5208)
+    if blk is None:
+        return None
+    sub = _core._tlv_items(blk) or []
+    typ = _core._tlv_find(sub, 0x5209)
+    typ = struct.unpack("<I", typ)[0] if typ and len(typ) == 4 else None
+    if typ == 1:
+        pos = _core._tlv_find(sub, 0x520A)
+        return struct.unpack("<3d", pos) if pos and len(pos) == 24 else None
+    ref = _core._tlv_find(sub, 0x520B)
+    f53fc = _core._tlv_find(_core._tlv_items(ref) or [], 0x53FC) \
+        if ref else None
+    fi = _core._tlv_items(f53fc) or [] if f53fc else []
+    vid = _core._tlv_find(fi, 0x53FD)
+    if not vid:
+        return None
+    local = id2pos.get(vid.hex())
+    if local is None:
+        return None
+    iid = _core._tlv_find(fi, 0x53FE)
+    if iid and len(iid) >= 1 and iid[0] > 0 and 1 + iid[0] <= len(iid):
+        world = inst_world.get(iid[1:1 + iid[0]].hex())
+        if world:
+            return _core.transform_point(local, world)
+    return local           # no instance named — the owner's local space
+
+
+def _vff_records(model_dat, marker):
+    """Yield ``(offset, fields)`` for each flat-TLV record starting with
+    ``marker`` whose body parses and is plausibly sized, in file order —
+    the pinned reader's scan shape, shared by dimensions and texts."""
+    from openskp import _core
+    i, n = 0, len(model_dat)
+    while True:
+        j = model_dat.find(marker, i)
+        if j < 0:
+            return
+        i = j + 1
+        if j + 6 > n:
+            continue
+        ln = struct.unpack_from("<I", model_dat, j + 2)[0]
+        if ln < 40 or j + 6 + ln > n:
+            continue
+        body = _core._tlv_items(model_dat[j + 6:j + 6 + ln])
+        if body is not None:
+            yield j, body
+
+
+def _vff_definition_spans(model_dat):
+    """``(start, end)`` byte spans of the file's ``7C15`` definitions, in
+    file order, located with the reader's own header machinery (a lone
+    ``F401`` wrapper, then the ``F901`` definition-list container). An
+    annotation record inside a span belongs to that definition; outside
+    every span it is model-level. ``[]`` when the shape is not found."""
+    from openskp import _core
+    try:
+        headers = _core._flat_headers(model_dat, 0, len(model_dat))
+        if len(headers) == 1 and headers[0][0] == "F401":
+            _, off, size = headers[0]
+            headers = _core._flat_headers(model_dat, off + 6, off + 6 + size)
+        for tag, off, size in headers:
+            if tag == "F901":
+                defs = _core._unwrap_definitions_container(
+                    model_dat, off, size)
+                if defs:
+                    return [(o, o + 6 + s) for _t, o, s in defs]
+                return []
+    except Exception:  # noqa: BLE001 — a shape we do not know: no owners
+        return []
+    return []
+
+
+def _vff_owner(spans, offset):
+    """Index of the innermost definition span holding ``offset``."""
+    best = None
+    for idx, (start, end) in enumerate(spans):
+        if start <= offset < end and (best is None
+                                      or end - start < spans[best][1]
+                                      - spans[best][0]):
+            best = idx
+    return best
+
+
+def _scan_vff_dimensions(model_dat, id2pos, inst_world):
+    """The file's ``5BCC`` dimension records that resolve, in file order,
+    each with the constraint axis (``5BD1``) the pinned reader drops."""
+    from openskp import _core
+    out = []
+    for offset, body in _vff_records(model_dat, b"\xcc\x5b"):
+        tags = [t for t, _ in body]
+        if 0x5BCD not in tags or 0x5BCE not in tags:
+            continue
+        a = _vff_point(_core._tlv_find(body, 0x5BCD), id2pos, inst_world)
+        b = _vff_point(_core._tlv_find(body, 0x5BCE), id2pos, inst_world)
+        if a is None or b is None:
+            continue
+        axis_raw = _core._tlv_find(body, 0x5BD1)
+        out.append({
+            "offset": offset, "a": a, "b": b,
+            "axis": struct.unpack("<I", axis_raw)[0]
+                    if axis_raw and len(axis_raw) == 4 else None,
+        })
+    return out
+
+
+def _scan_vff_texts(model_dat, id2pos, inst_world):
+    """The file's ``55F0`` text records, in file order. ``label_raw`` is
+    the stored ``55F5`` triple, whose space the caller settles (see
+    :func:`resolve_vff_annotations`)."""
+    from openskp import _core
+    out = []
+    for offset, body in _vff_records(model_dat, b"\xf0\x55"):
+        tags = [t for t, _ in body]
+        if 0x55F1 not in tags or 0x55F4 not in tags:
+            continue
+        raw = _core._tlv_find(body, 0x55F1)
+        text = raw.decode("utf-8", "replace").strip() if raw else ""
+        if not text:
+            continue
+        point = _vff_point(_core._tlv_find(body, 0x55F4),
+                           id2pos, inst_world)
+        label = _core._tlv_find(body, 0x55F5)
+        hidden = False
+        draw = _core._tlv_find(body, 0x07D0)
+        if draw:
+            flags = _core._tlv_find(_core._tlv_items(draw) or [], 0x07D3)
+            if flags:
+                hidden = bool(flags[0] & 0x01)
+        out.append({
+            "offset": offset, "text": text, "point": point,
+            "label_raw": struct.unpack("<3d", label)
+                         if label and len(label) == 24 else None,
+            "hidden": hidden,
+        })
+    return out
+
+
+def _vff_label_point(point, label_raw, bbox):
+    """Settle the space of a text's stored ``55F5`` triple. Writer-made
+    files store the label's absolute position; SketchUp itself stores it
+    relative to the anchor (the reporter's staircase: the absolute
+    reading puts both labels outside the model, the relative one lands
+    each beside its anchor). Prefer whichever lands inside the owner's
+    geometry bounds; when both or neither do, take the relative one —
+    a label near its anchor beats one outside the model."""
+    if label_raw is None:
+        return None
+    if point is None:
+        return label_raw
+    delta = tuple(p + d for p, d in zip(point, label_raw))
+    if bbox is None:
+        return delta
+    lo, hi = bbox
+
+    def inside(p):
+        return all(lo[k] - 1.0 <= p[k] <= hi[k] + 1.0 for k in range(3))
+    if inside(delta) == inside(label_raw):
+        return delta
+    return delta if inside(delta) else label_raw
+
+
+def resolve_vff_annotations(model) -> int:
+    """Repair the VFF annotations of the parse that built ``model`` (see
+    the module docstring): axis-tag the model dimensions, move the
+    definition-owned ones onto their definition, and rebuild the leader
+    texts the reader never parsed. Returns how many annotations were
+    touched; anything whose shape does not line up is left exactly as
+    the reader produced it."""
+    inputs = getattr(_parse_tables, "vff", None)
+    _parse_tables.vff = None
+    if not inputs:
+        return 0
+    model_dat, id2pos, inst_world = inputs
+    definitions = list((getattr(model, "definitions", None) or {}).values())
+    spans = _vff_definition_spans(model_dat)
+    # Span order is definition order only when the counts agree; without
+    # that, no ownership is assigned and everything stays model-level.
+    owners_known = len(spans) == len(definitions)
+    touched = 0
+
+    def owner_defn(offset, root):
+        idx = _vff_owner(spans, offset) if owners_known else None
+        return definitions[idx] if idx is not None else root
+
+    root = getattr(model, "root", None)
+
+    # Dimensions: the scan resolves with the reader's own logic, so its
+    # kept records line up 1:1, in order, with ``model.dimensions``. A
+    # count mismatch means the reader changed — leave its output alone.
+    model_dims = list(getattr(model, "dimensions", None) or [])
+    if model_dims and not any(getattr(d, "dimensions", None)
+                              for d in definitions):
+        scanned = _scan_vff_dimensions(model_dat, id2pos, inst_world)
+        if len(scanned) == len(model_dims):
+            moved = {}
+            for dm, rec in zip(model_dims, scanned):
+                dm.vff_axis = rec["axis"]
+                touched += 1
+                defn = owner_defn(rec["offset"], None)
+                if defn is not None:
+                    dm.vff_owned = True
+                    moved.setdefault(id(defn), (defn, []))[1].append(dm)
+            for defn, dims in moved.values():
+                defn.dimensions = list(getattr(defn, "dimensions", None)
+                                       or []) + dims
+            if moved:
+                gone = {id(dm) for _d, dims in moved.values() for dm in dims}
+                model.dimensions = [dm for dm in model_dims
+                                    if id(dm) not in gone]
+
+    # Texts: only when the reader produced none at all (its VFF text
+    # support arriving upstream retires this half on its own).
+    has_texts = bool(getattr(root, "texts", None)) or any(
+        getattr(d, "texts", None) for d in definitions)
+    if root is not None and not has_texts:
+        from openskp.model import TextEntity
+        for rec in _scan_vff_texts(model_dat, id2pos, inst_world):
+            defn = owner_defn(rec["offset"], root)
+            verts = (getattr(defn, "vertices", None) or {}).values()
+            bbox = None
+            if verts:
+                pts = [(v.x, v.y, v.z) for v in verts]
+                bbox = (tuple(min(p[k] for p in pts) for k in range(3)),
+                        tuple(max(p[k] for p in pts) for k in range(3)))
+            tx = TextEntity(
+                text=rec["text"], hidden=rec["hidden"],
+                point=rec["point"],
+                label_point=_vff_label_point(rec["point"],
+                                             rec["label_raw"], bbox))
+            tx.vff_recovered = True
+            defn.texts = list(getattr(defn, "texts", None) or []) + [tx]
+            touched += 1
+    return touched
 
 
 def _fix_legacy_dimensions(L) -> bool:

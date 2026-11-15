@@ -29,6 +29,8 @@ import math
 
 import numpy as np
 
+from core import progress as _progress
+
 #: Merge tolerance for the union of occluded intervals, in edge-parameter
 #: units — gaps smaller than this are drafting dust, not visibility.
 _T_EPS = 1e-6
@@ -71,9 +73,10 @@ def collect_geometry(scene, layers: bool = False):
 
     ``layers=True`` also returns, for every hard and soft edge, the layer
     its line is inked with on a sheet — its own, else its object's (the
-    insides of an object follow the object): ``(tris, hard, soft,
-    hard_layers, soft_layers)``."""
-    from core.group import world_mesh
+    insides of an object follow the object) — and the same for every
+    triangle, whose layer its section cut is inked and filled with:
+    ``(tris, hard, soft, hard_layers, soft_layers, tri_layers)``."""
+    from core.group import visible_placements, world_mesh
     from core.layers import DEFAULT_LAYER, layer_of
 
     tris: list = []
@@ -81,12 +84,17 @@ def collect_geometry(scene, layers: bool = False):
     soft: list = []          # (p0, p1, n_a, n_b) — n_b None for boundaries
     hard_l: list = []
     soft_l: list = []
+    tri_l: list = []
 
     def eat_mesh(mesh, visible=lambda _e: True, owner=DEFAULT_LAYER):
         for face in mesh.faces:
+            _progress.tick()
             if not visible(face):
                 continue
+            own = layer_of(face)
+            tag = own if own != DEFAULT_LAYER else owner
             for a, b, c in face.triangulate():
+                tri_l.append(tag)
                 tris.append(((a.x(), a.y(), a.z()),
                              (b.x(), b.y(), b.z()),
                              (c.x(), c.y(), c.z())))
@@ -118,11 +126,16 @@ def collect_geometry(scene, layers: bool = False):
     for g in scene.groups:
         if not scene.entity_visible(g) or getattr(g, "billboard", False):
             continue
-        mesh = (world_mesh(g) if g.xform is not None or g.children
-                else g.mesh)
-        eat_mesh(mesh, owner=layer_of(g))
+        if g.children:
+            mesh = world_mesh(g, visible_placements(scene, g))
+        else:
+            mesh = world_mesh(g) if g.xform is not None else g.mesh
+        # A face hidden inside a group (Edit ▸ Hide) leaves the group's
+        # chunk in the viewport; it leaves the sheet too.
+        eat_mesh(mesh, visible=lambda e: not scene.entity_hidden(e),
+                 owner=layer_of(g))
     if layers:
-        return tris, hard, soft, hard_l, soft_l
+        return tris, hard, soft, hard_l, soft_l, tri_l
     return tris, hard, soft
 
 
@@ -137,7 +150,7 @@ def collect_circles(scene) -> list:
     (Marco, 2026-09-20: «como que no reconoce el centro de un círculo»).
     The same curve on two faces (a hole and the pipe through it) is
     reported once."""
-    from core.group import iter_placements
+    from core.group import visible_placements
     from core.snap import curve_centers_of_face
 
     out: list = []
@@ -166,7 +179,7 @@ def collect_circles(scene) -> list:
     for g in scene.groups:
         if not scene.entity_visible(g) or getattr(g, "billboard", False):
             continue
-        for placed, m in iter_placements(g):
+        for placed, m in visible_placements(scene, g):
             eat(placed.mesh, m)
     return out
 
@@ -253,7 +266,47 @@ def clip_to_section(tris, hard, soft, plane, split_cuts: bool = False):
     return out_tris, out_hard, out_soft
 
 
-def section_loops(cut_edges, tol: float | None = None) -> list:
+def solid_depth(ring, tris, normal) -> float | None:
+    """How far the solid around section ring ``ring`` ((M, 3) world) runs
+    through the plane, square to it: from a point inside the ring, the
+    nearest of ``tris`` ((T, 3, 3), the solid's triangles) along
+    ``normal`` and the nearest against it, added. ``None`` when a ray finds
+    nothing (no point inside, an open solid)."""
+    ring = np.asarray(ring, dtype=np.float64)
+    T = np.asarray(tris, dtype=np.float64).reshape(-1, 3, 3)
+    if len(ring) < 3 or not len(T):
+        return None
+    n = np.asarray(normal, dtype=np.float64)
+    n = n / (np.linalg.norm(n) or 1.0)
+    # A point inside: the middle of the ring's longest chord through its
+    # centre would do for a convex ring; the centre itself for the usual
+    # rectangle of a beam or a stud.
+    origin = ring.mean(axis=0)
+    v0 = T[:, 0]
+    e1 = T[:, 1] - v0
+    e2 = T[:, 2] - v0
+    reach = []
+    for d in (n, -n):
+        # Moller-Trumbore, every triangle at once.
+        pv = np.cross(d, e2)
+        det = np.einsum("ij,ij->i", e1, pv)
+        ok = np.abs(det) > 1e-12
+        inv = np.where(ok, 1.0 / np.where(ok, det, 1.0), 0.0)
+        tv = origin - v0
+        u = np.einsum("ij,ij->i", tv, pv) * inv
+        qv = np.cross(tv, e1)
+        v = (qv @ d) * inv
+        t = np.einsum("ij,ij->i", e2, qv) * inv
+        hit = ok & (u >= -1e-9) & (v >= -1e-9) & (u + v <= 1 + 1e-9) \
+            & (t > 1e-9)
+        if not hit.any():
+            return None
+        reach.append(float(t[hit].min()))
+    return reach[0] + reach[1]
+
+
+def section_loops(cut_edges, tol: float | None = None,
+                  members: list | None = None) -> list:
     """Chain the plane∩triangle chords of a section cut into CLOSED loops —
     the outlines of the solids the plane slices through, i.e. the areas a
     drafter fills with poché. Returns a list of (M, 3) arrays in world
@@ -264,7 +317,10 @@ def section_loops(cut_edges, tol: float | None = None) -> list:
     a chain that dead-ends (an open surface: a lone wall face, a roof
     without walls) is dropped rather than filled — a section fill would
     leak on those, we prefer to leave them white. Nested rings (a
-    hollow wall, a pipe) are the caller's even-odd fill rule."""
+    hollow wall, a pipe) are the caller's even-odd fill rule.
+
+    ``members``, a list handed in, receives for each ring returned the
+    rows of ``cut_edges`` it was chained from."""
     if not len(cut_edges):
         return []
     E = np.asarray(cut_edges, dtype=np.float64).reshape(-1, 2, 3)
@@ -297,6 +353,7 @@ def section_loops(cut_edges, tol: float | None = None) -> list:
 
     adj: dict = {}
     chords: list = []
+    rows: list = []                     # chord → its row of cut_edges
     for k in range(len(E)):
         a = node_of(E[k, 0])
         b = node_of(E[k, 1])
@@ -304,6 +361,7 @@ def section_loops(cut_edges, tol: float | None = None) -> list:
             continue                    # a triangle touching the plane at a point
         idx = len(chords)
         chords.append((a, b))
+        rows.append(k)
         adj.setdefault(a, []).append(idx)
         adj.setdefault(b, []).append(idx)
     used = [False] * len(chords)
@@ -314,6 +372,7 @@ def section_loops(cut_edges, tol: float | None = None) -> list:
         a0, b0 = chords[start]
         used[start] = True
         ring = [a0, b0]
+        walked = [start]
         cur, prev_chord = b0, start
         closed = False
         while True:
@@ -325,6 +384,7 @@ def section_loops(cut_edges, tol: float | None = None) -> list:
             if nxt is None:
                 break
             used[nxt] = True
+            walked.append(nxt)
             x, y = chords[nxt]
             cur = y if x == cur else x
             prev_chord = nxt
@@ -335,7 +395,49 @@ def section_loops(cut_edges, tol: float | None = None) -> list:
         if closed and len(ring) >= 3:
             loops.append(np.asarray([nodes[i] for i in ring],
                                     dtype=np.float64))
+            if members is not None:
+                members.append([rows[c] for c in walked])
     return loops
+
+
+def closing_tags(cut_edges, cut_tags) -> list:
+    """``cut_tags`` with each chord given the layer of the ring it closes.
+
+    Rings are chained one layer at a time, so that a wall's cut takes the
+    wall's fill and the door's beside it its own. But a solid is not always
+    of one layer — a wall with one face moved to another — and then neither
+    layer's chords close by themselves: the wall lost its fill altogether.
+    The chords that close no ring within their own layer are chained
+    together, whatever their layers, and each ring found that way goes to
+    the layer most of its outline belongs to."""
+    tags = list(cut_tags)
+    if len(set(tags)) < 2:
+        return tags
+    E = np.asarray(cut_edges, dtype=np.float64).reshape(-1, 2, 3)
+    by_tag: dict = {}
+    for k, tag in enumerate(tags):
+        by_tag.setdefault(tag, []).append(k)
+    loose: list = []
+    for tag, idx in by_tag.items():
+        closed: list = []
+        section_loops(E[idx], members=closed)
+        inside = {j for ring in closed for j in ring}
+        loose.extend(k for j, k in enumerate(idx) if j not in inside)
+    if not loose or len({tags[k] for k in loose}) < 2:
+        return tags
+    mixed: list = []
+    section_loops(E[loose], members=mixed)
+    for ring in mixed:
+        length: dict = {}
+        for j in ring:
+            k = loose[j]
+            length[tags[k]] = length.get(tags[k], 0.0) + float(
+                np.linalg.norm(E[k, 1] - E[k, 0]))
+        # The most outline; names break a tie so the answer is one.
+        winner = max(sorted(length, key=str), key=lambda t: length[t])
+        for j in ring:
+            tags[loose[j]] = winner
+    return tags
 
 
 # ── The exact visibility kernel ─────────────────────────────────────────────
@@ -579,18 +681,29 @@ class HlrDrawing:
     KIND_CUT) and the closed section-cut rings to fill (``loops``, a list
     of (M,2) arrays in the camera plane). ``layers`` — only when asked
     for — is the layer each segment is inked with ((N,) object array of
-    names; ``None`` for a section-cut chord, which keeps the cut's pen)."""
+    names; a section-cut chord carries the layer of the face it cuts), and
+    ``loop_layers`` the layer of each ring, in the order of ``loops``.
+    ``loop_depths`` — only for the layers asked for — how far the solid of
+    each ring runs through the section plane, square to it, from inside
+    the ring (model units; ``None`` where it was not measured): a stud cut
+    in a plan runs its whole height, a board cut along its length only its
+    thickness."""
 
-    __slots__ = ("segs", "world", "kinds", "loops", "layers", "styles")
+    __slots__ = ("segs", "world", "kinds", "loops", "layers", "styles",
+                 "loop_layers", "loop_depths")
 
-    def __init__(self, segs, world, kinds, loops, layers=None):
+    def __init__(self, segs, world, kinds, loops, layers=None,
+                 loop_layers=None, loop_depths=None):
         self.segs = segs
         self.world = world
         self.kinds = kinds
         self.loops = loops
         self.layers = layers
-        #: ``{layer: (rgb, linetype, weight)}`` a sheet fills in for the
-        #: exporters (core.layers.line_styles); ``None`` until it does.
+        self.loop_layers = loop_layers
+        self.loop_depths = loop_depths
+        #: ``{layer: (rgb, linetype, weight, cut weight)}`` a sheet fills
+        #: in for the exporters (core.layers.line_styles); ``None`` until
+        #: it does.
         self.styles = None
 
     def __len__(self) -> int:
@@ -727,6 +840,7 @@ def _merge_collinear(segs, world, kinds, tol: float, tags=None):
     inv = 1.0 / tol
     cells: dict = {}
     for i in range(n):
+        _progress.tick()
         for end in (0, 1):
             x, y = segs[i, 2 * end], segs[i, 2 * end + 1]
             cells.setdefault((int(math.floor(x * inv)),
@@ -776,6 +890,7 @@ def _merge_collinear(segs, world, kinds, tol: float, tags=None):
             pw = world[j, 1 - jend]
 
     for i in range(n):
+        _progress.tick()
         if used[i]:
             continue
         used[i] = True
@@ -802,7 +917,8 @@ def _merge_collinear(segs, world, kinds, tol: float, tags=None):
 
 def hlr_drawing(scene, camera, geometry=None, profiles: bool = True,
                 fills: bool = True, caps: bool = True,
-                hidden: bool = False, layers: bool = False) -> HlrDrawing:
+                hidden: bool = False, layers: bool = False,
+                depth_layers=None) -> HlrDrawing:
     """The full line drawing of *scene* under *camera* (parallel): visible
     segments classified as edge / profile / cut, plus the section-cut
     rings to fill. :func:`hlr_view` is the segments-only view of this.
@@ -840,13 +956,27 @@ def hlr_drawing(scene, camera, geometry=None, profiles: bool = True,
 
     `layers=True` tags every segment with the layer it is inked with
     (`HlrDrawing.layers`) — what a sheet needs to draw each layer with its
-    own colour, line type and weight. It walks the model itself (the fast
-    `geometry` carries no layers), so it is asked for only when a layer
-    has a line of its own."""
+    own colour, line type and weight. Its section cut is tagged too, by
+    the layer of the face each chord cuts, and its rings are chained layer
+    by layer (`HlrDrawing.loop_layers`): a wall's cut gets the wall's pen
+    and fill, the door's beside it its own. With a tagged ``geometry`` —
+    the seven arrays ``Viewport.hlr_geometry(tags=True)`` returns, the
+    layers of the triangles, hard edges and soft edges after the four —
+    nothing is walked; without one, it walks the model itself.
+    ``depth_layers`` — layer names — measures, for each ring of those
+    layers, how far its solid runs through the plane
+    (``HlrDrawing.loop_depths``, :func:`solid_depth`): where timber is cut
+    across its grain or along it."""
     soft_n = None
-    htags = stags = None
-    if layers:
-        tris, hard, soft, htags, stags = collect_geometry(scene, layers=True)
+    htags = stags = ttags = None
+    whole_tris = whole_tags = ()
+    cut_tags: list = []
+    if layers and geometry is not None and len(geometry) == 7:
+        tris, hard, soft, soft_n, ttags, htags, stags = geometry
+        ttags, htags, stags = list(ttags), list(htags), list(stags)
+    elif layers:
+        tris, hard, soft, htags, stags, ttags = collect_geometry(
+            scene, layers=True)
     elif geometry is None:
         tris, hard, soft = collect_geometry(scene)
     else:
@@ -865,9 +995,10 @@ def hlr_drawing(scene, camera, geometry=None, profiles: bool = True,
             tris, hard, soft, cut_edges = clip_to_section(
                 tris, hard, soft, sp, split_cuts=True)
         else:
+            # The solids whole, for how deep each cut runs (depth_layers).
+            whole_tris, whole_tags = tris, ttags
             # Clipped layer by layer, so each piece keeps its tag.
-            tris, _h, _s, cut_edges = clip_to_section(tris, [], [], sp,
-                                                      split_cuts=True)
+            tris, cut_edges, cut_tags = _clip_tris_tagged(tris, ttags, sp)
             hard, htags = _clip_tagged(hard, htags, sp, soft=False)
             soft, stags = _clip_tagged(soft, stags, sp, soft=True)
     _e, _r, _u, fwd = camera_basis(camera)
@@ -887,6 +1018,9 @@ def hlr_drawing(scene, camera, geometry=None, profiles: bool = True,
             mask = np.isnan(fb) | ((fa < 0.0) != (fb < 0.0))
             hard = np.concatenate(
                 [hard, np.asarray(soft, dtype=np.float64)[mask]])
+            if htags is not None:       # the silhouettes keep their layer
+                htags = list(htags) + [stags[k] for k in
+                                       np.flatnonzero(mask).tolist()]
         if not len(hard) and not len(cut_edges):
             return empty_drawing()
     else:
@@ -942,12 +1076,44 @@ def hlr_drawing(scene, camera, geometry=None, profiles: bool = True,
     zero_len = ext_e * 1e-9             # a vertical seen end-on: a point
     # The section cap: the rings the composer fills also COVER (see above).
     loops: list = []
+    loop_tags: list | None = [] if htags is not None else None
+    loop_depths: list = []
     cap_P = cap_Q = cap_abg = None
     cap_eps = 0.0
     cap_box = None
     if len(cut_edges):
-        for ring in section_loops(cut_edges):
+        if loop_tags is None:
+            rings = [(ring, None) for ring in section_loops(cut_edges)]
+        else:
+            # Chained one layer at a time: each solid closes on its own, so
+            # its ring takes its layer's fill.
+            by_tag: dict = {}
+            for edge, tag in zip(cut_edges,
+                                 closing_tags(cut_edges, cut_tags)):
+                by_tag.setdefault(tag, []).append(edge)
+            rings = [(ring, tag) for tag, edges in by_tag.items()
+                     for ring in section_loops(edges)]
+        wanted = set(depth_layers or ()) if loop_tags is not None else set()
+        by_layer_tris: dict = {}
+        for ring, tag in rings:
             loops.append(_to_cam(ring, eye, right, up, fwd)[:, :2])
+            if loop_tags is not None:
+                loop_tags.append(tag)
+            if wanted:
+                if tag in wanted:
+                    if tag not in by_layer_tris:
+                        if isinstance(whole_tris, np.ndarray):
+                            by_layer_tris[tag] = whole_tris[
+                                np.asarray(whole_tags, dtype=object) == tag]
+                        else:
+                            by_layer_tris[tag] = [
+                                t for t, g in zip(whole_tris, whole_tags)
+                                if g == tag]
+                    n = sp.normal
+                    loop_depths.append(solid_depth(
+                        ring, by_layer_tris[tag], (n.x(), n.y(), n.z())))
+                else:
+                    loop_depths.append(None)
         if loops and caps:
             cap_abg = cap_depth_affine(sp, eye, right, up, fwd)
         if cap_abg is not None:
@@ -969,7 +1135,7 @@ def hlr_drawing(scene, camera, geometry=None, profiles: bool = True,
         n_off, n_spans = occ.visible_spans(
             np.ascontiguousarray(A), np.ascontiguousarray(B), float(eps))
     out_t: list = []
-    row_tags = (list(htags) + [None] * len(cut_edges)
+    row_tags = (list(htags) + list(cut_tags)
                 if htags is not None else None)
     for i in range(len(A)):
         a2, b2 = A[i, :2], B[i, :2]
@@ -1086,7 +1252,26 @@ def hlr_drawing(scene, camera, geometry=None, profiles: bool = True,
             segs, world, kinds, max(ext_e * 1e-6, 1e-9), tags)
         segs, world, kinds = kept[:3]
         tags = kept[3] if tags is not None else None
-    return HlrDrawing(segs, world, kinds, loops if fills else [], tags)
+    return HlrDrawing(segs, world, kinds, loops if fills else [], tags,
+                      (loop_tags if fills else []) if loop_tags is not None
+                      else None,
+                      (loop_depths if fills and depth_layers else None))
+
+
+def _clip_tris_tagged(tris, tags, plane):
+    """`clip_to_section` for triangles that carry a layer tag each: the
+    kept triangles, and the cut chords with the tag of the triangle each
+    one crosses — clipped one tag at a time, like `_clip_tagged`."""
+    by_tag: dict = {}
+    for tri, tag in zip(tris, tags):
+        by_tag.setdefault(tag, []).append(tri)
+    out, cuts, cut_tags = [], [], []
+    for tag, group in by_tag.items():
+        kept, _h, _s, chords = clip_to_section(group, [], [], plane, True)
+        out.extend(kept)
+        cuts.extend(chords)
+        cut_tags.extend([tag] * len(chords))
+    return out, cuts, cut_tags
 
 
 def _clip_tagged(items, tags, plane, soft: bool):

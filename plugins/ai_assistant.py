@@ -79,8 +79,8 @@ _LANGUAGE_NAMES = {
     "es": "español", "en": "English", "de": "Deutsch", "fr": "français",
     "id": "Bahasa Indonesia", "it": "italiano", "pl": "polski",
     "pt-BR": "português do Brasil", "ru": "русский", "zh-CN": "简体中文",
-    "vi": "Tiếng Việt", "lo": "ລາວ", "th": "ไทย", "ja": "日本語", "ko": "한국어",
-    "ar": "العربية",
+    "zh-TW": "繁體中文", "vi": "Tiếng Việt", "lo": "ລາວ", "th": "ไทย", "ja": "日本語", "ko": "한국어",
+    "ar": "العربية", "bg": "български",
 }
 
 
@@ -1155,7 +1155,8 @@ def setup(app) -> None:
     Extensions ▸ AI Assistant (Ctrl+Shift+A), which brings the tab
     forward — shown again if it was hidden — with the cursor in the input."""
     panel = AsistentePanel(app.viewport)
-    dock = app.add_panel(tr("AI"), panel, panel="ai", stretch=1)
+    dock = app.add_panel(tr("AI"), panel, panel="ai", stretch=1,
+                         icon="panel_ai")
     app.window._ai_assistant = panel
 
     def summon() -> None:

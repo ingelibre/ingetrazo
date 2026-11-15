@@ -626,7 +626,8 @@ def test_f2_renames_a_scene_and_a_sheet_in_the_browser():
     sheets.scenes_root.child(0).setText(0, "Ground floor")
     assert scene.saved_views[0].name == "Ground floor"
     assert a101.frames[0].view_key == "scene:Ground floor"
-    assert win.tray.scenes.list.item(0).text() == "Ground floor"
+    win.tray.scenes.refresh()
+    assert win.tray.scenes.scene_rows()[0].text(0) == "Ground floor"
     sheets.sheets_root.child(0).setText(0, "A-101")
     assert a101.name == "A-101"
     _app.processEvents()
@@ -640,7 +641,7 @@ def test_the_scenes_panel_rename_no_longer_orphans_sheet_views():
     a101, _a102 = _sheets_model(win)
     scenes = win.tray.scenes
     scenes.refresh()
-    scenes.list.item(0).setText("Ground floor")
+    scenes.scene_rows()[0].setText(0, "Ground floor")
     assert a101.frames[0].view_key == "scene:Ground floor"
     _close(win)
 
@@ -1762,5 +1763,45 @@ def test_a_tab_dropped_on_the_other_side_moves_there():
     assert comp_win._tabs.indexOf(comp_win._pages["items"]) < 0
     from PySide6.QtCore import QSettings
     QSettings().remove("composer/tab_layout")
+    QSettings().remove("composer/views_visible")
+    _close(win)
+
+
+def test_the_side_tabs_show_the_open_ones_name_as_inkscape():
+    """The composer's side tabs (Marco, 2026-11-12, after Inkscape's docked
+    dialogs): every tab has its icon, the open one shows its name beside
+    it and the others their icon alone, the name their tooltip. Moved to
+    the other side, a tab keeps its icon; the theme redraws them."""
+    from PySide6.QtCore import QSettings
+    from views import theme
+    win, scene, panel = _window_with()
+    comp_win = win._ensure_composer()
+    comp_win.resize(1200, 800)
+    comp_win.show()
+    _app.processEvents()
+    left, right = comp_win._left_tabs, comp_win._tabs
+    bar = right.tabBar()
+    for i in range(right.count()):
+        assert not right.tabIcon(i).isNull()
+        assert right.tabToolTip(i) == right.tabText(i)
+    right.setCurrentWidget(comp_win.props)
+    _app.processEvents()
+    open_i = right.currentIndex()
+    widths = [bar.tabRect(i).width() for i in range(right.count())]
+    shut = [w for i, w in enumerate(widths) if i != open_i]
+    assert len(set(shut)) == 1                        # the icon alone
+    assert widths[open_i] > shut[0] + 40              # icon and name
+    right.setCurrentIndex(0)
+    _app.processEvents()
+    assert bar.tabRect(0).width() > bar.tabRect(open_i).width()
+    comp_win.move_page("items", "left")
+    i = left.indexOf(comp_win._pages["items"])
+    assert not left.tabIcon(i).isNull()
+    old = left.tabIcon(i).cacheKey()
+    theme._redraw_icons(_app)
+    assert left.tabIcon(i).cacheKey() != old
+    comp_win.hide()
+    comp_win._saved_version = scene.version
+    QSettings().remove("composer/tab_layout")         # leave it as found
     QSettings().remove("composer/views_visible")
     _close(win)

@@ -298,27 +298,33 @@ def inherited_states(groups) -> dict:
 def node_icon(key: str) -> QIcon:
     """The icon for a row kind — ``group``, ``component``, ``ifc``,
     ``image``, ``text``, ``document``, ``scene``, ``sheet``, ``frame``,
-    ``eye``, ``eye_off``, ``warning``."""
-    if key not in _ICONS:
+    ``eye``, ``eye_off``, ``warning``.
+
+    Kept once per theme: they are painted in the palette's ink and accent,
+    and a theme switched with the app open must not get the old ones back
+    (#1086)."""
+    from PySide6.QtWidgets import QApplication
+    # The palette's cache key, not its colours: the Browser asks three times
+    # per row, and reading the colours cost a 20 000-row refresh 0.2 s.
+    slot = (key, QApplication.palette().cacheKey())
+    if slot not in _ICONS:
         if key.startswith("layers_"):
             # The Layers bar's icons (views/icons.py): the two trees draw
             # the same buttons with the same set.
             from views.icons import tool_icon
-            _ICONS[key] = tool_icon(key)
+            _ICONS[slot] = tool_icon(key)
         elif key in ("image", "text", "sections"):
             from views.icons import tool_icon
-            _ICONS[key] = tool_icon({"image": "image", "text": "text3d",
-                                     "sections": "section_planes"}[key])
+            _ICONS[slot] = tool_icon({"image": "image", "text": "text3d",
+                                      "sections": "section_planes"}[key])
         elif key == "warning":
-            from PySide6.QtWidgets import QApplication
-            _ICONS[key] = QApplication.style().standardIcon(
+            _ICONS[slot] = QApplication.style().standardIcon(
                 QStyle.SP_MessageBoxWarning)
         elif key == "folder":
-            from PySide6.QtWidgets import QApplication
-            _ICONS[key] = QApplication.style().standardIcon(QStyle.SP_DirIcon)
+            _ICONS[slot] = QApplication.style().standardIcon(QStyle.SP_DirIcon)
         else:
-            _ICONS[key] = _draw(key)
-    return _ICONS[key]
+            _ICONS[slot] = _draw(key)
+    return _ICONS[slot]
 
 
 def fill_icon(color, on: bool) -> QIcon:
@@ -1262,6 +1268,39 @@ class OutlinerPanel(QWidget):
         if path is not None:
             return path.name
         return getattr(w, "_import_name", None) or tr("Untitled")
+
+    def refresh_icons(self) -> None:
+        """Repaint every mark drawn in the palette's ink and accent after
+        the theme or the accent changes — the header's, the buttons' and
+        every row's. The rows set theirs once and only touch what changed,
+        so a theme switched with the app open left Light's black eyes and
+        padlocks on Dark's rows (the Layers tab's #1086, for the Browser)."""
+        hi = self.tree.headerItem()
+        hi.setIcon(COL_EYE, node_icon("eye"))
+        hi.setIcon(COL_LOCK, node_icon("lock"))
+        hi.setIcon(COL_ISOLATE, isolate_icon(False))
+        self._rename_btn.setIcon(node_icon("layers_rename"))
+        self._order_btn.setIcon(node_icon("layers_order"))
+        self._show_filter_state()
+        self._update_expand_button()
+        root = getattr(self, "_root", None)
+        if root is not None:
+            root.setIcon(COL_NAME, node_icon("document"))
+        # Forget what each row last showed, so the next pass paints all.
+        was = self._updating
+        self._updating = True
+        try:
+            for key, item in list(getattr(self, "_items", {}).items()):
+                state = self._state.get(key)
+                if state is not None:
+                    self._paint(item, None, state)
+        finally:
+            self._updating = was
+        self._sec_state = {}
+        self._sec_folder = None
+        self._head_marks = {}
+        self._rows_key = None
+        self.refresh()
 
     def refresh(self, rows_if_changed: bool = False) -> None:
         """Bring the tree up to date: rows rebuilt only when groups came or
@@ -2283,7 +2322,8 @@ class OutlinerPanel(QWidget):
         sec.setHidden(sec.childCount() == 0 or not any_shown)
 
     _PATTERN_TEXT = {"solid": "Solid", "hatch": "Hatched 45°",
-                     "cross": "Cross-hatched", "none": "No fill"}
+                     "cross": "Cross-hatched", "none": "No fill",
+                     "layers": "Layers' hatches"}
 
     def set_plane_fill(self, plane, **changes) -> None:
         """Change this cut's own fill — ``pattern``, ``color``, ``spacing``;
@@ -2339,18 +2379,23 @@ class OutlinerPanel(QWidget):
         """The cut's own fill: pattern, colour, spacing, or the style's."""
         from PySide6.QtCore import QTimer
         sub = menu.addMenu(tr("Fill of this cut"))
+        sub.setToolTipsVisible(True)
         own = getattr(plane, "fill", None) or {}
         current = own.get("pattern")
         act = sub.addAction(tr("As the style"), lambda: self.set_plane_fill(
             plane, pattern=None))
         act.setCheckable(True)
         act.setChecked(current is None)
-        for pattern in ("solid", "hatch", "cross", "none"):
+        for pattern in ("solid", "hatch", "cross", "layers", "none"):
             act = sub.addAction(tr(self._PATTERN_TEXT[pattern]),
                                 lambda p=pattern: self.set_plane_fill(
                                     plane, pattern=p))
             act.setCheckable(True)
             act.setChecked(current == pattern)
+            if pattern == "layers":
+                act.setToolTip(tr(
+                    "Each layer's cut with the hatch the Layers panel gives "
+                    "it, as a sheet at 1:50 draws it"))
         sub.addSeparator()
         # Dialogs open once the menu has closed (see _fill_actions).
         sub.addAction(tr("Fill color of this cut…"), lambda: QTimer.singleShot(
@@ -4559,11 +4604,7 @@ class SheetsPanel(QWidget):
 
     def rename_scene(self, view, name: str) -> bool:
         """Rename a scene and carry the sheet views that show it along."""
-        if not outliner.rename_scene(self._scene(), view, name):
-            if name and name != view.name:
-                self._window.viewport.flash_status(tr(
-                    "Another scene is already called «{name}»", name=name),
-                    3500)
+        if not self._window.tray.scenes.rename_view(view, name):
             self._touch()
             return False
         self._window.tray.scenes.refresh()
@@ -4740,12 +4781,7 @@ class SheetsPanel(QWidget):
     def _show_scene(self, view) -> None:
         """Through the Scenes panel, so a scene shown from here does all
         a scene shown there does (style menu, selection, layers)."""
-        scenes = self._window.tray.scenes
-        for i in range(scenes.list.count()):
-            row = scenes.list.item(i)
-            if row.data(Qt.UserRole) is view:
-                scenes._on_activate(row)
-                return
+        self._window.tray.scenes.activate_view(view)
 
     def _new_sheet(self) -> None:
         self._window._show_new_sheet()

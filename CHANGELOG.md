@@ -4,6 +4,393 @@ All notable changes to IngeTrazo are documented here.
 Format inspired by [Keep a Changelog](https://keepachangelog.com); versions
 follow [SemVer](https://semver.org).
 
+## [0.6.2.1] — 2026-11-14
+
+**Mejoramos las láminas y el acotar: las cotas de lámina enganchan a lo
+largo de las aristas, se voltean y se separan del texto, y el compositor
+abre en segundos aunque el modelo sea enorme. En la interfaz, el tema
+Oscuro está mejorado, los iconos son más finos y hay cuatro temas nuevos
+para elegir (Estudio, Solarized, Campbell y Arena). Además: transiciones
+entre escenas, Reproducir y vídeo; la herramienta Norte y los ajustes de
+cámara; exportar la vista como SVG en capas, con caras, texturas y sombras;
+escenas con carpetas y miniaturas; varias vistas, cada una con su estilo. El
+motor Rust abre y mueve los modelos enormes en menos tiempo y con mucha
+menos memoria. Y decenas de arreglos, muchos de colaboradores: Ctrl+S con
+extensiones abiertas, la vista explosionada, copias exactas con Mover+Ctrl y
+el cierre en Mac al importar un .skp con escenas.**
+
+### Añadido
+
+- **Alinear vista** en el menú contextual de una cara (#1374, @pacaeiro;
+  cierra #1313): la cámara mira de frente la cara elegida, también dentro de
+  grupos y componentes.
+- **Sombras suaves** (#1324, @ultracat; cierra #1281): un nivel de suavidad
+  del borde de las sombras del sol en Preferencias.
+- **Cuatro temas nuevos** en Preferencias ▸ Tema, en todos los idiomas:
+  **Estudio** (barras casi negras sobre paneles gris medio, como las suites
+  3D), **Solarized** (el azul verdoso oscuro de la paleta de terminal),
+  **Campbell** (el negro y gris de la consola clásica) y **Arena** (el claro
+  de Solarized, color papel). En estos temas, un elemento de menú bajo el
+  cursor ya no se pone blanco sobre blanco.
+- **Exportar la vista como SVG en capas** (#1331, @canalsecuario-blip; cierra
+  #332): las caras bajo las líneas, con sus colores, texturas y sombras del
+  sol, una capa por capa del modelo, en una hoja o al tamaño de la pantalla,
+  con vista previa. *Cómo probarlo:* Archivo ▸ Exportar vista actual como SVG.
+- **Barra de progreso con Cancelar** al exportar o previsualizar el SVG de un
+  modelo grande: la ventana sigue respondiendo y se puede desistir; un
+  modelo chico nunca la ve.
+- **Herramienta Norte** (#1330, @canalsecuario-blip): Herramientas ▸ Norte
+  (Mayús+N) orienta el norte real, y con él las sombras del sol, dibujándolo
+  sobre el modelo con una brújula. Manual en `docs/north.md`.
+- **Cámara ▸ Ajustes de cámara** (#1332, @canalsecuario-blip): distancia
+  focal sobre un sensor elegido, desplazamiento de lente, giro, recorte y
+  encuadre; la lente se escribe con Zoom.
+- **Transiciones entre escenas, Reproducir y vídeo** (#1342,
+  @canalsecuario-blip): al mostrar una escena la cámara se desliza hasta ella
+  (Esc o mover la cámara lo detiene); Cámara ▸ Animación ▸ Reproducir
+  recorre las escenas en bucle, y Archivo ▸ Exportar ▸ Escenas como vídeo
+  (.mkv) graba el recorrido en MPEG-4. La duración del deslizamiento y la
+  pausa en cada escena se ajustan en Cámara ▸ Animación ▸ Ajustes de
+  animación.
+  *Para desactivarlas:* desmarca Cámara ▸ Animación ▸ Transiciones de escena
+  y las escenas vuelven a cambiar al instante, como antes. Vienen encendidas
+  por defecto; la casilla se guarda con cada proyecto, así que hay que
+  guardar el archivo para que se quede apagada.
+- **Peso y trama de corte por capa** (#1100, @canalsecuario-blip; cierra #926
+  y #281): en las láminas, en el DXF y en la vista 3D.
+- **Escenas** como pestaña propia del panel lateral, con carpetas y
+  miniaturas (#1297, #1158, @canalsecuario-blip), y como acciones de la
+  ventana: añadir, actualizar, eliminar, mostrar, renombrar y duplicar (#695).
+- **Tema Pizarra**, Oscuro y Claro renovados e iconos más finos (#1292,
+  @canalsecuario-blip); los paneles siguen el cambio de tema.
+- **Pestañas de iconos** en los paneles laterales, con el nombre en un
+  globo y arriba del panel, un engranaje con sus opciones y pestañas que
+  pueden ir en vertical (#1142, #1140, @canalsecuario-blip).
+- **Varias vistas**: cada una con su estilo, proyección y escena; lupa de
+  Zoom ventana y Zoom a selección en todas; una vista estándar va a la vista
+  pulsada (#1307, #1306, @canalsecuario-blip).
+- **Crear caras**: comando nuevo y opción al importar DXF/DWG (#1143, #1109,
+  @canalsecuario-blip); miles de contornos sueltos ya no congelan la ventana.
+- **Empujar/Tirar con varias caras seleccionadas** a la vez, cada una por su
+  normal (#1298, @canalsecuario-blip).
+- **Círculos guía analíticos** (#1031, #238, @pacaeiro): Ctrl en la
+  herramienta Círculo dibuja una guía circular perfecta, con enganche al
+  centro, al borde, a cuadrantes, tangentes e intersecciones.
+- **Enganche «Centro de cara»** (#736, @canalsecuario-blip): el centro de
+  área de cada cara, descontados los agujeros.
+- **Cotas de lámina**: etiqueta debajo o volteada, separación del texto,
+  enganche a líneas y arreglos de selección (#1249, @BastelBaus); crear y
+  enganchar cotas sobre aristas (#933, #478, @BastelBaus).
+- **Las extensiones dibujan también en las láminas**
+  (`add_sheet_annotations`): lo que una extensión sólo pintaba sobre la
+  vista —las progresivas de un camino, un canal o una carretera— sale en
+  los marcos de vista del modelo como texto y líneas vectoriales, a un
+  tamaño en milímetros de papel, nunca al revés y sin pisarse, en la
+  impresión y en el PDF. Documentado en `docs/plugins.md`.
+- **Exportar todas las láminas a PDF desde la línea de órdenes**, sin
+  ventana (#1055, @BastelBaus).
+- **Texto 3D**: el cuadro de texto muestra la fuente, negrita y cursiva
+  elegidas (#1309, #1017, @canalsecuario-blip).
+- **Centímetros** como unidad lista al arrancar (#1284, #1216) y
+  **Preferencias con Ctrl+,** (#1285), @canalsecuario-blip.
+- **Ucraniano**: cadenas que faltaban y correcciones (#1295, @bolotov).
+
+### Cambiado
+
+- **Modelos enormes más rápidos con el motor Rust** (#158, #1092): el
+  primer cuadro de un modelo de 21 000 grupos baja de 60 s a 21 s y su
+  memoria de 9 GB a 5,4 GB; mover, seleccionar con caja y empujar ya no
+  construyen los grupos que no tocan, y las vistas que se suman a la
+  cuadrícula comparten lo ya calculado.
+- **Láminas de modelos grandes sin esperas**: abrir el compositor de la
+  plaza Queñuamarca pasa de 57 s a 2,5 s y las inferencias de la primera
+  cota salen en 0,3 s; con las cotas ancladas al modelo, abrir la lámina de
+  una plaza de 3 400 objetos baja de 5 s a menos de 1 s, porque ya no se
+  construyen las mallas diferidas para buscar sus anclas.
+- **Pestañas del panel lateral de las láminas con iconos** (Diseño,
+  Elementos, Propiedades, Vistas): la pestaña abierta muestra icono y
+  nombre, las demás solo el icono y su nombre al pasar el ratón.
+- **Editar un material con textura lo cambia en todo el modelo** (#1308):
+  Aplicar en el panel Materiales cambiaba sólo la textura con que se pinta
+  después y las caras seleccionadas, y un mismo material quedaba en dos
+  colores. Ahora cambia el material: todas las caras, grupos y componentes
+  que lo llevan toman el color o el tamaño nuevo, en un solo paso de
+  deshacer, y una textura ubicada a mano conserva su ubicación.
+- **Varias vistas sin esperas**: partir un documento en cuatro vistas ya no
+  prepara el modelo otra vez por cada vista, y una textura se decodifica una
+  sola vez (la plaza: 16,7 s → 2,4 s la primera vez, 1,4 s → 0,6 s después).
+- **Motor Rust, modelos muy grandes**: una cara cubierta por cientos de
+  otras (el suelo de una casa vista en planta) se resuelve por cuartos. Una
+  villa de 692 000 caras exporta su vista en planta en 106 s en vez de 275,
+  y su silencio más largo baja de 150 s a 14.
+- **Motor Rust**: las caras visibles del SVG, su geometría, la triangulación
+  de las caras y las líneas por capa ya se calculan en Rust, con el camino
+  Python detrás. La plaza de prueba (1 035 objetos) exporta su vista en
+  planta en 17 s en vez de 170; abre en 5 s en vez de 10. Dos diferencias
+  queridas: una cara vista de canto (más fina que una micra) no se dibuja, y
+  una cara oculta dentro de un componente ya no tapa líneas en las láminas
+  por capa, como en pantalla.
+- **Secciones**: arrastrar un plano por su flecha ya no vuelve a medir el
+  modelo en cada movimiento, mover un plano es una edición del documento y
+  no del modelo, y el primer corte lee las capas sin construir las mallas
+  diferidas (eran 140 s de los 153 del primer corte de un modelo grande).
+- **Cortes en el compositor**: un sólido de dos capas conserva su corte y
+  picar algo no vuelve a trazar las líneas del modelo (#1100).
+- **Instalador de Windows**: al desinstalar, los `.skp` vuelven al programa
+  que los abría (#1268), y las miniaturas se toman del programa anterior
+  aunque ya haya otra instalación de IngeTrazo.
+- **Pestañas de proyecto y escenas** tan altas como las de iconos; el
+  compositor reclama Ctrl+C/X/V antes que los atajos de la ventana.
+- **Gestor de extensiones**: descarga las miniaturas del catálogo y las
+  renueva si cambian (#1296).
+- **Preferencia «Servidor gráfico»** solo en Linux (#1179).
+
+### Arreglado
+
+- **La barra lateral y la pantalla limpia sin esperas con modelos grandes**
+  (0.6.2.1). Con el Inspector de sólidos en la barra lateral, cada vez que
+  esta volvía a mostrarse (desplegarla, o salir de pantalla limpia con
+  Ctrl+0) el inspector revisaba de nuevo todo el modelo y rellenaba su tabla
+  midiendo cada fila otra vez: con unos mil grupos, la ventana se quedaba
+  congelada entre 12 y 22 segundos. Ahora la tabla se mide una sola vez y el
+  inspector solo vuelve a revisar el modelo cuando este cambió (mover la
+  cámara no cuenta): tarda alrededor de una décima de segundo. La 0.6.1 tenía
+  el mismo problema.
+- **Ctrl+S vuelve a guardar con el panel de una extensión abierto** (cierra
+  #1334): una extensión que usa la misma tecla para lo suyo (el Editor de
+  nodos guarda su grafo con Ctrl+S y Ctrl+Mayús+S) dejaba la tecla sin
+  dueño y no guardaba nadie. Ahora, dentro del panel de la extensión la
+  tecla es de la extensión; en el resto de la ventana, de IngeTrazo.
+- **Un STL importado vuelve a guardarse** (ronda Windows 0.6.2; ya pasaba
+  en la 0.6.1): con «unir triángulos coplanares» (la opción por defecto),
+  algunos modelos daban «list index out of range» al guardar. La limpieza
+  final quitaba una esquina de un agujero triangular muy delgado.
+- **Menos memoria con modelos grandes**: las miniaturas de la pestaña
+  Escenas ya no construyen el compositor de láminas oculto, y las texturas
+  decodificadas solo se guardan mientras hay varias vistas en pantalla. En
+  la plaza de prueba, 903 MB → 728 MB, y abre algo antes.
+- **La vista explosionada ya no vuelve componentes los grupos** (cierra
+  #1375): las piezas que eran grupos salían componentes, y dentro de ellas
+  ya no se podía agrupar ni explotar. Un modelo guardado así se recupera
+  explotando la pieza y agrupándola otra vez.
+- **Lo oculto dentro de un grupo ya no sale en las láminas ni en las
+  exportaciones** (#1204, @vicc3d): un grupo anidado oculto, en una capa
+  oculta, o una cara oculta dentro de un grupo, quedan fuera como en la vista.
+- **Mover+Ctrl copia exacto** (#1360, @rezaprama; cierra #1087): la copia de
+  una malla grande o importada sale idéntica, sin rehacer caras ni partir lo
+  coplanar, y siempre igual.
+- **Tras copiar con Mover+Ctrl quedan seleccionadas las copias** (#1359,
+  @rezaprama; cierra #1214), también en matrices; Deshacer vuelve a la
+  selección de antes.
+- **Rotar+Ctrl con copias solapadas** (#1368, @rezaprama; cierra #551): se
+  cortan entre sí y quedan como caras editables, sin área contada dos veces.
+- **Bajar una arista curva hasta la de abajo hace una rampa** (#1346,
+  @ultracat; #1294): ya no se rechaza el movimiento; el abanico de la curva
+  queda suave.
+- **Una línea que cruza una cara de 1 mm la divide** en vez de borrarla
+  (#1369, @ultracat; #1294).
+- **Selección por caja en modelos muy grandes** (#1370, @rezaprama; cierra
+  #1175): usa mucha menos memoria y termina antes, sobre todo en Windows.
+- **Indonesio**: traducción revisada de la interfaz y README, guía de
+  contribución y manuales de Capas y Pestañas de proyecto en indonesio
+  (#1358, @rezaprama).
+- **Dentro de un grupo o componente, lo de fuera vuelve a engancharse**
+  (#1327, @hvfrancesco): la malla suelta de la raíz —lo que no está
+  agrupado— ofrece otra vez «Punto final», «Punto medio» y «En cara» y tapa
+  lo que queda detrás, y las caras de los demás componentes también dan «En
+  cara» desde dentro. El aviso del cursor lo dice —«Punto final fuera del
+  componente», «En cara fuera del grupo»—. Con «Ocultar el resto del modelo»
+  sigue sin ofrecerse.
+- **Mac: importar un .skp con escenas cerraba la 0.6.1** (#1321 y #1322,
+  @ultracat; cierra #1316): la fila de pestañas de escena se mostraba en
+  medio del dibujo de la vista; ahora la versión de la escena se anuncia
+  cuando el cuadro ya salió.
+- **Sombras vistas desde debajo del suelo** (#1345, @ultracat; cierra
+  #1301): con la cámara bajo el plano del suelo ya no se dibujan.
+- **Geometría oculta muestra las aristas suaves** de superficies curvas y
+  biseles (#1363, @alteralto; cierra #1361).
+- **Arco: redondear otra vez una esquina ya redondeada** con un arco mayor
+  engancha la tangente (#1367, @alteralto; cierra #1354).
+- **Las pestañas de proyecto** nacen con la altura de una pestaña: en Mac la
+  línea de acento ya no sale cortada al abrir (#1351, @ultracat).
+- **Gestor de extensiones**: una etiqueta queda en una línea salvo que no
+  quepa en la tarjeta (#1352, @ultracat).
+- **Lao en Windows**: se prefiere Noto Sans Lao para la escritura lao
+  (#1323, @bounkirdni-2025).
+- Pruebas: el atajo se espera como lo escribe cada sistema (⌘ en Mac) y una
+  prueba de Empujar/Tirar que dependía del redondeo (#1350 y #1353,
+  @ultracat).
+- **Posicionar textura** (#1308): un pin que se suelta cerca de una esquina
+  de la cara o del medio de una arista cae exacto ahí, con la marca de las
+  herramientas de dibujo; Ctrl lo deja libre.
+- **Varias vistas**: Exportar imagen y las exportaciones DXF/SVG de la vista
+  salen de la vista activa, no siempre de la Perspectiva.
+- **Lápiz en Linux (X11/XWayland)** con escala de pantalla mayor que 1: dibuja
+  en su punta, no 15 px arriba a la izquierda.
+- **Las pestañas de los paneles** ya no repintan la ventana sin parar: con
+  el compositor de láminas delante, abrirlo pasa de 38 s a 2 s y añadir un
+  marco de 40 s a un instante.
+- **Empujar/Tirar y dibujar sobre un sólido con muchos rasgos** preguntan al
+  modelo una vez; una cara que no puede ir toda la distancia se queda donde
+  estaba; mover una curva sobre la de abajo hace una rampa, y una cara de
+  1 mm se encuentra bajo el cursor (#1294).
+- **Orientación**: una piel cerrada enrollada en un sentido se decide con
+  pocas caras.
+- **Herramientas planas**: bloqueo por flechas, cerca del horizonte y en
+  ángulo rasante (#1171, @pacaeiro); el primer clic conserva el plano.
+- **Enganche a grupos y componentes bloqueados** (#1250, @APBureauEtude).
+- **Borrar la arista de un agujero** quita el agujero en vez de dejarlo
+  colgando (#1291, #1191, @tony1233200).
+- **SKP**: cotas y textos con línea guía dentro de grupos (#1288, #1226,
+  @tony1233200).
+- **Autoguardado** respeta la variable APPDATA del proceso en Windows (#1286,
+  #1180); **cerrar** antes o durante la apertura inicial (#1289, #1269); el
+  **selector de color de Qt** traducido (#1290, #1178); @tony1233200.
+- **BIM**: el volumen de un conjunto de caras se mide desde el conjunto, no
+  desde el origen (#1264, #1221, @tony1233200).
+- **Bandeja de piezas**: una definición compartida se lee una vez, no una por
+  copia (#1237, @vicc3d); **el terreno 3D** se conserva en el documento
+  (#1238, @vicc3d).
+- **Invertir una cara dentro de un componente** se ve igual al salir (#1153).
+- **Láminas**: la lista de elementos ya no se cierra tras un clic derecho; un
+  punto a lo largo de una arista también engancha (#1219); la lista de
+  estilos de un marco muestra los guardados después de abrirlo (#1310,
+  #1283).
+- **Asistente de IA**: nunca envía un bloque de texto vacío (#1266).
+- **Círculo**: la pista en español cabe en una pantalla de 1366 px; un
+  archivo con círculos guía abre en una versión sin ellos.
+- **Imagen PNG**: vuelve a empezar con fondo opaco; la casilla de fondo
+  transparente sigue ahí.
+- **Motor Rust**: un arranque que no llegó a dibujar no lo apaga.
+
+## [0.6.1] — 2026-11-08
+
+**Vistas en la misma pestaña: una, dos, tres o cuatro, con líneas que se
+arrastran y escenas en su propia fila; aviso cuando sale una versión nueva;
+PNG con fondo transparente y vidrio translúcido en Monocromo; búlgaro y chino
+tradicional, ya son 19 idiomas; Empujar/Tirar y las herramientas de ángulo más
+fiables, y decenas de arreglos de importación, pintura y grupos.**
+
+### Añadido
+
+- **Distribuciones de vistas** (#1127, @canalsecuario-blip): la zona del
+  modelo se divide en una, dos, tres o cuatro vistas, cada una con su cámara.
+  Cada línea entre vistas se arrastra sola y un cuadrado mueve el bloque;
+  Maximizar y Restaurar están en el menú de la etiqueta de cada vista. Lo que
+  dibujas en una se ve en las demás, y la distribución se guarda en el `.igz`
+  si usas más de una vista. *Cómo probarlo:* el botón de los cuatro cuadrados, a
+  la izquierda de las pestañas; Ctrl+Espacio maximiza la vista bajo el cursor.
+- **Escenas como pestañas** (#1127): una fila de pestañas bajo el visor, que
+  solo aparece si el proyecto tiene escenas. Se crean, renombran, reordenan y
+  eliminan desde la fila o desde el panel; crear una es un paso de Deshacer.
+  Alt+E oculta la fila.
+- **Área vacía** (#1127): al cerrar la última pestaña queda un área vacía con
+  un «+» que abre un documento nuevo.
+- **Aviso de versión nueva**: una vez al día, al abrir, IngeTrazo pregunta a
+  GitHub cuál es la última versión y, si hay una más reciente, muestra sus
+  novedades sin interrumpir. También en Ayuda ▸ Buscar actualizaciones…; se
+  apaga en Preferencias. No aparece en Flatpak ni Snap, que se actualizan
+  solos.
+- **PNG con fondo transparente**: una casilla en Exportar imagen deja sin
+  cielo ni suelo el fondo del PNG. *Cómo probarlo:* Archivo ▸ Exportar imagen,
+  formato PNG, marca «Fondo transparente». En JPG aparece desactivada.
+- **Búlgaro** (#1185, @davidsmavrov-debug) y **chino tradicional de Taiwán**
+  (#1010, #1099, @KuoYaMu).
+- **Campo `{sheet_name}`** (#1168, @BastelBaus): siempre el nombre de la
+  lámina, como aparece en la lista de láminas — a diferencia de
+  `{lamina}`/`{sheet}`, que leen la fila LÁMINA del cajetín (el número de
+  plano). Es otro nombre de `{nombre}`/`{name}`. *Cómo probarlo:* escribe un
+  texto «{sheet} — {sheet_name}» en una lámina con cajetín y renombra la
+  lámina.
+- **Enganche donde una arista o guía atraviesa una cara** (#1169, @pacaeiro).
+- **Atajos de teclado**: cada comando muestra su menú y se puede buscar por él
+  (#1157, @canalsecuario-blip).
+
+### Cambiado
+
+- **Doble clic de la rueda: recentra en el punto** (#1154,
+  @canalsecuario-blip): el punto bajo el cursor pasa al centro de la vista,
+  sobre el modelo o sobre el vacío, sin cambiar el zoom ni encuadrar nada.
+  Antes encuadraba todo el modelo (eso sigue en «Zoom a extensión»). *Cómo
+  probarlo:* con la herramienta que sea, doble clic de la rueda sobre una
+  esquina del modelo.
+- **Equidistancia** (#1084, @pacaeiro): engancha solo a puntos finales y
+  medios, y solo durante el arrastre, no a aristas, caras ni inferencias.
+- **Punto de referencia en 3D** (#1097, @pacaeiro): pausar sobre un punto da
+  su referencia también en 3D al dibujar, y Shift la bloquea.
+- **Niveles** (#1075, @consumr): las alturas van en las unidades del documento,
+  las flechas avanzan 10 cm o 4 pulgadas, y cada nivel nuevo repite la altura
+  del anterior.
+- **Pestañas de láminas**: ocupan el ancho libre de la barra de estado y solo
+  muestran flechas si hace falta; un nombre muy largo se corta en la pestaña y
+  se lee entero en su globo (#1184).
+- **Abrir una pestaña nueva** tarda la mitad (@canalsecuario-blip).
+
+### Corregido
+
+- **El programa ya no se cierra de golpe en las láminas**: tras un clic derecho
+  en una fila de la lista de elementos del compositor, ocultarla o cambiar la
+  lista podía tumbar IngeTrazo, y se perdía lo que no estuviera guardado.
+- **Importar `.skp`**: un componente escalado de cierta forma entraba 10 000
+  veces más grande (#1196, @DarkBiscuits).
+- **Una importación que falla o no trae nada lo dice y no deja una pestaña
+  vacía**: DXF, DWG, DAE, GLB, OBJ y SKP (#1176, #1172).
+- **DXF** (#1160, @nicolasmarc): cada parte POLYFACE o MESH se une por su
+  cuenta, los bloques de ensamblaje dan un componente con nombre por parte y
+  una cara repetida por las entidades de malla queda una sola vez.
+- **Importar GLB**: las imágenes ya no llegan al revés (#1159,
+  @canalsecuario-blip).
+- **Exportar GLB**: una cara pintada solo por el reverso sale con esa pintura.
+- **Guardar escribe el documento del proyecto activo** (#1106).
+- **Extensiones**: una que no se puede leer o cargar ya no impide cargar las
+  demás ni abrir el gestor, e instalar como administrador ya no la deja sin
+  permisos para los demás usuarios (#1152).
+- **Empujar/Tirar**: una distancia tecleada o un clic ya no se ignoran en
+  silencio en una cara desviada, y una puerta desviada 1 mm se abre al empujar
+  el grueso del muro (#1094).
+- **Transportador y Rotar**: el disco ya no cambia de tamaño al mover el cursor
+  en vistas rasantes (#1200, #1208, @pacaeiro), y cambiar el plano con
+  una flecha después de colocar el centro también mueve el plano de trabajo,
+  así que el eje Z engancha (#1220, @pacaeiro).
+- **Formas planas con flecha**: se anclan en la cara bajo el cursor, en lugar
+  de en el plano del origen (#1171, @pacaeiro).
+- **Hacer componente sobre un grupo** ya no lo hace desaparecer de la vista
+  (#1150, @canalsecuario-blip).
+- **Puente**: dos arcos opuestos ya no se cruzan en un reloj de arena (#1164,
+  @canalsecuario-blip).
+- **Grupos anidados**: una pieza sin pintar lleva la pintura de su contenedor
+  pintado más cercano, y la conserva al moverla (#1156, #1101, @alteralto).
+- **Lo que cambias dentro de un grupo anidado se ve al momento**: en un grupo
+  abierto dentro de otro, o en un contenedor con caras propias, pintar, dibujar
+  o mover no aparecía en pantalla hasta salir del grupo. Tampoco se veía
+  Deshacer tras salir del grupo ni editar un material usado dentro de un
+  componente cerrado. *Cómo probarlo:* entra en un grupo dentro de otro y pinta
+  una cara; Deshacer y Rehacer también deben verse.
+- **Pintar**: lo pintado dentro de un grupo ya no vuelve a su color anterior al
+  salir; cada repintado de una definición compartida ve la edición (#1129); el
+  aviso al pintar un contenedor dura diez segundos, y al salir de un componente
+  anidado cuenta bien sus copias.
+- **Vidrio**: en Monocromo es translúcido y gris, en lugar de opaco y blanco, y
+  las imágenes exportadas salen opacas detrás del vidrio: el fondo ya no queda
+  semitransparente en los PNG.
+- **Seleccionar**: entre objetos sobre un mismo plano gana el más pequeño
+  (#982). **Pegar**: lo pegado queda seleccionado, también caras y aristas
+  sueltas.
+- **`{proyecto}`, `{autor}` y `{lamina}` leen la tabla del cajetín** (#1168,
+  @BastelBaus): los campos de los textos de la lámina tomaban los valores con
+  los que nació el cajetín, no los que uno escribe después en su tabla —
+  cambiabas el nombre del proyecto y el texto seguía diciendo el viejo. Ahora
+  leen la fila con ese nombre (PROYECTO, AUTOR, LÁMINA; también en inglés o
+  alemán, con o sin tilde), y el texto se repinta al editar la fila. *Cómo
+  probarlo:* en una lámina con cajetín, escribe un texto «{proyecto} —
+  {lamina}» y cambia la fila PROYECTO en el panel.
+- **Compositor**: los campos del panel lateral responden a la rueda solo si
+  tienen el foco (#1163).
+- **Tabla BIM**: conserva las ramas que plegaste (#1117).
+- **Panel de capas**: las marcas de cada fila se repintan al cambiar de tema
+  (#1128, @alteralto).
+- **macOS**: la release deja el ejecutor `macos-14`, que se retira (#1123).
+
 ## [0.6.0] — 2026-11-01
 
 **Varios proyectos en pestañas en la misma ventana; IngeTrazo ya habla 17

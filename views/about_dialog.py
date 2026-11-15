@@ -45,8 +45,10 @@ CONTRIBUTORS = [
     ("Gabriel Rodríguez Arregin",
      "Architect. The units system, the Browser, Layers 2.0, the Solid "
      "Inspector, Fillet 3D bevels, Bridge, Join Segments, Camera ▸ Axes, "
-     "soft ambient occlusion, round curved surfaces, cleaner exports and "
-     "many everyday editing tools.",
+     "soft ambient occlusion, round curved surfaces, view layouts, scenes "
+     "as tabs, cleaner exports and many everyday editing tools. And for "
+     "0.6.2: the North tool, camera settings, scene transitions with video "
+     "and the view as layered SVG.",
      "https://github.com/canalsecuario-blip"),
     ("Félix Riestra",
      "The macOS package: IngeTrazo for Mac. Components that come apart "
@@ -144,7 +146,7 @@ CONTRIBUTORS = [
      "https://github.com/PRIDA-TAKON"),
     ("ChangWoo Lee",
      "Korean translation of the interface, and the AI key from an "
-     "environment variable.",
+     "environment variable. In 0.6.2, soft shadows and fixes for macOS.",
      "https://github.com/ultracat"),
     ("nonasige-ui",
      "Japanese translation of the interface.",
@@ -168,7 +170,8 @@ CONTRIBUTORS = [
      "A failed scripted import that gives back what it had removed.",
      "https://github.com/clinta"),
     ("nicolasmarc",
-     "DXF polyface and mesh entities imported as faces.",
+     "DXF polyface and mesh entities imported as faces, merged part by "
+     "part.",
      "https://github.com/nicolasmarc"),
     ("BastelBaus",
      "DAE and .skp imports that keep the file's groups, nested and named, "
@@ -256,12 +259,36 @@ CONTRIBUTORS = [
      "The OpenCode Go provider and a readable chat for the AI Assistant.",
      "https://github.com/changastyle"),
     ("Alexey Tkachenko",
-     ".skp components scaled by −1 that keep their front.",
+     ".skp components scaled by −1 that keep their front, and nested "
+     "groups that wear their nearest painted container.",
      "https://github.com/alteralto"),
+    ("Reza Prama Arviandi",
+     "Exact Move+Ctrl copies, overlapping rotated copies, faster box "
+     "selection on huge models and the reviewed Indonesian translation.",
+     "https://github.com/rezaprama"),
+    ("Francesco Fantoni",
+     "Snapping to the rest of the model from inside a group or component.",
+     "https://github.com/hvfrancesco"),
     ("Aashish — IngeTrazo Tutorials",
      "The IngeTrazo Tutorials channel on YouTube, and nine extensions: "
      "MultiView, Phasing Animator, Kitchen Maker, Taper and more.",
      "https://github.com/aashishzharbade-arch"),
+    ("Phillip Edwards (Eddy)",
+     "Twenty-three extensions in the catalogue: period doors and windows, "
+     "roof tiles, brick and block, gutters, fences, Loft, Wrap and more.",
+     "https://github.com/eddy-99"),
+    ("Dugan Caswell",
+     "Levels: heights in the document's units.",
+     "https://github.com/consumr"),
+    ("David Mavrov",
+     "The Bulgarian translation.",
+     "https://github.com/davidsmavrov-debug"),
+    ("KuoYaMu",
+     "The Traditional Chinese translation.",
+     "https://github.com/KuoYaMu"),
+    ("DarkBiscuits",
+     "A .skp component 10 000 times too big, traced.",
+     "https://github.com/DarkBiscuits"),
     ("İbrahim Halim Gökbulut",
      "Turkish localization and workspace guide.",
      "https://github.com/h-skycloud"),
@@ -502,6 +529,9 @@ class AboutDialog(QDialog):
         head.setContentsMargins(0, 8, 0, 0)
         self.credits = _Credits(CONTRIBUTORS, self)
         col.addWidget(self.credits)
+        para("<small><a href='https://github.com/ingelibre/ingetrazo-extensions'>"
+             f"{tr('Thanks as well to all the authors of the extensions catalogue')}"
+             "</a>.</small>")
         para(f"<small>{tr('And thanks to everyone who tries IngeTrazo and reports what they find.')}</small>")
         para(f"<small>{tr('Licensed under GPL-3.0-or-later.')} · "
              "<a href='https://github.com/ingelibre/ingetrazo'>"

@@ -144,7 +144,7 @@ Root: HKCU; Subkey: "Software\Microsoft\DirectX\UserGpuPreferences"; \
 ; ── .igz — IngeTrazo's own format: full association + branded document icon ──
 ; Double-click opens the document in IngeTrazo and Explorer shows the .igz icon.
 Root: HKA; Subkey: "Software\Classes\.igz"; ValueType: string; \
-    ValueData: "IngeTrazo.Document"; Flags: uninsdeletevalue
+    ValueData: "IngeTrazo.Document"; Flags: uninsdeletevalue uninsdeletekeyifempty
 Root: HKA; Subkey: "Software\Classes\IngeTrazo.Document"; ValueType: string; \
     ValueData: "{cm:IgzDocument}"; Flags: uninsdeletekey
 Root: HKA; Subkey: "Software\Classes\IngeTrazo.Document\DefaultIcon"; \
@@ -159,6 +159,10 @@ Root: HKA; Subkey: "Software\Classes\IngeTrazo.Document\shell\open\command"; \
 ; each extension's OpenWithProgids list, so IngeTrazo appears in the right-click
 ; "Open with" menu. The ProgId carries the branded icon, which only takes visual
 ; effect if the user later chooses IngeTrazo as the default for these files.
+; Uninstalling undoes the entries last to first, so each extension's own key is
+; listed before what goes inside it, and goes only if nothing else is left there.
+Root: HKA; Subkey: "Software\Classes\.dae"; Flags: uninsdeletekeyifempty
+Root: HKA; Subkey: "Software\Classes\.skp"; Flags: uninsdeletekeyifempty
 Root: HKA; Subkey: "Software\Classes\IngeTrazo.dae"; ValueType: string; \
     ValueData: "{cm:DaeModel}"; Flags: uninsdeletekey
 Root: HKA; Subkey: "Software\Classes\IngeTrazo.dae\DefaultIcon"; \
@@ -167,7 +171,7 @@ Root: HKA; Subkey: "Software\Classes\IngeTrazo.dae\shell\open\command"; \
     ValueType: string; ValueData: """{app}\{#MyAppExeName}"" ""%1"""
 Root: HKA; Subkey: "Software\Classes\.dae\OpenWithProgids"; \
     ValueType: string; ValueName: "IngeTrazo.dae"; ValueData: ""; \
-    Flags: uninsdeletevalue
+    Flags: uninsdeletevalue uninsdeletekeyifempty
 
 Root: HKA; Subkey: "Software\Classes\IngeTrazo.skp"; ValueType: string; \
     ValueData: "{cm:SkpModel}"; Flags: uninsdeletekey
@@ -177,7 +181,7 @@ Root: HKA; Subkey: "Software\Classes\IngeTrazo.skp\shell\open\command"; \
     ValueType: string; ValueData: """{app}\{#MyAppExeName}"" ""%1"""
 Root: HKA; Subkey: "Software\Classes\.skp\OpenWithProgids"; \
     ValueType: string; ValueName: "IngeTrazo.skp"; ValueData: ""; \
-    Flags: uninsdeletevalue
+    Flags: uninsdeletevalue uninsdeletekeyifempty
 ; Optional task: make IngeTrazo the DEFAULT opener for .skp (double-click).
 ; Checked by default — .skp now opens natively (openskp backend). Users who
 ; prefer another program for .skp can untick it; uninstall removes the value
@@ -200,8 +204,19 @@ const
   SkpProgId = 'IngeTrazo.skp';
   ThumbnailHandlerKey = 'ShellEx\{E357FCCD-A995-4576-B01F-234630154E96}';
 
+  // Where the ProgID that opened .skp before IngeTrazo is kept, to put it
+  // back on uninstall (issue #1268): a value of IngeTrazo.skp's own key.
+  SkpClassKey = 'Software\Classes\.skp';
+  SkpOwnKey = 'Software\Classes\IngeTrazo.skp';
+  PreviousValueName = 'PreviousSkpProgId';
+
 var
   PreviousSkpProgId: String;
+  // The default of .skp in the root this install writes to (HKA), which is
+  // the one the uninstaller deletes: HKCR also shows the other root's.
+  PreviousOwnRootProgId: String;
+  // Read by the uninstaller before IngeTrazo.skp's key goes.
+  ProgIdToRestore: String;
 
 function ReadThumbnailHandler(const Owner: String; var Clsid: String): Boolean;
 begin
@@ -209,6 +224,47 @@ begin
   if Owner <> '' then
     if RegQueryStringValue(HKCR, Owner + '\' + ThumbnailHandlerKey, '', Clsid) then
       Result := Clsid <> '';
+end;
+
+// The programs Windows offers for .skp: the one that owned it before may be
+// only there once another install of IngeTrazo has the default — a copy for
+// one user over the one for the whole machine found IngeTrazo.skp as the
+// previous ProgID and skipped it, and the previews of the other program were
+// not borrowed. Its ProgID is named in any of three places: the ProgIDs
+// .skp's OpenWithProgids lists, the keys under .skp (a program's ShellNew
+// goes there), and the list Explorer keeps of what opened .skp (seen on the
+// minipc, 11-11: only the last two named it).
+function HandlerOfAny(const Root: Integer; const Key: String; const Values: Boolean;
+                      var Clsid: String): Boolean;
+var
+  Names: TArrayOfString;
+  Listed: Boolean;
+  I: Integer;
+begin
+  Result := False;
+  if Values then
+    Listed := RegGetValueNames(Root, Key, Names)
+  else
+    Listed := RegGetSubkeyNames(Root, Key, Names);
+  if Listed then
+    for I := 0 to GetArrayLength(Names) - 1 do
+      if (not Result) and (Names[I] <> '') and (CompareText(Names[I], SkpProgId) <> 0)
+         and (CompareText(Names[I], 'OpenWithProgids') <> 0)
+         and (CompareText(Names[I], 'OpenWithList') <> 0)
+         and (CompareText(Names[I], 'ShellEx') <> 0)
+         and (CompareText(Names[I], 'ShellNew') <> 0) then
+        Result := ReadThumbnailHandler(Names[I], Clsid);
+end;
+
+function ReadOpenWithHandler(var Clsid: String): Boolean;
+begin
+  Result := HandlerOfAny(HKCR, '.skp\OpenWithProgids', True, Clsid);
+  if not Result then
+    Result := HandlerOfAny(HKCR, '.skp', False, Clsid);
+  if not Result then
+    Result := HandlerOfAny(HKCU,
+      'Software\Microsoft\Windows\CurrentVersion\Explorer\FileExts\.skp\OpenWithProgids',
+      True, Clsid);
 end;
 
 procedure CurStepChanged(CurStep: TSetupStep);
@@ -221,6 +277,8 @@ begin
     // Before [Registry] replaces the default of .skp.
     if not RegQueryStringValue(HKCR, '.skp', '', PreviousSkpProgId) then
       PreviousSkpProgId := '';
+    if not RegQueryStringValue(HKA, SkpClassKey, '', PreviousOwnRootProgId) then
+      PreviousOwnRootProgId := '';
   end
   else if CurStep = ssPostInstall then
   begin
@@ -232,8 +290,40 @@ begin
       Found := ReadThumbnailHandler('.skp', Clsid);
     if not Found then
       Found := ReadThumbnailHandler('SystemFileAssociations\.skp', Clsid);
+    if not Found then
+      Found := ReadOpenWithHandler(Clsid);
     // The key is deleted with IngeTrazo.skp (uninsdeletekey) on uninstall.
     if Found then
       RegWriteStringValue(HKA, 'Software\Classes\' + SkpProgId + '\' + ThumbnailHandlerKey, '', Clsid);
+    // Remember who opened .skp in this root, to hand it back on uninstall.
+    // An upgrade finds IngeTrazo.skp there and keeps what the first install
+    // wrote down.
+    if WizardIsTaskSelected('skpdefault') and (PreviousOwnRootProgId <> '')
+       and (CompareText(PreviousOwnRootProgId, SkpProgId) <> 0) then
+      RegWriteStringValue(HKA, SkpOwnKey, PreviousValueName, PreviousOwnRootProgId);
+  end;
+end;
+
+procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
+var
+  Current: String;
+begin
+  if CurUninstallStep = usUninstall then
+  begin
+    // Before the uninstaller deletes IngeTrazo.skp's key.
+    if not RegQueryStringValue(HKA, SkpOwnKey, PreviousValueName, ProgIdToRestore) then
+      ProgIdToRestore := '';
+  end
+  else if CurUninstallStep = usPostUninstall then
+  begin
+    // .skp left without a default, or still pointing at IngeTrazo: back to
+    // the program that had it. Anything the user chose since is left alone.
+    if ProgIdToRestore <> '' then
+    begin
+      if not RegQueryStringValue(HKA, SkpClassKey, '', Current) then
+        Current := '';
+      if (Current = '') or (CompareText(Current, SkpProgId) = 0) then
+        RegWriteStringValue(HKA, SkpClassKey, '', ProgIdToRestore);
+    end;
   end;
 end;

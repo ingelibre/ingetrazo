@@ -220,6 +220,21 @@ def test_1076_door_pushed_through_the_wall(door, tilt, lift, past):
         for g in scene.mesh.faces)
 
 
+@pytest.mark.parametrize("door", sorted(_DOORS))
+@pytest.mark.parametrize("tilt", [5e-4, 1e-3, 1.5e-3])
+@pytest.mark.parametrize("past", [0.0, 5e-5, 1e-4, 2e-4])
+def test_1094_door_a_millimetre_out_of_true_opens_the_wall(door, tilt, past):
+    """The wall's far face lies to the side of the door, and door A's normal
+    leans towards it: measuring the reach along the push to that face's
+    centroid read it as beyond the push. It left a cap on the far face, an
+    edge with three faces and, a hair past it, a wrecked volume."""
+    scene, f = _plan(door, tilt)
+    v0, area = signed_volume(scene.mesh), f.area()
+    vp = T._push(scene, f, -(_W1 - _W0 + past))
+    _solid_ok(scene, vp, v0, -area * (_W1 - _W0), tol=2e-3)
+    assert len(scene.mesh.faces) == 22
+
+
 def test_1076_door_push_survives_save_and_reopen(tmp_path):
     scene, f = _plan("A")
     T._push(scene, f, -0.1)

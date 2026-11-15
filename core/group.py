@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import copy
 import itertools
+import uuid
 
 from core.mesh import Mesh
 
@@ -23,7 +24,6 @@ _counter = itertools.count(1)
 def new_uid() -> str:
     """A fresh group identity: random, so two documents merged (a ``.igz``
     imported as a component) never collide."""
-    import uuid
     return uuid.uuid4().hex[:16]
 
 
@@ -387,7 +387,7 @@ def _remap_uvws(mesh, m, faces=None) -> None:
         f.attrs["texture"] = {**t, "uvw": new}
 
 
-def world_mesh(group) -> Mesh:
+def world_mesh(group, placements=None) -> Mesh:
     """A world-space mesh for a group: the mesh itself for classic groups,
     a transformed DEEP copy (positions + texture UV maps) for component
     instances — the shared prototype is never touched. (``capture_state``
@@ -398,15 +398,19 @@ def world_mesh(group) -> Mesh:
     A group's nested placements (``children``) are folded in, each through
     its own transform composed with this one — the group's full geometry,
     which is what every consumer that used to read ``group.mesh`` directly
-    needs once a component keeps its internal sharing."""
+    needs once a component keeps its internal sharing.
+
+    ``placements`` (``(group, world_matrix)`` pairs, as
+    :func:`iter_placements` yields them) folds in only those: what
+    :func:`visible_placements` returns, for a consumer that draws."""
     m = getattr(group, "xform", None)
     kids = getattr(group, "children", None)
     if not kids:
         return group.mesh if m is None else transformed_mesh(group.mesh, m)
-    return _merged_placements(group)
+    return _merged_placements(group, placements)
 
 
-def _merged_placements(group) -> Mesh:
+def _merged_placements(group, placements=None) -> Mesh:
     """Every placement of ``group`` welded into ONE mesh, in a single
     vectorized pass.
 
@@ -425,8 +429,10 @@ def _merged_placements(group) -> Mesh:
     ring_sizes: list = []
     ring_counts: list = []
     attrs_list: list = []
-    for g, m in iter_placements(group):
+    for g, m in (iter_placements(group) if placements is None
+                 else placements):
         src = g.mesh
+        mirror = _is_mirror(m)
         epts: list = []
         fpts: list = []
         for e in src.edges:
@@ -439,10 +445,11 @@ def _merged_placements(group) -> Mesh:
                 holes = _maximal_holes([list(h) for h in holes])
             ring_counts.append(1 + len(holes))
             ring_sizes.append(len(f.vertices))
-            fpts.extend((v.x(), v.y(), v.z()) for v in f.vertices)
+            fpts.extend((v.x(), v.y(), v.z())
+                        for v in _ring(f.vertices, mirror))
             for h in holes:
                 ring_sizes.append(len(h))
-                fpts.extend((v.x(), v.y(), v.z()) for v in h)
+                fpts.extend((v.x(), v.y(), v.z()) for v in _ring(h, mirror))
             # The texture's world->UV map travels with the placement, so a
             # nested leaf keeps its wood grain instead of inheriting the
             # parent's frame.
@@ -503,6 +510,63 @@ def iter_placements(group, base=None):
         yield from iter_placements(child, m)
 
 
+def iter_painted_placements(group, base=None, paint=None):
+    """:func:`iter_placements` with the paint each placement's default faces
+    show: ``(group, world_matrix, paint)``. A placement with no paint of its
+    own wears the nearest painted container above it, at any depth — the
+    .skp rule the import already follows (#1101: a plain piece two levels
+    down showed the top-level object's paint, or none). ``paint`` is what
+    ``group`` itself sits in."""
+    m = getattr(group, "xform", None)
+    if base is not None:
+        m = base if m is None else base * m
+    paint = getattr(group, "material", None) or paint
+    yield group, m, paint
+    for child in getattr(group, "children", None) or ():
+        yield from iter_painted_placements(child, m, paint)
+
+
+def visible_placements(scene, group):
+    """:func:`iter_placements` without the nested placements the viewport
+    does not draw, for a top-level ``group`` the caller already found
+    visible.
+
+    The same rule as ``Viewport._expand_placements``: Hide on a group takes
+    its whole subtree along; a nested group with no tag of its own takes the
+    nearest one above it; and a hidden or locked tag above puts every
+    instance below it on that tag, whatever its children are tagged. A
+    hidden group two levels down drew in a sheet while the viewport left it
+    out, because :func:`world_mesh` folds in every child."""
+    def shown(layer):
+        ly = scene.layer(layer) if layer else None
+        return ly is None or ly.visible
+
+    def blocking(layer):
+        ly = scene.layer(layer) if layer else None
+        return ly is not None and (not ly.visible or ly.locked)
+
+    def walk(node, world, hidden, forced, inherited):
+        for child in node.children:
+            m = (child.xform if world is None
+                 else (world * child.xform if child.xform is not None
+                       else world))
+            layer = forced or child.layer or inherited or node.layer
+            off = hidden or bool(child.hidden)
+            if not off and shown(layer):
+                yield child, m
+            if child.children:
+                kid_forced = forced
+                if kid_forced is None and blocking(layer):
+                    kid_forced = layer
+                yield from walk(child, m, off, kid_forced, layer)
+
+    m = getattr(group, "xform", None)
+    yield group, m
+    if getattr(group, "children", None):
+        forced = group.layer if blocking(group.layer) else None
+        yield from walk(group, m, bool(group.hidden), forced, None)
+
+
 def _copy_mesh(mesh) -> Mesh:
     from PySide6.QtGui import QMatrix4x4
     return transformed_mesh(mesh, QMatrix4x4())
@@ -533,9 +597,24 @@ def np_affine(m):
     return rot, np.array([d[12], d[13], d[14]], dtype=np.float64)
 
 
+def _is_mirror(m) -> bool:
+    """Whether the matrix reflects: it turns every ring it maps inside out."""
+    return m is not None and m.determinant() < 0.0
+
+
+def _ring(points, mirror: bool):
+    """A face's ring in the order that keeps its front the front once mapped
+    through a matrix (see :func:`_is_mirror`)."""
+    return points[::-1] if mirror else points
+
+
 def transformed_mesh(src: Mesh, m) -> Mesh:
     """A DEEP copy of ``src`` with every position mapped through ``m``,
     carrying face attrs, soft/curve flags and re-fitted texture UV maps.
+
+    A mirror keeps each face's front the front, as a mirrored placement draws
+    it (``Viewport._instance_chunk``): opening one for editing showed every
+    face the other way round.
 
     Big meshes go through one vectorized ``bulk_weld`` pass (same recipe as
     the ``.igz`` loader): the per-entity ``add_face``/``add_edge`` walk froze
@@ -547,6 +626,7 @@ def transformed_mesh(src: Mesh, m) -> Mesh:
     import numpy as np
     from core.topology import _maximal_holes
     new = Mesh()
+    mirror = _is_mirror(m)
     flat: list = []
     for e in src.edges:
         flat.append((e.a.x(), e.a.y(), e.a.z()))
@@ -561,10 +641,10 @@ def transformed_mesh(src: Mesh, m) -> Mesh:
             holes = _maximal_holes([list(h) for h in holes])
         ring_counts.append(1 + len(holes))
         ring_sizes.append(len(f.vertices))
-        flat.extend((v.x(), v.y(), v.z()) for v in f.vertices)
+        flat.extend((v.x(), v.y(), v.z()) for v in _ring(f.vertices, mirror))
         for h in holes:
             ring_sizes.append(len(h))
-            flat.extend((v.x(), v.y(), v.z()) for v in h)
+            flat.extend((v.x(), v.y(), v.z()) for v in _ring(h, mirror))
         attrs_list.append(dict(f.attrs) if f.attrs else None)
     if not flat:
         return new
@@ -588,14 +668,16 @@ def _transformed_mesh_walk(src: Mesh, m) -> Mesh:
     """Sequential per-entity copy — exact semantics for small meshes."""
     from PySide6.QtGui import QVector3D
     new = Mesh()
+    mirror = _is_mirror(m)
 
     def W(p) -> QVector3D:
         return m.map(p)
 
     for f in src.faces:
         try:
-            nf = new.add_face([W(v) for v in f.vertices],
-                              [[W(v) for v in h] for h in f.holes] or None)
+            nf = new.add_face([W(v) for v in _ring(f.vertices, mirror)],
+                              [[W(v) for v in _ring(h, mirror)]
+                               for h in f.holes] or None)
         except Exception:  # noqa: BLE001 — degenerate under the transform
             continue
         if f.attrs:

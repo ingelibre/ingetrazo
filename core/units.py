@@ -427,10 +427,12 @@ FRACTION_LABELS = ('1"', '1/4"', '1/16"', '1/32"', '1/64"')
 #: separator is the reader's, not the profile's, and stays as it is.
 PROFILES = {
     "metric": {"length": "m", "precision": 2},
+    "centimetric": {"length": "cm", "precision": 1},
     "millimetric": {"length": "mm", "precision": 0},
     "imperial": {"length": "ft-in-frac", "precision": 2},
 }
-PROFILE_LABELS = {"metric": "Metric (m, cm)", "millimetric": "Millimetric (mm)",
+PROFILE_LABELS = {"metric": "Metric (m)", "centimetric": "Centimetric (cm)",
+                  "millimetric": "Millimetric (mm)",
                   "imperial": "Imperial (ft-in)", "custom": "Custom"}
 
 

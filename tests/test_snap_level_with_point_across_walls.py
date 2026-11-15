@@ -246,8 +246,9 @@ def test_the_opposite_wall_too_where_no_axis_line_reaches():
             s = vp.last_snap
             assert s.kind == "aligned", (x, s.kind)
             assert abs(s.point.y() - 5.0) < 1e-6 and abs(s.point.z() - 2.2) < 1e-6
-        # Well off the height: nothing but the wall.
-        _hover(vp, V(4.0, 5, 1.5))
+        # Well off the height: nothing but the wall. (Off its middle too:
+        # (4, 5, 1.5) is the wall's centre, which offers «Face center».)
+        _hover(vp, V(6.0, 5, 1.0))
         assert vp.last_snap.kind == "on_face"
     finally:
         win._saved_version = vp.scene.version

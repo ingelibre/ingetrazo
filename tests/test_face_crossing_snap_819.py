@@ -163,7 +163,7 @@ def test_the_probes_either_side_are_baked_before_any_is_asked(monkeypatch):
                 seq.append("bake")
             return real_mat(near)
 
-        def front(x, y):
+        def front(x, y, *a):
             seq.append("ask")
             return real_front(x, y)
         px = vp._world_to_pixel(V(0.5, 0.0, 0.0))

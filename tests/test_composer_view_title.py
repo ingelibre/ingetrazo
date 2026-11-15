@@ -31,7 +31,7 @@ def _composer():
         [V(0, 0, 0), V(6, 0, 0), V(6, 0, 3), V(0, 0, 3)])
     composer = ComposerWindow(host)
     composer.comp.cajetin = Cajetin()
-    composer.comp.cajetin.lamina = "A-101"
+    composer.comp.cajetin.set_field("LÁMINA", "A-101")
     composer._set_field_context(composer.comp)
     return composer, host
 

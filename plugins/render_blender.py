@@ -1289,7 +1289,7 @@ def draw_lights(app, panel, viewport, painter) -> None:
 
 def setup(app) -> None:
     panel = RenderPanel(app)
-    dock = app.add_panel(tr("Render"), panel)
+    dock = app.add_panel(tr("Render"), panel, icon="panel_render")
     # The tab is the render tool; this entry only brings it forward —
     # shown again if hidden from Window ▸ Panels (Marco: «no aparece en el
     # menú Extensiones»).

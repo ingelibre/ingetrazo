@@ -466,7 +466,8 @@ def test_line_styles_and_wanted():
     scene = _two_boxes_scene()
     assert L.layer_lines_wanted(scene)
     st = L.line_styles(scene, colored=False)
-    assert st["A"] == (None, "dashed", 0.5) and st["B"][0] is None
+    assert st["A"] == (None, "dashed", 0.5, None, (3.0, 1.5), None)
+    assert st["B"][0] is None
     assert L.line_styles(scene, colored=True)[DEFAULT_LAYER][0] is None
     plain = Scene()
     plain.layers.append(Layer("X"))
@@ -1221,6 +1222,40 @@ def test_active_pencil_follows_the_chosen_accent(win):
         theme.apply_accent(_app)
 
 
+def test_row_icons_follow_a_live_theme_switch(win):
+    # #1086: after switching the theme with the app open, the eye, padlock,
+    # isolate and print marks stayed in the previous theme's ink
+    from views import theme
+
+    panel = win.layers_dock.panel
+    win.viewport.scene.layers.append(Layer("A"))     # has an isolate target
+    panel.refresh()
+
+    def lightness(icon):
+        image = icon.pixmap(18, 18).toImage()
+        return [image.pixelColor(x, y).lightness()
+                for y in range(image.height()) for x in range(image.width())
+                if image.pixelColor(x, y).alpha() > 100]
+
+    columns = (2, 3, 6, 10)               # COL_EYE, COL_LOCK, COL_ISOLATE, COL_PRINT
+    try:
+        for mode, other in ((theme.LIGHT, theme.dark_palette()),
+                            (theme.DARK, theme.light_palette())):
+            theme.apply_theme(_app, mode)
+            _app.processEvents()
+            ink = _app.palette().text().color().lightness()
+            old = other.text().color().lightness()
+            row, head = panel.item_for("A"), panel.tree.headerItem()
+            for col in columns:
+                for icon in (row.icon(col), head.icon(col)):
+                    seen = lightness(icon)
+                    # drawn, and every visible pixel in this theme's ink
+                    assert seen, (mode, col)
+                    assert all(abs(v - ink) < abs(v - old) for v in seen), (mode, col)
+    finally:
+        theme.apply_theme(_app, theme.DARK)
+
+
 def test_colour_by_layer_button_sets_the_style(win):
     panel = win.layers_dock.panel
     scene = win.viewport.scene
@@ -1576,9 +1611,9 @@ def test_line_type_and_weight_columns_follow_the_colour(win):
     panel.refresh()
     head = panel.tree.header()
     order = [head.logicalIndex(v) for v in range(head.count())]
-    from views.layers_panel import COL_OPACITY, COL_PRINT
-    assert order[-6:] == [COL_COLOR, COL_LINETYPE, COL_WEIGHT, COL_OPACITY,
-                          COL_PRINT, COL_COUNT]
+    from views.layers_panel import COL_CUT, COL_HATCH, COL_OPACITY, COL_PRINT
+    assert order[-8:] == [COL_COLOR, COL_LINETYPE, COL_HATCH, COL_WEIGHT,
+                          COL_CUT, COL_OPACITY, COL_PRINT, COL_COUNT]
     a, b = panel.item_for("A"), panel.item_for("B")
     assert a.data(COL_LINETYPE, ROLE_LINETYPE) == "dashed"
     assert a.text(COL_WEIGHT) == "0.35"
@@ -1630,7 +1665,8 @@ def test_the_line_type_list_shows_the_lines_not_their_names(win):
     menu = QMenu()
     panel._fill_linetypes(menu, ["A"], scene.layer("A"))
     samples = [a.defaultWidget() for a in menu.actions()
-               if isinstance(a, QWidgetAction)]
+               if isinstance(a, QWidgetAction)
+               and isinstance(a.defaultWidget(), _LineSample)]
     from views.layers_panel import LayersPanel
     keys = [k for k, _l in LayersPanel.LINETYPE_LABELS]
     assert [s.key for s in samples] == keys
@@ -1651,16 +1687,16 @@ def test_the_columns_button_switches_columns_and_remembers(win):
     panel = win.layers_dock.panel
     QSettings().remove(LayersPanel.HIDDEN_COLUMNS_KEY)
     panel._apply_column_choice()
-    # By default the weight, the print mark, the transparency and the count
-    # are off.
-    from views.layers_panel import COL_OPACITY, COL_PRINT, COL_WEIGHT
+    # By default the weight, the print mark, the transparency, the count
+    # and the cut weight are off.
+    from views.layers_panel import COL_CUT, COL_OPACITY, COL_PRINT, COL_WEIGHT
     assert panel.hidden_columns() == {COL_WEIGHT, COL_PRINT, COL_OPACITY,
-                                      COL_COUNT}
+                                      COL_COUNT, COL_CUT}
     assert panel.tree.isColumnHidden(COL_COUNT)
     assert panel.tree.isColumnHidden(COL_OPACITY)
-    assert panel.columns_button.text() == "+4"
+    assert panel.columns_button.text() == "+5"
     for c in (COL_COUNT, COL_OPACITY, COL_PRINT,
-              COL_WEIGHT):                         # now chosen: all on
+              COL_WEIGHT, COL_CUT):                # now chosen: all on
         panel.set_column_shown(c, True)
     win.layers_dock.raise_()
     _app.processEvents()
@@ -1683,14 +1719,14 @@ def test_the_columns_button_switches_columns_and_remembers(win):
     assert LayersPanel.hidden_columns(panel) == {COL_COUNT}
     QSettings().remove(LayersPanel.HIDDEN_COLUMNS_KEY)
     panel._apply_column_choice()
-    assert b.text() == "+4"                        # back to the default
+    assert b.text() == "+5"                        # back to the default
 
 
 def test_dropped_menus_stay_inside_the_panel(win):
     """Every list opens the same way — its right edge on the cell's or the
     button's — and inside the panel, a margin from its sides."""
     from PySide6.QtCore import QRect
-    from views.layers_panel import (COL_LINETYPE, COL_WEIGHT, MENU_MARGIN,
+    from views.layers_panel import (COL_CUT, COL_WEIGHT, MENU_MARGIN,
                                     global_rect, place_menu)
     panel = win.layers_dock.panel
     scene = win.viewport.scene
@@ -1701,7 +1737,9 @@ def test_dropped_menus_stay_inside_the_panel(win):
     inside = global_rect(panel)
     seen = []
     panel._popup = lambda m, pos: seen.append((m.sizeHint().width(), pos))
-    for col in (COL_LINETYPE, COL_WEIGHT):
+    # The line type is a panel of its own now, centred like the hatch
+    # picker: the weight lists drop from their cells.
+    for col in (COL_CUT, COL_WEIGHT):
         panel.click_cell(("layer", "A"), col)
     panel._open_more_menu()
     panel._open_filter_menu()
@@ -1711,7 +1749,7 @@ def test_dropped_menus_stay_inside_the_panel(win):
     # The two cell lists line up the same way on their cells.
     item = panel.item_for("A")
     row = panel.tree.visualItemRect(item)
-    for (w, at), col in zip(seen[:2], (COL_LINETYPE, COL_WEIGHT)):
+    for (w, at), col in zip(seen[:2], (COL_CUT, COL_WEIGHT)):
         cell = QRect(panel.tree.columnViewportPosition(col), row.top(),
                      panel.tree.columnWidth(col), row.height())
         right = global_rect(panel.tree.viewport(), cell).right() + 1
@@ -1747,6 +1785,8 @@ def test_the_columns_menu_stays_open_and_shows_all(win):
     from views.layers_panel import COL_COLOR, COL_COUNT, COL_WEIGHT, LayersPanel
     panel = win.layers_dock.panel
     QSettings().setValue(LayersPanel.HIDDEN_COLUMNS_KEY, "")   # all on
+    QSettings().setValue(LayersPanel.KNOWN_COLUMNS_KEY, ",".join(
+        str(c) for c, _l in LayersPanel.OPTIONAL_COLUMNS))
     panel._apply_column_choice()
     menu = panel._columns_menu()
     menu.popup(QPoint(100, 100))
@@ -1938,6 +1978,97 @@ def test_sort_by_order_created_from_the_options_menu(win):
     QSettings().remove(LayersPanel.SORT_KEY)
 
 
+def _top_rows(panel):
+    return [panel.tree.topLevelItem(i).text(0)
+            for i in range(panel.tree.topLevelItemCount())]
+
+
+def _child_rows(panel, folder):
+    item = panel.item_for(folder, "folder")
+    return [item.child(i).text(0) for i in range(item.childCount())]
+
+
+@pytest.mark.parametrize("how, label, attr", [
+    ("visible", "Sort by visible", "visible"),
+    ("locked", "Sort by locked", "locked"),
+])
+def test_sort_by_visible_or_locked_from_the_options_menu(win, how, label,
+                                                         attr):
+    from PySide6.QtCore import QSettings
+    from views.layers_panel import LayersPanel
+    QSettings().remove(LayersPanel.SORT_KEY)
+    panel = win.layers_dock.panel
+    scene = win.viewport.scene
+    # Visible (or locked) layers go first, the others after.
+    scene.layers += [Layer("Capa 10", **{attr: True}),
+                     Layer("Capa 2", **{attr: False}),
+                     Layer("Capa 1", **{attr: True}),
+                     Layer("Alzado", **{attr: False})]
+    panel.refresh()
+    assert _layer_rows(panel)[1:] == ["Alzado", "Capa 1", "Capa 2",
+                                      "Capa 10"]
+    panel._fill_more_menu()
+    next(a for a in panel.more_menu.actions() if a.text() == label).trigger()
+    assert panel.sort_by == how
+    # Layer 0 still first; then that state's layers, each group by name
+    # with its numbers read as numbers.
+    assert _layer_rows(panel) == [DEFAULT_LAYER, "Capa 1", "Capa 10",
+                                  "Alzado", "Capa 2"]
+    panel._fill_more_menu()
+    checks = {a.text(): a.isChecked() for a in panel.more_menu.actions()}
+    assert checks[label]
+    assert sum(checks[t] for t in ("Sort by name", "Sort by order created",
+                                   "Sort by visible", "Sort by locked")) == 1
+    assert str(QSettings().value(LayersPanel.SORT_KEY)) == how   # remembered
+    panel.set_sort_by("name")
+    QSettings().remove(LayersPanel.SORT_KEY)
+
+
+def test_sort_by_visible_moves_a_row_when_its_eye_is_clicked(win):
+    from PySide6.QtCore import QSettings
+    from views.layers_panel import COL_EYE, COL_LOCK, LayersPanel
+    QSettings().remove(LayersPanel.SORT_KEY)
+    panel = win.layers_dock.panel
+    scene = win.viewport.scene
+    scene.layers += [Layer("A"), Layer("B"), Layer("C")]
+    panel.set_sort_by("visible")
+    assert _layer_rows(panel)[1:] == ["A", "B", "C"]
+    panel.click_cell(("layer", "A"), COL_EYE)       # hide A: it goes down
+    assert not scene.layer("A").visible
+    assert _layer_rows(panel)[1:] == ["B", "C", "A"]
+    panel.click_cell(("layer", "A"), COL_EYE)       # shown again: back up
+    assert _layer_rows(panel)[1:] == ["A", "B", "C"]
+    panel.set_sort_by("locked")
+    panel.click_cell(("layer", "C"), COL_LOCK)      # locked: it goes up
+    assert _layer_rows(panel)[1:] == ["C", "A", "B"]
+    panel.set_sort_by("name")
+    QSettings().remove(LayersPanel.SORT_KEY)
+
+
+def test_sort_by_visible_keeps_folders_first_and_sorts_inside_them(win):
+    from PySide6.QtCore import QSettings
+    from views.layers_panel import LayersPanel
+    QSettings().remove(LayersPanel.SORT_KEY)
+    panel = win.layers_dock.panel
+    scene = win.viewport.scene
+    hidden = L.add_folder(scene, "Apagada")
+    shown = L.add_folder(scene, "Zona")
+    scene.layers += [Layer("Muro", folder=hidden, visible=False),
+                     Layer("Losa", folder=shown, visible=False),
+                     Layer("Pilar", folder=shown),
+                     Layer("Suelta", visible=False), Layer("Viga")]
+    panel.set_sort_by("visible")
+    # Layer 0, the folders (the one with a layer shown first), the layers.
+    assert _top_rows(panel) == [DEFAULT_LAYER, shown, hidden, "Viga",
+                                "Suelta"]
+    assert _child_rows(panel, shown) == ["Pilar", "Losa"]
+    panel.set_sort_by("name")
+    assert _top_rows(panel) == [DEFAULT_LAYER, hidden, shown, "Suelta",
+                                "Viga"]
+    assert _child_rows(panel, shown) == ["Losa", "Pilar"]
+    QSettings().remove(LayersPanel.SORT_KEY)
+
+
 def test_a_new_layer_goes_into_the_folder_of_the_selected_layer(win):
     panel = win.layers_dock.panel
     scene = win.viewport.scene
@@ -1958,9 +2089,9 @@ def test_a_new_layer_goes_into_the_folder_of_the_selected_layer(win):
 
 def test_default_columns_puts_the_daily_set_back(win):
     from PySide6.QtCore import QSettings
-    from views.layers_panel import (COL_COLOR, COL_COUNT, COL_LINETYPE,
-                                    COL_OPACITY, COL_PRINT, COL_WEIGHT,
-                                    LayersPanel)
+    from views.layers_panel import (COL_COLOR, COL_COUNT, COL_CUT,
+                                    COL_LINETYPE, COL_OPACITY, COL_PRINT,
+                                    COL_WEIGHT, LayersPanel)
     panel = win.layers_dock.panel
     QSettings().setValue(LayersPanel.HIDDEN_COLUMNS_KEY,
                          str(COL_COLOR))                # someone's own choice
@@ -1968,11 +2099,11 @@ def test_default_columns_puts_the_daily_set_back(win):
     menu = panel._columns_menu()
     next(a for a in menu.actions() if a.text() == "Default columns").trigger()
     hidden = panel.hidden_columns()
-    assert hidden == {COL_WEIGHT, COL_PRINT, COL_OPACITY, COL_COUNT}
+    assert hidden == {COL_WEIGHT, COL_PRINT, COL_OPACITY, COL_COUNT, COL_CUT}
     for col in (COL_COLOR, COL_LINETYPE):
         assert not panel.tree.isColumnHidden(col)
     assert panel.tree.isColumnHidden(COL_WEIGHT)
-    assert panel.columns_button.text() == "+4"
+    assert panel.columns_button.text() == "+5"
 
 
 def test_the_line_weight_column_starts_off(win):
@@ -2268,3 +2399,60 @@ def test_a_new_layer_keeps_its_name_editor_open(win):
     _app.processEvents()
     assert panel.tree.state() == QAbstractItemView.EditingState
     assert panel.tree.currentItem().text(0) == name
+
+
+def test_the_row_icons_follow_a_theme_switched_live(win):
+    """Light to dark while the app runs: the eye, padlock and target of the
+    rows — and the header's — are drawn again at once in the new ink, not
+    left black until the list happens to rebuild."""
+    from PySide6.QtGui import QColor
+    from views.layers_panel import COL_EYE, COL_LOCK
+    from views.theme import dark_palette, light_palette
+
+    def darkest(icon):
+        img = icon.pixmap(18, 18).toImage()
+        tones = [QColor(img.pixel(x, y)) for x in range(18) for y in range(18)
+                 if QColor.fromRgba(img.pixel(x, y)).alpha() > 200]
+        return max(c.lightness() for c in tones) if tones else None
+
+    panel = win.layers_dock.panel
+    scene = win.viewport.scene
+    scene.layers += [Layer("A")]
+    _app.setPalette(light_palette())
+    _app.processEvents()
+    panel.refresh()
+    item = panel.item_for("A")
+    light = darkest(item.icon(COL_EYE))
+    try:
+        _app.setPalette(dark_palette())
+        _app.processEvents()
+        item = panel.item_for("A")
+        assert darkest(item.icon(COL_EYE)) > light + 60      # light ink now
+        assert darkest(item.icon(COL_LOCK)) > light + 60
+        head = panel.tree.headerItem()
+        assert darkest(head.icon(COL_EYE)) > light + 60
+    finally:
+        _app.setPalette(light_palette())
+        _app.processEvents()
+
+
+def test_the_layer_of_what_is_picked_in_the_model_stands_out(win):
+    """Picked in the model, its layer's row reads at a glance: tinted, its
+    name in bold, the accent bar — and back to plain when nothing is."""
+    from views.layers_panel import COL_NAME, ROLE_HOLDS
+    panel = win.layers_dock.panel
+    scene = win.viewport.scene
+    scene.layers += [Layer("Muros")]
+    g = Group(Mesh(), name="muro")
+    g.layer = "Muros"
+    scene.groups.append(g)
+    panel.refresh()
+    scene.selection.add(g)
+    panel._mark_selection()
+    item = panel.item_for("Muros")
+    assert item.data(COL_NAME, ROLE_HOLDS)
+    assert item.font(COL_NAME).bold()
+    assert item.background(COL_NAME).color().alpha() >= 100
+    scene.selection.clear()
+    panel._mark_selection()
+    assert not item.font(COL_NAME).bold()

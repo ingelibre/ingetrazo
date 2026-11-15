@@ -56,9 +56,11 @@ def _hover_at(vp, tool, px):
     return world
 
 
-def _start_at_origin(vp, tool):
+def _start_at_origin(vp, tool, px=None):
+    """First click; ``px`` lets it land where the cursor shows a plane: the
+    plane in force at that click is the one the shape keeps."""
     vp.active_tool = tool
-    o_px = vp._world_to_pixel(QVector3D(0, 0, 0))
+    o_px = px or vp._world_to_pixel(QVector3D(0, 0, 0))
     world = vp._world_from_pixel(int(o_px[0]), int(o_px[1]))
     tool.on_click(_ctx(vp, world, o_px))
     return o_px
@@ -74,10 +76,12 @@ def test_rectangle_at_eye_level_stands_up_with_two_real_sides(viewport):
     from tools.rectangle import RectangleTool
     _eye_level(viewport)
     tool = RectangleTool()
-    o_px = _start_at_origin(viewport, tool)
-    assert tool.work_plane is None                      # free point: no capture
     horizon_y = viewport._world_to_pixel(QVector3D(0, 0, 1.6))[1]
-    _hover_at(viewport, tool, (o_px[0] - 250, horizon_y - 34))   # Rafael's cursor
+    # The plane is decided by the cursor BEFORE the first click, and the
+    # click keeps it.
+    o_px = _start_at_origin(viewport, tool, (500.0, horizon_y - 34))
+    assert tool.work_plane is None                      # free point: no capture
+    _hover_at(viewport, tool, (o_px[0] - 250, horizon_y + 26))
     text, _mid = tool.value_label()
     w, h = (float(t) for t in text.replace(" m", "").split(" × ")[:2])
     assert w > 1.0 and h > 1.0, text                    # not «5.74 × 0.00»
@@ -87,29 +91,34 @@ def test_rectangle_at_eye_level_stands_up_with_two_real_sides(viewport):
     assert min(span.x(), span.y()) < 1e-6               # in ONE vertical plane
 
 
-def test_orbiting_after_the_first_click_re_decides_the_plane(viewport):
+def test_orbiting_before_the_first_click_re_decides_the_plane_and_the_click_keeps_it(viewport):
     from tools.rectangle import RectangleTool
     _eye_level(viewport)
     tool = RectangleTool()
-    o_px = _start_at_origin(viewport, tool)
+    viewport.active_tool = tool
     horizon_y = viewport._world_to_pixel(QVector3D(0, 0, 1.6))[1]
-    _hover_at(viewport, tool, (o_px[0] - 250, horizon_y + 40))
-    assert _span(tool._corners(tool.start_point, tool.hover_point)).z() > 0.5
-    viewport.camera.set_view("iso")                     # orbit up
+    viewport._world_from_pixel(500, int(horizon_y - 34))
+    assert abs(viewport._last_work_plane[1].z()) < 1e-6      # stands up
+    viewport.camera.set_view("iso")                     # orbit up, no click yet
     o_px = viewport._world_to_pixel(QVector3D(0, 0, 0))
+    _start_at_origin(viewport, tool, o_px)
+    assert abs(viewport._last_work_plane[1].z()) > 0.999     # ground now
     _hover_at(viewport, tool, (o_px[0] - 120, o_px[1] - 60))
     corners = tool._corners(tool.start_point, tool.hover_point)
-    assert _span(corners).z() < 1e-6                    # flat on the ground again
+    assert _span(corners).z() < 1e-6                    # flat on the ground
     assert _span(corners).x() > 0.5 and _span(corners).y() > 0.1
+    _eye_level(viewport)                                # orbit after the click
+    _hover_at(viewport, tool, (500, int(horizon_y + 90)))
+    assert _span(tool._corners(tool.start_point, tool.hover_point)).z() < 1e-6
 
 
 def test_circle_at_eye_level_stands_up(viewport):
     from tools.circle import CircleTool
     _eye_level(viewport, yaw_deg=80.0)
     tool = CircleTool()
-    o_px = _start_at_origin(viewport, tool)
     horizon_y = viewport._world_to_pixel(QVector3D(0, 0, 1.6))[1]
-    _hover_at(viewport, tool, (o_px[0] - 150, horizon_y - 20))
+    o_px = _start_at_origin(viewport, tool, (500.0, horizon_y - 20))
+    _hover_at(viewport, tool, (o_px[0] - 150, horizon_y + 40))
     pts = tool._points(tool.start_point, tool.hover_point)
     span = _span(pts)
     assert span.z() > 1.0 and min(span.x(), span.y()) < 1e-6

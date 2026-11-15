@@ -114,18 +114,36 @@ def _probe_hypot(mod):
     return None
 
 
-#: Set while a start with the engine on is under way; cleared once the
-#: window has drawn. Still set at the next start: that start never got
-#: there, and the engine is turned off (start_guard).
+#: How many starts in a row with the engine on are still under way: a
+#: start adds one, the first drawn frame puts it back to 0. A start that
+#: finds FAILED_STARTS of them never drawn turns the engine off
+#: (start_guard).
 STARTING = "rust_engine_starting"
+#: One start that never drew is not the engine's doing often enough to act
+#: on it: the window closed while it was loading, a second window opened
+#: before the first had drawn, the machine went off. Two in a row are.
+FAILED_STARTS = 2
+#: The version whose start guard turned the engine off ("" when nobody or
+#: the user did). Another version tries the engine again, once: what
+#: stopped that start may be fixed, and on Python every edit of a large
+#: model takes about twice as long — a price nobody chose.
+OFF_BY_GUARD = "rust_engine_off_by_guard"
 #: ``--python-engine``: this run on the normal engine, whatever is saved.
 FLAG = "--python-engine"
 
 
+def _count(raw) -> int:
+    try:
+        return max(0, int(str(raw)))
+    except ValueError:
+        return 0
+
+
 def start_guard(argv) -> bool:
     """Before anything reads ``native``: honour ``--python-engine``, and if
-    the last start with the engine on never reached its first frame, turn
-    the engine off for good (the user turns it on again in Preferences).
+    the last FAILED_STARTS starts with the engine on never reached their
+    first frame, turn the engine off (the user turns it on again in
+    Preferences, and the next version tries it again by itself).
     Returns True when it was turned off that way — the window says so."""
     if FLAG in argv:
         os.environ["INGETRAZO_RUST"] = "0"
@@ -135,22 +153,46 @@ def start_guard(argv) -> bool:
     try:
         from PySide6.QtCore import QSettings
         from core import general_settings
+        from core.version import __version__
         st = QSettings()
         on = str(general_settings.value(SETTING, DEFAULT, st)) == "1"
-        pending = str(general_settings.value(STARTING, "0", st)) == "1"
-        if on and pending:
+        off_by = str(general_settings.value(OFF_BY_GUARD, "", st))
+        if not on and off_by and off_by != __version__:
+            # Turned off by the guard of another version, not by the user:
+            # this version gets its own try.
+            general_settings.set_value(SETTING, "1", st)
+            general_settings.set_value(OFF_BY_GUARD, "", st)
+            general_settings.set_value(STARTING, "0", st)
+            on = True
+            log.info("The Rust engine was turned off by the start guard of "
+                     "%s: trying it again.", off_by)
+        pending = _count(general_settings.value(STARTING, "0", st))
+        if on and pending >= FAILED_STARTS:
             general_settings.set_value(SETTING, "0", st)
             general_settings.set_value(STARTING, "0", st)
+            general_settings.set_value(OFF_BY_GUARD, __version__, st)
             st.sync()
-            log.warning("The last start with the Rust engine did not open "
-                        "the window: back on the Python engine.")
+            log.warning("The last %d starts with the Rust engine did not "
+                        "open the window: back on the Python engine.",
+                        pending)
             return True
         if on:
-            general_settings.set_value(STARTING, "1", st)
+            general_settings.set_value(STARTING, str(pending + 1), st)
             st.sync()                   # on disk before anything can crash
     except Exception as exc:  # noqa: BLE001 — never stop a start over this
         log.warning("Rust engine start guard: %s", exc)
     return False
+
+
+def chosen_by_user(settings=None) -> None:
+    """The user set the engine in Preferences: from now on the choice is
+    theirs, and no later version turns it back on for them."""
+    try:
+        from core import general_settings
+        general_settings.set_value(OFF_BY_GUARD, "", settings)
+        general_settings.set_value(STARTING, "0", settings)
+    except Exception as exc:  # noqa: BLE001
+        log.warning("Rust engine start guard: %s", exc)
 
 
 def start_ok() -> None:
@@ -159,7 +201,7 @@ def start_ok() -> None:
         from PySide6.QtCore import QSettings
         from core import general_settings
         st = QSettings()
-        if str(general_settings.value(STARTING, "0", st)) == "1":
+        if _count(general_settings.value(STARTING, "0", st)):
             general_settings.set_value(STARTING, "0", st)
             st.sync()
     except Exception as exc:  # noqa: BLE001

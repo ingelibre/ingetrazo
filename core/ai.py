@@ -619,6 +619,10 @@ def _session_id() -> str:
     return _SESSION_ID
 
 
+#: What an empty turn is sent as to Anthropic, which refuses empty text.
+EMPTY_TURN = "(respuesta vacía)"
+
+
 def build_request(provider: str, model: str, api_key: str,
                   system: str, messages: list,
                   ollama_url: str = "http://localhost:11434",
@@ -633,8 +637,20 @@ def build_request(provider: str, model: str, api_key: str,
     if provider == "anthropic":
         content_msgs = []
         for m in messages:
-            blocks = [{"type": "text", "text": m["text"]}]
+            # Anthropic rejects an empty text block with HTTP 400 («text
+            # content blocks must be non-empty», #1266). A reply that came
+            # back empty — or was all <thinking>, which strip_thoughts
+            # drops — sits in the convo and broke EVERY later turn. An
+            # image needs no text beside it; a bare empty turn keeps a
+            # stand-in so the roles still alternate.
+            text = m.get("text") or ""
             img, mime = _message_image(m)
+            if text.strip():
+                blocks = [{"type": "text", "text": text}]
+            elif img:
+                blocks = []
+            else:
+                blocks = [{"type": "text", "text": EMPTY_TURN}]
             if img:
                 blocks.insert(0, {
                     "type": "image",

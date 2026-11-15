@@ -39,6 +39,7 @@ The contract ``views/main_window.py`` relies on:
 """
 from __future__ import annotations
 
+import glob
 import importlib.util
 import inspect
 import logging
@@ -87,20 +88,76 @@ def plugin_dirs() -> list[Path]:
     return [app_root() / "plugins", user_plugins_dir()]
 
 
+def note_failure(what: str) -> None:
+    """Append the exception being handled to the error log. A windowed
+    Windows build has no stderr: without this a failing extension leaves no
+    trace at all, and «Open logs folder» shows nothing (#1152)."""
+    import time
+    import traceback
+    from core.paths import user_log_dir
+    try:
+        with open(user_log_dir() / "ingetrazo-errors.log", "a",
+                  encoding="utf-8") as f:
+            f.write(f"\n[{time.strftime('%Y-%m-%d %H:%M:%S')}] {what}\n"
+                    f"{traceback.format_exc()}")
+    except OSError:
+        pass
+
+
+def _misplaced_module(folder: Path) -> str | None:
+    """Where the extension is inside a folder that is not a package itself,
+    or None. A folder without ``__init__.py`` does not load, and it said
+    nothing: copying the folder a ZIP extracts to (``x/x/__init__.py``) or a
+    repository's folder of loose modules looked like an extension that
+    refused to load, with not a word anywhere."""
+    for pattern in ("*.py", "*/__init__.py", "*/*/__init__.py"):
+        found = sorted(glob.glob(os.path.join(glob.escape(str(folder)),
+                                              pattern)))
+        if found:
+            path = Path(found[0])
+            inner = path if path.name != "__init__.py" else path.parent
+            return inner.relative_to(folder).as_posix()
+    return None
+
+
 def _candidates(p_dir: Path):
-    """Yield ``(stem, file)``: loose ``x.py`` files and ``x/__init__.py``
-    packages, skipping dunders, dotfiles and non-Python clutter (README)."""
-    for entry in sorted(p_dir.iterdir()):
+    """Yield ``(stem, file, error)``: loose ``x.py`` files and
+    ``x/__init__.py`` packages, skipping dunders, dotfiles and non-Python
+    clutter (README). ``error`` says why a candidate cannot be loaded at all.
+
+    ``os.path`` and not ``Path.is_file``: up to Python 3.13 the latter RAISES
+    on a folder that cannot be read, and the first such folder ended the
+    whole scan (#1152)."""
+    try:
+        entries = sorted(p_dir.iterdir())
+    except OSError as exc:
+        log.warning("cannot read the plugin folder %s: %s", p_dir, exc)
+        return
+    for entry in entries:
         if entry.name.startswith(("_", ".")):
             continue
-        if entry.is_file() and entry.suffix == ".py":
-            yield entry.stem, entry
-        elif entry.is_dir() and (entry / "__init__.py").is_file():
-            if (entry / ".disabled").is_file():
+        if os.path.isdir(entry):
+            try:
+                os.listdir(entry)
+            except OSError as exc:
+                yield entry.name, entry, f"{type(exc).__name__}: {exc}"
+                continue
+            init = entry / "__init__.py"
+            if not os.path.isfile(init):
+                inner = _misplaced_module(entry)
+                if inner is not None:
+                    yield entry.name, entry, (
+                        "This folder is not an extension: IngeTrazo needs "
+                        "__init__.py directly inside it. Move "
+                        f"{inner} straight into the extensions folder.")
+                continue
+            if os.path.isfile(entry / ".disabled"):
                 log.info("plugin %r is disabled by the extension manager",
                          entry.name)
                 continue
-            yield entry.name, entry / "__init__.py"
+            yield entry.name, init, None
+        elif entry.suffix == ".py" and os.path.isfile(entry):
+            yield entry.stem, entry, None
 
 
 def _import_by_path(stem: str, file: Path):
@@ -138,14 +195,18 @@ def discover_plugins(dirs=None):
     seen: set[str] = set()
 
     for p_dir in (list(dirs) if dirs is not None else plugin_dirs()):
-        if not p_dir.is_dir():
+        if not os.path.isdir(p_dir):
             continue
-        for stem, file in _candidates(p_dir):
+        for stem, file, problem in _candidates(p_dir):
             if stem in seen:
                 log.warning("plugin %r at %s shadowed by an earlier one; "
                             "skipped", stem, file)
                 continue
             seen.add(stem)
+            if problem is not None:
+                log.warning("plugin %r at %s: %s", stem, file, problem)
+                errors.append(PluginError(stem, file, problem))
+                continue
             try:
                 mod = _import_by_path(stem, file)
                 tools = [
@@ -156,12 +217,15 @@ def discover_plugins(dirs=None):
                         and not inspect.isabstract(obj)
                         and _builds_bare(obj))
                 ]
-            except Exception as exc:                # noqa: BLE001 — contract
+                setup = getattr(mod, "setup", None)
+            # SystemExit too: an extension calling sys.exit() must not close
+            # the whole application.
+            except (Exception, SystemExit) as exc:  # noqa: BLE001 — contract
                 log.exception("failed to load plugin %r from %s", stem, file)
+                note_failure(f"failed to load plugin {stem!r} from {file}")
                 errors.append(PluginError(
                     stem, file, f"{type(exc).__name__}: {exc}"))
                 continue
-            setup = getattr(mod, "setup", None)
             if not callable(setup):
                 setup = None
             if tools or setup is not None:

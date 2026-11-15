@@ -95,6 +95,51 @@ def test_the_viewport_keeps_the_hovered_corner_before_the_first_click():
     assert (vp._acquired_point - V(4, 0, 3)).length() < 1e-6      # still encouraged
 
 
+def test_a_tool_with_inferences_off_snaps_but_never_encourages():
+    """``allow_inferences = False`` (the Offset): the hard point snap still
+    lands on the corner, but the dwell never starts — no encouraged point,
+    no «from point» / «level with» lines."""
+    import os
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    import pytest
+    from PySide6.QtCore import QPointF, Qt
+    from PySide6.QtWidgets import QApplication
+    app = QApplication.instance()
+    if app is None:
+        app = QApplication([])
+    elif not isinstance(app, QApplication):
+        pytest.skip("another Qt application flavour is already running")
+    from views.viewport import Viewport
+    from tools.base import Tool
+
+    class _SnapsOnly(Tool):
+        name = "snaps-only"
+        uses_snap = True
+        allow_inferences = False
+
+        def on_activate(self, viewport):
+            pass
+
+        def on_deactivate(self, viewport):
+            pass
+
+    vp = Viewport(None)
+    vp.resize(1000, 600)
+    vp.camera.set_aspect(1000, 600)
+    vp.flash_status = lambda *a, **k: None
+    vp.scene.mesh.add_face([V(0, 0, 0), V(4, 0, 0), V(4, 0, 3), V(0, 0, 3)])
+    vp.scene.version += 1
+    vp.camera.set_view("front")
+    vp.camera.target = V(2, 0, 1.5)
+    vp.camera.distance = 12
+    vp.set_active_tool(_SnapsOnly())
+    corner_px = vp._world_to_pixel(V(4, 0, 3))
+    vp._process_hover(QPointF(*corner_px), Qt.NoModifier)
+    assert vp.last_snap.kind == "endpoint"     # the snap still works…
+    assert not vp._dwell_timer.isActive()      # …but no dwell → no inference
+    assert vp._encouraged == []
+
+
 def test_hovering_a_circles_rim_encourages_its_centre(monkeypatch):
     """Marco's reference capture (2026-09-14): with the Circle tool on
     another circle's rim, the dotted line runs from THAT circle's centre —

@@ -29,7 +29,7 @@ if QApplication.instance() is None:
     QApplication(sys.argv[:1])
 
 from core.group import Group
-from core.guide import Guide
+from core.guide import Guide, GuideCircle
 from core.history import History, MoveGuidesCommand, RotateGuidesCommand
 from core.mesh import Mesh
 from core.scene import Scene
@@ -341,6 +341,58 @@ def test_rotate_turns_a_selected_guide():
     history.undo()
     assert _near(line.point, V(2, 0))
     assert _near(line.direction, V(1, 0))
+
+
+def test_a_selected_guide_circle_moves_with_the_move_tool():
+    scene = Scene()
+    history = History(scene)
+    circ = GuideCircle(V(2, 0, 0), V(0, 0, 1), 1.5)
+    scene.guides.append(circ)
+    scene.select([circ])
+    vp = _viewport(scene, history)
+    tool = MoveTool()
+
+    tool.on_click(_ctx(vp, V(2, 0)))
+    assert tool._moved_guides == [circ]
+    assert not tool._positions and not tool._groups
+    tool.on_click(_ctx(vp, V(3, 1)))
+    assert _near(circ.center, V(3, 1, 0))
+    assert abs(circ.radius - 1.5) < 1e-12
+    assert (circ.normal - V(0, 0, 1)).length() < 1e-9
+    history.undo()
+    assert _near(circ.center, V(2, 0, 0))
+
+
+def test_a_selected_guide_circle_rotates_with_the_rotate_tool():
+    scene = Scene()
+    history = History(scene)
+    circ = GuideCircle(V(2, 0, 0), V(1, 0, 0), 1.5)
+    scene.guides.append(circ)
+    scene.select([circ])
+    vp = _viewport(scene, history)
+    _turn(vp, RotateTool(), 90.0)
+
+    assert _near(circ.center, V(0, 2, 0))
+    assert _near(circ.normal, V(0, 1, 0))     # the plane turns with the circle
+    assert abs(circ.radius - 1.5) < 1e-12
+    history.undo()
+    assert _near(circ.center, V(2, 0, 0))
+    assert _near(circ.normal, V(1, 0, 0))
+
+
+def test_delete_erases_a_selected_guide_circle():
+    from tools.select import erase_entities
+    scene = Scene()
+    history = History(scene)
+    circ = GuideCircle(V(0, 0, 0), V(0, 0, 1), 1.0)
+    scene.guides.append(circ)
+    scene.select([circ])
+    vp = _viewport(scene, history)
+
+    assert erase_entities(vp, [circ])
+    assert circ not in scene.guides
+    history.undo()
+    assert circ in scene.guides
 
 
 def test_rotate_with_ctrl_copies_the_guide():

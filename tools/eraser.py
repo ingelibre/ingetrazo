@@ -26,7 +26,7 @@ from PySide6.QtCore import Qt
 
 from core.dimension import Dimension
 from core.group import Group
-from core.guide import Guide
+from core.guide import Guide, is_guide
 from core.history import (
     CompoundCommand,
     DeleteDimensionsCommand,
@@ -115,7 +115,7 @@ class EraserTool(Tool):
                     cmds[0] if len(cmds) == 1 else CompoundCommand(cmds))
             viewport.update()
             return
-        guides = [m for m in marked if isinstance(m, Guide)]
+        guides = [m for m in marked if is_guide(m)]
         dims = [m for m in marked if isinstance(m, Dimension)]
         paths = [m for m in marked if isinstance(m, GeoPath)]
         labels = [m for m in marked if isinstance(m, TextLabel)]
@@ -151,6 +151,10 @@ class EraserTool(Tool):
                 segs.extend(self._group_box_segments(m))
             elif isinstance(m, Guide):
                 segs.append(m.segment())
+            elif getattr(m, "is_circle", False):
+                pts = m.sample_points(24)
+                segs.extend((pts[i], pts[(i + 1) % len(pts)])
+                            for i in range(len(pts)))
             elif isinstance(m, Dimension):
                 segs.append(m.line_points())
             elif isinstance(m, GeoPath):

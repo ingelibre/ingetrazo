@@ -33,6 +33,42 @@ def test_dynamic_fields_read_the_sheet():
     assert expand_fields("{escala}|{lamina}") == "|"
 
 
+def test_fields_read_the_rows_the_user_edited():
+    """{proyecto}/{autor}/{lamina} follow the title block's table, not the
+    values it was created with; a row labelled in English or German, or
+    without the accent, counts too."""
+    comp = Composicion(name="Planta baja")
+    comp.cajetin = Cajetin(proyecto="Casa", autor="MS", lamina="L-01")
+    comp.cajetin.set_field("PROYECTO", "Plaza nueva")
+    comp.cajetin.set_field("LÁMINA", "A-03")
+    comp.cajetin.campos = [r for r in comp.cajetin.campos if r[0] != "AUTOR"]
+    comp.cajetin.campos.append(["Verfasser", "Ana"])
+    set_field_context(comp=comp)
+    try:
+        assert expand_fields("{proyecto}|{autor}|{lamina}") == \
+            "Plaza nueva|Ana|A-03"
+        comp.cajetin.campos = [r for r in comp.cajetin.campos
+                               if r[0] != "LÁMINA"]
+        comp.cajetin.campos.append(["Lamina", ""])
+        assert expand_fields("{lamina}") == "Planta baja"   # empty → name
+    finally:
+        set_field_context()
+
+
+def test_sheet_name_is_always_the_sheets_name():
+    """{sheet} is the title block's LÁMINA row (the drawing number);
+    {sheet_name} is the sheet's own name, whatever that row says."""
+    comp = Composicion(name="Planta baja")
+    comp.cajetin = Cajetin()
+    comp.cajetin.set_field("LÁMINA", "A-101")
+    set_field_context(comp=comp)
+    try:
+        assert expand_fields("{sheet} · {sheet_name} · {SHEET_NAME}") == \
+            "A-101 · Planta baja · Planta baja"
+    finally:
+        set_field_context()
+
+
 def _composer(monkeypatch, tmp_path):
     from views.composer import ComposerWindow
     from views.main_window import MainWindow

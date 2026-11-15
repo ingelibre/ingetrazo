@@ -323,6 +323,13 @@ class MarcoVista:
     #: "solid" | "hatch" (45° lines every ``cut_hatch_mm``) | "none".
     cut_fill: str = "solid"
     cut_fill_color: str = "#595e69"
+    #: Each cut solid filled with its layer's colour instead (the default
+    #: layer keeps ``cut_fill_color``).
+    cut_fill_by_layer: bool = False
+    #: Pen of the cut's hatch lines, in paper mm; 0: automatic (70 % of the
+    #: edges' pen). One value per view: what reads at its scale, the same
+    #: for every material, as drafting has it.
+    pen_hatch_mm: float = 0.0
     cut_hatch_mm: float = 1.5
     #: Scale label of the frame ("ESC. 1:40"): follows the scale, sits
     #: under or inside the frame; ``{n}`` in the text is the scale number.
@@ -1039,6 +1046,10 @@ class CotaItem:
     text_dx_mm: float = 0.0
     text_dy_mm: float = 0.0
     text_align: str = "aligned"  # aligned | horizontal
+    #: Turn an aligned label half a turn, so it reads the other way along
+    #: its line (a vertical cota read from the right, top-to-bottom). The
+    #: label stays on the same side of the line, at the same gap.
+    text_flip: bool = False
     text_color: str = ""
     text_bg: str = ""            # "" = no background behind the label
     text_bg_opacity: float = 1.0
@@ -1546,7 +1557,8 @@ def _migrate_fixed_scale_labels(c: "Composicion") -> None:
 _FIELD_CTX: dict = {}
 
 #: Each field by its Spanish name — the one documents and the catalogs
-#: carry — with its English and German names. All three expand alike.
+#: carry — with its English and German names, then any further aliases.
+#: All of them expand alike.
 FIELD_NAMES = {
     "proyecto": ("project", "projekt"),
     "autor": ("author", "verfasser"),
@@ -1555,7 +1567,7 @@ FIELD_NAMES = {
     "escena": ("scene", "szene"),
     "fecha": ("date", "datum"),
     "archivo": ("file", "datei"),
-    "nombre": ("name", "planname"),
+    "nombre": ("name", "planname", "sheet_name"),   # {sheet} is the LÁMINA row
     "hoja": ("page", "blatt"),
     "total": ("total", "gesamt"),
 }
@@ -1589,11 +1601,26 @@ def field_values(frame_uid: str = "") -> dict:
             scene_name = f.view_key[6:]          # the main frame's, else any
             break
     idx, total = _FIELD_CTX.get("index"), _FIELD_CTX.get("total")
+
+    def row(es: str) -> str:
+        """The title block's row for field *es*, found by its label in any
+        of the field's names (PROYECTO, Project, PROJEKT…) — the rows the
+        user edits; the legacy attribute only when there is no such row."""
+        if caj is None:
+            return ""
+        import unicodedata
+        names = {es, *FIELD_NAMES[es]}
+        for r in getattr(caj, "campos", None) or []:
+            label = unicodedata.normalize("NFKD", str(r[0]).strip().lower())
+            label = "".join(ch for ch in label if not unicodedata.combining(ch))
+            if label in names:
+                return str(r[1] or "")
+        return getattr(caj, es, "") or ""
+
     vals = {
-        "proyecto": (getattr(caj, "proyecto", "") or "") if caj else "",
-        "autor": (getattr(caj, "autor", "") or "") if caj else "",
-        "lamina": ((getattr(caj, "lamina", "") or "") if caj else "")
-                  or (comp.name if comp is not None else ""),
+        "proyecto": row("proyecto"),
+        "autor": row("autor"),
+        "lamina": row("lamina") or (comp.name if comp is not None else ""),
         "nombre": comp.name if comp is not None else "",
         "escala": format_scale(main.scale_n) if main is not None else "",
         "escena": scene_name,

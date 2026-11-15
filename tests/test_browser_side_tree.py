@@ -76,6 +76,10 @@ def _window_with(*groups):
 def _close(win):
     win.viewport.scene.end_group_edit()
     win._saved_version = win.viewport.scene.version
+    # Closed, not left on screen: a shown window stays the active one for
+    # the tests after these in the same process, and took their window
+    # shortcuts (the composer's Ctrl+C in test_composer_clipboard.py).
+    win.close()
 
 
 def _row(panel, group):

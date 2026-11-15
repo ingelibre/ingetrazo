@@ -64,6 +64,12 @@ def test_turned_off_in_preferences(fresh, monkeypatch):
     assert mod.engine() == "Python"
 
 
+def _reset_guard():
+    general_settings.set_value(_native.SETTING, "0")
+    general_settings.set_value(_native.STARTING, "0")
+    general_settings.set_value(_native.OFF_BY_GUARD, "")
+
+
 def test_the_start_guard_watches_a_default_start(monkeypatch):
     """The guard must cover the users who never chose too: a default start
     marks itself under way like an explicit one."""
@@ -71,13 +77,14 @@ def test_the_start_guard_watches_a_default_start(monkeypatch):
     try:
         _forget_choice()
         general_settings.set_value(_native.STARTING, "0")
+        general_settings.set_value(_native.OFF_BY_GUARD, "")
         assert _native.start_guard([]) is False
         assert general_settings.value(_native.STARTING) == "1"
-        assert _native.start_guard([]) is True      # never drew: back off
+        assert _native.start_guard([]) is False     # one that never drew
+        assert _native.start_guard([]) is True      # two: back off
         assert general_settings.value(_native.SETTING) == "0"
     finally:
-        general_settings.set_value(_native.SETTING, "0")
-        general_settings.set_value(_native.STARTING, "0")
+        _reset_guard()
 
 
 def test_preference_turns_it_on(fresh, monkeypatch):
@@ -100,28 +107,86 @@ def test_environment_overrides_preference(fresh, monkeypatch, env, pref, on):
     assert (mod.native is not None) is on
 
 
-def test_a_start_that_never_drew_turns_the_engine_off(monkeypatch):
+def test_two_starts_that_never_drew_turn_the_engine_off(monkeypatch):
     """The start guard: with the engine on, a start marks itself under way
-    and the first drawn frame clears the mark; a start that finds the mark
-    still there (the last one never got to the window) goes back to the
-    normal engine, saved, and says so once."""
+    and the first drawn frame clears the mark; a start that finds two
+    marks in a row (the last two never got to the window) goes back to
+    the normal engine, saved, and says so once."""
     monkeypatch.delenv("INGETRAZO_RUST", raising=False)
     try:
         general_settings.set_value(_native.SETTING, "1")
         general_settings.set_value(_native.STARTING, "0")
+        general_settings.set_value(_native.OFF_BY_GUARD, "")
         assert _native.start_guard([]) is False
         assert general_settings.value(_native.STARTING) == "1"
         _native.start_ok()                         # the window drew
         assert general_settings.value(_native.STARTING) == "0"
         assert _native.start_guard([]) is False    # a good start again
-        # ... and this one dies before its first frame.
+        # ... this one dies before its first frame, and the next one too.
+        assert _native.start_guard([]) is False
+        assert general_settings.value(_native.SETTING) == "1"
         assert _native.start_guard([]) is True
         assert general_settings.value(_native.SETTING) == "0"
         assert general_settings.value(_native.STARTING) == "0"
         assert _native.start_guard([]) is False    # off now: nothing to say
     finally:
-        general_settings.set_value(_native.SETTING, "0")
+        _reset_guard()
+
+
+def test_one_start_that_never_drew_leaves_the_engine_on(monkeypatch):
+    """A window closed while it loaded, a second window opened before the
+    first had drawn: one start without a frame is not the engine failing.
+    The engine stays on, and a start that does draw forgets it."""
+    monkeypatch.delenv("INGETRAZO_RUST", raising=False)
+    try:
+        general_settings.set_value(_native.SETTING, "1")
         general_settings.set_value(_native.STARTING, "0")
+        general_settings.set_value(_native.OFF_BY_GUARD, "")
+        assert _native.start_guard([]) is False    # never draws
+        assert _native.start_guard([]) is False    # the next start: still on
+        assert general_settings.value(_native.SETTING) == "1"
+        _native.start_ok()                         # and this one draws
+        assert general_settings.value(_native.STARTING) == "0"
+        assert _native.start_guard([]) is False    # one more that never
+        assert _native.start_guard([]) is False    # draws: the count began
+        assert general_settings.value(_native.SETTING) == "1"   # again
+    finally:
+        _reset_guard()
+
+
+def test_another_version_tries_the_engine_the_guard_turned_off(monkeypatch):
+    """The guard turns the engine off for the version that failed, not for
+    good: the next version starts with it on once more. What the user
+    turned off in Preferences stays off."""
+    import core.version
+    monkeypatch.delenv("INGETRAZO_RUST", raising=False)
+    try:
+        general_settings.set_value(_native.SETTING, "1")
+        general_settings.set_value(_native.STARTING, "0")
+        general_settings.set_value(_native.OFF_BY_GUARD, "")
+        monkeypatch.setattr(core.version, "__version__", "9.9.1")
+        assert _native.start_guard([]) is False
+        assert _native.start_guard([]) is False
+        assert _native.start_guard([]) is True     # off, by 9.9.1's guard
+        assert general_settings.value(_native.OFF_BY_GUARD) == "9.9.1"
+        assert _native.start_guard([]) is False    # same version: stays off
+        assert general_settings.value(_native.SETTING) == "0"
+        monkeypatch.setattr(core.version, "__version__", "9.9.2")
+        assert _native.start_guard([]) is False    # the update tries again
+        assert general_settings.value(_native.SETTING) == "1"
+        assert general_settings.value(_native.STARTING) == "1"
+        assert general_settings.value(_native.OFF_BY_GUARD) == ""
+        _native.start_ok()
+        # Off by the guard again, and then the user has their say.
+        assert _native.start_guard([]) is False
+        assert _native.start_guard([]) is False
+        assert _native.start_guard([]) is True
+        _native.chosen_by_user()
+        monkeypatch.setattr(core.version, "__version__", "9.9.3")
+        assert _native.start_guard([]) is False
+        assert general_settings.value(_native.SETTING) == "0"   # theirs
+    finally:
+        _reset_guard()
 
 
 def test_python_engine_flag_wins_for_one_run(monkeypatch):

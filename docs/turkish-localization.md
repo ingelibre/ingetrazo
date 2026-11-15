@@ -7,6 +7,14 @@ catalogue translates standard buttons without translating shortcut key names.
 
 ## Source reconciliation
 
+Refreshed on 2026-11-15 against upstream `8dbed761dca99dcae76efd9cd3025bfa5b8014d8`
+(0.6.2.1). All **491 new upstream messages** have Turkish translations, including
+SVG export, material hatches, camera settings and scene animation. Together with
+the 36 contribution-local display/workspace messages, the canonical catalogue
+now has **3,803 keys**, all present and nonempty in Turkish. Other languages'
+upstream translations are preserved, including Bulgarian and Traditional Chinese.
+The following paragraph records the original November 5 reconciliation.
+
 Base: `e61132a7f8a098ca77fb6b0e7cac488c1bd410cb`, fetched from upstream on
 2026-11-05. The handoff has 3,276 entries. Nine keys lost a leading space in
 the handoff; these were matched to the exact original keys and their Turkish

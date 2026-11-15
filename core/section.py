@@ -19,11 +19,20 @@ from PySide6.QtGui import QVector3D
 
 _last_uid = 0
 
-#: How a cut can be filled: solid, hatched at 45°, cross-hatched, or not.
-FILL_PATTERNS = ("solid", "hatch", "cross", "none")
+#: How a cut can be filled: solid, hatched at 45°, cross-hatched, not at
+#: all, or each layer with its own hatch (``"layers"``, as the sheets draw
+#: it).
+FILL_PATTERNS = ("solid", "hatch", "cross", "none", "layers")
 #: Hatch spacing when neither the plane nor anything else says: 5 cm in
 #: the model, a wall of 20 cm reads as four lines.
 DEFAULT_HATCH_SPACING = 0.05
+#: The layers' hatches in the model are laid as a sheet at 1:50 lays them —
+#: the usual scale of a plan or a section with its materials; bricks,
+#: blocks and their joints keep their real size at any scale.
+LAYER_HATCH_SCALE = 50.0
+#: More hatch lines than this in one cut and the rest of its layers stay
+#: solid: a pattern that fine reads as a tone anyway, and draws slowly.
+LAYER_HATCH_MOST = 250000
 
 
 def effective_fill(plane, style) -> tuple:
@@ -170,42 +179,91 @@ class SectionPlane:
 
 # ---- The cut, as geometry --------------------------------------------------
 
-def cut_chords(v0, e1, e2, normal, point, visible=None):
+def cut_chords(v0, e1, e2, normal, point, visible=None, rows=False,
+               reach=None):
     """The chords the plane cuts out of triangles given as ``v0`` + edge
     vectors ``e1``/``e2`` ((N, 3) arrays, as the pick index keeps them):
     an (K, 2, 3) float32 array, or ``None`` when the plane misses them all.
-    ``visible`` (N bools) leaves hidden triangles out."""
-    import numpy as np
+    ``visible`` (N bools) leaves hidden triangles out. ``rows=True`` returns
+    ``(chords, triangle index of each)`` — whose layer each chord is.
+    ``reach``: a :class:`PlaneReach` of these very triangles and this
+    normal, kept between calls — a plane slid along its normal (a section
+    dragged by its arrow) then only measures where it now stands."""
     if v0 is None or not len(v0):
-        return None
-    nv = np.array([normal.x(), normal.y(), normal.z()], dtype=np.float64)
-    c = float(np.dot(nv, [point.x(), point.y(), point.z()]))
-    p0 = np.asarray(v0, dtype=np.float64)
-    p1 = p0 + e1
-    p2 = p0 + e2
-    d0 = p0 @ nv - c
-    d1 = p1 @ nv - c
-    d2 = p2 @ nv - c
-    pts = []
-    for (a, b, da, db) in ((p0, p1, d0, d1), (p1, p2, d1, d2),
-                           (p2, p0, d2, d0)):
-        cross = (da * db) < 0
-        t = np.zeros(len(da))
-        np.divide(da, da - db, out=t, where=cross)
-        pts.append((cross, a + (b - a) * t[:, None]))
-    two = (pts[0][0].astype(np.int8) + pts[1][0] + pts[2][0]) == 2
-    if visible is not None:
-        two &= visible
-    if not two.any():
-        return None
-    acc = np.zeros((int(two.sum()), 2, 3))
-    slot = np.zeros(int(two.sum()), dtype=np.int64)
-    for cross, p in pts:
-        m = cross[two]
-        where = np.where(m)[0]
-        acc[where, np.minimum(slot[where], 1)] = p[two][m]
-        slot[where] += 1
-    return acc.astype(np.float32)
+        return (None, None) if rows else None
+    if reach is None or not reach.fits(v0, normal, e1, e2):
+        reach = PlaneReach(v0, e1, e2, normal)
+    return reach.cut(point, visible, rows)
+
+
+class PlaneReach:
+    """The corners of a set of triangles and how far along one normal each
+    stands — what every cut by a plane of that normal starts from. Sliding
+    the plane only moves the offset: the triangles it crosses are found by
+    comparing three arrays with it, and only those are cut.
+
+    The chords are those :func:`cut_chords` always made, in the same order
+    and to the bit: the same products, the same differences."""
+
+    __slots__ = ("_v0", "_e1", "_e2", "_n", "p0", "p1", "p2", "h0", "h1", "h2", "lo",
+                 "hi", "_nv")
+
+    def __init__(self, v0, e1, e2, normal) -> None:
+        import numpy as np
+        self._v0, self._e1, self._e2 = v0, e1, e2
+        self._n = (normal.x(), normal.y(), normal.z())
+        self._nv = np.array(self._n, dtype=np.float64)
+        self.p0 = np.asarray(v0, dtype=np.float64)
+        self.p1 = self.p0 + e1
+        self.p2 = self.p0 + e2
+        self.h0 = self.p0 @ self._nv
+        self.h1 = self.p1 @ self._nv
+        self.h2 = self.p2 @ self._nv
+        self.lo = np.minimum(np.minimum(self.h0, self.h1), self.h2)
+        self.hi = np.maximum(np.maximum(self.h0, self.h1), self.h2)
+
+    def fits(self, v0, normal, e1=None, e2=None) -> bool:
+        """Made from these very arrays (the pick index never writes into
+        its own: a changed model is new arrays) and this normal."""
+        return (v0 is self._v0
+                and (e1 is None or e1 is self._e1)
+                and (e2 is None or e2 is self._e2)
+                and (normal.x(), normal.y(), normal.z()) == self._n)
+
+    def cut(self, point, visible=None, rows=False):
+        import numpy as np
+        c = float(np.dot(self._nv, [point.x(), point.y(), point.z()]))
+        # Only a triangle with corners on both sides can have an edge that
+        # crosses: the rest is never cut, whatever the plane's offset.
+        near = np.nonzero((self.lo - c < 0) & (self.hi - c > 0))[0]
+        if visible is not None and len(near):
+            near = near[np.asarray(visible)[near]]
+        if not len(near):
+            return (None, None) if rows else None
+        p0, p1, p2 = self.p0[near], self.p1[near], self.p2[near]
+        d0 = self.h0[near] - c
+        d1 = self.h1[near] - c
+        d2 = self.h2[near] - c
+        pts = []
+        for (a, b, da, db) in ((p0, p1, d0, d1), (p1, p2, d1, d2),
+                               (p2, p0, d2, d0)):
+            cross = (da * db) < 0
+            t = np.zeros(len(da))
+            np.divide(da, da - db, out=t, where=cross)
+            pts.append((cross, a + (b - a) * t[:, None]))
+        two = (pts[0][0].astype(np.int8) + pts[1][0] + pts[2][0]) == 2
+        if not two.any():
+            return (None, None) if rows else None
+        acc = np.zeros((int(two.sum()), 2, 3))
+        slot = np.zeros(int(two.sum()), dtype=np.int64)
+        for cross, p in pts:
+            m = cross[two]
+            where = np.where(m)[0]
+            acc[where, np.minimum(slot[where], 1)] = p[two][m]
+            slot[where] += 1
+        if rows:
+            return acc.astype(np.float32), near[two]
+        return acc.astype(np.float32)
 
 
 def _plane_basis(normal):
@@ -289,10 +347,15 @@ def fill_triangles(chords, normal):
     dropped instead of filled. A ring inside another is a hole, and one
     inside that hole is solid again; rings that merely overlap (two walls
     crossing at a corner) are both filled — their union."""
+    groups, _basis = _fill_groups(chords, normal)
+    return _group_triangles(groups)
+
+
+def _group_triangles(groups):
+    """The areas of :func:`_fill_groups` as triangles ((T, 3, 3) float32)."""
     import numpy as np
     from core.triangulate import earcut
     empty = np.zeros((0, 3, 3), dtype=np.float32)
-    groups, _basis = _fill_groups(chords, normal)
     parts: list = []
     for rings3, rings2 in groups:
         pts2: list = []
@@ -357,3 +420,95 @@ def hatch_segments(chords, normal, spacing: float, cross: bool = False):
     if not out:
         return empty
     return np.asarray(out, dtype=np.float32)
+
+
+def _sheet_basis(normal):
+    """``(u, v)`` across a cut as a sheet looks at it: a plan with x east
+    and y north, a section with v straight up — so courses of brick lie
+    level and a pattern keeps the turn the sheet gives it."""
+    import numpy as np
+    n = np.array([normal.x(), normal.y(), normal.z()], dtype=np.float64)
+    n /= np.linalg.norm(n) or 1.0
+    if abs(n[2]) >= 0.7:                             # a plan
+        u = np.array([1.0, 0.0, 0.0]) - n * n[0]
+        u /= np.linalg.norm(u) or 1.0
+        return u, np.cross(n, u)
+    v = np.array([0.0, 0.0, 1.0]) - n * n[2]
+    v /= np.linalg.norm(v) or 1.0
+    u = np.cross(v, n)
+    return u / (np.linalg.norm(u) or 1.0), v
+
+
+def layer_fills(chords, tags, normal, scene, color,
+                scale_n: float = LAYER_HATCH_SCALE) -> list:
+    """The cut filled layer by layer — each with its layer's hatch, as a
+    sheet at 1:``scale_n`` draws it (bricks laid by the cut and the wall's
+    thickness, timber, insulation…): a list of ``(triangles, rgb, lines,
+    ink)`` — the (T, 3, 3) fill in ``rgb`` and the (L, 2, 3) hatch lines
+    over it in ``ink``, world space. ``tags`` gives each chord's layer.
+
+    A layer without a hatch, and one whose hatch sets no ink («as the
+    frame says»), takes ``color`` — the plane's own fill; a hatch lies on
+    its layer's ground, or on a pale tone of its ink (the paper of a
+    sheet)."""
+    import numpy as np
+    from core.hatches import hatch_lines
+    from core.hlr import closing_tags, section_loops
+    from core.layers import cut_hatch_forms, cut_hatches, hatch_ground_rgb,         hatch_ink_rgb
+    if chords is None or not len(chords):
+        return []
+    # A solid of more than one layer is filled as the layer of most of it.
+    tags = np.asarray(closing_tags(chords, tags), dtype=object)
+    hatches = cut_hatches(scene)
+    forms = cut_hatch_forms(scene, scale_n)
+    u, v = _sheet_basis(normal)
+    n = np.cross(u, v)
+    k = 1000.0 / float(scale_n or LAYER_HATCH_SCALE)    # paper mm per metre
+    cut = "plan" if abs(normal.z()) >= 0.7 else "vertical"
+    color = tuple(float(c) for c in color[:3])
+    plain: list = []
+    out: list = []
+    budget = LAYER_HATCH_MOST
+    for tag in sorted({str(t) for t in tags}):
+        mine = chords[tags == tag]
+        key = hatches.get(tag)
+        if not key:
+            plain.append(mine)
+            continue
+        groups, _basis = _fill_groups(mine, normal)
+        tris = _group_triangles(groups)
+        if not len(tris):
+            continue
+        ly = scene.layer(tag) if hasattr(scene, "layer") else None
+        ink = tuple((hatch_ink_rgb(ly) if ly is not None else None)
+                    or color)
+        if key == "solid":
+            out.append((tris, ink, None, ink))
+            continue
+        ground = hatch_ground_rgb(ly) if ly is not None else None
+        ground = tuple(ground) if ground is not None else tuple(
+            c + (1.0 - c) * 0.85 for c in ink)
+        form = dict(forms.get(tag, {}), cut=cut)
+        off = float(np.dot(groups[0][0][0][0], n)) * n
+        segs: list = []
+        for rings3, _rings2 in groups:
+            if budget <= 0:
+                break
+            paper = [[(float(p @ u) * k, -float(p @ v) * k) for p in r]
+                     for r in rings3]
+            got = hatch_lines(key, paper, form)
+            budget -= len(got)
+            segs += got
+        lines = None
+        if segs:
+            a = np.asarray(segs, dtype=np.float64) / k
+            lines = np.stack([off + a[:, 0:1] * u - a[:, 1:2] * v,
+                              off + a[:, 2:3] * u - a[:, 3:4] * v], axis=1)
+            lines = lines.astype(np.float32)
+        out.append((tris, ground, lines, ink))
+    if plain:
+        tris = _group_triangles(_fill_groups(np.concatenate(plain),
+                                             normal)[0])
+        if len(tris):
+            out.insert(0, (tris, color, None, color))
+    return out

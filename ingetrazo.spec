@@ -124,6 +124,9 @@ hiddenimports = [
     'PySide6.QtOpenGL',
     'PySide6.QtOpenGLWidgets',
     'PySide6.QtNetwork',        # tile/DEM fetch (georef)
+    # Export ▸ Scenes as Video (.mkv): Qt Multimedia writes the file with
+    # its own ffmpeg plugin; imported inside functions (views/video_export).
+    'PySide6.QtMultimedia',
     # Lazily imported project modules (inside functions) — listed for safety.
     'core.text3d',
     'core.textlabel',

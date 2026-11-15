@@ -47,6 +47,7 @@ from PySide6.QtWidgets import (
     QSizePolicy,
     QSlider,
     QSpinBox,
+    QStyledItemDelegate,
     QStyle,
     QToolButton,
     QVBoxLayout,
@@ -54,6 +55,7 @@ from PySide6.QtWidgets import (
 )
 
 from views.color_dialog import get_color
+from views.side_tree import SideTree
 from core.i18n import tr
 from views.theme import style as theme_style
 from views.rtl import set_arrow
@@ -881,8 +883,12 @@ class BaseMapPanel(QWidget):
                         * _math.cos(_math.radians(self._lat.value())))
                 if _math.hypot(dlat, dlon) < 1000.0:
                     keep_alt = old_datum.alt
+            # The north set with Tools ▸ North before there was a location
+            # (or the old datum's) is how the model is drawn on its site:
+            # it carries over, the sun does not jump.
+            from core.sun import scene_north_deg
             datum = SceneDatum(self._lat.value(), self._lon.value(),
-                               alt=keep_alt)
+                               alt=keep_alt, north=scene_north_deg(scene))
         scene.georef = datum
         layer = TileLayer(src, zoom=self._zoom.value())
         layer.set_rectangle(self._capture_w, self._capture_l)
@@ -892,6 +898,8 @@ class BaseMapPanel(QWidget):
                 "Large capture — detail reduced to zoom {z} to stay fast.")
                 .format(z=layer.zoom))
         layer.visible = self._show.isChecked()
+        # A new capture keeps the terrain as it was (3D or flat).
+        layer.terrain3d = bool(getattr(self._window, "_terrain_on", False))
         scene.tile_layer = layer
         self._attribution.setText(src.attribution)
         self._window.viewport.reset_tiles()
@@ -936,6 +944,7 @@ class BaseMapPanel(QWidget):
         layer.set_rectangle(self._capture_w, self._capture_l, cx=cx, cy=cy)
         layer.cap_detail(datum, max_tiles=500)
         layer.visible = self._show.isChecked()
+        layer.terrain3d = bool(getattr(self._window, "_terrain_on", False))
         scene.tile_layer = layer
         self._attribution.setText(src.attribution)
         blockers = [QSignalBlocker(w) for w in (self._lat, self._lon)]
@@ -1093,6 +1102,10 @@ class BaseMapPanel(QWidget):
         layer = getattr(self._window.viewport.scene, "tile_layer", None)
         if layer is not None:
             self._window.viewport.reset_tiles()
+            # Saved with the 3D terrain on: build it again (it is display
+            # only, never in the file; it fills in as the elevation arrives).
+            if getattr(layer, "terrain3d", False):
+                self._window._build_terrain()
             self._window.viewport.update()
 
     def _sync_from_scene(self) -> None:
@@ -1702,12 +1715,13 @@ class PartsPanel(QWidget):
             return groups[0]            # a plain group: offer Split
         return None
 
-    def _row(self, part) -> dict:
+    def _row(self, part, shared=None) -> dict:
         """``part``'s row, measured once per version of its geometry — a
         tray refresh follows every edit, and a part is only re-measured
-        when it itself changed."""
+        when it itself changed. ``shared`` is one refresh's cache: the
+        parts that are copies of one definition read it once."""
         from core.group import iter_placements
-        from core.parts import part_rows
+        from core.parts import part_row
         sig = tuple(
             (id(g.mesh), getattr(g.mesh, "_mut_serial", 0),
              tuple(m.data()) if m is not None else None,
@@ -1717,9 +1731,7 @@ class PartsPanel(QWidget):
         if hit is not None and hit[0] == sig:
             row = hit[1]
         else:
-            holder = type("_Holder", (), {})()
-            holder.children = [part]
-            row = part_rows(holder)[0]
+            row = part_row(part, shared)
             self._cache[id(part)] = (sig, row)
         row = dict(row)
         row["name"] = part.name
@@ -1744,7 +1756,8 @@ class PartsPanel(QWidget):
         alive = {id(k) for k in kids}
         for key in [k for k in self._cache if k not in alive]:
             del self._cache[key]
-        self._rows = [self._row(k) for k in kids]
+        shared: dict = {}
+        self._rows = [self._row(k, shared) for k in kids]
         listed = [it.data(0, Qt.UserRole) for it in self._items]
         if len(listed) != len(kids) or any(a is not b
                                            for a, b in zip(listed, kids)):
@@ -2747,6 +2760,18 @@ class MaterialsPanel(QWidget):
 
     def _load_texture_fields(self) -> None:
         tex = PaintTool.current_texture
+        mat = PaintTool.current_material
+        vp = getattr(self._window, "viewport", None)
+        reg = (vp.scene.materials.get(mat.name)
+               if mat is not None and vp is not None else None)
+        if (tex and not tex.get("tint") and reg is not None and reg.texture
+                and reg.texture.get("tint")
+                and reg.texture.get("path") == tex.get("path")):
+            # A tinted swatch of «In model» hands over the image it shows,
+            # not its colour: the fields read the colour off the material,
+            # or an Apply to change the size would strip it everywhere.
+            tex = {**reg.texture, **{k: tex[k] for k in ("sw", "sh", "rot")
+                                     if k in tex}}
         if tex:
             self._sw_box.setValue(float(tex.get("sw", 1.0)))
             self._sh_box.setValue(float(tex.get("sh", 1.0)))
@@ -2828,12 +2853,14 @@ class MaterialsPanel(QWidget):
         sw = self._sw_box.value()
         sh = self._sh_box.value()
         rot = self._rot_box.value() % 360.0
-        if PaintTool.current_texture:
-            PaintTool.current_texture = self._retinted({
-                **PaintTool.current_texture, "sw": sw, "sh": sh, "rot": rot})
         scene = self._window.viewport.scene
         targets = [f for f in scene.selection
                    if isinstance(f, Face) and f.attrs.get("texture")]
+        if self._edit_model_material(sw, sh, rot, targets):
+            return
+        if PaintTool.current_texture:
+            PaintTool.current_texture = self._retinted({
+                **PaintTool.current_texture, "sw": sw, "sh": sh, "rot": rot})
         if targets:
             # Each face keeps its own image; size/rotation and the tint change.
             from core.history import CompoundCommand
@@ -2857,6 +2884,52 @@ class MaterialsPanel(QWidget):
                     tr("Pick a texture (or select textured faces) first"),
                     2500)
         self._refresh_preview()
+
+    def _edit_model_material(self, sw, sh, rot, selected=()) -> bool:
+        """Apply on a textured material of the model: the material itself
+        changes, on every face and object that wears it, one undo step —
+        not only the faces selected, which left one name in two looks
+        (#1308). The tile size and turn reach those faces only when they
+        were changed here; otherwise each face keeps its own (a texture
+        placed by hand stays where it was). Selected textured faces of
+        other materials take the fields, as before, in the same step.
+        False when the active texture is no model material: then Apply
+        works on the selection alone."""
+        mat = PaintTool.current_material
+        scene = self._window.viewport.scene
+        reg = scene.materials.get(mat.name) if mat is not None else None
+        if not PaintTool.current_texture or reg is None or not reg.texture:
+            return False
+        from core.history import (CompoundCommand,
+                                  EditTexturedMaterialCommand,
+                                  SetFaceTextureCommand)
+        old = reg.texture
+        was = (float(old.get("sw", 1.0)), float(old.get("sh", 1.0)),
+               float(old.get("rot", 0.0)) % 360.0)
+        size = (sw, sh, rot)
+        if all(abs(a - b) < 1e-9 for a, b in zip(size, was)):
+            size = None
+        mode = self._tint_mode.currentData()
+        cmds = [EditTexturedMaterialCommand(
+            reg.name, self._tint, int(mode if mode is not None else 0),
+            size)]
+        for f in selected:
+            if f.attrs.get("mat") != reg.name:
+                cmds.append(SetFaceTextureCommand([f], self._retinted({
+                    **f.attrs["texture"], "sw": sw, "sh": sh, "rot": rot})))
+        self._window.viewport.history.execute(
+            cmds[0] if len(cmds) == 1 else CompoundCommand(cmds))
+        new = scene.materials.get(reg.name) or reg
+        PaintTool.current_material = new
+        PaintTool.current_texture = dict(new.texture or {}) or None
+        self._window.viewport.notify_scene_changed()
+        self._window.viewport.update()
+        self.refresh_in_model()
+        self._refresh_preview()
+        self._window.statusBar().showMessage(
+            tr("Material '{name}' updated on every face that wears it",
+               name=reg.name), 3000)
+        return True
 
     def _recolour_active(self, rgb) -> bool:
         """Give the active plain colour ``rgb``: a named material is edited
@@ -3323,7 +3396,25 @@ class StylesPanel(QWidget):
 
     # ---- Plumbing -----------------------------------------------------------
     def _style(self):
+        """The active view's style, to show (with several views, the one
+        worked in)."""
+        active = getattr(self._window, "active_style", None)
+        if active is not None:
+            return active()
         return getattr(self._window.viewport.scene, "display_style", None)
+
+    def _own_style(self):
+        """The active view's style, to change: its own copy first when it is
+        one of several views still showing the window's."""
+        own = getattr(self._window, "own_style", None)
+        return own() if own is not None else self._style()
+
+    def _repaint(self) -> None:
+        again = getattr(self._window, "repaint_styled", None)
+        if again is not None:
+            again()
+        else:
+            self._window.viewport.update()
 
     def _shown_color(self, attr: str):
         """The colour a swatch shows for ``attr``. Back color may be unset
@@ -3398,14 +3489,18 @@ class StylesPanel(QWidget):
         picked = style_by_name(self._combo.itemData(index))
         if picked is None:
             return
-        self._window.viewport.scene.display_style = picked
+        put = getattr(self._window, "set_active_style", None)
+        if put is not None:
+            put(picked)
+        else:
+            self._window.viewport.scene.display_style = picked
         self._window._sync_style_menu()          # menu + this panel
-        self._window.viewport.update()
+        self._repaint()
 
     def _apply_edits(self, *_a) -> None:
-        style = self._style()
-        if style is None or self._updating:
+        if self._style() is None or self._updating:
             return
+        style = self._own_style()
         style.face_mode = self._mode.currentData()
         style.edges = self._edges.isChecked()
         style.profiles = self._profiles.isChecked()
@@ -3416,7 +3511,7 @@ class StylesPanel(QWidget):
         style.ao_intensity = self._ao_int.value() / 10.0
         self._sync_ao_controls()
         self._window._sync_style_menu()
-        self._window.viewport.update()
+        self._repaint()
 
     _AO_DIST_STEPS = 200
 
@@ -3442,9 +3537,9 @@ class StylesPanel(QWidget):
     def _on_ao_dist_slider(self, pos: int) -> None:
         # Only a drag writes the distance: a value from a file that sits
         # between two slider steps is kept as it is until then.
-        style = self._style()
-        if style is None or self._updating:
+        if self._style() is None or self._updating:
             return
+        style = self._own_style()
         style.ao_distance = self._ao_dist_at(pos)
         self._apply_edits()
 
@@ -3490,9 +3585,10 @@ class StylesPanel(QWidget):
             QColor.fromRgbF(*(float(v) for v in c[:3])), _dialog_parent(self), title)
         if not chosen.isValid():
             return
+        style = self._own_style()
         setattr(style, attr, (chosen.redF(), chosen.greenF(), chosen.blueF()))
         self.refresh()
-        self._window.viewport.update()
+        self._repaint()
         # Every colour is editable in every mode (build the look, save it) —
         # but an edit that can't show RIGHT NOW says so, or it reads as
         # "styles don't work" (it did, live, 2026-08-31).
@@ -3543,6 +3639,7 @@ class StylesPanel(QWidget):
                 tr("'{name}' is a built-in style — pick another name.",
                    name=name))
             return
+        style = self._own_style()
         style.name = name        # the active style takes the saved identity
         save_user_style(style)
         self._window._sync_style_menu()
@@ -3644,14 +3741,36 @@ class ShadowsPanel(QWidget):
         self._tz.currentIndexChanged.connect(self._apply)
         grid.addWidget(self._tz, 7, 1)
 
+        # Where true north lies (core.sun.scene_north_deg): typed here, or
+        # aimed on screen with Tools ▸ North — the button picks it up.
+        grid.addWidget(QLabel(tr("North:")), 8, 0)
+        north_row = QHBoxLayout()
+        self._north = QDoubleSpinBox()
+        self._north.setRange(-180.0, 180.0)
+        self._north.setDecimals(1)
+        self._north.setSingleStep(1.0)
+        self._north.setWrapping(True)
+        self._north.setSuffix("°")
+        self._north.setToolTip(tr(
+            "Where true north lies, in degrees clockwise from the green (Y) "
+            "axis. The shadows turn with it; the model does not move."))
+        self._north.editingFinished.connect(self._on_north_edited)
+        north_row.addWidget(self._north, 1)
+        self._north_btn = QPushButton(tr("On screen"))
+        self._north_btn.setToolTip(tr(
+            "Tools ▸ North: click a centre, then click toward north."))
+        self._north_btn.clicked.connect(self._on_north_tool)
+        north_row.addWidget(self._north_btn)
+        grid.addLayout(north_row, 8, 1)
+
         self._site = QLabel("")
         self._site.setWordWrap(True)
         theme_style(self._site, "color:{muted}; font-size: 11px;")
-        grid.addWidget(self._site, 8, 0, 1, 2)
+        grid.addWidget(self._site, 9, 0, 1, 2)
 
         self._locate_btn = QPushButton(tr("Add location…"))
         self._locate_btn.clicked.connect(self._on_add_location)
-        grid.addWidget(self._locate_btn, 9, 0, 1, 2)
+        grid.addWidget(self._locate_btn, 10, 0, 1, 2)
 
         self.refresh()
 
@@ -3723,6 +3842,8 @@ class ShadowsPanel(QWidget):
             self._dark.setValue(round((1.0 - sh.darkness) * 100))
             idx = self._tz.findData(sh.utc_offset)
             self._tz.setCurrentIndex(idx if idx >= 0 else 0)
+            from core.sun import scene_north_deg
+            self._north.setValue(scene_north_deg(self._window.viewport.scene))
             datum = getattr(self._window.viewport.scene, "georef", None)
             if datum is not None:
                 self._site.setText(tr(
@@ -3734,6 +3855,30 @@ class ShadowsPanel(QWidget):
                     "a true sun study."))
         finally:
             self._updating = False
+
+    def showEvent(self, event) -> None:
+        # The north may have been aimed on screen (or undone) since the
+        # panel last dropped down.
+        self.refresh()
+        super().showEvent(event)
+
+    def _on_north_edited(self) -> None:
+        if self._updating:
+            return
+        from core.history import SetNorthCommand
+        from core.sun import scene_north_deg
+        from tools.north import refresh_north_display
+        vp = self._window.viewport
+        value = self._north.value()
+        if abs(value - scene_north_deg(vp.scene)) < 1e-9:
+            return
+        vp.history.execute(SetNorthCommand(value))
+        refresh_north_display(vp)
+
+    def _on_north_tool(self) -> None:
+        activate = getattr(self._window, "_activate_tool", None)
+        if callable(activate):
+            activate("north")
 
     def _on_date_edited(self, *_a) -> None:
         if self._updating:
@@ -3769,8 +3914,11 @@ class ShadowsPanel(QWidget):
         if result is None:
             return
         lat, lon, _w, _l = result
+        from core.sun import scene_north_deg
         from georef.datum import SceneDatum
-        self._window.viewport.scene.georef = SceneDatum(lat, lon)
+        scene = self._window.viewport.scene
+        # Tools ▸ North set before the location carries over.
+        scene.georef = SceneDatum(lat, lon, north=scene_north_deg(scene))
         self._window.viewport.scene.version += 1
         self.refresh()
         self._window.viewport.update()
@@ -4280,86 +4428,725 @@ def _scrolled(sections) -> QScrollArea:
 _SCENE_ALWAYS_BUMP = os.environ.get("INGETRAZO_SCENE_ALWAYS_BUMP", "") == "1"
 
 
+#: The picture of a scene in the Scenes tab's thumbnails view — the size
+#: the sheets' «Views and sheets» list draws them at.
+_SCENE_THUMB = QSize(96, 64)
+
+
+class _SceneNameDelegate(QStyledItemDelegate):
+    """The name being typed in a box one line high, centred beside the
+    picture, as in Layers' rows — not a box as tall as a thumbnail."""
+
+    def updateEditorGeometry(self, editor, option, index) -> None:  # noqa: N802
+        super().updateEditorGeometry(editor, option, index)
+        rect = editor.geometry()
+        h = min(rect.height(), editor.sizeHint().height())
+        rect.setTop(option.rect.center().y() - h // 2)
+        rect.setHeight(h)
+        editor.setGeometry(rect)
+
+
+class _SceneTree(SideTree):
+    """The Scenes tab's tree, taking drops of its own rows: dropped on a
+    folder they go into it; dropped on a scene they go right before it, in
+    its folder; on the empty space, out of any folder. Qt never moves a row
+    by itself here: the document changes and the tree is rebuilt from it."""
+
+    #: Delete belongs to the list while it has the focus.
+    DELETE_KEY = True
+
+    def drop_target(self, pos):
+        item = self.itemAt(pos)
+        if item is None:
+            return ("folder", None)
+        kind, obj = item.data(0, Qt.UserRole)
+        return ("folder", obj) if kind == "folder" else ("before", obj)
+
+    def drop_items(self, token):
+        kind, obj = token
+        if kind == "before":
+            row = self._panel.row_for(obj)
+            return [row] if row is not None else []
+        row = self._panel.folder_row(obj) if obj is not None else None
+        if row is None:
+            return []
+        items, stack = [row], [row]
+        while stack:
+            node = stack.pop()
+            if not node.isExpanded():
+                continue
+            for i in range(node.childCount()):
+                child = node.child(i)
+                if not child.isHidden():
+                    items.append(child)
+                    stack.append(child)
+        return items
+
+    def drop_text(self, token) -> str:
+        kind, obj = token
+        if kind == "before":
+            return tr("Before «{name}»", name=obj.name)
+        return (tr("Into «{folder}»", folder=obj) if obj is not None
+                else tr("Out of any folder"))
+
+    def apply_drop(self, token, rows) -> None:
+        self._panel.drop_rows(token, rows)
+
+
 class ScenesPanel(QWidget):
     """Saved views — "Scenes": named camera + layer-visibility
-    snapshots. Double-click recalls one; the buttons capture the current
-    view, update the selected scene from it, or delete it. Together with
+    snapshots. Double-click recalls one; the bar adds a scene from the
+    current view or a folder, updates the selected scene, filters the
+    list and switches between the list and the thumbnails; the
+    right-click menu has every scene action. Together with
     layers this is the '2D that emerges' workflow bottled: "Planta" = top
-    camera + parallel + plan layers, one click away."""
+    camera + parallel + plan layers, one click away.
+
+    Its own tab of the side tray since #1158, with the bar of Layers and
+    the Browser and their kind of tree: scenes filed in folders (inside
+    folders, as deep as wanted) and dragged into them or to another place.
+    Everything it changes goes through the undo history, and the menu runs
+    the window's scene actions (Camera ▸ Scenes), the same ones the sheets'
+    list runs."""
 
     def __init__(self, window) -> None:
         super().__init__()
-        from PySide6.QtWidgets import (QHBoxLayout, QLabel, QListWidget,
-                                       QPushButton, QVBoxLayout)
+        from PySide6.QtGui import QActionGroup
+        from PySide6.QtWidgets import (QAbstractItemView, QHBoxLayout,
+                                       QVBoxLayout)
+        from views.icons import tool_icon
         self._window = window
         self._updating = False
+        self._shape = None
+        #: Folders folded shut by the user (by name).
+        self._collapsed: set = set()
+        #: The scene shown last from here, the sheets' list or a key: its
+        #: row carries the mark (#1158, point 6).
+        self.shown = None
+        #: Scene pictures, by name and contents: a scene updated or renamed
+        #: is drawn again; one that changed nothing is not.
+        self._thumbs: dict = {}
+        self._thumb_queue: list = []
+        self._drawing = None              # the key of the picture in hand
+        self._names = None                # the names the composer last got
+        #: Pictures drawn before the model last changed: still shown, drawn
+        #: again one by one while the tab is in sight.
+        self._old: set = set()
+        #: The model's content version the pictures show.
+        self._model_seen = self._scene().content_version
+        # A model edited: once it has been still for a moment (not at each
+        # stroke of a drag), the pictures go old.
+        from PySide6.QtCore import QTimer
+        self._old_timer = QTimer(self)
+        self._old_timer.setSingleShot(True)
+        self._old_timer.setInterval(self.OLD_AFTER_MS)
+        self._old_timer.timeout.connect(self._mark_old)
+        # A picture that could not be drawn is asked for again a little
+        # later, a few times: at start-up the view may not be ready to
+        # draw yet, and the scene kept the camera for good.
+        self._misses: dict = {}
+        self._retry_timer = QTimer(self)
+        self._retry_timer.setSingleShot(True)
+        self._retry_timer.setInterval(self.RETRY_AFTER_MS)
+        self._retry_timer.timeout.connect(self._queue_thumbnails)
         lay = QVBoxLayout(self)
-        lay.setContentsMargins(8, 6, 8, 8)
-        hint = QLabel(tr("Double-click a scene to show it"))
-        hint.setStyleSheet("color: gray;")
-        lay.addWidget(hint)
-        self.list = QListWidget()
-        # Ctrl/Shift+click picks several scenes; − or Delete removes them
-        # all in one undo step (#280).
-        self.list.setSelectionMode(QListWidget.ExtendedSelection)
-        self.list.itemDoubleClicked.connect(self._on_activate)
-        self.list.itemChanged.connect(self._on_item_changed)
+        lay.setContentsMargins(6, 6, 6, 6)
+        lay.setSpacing(4)
+        # The add buttons, then the filter — the bar of Layers and the
+        # Browser: flat tool buttons that raise on hover.
+        bar = QHBoxLayout()
+        self.add_btn = self._tool_button(
+            "scene_add",
+            tr("Save the current view and layer visibility"), self._on_add)
+        self.add_folder_btn = self._tool_button(
+            "folder_add", tr("Add folder"), self._on_add_folder)
+        self.update_btn = self._tool_button(
+            "refresh",
+            tr("Update the selected scene from the current view"),
+            self._on_update)
+        bar.addWidget(self.add_btn)
+        bar.addWidget(self.add_folder_btn)
+        bar.addWidget(self.update_btn)
+        self.search = QLineEdit()
+        self.search.setPlaceholderText(tr("Filter scenes… (* and ? work)"))
+        self.search.setClearButtonEnabled(True)
+        self.search.textChanged.connect(lambda _t: self._apply_filter())
+        bar.addWidget(self.search, 1)
+        # The list or the thumbnails: a picture of each scene, as the
+        # sheets' list draws them — the thumbnails unless chosen otherwise.
+        self.view_btn = QToolButton()
+        self.view_btn.setAutoRaise(True)
+        self.view_btn.setPopupMode(QToolButton.InstantPopup)
+        self.view_btn.setToolTip(tr(
+            "Show the scenes as a list or with a picture of each"))
+        menu = QMenu(self.view_btn)
+        group = QActionGroup(self)
+        self.list_action = menu.addAction(tool_icon("scenes_list"), tr("List"))
+        self.thumbs_action = menu.addAction(tool_icon("scenes_thumbs"),
+                                            tr("Thumbnails"))
+        self.list_action.setProperty("icon_key", "scenes_list")
+        self.thumbs_action.setProperty("icon_key", "scenes_thumbs")
+        for act in (self.list_action, self.thumbs_action):
+            act.setCheckable(True)
+            group.addAction(act)
+        self.list_action.triggered.connect(
+            lambda: self.set_thumbnails(False))
+        self.thumbs_action.triggered.connect(
+            lambda: self.set_thumbnails(True))
+        self.view_btn.setMenu(menu)
+        bar.addWidget(self.view_btn)
+        lay.addLayout(bar)
+        self.tree = _SceneTree(self)
+        self.tree.setItemDelegate(_SceneNameDelegate(self.tree))
+        self.tree.setHeaderHidden(True)
+        self.tree.setColumnCount(1)
+        self.tree.setToolTip(tr("Double-click a scene to show it"))
+        # Ctrl/Shift+click picks several rows; Delete removes them all in
+        # one undo step (#280).
+        self.tree.setSelectionMode(QAbstractItemView.ExtendedSelection)
+        self.tree.setEditTriggers(QAbstractItemView.SelectedClicked
+                                  | QAbstractItemView.EditKeyPressed)
+        self.tree.itemDoubleClicked.connect(self._on_double_click)
+        self.tree.itemChanged.connect(self._on_item_changed)
+        self.tree.itemExpanded.connect(lambda it: self._on_folded(it, True))
+        self.tree.itemCollapsed.connect(lambda it: self._on_folded(it, False))
+        self.tree.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.tree.customContextMenuRequested.connect(self._on_context_menu)
+        # One place up or down within its folder, from the keyboard.
         from PySide6.QtGui import QAction, QKeySequence
-        delete = QAction(self.list)
-        delete.setShortcut(QKeySequence.Delete)
-        delete.setShortcutContext(Qt.WidgetShortcut)
-        delete.triggered.connect(self._on_delete)
-        self.list.addAction(delete)
-        lay.addWidget(self.list)
-        row = QHBoxLayout()
-        add_btn = QPushButton(tr("+ Scene"))
-        add_btn.setToolTip(tr("Save the current view and layer visibility"))
-        add_btn.clicked.connect(self._on_add)
-        upd_btn = QPushButton(tr("Update"))
-        upd_btn.setToolTip(tr("Update the selected scene from the current view"))
-        upd_btn.clicked.connect(self._on_update)
-        del_btn = QPushButton(tr("−"))
-        del_btn.setToolTip(tr("Delete the selected scenes"))
-        del_btn.clicked.connect(self._on_delete)
-        row = FlowLayout(spacing=4)          # wraps in a narrow tray (see Layers)
-        row.addWidget(add_btn)
-        row.addWidget(upd_btn)
-        row.addWidget(del_btn)
-        lay.addLayout(row)
+        for keys, step in (("Alt+Up", -1), ("Alt+Down", 1)):
+            move = QAction(self.tree)
+            move.setShortcut(QKeySequence(keys))
+            move.setShortcutContext(Qt.WidgetShortcut)
+            move.triggered.connect(
+                lambda _c=False, s=step: self._on_move(s))
+            self.tree.addAction(move)
+        lay.addWidget(self.tree, 1)
+        self.thumbnails = self._saved_thumbnails()
+        self._show_view_mode()
         self.refresh()
+
+    @staticmethod
+    def _tool_button(key: str, tip: str, slot) -> QToolButton:
+        from views.icons import tool_icon
+        btn = QToolButton()
+        btn.setIcon(tool_icon(key))
+        # Drawn in the theme's ink when made: named, so a change of theme
+        # draws it again (views.theme._redraw_icons).
+        btn.setProperty("icon_key", key)
+        btn.setToolTip(tip)
+        btn.setAutoRaise(True)
+        btn.clicked.connect(lambda _c=False: slot())
+        return btn
 
     def _scene(self):
         return self._window.viewport.scene
 
+    def _history(self):
+        return self._window.viewport.history
+
+    # ---- The list or the thumbnails -----------------------------------------
+    @staticmethod
+    def _saved_thumbnails() -> bool:
+        from PySide6.QtCore import QSettings
+        raw = QSettings().value("scenes/thumbnails", True)
+        return raw not in (False, "false", "0", 0)
+
+    def set_thumbnails(self, on: bool) -> None:
+        """Show each scene with its picture (``True``) or as a plain list,
+        and remember the choice."""
+        from PySide6.QtCore import QSettings
+        self.thumbnails = bool(on)
+        QSettings().setValue("scenes/thumbnails", self.thumbnails)
+        self._show_view_mode()
+        self._shape = None
+        self.refresh()
+
+    def _show_view_mode(self) -> None:
+        from views.icons import tool_icon
+        self.thumbs_action.setChecked(self.thumbnails)
+        self.list_action.setChecked(not self.thumbnails)
+        key = "scenes_thumbs" if self.thumbnails else "scenes_list"
+        self.view_btn.setIcon(tool_icon(key))
+        self.view_btn.setProperty("icon_key", key)
+        self.tree.setIconSize(_SCENE_THUMB if self.thumbnails
+                              else QSize(16, 16))
+
+    @staticmethod
+    def _thumb_key(view) -> tuple:
+        """What the picture shows: the name and the scene's contents, its
+        folder aside (filing a scene changes no picture)."""
+        import json
+        data = {k: v for k, v in view.to_dict().items() if k != "folder"}
+        return (view.name, json.dumps(data, sort_keys=True, default=str))
+
+    def _folder_icon(self):
+        """The folder of the rows. Among the pictures it keeps its own
+        size, in the middle of a picture's room, instead of growing to it."""
+        from views.outliner import node_icon
+        icon = node_icon("folder")
+        if not self.thumbnails:
+            return icon
+        from PySide6.QtGui import QPainter
+        size = _SCENE_THUMB
+        pm = QPixmap(size)
+        pm.fill(Qt.transparent)
+        p = QPainter(pm)
+        p.drawPixmap((size.width() - 32) // 2, (size.height() - 32) // 2,
+                     icon.pixmap(32, 32))
+        p.end()
+        return QIcon(pm)
+
+    def _scene_icon(self, view):
+        from views.outliner import node_icon
+        if self.thumbnails:
+            icon = self._thumbs.get(self._thumb_key(view))
+            if icon is not None:
+                return icon
+        return node_icon("scene")
+
+    def _queue_thumbnails(self) -> None:
+        """Pictures of the scenes that have none yet, one at a time from the
+        event loop — a render each, so the tab shows at once and fills in.
+        Only while the tab is on screen: a hidden one draws them when it
+        shows."""
+        if not self.thumbnails or not self.isVisible():
+            return
+        from PySide6.QtCore import QTimer
+        queued = bool(self._thumb_queue)
+        # The one being drawn is not asked for again: a refresh while
+        # it renders would queue it a second time.
+        self._thumb_queue = [v for v in self._scene().saved_views
+                             if (self._thumb_key(v) not in self._thumbs
+                                 or self._thumb_key(v) in self._old)
+                             and self._thumb_key(v) != self._drawing]
+        if self._thumb_queue and not queued:
+            QTimer.singleShot(0, self._next_thumbnail)
+
+    def _next_thumbnail(self) -> None:
+        from shiboken6 import isValid
+        if not isValid(self) or not self._thumb_queue or not self.thumbnails:
+            self._thumb_queue = []
+            return
+        view = self._thumb_queue.pop(0)
+        if any(v is view for v in self._scene().saved_views):
+            key = self._thumb_key(view)
+            self._drawing = key
+            try:
+                icon = self._render_thumbnail(view)
+            finally:
+                self._drawing = None
+            # Nothing drawn (no picture to be had): the camera stays, and
+            # the scene is not asked for again until it changes. An old
+            # picture that could not be drawn again is kept.
+            if icon is None and key in self._old:
+                icon = self._thumbs.get(key)
+            if (icon is None
+                    and self._misses.get(key, 0) < self.RETRIES):
+                # Not noted as "has none": asked for again in a moment.
+                self._misses[key] = self._misses.get(key, 0) + 1
+                self._retry_timer.start()
+                if self._thumb_queue:
+                    from PySide6.QtCore import QTimer
+                    QTimer.singleShot(20, self._next_thumbnail)
+                return
+            if icon is not None:
+                self._misses.pop(key, None)
+            self._old.discard(key)
+            self._thumbs[key] = icon
+            if not self._old_timer.isActive() and not self._old:
+                # Drawn from the model as it is now (an edit since would
+                # have started the timer).
+                self._model_seen = self._scene().content_version
+            row = self.row_for(view)
+            if icon is not None and row is not None:
+                self._updating = True
+                try:
+                    row.setIcon(0, icon)
+                finally:
+                    self._updating = False
+        if self._thumb_queue:
+            from PySide6.QtCore import QTimer
+            QTimer.singleShot(20, self._next_thumbnail)
+
+    def _render_thumbnail(self, view):
+        """A picture of ``view`` — the render a sheet frame gets — or
+        ``None``. Through the composer when it is already built, else
+        through a :class:`views.composer.SceneThumbnailer`: asking for the
+        composer built it, hidden, on every document with scenes (+2.2 s
+        and ~140 MB on the plaza, 14-11)."""
+        window = self._window
+        if getattr(window, "viewport", None) is None:
+            return None
+        try:
+            painter = getattr(window, "_composer", None)
+            if painter is None:
+                painter = window.__dict__.get("_scene_thumbnailer")
+                if painter is None:
+                    from views.composer import SceneThumbnailer
+                    painter = SceneThumbnailer(window)
+                    window.__dict__["_scene_thumbnailer"] = painter
+            # Its own pictures are kept by name: this one may have changed.
+            painter.__dict__.get("_thumbs", {}).pop(view.name, None)
+            return painter.scene_thumbnail(view.name)
+        except Exception:                          # noqa: BLE001
+            return None
+
+    def refresh_thumbnails(self) -> None:
+        """Draw every picture again (the model changed since)."""
+        self._thumbs.clear()
+        self._old.clear()
+        self._misses.clear()
+        self._model_seen = self._scene().content_version
+        self._shape = None
+        self.refresh()
+
+    #: How long the model must stay still before the pictures go old.
+    OLD_AFTER_MS = 1500
+    #: A picture that could not be drawn: how many times it is asked for
+    #: again, and how long after.
+    RETRIES = 3
+    RETRY_AFTER_MS = 400
+
+    def _watch_model(self) -> None:
+        """Called on every refresh: the model changed since the pictures
+        were drawn → they go old once it has been still a moment."""
+        version = self._scene().content_version
+        if not any(icon is not None for icon in self._thumbs.values()):
+            self._model_seen = version       # no picture yet: none is old
+        elif version != self._model_seen:
+            self._old_timer.start()          # (re)started: waits for calm
+
+    def _mark_old(self) -> None:
+        """Every picture old: each is shown until its new one is drawn —
+        now if the tab is in sight, else when it shows."""
+        from shiboken6 import isValid
+        if not isValid(self):
+            return
+        self._model_seen = self._scene().content_version
+        self._old = set(self._thumbs)
+        self._queue_thumbnails()
+
+    def showEvent(self, event) -> None:  # noqa: N802 — Qt override
+        super().showEvent(event)
+        self._queue_thumbnails()
+
     # ---- Model → view --------------------------------------------------------
     def refresh(self) -> None:
-        from PySide6.QtWidgets import QListWidgetItem
+        from PySide6.QtWidgets import QTreeWidgetItem
+        from core import scene_folders as SF
+        from views.outliner import node_icon
+        scene = self._scene()
+        views = list(scene.saved_views)
+        if self.shown is not None and not any(v is self.shown for v in views):
+            self.shown = None
+        folders = SF.folders_of(scene)
+        # Rebuilt only when what the rows show changed: every edit of the
+        # model calls here, and a rebuild drops the selection.
+        shape = (tuple((id(v), v.name, SF.folder_of(scene, v))
+                       for v in views),
+                 tuple((f, SF.folder_parent(scene, f)) for f in folders),
+                 id(self.shown), self.thumbnails)
+        self._watch_model()
+        if shape == self._shape:
+            self._queue_thumbnails()
+            self._follow(views)
+            return
+        self._shape = shape
+        keep = {self._row_key(it) for it in self.tree.selectedItems()}
+        current = self.tree.currentItem()
+        current = self._row_key(current) if current is not None else None
         self._updating = True
-        self.list.clear()
-        for view in self._scene().saved_views:
-            item = QListWidgetItem(view.name)
-            item.setData(Qt.UserRole, view)
-            item.setFlags(item.flags() | Qt.ItemIsEditable)
-            self.list.addItem(item)
-        fit_rows(self.list)
-        self._updating = False
+        try:
+            self.tree.clear()
+            folder_icon = self._folder_icon()
+
+            def level(parent, name) -> None:
+                for f in SF.subfolders(scene, name):
+                    item = QTreeWidgetItem([f])
+                    item.setData(0, Qt.UserRole, ("folder", f))
+                    item.setIcon(0, folder_icon)
+                    item.setFlags(item.flags() | Qt.ItemIsEditable)
+                    self._add_row(parent, item)
+                    level(item, f)
+                    item.setExpanded(f not in self._collapsed)
+                for view in SF.scenes_in(scene, name):
+                    item = QTreeWidgetItem([view.name])
+                    item.setData(0, Qt.UserRole, ("scene", view))
+                    item.setIcon(0, self._scene_icon(view))
+                    item.setFlags(item.flags() | Qt.ItemIsEditable)
+                    if view is self.shown:
+                        font = item.font(0)
+                        font.setBold(True)
+                        item.setFont(0, font)
+                        item.setToolTip(0, tr("The scene shown last"))
+                    self._add_row(parent, item)
+            level(None, None)
+            for item in self._rows():
+                key = self._row_key(item)
+                if key == current:
+                    self.tree.setCurrentItem(item)
+                item.setSelected(key in keep)
+        finally:
+            self._updating = False
+        self._apply_filter()
+        self._queue_thumbnails()
+        self._follow(views)
+
+    def _follow(self, views) -> None:
+        """The scene tabs under the viewport list the same scenes, in the
+        same order; so do the view sources of the sheet composer — those
+        only when the names changed, since every edit passes through here."""
+        follow = getattr(self._window, "_refresh_scene_tabs", None)
+        if callable(follow):
+            follow()
+        names = [v.name for v in views]
+        if names != self._names:
+            self._names = names
+            composer = getattr(self._window, "_composer", None)
+            reload = getattr(composer, "_reload_view_sources", None)
+            if reload is not None:
+                reload()
+
+    def _add_row(self, parent, item) -> None:
+        if parent is None:
+            self.tree.addTopLevelItem(item)
+        else:
+            parent.addChild(item)
+
+    @staticmethod
+    def _row_key(item):
+        kind, obj = item.data(0, Qt.UserRole)
+        return (kind, id(obj) if kind == "scene" else obj)
+
+    def _rows(self) -> list:
+        """Every row, folders and scenes, from top to bottom."""
+        from PySide6.QtWidgets import QTreeWidgetItemIterator
+        out = []
+        it = QTreeWidgetItemIterator(self.tree)
+        while it.value() is not None:
+            out.append(it.value())
+            it += 1
+        return out
+
+    def scene_rows(self) -> list:
+        """The scenes' rows, from top to bottom."""
+        return [it for it in self._rows()
+                if it.data(0, Qt.UserRole)[0] == "scene"]
+
+    def row_for(self, view):
+        """The row of scene ``view``, or None."""
+        return next((it for it in self.scene_rows()
+                     if it.data(0, Qt.UserRole)[1] is view), None)
+
+    def folder_row(self, name):
+        """The row of folder ``name``, or None."""
+        return next((it for it in self._rows()
+                     if it.data(0, Qt.UserRole) == ("folder", name)), None)
+
+    def current_view(self):
+        """The scene of the current row, or None (a folder or nothing)."""
+        item = self.tree.currentItem()
+        if item is None:
+            return None
+        kind, obj = item.data(0, Qt.UserRole)
+        return obj if kind == "scene" else None
+
+    def selected_views(self) -> list:
+        return [it.data(0, Qt.UserRole)[1] for it in self.tree.selectedItems()
+                if it.data(0, Qt.UserRole)[0] == "scene"]
+
+    def _context_folder(self):
+        """The folder a new scene or folder goes into: the current folder
+        row, the folder of the current scene, or none."""
+        item = self.tree.currentItem()
+        if item is None or not item.isSelected():
+            return None
+        kind, obj = item.data(0, Qt.UserRole)
+        if kind == "folder":
+            return obj
+        from core.scene_folders import folder_of
+        return folder_of(self._scene(), obj)
+
+    def _apply_filter(self) -> None:
+        """Rows whose name passes the filter stay (``*`` and ``?`` as in
+        Layers), with the folders on the way to them; a folder whose name
+        passes shows all it holds. Filtered, the rows do not drag: a row
+        dropped among hidden ones would land in a place nobody sees."""
+        from PySide6.QtWidgets import QAbstractItemView
+        from core.outliner import text_matches
+        text = self.search.text().strip().casefold()
+
+        def show(item, inherited: bool) -> bool:
+            here = inherited or text_matches(item.text(0), text)
+            kind = item.data(0, Qt.UserRole)[0]
+            below = False
+            for i in range(item.childCount()):
+                below = show(item.child(i), here and kind == "folder") \
+                    or below
+            visible = here or below
+            item.setHidden(not visible)
+            if text and below and kind == "folder":
+                item.setExpanded(True)
+            return visible
+
+        self._updating = True
+        try:
+            for i in range(self.tree.topLevelItemCount()):
+                show(self.tree.topLevelItem(i), False)
+            if not text:
+                for item in self._rows():
+                    kind, obj = item.data(0, Qt.UserRole)
+                    if kind == "folder":
+                        item.setExpanded(obj not in self._collapsed)
+        finally:
+            self._updating = False
+        self.tree.setDragDropMode(QAbstractItemView.NoDragDrop if text
+                                  else QAbstractItemView.InternalMove)
+
+    def select_view(self, view) -> None:
+        """Make ``view``'s row the current one (and the only one picked),
+        its folders open."""
+        self.refresh()
+        row = self.row_for(view)
+        self._select_row(row)
+
+    def _select_row(self, row) -> None:
+        self.tree.clearSelection()
+        if row is None:
+            return
+        parent = row.parent()
+        while parent is not None:
+            self._collapsed.discard(parent.data(0, Qt.UserRole)[1])
+            parent.setExpanded(True)
+            parent = parent.parent()
+        self.tree.setCurrentItem(row)
+        row.setSelected(True)
+        self.tree.scrollToItem(row)
 
     # ---- View → model --------------------------------------------------------
-    def _on_activate(self, item) -> None:
-        view = item.data(Qt.UserRole)
-        if view is None:
+    def _on_folded(self, item, opened: bool) -> None:
+        if self._updating:
             return
+        kind, name = item.data(0, Qt.UserRole)
+        if kind != "folder":
+            return
+        if opened:
+            self._collapsed.discard(name)
+        else:
+            self._collapsed.add(name)
+
+    def _on_double_click(self, item, _column=0) -> None:
+        if item.data(0, Qt.UserRole)[0] == "scene":
+            self._on_activate(item)
+
+    def _on_context_menu(self, pos) -> None:
+        menu = self.context_menu(self.tree.itemAt(pos))
+        if not menu.isEmpty():
+            menu.exec(self.tree.viewport().mapToGlobal(pos))
+
+    def context_menu(self, item) -> QMenu:
+        """The right-click menu over ``item`` (``None``: the empty space
+        under the rows). Over a scene, the window's scene actions (Camera ▸
+        Scenes): the panel, the scene tabs and the sheets' list run the same
+        ones (#1158, point 7). The row clicked becomes the one they act on."""
+        if item is not None and not item.isSelected():
+            self._select_row(item)
+        acts = getattr(self._window, "_scene_actions", None) or {}
+        menu = QMenu(self)
+        kind = item.data(0, Qt.UserRole)[0] if item is not None else None
+        if kind == "scene":
+            keys = ("scene_show", "scene_update", None, "scene_rename",
+                    "scene_duplicate", None, "scene_delete")
+        else:
+            keys = ("scene_add",)
+        for key in keys:
+            if key is None:
+                menu.addSeparator()
+            elif key in acts:
+                menu.addAction(acts[key])
+        if kind == "scene":
+            from core import scene_folders as SF
+            view = item.data(0, Qt.UserRole)[1]
+            scene = self._scene()
+            edit = getattr(self._window, "edit_scene_camera", None)
+            if edit is not None:
+                from views.icons import tool_icon
+                act = menu.addAction(tool_icon("camera_settings"),
+                                     tr("Camera Settings…"))
+                act.setStatusTip(tr(
+                    "Show this scene and set its camera: lens, shift, frame "
+                    "and more. The changes are kept in the scene."))
+                act.triggered.connect(lambda _c=False, v=view: edit(v))
+            mates = list(SF.scenes_in(scene, SF.folder_of(scene, view)))
+            at = next(i for i, v in enumerate(mates) if v is view)
+            menu.addSeparator()
+            up = menu.addAction(tr("Move up (Alt+↑)"),
+                                lambda: self._on_move(-1))
+            up.setEnabled(at > 0)
+            down = menu.addAction(tr("Move down (Alt+↓)"),
+                                  lambda: self._on_move(1))
+            down.setEnabled(at < len(mates) - 1)
+        if kind == "folder":
+            menu.addAction(tr("Add folder"), self._on_add_folder)
+            menu.addSeparator()
+            menu.addAction(tr("Rename folder…"),
+                           lambda: self.tree.editItem(item, 0))
+            menu.addAction(tr("Delete folder"), self.delete_row)
+        elif kind is None:
+            menu.addAction(tr("Add folder"), self._on_add_folder)
+        if self.thumbnails:
+            menu.addSeparator()
+            menu.addAction(tr("Refresh previews"), self.refresh_thumbnails)
+        return menu
+
+    def activate_view(self, view) -> None:
+        """Show ``view`` at once, without a glide (the Outliner, the view
+        put back after an export, the end of ``show_view``). It may be no
+        scene of the list: the view as it was before an export."""
+        if self.row_for(view) is None:
+            self._shape = None
+            self.refresh()
+        self._show(view)
+
+    def _on_activate(self, item, _column=0) -> None:
+        kind, view = item.data(0, Qt.UserRole)
+        if kind != "scene" or view is None:
+            return
+        self.show_view(view)
+
+    def _show(self, view, camera: bool = True) -> None:
         scene = self._scene()
+        self._begin_own()
         from core.saved_views import shown_state
         before = shown_state(scene)
-        view.apply(scene, self._window.viewport.camera)
+        # With several views, the scene goes to the one worked in: its
+        # camera, and its style as that view's own.
+        w = self._window
+        pick = getattr(w, "_active_view", None)
+        vp = pick() if pick is not None else w.viewport
+        if vp is w.viewport:
+            keep = getattr(w, "keep_other_views_style", None)
+            if keep is not None:          # the others keep their style
+                keep()
+            if camera:
+                view.apply(scene, vp.camera)
+            else:                         # a glide took the camera there
+                view.apply_state(scene)
+        else:
+            def own(style, vp=vp):
+                vp.view_style = style
+            view.apply(scene, vp.camera, own)
+            vp.update()
         # A scene that only moves the camera changes nothing the caches
         # keyed on ``scene.version`` hold: bumping it re-synced every edge
         # and profile of the model (120 ms on a 1 M-face building) and
         # marked the document modified for a look around.
         changed = _SCENE_ALWAYS_BUMP or shown_state(scene) != before
-        # The view may carry a style snapshot — keep the menu in step.
-        sync = getattr(self._window, "_sync_style_menu", None)
+        # The view may carry a style snapshot and a projection — keep the
+        # menu and the projection buttons in step.
+        sync = (getattr(self._window, "on_active_view_changed", None)
+                or getattr(self._window, "_sync_style_menu", None))
         if sync is not None:
             sync()
         # Entities that just went invisible/unpickable leave the selection,
@@ -4369,69 +5156,373 @@ class ScenesPanel(QWidget):
                 and not scene.entity_selectable(s)]
         for s in dead:
             scene.selection.discard(s)
+        self.shown = view
         if changed:
             self._touch()
         else:
             self._window.viewport.update()
+        self.refresh()
         dock = getattr(self._window, "layers_dock", None)
         if dock is not None:
             dock.panel.refresh()
+        row = getattr(self._window, "_scene_tabs", None)
+        if row is not None:
+            row.mark_view(view)
         self._window.statusBar().showMessage(
             tr("Scene '{name}'", name=view.name), 2000)
+        # The keyboard goes back to the model, as after a click on it: the
+        # list kept the letters for its own search, so Z (Zoom), L (Line)…
+        # pressed next did nothing, and «35mm» typed for Zoom was lost.
+        self._window.viewport.setFocus(Qt.OtherFocusReason)
 
-    def _on_item_changed(self, item) -> None:
+    def _on_item_changed(self, item, _column=0) -> None:
         if self._updating:
             return
-        view = item.data(Qt.UserRole)
-        new_name = item.text().strip()
-        if view is not None and new_name:
-            # Through the browser's rule: the sheet views that show this
-            # scene follow the new name instead of losing their scene.
-            from core.outliner import rename_scene
-            rename_scene(self._scene(), view, new_name)
+        kind, obj = item.data(0, Qt.UserRole)
+        new_name = item.text(0).strip()
+        if kind == "scene":
+            if obj is not None and new_name and new_name != obj.name:
+                # Through the browser's rule: the sheet views that show
+                # this scene follow the new name instead of losing it.
+                self.rename(obj, new_name)
+        elif new_name and new_name != obj:
+            self.rename_folder(obj, new_name)
+        self._shape = None
+        self.refresh()
+
+    def rename_view(self, view, name: str) -> bool:
+        """Rename the scene ``view``, as one undo step (its row, the scene
+        tabs, the composer's panel, Camera ▸ Scenes). False when nothing
+        changed: an empty name, the same one, or another scene's."""
+        name = (name or "").strip()
+        if view is None or not name or name == view.name:
+            return False
+        return self.rename(view, name)
+
+    def ask_rename(self, view, in_row: bool = False) -> None:
+        """Ask for a new name of ``view`` in the program's name prompt (a
+        scene tab: the name is asked where the user is). ``in_row`` (the
+        panel's menu, Camera ▸ Scenes): in its row when the Scenes tab is
+        in sight, as Layers and the Browser rename."""
+        if view is None:
+            return
+        self.select_view(view)
+        row = self.row_for(view)
+        if (in_row and row is not None and self.tree.isVisible()
+                and not row.isHidden()):
+            self.tree.scrollToItem(row)
+            self.tree.setCurrentItem(row)
+            self.tree.editItem(row, 0)      # _on_item_changed renames
+            return
+        from views import prompts as _prompts
+        name, ok = _prompts.get_text(
+            self._window, tr("Rename Scene"), tr("Name:"), text=view.name)
+        if ok:
+            self.rename_view(view, name)
+
+    def show_view(self, view, animate: bool = True) -> None:
+        """Show the saved ``view`` (a double-click on its row, a click on a
+        scene tab, Camera ▸ Scenes ▸ Show). With the document's transitions
+        on (``scene.animation``) the camera glides there first, and the
+        rest of the scene comes in when it arrives (views/scene_player.py).
+        The glide moves the main viewport; with another view the one worked
+        in, the scene comes in at once there."""
+        if view is None:
+            return
+        w = self._window
+        player = getattr(w, "scene_player", None)
+        if player is not None:
+            player.cancel()
+        anim = getattr(self._scene(), "animation", None)
+        seconds = anim.glide_seconds() if (animate and anim) else 0.0
+        pick = getattr(w, "_active_view", None)
+        main = pick is None or pick() is w.viewport
+        if (player is not None and seconds > 0.0 and main
+                and w.viewport.isVisible()
+                and player.glide_to(view, seconds,
+                                    lambda v: self.finish_view(v, False))):
+            row = getattr(w, "_scene_tabs", None)
+            if row is not None:
+                row.mark_view(view)
+            # The keyboard goes back to the model now, not on arrival (see
+            # the end of ``_show``): a key pressed mid-glide stops it there.
+            w.viewport.setFocus(Qt.OtherFocusReason)
+            return
+        self.finish_view(view)
+
+    def finish_view(self, view, camera: bool = True) -> None:
+        """Recall ``view``: its camera (unless a glide already took the
+        camera there, ``camera=False``), layers, style, section…"""
+        if view is None:
+            return
+        if not camera:
+            self._show(view, camera=False)
+            return
+        self.activate_view(view)
+
+    def rename(self, view, name: str) -> bool:
+        """Rename ``view`` undoably; a name another scene has is refused
+        with the Browser's message."""
+        from core.saved_views import RenameSceneCommand
+        history = self._history()
+        self._begin_own()
+        history.execute(RenameSceneCommand(view, name))
+        if history.last_rejected is not None:
+            self._window.statusBar().showMessage(tr(
+                "Another scene is already called «{name}»",
+                name=name.strip()), 3500)
+            return False
         self.refresh()
         self._touch()
+        return True
 
-    def _on_add(self) -> None:
+    def _tree_change(self, change) -> bool:
+        """Run ``change(scene)`` (helpers of core.scene_folders) as one undo
+        step; whether it changed anything."""
+        from core import scene_folders as SF
+        from core.history import SceneTreeCommand
+
+        def run(scene) -> bool:
+            before = SF.signature(scene)
+            change(scene)
+            return SF.signature(scene) != before
+        history = self._history()
+        self._begin_own()
+        history.execute(SceneTreeCommand(run))
+        if history.last_rejected is not None:
+            return False
+        self._shape = None
+        self.refresh()
+        self._touch()
+        return True
+
+    def rename_folder(self, old: str, new: str) -> bool:
+        from core import scene_folders as SF
+        new = new.strip()
+        if not self._tree_change(lambda s: SF.rename_folder(s, old, new)):
+            if new and new != old:
+                self._window.statusBar().showMessage(tr(
+                    "Another folder is already called «{name}»", name=new),
+                    3500)
+            return False
+        if old in self._collapsed:
+            self._collapsed.discard(old)
+            self._collapsed.add(new)
+        return True
+
+    def _on_add_folder(self) -> None:
+        """A new folder in the folder picked (or at the top), its name open
+        to type over."""
+        from core import scene_folders as SF
+        parent = self._context_folder()
+        made = []
+        if not self._tree_change(lambda s: made.append(
+                SF.add_folder(s, tr("Folder"), parent))):
+            return
+        row = self.folder_row(made[0]) if made else None
+        self._select_row(row)
+        if row is not None:
+            self.tree.editItem(row, 0)
+
+    def add_scene(self):
+        """Keep the current view as a new scene («+» of the scene tabs):
+        filed with the scene shown, since the panel may be out of sight;
+        its tab is marked. The new scene."""
+        from core import scene_folders as SF
+        shown = self.shown
+        folder = (SF.folder_of(self._scene(), shown)
+                  if shown is not None else None)
+        view = self._on_add(folder=folder)
+        row = getattr(self._window, "_scene_tabs", None)
+        if row is not None:
+            row.mark_view(view)
+        return view
+
+    _CONTEXT = object()          # _on_add: the folder picked in the tree
+
+    def _live_view(self):
+        """The camera and style a new or updated scene takes: with several
+        views, the active one's (its own camera, projection and style)."""
+        w = self._window
+        pick = getattr(w, "_active_view", None)
+        vp = pick() if pick is not None else w.viewport
+        active = getattr(w, "active_style", None)
+        return vp.camera, (active() if active is not None else None)
+
+    def _on_add(self, folder=_CONTEXT):
+        """A scene from the current view, in the folder picked (or
+        ``folder``); it becomes the current row. The new scene."""
+        from core.history import AddSceneCommand
         from core.saved_views import SavedView
         scene = self._scene()
+        if folder is ScenesPanel._CONTEXT:
+            folder = self._context_folder()
         base = tr("Scene")
         n = 1
         taken = {v.name for v in scene.saved_views}
         while f"{base} {n}" in taken:
             n += 1
-        scene.saved_views.append(SavedView.capture(
-            f"{base} {n}", scene, self._window.viewport.camera))
-        self.refresh()
+        camera, style = self._live_view()
+        view = SavedView.capture(f"{base} {n}", scene, camera, style)
+        view.folder = folder
+        self._begin_own()
+        self._history().execute(AddSceneCommand(view))
+        self.select_view(view)
         self._touch()
+        return view
 
     def _on_update(self) -> None:
-        item = self.list.currentItem()
-        view = item.data(Qt.UserRole) if item is not None else None
+        self.update_view(self.current_view())
+
+    def update_view(self, view) -> None:
+        """Keep the current view in the scene ``view``, as one undo step
+        (the bar, the right-click menus, Camera ▸ Scenes)."""
         if view is None:
             return
-        view.recapture(self._scene(), self._window.viewport.camera)
+        from core.history import UpdateSceneCommand
+        self._begin_own()
+        self._history().execute(
+            UpdateSceneCommand(view, *self._live_view()))
         self._touch()
+        self.refresh()                     # its picture is drawn again
         self._window.statusBar().showMessage(
             tr("Scene '{name}' updated", name=view.name), 2000)
 
+    def drop_rows(self, token, rows) -> None:
+        """Rows dropped: into a folder, or right before a scene in its
+        folder — one undo step. The scene tabs and the sheets' list follow
+        the new order."""
+        from shiboken6 import isValid
+        from core import scene_folders as SF
+        rows = [r for r in rows if isValid(r)]
+        views = [r.data(0, Qt.UserRole)[1] for r in rows
+                 if r.data(0, Qt.UserRole)[0] == "scene"]
+        folders = [r.data(0, Qt.UserRole)[1] for r in rows
+                   if r.data(0, Qt.UserRole)[0] == "folder"]
+        kind, obj = token
+        scene = self._scene()
+        if kind == "before":
+            folder = SF.folder_of(scene, obj)
+            before = None if any(obj is v for v in views) else obj
+        else:
+            folder, before = obj, None
+        if folder is not None:
+            self._collapsed.discard(folder)
+        self._tree_change(lambda s: SF.move_rows(s, views, folders, folder,
+                                                 before))
+
+    def move_view(self, view, index: int) -> None:
+        """Move ``view`` to ``index`` of the list (a scene tab dragged),
+        as one undo step. Folders keep together: it lands right before the
+        scene that comes after it there, in that scene's folder — what a
+        drop on that row does; at the end, after the scene before it."""
+        from core import scene_folders as SF
+        scene = self._scene()
+        if view is None or not any(v is view for v in scene.saved_views):
+            return
+        order = [v for v in scene.saved_views if v is not view]
+        index = max(0, min(int(index), len(order)))
+        if index < len(order):
+            nxt = order[index]
+            folder, before = SF.folder_of(scene, nxt), nxt
+        else:
+            prev = order[-1] if order else None
+            folder = SF.folder_of(scene, prev) if prev is not None else None
+            before = None
+        self._tree_change(
+            lambda s: SF.move_rows(s, [view], [], folder, before))
+
+    def _on_move(self, step: int) -> None:
+        """One place up or down for the current scene, among the scenes of
+        its folder (Alt+↑/↓, the right-click menu)."""
+        from core import scene_folders as SF
+        view = self.current_view()
+        if view is None:
+            return
+        scene = self._scene()
+        folder = SF.folder_of(scene, view)
+        mates = list(SF.scenes_in(scene, folder))
+        at = next(i for i, v in enumerate(mates) if v is view)
+        to = at + step
+        if not 0 <= to < len(mates):
+            return
+        rest = [v for v in mates if v is not view]
+        before = rest[to] if to < len(rest) else None
+        self._tree_change(
+            lambda s: SF.move_rows(s, [view], [], folder, before))
+        self.select_view(view)
+
+    def delete_row(self) -> None:
+        """Delete (the key or the menu): the scenes picked go, one undo
+        step; a folder goes and what it held stays, one level up."""
+        folders = [it.data(0, Qt.UserRole)[1]
+                   for it in self.tree.selectedItems()
+                   if it.data(0, Qt.UserRole)[0] == "folder"]
+        if not folders:
+            self._on_delete()
+            return
+        from core import scene_folders as SF
+        views = self.selected_views()
+
+        def change(scene) -> None:
+            for f in folders:
+                SF.delete_folder(scene, f)
+            scene.saved_views[:] = [v for v in scene.saved_views
+                                    if not any(v is d for d in views)]
+        self._tree_change(change)
+
     def _on_delete(self) -> None:
-        views = [it.data(Qt.UserRole) for it in self.list.selectedItems()]
+        views = self.selected_views()
         if not views:
-            item = self.list.currentItem()
-            views = [item.data(Qt.UserRole)] if item is not None else []
+            view = self.current_view()
+            views = [view] if view is not None else []
+        self.delete_views(views)
+
+    def delete_views(self, views) -> None:
+        """Delete these scenes, as one undo step (Delete, the menus)."""
         views = [v for v in views if v is not None]
         if not views:
             return
         from core.history import DeleteScenesCommand
-        self._window.viewport.history.execute(DeleteScenesCommand(views))
+        self._begin_own()
+        self._history().execute(DeleteScenesCommand(views))
         self.refresh()
         self._touch()
+
+    def _begin_own(self) -> None:
+        """An edit of the scenes from here begins: it changes no picture
+        but the ones it names (keyed by contents), so pictures up to date
+        before it stay so after it — :meth:`_touch` closes it."""
+        self._own_fresh = (
+            self._scene().content_version == self._model_seen
+            and not self._old_timer.isActive())
 
     def _touch(self) -> None:
         scene = self._scene()
         scene.version += 1
+        if getattr(self, "_own_fresh", False):
+            self._model_seen = scene.content_version
+            self._old_timer.stop()
+        self._own_fresh = False
         self._window.viewport.update()
+
+
+class ScenesDock(QDockWidget):
+    """Sidebar tab **Scenes**, beside Layers (#1158) — it was a section of
+    Properties."""
+
+    def __init__(self, window) -> None:
+        super().__init__(tr("Scenes"), window)
+        self.setObjectName("tray_scenes")
+        self.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
+        self.setFeatures(QDockWidget.DockWidgetMovable
+                         | QDockWidget.DockWidgetClosable)
+        self.panel = ScenesPanel(window)
+        self.setWidget(self.panel)
+        self.setMinimumWidth(240)
+
+    def on_scene_changed(self) -> None:
+        self.panel.refresh()
 
 
 class BimPanel(QWidget):
@@ -4531,6 +5622,21 @@ class BimPanel(QWidget):
             rows += p is None
             it += 1
         fit_rows(self.tree, rows=rows)
+
+    def _folded_groups(self) -> set:
+        """The ``id`` of the group behind each folded row of the table."""
+        from PySide6.QtWidgets import QTreeWidgetItemIterator
+        folded = set()
+        it = QTreeWidgetItemIterator(self.tree)
+        while it.value() is not None:
+            item = it.value()
+            if item.childCount() and not item.isExpanded():
+                idx = item.data(0, Qt.UserRole)
+                group = (self._containers[-idx - 1] if idx < 0
+                         else self._objects[idx].get("group"))
+                folded.add(id(group))
+            it += 1
+        return folded
 
     # ---- Actions -------------------------------------------------------------
     def _on_tag(self) -> None:
@@ -4684,6 +5790,9 @@ class BimPanel(QWidget):
                 and getattr(self, "_untagged_scene", None) == id(scene)
                 and hist.tags_cv == scene.content_version):
             return
+        # The rows are rebuilt below, and opening a group is a change of
+        # content: what the user folded has to survive it (#1117).
+        folded = self._folded_groups()
         # A memo per panel: an edit re-measures only the objects it touched.
         memo = self.__dict__.setdefault("_takeoff_memo", {})
         self._objects = collect_objects(scene, memo)
@@ -4777,7 +5886,14 @@ class BimPanel(QWidget):
             else:
                 parent.addChild(item)
         self.tree.expandAll()
-        self.tree.resizeColumnToContents(0)
+        self.tree.blockSignals(True)            # one _fit_tree, below
+        try:
+            for rows in (tagged_rows, group_rows):
+                for key, row in rows.items():
+                    if key in folded:
+                        row.setExpanded(False)
+        finally:
+            self.tree.blockSignals(False)
         self._fit_tree()
 
 
@@ -4800,13 +5916,16 @@ class Tray(QDockWidget):
         self.materials = MaterialsPanel(window)
         self.components = ComponentsPanel(window)
         self.parts = PartsPanel(window)
-        self.scenes = ScenesPanel(window)
+        #: The Scenes panel: its own tab since #1158 (ScenesDock). The
+        #: window sets it here once that tab is built, so
+        #: ``tray.scenes`` keeps working for the Browser, the scene
+        #: actions and extensions.
+        self.scenes = None
         # Styles, Shadows and Dimension style are NOT here: they live in
         # their own on-demand docks (toolbar toggles) — the always-open tray
         # was drowning.
         self.setWidget(_scrolled([
             (tr("Entity info"), self.entity_info),
-            (tr("Scenes"), self.scenes),
             (tr("Materials"), self.materials),
             (tr("Components"), self.components),
             (tr("Parts"), self.parts),
@@ -4845,7 +5964,6 @@ class Tray(QDockWidget):
         self._after_materials()
 
     def _after_materials(self) -> None:
-        self.scenes.refresh()
         self.components.on_scene_changed()
         self.parts.refresh()
 

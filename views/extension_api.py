@@ -166,7 +166,7 @@ class ExtensionApp:
     # ---- Side panel ----------------------------------------------------------
     def add_panel(self, title: str, widget, name: str | None = None, *,
                   panel: str | None = None, stretch: int = 0,
-                  start_hidden: bool = False):
+                  start_hidden: bool = False, icon=None):
         """Put ``widget`` in the side tray as a tab of its own, beside
         Properties / BIM / Terrain. Returns the dock.
 
@@ -186,7 +186,13 @@ class ExtensionApp:
 
         ``start_hidden``: the panel starts closed the first time (for a
         panel few users need open all the time); Window ▸ Panels opens it,
-        and from then on the user's choice is kept."""
+        and from then on the user's choice is kept.
+
+        ``icon``: what the panel's tab shows — the tabs show only an icon,
+        the name being their tooltip and the panel's heading. A QIcon, or
+        the key of one of IngeTrazo's drawn icons (``"panel_render"``…),
+        which then follows the theme. Without one the tab shows the
+        title's initial in a rounded square."""
         from PySide6.QtWidgets import QDockWidget, QVBoxLayout, QWidget
         win = self._window
         shared = getattr(win, "_shared_panels", None)
@@ -195,6 +201,8 @@ class ExtensionApp:
         if panel is not None and panel in shared:
             dock, box = shared[panel]
             box.addWidget(widget, stretch)
+            if icon is not None and not dock.property("ingetrazo_icon"):
+                self._set_panel_icon(dock, icon)
             return dock
         if panel is not None:
             object_name = f"extension_{panel}"
@@ -217,7 +225,9 @@ class ExtensionApp:
                 win._start_hidden = set()
             win._start_hidden.add(object_name)
         dock.setWidget(widget)
-        dock.setTitleBarWidget(QWidget(dock))   # the tab already names it
+        dock.setTitleBarWidget(QWidget(dock))   # the window puts its header
+        if icon is not None:
+            self._set_panel_icon(dock, icon)
         win._register_extension_dock(dock)
         if panel is not None:
             shared[panel] = (dock, box)
@@ -225,6 +235,10 @@ class ExtensionApp:
         if tray is not None:
             tray.raise_()                   # Properties stays the one in front
         return dock
+
+    def _set_panel_icon(self, dock, icon) -> None:
+        dock.setProperty("ingetrazo_icon", True)
+        self._window.set_dock_icon(dock, icon)
 
     def show_panel(self, dock) -> None:
         """Bring a tab from :meth:`add_panel` to the front — shown again
@@ -324,6 +338,40 @@ class ExtensionApp:
         The painter state is saved and restored around each call."""
         self.viewport._ext_overlays.append(fn)
         self.viewport.update()
+
+    # ---- Sheets ----------------------------------------------------------------
+    def add_sheet_annotations(self, fn) -> None:
+        """What an overlay draws on screen, for the SHEETS too: ``fn(scene,
+        sheet)`` returns the items to print in a model-view frame, in
+        WORLD points (metres), and the sheet projects them with the frame's
+        own camera and draws them as vectors — crisp at any scale, in the
+        print and in the PDF. It is asked each time a frame's overlay is
+        worked out (an Update, an annotation switch), with that frame's
+        scene applied: ask ``scene.entity_visible(group)`` and a layer the
+        frame hides hides your items too.
+
+        ``sheet`` gives ``scale_n`` (1:N; 0 for a perspective frame),
+        ``text_mm`` (the frame's annotation text height) and
+        ``paper(points)`` → ``[(x_mm, y_mm), …]``, where your points land.
+
+        Items are dicts:
+
+        - ``{"line": [p0, p1, …]}``: a polyline; ``width_mm`` (0.25),
+          ``color`` (RGB 0–255).
+        - ``{"text": "0+020", "at": p}``: ``toward`` (a second world
+          point: the text runs from ``at`` toward it, turned so it is never
+          upside down; none = level on the page), ``anchor`` (``"center"``
+          or ``"start"``: the text begins at ``at``), ``size_mm``,
+          ``bold`` (True), ``color``, ``background`` (RGB or None),
+          ``background_opacity`` (0–100), and ``priority``: texts that
+          have one give way where they would overlap, the LOWER number
+          kept first.
+
+        A provider that raises is logged once and removed."""
+        win = self._window
+        if not hasattr(win, "_ext_sheet_annots"):
+            win._ext_sheet_annots = []
+        win._ext_sheet_annots.append(fn)
 
     def world_to_pixels(self, points):
         """World points (metres; anything shaped ``(N, 3)``) → ``(px, py,

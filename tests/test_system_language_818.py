@@ -35,6 +35,15 @@ from views.preferences_dialog import PreferencesDialog  # noqa: E402
     (["pt-PT"], "pt-BR"),            # same base language
     (["de_AT"], "de"),               # Qt's underscore spelling too
     (["zh-Hans-CN"], "zh-CN"),
+    (["zh-CN"], "zh-CN"),
+    (["zh"], "zh-CN"),
+    (["zh-SG"], "zh-CN"),
+    (["zh-TW"], "zh-TW"),
+    (["zh_TW"], "zh-TW"),
+    (["zh-Hant-TW", "zh-TW", "zh-Hant", "zh"], "zh-TW"),  # Qt's list in Taiwan
+    (["zh-Hant"], "zh-TW"),
+    (["zh-HK"], "zh-TW"),
+    (["zh-Hant-MO"], "zh-TW"),
     (["it-IT", "en-US"], "it"),
     (["en-US", "es-ES"], "en"),      # the first preferred one decides
     (["nl-NL", "fr-FR"], "fr"),      # no Dutch catalog: next preference

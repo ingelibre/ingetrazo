@@ -198,7 +198,7 @@ def test_a_dragged_image_lands_its_nearest_corner_on_a_drawn_point(
         target = (91.0, 81.0)
         monkeypatch.setattr(
             ComposerWindow, "nearest_snap_point",
-            lambda self, x, y, thr: (target + ((0.0, 0.0, 0.0), None)
+            lambda self, x, y, thr, edges=True: (target + ((0.0, 0.0, 0.0), None)
                                      if abs(x - target[0]) <= thr
                                      and abs(y - target[1]) <= thr else None))
         got = item._snap_corner_to_drawing(50.0, 50.0, 40.0, 30.0)

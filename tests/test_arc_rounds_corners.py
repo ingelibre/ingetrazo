@@ -351,3 +351,66 @@ def test_off_the_fillet_a_typed_value_is_still_the_bulge(viewport):
     arc = _arc_edges(mesh)
     top = max(p.y() for e in arc for p in (e.a, e.b))
     assert top == pytest.approx(1.2, abs=1e-6)                # bulge 0.2
+
+
+def _arc_on(mesh, centre, radius):
+    """The curve edges with both ends ``radius`` from ``centre``."""
+    return [e for e in _arc_edges(mesh)
+            if all(abs((p - centre).length() - radius) < 1e-5 for p in (e.a, e.b))]
+
+
+def _fillet(vp, tool, start, end):
+    """Round a corner from ``start`` to the equidistant ``end``, by a
+    double-click on the magenta point."""
+    tool.on_click(_ctx(vp, start))
+    tool.on_hover(_ctx(vp, end))
+    assert tool._equidistant is not None, "the end point snaps magenta"
+    tool.on_click(_ctx(vp, end))
+    tool.on_double_click(_ctx(vp, end))
+    assert tool.start_point is None
+
+
+def test_a_corner_already_rounded_rounds_again_with_a_larger_arc(viewport):
+    """#1354: once a corner is rounded its two edges no longer meet, and a
+    second, larger arc found no equidistant point. It is measured from
+    where the edges' lines meet, the corner as it was drawn."""
+    _square(viewport)
+    tool = _tool(viewport)
+    mesh = viewport.scene.mesh
+    _fillet(viewport, tool, QVector3D(1.5, 0, 0), QVector3D(2.0, 0.5, 0))
+    # A larger arc on the same corner: from the bottom edge, 1 from the old
+    # corner, to the right edge at the same distance from it.
+    tool.on_click(_ctx(viewport, QVector3D(1.0, 0, 0)))
+    P2 = QVector3D(2.0, 1.0, 0)
+    tool.on_hover(_ctx(viewport, P2))
+    assert tool._equidistant is not None
+    V, snapped, edge = tool._equidistant
+    assert (V - QVector3D(2, 0, 0)).length() < 1e-6, "the corner before it was rounded"
+    assert (snapped - P2).length() < 1e-6
+    assert edge.curve is None
+    assert tool.wireframe_color[:3] == COLOR_FILLET
+    tool.on_click(_ctx(viewport, P2))
+    tool.on_double_click(_ctx(viewport, P2))
+    assert tool.start_point is None
+    # Tangent to both edges: a whole arc of points 1 from (1, 1), and the
+    # first arc still there.
+    assert len(_arc_on(mesh, QVector3D(1.0, 1.0, 0), 1.0)) == tool.segments
+    assert len(_arc_on(mesh, QVector3D(1.5, 0.5, 0), 0.5)) == tool.segments
+
+
+def test_a_typed_radius_on_a_rounded_corner_is_measured_from_the_old_corner(viewport):
+    _square(viewport)
+    tool = _tool(viewport)
+    mesh = viewport.scene.mesh
+    _fillet(viewport, tool, QVector3D(1.5, 0, 0), QVector3D(2.0, 0.5, 0))
+    arcs = len(_arc_edges(mesh))
+    tool.on_click(_ctx(viewport, QVector3D(1.0, 0, 0)))
+    tool.on_hover(_ctx(viewport, QVector3D(2.0, 1.0, 0)))
+    tool.on_click(_ctx(viewport, QVector3D(2.0, 1.0, 0)))
+    assert tool._fillet is not None
+    # A radius whose arc would sit inside the one already there is refused.
+    assert tool.on_value(viewport, 0.3) is False
+    assert len(_arc_edges(mesh)) == arcs
+    # 1.5 from the old corner on each edge: the edges reach it.
+    assert tool.on_value(viewport, 1.5) is True
+    assert len(_arc_on(mesh, QVector3D(0.5, 1.5, 0), 1.5)) == tool.segments

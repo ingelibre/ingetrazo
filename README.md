@@ -1,5 +1,7 @@
 # IngeTrazo
 
+[Bahasa Indonesia](README.id.md) · [Español](#en-español)
+
 *Pronounced **EEN-heh-TRAH-soh** — from Spanish* inge(niería) *"engineering"
 +* trazo *"a drawn stroke": the engineer's stroke.*
 
@@ -83,7 +85,9 @@ welcome arch with all its rebar (also attached to every release as
 
 - **Viewport** — Z-up camera that orbits around the point under the cursor,
   grid, colored axes, perspective ↔ parallel and two-point perspective,
-  standard views, zoom-extents, hidden-line removal, real-sun shadows.
+  standard views, zoom-extents, hidden-line removal, real-sun shadows. Right-click
+  a face and choose **Align View** to look along its normal, including inside
+  an open group or component (two-point perspective switches to perspective).
 - **Walkthrough** — Position Camera, Walk and Look Around at eye height.
 - **Drawing tools** — Line, Rectangle, Rotated Rectangle, Circle, Polygon,
   Arc (2-point) and 3-Point Arc, with inferencing, snapping, axis locks and a
@@ -219,7 +223,8 @@ Contributors from anywhere are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md)
 and [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md). All code, comments and commit
 messages are in **English**; the UI speaks Spanish, English, Brazilian
 Portuguese, Simplified Chinese, Italian, Indonesian, French, German, Polish,
-Russian, Vietnamese, Lao, Thai, Japanese, Korean and Turkish (translations are one
+Russian, Vietnamese, Lao, Thai, Japanese, Korean, Ukrainian, Arabic, Bulgarian,
+Traditional Chinese and Turkish (translations are one
 JSON file each under `i18n/`).
 
 Turkish users can start with the skippable workspace guide; layouts remain

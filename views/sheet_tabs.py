@@ -33,7 +33,7 @@ kind of thing that segfaults.
 """
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import QEvent, Qt, QTimer
 from PySide6.QtGui import QFontMetrics
 from PySide6.QtWidgets import QLabel, QSizePolicy, QStatusBar, QTabBar, QWidget
 
@@ -44,6 +44,13 @@ class SheetTabs(QTabBar):
     """The tab strip. ``on_model()``, ``on_sheet(index)`` and ``on_new()``
     are the owner's callbacks; ``refresh`` rebuilds the strip from the
     sheet names and marks the current tab (``None`` = the model)."""
+
+    #: The widest a sheet's name reads on its tab, in average characters
+    #: (some 20 letters of ordinary text); past it, «…» and the whole name
+    #: in the tab's tooltip. Measured at 9 pt: five long names, «Model» and
+    #: «+» fit in what the bar has free at 1536 px; a larger font scrolls
+    #: sooner. Long names scrolled «Model» out of sight (#1184).
+    LABEL_MAX_CHARS = 18
 
     def __init__(self, parent, on_model, on_sheet, on_new=None,
                  on_menu=None) -> None:
@@ -58,7 +65,8 @@ class SheetTabs(QTabBar):
         self.setDrawBase(False)
         self.setUsesScrollButtons(True)
         # Scroll, never elide: an elided strip squeezes every name to «L…»
-        # before the ◀ ▶ buttons ever show.
+        # before the ◀ ▶ buttons ever show. Only a very long name is cut,
+        # once and for all (``_tab_text``), however much room there is.
         self.setElideMode(Qt.ElideNone)
         # The keys here too, not only on each tab: where Qt cannot tell
         # which tab is under the pointer (Marco's Wayland screen at 120 %)
@@ -80,11 +88,12 @@ class SheetTabs(QTabBar):
         self.refresh([], None)
 
     # ---- state ----------------------------------------------------------------
-    # The strip has a width budget (a share of the bar): past it, QTabBar's
-    # own ◀ ▶ scroll buttons appear, the way spreadsheet tabs scroll, and the
-    # tabs keep their look. With four sheets the strip had left the hint a
-    # stub, and with ten it would have left nothing (Marco, 23-09; he tried
-    # folding the tabs into a «▾ N more» menu and preferred the arrows).
+    # The strip has a width budget (what the bar has free, see
+    # ``SheetStatusBar``): past it, QTabBar's own ◀ ▶ scroll buttons appear,
+    # the way spreadsheet tabs scroll, and the tabs keep their look. With
+    # four sheets an unbudgeted strip left the hint a stub, and with ten it
+    # would have left nothing (Marco, 23-09; he tried folding the tabs into
+    # a «▾ N more» menu and preferred the arrows).
     # The LOGICAL layout — «Model», one tab per sheet, «+» — is what
     # ``names``/``current``/``plus_index``/``click`` speak.
 
@@ -112,6 +121,16 @@ class SheetTabs(QTabBar):
         n = len(self._names)
         return ([("model",)] + [("sheet", i) for i in range(n)]
                 + ([("new",)] if self._has_new() else []))
+
+    def _tab_text(self, slot) -> str:
+        """What the tab of ``slot`` reads: a sheet's long name is cut."""
+        label = self._slot_label(slot)
+        if slot[0] != "sheet":
+            return label
+        metrics = self.fontMetrics()
+        return metrics.elidedText(
+            label, Qt.ElideRight,
+            self.LABEL_MAX_CHARS * metrics.averageCharWidth())
 
     def _slot_label(self, slot) -> str:
         kind = slot[0]
@@ -145,7 +164,8 @@ class SheetTabs(QTabBar):
                 while self.count():
                     self.removeTab(0)
                 for i, (label, sl) in enumerate(zip(shown, slots)):
-                    self.addTab(label)
+                    text = self._tab_text(sl)
+                    self.addTab(text)
                     # The keys that walk the strip, where the hand already
                     # is (Marco, 24-09: «un mensaje informativo cuando me
                     # acerque a modelo o lámina»).
@@ -155,11 +175,15 @@ class SheetTabs(QTabBar):
                         self.setTabToolTip(i, tr(
                             "Model — Ctrl+Tab goes to the sheet"))
                     else:
-                        self.setTabToolTip(i, tr(
+                        tip = tr(
                             "Sheet — Ctrl+Tab goes back to the model; "
                             "Ctrl+PgUp / Ctrl+PgDown, the sheet before / "
-                            "after"))
+                            "after")
+                        self.setTabToolTip(i, tip if text == label
+                                           else f"{label}\n{tip}")
                 self._shown = shown
+                # A hidden QTabBar does not tell the layout its size changed.
+                self.updateGeometry()
             self._slot_list = slots
             want = ("model",) if self._current is None else ("sheet", self._current)
             self.setCurrentIndex(slots.index(want) if want in slots else 0)
@@ -300,13 +324,60 @@ class SheetStatusBar(QStatusBar):
     #: label, and the hint, now longer by that name, gets that room.
     MESSAGE_SHARE = 0.6
 
-    #: The sheet strip's share of the bar before its tabs fold.
-    TABS_SHARE = 0.3
+    #: What the strip always leaves the message, in average characters: a
+    #: useful stub of a hint, past which the tabs scroll. It is left whether
+    #: or not a message shows right now, or a hint coming and going would
+    #: make the arrows come and go with it.
+    MESSAGE_MIN_CHARS = 45
+
+    #: The strip keeps this much however narrow the window gets.
+    TABS_FLOOR = 200
+
+    #: A budget closer than this to the one in force stays as it was: the
+    #: cursor position on the right changes width as the mouse moves, and
+    #: the message soaks that up instead of the strip's end shaking.
+    BUDGET_SLACK = 32
+
+    #: QStatusBar's own gap between its items.
+    ITEM_GAP = 6
 
     def resizeEvent(self, event) -> None:  # noqa: N802
         super().resizeEvent(event)
         self._msg.setMaximumWidth(max(120, int(self.width() * self.MESSAGE_SHARE)))
-        self.tabs.set_budget(max(200, int(self.width() * self.TABS_SHARE)))
+        self._update_tab_budget()
+
+    def event(self, event) -> bool:  # noqa: N802
+        handled = super().event(event)
+        # What decides the budget changed: a tab added, renamed or marked,
+        # or a widget on the right shown, hidden or resized.
+        if event.type() == QEvent.LayoutRequest:
+            self._update_tab_budget()
+        return handled
+
+    def _right_width(self) -> int:
+        """What the widgets right of the message ask for, gaps included:
+        whatever the windows and the extensions added, and the size grip."""
+        ours = (self.tabs, self._msg, self._filler)
+        width = 3 * self.ITEM_GAP
+        for w in self.findChildren(QWidget, options=Qt.FindDirectChildrenOnly):
+            if w in ours or w.isHidden() or w.isWindow():
+                continue
+            width += min(w.sizeHint().expandedTo(w.minimumSize()).width(),
+                         w.maximumWidth()) + self.ITEM_GAP
+        return width
+
+    def _update_tab_budget(self) -> None:
+        """Tabs as wide as they ask for, up to what the bar has free; only
+        then do the arrows show. The right end is never touched, and what
+        the strip leaves goes to the message (capped by MESSAGE_SHARE)."""
+        tabs = self.tabs
+        free = self.width() - self._right_width()
+        room = self._msg.fontMetrics().averageCharWidth() * self.MESSAGE_MIN_CHARS
+        budget = max(self.TABS_FLOOR, free - min(room, int(free * 0.4)))
+        if tabs.sizeHint().width() <= budget:
+            tabs.set_budget(None)
+        elif abs(tabs.maximumWidth() - budget) > self.BUDGET_SLACK:
+            tabs.set_budget(budget)
 
     # ---- messages, routed to our label ---------------------------------------
     def showMessage(self, text: str, timeout: int = 0) -> None:  # noqa: N802

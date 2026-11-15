@@ -81,6 +81,8 @@ HINTS: dict = {
              "Click the second point, or type the distance and Enter."),
     "protractor": ("Click the vertex of the angle.",
                    "Click the start of the angle, then the end; or type the degrees."),
+    "north": ("Click the centre of the compass.",
+              "Click toward north, or type the degrees from the green axis."),
     "dimension": ("Click the first point of the dimension.",
                   "Click the 2nd point, then place it; past an end = linear."),
     # Two phases, because after the anchor click the tool is doing
@@ -106,7 +108,7 @@ HINTS: dict = {
 NAV_HINTS: dict = {
     "orbit": "Drag to orbit. Shift = pan. Wheel = zoom. The middle button orbits from any tool.",
     "pan": "Drag to pan. Wheel = zoom.",
-    "zoom": "Drag up to zoom in, down to zoom out. Wheel zooms at the cursor.",
+    "zoom": "Drag up or down to zoom; the wheel zooms at the cursor. Type 35mm or 60deg for the lens.",
     "zoom_window": "Drag a box to zoom into it.",
 }
 
@@ -196,7 +198,8 @@ def _with_alt(text: str, key, tool, linear_mode) -> str:
     # eraser, Scale, Select, Position Texture — was being offered a toggle
     # that changes nothing for it, and the dead clause was what pushed
     # those lines past the end of the bar.
-    if not getattr(tool, "uses_snap", False):
+    if (not getattr(tool, "uses_snap", False)
+            or not getattr(tool, "allow_inferences", True)):
         return text
     clause = alt_inference_hint(linear_mode)
     return f"{text} | {clause}" if clause else text

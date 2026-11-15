@@ -102,7 +102,12 @@ def test_the_tab_under_the_pointer_names_its_tray():
     bar = next(tb for tb in win._dock_tab_bars() if tb.isVisible()
                and win.rect().contains(tb.mapTo(win, QPoint(0, 0))))
     i = next(i for i in range(bar.count()) if bar.tabText(i) == "BIM")
+    # With the Scenes tab in the row (#1158) BIM can sit past the end of a
+    # narrow tray, behind the scroll arrows: scrolled into sight first.
+    bar.setCurrentIndex(i)
+    _app.processEvents()
     centre = bar.tabRect(i).center()
+    assert bar.rect().contains(centre)
     pos = bar.mapTo(win, centre)
     assert win._dock_tab_at(pos) is win.bim_tray
     _close(win)
@@ -114,7 +119,7 @@ def test_a_tray_alone_on_its_side_still_has_a_tab():
     win.move_dock(win.project_browser, Qt.LeftDockWidgetArea)
     _app.processEvents()
     _app.processEvents()
-    tab = win.project_browser.titleBarWidget()
+    tab = win.project_browser.titleBarWidget().tab
     assert isinstance(tab, _DockTitleTab)
     assert tab.isVisible() and tab.tabText(0) == "Browser"
     centre = tab.mapTo(win, tab.tabRect(0).center())
@@ -123,15 +128,15 @@ def test_a_tray_alone_on_its_side_still_has_a_tab():
     _close(win)
 
 
-def test_a_tabbed_tray_does_not_name_itself_twice():
+def test_a_tabbed_tray_has_no_tab_of_its_own():
     win = _window()
     from views.main_window import _DockTitleTab
     win._style_dock_tabs()
-    assert not isinstance(win.tray.titleBarWidget(), _DockTitleTab)  # tabbed
+    assert win.tray.titleBarWidget().tab is None        # Qt's bar holds it
     win.move_dock(win.project_browser, Qt.LeftDockWidgetArea)
     _app.processEvents()
     win._style_dock_tabs()
-    assert isinstance(win.project_browser.titleBarWidget(), _DockTitleTab)
+    assert isinstance(win.project_browser.titleBarWidget().tab, _DockTitleTab)
     win.move_dock(win.project_browser, Qt.RightDockWidgetArea)
     _close(win)
 

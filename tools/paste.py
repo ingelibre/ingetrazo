@@ -43,7 +43,9 @@ class _PruneOnUndo(Command):
     faces and edges are gone, the vertices nothing uses any more go too.
     ``remove_edge`` only detaches, and the leftovers kept the edit box of a
     group (which wraps its vertices) at the pasted size after Ctrl+Z. Redo
-    puts them back before the geometry is relinked onto them."""
+    puts them back before the geometry is relinked onto them. The pasted
+    faces leave the selection here too: undoing a face does not take it out,
+    and the next Move would carry the corners of one no longer there."""
 
     keeps_groups = True        # only vertices nothing uses
 
@@ -67,6 +69,11 @@ class _PruneOnUndo(Command):
         m.prune_orphan_vertices()
         kept = {id(v) for v in m.vertices}
         self._gone = [v for k, v in before.items() if k not in kept]
+        from core.mesh import Face
+        live = set(map(id, m.faces))
+        for ent in list(scene.selection):
+            if isinstance(ent, Face) and id(ent) not in live:
+                scene.selection.discard(ent)
         scene.version += 1
 
 
@@ -149,20 +156,22 @@ class PasteTool(Tool):
         coordinates it was copied from, no cursor placement. The tools work
         in world coordinates inside an open group too, so copying in one
         context and pasting in place in another moves geometry into or out
-        of groups without shifting it. Everything pasted ends up selected."""
+        of groups without shifting it."""
         clip = getattr(viewport, "clipboard", None)
         if not clip:
             return False
         tool = cls()
         tool._clip = clip
-        ok = tool.stamp(viewport, QVector3D(0.0, 0.0, 0.0), select_all=True)
+        ok = tool.stamp(viewport, QVector3D(0.0, 0.0, 0.0))
         viewport.update()
         return ok
 
-    def stamp(self, viewport, off, select_all: bool = False) -> bool:
+    def stamp(self, viewport, off) -> bool:
         """Stamp the clipboard displaced by ``off`` as ONE undoable step;
-        False when there was nothing to stamp. ``select_all`` leaves the
-        loose faces and edges selected too (groups always are)."""
+        False when there was nothing to stamp. Everything pasted ends up
+        selected, loose faces and edges too: the next Move, Delete or Copy
+        acts on the copy. With only the groups selected it left the loose
+        part behind, and with no group the ORIGINALS stayed selected."""
         commands: list = [_PruneOnUndo()]
         # A face's boundary edges are created BY the face; undoing the face
         # alone leaves them behind as loose edges (inside a group they read
@@ -215,23 +224,21 @@ class PasteTool(Tool):
         self._end_preview(viewport)
         viewport.history.execute(CompoundCommand(commands))
         picked = list(pasted_groups)
-        if select_all:
-            live = set(map(id, viewport.scene.mesh.faces))
-            picked += [c.face for c in commands
-                       if isinstance(c, AddFaceCommand)
-                       and c.face is not None and id(c.face) in live]
-            # The copied edges themselves (looked up by position: a copy
-            # pasted in place welds onto the original's edges, so the
-            # command may own none of them).
-            mesh = viewport.scene.mesh
-            for a, b, _s, _c in self._clip["edges"]:
-                v0, v1 = mesh.vertex_at(a + off), mesh.vertex_at(b + off)
-                e = mesh.find_edge(v0, v1) if v0 and v1 else None
-                if e is not None:
-                    picked.append(e)
-        if picked:
-            # InsertGroupCommand selects only the last one — select them all.
-            viewport.scene.select(picked)
+        live = set(map(id, viewport.scene.mesh.faces))
+        picked += [c.face for c in commands
+                   if isinstance(c, AddFaceCommand)
+                   and c.face is not None and id(c.face) in live]
+        # The copied edges themselves (looked up by position: a copy
+        # pasted in place welds onto the original's edges, so the
+        # command may own none of them).
+        mesh = viewport.scene.mesh
+        for a, b, _s, _c in self._clip["edges"]:
+            v0, v1 = mesh.vertex_at(a + off), mesh.vertex_at(b + off)
+            e = mesh.find_edge(v0, v1) if v0 and v1 else None
+            if e is not None:
+                picked.append(e)
+        # InsertGroupCommand selects only the last one — select them all.
+        viewport.scene.select(picked)
         return True
 
     def on_cancel(self, viewport) -> None:

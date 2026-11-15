@@ -32,6 +32,12 @@ uniform sampler2D u_shadow_map;
 uniform mat4 u_light_vp;
 uniform float u_shadow_dark;
 uniform float u_shadow_bias;
+// Soft sun shadows (#1281, Preferences): how fast the penumbra widens with
+// the distance from what casts it (world width per world distance; 0 = the
+// crisp map below), and the map's footprint in the world: x = metres across
+// one map side, y = metres along the sun over the whole depth range.
+uniform float u_shadow_soft;
+uniform vec2 u_shadow_world;
 // Unit vector toward the sun — with shadows on, faces are shaded BY THE SUN
 // ("use sun for shading"): the per-fragment normal comes from
 // screen derivatives of the world position (exact on flat faces, no vertex
@@ -78,6 +84,68 @@ uniform int u_back_shade;
 
 out vec4 fragColor;
 
+// The stored depth of the shadow map at ``uv`` (packed in RGB).
+float shadow_depth(vec2 uv) {
+    vec3 e = texture(u_shadow_map, uv).rgb;
+    return dot(e, vec3(1.0, 1.0 / 255.0, 1.0 / 65025.0));
+}
+
+// 32 points of a Poisson disc of radius 1; the first 16 spread as well on
+// their own, for the blocker search.
+const vec2 POISSON[32] = vec2[32](
+    vec2(-0.6123, 0.3315), vec2(0.4211, -0.7346), vec2(0.8622, 0.3911),
+    vec2(-0.1843, -0.9318), vec2(0.0897, 0.6214), vec2(-0.8915, -0.3426),
+    vec2(0.5503, 0.0712), vec2(-0.3364, -0.3992), vec2(-0.0412, 0.0567),
+    vec2(0.2938, 0.9348), vec2(-0.4621, 0.8506), vec2(0.9547, -0.2459),
+    vec2(-0.9618, 0.1574), vec2(0.6845, -0.6432), vec2(0.2371, -0.3365),
+    vec2(-0.6834, -0.7175), vec2(0.1528, 0.2896), vec2(-0.2531, 0.3608),
+    vec2(0.6627, 0.6876), vec2(-0.7765, 0.6151), vec2(0.3917, 0.4954),
+    vec2(-0.5398, -0.0745), vec2(0.0174, -0.6293), vec2(0.7614, -0.0124),
+    vec2(-0.1287, 0.8634), vec2(0.4637, -0.4215), vec2(-0.3946, -0.8237),
+    vec2(0.9265, 0.1287), vec2(-0.8213, -0.0567), vec2(0.1843, -0.9471),
+    vec2(-0.2145, -0.1563), vec2(0.5638, 0.2964));
+
+// Percentage-closer soft shadows: the blockers around the fragment say how
+// far it lies behind them, and the penumbra widens with that distance —
+// crisp where a wall meets the floor, soft at the far end of its shadow.
+// Widths are worked out in the world, so the detail map of a settled view
+// (#958) and an export's bigger map soften the same.
+float soft_shadow_light(vec3 uvz, vec2 grad, float bias, vec2 texel) {
+    // One turn of the disc per pixel: the samples' pattern does not band.
+    float a = 6.2831853 * fract(52.9829189 * fract(
+        dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
+    mat2 rot = mat2(cos(a), sin(a), -sin(a), cos(a));
+    float per_uv = u_shadow_soft * u_shadow_world.y / u_shadow_world.x;
+    // At most half a metre wide, in the world — not in texels, which an
+    // export's bigger map or a settled view's detail map would shrink —
+    // and never crisper than the PCF below.
+    float least = 1.5 * texel.x;
+    float most = max(0.5 / u_shadow_world.x, least);
+    // Blocker search, as wide as the widest penumbra this point can get.
+    float search = clamp(per_uv * uvz.z, least, most);
+    float sum = 0.0;
+    float n = 0.0;
+    for (int i = 0; i < 16; i++) {
+        vec2 off = rot * POISSON[i] * search;
+        float d = shadow_depth(uvz.xy + off);
+        if (d < uvz.z + dot(grad, off) - bias) {
+            sum += d;
+            n += 1.0;
+        }
+    }
+    if (n == 0.0) {
+        return 1.0;                       // nothing in front: in the sun
+    }
+    float pen = clamp(per_uv * (uvz.z - sum / n), least, most);
+    float lit = 0.0;
+    for (int i = 0; i < 32; i++) {
+        vec2 off = rot * POISSON[i] * pen;
+        lit += (uvz.z + dot(grad, off) - bias <= shadow_depth(uvz.xy + off))
+            ? 1.0 : 0.0;
+    }
+    return lit / 32.0;
+}
+
 // Fraction of light reaching this fragment (0..1): 3x3 PCF over the
 // packed-depth shadow map, each tap bilinearly weighted between the four
 // texels around it — so the edge is a smooth ramp instead of the map's
@@ -119,6 +187,9 @@ float shadow_light() {
     // Margin: constant term + 1.5 texels of slope along the gradient
     // (covers the within-texel offset of both receiver and caster raster).
     float bias = u_shadow_bias + glen * texel.x * 1.5;
+    if (u_shadow_soft > 0.0) {
+        return soft_shadow_light(uvz, grad, bias, texel);
+    }
     // The 4x4 texels under the kernel, each compared once against the
     // receiver plane at its own centre...
     vec2 size = vec2(textureSize(u_shadow_map, 0));
@@ -130,8 +201,7 @@ float shadow_light() {
         for (int i = 0; i < 4; i++) {
             vec2 uv = (cell + vec2(i - 1, j - 1) + 0.5) * texel;
             vec2 off = uv - uvz.xy;
-            vec3 e = texture(u_shadow_map, uv).rgb;
-            float d = dot(e, vec3(1.0, 1.0 / 255.0, 1.0 / 65025.0));
+            float d = shadow_depth(uv);
             t[j * 4 + i] = (uvz.z + dot(grad, off) - bias <= d) ? 1.0 : 0.0;
         }
     }

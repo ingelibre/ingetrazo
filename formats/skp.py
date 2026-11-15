@@ -375,9 +375,11 @@ def _apply_payload_inner(scene, payload, progress=None) -> str:
             existing.add(raw["name"])
 
     # Linear dimensions (.skp dimension entities): world endpoints + an
-    # offset distance. IngeTrazo's Dimension carries the offset as a VECTOR
-    # from the a–b segment to the dimension line, so turn the .skp scalar
-    # into the in-plane perpendicular direction × distance.
+    # offset. IngeTrazo's Dimension carries the offset as a VECTOR from
+    # the a–b segment to the dimension line. The adapter resolves that
+    # vector itself when the file states the dimension's constraint
+    # axis (#1226); otherwise turn the .skp scalar into the in-plane
+    # perpendicular direction × distance here, as before.
     if payload.get("dimensions"):
         from PySide6.QtGui import QVector3D
         from core.dimension import Dimension
@@ -386,6 +388,10 @@ def _apply_payload_inner(scene, payload, progress=None) -> str:
             b = QVector3D(*raw["b"])
             seg = b - a
             if seg.length() < 1e-9:
+                continue
+            if raw.get("offset_vector"):
+                scene.dimensions.append(
+                    Dimension(a, b, QVector3D(*raw["offset_vector"])))
                 continue
             n = QVector3D(*raw["normal"]) if raw.get("normal") \
                 else QVector3D(0.0, 0.0, 1.0)

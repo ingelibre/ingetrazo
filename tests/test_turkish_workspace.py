@@ -30,10 +30,21 @@ def window(tmp_path, monkeypatch):
     yield win
     win._saved_version = win.viewport.scene.version
     win.close()
+    # Destroy Qt children while QApplication is alive, rather than during
+    # interpreter shutdown (Windows/offscreen native teardown is order-sensitive).
+    import shiboken6
+    shiboken6.delete(win)
     st.clear()
     for k, v in before.items():
         st.setValue(k, v)
     i18n.set_language(lang)
+
+
+def test_turkish_catalogue_matches_current_source_and_preserves_tokens():
+    from scripts.verify_turkish import verify
+    report = verify()
+    assert report["source_keys"] == report["turkish_keys"]
+    assert not report["errors"], report["errors"]
 
 
 def test_turkish_system_language_and_persistence(window, monkeypatch):

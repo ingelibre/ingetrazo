@@ -14,6 +14,8 @@ that carry eye/target/up cameras (e.g. .skp) convert once at import time.
 """
 from __future__ import annotations
 
+from core.history import Command, CommandRejected
+
 
 class SavedView:
     """A named camera + layer-visibility snapshot."""
@@ -23,8 +25,12 @@ class SavedView:
                  fov_deg: float = 45.0, perspective: bool = True,
                  two_point: bool = False, hidden_layers=None, style=None, section=None,
                  georef=None, shadows=None, hidden_objects=None,
-                 hidden_shown=None) -> None:
+                 hidden_shown=None, folder=None, lens=None) -> None:
         self.name = name
+        #: The folder of the Scenes tab the scene is filed under, or
+        #: ``None`` at the top (core.scene_folders, #1158). Only organises
+        #: the list: nothing of the view depends on it.
+        self.folder = folder or None
         self.target = tuple(target)
         self.distance = float(distance)
         self.yaw = float(yaw)
@@ -74,21 +80,31 @@ class SavedView:
         #: (``{"objects": bool, "geometry": bool}``); scenes keep
         #: both. ``None`` = hands-off.
         self.hidden_shown = dict(hidden_shown) if hidden_shown else None
+        #: The camera's lens beyond the field of view — frame shift, roll,
+        #: clipping, frame shape (``OrbitCamera.lens_dict``). ``{}`` is an
+        #: ordinary lens, and recalling it takes off whatever lens the view
+        #: had before: every scene stands on its own, like sections.
+        self.lens = dict(lens) if lens else {}
 
     # ---- Snapshot / recall ---------------------------------------------------
     @classmethod
-    def capture(cls, name: str, scene, camera) -> "SavedView":
-        """Snapshot the live camera and the current layer visibility."""
+    def capture(cls, name: str, scene, camera, style=None) -> "SavedView":
+        """Snapshot the live camera and the current layer visibility.
+        ``style``: the one the view shows when it has its own (one of
+        several views); else the scene's."""
+        if style is None:
+            style = getattr(scene, "display_style", None)
         t = camera.target
         return cls(name, target=(t.x(), t.y(), t.z()),
                    distance=camera.distance, yaw=camera.yaw,
                    pitch=camera.pitch, fov_deg=camera.fov_deg,
                    perspective=camera.perspective,
                    two_point=bool(getattr(camera, "two_point", False)),
+                   lens=(camera.lens_dict()
+                         if hasattr(camera, "lens_dict") else None),
                    hidden_layers=[ly.name for ly in scene.layers
                                   if not ly.visible],
-                   style=(scene.display_style.to_dict()
-                          if getattr(scene, "display_style", None) else None),
+                   style=style.to_dict() if style else None,
                    section={
                        "active": (scene.active_section().uid
                                   if scene.active_section() else None),
@@ -109,14 +125,39 @@ class SavedView:
                        "geometry": bool(getattr(scene, "show_hidden_geometry",
                                                 False))})
 
-    def recapture(self, scene, camera) -> None:
-        """Update this view in place from the live state (keeps the name)."""
-        fresh = SavedView.capture(self.name, scene, camera)
+    def take_camera(self, camera) -> None:
+        """Keep ``camera`` as this scene's camera — and nothing else: the
+        layers, style, section and hidden objects it remembers stay as they
+        are (Camera Settings editing a scene)."""
+        t = camera.target
+        self.target = (t.x(), t.y(), t.z())
+        self.distance = float(camera.distance)
+        self.yaw = float(camera.yaw)
+        self.pitch = float(camera.pitch)
+        self.fov_deg = float(camera.fov_deg)
+        self.perspective = bool(camera.perspective)
+        self.two_point = bool(getattr(camera, "two_point", False))
+        if hasattr(camera, "lens_dict"):
+            self.lens = camera.lens_dict()
+
+    def recapture(self, scene, camera, style=None) -> None:
+        """Update this view in place from the live state (keeps the name
+        and the folder). ``style``: as in :meth:`capture`."""
+        fresh = SavedView.capture(self.name, scene, camera, style)
+        fresh.folder = self.folder
         self.__dict__.update(fresh.__dict__)
 
-    def apply(self, scene, camera) -> None:
+    def apply(self, scene, camera, put_style=None) -> None:
         """Recall the view: camera first, then the layer-visibility state.
-        The caller bumps ``scene.version`` / repaints (tray convention)."""
+        The caller bumps ``scene.version`` / repaints (tray convention).
+        ``put_style``: where the style goes, for a view with its own (one
+        of several views); else it becomes the scene's."""
+        self.apply_camera(camera)
+        self.apply_state(scene, put_style)
+
+    def apply_camera(self, camera) -> None:
+        """Only the camera, its lens included (a scene transition glides it
+        there first)."""
         from PySide6.QtGui import QVector3D
         camera.target = QVector3D(*self.target)
         camera.distance = self.distance
@@ -125,12 +166,22 @@ class SavedView:
         camera.fov_deg = self.fov_deg
         camera.perspective = self.perspective
         camera.two_point = self.two_point
+        if hasattr(camera, "apply_lens"):
+            camera.apply_lens(self.lens)
+
+    def apply_state(self, scene, put_style=None) -> None:
+        """Everything but the camera: layers, style, section, geographic
+        layers, shadows, hidden objects. ``put_style`` as in :meth:`apply`."""
         hidden = set(self.hidden_layers)
         for ly in scene.layers:
             ly.visible = ly.name not in hidden
         if self.style:
             from core.style import Style
-            scene.display_style = Style.from_dict(self.style)
+            style = Style.from_dict(self.style)
+            if put_style is not None:
+                put_style(style)
+            else:
+                scene.display_style = style
         if self.section is not None:
             uid = self.section.get("active")
             target = None
@@ -172,6 +223,8 @@ class SavedView:
             entry["parallel"] = True
         if self.two_point:
             entry["two_point"] = True
+        if self.lens:
+            entry["lens"] = dict(self.lens)
         if self.hidden_layers:
             entry["hidden_layers"] = list(self.hidden_layers)
         if self.style:
@@ -186,6 +239,8 @@ class SavedView:
             entry["hidden_objects"] = list(self.hidden_objects)
         if self.hidden_shown is not None:
             entry["hidden_shown"] = dict(self.hidden_shown)
+        if self.folder:
+            entry["folder"] = self.folder
         return entry
 
     @classmethod
@@ -205,7 +260,11 @@ class SavedView:
                    georef=raw.get("georef"),
                    shadows=raw.get("shadows"),
                    hidden_objects=raw.get("hidden_objects"),
-                   hidden_shown=raw.get("hidden_shown"))
+                   hidden_shown=raw.get("hidden_shown"),
+                   folder=(raw.get("folder")
+                           if isinstance(raw.get("folder"), str) else None),
+                   lens=(raw.get("lens")
+                         if isinstance(raw.get("lens"), dict) else None))
 
 
 def apply_shadow_state(scene, raw: dict) -> None:
@@ -290,3 +349,57 @@ def from_lookat(name: str, eye, target, up, fov_deg: float = 45.0,
     return SavedView(name, target=tuple(target), distance=distance, yaw=yaw,
                      pitch=pitch, fov_deg=fov_deg, perspective=perspective,
                      hidden_layers=hidden_layers)
+
+
+class RenameSceneCommand(Command):
+    """A scene's new name, and the sheet views that show it along with it
+    (``core.outliner.rename_scene``). A name refused there is no step."""
+
+    keeps_paint = True
+
+    def __init__(self, view, name: str) -> None:
+        self.view = view
+        self.name = name
+        self._prev = None
+        self._frames: list = []
+
+    def do(self, scene) -> None:
+        from core.outliner import frames_showing, rename_scene
+        prev = self.view.name
+        frames = [frame for _comp, frame in frames_showing(scene, prev)]
+        if not rename_scene(scene, self.view, self.name):
+            raise CommandRejected(self.name)
+        self._prev, self._frames = prev, frames
+        scene.version += 1
+
+    def undo(self, scene) -> None:
+        self.view.name = self._prev
+        for frame in self._frames:
+            frame.view_key = f"scene:{self._prev}"
+        scene.version += 1
+
+
+class MoveSceneCommand(Command):
+    """A scene to another place in the list: the order of the list is the
+    order of the scene tabs and the panel, and what the document saves."""
+
+    keeps_paint = True
+
+    def __init__(self, view, index: int) -> None:
+        self.view = view
+        self.index = int(index)
+        self._from = None
+
+    def do(self, scene) -> None:
+        views = scene.saved_views
+        if self.view not in views or self.index == views.index(self.view):
+            raise CommandRejected(self.view.name)
+        self._from = views.index(self.view)
+        views.remove(self.view)
+        views.insert(self.index, self.view)
+        scene.version += 1
+
+    def undo(self, scene) -> None:
+        scene.saved_views.remove(self.view)
+        scene.saved_views.insert(self._from, self.view)
+        scene.version += 1

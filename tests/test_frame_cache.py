@@ -304,3 +304,29 @@ def test_the_picture_is_kept_once_the_view_settles(win, monkeypatch):
         _one_paint(vp)
     assert len(stores) == kept + 1, "the settled frame did not keep the picture"
     assert vp._frame_cache is not None
+
+
+def test_the_soft_shadow_level_is_part_of_the_kept_frame():
+    """Preferences sets ``_soft_shadows`` and asks for a frame: a still view
+    reused the frame drawn at the old level until the camera moved
+    (Windows round 0.6.2). No GL needed: the key alone."""
+    from views.main_window import MainWindow
+    import views.viewport as V_
+    w = MainWindow()
+    try:
+        vp = w.viewport
+        was, V_._FRAME_CACHE = V_._FRAME_CACHE, True
+        try:
+            def key():
+                style = vp._effective_style()
+                return vp._frame_cache_key(QMatrix4x4(), 800, 600, style,
+                                           style.face_mode)
+            vp._soft_shadows = 0
+            crisp = key()
+            vp._soft_shadows = 2
+            assert crisp is not None and key() != crisp
+        finally:
+            V_._FRAME_CACHE = was
+    finally:
+        w._saved_version = w.viewport.scene.version
+        w.close()

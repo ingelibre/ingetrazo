@@ -351,7 +351,9 @@ def build_mesh(batches, progress=None):
                 base["opacity"] = opacity
             attrs_list.extend([dict(base) if base else None] * len(tris))
         else:
-            uvw, okm = _triangle_uvws(tris, uvs)
+            # glTF counts V from the top of the image; the viewport, like
+            # OBJ and COLLADA, from the bottom (#1141).
+            uvw, okm = _triangle_uvws(tris, uvs * (1.0, -1.0) + (0.0, 1.0))
             glu = np.linalg.norm(uvw[:, 0:3], axis=1)
             glv = np.linalg.norm(uvw[:, 4:7], axis=1)
             sw = np.where(glu > 1e-9, 1.0 / np.maximum(glu, 1e-9), 1.0)

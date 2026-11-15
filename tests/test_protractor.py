@@ -210,3 +210,74 @@ def test_reload_and_escape_release_the_arrow_lock():
     t.on_deactivate(vp)
     t.on_activate(vp)                               # picked up again
     assert t._axis_pick is None
+
+
+def test_changing_the_plane_after_the_centre_reanchors_it():
+    """Locking the plane AFTER the first click used to tilt the disc
+    (``_axis_pick``) while leaving ``work_plane`` on the old plane, so the
+    cursor and the axis magnet never followed — Z would not snap on XZ/YZ."""
+    scene = Scene()
+    vp = _Vp(scene)
+    t = ProtractorTool()
+    t.on_activate(vp)
+    _click(vp, t, 0, 0)                              # centre on the ground (XY)
+    assert t.on_key(vp, Qt.Key_Left, Qt.NoModifier) is True   # lock to XZ
+    point, normal = t.work_plane
+    assert (point - QVector3D(0, 0, 0)).length() < 1e-9   # anchored at centre
+    assert abs(normal.y()) == 1.0                          # XZ plane
+    assert t.on_key(vp, Qt.Key_Left, Qt.NoModifier) is True   # release it
+    assert abs(t.work_plane[1].z()) == 1.0                 # back to XY
+
+
+
+class _VpGrazing(_Vp):
+    """A view where one in-plane axis points into the screen: a unit along it
+    spans 5 pixels and a unit along the other spans 100."""
+
+    def __init__(self, scene, foreshortened):
+        super().__init__(scene)
+        self.scale = (5.0, 100.0) if foreshortened == "x" else (100.0, 5.0)
+
+    def _world_to_pixel(self, v):
+        return (v.x() * self.scale[0], v.y() * self.scale[1])
+
+
+def test_the_disc_keeps_its_size_whichever_axis_points_into_the_screen():
+    """#1200: the radius came from the first in-plane axis alone, so with that
+    axis pointing into the screen the disc grew as the cursor moved."""
+    radii = []
+    for foreshortened in ("x", "y"):
+        vp = _VpGrazing(Scene(), foreshortened)
+        t = ProtractorTool()
+        t.on_activate(vp)
+        _hover(vp, t, 1, 1)
+        radii.append(t._disc_r)
+    assert math.isclose(radii[0], radii[1], rel_tol=1e-9)
+
+
+def test_an_arrow_lock_after_the_base_arm_stays_on_the_centre():
+    vp = _Vp(Scene())
+    t = ProtractorTool()
+    t.on_activate(vp)
+    _click(vp, t, 2, 1)                              # centre
+    _click(vp, t, 5, 1)                              # base arm
+    t.on_key(vp, Qt.Key_Left, Qt.NoModifier)         # lock to XZ
+    point, normal = t.work_plane
+    assert (point - QVector3D(2, 1, 0)).length() < 1e-9
+    assert abs(normal.y()) == 1.0
+    t.on_key(vp, Qt.Key_Left, Qt.NoModifier)         # release
+    point, normal = t.work_plane
+    assert (point - QVector3D(2, 1, 0)).length() < 1e-9
+    assert abs(normal.z()) == 1.0
+
+
+def test_a_finished_guide_forgets_the_centre_plane():
+    vp = _Vp(Scene())
+    t = ProtractorTool()
+    t.on_activate(vp)
+    _click(vp, t, 2, 1)
+    _click(vp, t, 5, 1)
+    _hover(vp, t, 2, 4)
+    _click(vp, t, 2, 4)                              # guide done, tool resets
+    assert t.start_point is None
+    assert t._centre_plane is None

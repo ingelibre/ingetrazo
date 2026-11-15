@@ -55,6 +55,88 @@ FAR_PER_DISTANCE = 4.0
 #: and guides run past the model, and a dragged object may too.
 PARALLEL_REACH_MARGIN = 4.0
 
+#: The film or sensor a focal length is read for, (width, height) in
+#: millimetres. A lens of so many millimetres gives the picture it gives on
+#: THAT camera: the smaller the sensor, the narrower the same lens sees.
+#: The full frame of 35 mm film is the default, and what a focal length
+#: means when nothing else is said.
+FULL_FRAME = (36.0, 24.0)
+SENSORS = {
+    "full_frame": FULL_FRAME,
+    "aps_c": (23.6, 15.6),
+    "micro_four_thirds": (17.3, 13.0),
+    "super_35": (24.9, 18.7),
+}
+SENSOR_HEIGHT_MM = FULL_FRAME[1]
+
+#: Bounds for a sensor typed by hand, in millimetres.
+SENSOR_RANGE_MM = (1.0, 100.0)
+
+#: The angles of view the camera may take: down to 1° for a long lens (533
+#: mm on full frame is 2.6°; 1° is about 1 375 mm) and up to 120° wide.
+FOV_RANGE = (1.0, 120.0)
+
+#: The lens settings beyond the field of view (Camera ▸ Camera Settings),
+#: each with the value that leaves the view as it always was.
+LENS_DEFAULTS = {
+    "shift_x": 0.0,         # frame slid sideways, in view widths
+    "shift_y": 0.0,         # frame slid up, in view heights
+    "roll_deg": 0.0,        # turn about the sight line, degrees
+    "clip_near": None,      # metres from the eye, or None = automatic
+    "clip_far": None,       # metres from the eye, or None = automatic
+    "frame_aspect": None,   # width / height of the frame drawn, or None
+    "sensor": None,         # (width, height) mm, or None = full frame
+}
+
+
+def sensor_picture_height(sensor, aspect: float | None) -> float:
+    """How much of the sensor's height a picture of shape ``aspect`` (width
+    / height) uses, in millimetres — as in a real camera, the picture is
+    the largest rectangle of its shape inside the sensor: a 16:9 picture on
+    a 3:2 sensor takes its whole width and less than its height."""
+    w, h = sensor or FULL_FRAME
+    if aspect and aspect > 0.0 and aspect > w / h:
+        return w / aspect
+    return h
+
+#: How far the frame may slide: a whole view each way is already a picture
+#: taken entirely beside where the camera points.
+MAX_SHIFT = 1.0
+
+
+def focal_from_fov(fov_deg: float,
+                   picture_height_mm: float = SENSOR_HEIGHT_MM) -> float:
+    """The focal length, in millimetres, of a lens whose vertical angle of
+    view is ``fov_deg`` on a picture ``picture_height_mm`` tall (by default
+    the 24 mm of the 35 mm full frame)."""
+    half = math.radians(max(1e-3, min(179.0, float(fov_deg)))) / 2.0
+    return (float(picture_height_mm) / 2.0) / math.tan(half)
+
+
+def fov_from_focal(focal_mm: float,
+                   picture_height_mm: float = SENSOR_HEIGHT_MM) -> float:
+    """The vertical angle of view, in degrees, of a ``focal_mm`` lens on a
+    picture ``picture_height_mm`` tall — the inverse of
+    :func:`focal_from_fov`."""
+    f = max(1e-3, float(focal_mm))
+    return math.degrees(2.0 * math.atan((float(picture_height_mm) / 2.0) / f))
+
+
+def frame_rect(width: float, height: float,
+               aspect: float | None) -> tuple[float, float, float, float] | None:
+    """The picture frame of shape ``aspect`` (width / height) in a view of
+    ``width`` × ``height`` pixels: the largest such rectangle, centred, as
+    ``(x, y, w, h)``. ``None`` without a frame or with an empty view."""
+    if not aspect or aspect <= 0.0 or width <= 0 or height <= 0:
+        return None
+    if width / height > aspect:
+        h = float(height)
+        w = h * aspect
+    else:
+        w = float(width)
+        h = w / aspect
+    return ((width - w) / 2.0, (height - h) / 2.0, w, h)
+
 
 class OrbitCamera:
     """Camera that orbits around a target point."""
@@ -78,6 +160,142 @@ class OrbitCamera:
         #: the viewport keeps up to date, or ``None`` (unknown). Parallel
         #: projection fits its depth range to it (``parallel_depth``).
         self.depth_reach = None
+        #: The lens (:data:`LENS_DEFAULTS`). The frame SHIFT slides the
+        #: picture without turning the camera, as a view camera's rise
+        #: does: a tall facade fills the frame and its verticals stay
+        #: parallel. ROLL turns the picture about the sight line. The
+        #: CLIP distances, when set, replace the automatic near and far
+        #: planes — a near plane past a wall looks through it. The FRAME
+        #: is the shape of the picture, drawn over the view.
+        self.shift_x = 0.0
+        self.shift_y = 0.0
+        self.roll_deg = 0.0
+        self.clip_near = None
+        self.clip_far = None
+        self.frame_aspect = None
+        #: The SENSOR a focal length is read for, ``(width, height)`` mm,
+        #: or ``None`` for the 35 mm full frame (:data:`SENSORS`).
+        self.sensor = None
+
+    # ---- Lens -------------------------------------------------------------
+    def lens_dict(self) -> dict:
+        """The lens settings that differ from :data:`LENS_DEFAULTS` — what
+        a scene and the document keep (``{}`` for an ordinary camera)."""
+        out = {}
+        for k, default in LENS_DEFAULTS.items():
+            v = getattr(self, k)
+            if k == "sensor":
+                if v is not None and tuple(v) != FULL_FRAME:
+                    out[k] = [float(v[0]), float(v[1])]
+            elif v != default:
+                out[k] = v
+        return out
+
+    @staticmethod
+    def _read_sensor(v):
+        """A sensor as given in a lens dict — ``[width, height]`` mm — or
+        ``None`` when it is not one (the full frame then)."""
+        if not isinstance(v, (list, tuple)) or len(v) != 2:
+            return None
+        try:
+            w, h = float(v[0]), float(v[1])
+        except (TypeError, ValueError):
+            return None
+        lo, hi = SENSOR_RANGE_MM
+        if not (math.isfinite(w) and math.isfinite(h)
+                and lo <= w <= hi and lo <= h <= hi):
+            return None
+        return None if (w, h) == FULL_FRAME else (w, h)
+
+    def apply_lens(self, raw) -> None:
+        """Put back what :meth:`lens_dict` gave; every setting it does not
+        name goes back to its default, so a scene saved with an ordinary
+        lens takes off a shift or a roll left by the one before. Values
+        that are not numbers are ignored (the default stays)."""
+        raw = raw if isinstance(raw, dict) else {}
+        for k, default in LENS_DEFAULTS.items():
+            setattr(self, k, default)
+            v = raw.get(k)
+            if v is None:
+                continue
+            if k == "sensor":
+                self.sensor = self._read_sensor(v)
+                continue
+            try:
+                v = float(v)
+            except (TypeError, ValueError):
+                continue
+            if not math.isfinite(v):
+                continue
+            if k in ("shift_x", "shift_y"):
+                v = max(-MAX_SHIFT, min(MAX_SHIFT, v))
+            elif k == "roll_deg":
+                v = math.remainder(v, 360.0)
+            elif v <= 0.0:          # a clip distance or aspect must be > 0
+                continue
+            setattr(self, k, v)
+        if (self.clip_near is not None and self.clip_far is not None
+                and self.clip_far <= self.clip_near):
+            self.clip_far = None
+
+    def reset_lens(self) -> None:
+        """Shift, roll, clipping and frame back to :data:`LENS_DEFAULTS`.
+        The sensor stays: it is the camera, not a setting of the shot."""
+        sensor = self.sensor
+        self.apply_lens({})
+        self.sensor = sensor
+
+    def set_sensor(self, size) -> None:
+        """Read focal lengths for the sensor ``size`` ``(width, height)`` mm
+        (``None``: the full frame). The picture stays as it is — the angle
+        of view is kept; only what it reads in millimetres changes."""
+        self.sensor = None if size is None else self._read_sensor(size)
+
+    def sensor_size(self) -> tuple[float, float]:
+        """The sensor, ``(width, height)`` mm."""
+        return tuple(self.sensor) if self.sensor else FULL_FRAME
+
+    def picture_aspect(self) -> float:
+        """The shape of the picture: the frame's when one is set, else the
+        view's."""
+        return self.frame_aspect or self.aspect
+
+    def picture_height_mm(self) -> float:
+        """The height of the sensor the picture uses (as in a real camera,
+        the largest rectangle of the picture's shape inside the sensor)."""
+        return sensor_picture_height(self.sensor_size(),
+                                     self.picture_aspect())
+
+    @property
+    def focal_mm(self) -> float:
+        """The field of view as a focal length on this camera's sensor."""
+        return focal_from_fov(self.fov_deg, self.picture_height_mm())
+
+    def fov_for_focal(self, focal_mm: float) -> float:
+        """The vertical angle of view of a ``focal_mm`` lens on this
+        camera's sensor and picture."""
+        return fov_from_focal(focal_mm, self.picture_height_mm())
+
+    def focal_for_fov(self, fov_deg: float) -> float:
+        """The focal length that gives ``fov_deg`` on this camera."""
+        return focal_from_fov(fov_deg, self.picture_height_mm())
+
+    def place(self, eye: QVector3D, target: QVector3D) -> bool:
+        """Put the eye exactly at ``eye`` looking at ``target`` — the
+        coordinates typed in the camera settings. The target becomes the
+        orbit centre, so orbiting afterwards turns about it. ``False`` (and
+        nothing changes) when the two points coincide or are not numbers."""
+        d = target - eye
+        length = d.length()
+        if not math.isfinite(length) or length < 1e-6:
+            return False
+        before = (QVector3D(self.target), self.distance, self.yaw, self.pitch)
+        self.distance = min(length, MAX_DISTANCE)
+        self.look_from(eye, d)
+        if not self.is_finite():
+            self.target, self.distance, self.yaw, self.pitch = before
+            return False
+        return True
 
     # ---- Derived state ------------------------------------------------------
     def eye(self) -> QVector3D:
@@ -104,13 +322,24 @@ class OrbitCamera:
         up the screen in Top (y+ at the default yaw), the same axis the
         other way in Bottom, so the exact view looks like the 89° one it
         replaces, only straight. A rolled ``up`` (the composer turning a
-        plan) is never along the sight line and comes back as it is."""
+        plan) is never along the sight line and comes back as it is.
+
+        A ``roll_deg`` turns that up about the sight line (positive turns
+        the camera to the left, the picture to the right). Panning, Zoom
+        Extents and the picture itself all read the up from here, so they
+        agree. A two-point perspective keeps its verticals upright and
+        takes no roll."""
         f = self.forward()
         if abs(QVector3D.dotProduct(f, self.up)) < 0.9999:
-            return self.up
-        sign = -1.0 if self.pitch > 0 else 1.0
-        return QVector3D(sign * math.cos(self.yaw), sign * math.sin(self.yaw),
-                         0.0)
+            up = self.up
+        else:
+            sign = -1.0 if self.pitch > 0 else 1.0
+            up = QVector3D(sign * math.cos(self.yaw),
+                           sign * math.sin(self.yaw), 0.0)
+        if self.roll_deg and self._level_forward() is None:
+            from PySide6.QtGui import QQuaternion
+            up = QQuaternion.fromAxisAndAngle(f, self.roll_deg).rotatedVector(up)
+        return up
 
     # ---- First person (Position Camera / Look Around / Walk) ---------------
     # The orbit model stays: a walkthrough only ever asks "the eye is HERE,
@@ -199,8 +428,17 @@ class OrbitCamera:
                 rel = self.target - self.eye()
                 depth = QVector3D.dotProduct(rel, level)
                 shift = rel.z() * near / depth
-                m.frustum(-half_w, half_w, -half_h + shift, half_h + shift,
+                sx, sy = self._shift(half_w, half_h)
+                m.frustum(-half_w + sx, half_w + sx,
+                          -half_h + shift + sy, half_h + shift + sy,
                           near, self.far_plane())
+                return m
+            if self.shift_x or self.shift_y:
+                half_h = near * math.tan(math.radians(self.fov_deg) / 2.0)
+                half_w = half_h * self.aspect
+                sx, sy = self._shift(half_w, half_h)
+                m.frustum(-half_w + sx, half_w + sx, -half_h + sy,
+                          half_h + sy, near, self.far_plane())
                 return m
             m.perspective(self.fov_deg, self.aspect, near, self.far_plane())
         else:
@@ -209,8 +447,19 @@ class OrbitCamera:
             half_h = self.distance * math.tan(math.radians(self.fov_deg) / 2.0)
             half_w = half_h * self.aspect
             depth = self.parallel_depth()
-            m.ortho(-half_w, half_w, -half_h, half_h, -depth, depth)
+            sx, sy = self._shift(half_w, half_h)
+            near = -depth if self.clip_near is None else self.clip_near
+            far = depth if self.clip_far is None else self.clip_far
+            if far <= near:
+                near, far = -depth, depth
+            m.ortho(-half_w + sx, half_w + sx, -half_h + sy, half_h + sy,
+                    near, far)
         return m
+
+    def _shift(self, half_w: float, half_h: float) -> tuple[float, float]:
+        """The frame shift as offsets of a frustum ``2·half_w`` wide and
+        ``2·half_h`` tall."""
+        return (self.shift_x * 2.0 * half_w, self.shift_y * 2.0 * half_h)
 
     def parallel_depth(self) -> float:
         """How far in front of and behind the eye a parallel view reaches.
@@ -237,7 +486,10 @@ class OrbitCamera:
         """The near clipping distance in perspective: the usual ``znear``
         at any working distance, stepping back with the camera when you come
         right up to something — otherwise the near plane itself is what
-        stops you — but never closer than :data:`NEAR_FLOOR`."""
+        stops you — but never closer than :data:`NEAR_FLOOR`. A ``clip_near``
+        set by hand is used as it is (Camera Settings ▸ Clipping)."""
+        if self.clip_near is not None:
+            return max(float(self.clip_near), NEAR_FLOOR)
         return min(self.znear, max(self.distance * 0.02, NEAR_FLOOR))
 
     def min_distance(self, at: QVector3D | None = None) -> float:
@@ -252,7 +504,11 @@ class OrbitCamera:
 
     def far_plane(self) -> float:
         """The far clipping distance: ``zfar`` at any working distance,
-        growing with the orbit distance when zoomed far out (#340)."""
+        growing with the orbit distance when zoomed far out (#340); a
+        ``clip_far`` set by hand is used as it is, never nearer than just
+        past the near plane."""
+        if self.clip_far is not None:
+            return max(float(self.clip_far), self.near_plane() * 1.01)
         return max(self.zfar, self.distance * FAR_PER_DISTANCE)
 
     # ---- Navigation ---------------------------------------------------------
@@ -418,6 +674,15 @@ class OrbitCamera:
         t = self.target
         return all(math.isfinite(v) for v in (
             t.x(), t.y(), t.z(), self.distance, self.yaw, self.pitch))
+
+    def sees_from_below(self, z: float) -> bool:
+        """The view looks at the horizontal plane at height ``z`` from
+        underneath: in perspective the eye is at or below it; in parallel
+        projection, whose eye is only a point at ``distance``, the view
+        looks upward. The ground's shadows are not drawn then (#1301)."""
+        if self.perspective:
+            return self.eye().z() <= z
+        return self.forward().z() > 0.0
 
     def set_aspect(self, w: int, h: int) -> None:
         self.aspect = max(w, 1) / max(h, 1)

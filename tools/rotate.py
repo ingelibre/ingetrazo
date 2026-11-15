@@ -37,6 +37,7 @@ from core.history import (
     AddEdgeCommand,
     AddFaceCommand,
     AddGuideCommand,
+    Command,
     CompoundCommand,
     InsertGroupCommand,
     RotateGroupCommand,
@@ -47,10 +48,63 @@ from core.history import (
 from core.i18n import tr
 from core.mesh import Edge, Face, Mesh
 from core.axes import plane_axes  # drawing axes (#44)
-from core.guide import Guide
+from core.guide import is_guide
 from tools.base import ToolContext
-from tools.move import copied_guide, gather_targets, guide_ghost_segments
+from tools.move import (
+    copied_guide, gather_targets, groups_ghost_segments, guide_ghost_segments)
 from tools.protractor import ProtractorBase
+
+
+class _MergeCopiedFaces(Command):
+    """Merge only overlaps between a rotated copy and geometry outside it.
+
+    All copies are stamped first. One lazy snapshot protects their combined
+    mesh edit; undo restores the stamped faces before their add commands
+    remove them. Disjoint copies need no snapshot and retain their topology.
+    """
+
+    keeps_groups = True
+
+    def __init__(self, batches) -> None:
+        self._batches = batches
+        self._before = self._after = None
+        self._selection_before = self._selection_after = None
+        self._context = None
+
+    def do(self, scene) -> None:
+        if self._after is not None:
+            scene.mesh.restore_state(self._after)
+            if scene.edit_group is self._context:
+                scene.selection = set(self._selection_after)
+            scene.version += 1
+            return
+        from core.history import _merge_overlapping_planes
+
+        def checkpoint():
+            if self._before is None:
+                self._before = scene.mesh.capture_state()
+                self._selection_before = set(scene.selection)
+                self._context = scene.edit_group
+
+        pending = {c.face for batch in self._batches for c in batch if c.face is not None}
+        for batch in self._batches:
+            added = {c.face for c in batch if c.face is not None}
+            pending.difference_update(added)
+            # Include earlier array members (and their rebuilt regions), but
+            # never merge the supplied faces of one copy against each other.
+            before = [f for f in scene.mesh.faces if f not in pending and f not in added]
+            _merge_overlapping_planes(scene, before, [c.face for c in batch],
+                                       on_rebuild=checkpoint)
+        if self._before is not None:
+            self._after = scene.mesh.capture_state()
+            self._selection_after = set(scene.selection)
+
+    def undo(self, scene) -> None:
+        if self._before is not None:
+            scene.mesh.restore_state(self._before)
+            if scene.edit_group is self._context:
+                scene.selection = set(self._selection_before)
+            scene.version += 1
 
 
 class RotateTool(ProtractorBase):
@@ -74,6 +128,7 @@ class RotateTool(ProtractorBase):
         self._sel_faces: list = []          # for copy mode (loose geometry)
         self._sel_edges: list = []
         self._base_segments: list = []      # wireframe for the copy preview
+        self._groups_ghost_due = False
         self._preview_deg = 0.0
         self._orig = None                   # the preview's snapshot
         self._copy = False                  # Ctrl: rotate a COPY
@@ -158,7 +213,7 @@ class RotateTool(ProtractorBase):
             from tools.move import gather_images
             images = gather_images(ctx)
             guides = [g for g in viewport.scene.selection
-                      if isinstance(g, Guide)]
+                      if is_guide(g)]
             if not (groups or positions or splanes or images or guides):
                 viewport.flash_status(
                     tr("Select (or click) the geometry to rotate first"))
@@ -182,6 +237,9 @@ class RotateTool(ProtractorBase):
                     self._vp_preview = True
             self._gather_copy_entities(ctx)
             self.start_point = ctx.world
+            # The centre's plane, kept so a later arrow lock can be released
+            # back to it (same fix as the Protractor's shared on_key).
+            self._centre_plane = (self.start_point, QVector3D(self._axis()))
             self._axis_drag_armed = True   # a DRAG from here sets the axis
             return
         if self.ref_point is None:
@@ -345,6 +403,10 @@ class RotateTool(ProtractorBase):
             deg = self._commit_deg(self.hover_point)
             if deg is not None:
                 segments.extend(self._arc_segments(deg))
+                if self._copy and self._groups_ghost_due:
+                    self._groups_ghost_due = False
+                    self._base_segments[:0] = groups_ghost_segments(
+                        self._groups)
                 if self._copy and self._base_segments:
                     # Copy mode: the original stays put — preview the rotated
                     # COPY as a wireframe at the cursor angle.
@@ -384,17 +446,7 @@ class RotateTool(ProtractorBase):
         the copy preview swings (group wireframe, or the loose selection)."""
         viewport = ctx.viewport
         self._sel_faces, self._sel_edges, self._base_segments = [], [], []
-        from core.group import iter_placements
-        for group in self._groups:
-            # A component's geometry lives in the placements it holds, so the
-            # ghost has to swing the whole subtree — the top-level mesh of an
-            # imported component is often empty.
-            for pg, xf in iter_placements(group):
-                for e in pg.mesh.edges:
-                    a, b = QVector3D(e.a), QVector3D(e.b)
-                    if xf is not None:
-                        a, b = xf.map(a), xf.map(b)
-                    self._base_segments.append((a, b))
+        self._groups_ghost_due = True     # asked of only when copying (#1092)
         cam = getattr(viewport, "camera", None)
         reach = max(float(getattr(cam, "distance", 10.0)), 1e-3)
         self._base_segments.extend(guide_ghost_segments(self._moved_guides, reach))
@@ -520,7 +572,9 @@ class RotateTool(ProtractorBase):
             cmds: list = []
             if copy:
                 id_map: dict[int, int] = {}
+                face_batches = []
                 for deg in degs:
+                    batch = []
                     m = rotation_matrix(start, axis, deg)
                     for group in groups:
                         g = copy_group(group)  # instance → sibling instance
@@ -529,13 +583,17 @@ class RotateTool(ProtractorBase):
                     for gd in guides:
                         cmds.append(AddGuideCommand(copied_guide(gd, m)))
                     for f in faces:
-                        cmds.append(AddFaceCommand(
+                        face_cmd = AddFaceCommand(
                             [m.map(v) for v in f.vertices],
                             holes=[[m.map(v) for v in h] for h in f.holes]
                             or None,
                             auto=False,
                             attrs=transformed_attrs(f.attrs, m),
-                        ))
+                        )
+                        cmds.append(face_cmd)
+                        batch.append(face_cmd)
+                    if batch:
+                        face_batches.append(batch)
                     for e in edges:
                         curve = getattr(e, "curve", None)
                         # One fresh curve id per (curve, copy): the arms of
@@ -547,6 +605,8 @@ class RotateTool(ProtractorBase):
                             m.map(e.a), m.map(e.b),
                             soft=getattr(e, "soft", False) or None,
                             curve=id_map.get(key)))
+                if face_batches:
+                    cmds.append(_MergeCopiedFaces(face_batches))
             else:
                 # Nothing is copied, so there is only ever one angle.
                 deg = degs[-1]
@@ -604,6 +664,7 @@ class RotateTool(ProtractorBase):
         self._sel_faces = []
         self._sel_edges = []
         self._base_segments = []
+        self._groups_ghost_due = False
         self._preview_deg = 0.0
         self._orig = None       # the preview's snapshot (see _snapshot)
         self._copy = False      # the Ctrl modifier arms ONE operation

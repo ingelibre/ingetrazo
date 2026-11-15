@@ -75,10 +75,13 @@ class _ButtonsOnlyTranslator(QTranslator):
     ``qtbase_<lang>.qm`` also names the keys — «Control+Mayúsculas+Re Pág»
     for Ctrl+Shift+PgUp in menus, tooltips and the shortcut editor — and
     the shortcuts stay in English on purpose. The button texts live in
-    these contexts; everything else is left untranslated."""
+    these contexts; everything else is left untranslated. QColorDialog
+    joins them (#1178): the colour picker's own labels («Basic colors»,
+    «Custom colors», the channel names) are plain words, no key names,
+    so they translate with the rest of the interface."""
 
     _CONTEXTS = frozenset({"QPlatformTheme", "QMessageBox",
-                           "QDialogButtonBox"})
+                           "QDialogButtonBox", "QColorDialog"})
 
     _BUILTIN = {
         "vi": {
@@ -458,6 +461,127 @@ def _run_mcp_server() -> int:
     return 0
 
 
+# The command line that works without a window: ``-p`` (or any of the
+# others) in argv switches to it; anything else is the GUI's, as before.
+_CLI_FLAGS = frozenset({"-i", "--input-file", "-o", "--output-file",
+                        "-p", "--create-pdf", "-h", "--help"})
+
+
+def _wants_cli(argv: list[str]) -> bool:
+    return any(a.split("=", 1)[0] in _CLI_FLAGS for a in argv)
+
+
+def _attach_console() -> None:
+    """A windowed Windows exe has no sys.stdout: borrow the console of
+    the shell that started us, so the CLI's messages are seen there."""
+    if sys.stdout is not None and sys.stderr is not None:
+        return
+    if sys.platform == "win32":
+        try:
+            import ctypes
+            ctypes.windll.kernel32.AttachConsole(-1)   # ATTACH_PARENT_PROCESS
+            sys.stdout = open("CONOUT$", "w", encoding="utf-8")
+            sys.stderr = sys.stdout
+            return
+        except (OSError, AttributeError):
+            pass
+    # Nobody to talk to: the messages go nowhere instead of raising.
+    if sys.stdout is None:
+        sys.stdout = open(os.devnull, "w")
+    if sys.stderr is None:
+        sys.stderr = sys.stdout
+
+
+def _parse_cli(argv: list[str]):
+    import argparse
+    parser = argparse.ArgumentParser(
+        prog="ingetrazo",
+        description="IngeTrazo without a window: open a document and "
+                    "export its sheets.")
+    parser.add_argument("-i", "--input-file", required=True, type=Path,
+                        help="the document to open (.igz)")
+    parser.add_argument("-o", "--output-file", type=Path,
+                        help="the PDF to write (default: the input file "
+                             "with .pdf, beside it)")
+    parser.add_argument("-p", "--create-pdf", action="store_true",
+                        help="export all the sheets into one PDF, as "
+                             "Export all sheets (PDF) does")
+    args = parser.parse_args(argv)
+    if not args.create_pdf:
+        parser.error("nothing to do: add -p/--create-pdf")
+    return args
+
+
+def _run_cli(argv: list[str]) -> int:
+    """``ingetrazo -i Casa.igz -p [-o Casa.pdf]``: open the document and
+    run Export all sheets (PDF) on it — every sheet, one PDF, each page
+    at its own paper size — with no window on screen.
+
+    The sheets' views are GL renders, so the main window is still built
+    and "shown" (that is what gives the viewport its GL context), but with
+    ``WA_DontShowOnScreen``: nothing reaches the desktop. No single
+    instance either: a running IngeTrazo is neither asked nor disturbed."""
+    _attach_console()
+    args = _parse_cli(argv)
+    src = args.input_file.resolve()
+    if not src.is_file():
+        print(f"ingetrazo: no such file: {src}", file=sys.stderr)
+        return 2
+    out = (args.output_file or src.with_suffix(".pdf")).resolve()
+
+    _configure_surface_format()
+    app = _App(sys.argv[:1])
+    app.setApplicationName("IngeTrazo")
+    app.setOrganizationName("IngeTrazo")
+    _init_language()
+    window = MainWindow(defer_extensions=True)
+    window.setAttribute(Qt.WA_DontShowOnScreen, True)
+    window.show()
+    app.processEvents()
+    if getattr(window.viewport, "_gl", None) is None:
+        print("ingetrazo: no OpenGL context — the sheets' views will come "
+              "out empty", file=sys.stderr)
+
+    # Opening must not stop to ask: no progress bar on screen, and an
+    # auto-saved copy of the document is left alone (open_path would ask
+    # whether to recover it, and «no» deletes it) — the file on disk is
+    # what gets exported.
+    class _NoDialog:
+        def close(self):
+            pass
+
+    window._import_progress = lambda title: (
+        _NoDialog(), lambda frac, text: app.processEvents())
+    from core import autosave
+    pending = autosave.pending
+    autosave.pending = lambda path: None
+    try:
+        window.load_extensions()
+        opened = window.open_path(src)
+    finally:
+        autosave.pending = pending
+    if not opened:
+        print(f"ingetrazo: could not open {src}", file=sys.stderr)
+        return 1
+    app.processEvents()
+
+    sheets = list(window.viewport.scene.compositions)
+    if not sheets:
+        print(f"ingetrazo: {src.name} has no sheets", file=sys.stderr)
+        return 1
+    out.parent.mkdir(parents=True, exist_ok=True)
+    troubled = window._ensure_composer().export_all_pdf(str(out), sheets)
+    if not out.is_file():
+        print(f"ingetrazo: the PDF was not written: {out}", file=sys.stderr)
+        return 1
+    print(f"Exported {len(sheets)} sheets to {out}")
+    if troubled:
+        print("ingetrazo: a view would not render on "
+              + ", ".join(troubled), file=sys.stderr)
+        return 3
+    return 0
+
+
 def main() -> int:
     # HTTPS from Python (the AI assistant) must find a CA bundle: the macOS
     # package asked for one where only the build machine had it (#198).
@@ -467,6 +591,8 @@ def main() -> int:
         return _self_check()
     if "--mcp" in sys.argv[1:]:
         return _run_mcp_server()
+    if _wants_cli(sys.argv[1:]):
+        return _run_cli(sys.argv[1:])
     # Hang autopsy (Linux): `kill -USR1 <pid>` dumps every thread's Python
     # stack to stderr, so a frozen main loop names its exact line without a
     # debugger or elevated ptrace. No-op where SIGUSR1 doesn't exist.
@@ -650,6 +776,10 @@ def main() -> int:
                "again in Preferences ▸ General.")))
 
     def _after_first_frame():
+        if getattr(window, "_closed", False):
+            # The user closed the window before this deferred slot got
+            # to run (#1269): the command-line open dies with it.
+            return
         # The plugins' setup, now that the window is up (#440) — and only
         # then the document passed on the command line (the OS file
         # association's double-click hands it as argv[1]): an extension may
@@ -659,6 +789,10 @@ def main() -> int:
             doc = Path(arg)
             if doc.exists():
                 _open_document_in(window, doc)
+        if getattr(window, "_closed", False):
+            # Closed while the document was coming in: no units question
+            # or update check on a window that is going away (#1269).
+            return
         # Which units to work in, once the window is up and the document in
         # (off for good with «Don't show this at startup»; Preferences ▸
         # Units turns it back on). Offered after the opening, not beside
@@ -668,6 +802,7 @@ def main() -> int:
         from views.workspace_profiles import offer_intro
         if arg or not offer_intro(window):
             QTimer.singleShot(0, window.offer_units_at_start)
+        QTimer.singleShot(4000, window.check_updates_quietly)
 
     QTimer.singleShot(0, _after_first_frame)
     _offer_appimage_integration(window)
@@ -724,7 +859,31 @@ def _exit_now(code) -> None:
             stream.flush()
         except Exception:
             pass
-    os._exit(code if isinstance(code, int) else 0)
+    status = code if isinstance(code, int) else 0
+    if sys.platform == "win32":
+        _terminate_windows_process(status)
+    os._exit(status)
+
+
+def _terminate_windows_process(status: int) -> None:
+    """End the process without running the DLLs' exit code. On Windows
+    os._exit still unloads them, and the destructor of shiboken's binding
+    manager can then crash (0xC0000005) walking wrappers Qt has already
+    deleted. It happens after everything is saved, but the system logs a
+    crash. Returns only if the call fails, and the caller then exits the
+    usual way."""
+    import ctypes
+    try:
+        kernel32 = ctypes.WinDLL("kernel32")
+        kernel32.GetCurrentProcess.argtypes = []
+        kernel32.GetCurrentProcess.restype = ctypes.c_void_p
+        kernel32.TerminateProcess.argtypes = [ctypes.c_void_p, ctypes.c_uint]
+        kernel32.TerminateProcess.restype = ctypes.c_int
+        # A negative status keeps its 32 bits, as with os._exit.
+        kernel32.TerminateProcess(
+            kernel32.GetCurrentProcess(), status & 0xFFFFFFFF)
+    except (OSError, AttributeError, ValueError):
+        pass
 
 
 if __name__ == "__main__":

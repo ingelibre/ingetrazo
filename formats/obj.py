@@ -306,8 +306,18 @@ def suggest_unit(path) -> str:
     return "m"
 
 
+def _has_area(loop) -> bool:
+    """Whether a polygon encloses any area (Newell's normal is not null)."""
+    nx = ny = nz = 0.0
+    for a, b in zip(loop, loop[1:] + loop[:1]):
+        nx += (a.y() - b.y()) * (a.z() + b.z())
+        ny += (a.z() - b.z()) * (a.x() + b.x())
+        nz += (a.x() - b.x()) * (a.y() + b.y())
+    return nx * nx + ny * ny + nz * nz > 1e-28
+
+
 def load_obj(scene, path, progress=None, scale: float = 1.0,
-             matrix=None):
+             matrix=None, require_geometry: bool = False):
     """See :func:`_load_obj_inner`. Wrapped to run with the generational GC off —
     mass vertex/edge/face construction ahead (see formats.skp.apply_payload);
     collection is merely deferred to the re-enable."""
@@ -316,14 +326,15 @@ def load_obj(scene, path, progress=None, scale: float = 1.0,
     gc.disable()
     try:
         return _load_obj_inner(scene, path, progress=progress, scale=scale,
-                               matrix=matrix)
+                               matrix=matrix,
+                               require_geometry=require_geometry)
     finally:
         if _gc_was_enabled:
             gc.enable()
 
 
 def _load_obj_inner(scene, path, progress=None, scale: float = 1.0,
-                    matrix=None):
+                    matrix=None, require_geometry: bool = False):
     """Add the faces of a Wavefront OBJ at ``path`` to ``scene``'s mesh, then
     weld + merge coplanar so a triangulated file (e.g. our own export, or another
     modeller's OBJ) comes back as clean editable polygons. Material ``Kd`` colours
@@ -339,7 +350,10 @@ def _load_obj_inner(scene, path, progress=None, scale: float = 1.0,
 
     A file in survey coordinates (a drone terrain in UTM) is moved near the
     origin before any vertex is made (formats/recenter.py); returns that
-    offset, or ``None`` when the file was read where it is."""
+    offset, or ``None`` when the file was read where it is.
+
+    OBJ is plain text and skips what it cannot mean, so any file «reads»:
+    ``require_geometry`` raises ``ValueError`` when it brought no face."""
     from core.history import run_stitch
     from core.orient import orient_outward
     from core.topology import _key
@@ -440,6 +454,14 @@ def _load_obj_inner(scene, path, progress=None, scale: float = 1.0,
                                 loop_uv, current_smooth,
                                 (current_o, current_g)))
 
+    def no_geometry():
+        from core.i18n import tr
+        return ValueError(tr("“{name}” has no geometry.", name=path.name))
+
+    # A polygon without area (corners repeated or in line) is no face either.
+    if require_geometry and not any(_has_area(item[0]) for item in pending):
+        raise no_geometry()
+
     def _face_attrs(mat, loop=None, loop_uv=None, smooth=0):
         """The attrs of one imported polygon.
 
@@ -536,6 +558,8 @@ def _load_obj_inner(scene, path, progress=None, scale: float = 1.0,
             face.attrs.update(attrs)
         for v in loop:
             seed.add(_key(v))
+    if require_geometry and not new_faces:
+        raise no_geometry()
 
     # Weld coincident vertices and fuse the coplanar triangles back into the
     # polygons they were exported from (a triangulated cube → 6 quads). The

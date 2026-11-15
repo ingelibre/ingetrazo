@@ -182,6 +182,11 @@ class TileLayer:
         #: 0..1 — a faded map lets the model and its lines read over the
         #: imagery (a plan sheet over the satellite: Marco, 2026-09-14).
         self.opacity = 1.0
+        #: Whether the ground is shown as 3D terrain over this capture. The
+        #: document's, saved with the capture: it lived in the window, so a
+        #: file saved with the terrain on reopened flat after a restart, and
+        #: what stood on the terrain floated over the map.
+        self.terrain3d = False
         # (x, y, z) -> QImage, populated asynchronously by the fetcher.
         self.images: dict[tuple[int, int, int], object] = {}
         # Capture patches: local-metre rectangles ``(cx, cy, hw, hh)`` that the
@@ -205,6 +210,7 @@ class TileLayer:
         return {"source": self.source.id, "zoom": self.zoom,
                 "radius_m": self.radius_m, "visible": bool(self.visible),
                 "opacity": float(self.opacity),
+                "terrain3d": bool(self.terrain3d),
                 "patches": [list(p) for p in self.patches],
                 # Kept so a custom XYZ source survives too: presets are looked
                 # up by id, anything else is rebuilt from these.
@@ -228,6 +234,7 @@ class TileLayer:
             layer.patches = [tuple(float(v) for v in p) for p in patches]
         layer.visible = bool(raw.get("visible", True))
         layer.opacity = max(0.0, min(1.0, float(raw.get("opacity", 1.0))))
+        layer.terrain3d = bool(raw.get("terrain3d", False))
         return layer
 
     def set_rectangle(self, width_m: float, length_m: float,
