@@ -415,3 +415,65 @@ def test_a_segment_behind_the_camera_is_cut_where_it_passes():
     assert seg[0] == pytest.approx(sol.project((0, 0, 0)))
     assert PM.project_segment(sol, behind, tuple(
         e - 60 * f for e, f in zip(sol.eye, sol.forward))) is None
+
+
+# ---- Translations ------------------------------------------------------------
+def _feature_texts():
+    """Every text Camera from Photo passes through ``tr``, its error
+    messages included, read from its own modules."""
+    import ast
+    from pathlib import Path
+    root = Path(__file__).resolve().parent.parent
+    found = set()
+
+    def lit(n):
+        if isinstance(n, ast.Constant) and isinstance(n.value, str):
+            return n.value
+        if isinstance(n, ast.BinOp):
+            a, b = lit(n.left), lit(n.right)
+            return a + b if a is not None and b is not None else None
+        return None
+    for rel in ("core/photo_match.py", "tools/photo_match.py",
+                "views/photo_match_panel.py"):
+        tree = ast.parse((root / rel).read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            name = getattr(node.func, "id", None)
+            if name == "tr" and node.args:
+                text = lit(node.args[0])
+            elif name == "CalibrationError" and len(node.args) > 1:
+                text = lit(node.args[1])
+            else:
+                continue
+            if text:
+                found.add(text)
+    from tools.photo_match import GRID_PLANES, STARTS
+    found |= {label for _k, label in STARTS + GRID_PLANES}
+    return found
+
+
+def test_every_text_is_translated_and_reads_back_alone():
+    """Each text has its translation in every language, and no other
+    message of the program shares it: the program reads an action's
+    English back from its translation, and «Display» translated as
+    «View» was in Japanese gave another action its key (the CI failed
+    on test_shortcut_editor)."""
+    import json
+    from core.i18n import _I18N_DIR
+    # Words the program already had, reused here: their translations are
+    # theirs (Spanish «Cuadrícula» was «Grid» and «Square grid» before).
+    texts = _feature_texts() - {"Cancel", "Done", "Grid"}
+    assert len(texts) > 40
+    for path in sorted(_I18N_DIR.glob("*.json")):
+        if path.stem == "en":
+            continue
+        data = json.loads(path.read_text(encoding="utf-8"))
+        by_value = {}
+        for key, value in data.items():
+            by_value.setdefault(value, []).append(key)
+        for text in texts:
+            assert text in data, f"{path.stem}: {text!r} untranslated"
+            shared = [k for k in by_value[data[text]] if k != text]
+            assert not shared, (f"{path.stem}: {text!r} reads as "
+                                f"{data[text]!r}, as {shared[:3]} do")

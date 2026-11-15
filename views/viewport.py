@@ -2954,7 +2954,11 @@ class Viewport(QOpenGLWidget):
         self._tick = getattr(self, "_tick", 0) + 1     # a new epoch memo
         self._depth_clean = None          # see the read-back at the end
         self._sync_axes()
-        self._check_photo()
+        # Camera from Photo: a stand-in viewport (tests, a context below
+        # GL 3.3) may not have it.
+        check_photo = getattr(self, "_check_photo", None)
+        if check_photo is not None:
+            check_photo()
         self._sync_projection()
         if self._program is None:
             if self._gl is not None:          # a context below GL 3.3
@@ -3070,11 +3074,12 @@ class Viewport(QOpenGLWidget):
                 and not self._base_map_showing()
                 and not self._terrain_showing()
                 and not self._photo_showing()
-                and self.photo_view is None):
+                and getattr(self, "photo_view", None) is None):
             self._draw_sky(mvp)
             self._program.setUniformValue(self._loc_mvp, mvp)
         # Camera from Photo: the photo is the backdrop.
-        if self.photo_view is not None and not self._export_transparent:
+        if (getattr(self, "photo_view", None) is not None
+                and not self._export_transparent):
             self._draw_photo_backdrop(mvp)
 
         # Base-map tiles (Track G) — the ground image, drawn before the grid so
@@ -9986,7 +9991,9 @@ class Viewport(QOpenGLWidget):
         # Camera from Photo: the photo over the model, when it is set in
         # front (or the model is hidden); the frame and the tool's lines
         # still draw over it.
-        self._draw_photo_in_front(painter)
+        draw_photo = getattr(self, "_draw_photo_in_front", None)
+        if draw_photo is not None:
+            draw_photo(painter)
 
         # The camera's picture frame first: what lies outside it is
         # shaded, and everything below still draws over it.

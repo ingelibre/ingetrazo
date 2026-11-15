@@ -3818,7 +3818,7 @@
  "Display": "Anzeige",
  "How opaque the photo in front is.": "Wie deckend das Foto davor ist.",
  "Opacity:": "Deckkraft:",
- "Spacing:": "Abstand:",
+ "Spacing:": "Rasterabstand:",
  "Keys: Enter = done, Esc = cancel, F = photo's focal length. Right-click over the photo for this menu. Orbiting leaves the photo; its scene tab brings it back.": "Tasten: Enter = fertig, Esc = abbrechen, F = Brennweite des Fotos. Rechtsklick auf das Foto für dieses Menü. Orbit verlässt das Foto; der Szenen-Tab holt es zurück.",
  "Camera: {model}": "Kamera: {model}"
 }
