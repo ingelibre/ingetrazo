@@ -138,8 +138,27 @@ def frame_rect(width: float, height: float,
     return ((width - w) / 2.0, (height - h) / 2.0, w, h)
 
 
+#: What a locked camera keeps (:attr:`OrbitCamera.locked`): where it looks
+#: from and how — not the picture's aspect or depth range, which follow
+#: the view's size and contents.
+LOCKED_FIELDS = frozenset((
+    "target", "distance", "yaw", "pitch", "up", "fov_deg", "perspective",
+    "two_point", "shift_x", "shift_y", "roll_deg"))
+
+
 class OrbitCamera:
     """Camera that orbits around a target point."""
+
+    #: A locked view (one of several, menu of its label ▸ Lock view): every
+    #: change of its pose is ignored, whoever asks — orbit, pan, zoom, a
+    #: standard view, Zoom Extents, a scene, a tool or an extension — while
+    #: drawing and selecting in it carry on.
+    locked = False
+
+    def __setattr__(self, name, value) -> None:
+        if self.locked and name in LOCKED_FIELDS and name in self.__dict__:
+            return
+        super().__setattr__(name, value)
 
     def __init__(self) -> None:
         self.target = QVector3D(0.0, 0.0, 0.0)
