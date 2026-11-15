@@ -14535,8 +14535,8 @@ class ComposerWindow(QMainWindow):
         self._act_views = views
         clean = QAction(tr("Clean screen"), self)
         clean.setStatusTip(tr(
-            "Fold away every toolbar, panel and bar so only the sheet "
-            "shows; once more brings them all back."))
+            "Fold away every toolbar and panel so only the sheet and the "
+            "status bar show; once more brings them all back."))
         clean.setShortcut(QKeySequence("Ctrl+0"))
         clean.setCheckable(True)
         clean.toggled.connect(self._toggle_clean_screen)
@@ -14824,24 +14824,32 @@ class ComposerWindow(QMainWindow):
 
     def _toggle_clean_screen(self, on: bool) -> None:
         from PySide6.QtWidgets import QToolBar
+        # The status bar stays (the hint), and so do the hidden bars'
+        # and menus' shortcuts: views/clean_screen.py.
+        from views.clean_screen import keep_shortcuts_alive, release_shortcuts
         if on:
             self._clean_screen_state = self.saveState()
             self._clean_screen_panel = self._act_sidebar.isChecked()
             self._clean_screen_views = self._act_views.isChecked()
+            release_shortcuts(self, getattr(self, "_clean_screen_actions", None))
+            self._clean_screen_actions = keep_shortcuts_alive(self)
             for tb in self.findChildren(QToolBar):
                 tb.hide()
             self._panel.hide()
             self._left_panel.hide()
-            self.statusBar().hide()
+            self.statusBar().show()
             self.ruler_h.hide()
             self.ruler_v.hide()
-            self._clean_screen_exit_button().show()
+            self._clean_screen_exit_button()
+            self._clean_exit_fader.start()      # shows it, gone in 3 s
             self._place_clean_screen_exit()
             self._sidebar_handle.hide()
         else:
-            btn = getattr(self, "_clean_exit_btn", None)
-            if btn is not None:
-                btn.hide()
+            fader = getattr(self, "_clean_exit_fader", None)
+            if fader is not None:
+                fader.stop()                    # hides the button too
+            release_shortcuts(self, getattr(self, "_clean_screen_actions", None))
+            self._clean_screen_actions = []
             state = getattr(self, "_clean_screen_state", None)
             if state is not None:
                 self.restoreState(state)
@@ -14874,6 +14882,10 @@ class ComposerWindow(QMainWindow):
         btn.clicked.connect(lambda: self._act_clean_screen.setChecked(False))
         btn.hide()
         self._clean_exit_btn = btn
+        # Goes after a few seconds, back with the mouse near its corner.
+        from views.clean_screen import ExitButtonFader
+        self._clean_exit_fader = ExitButtonFader(btn, self._view)
+        self._clean_exit_fader.shown.connect(self._place_clean_screen_exit)
         self._view.installEventFilter(self)
         return btn
 
