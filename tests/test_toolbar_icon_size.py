@@ -163,14 +163,14 @@ def test_a_fresh_install_gets_marcos_layout_and_large_icons(settings_file, monke
     from PySide6.QtCore import Qt
     from views import icons
     from views.main_window import MainWindow
-    assert icons.toolbar_icon_px() == 24                                # normal, since 14-09
+    assert icons.toolbar_icon_px() == 20                                # small: the icons fill it
     win = MainWindow()
     try:
         assert win.toolBarArea(win.toolbars["draw"]) == Qt.LeftToolBarArea
         assert win.toolBarArea(win.toolbars["annotate"]) == Qt.LeftToolBarArea
         for name in ("main", "modify", "view", "sections", "views"):
             assert win.toolBarArea(win.toolbars[name]) == Qt.TopToolBarArea, name
-        assert all(tb.iconSize().width() == 24 for tb in win.toolbars.values())
+        assert all(tb.iconSize().width() == 20 for tb in win.toolbars.values())
     finally:
         win._saved_version = win.viewport.scene.version
         win.close()
@@ -339,10 +339,11 @@ def test_the_composer_toolbars_are_movable_and_their_arrangement_is_remembered(s
 
 def test_the_default_is_normal_on_any_screen_and_a_choice_wins(settings_file):
     """Large (32 px) was the default for the 0.3.20 (fine on a 27" monitor,
-    clumsy on the laptop — Marco, 2026-09-14); normal since, on every
-    screen. A saved choice is never second-guessed."""
+    clumsy on the laptop — Marco, 2026-09-14); normal after it, and small
+    (20 px) since the icons fill their buttons, on every screen. A saved
+    choice is never second-guessed."""
     from views import icons
-    assert icons.toolbar_icon_px() == 24
+    assert icons.toolbar_icon_px() == 20
     icons.save_toolbar_icon_px(40)
     assert icons.toolbar_icon_px() == 40
 
