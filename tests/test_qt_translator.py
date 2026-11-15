@@ -19,6 +19,7 @@ _app = QApplication.instance() or QApplication([])
     ("pt-BR", "&Sim", "Cancelar"),
     ("vi", "&Có", "Hủy"),
     ("ja", "はい(&Y)", "キャンセル"),
+    ("tr", "&Evet", "İptal"),
 ])
 def test_standard_buttons_are_translated(monkeypatch, lang, yes, cancel):
     import main
@@ -59,7 +60,7 @@ def test_colour_picker_labels_are_translated(monkeypatch):
         QApplication.removeTranslator(main._qt_translator)
 
 
-@pytest.mark.parametrize("lang", ["es", "ja"])
+@pytest.mark.parametrize("lang", ["es", "ja", "tr"])
 def test_shortcuts_keep_their_english_key_names(monkeypatch, lang):
     import main
     monkeypatch.setattr(main, "_qt_translator", None)
