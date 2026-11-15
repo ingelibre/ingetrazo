@@ -4,7 +4,7 @@ All notable changes to IngeTrazo are documented here.
 Format inspired by [Keep a Changelog](https://keepachangelog.com); versions
 follow [SemVer](https://semver.org).
 
-## [0.6.2] — 2026-11-14
+## [0.6.2.1] — 2026-11-14
 
 **Mejoramos las láminas y el acotar: las cotas de lámina enganchan a lo
 largo de las aristas, se voltean y se separan del texto, y el compositor
@@ -147,6 +147,15 @@ el cierre en Mac al importar un .skp con escenas.**
 
 ### Arreglado
 
+- **La barra lateral y la pantalla limpia sin esperas con modelos grandes**
+  (0.6.2.1). Con el Inspector de sólidos en la barra lateral, cada vez que
+  esta volvía a mostrarse (desplegarla, o salir de pantalla limpia con
+  Ctrl+0) el inspector revisaba de nuevo todo el modelo y rellenaba su tabla
+  midiendo cada fila otra vez: con unos mil grupos, la ventana se quedaba
+  congelada entre 12 y 22 segundos. Ahora la tabla se mide una sola vez y el
+  inspector solo vuelve a revisar el modelo cuando este cambió (mover la
+  cámara no cuenta): tarda alrededor de una décima de segundo. La 0.6.1 tenía
+  el mismo problema.
 - **Ctrl+S vuelve a guardar con el panel de una extensión abierto** (cierra
   #1334): una extensión que usa la misma tecla para lo suyo (el Editor de
   nodos guarda su grafo con Ctrl+S y Ctrl+Mayús+S) dejaba la tecla sin
