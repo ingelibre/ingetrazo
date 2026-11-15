@@ -2124,6 +2124,69 @@ def _camera_settings(p, ink):
     p.drawEllipse(QPointF(30, 42), 3.4, 3.4)
 
 
+def _photo_frame(p, ink) -> None:
+    """Camera from Photo's photo: the frame of Image's icon, a little
+    larger, in the tools' ink."""
+    p.save()
+    p.setPen(_rpen(ink, 2.6))
+    p.setBrush(Qt.NoBrush)
+    p.drawRoundedRect(QRectF(5, 8, 38, 32), 3.0, 3.0)
+    p.restore()
+
+
+#: The building in the photo: a box seen corner-on, as in Two-Point
+#: Perspective — (top, bottom) of its left, front and right edges.
+_PHOTO_BOX = ((QPointF(12, 19), QPointF(12, 31)),
+              (QPointF(24, 14), QPointF(24, 35)),
+              (QPointF(36, 19), QPointF(36, 31)))
+
+
+def _photo_match(p, ink):
+    # Camera from Photo: a photo of a building corner, drawn as Two-Point
+    # Perspective draws its box — the picture the camera is found from.
+    _photo_frame(p, ink)
+    p.save()
+    p.setPen(_rpen(ink, 2.4))
+    _box(p, ink, *_PHOTO_BOX)
+    p.restore()
+
+
+def _photo_lines(p, ink):
+    # Edit the lines: the corner's edges only, each run on (thin) toward
+    # where it vanishes, with the accent handles the user drags.
+    _photo_frame(p, ink)
+    (lt, lb), (ft, fb), (rt, rb) = _PHOTO_BOX
+    p.save()
+    faint = QColor(ink)
+    faint.setAlpha(140)
+    p.setPen(_rpen(faint, 1.4))
+    for a, b in ((ft, lt), (fb, lb), (ft, rt), (fb, rb)):
+        far = QPointF(b.x() + (b.x() - a.x()) * 0.45,
+                      b.y() + (b.y() - a.y()) * 0.45)
+        p.drawLine(b, far)
+    p.setPen(_rpen(ink, 2.4))
+    for a, b in ((ft, lt), (fb, lb), (ft, rt), (fb, rb), (ft, fb)):
+        p.drawLine(a, b)
+    p.restore()
+    for pt in (lt, lb, rt, rb):
+        _dot(p, pt.x(), pt.y(), r=2.8)
+
+
+def _photo_new(p, ink):
+    # A new photo: the sign at its full size, as its three siblings, and
+    # the «+» on its plate over the frame's corner.
+    _photo_match(p, ink)
+    _badge_plate(p)
+    _badge_plus(p, ink)
+
+
+def _photo_reset(p, ink):
+    # Reset the lines: the lines at their full size, and Undo's arrow on
+    # its plate over the frame's corner.
+    _photo_lines(p, ink)
+    _badge_back(p, ink)
+
+
 def _walk(p, ink):
     # Walk: two footprints stepping forward up the icon, the leading one in
     # the accent — the camera advances as you walk.
@@ -2583,6 +2646,8 @@ _DRAW = {
     "zoom": _zoom, "zoom_window": _zoom_window,
     "position_camera": _position_camera, "walk": _walk,
     "camera_settings": _camera_settings,
+    "photo_match": _photo_match, "photo_new": _photo_new,
+    "photo_lines": _photo_lines, "photo_reset": _photo_reset,
     "look_around": _look_around, "first_person": _first_person,
     "four_views": _four_views, "close": _close,
     "zoom_extents": _zoom_extents, "zoom_selection": _zoom_selection,
