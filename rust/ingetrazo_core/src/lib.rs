@@ -34,6 +34,7 @@ fn ingetrazo_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(occlusion_span, m)?)?;
     m.add_function(wrap_pyfunction!(face_geometry, m)?)?;
     m.add_function(wrap_pyfunction!(qt_vector_probe, m)?)?;
+    m.add_function(wrap_pyfunction!(qt_dot_rows, m)?)?;
     m.add_function(wrap_pyfunction!(weld_points, m)?)?;
     m.add_function(wrap_pyfunction!(json_mesh_blocks, m)?)?;
     m.add_function(wrap_pyfunction!(boxes_near_px, m)?)?;
@@ -214,6 +215,7 @@ fn hypot_of(name: &str) -> PyResult<facegeom::Hypot> {
     match name {
         "libstdc++" => Ok(facegeom::Hypot::LibStdCxx),
         "msvc" => Ok(facegeom::Hypot::Msvc),
+        "libc++" => Ok(facegeom::Hypot::LibCxx),
         _ => Err(pyo3::exceptions::PyValueError::new_err("unknown hypot")),
     }
 }
@@ -476,6 +478,25 @@ fn qt_vector_probe<'py>(
         (ln, nz, pu, pv)
     });
     Ok((PyArray1::from_vec(py, ln), flat3(py, nz)?, flat3(py, pu)?, flat3(py, pv)?))
+}
+
+/// Row-wise QVector3D::dotProduct, with the probed Qt arithmetic.
+#[pyfunction]
+fn qt_dot_rows<'py>(
+    py: Python<'py>,
+    a: PyReadonlyArray2<'_, f32>,
+    b: PyReadonlyArray2<'_, f32>,
+    hypot: &str,
+) -> PyResult<Bound<'py, PyArray1<f32>>> {
+    let h = hypot_of(hypot)?;
+    let (a, b) = (a.as_array(), b.as_array());
+    if a.shape() != b.shape() || a.shape()[1] != 3 {
+        return Err(pyo3::exceptions::PyValueError::new_err("expected matching (N,3) arrays"));
+    }
+    let values = a.outer_iter().zip(b.outer_iter()).map(|(a, b)| {
+        facegeom::V3(a[0], a[1], a[2]).dot(facegeom::V3(b[0], b[1], b[2]), h)
+    }).collect();
+    Ok(PyArray1::from_vec(py, values))
 }
 
 /// views.viewport._face_geometry for every face of a mesh given as arrays:
