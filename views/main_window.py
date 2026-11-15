@@ -674,6 +674,9 @@ class MainWindow(QMainWindow):
         # exists — saveState matches them by objectName.
         st = QSettings()
         state = st.value("ui/window_state")
+        # A first run: the side tray takes the factory width once the
+        # window is up (see showEvent), not the one the blob was saved at.
+        self._tray_width_pending = state is None
         if state is None:
             from core.paths import app_root
             factory = app_root() / "resources" / "ui" / "default_layout.state"
@@ -706,6 +709,9 @@ class MainWindow(QMainWindow):
             from PySide6.QtCore import QTimer
             self._toolbars_packed = True
             QTimer.singleShot(0, self, self._pack_toolbars)
+        if getattr(self, "_tray_width_pending", False):
+            self._tray_width_pending = False
+            self._give_tray_factory_width()
         if not getattr(self, "_ndof_connected", False):
             self._connect_ndof()
 
@@ -2516,10 +2522,23 @@ class MainWindow(QMainWindow):
         for first, nxt in zip(order, order[1:]):
             self.tabifyDockWidget(first, nxt)
 
-    #: The side tray's width on a first run — the one the factory layout
-    #: (resources/ui/default_layout.state) gives it; Restore default
-    #: panels puts it back (tests/test_sidebar_trays.py checks they agree).
-    FACTORY_TRAY_WIDTH = 439
+    #: The side tray's width on a first run and after Restore default
+    #: panels. The tabs are icons now, so the tray no longer has to be as
+    #: wide as their names: 370 px still holds the Browser's Name, Type
+    #: and Layer uncut (tests/test_browser_columns_fit.py) and Properties
+    #: whole. The factory layout blob was saved wider; a first run sets
+    #: this one over it (``_give_tray_factory_width``).
+    FACTORY_TRAY_WIDTH = 370
+
+    def _give_tray_factory_width(self) -> None:
+        """The side tray at :attr:`FACTORY_TRAY_WIDTH` — now and once more
+        after the pending layout settles (a dock resized before it has
+        laid out keeps the old width)."""
+        from PySide6.QtCore import QTimer
+        width = self.FACTORY_TRAY_WIDTH
+        self.resizeDocks([self.tray], [width], Qt.Horizontal)
+        QTimer.singleShot(0, self, lambda: self.resizeDocks(
+            [self.tray], [width], Qt.Horizontal))
 
     def restore_default_trays(self) -> None:
         """Window ▸ Panels ▸ Restore default panels: the factory layout of
@@ -2556,10 +2575,7 @@ class MainWindow(QMainWindow):
         # And the side tray's width: the factory one. Not the width the
         # window opened with — the layout is saved on closing, so a tray
         # left wide opened wide, and «restoring» to that changed nothing.
-        width = self.FACTORY_TRAY_WIDTH
-        self.resizeDocks([self.tray], [width], Qt.Horizontal)
-        QTimer.singleShot(0, self, lambda: self.resizeDocks(
-            [self.tray], [width], Qt.Horizontal))
+        self._give_tray_factory_width()
         QTimer.singleShot(0, self, self._style_dock_tabs)
         QTimer.singleShot(0, self, self._place_sidebar_handle)
 
