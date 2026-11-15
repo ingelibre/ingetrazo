@@ -164,6 +164,12 @@ def hint_for(key: str | None, tool, nav_mode: str | None = None,
         return tr(NAV_HINTS[nav_mode])
     entry = HINTS.get(key or "")
     if entry is None:
+        # A tool with no entry of its own here (Camera from Photo, opened
+        # from a menu) may still say what it does.
+        clause = getattr(tool, "status_clause", None)
+        clause = clause() if callable(clause) else ""
+        if clause:
+            return clause
         name = getattr(tool, "name", None)
         return tr("{name}: Esc cancels.", name=tr(name)) if name else ""
     if isinstance(entry, str):
