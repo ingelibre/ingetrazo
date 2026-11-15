@@ -94,6 +94,16 @@ def test_roll_does_nothing_and_rotation_can_be_locked():
     cam, moved = _push(NdofSample(spin=1.0, tilt=1.0), lock_rotation=True)
     assert not moved
 
+def test_roll_rotates_the_view_and_rotation_can_be_locked():
+    cam = _cam()
+    up_before = QVector3D(cam.up)
+    moved = apply_ndof(cam, NdofSample(roll=1.0), 0.05, 600,
+                       NdofSettings())
+    assert moved
+    assert cam.up != up_before
+    cam, moved = _push(NdofSample(spin=1.0, tilt=1.0), lock_rotation=True)
+    assert not moved
+
 
 def test_speed_follows_time_and_sensitivity_and_a_stall_is_capped():
     a, _ = _push(NdofSample(forward=1.0), dt=0.02)

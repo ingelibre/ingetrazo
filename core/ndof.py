@@ -68,9 +68,9 @@ class NdofSample:
 
 
 AXES = ("right", "up", "forward", "tilt", "spin", "roll")
-ACTIONS = ("pan_x", "pan_y", "zoom", "orbit_x", "orbit_y", "disabled")
+ACTIONS = ("pan_x", "pan_y", "zoom", "orbit_x", "orbit_y", "orbit_z", "disabled")
 DEFAULT_MAPPING = dict(zip(AXES, ("pan_x", "pan_y", "zoom",
-                                  "orbit_y", "orbit_x", "disabled")))
+                                  "orbit_y", "orbit_x", "orbit_z", "disabled")))
 # Based on the user's tested FreeCAD-style configuration; true camera roll
 # is not supported by OrbitCamera yet.
 FREECAD_MAPPING = dict(zip(AXES, ("pan_x", "zoom", "pan_y",
@@ -121,9 +121,9 @@ def mapped_movements(sample, settings):
                 "forward": settings.invert_zoom,
                 "tilt": settings.invert_rotate != settings.invert_tilt,
                 "spin": settings.invert_rotate != settings.invert_spin,
-                "roll": False,
+                "roll": settings.invert_rotate != getattr(settings, "invert_roll", False),
             }
-            if legacy[axis]:
+            if legacy.get(axis, False):
                 value = -value
         outputs[action] += value
     return {key: max(-1.0, min(1.0, value))
@@ -147,6 +147,7 @@ class NdofSettings:
     invert_spin: bool = False      # orbit around (cap twisted)
     #: Only translations (pan + zoom) — for plan drawing, where an accidental
     #: twist that tips the view out of Top is the last thing wanted.
+    invert_roll: bool = False      # MODIFICACIÓN: Inversión para el eje roll / orbit_z
     lock_rotation: bool = False
     mapping_preset: str = "original"
     axis_mapping: dict = field(default_factory=default_axis_mapping)
@@ -179,9 +180,9 @@ def apply_ndof(camera, sample: NdofSample, dt: float, viewport_h: int,
     movements = mapped_movements(sample, st)
     right, up, forward = (movements["pan_x"], movements["pan_y"],
                           movements["zoom"])
-    spin, tilt = movements["orbit_x"], movements["orbit_y"]
+    spin, tilt, roll_z = movements["orbit_x"], movements["orbit_y"], movements["orbit_z"]
     if st.lock_rotation:
-        spin = tilt = 0.0
+        spin = tilt = roll_z = 0.0
     moved = False
     if right or up:
         # camera.pan GRABS the model like a mouse drag: +dx carries it right,
@@ -201,6 +202,17 @@ def apply_ndof(camera, sample: NdofSample, dt: float, viewport_h: int,
         px = ORBIT_RAD_PER_S * k * h / math.pi
         camera.orbit(spin * px, tilt * px, h)
         moved = True
+        
+    # MODIFICACIÓN: Manejo de la rotación en el eje Z (Roll / orbit_z)
+    if roll_z:
+        px_roll = ORBIT_RAD_PER_S * k
+        # Orbit Z rolls the view around its forward axis. OrbitCamera.roll
+        # accepts radians; the angle is already time- and speed-scaled.
+        roll = getattr(camera, "roll", None)
+        if callable(roll):
+            roll(roll_z * px_roll)
+            moved = True
+            
     return moved
 
 
