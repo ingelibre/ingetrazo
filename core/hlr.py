@@ -305,6 +305,107 @@ def solid_depth(ring, tris, normal) -> float | None:
     return reach[0] + reach[1]
 
 
+def scene_cut_planes(scene) -> list:
+    """Every plane cutting *scene* for a drawing: the active section plane
+    and the faces of an active section box (``core.section.cut_planes``),
+    or ``[]``. A scene stand-in without sections cuts nothing."""
+    if not hasattr(scene, "active_section"):
+        return []
+    from core.section import cut_planes
+    return cut_planes(scene)
+
+
+def clip_to_planes(tris, hard, soft, planes):
+    """:func:`clip_to_section` through several planes in turn — the active
+    plane and the section box's faces: what any of them hides goes. The cut
+    chords come back as a fourth list, each plane's trimmed by the others
+    (a box face's chords stop at the box)."""
+    cut_edges: list = []
+    for plane in planes:
+        if cut_edges:
+            _t, cut_edges, _s, _c = clip_to_section([], cut_edges, [],
+                                                    plane, True)
+        tris, hard, soft, chords = clip_to_section(tris, hard, soft, plane,
+                                                   split_cuts=True)
+        cut_edges = list(cut_edges) + list(chords)
+    return tris, hard, soft, cut_edges
+
+
+def corner_lines(tris, planes) -> list:
+    """The cut lines where two cutting planes meet inside the material (a
+    box's corner, the plane through a box's face), trimmed by the other
+    planes: no edge of the model runs there, the cuts make them."""
+    from core.section import plane_pair_line
+    out: list = []
+    chords: dict = {}
+    for i, a in enumerate(planes):
+        for j in range(i + 1, len(planes)):
+            if i not in chords:
+                chords[i] = clip_to_section(tris, [], [], a, True)[3]
+            segs = plane_pair_line(a, planes[j], chords[i])
+            if segs is None:
+                continue
+            lines = [(tuple(p), tuple(q)) for p, q in segs.tolist()]
+            for k, other in enumerate(planes):
+                if k not in (i, j):
+                    lines = clip_to_section([], lines, [], other, True)[1]
+            out.extend(lines)
+    return out
+
+
+def _clip_ring(ring, plane):
+    """A closed 3D ring clipped to the kept side of ``plane``
+    (Sutherland–Hodgman); fewer than three points when nothing is left."""
+    n = np.array([plane.normal.x(), plane.normal.y(), plane.normal.z()])
+    c = float(n @ [plane.point.x(), plane.point.y(), plane.point.z()])
+    pts = np.asarray(ring, dtype=np.float64)
+    d = pts @ n - c
+    out = []
+    k = len(pts)
+    for i in range(k):
+        a, b = pts[i], pts[(i + 1) % k]
+        da, db = d[i], d[(i + 1) % k]
+        if da <= 1e-9:
+            out.append(a)
+        if (da > 1e-9) != (db > 1e-9):
+            out.append(a + (b - a) * (da / (da - db)))
+    return np.asarray(out, dtype=np.float64).reshape(-1, 3)
+
+
+def section_rings(tris, planes, tags=None) -> list:
+    """``[(plane, [(ring, layer), ...])]``: each cutting plane's closed
+    section rings (:func:`section_loops` of its chords through the WHOLE
+    model), each ring clipped by the other planes. The cut of one plane is
+    a closed shape in its plane; the other cuts take a convex bite out of
+    it, and clipping every ring by the same convex region keeps the
+    even-odd rule — a hollow wall's hole stays a hole.
+
+    With ``tags`` (the layer of each triangle) the rings are chained one
+    layer at a time (:func:`closing_tags`), each with its layer; without,
+    the layer is ``None``."""
+    out = []
+    for i, plane in enumerate(planes):
+        if tags is None:
+            chords = clip_to_section(tris, [], [], plane, True)[3]
+            rings = [(ring, None) for ring in section_loops(chords)]
+        else:
+            _k, _kt, chords, ctags = _clip_tris_tagged_kept(tris, tags, plane)
+            by_tag: dict = {}
+            for edge, tag in zip(chords, closing_tags(chords, ctags)):
+                by_tag.setdefault(tag, []).append(edge)
+            rings = [(ring, tag) for tag, edges in by_tag.items()
+                     for ring in section_loops(edges)]
+        for j, other in enumerate(planes):
+            if j == i or not rings:
+                continue
+            rings = [(r, tag) for r, tag in
+                     ((_clip_ring(r, other), tag) for r, tag in rings)
+                     if len(r) >= 3]
+        if rings:
+            out.append((plane, rings))
+    return out
+
+
 def section_loops(cut_edges, tol: float | None = None,
                   members: list | None = None) -> list:
     """Chain the plane∩triangle chords of a section cut into CLOSED loops —
@@ -981,26 +1082,41 @@ def hlr_drawing(scene, camera, geometry=None, profiles: bool = True,
         tris, hard, soft = collect_geometry(scene)
     else:
         tris, hard, soft, soft_n = geometry
-    # Active section cut: the composer's sheets honour it — the
-    # whole reason sections exist here (plans and cross-cuts on paper).
-    sp = (scene.active_section()
-          if getattr(scene, "show_section_cuts", True)
-          and hasattr(scene, "active_section") else None)
+    # The section cut: the composer's sheets honour it — the whole
+    # reason sections exist here (plans and cross-cuts on paper). The
+    # active plane and the section box's faces, each cutting.
+    planes = scene_cut_planes(scene)
     cut_edges: list = []
-    if sp is not None:
+    rings: list = []
+    if planes:
         if soft_n is not None:          # the clipper walks tuple lists
             tris, hard, soft = _geometry_as_lists(tris, hard, soft, soft_n)
             soft_n = None
+        whole = tris
         if htags is None:
-            tris, hard, soft, cut_edges = clip_to_section(
-                tris, hard, soft, sp, split_cuts=True)
+            tris, hard, soft, cut_edges = clip_to_planes(tris, hard, soft,
+                                                         planes)
         else:
             # The solids whole, for how deep each cut runs (depth_layers).
             whole_tris, whole_tags = tris, ttags
             # Clipped layer by layer, so each piece keeps its tag.
-            tris, cut_edges, cut_tags = _clip_tris_tagged(tris, ttags, sp)
-            hard, htags = _clip_tagged(hard, htags, sp, soft=False)
-            soft, stags = _clip_tagged(soft, stags, sp, soft=True)
+            # Through every plane in turn, as clip_to_planes does: each
+            # plane's chords trimmed by the planes after it.
+            for sp in planes:
+                if cut_edges:
+                    cut_edges, cut_tags = _clip_tagged(cut_edges, cut_tags,
+                                                       sp, soft=False)
+                tris, ttags, chords, ctags = _clip_tris_tagged_kept(
+                    tris, ttags, sp)
+                cut_edges = list(cut_edges) + list(chords)
+                cut_tags = list(cut_tags) + list(ctags)
+                hard, htags = _clip_tagged(hard, htags, sp, soft=False)
+                soft, stags = _clip_tagged(soft, stags, sp, soft=True)
+        if len(planes) > 1:
+            corners = corner_lines(whole, planes)
+            cut_edges = list(cut_edges) + corners
+            if htags is not None:
+                cut_tags = list(cut_tags) + [None] * len(corners)
     _e, _r, _u, fwd = camera_basis(camera)
 
     def empty_drawing():
@@ -1074,29 +1190,32 @@ def hlr_drawing(scene, camera, geometry=None, profiles: bool = True,
     ab = np.concatenate([A[:, :2], B[:, :2]])
     ext_e = float((ab.max(axis=0) - ab.min(axis=0)).max()) or 1.0
     zero_len = ext_e * 1e-9             # a vertical seen end-on: a point
-    # The section cap: the rings the composer fills also COVER (see above).
+    # The section cap: the rings the composer fills also COVER (see above)
+    # — each plane's own, behind its own plane.
     loops: list = []
     loop_tags: list | None = [] if htags is not None else None
     loop_depths: list = []
-    cap_P = cap_Q = cap_abg = None
+    cap_list: list = []                 # (P, Q, abg, box) per plane
     cap_eps = 0.0
-    cap_box = None
-    if len(cut_edges):
-        if loop_tags is None:
-            rings = [(ring, None) for ring in section_loops(cut_edges)]
-        else:
-            # Chained one layer at a time: each solid closes on its own, so
-            # its ring takes its layer's fill.
-            by_tag: dict = {}
-            for edge, tag in zip(cut_edges,
-                                 closing_tags(cut_edges, cut_tags)):
-                by_tag.setdefault(tag, []).append(edge)
-            rings = [(ring, tag) for tag, edges in by_tag.items()
-                     for ring in section_loops(edges)]
-        wanted = set(depth_layers or ()) if loop_tags is not None else set()
-        by_layer_tris: dict = {}
-        for ring, tag in rings:
-            loops.append(_to_cam(ring, eye, right, up, fwd)[:, :2])
+    rings = (section_rings(whole, planes,
+                           whole_tags if htags is not None else None)
+             if planes and len(cut_edges) and (fills or caps) else [])
+    if rings:
+        zs = np.concatenate([A[:, 2], B[:, 2]])
+        cap_eps = max(float(zs.max() - zs.min()) * 1e-4, eps, 1e-9)
+    wanted = set(depth_layers or ()) if loop_tags is not None else set()
+    by_layer_tris: dict = {}
+    for plane, plane_rings in rings:
+        if hasattr(plane, "box") and float(np.dot(
+                [plane.normal.x(), plane.normal.y(), plane.normal.z()],
+                fwd)) > -1e-9:
+            # A face of the section box seen from behind (or edge-on): its
+            # cut faces away, behind the material — no poché on paper, which
+            # is painted over everything, nor a cap.
+            continue
+        flat = []
+        for ring, tag in plane_rings:
+            flat.append(_to_cam(ring, eye, right, up, fwd)[:, :2])
             if loop_tags is not None:
                 loop_tags.append(tag)
             if wanted:
@@ -1109,18 +1228,17 @@ def hlr_drawing(scene, camera, geometry=None, profiles: bool = True,
                             by_layer_tris[tag] = [
                                 t for t, g in zip(whole_tris, whole_tags)
                                 if g == tag]
-                    n = sp.normal
+                    n = plane.normal
                     loop_depths.append(solid_depth(
                         ring, by_layer_tris[tag], (n.x(), n.y(), n.z())))
                 else:
                     loop_depths.append(None)
-        if loops and caps:
-            cap_abg = cap_depth_affine(sp, eye, right, up, fwd)
-        if cap_abg is not None:
-            cap_P, cap_Q = cap_ring_edges(loops)
-            zs = np.concatenate([A[:, 2], B[:, 2]])
-            cap_eps = max(float(zs.max() - zs.min()) * 1e-4, eps, 1e-9)
-            cap_box = (cap_P.min(axis=0), cap_P.max(axis=0))
+        loops.extend(flat)
+        abg = cap_depth_affine(plane, eye, right, up, fwd) if caps else None
+        if abg is not None and flat:
+            cap_P, cap_Q = cap_ring_edges(flat)
+            cap_list.append((cap_P, cap_Q, abg,
+                             (cap_P.min(axis=0), cap_P.max(axis=0))))
     out: list = []
     out_w: list = []
     out_k: list = []
@@ -1168,11 +1286,14 @@ def hlr_drawing(scene, camera, geometry=None, profiles: bool = True,
         # takes what lies inside the material (that is not drawn at all).
         hid = (subtract_spans([(0.0, 1.0)], spans)
                if hidden and i < n_hard else [])
-        if cap_abg is not None and (spans or hid):
+        if cap_list and (spans or hid):
             elo = np.minimum(a2, b2)
             ehi = np.maximum(a2, b2)
-            if not (ehi[0] < cap_box[0][0] or elo[0] > cap_box[1][0]
-                    or ehi[1] < cap_box[0][1] or elo[1] > cap_box[1][1]):
+            for cap_P, cap_Q, cap_abg, cap_box in cap_list:
+                if (ehi[0] < cap_box[0][0] or elo[0] > cap_box[1][0]
+                        or ehi[1] < cap_box[0][1]
+                        or elo[1] > cap_box[1][1]):
+                    continue
                 inside = cap_hidden_spans(a2, b2, az, bz, cap_P, cap_Q,
                                           cap_abg, cap_eps)
                 spans = subtract_spans(spans, inside)
@@ -1272,6 +1393,22 @@ def _clip_tris_tagged(tris, tags, plane):
         cuts.extend(chords)
         cut_tags.extend([tag] * len(chords))
     return out, cuts, cut_tags
+
+
+def _clip_tris_tagged_kept(tris, tags, plane):
+    """`_clip_tris_tagged`, also giving back the layer of every kept
+    triangle — what the next plane of a section box clips by."""
+    by_tag: dict = {}
+    for tri, tag in zip(tris, tags):
+        by_tag.setdefault(tag, []).append(tri)
+    out, out_tags, cuts, cut_tags = [], [], [], []
+    for tag, group in by_tag.items():
+        kept, _h, _s, chords = clip_to_section(group, [], [], plane, True)
+        out.extend(kept)
+        out_tags.extend([tag] * len(kept))
+        cuts.extend(chords)
+        cut_tags.extend([tag] * len(chords))
+    return out, out_tags, cuts, cut_tags
 
 
 def _clip_tagged(items, tags, plane, soft: bool):
@@ -1392,16 +1529,16 @@ def hlr_perspective(scene, camera, geometry=None) -> np.ndarray:
         tris, hard, soft = collect_geometry(scene)
     else:
         tris, hard, soft, soft_n = geometry
-    sp = (scene.active_section()
-          if getattr(scene, "show_section_cuts", True)
-          and hasattr(scene, "active_section") else None)
+    planes = scene_cut_planes(scene)
     cut: list = []
-    if sp is not None:
+    if planes:
         if soft_n is not None:
             tris, hard, soft = _geometry_as_lists(tris, hard, soft, soft_n)
             soft_n = None
-        tris, hard, soft, cut = clip_to_section(tris, hard, soft, sp,
-                                                split_cuts=True)
+        whole = tris
+        tris, hard, soft, cut = clip_to_planes(tris, hard, soft, planes)
+        if len(planes) > 1:
+            cut = list(cut) + corner_lines(whole, planes)
     if soft_n is None:                  # tuple lists → arrays
         soft_n = np.array([[na, nb if nb is not None else (np.nan,) * 3]
                            for _p0, _p1, na, nb in soft],

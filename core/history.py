@@ -1996,6 +1996,88 @@ class SetSectionFillCommand(Command):
         scene.bump_sections()
 
 
+class SetSectionBoxesCommand(Command):
+    """The section boxes as a whole, in one undo step: ``entries`` is the
+    new list, ``[(box, state)]`` — each box OBJECT with the state it takes
+    (a :class:`core.section.SectionBox` value; see ``SectionBox.assign``).
+    A box left out of the list leaves the model; a new object joins it.
+
+    Boxes keep their identity across every change and its undo, as section
+    planes do, so the Browser rows, the selection, the scenes (by uid) and
+    the fill steps holding a box keep pointing at the box the scene has.
+    Build it with :func:`section_box_added`, :func:`section_box_changed`
+    or :func:`section_boxes_removed`."""
+
+    keeps_paint = True
+
+    def __init__(self, entries) -> None:
+        self.entries = [(box, state.copy()) for box, state in entries]
+        self._before = None
+
+    def do(self, scene) -> None:
+        self._before = [(b, b.copy()) for b in scene.section_boxes]
+        kept = {id(b) for b, _s in self.entries}
+        for box, state in self.entries:
+            box.assign(state)
+        scene.section_boxes[:] = [b for b, _s in self.entries]
+        for box, _s in self._before:
+            if id(box) not in kept:
+                scene.selection.discard(box)
+        scene.version += 1
+
+    def undo(self, scene) -> None:
+        had = {id(b) for b, _s in self._before}
+        for box, state in self._before:
+            box.assign(state)
+        scene.section_boxes[:] = [b for b, _s in self._before]
+        for box, _s in self.entries:
+            if id(box) not in had:
+                scene.selection.discard(box)
+        scene.version += 1
+
+
+def _others(scene, box, active: bool) -> list:
+    """The entries of every box but ``box``: as they are — or, when
+    ``box`` is to cut, with their cut off (ONE box cuts at a time)."""
+    out = []
+    for b in scene.section_boxes:
+        if b is box:
+            continue
+        state = b.copy()
+        if active:
+            state.active = False
+        out.append((b, state))
+    return out
+
+
+def section_box_added(scene, box) -> SetSectionBoxesCommand:
+    """Put ``box`` (a new SectionBox) in the model, after the others."""
+    return SetSectionBoxesCommand(_others(scene, box, box.active)
+                                  + [(box, box.copy())])
+
+
+def section_box_changed(scene, box, state) -> SetSectionBoxesCommand:
+    """``box`` takes ``state`` (corners, cut, frame, fill, name); a box
+    set to cut takes the cut off the others."""
+    entries = []
+    for b in scene.section_boxes:
+        if b is box:
+            entries.append((b, state.copy()))
+        else:
+            other = b.copy()
+            if state.active:
+                other.active = False
+            entries.append((b, other))
+    return SetSectionBoxesCommand(entries)
+
+
+def section_boxes_removed(scene, boxes) -> SetSectionBoxesCommand:
+    """Take ``boxes`` out of the model."""
+    gone = {id(b) for b in boxes}
+    return SetSectionBoxesCommand([(b, b.copy()) for b in scene.section_boxes
+                                   if id(b) not in gone])
+
+
 class RenameSectionPlaneCommand(Command):
     """A section plane's name and symbol (the symbol reads on its frame and
     in the sheets' section marks)."""

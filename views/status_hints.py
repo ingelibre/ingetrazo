@@ -93,6 +93,7 @@ HINTS: dict = {
              "Click where the label goes; the text is asked for next."),
     "geopath": "Click the points of the path; Enter or double-click finishes.",
     "section": "Click a face to place the section plane. Shift keeps the orientation.",
+    "section_box": "Drag a face of the box to move it; type a distance while dragging to set it",
     "texture_position": "Drag a pin: red moves, green scales/rotates, blue shears. Enter finishes.",
     "image": "Click the first corner of the image, then the opposite one. Shift frees the aspect.",
     "paste": "Click where the copy goes. Arrows lock an axis.",

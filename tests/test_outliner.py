@@ -177,8 +177,9 @@ def test_the_tree_shows_the_whole_model_nested():
     building, tree = _building()
     win, scene, panel = _window_with(building, tree)
     t = panel.tree
-    assert t.topLevelItemCount() == 2            # the document, the planes
+    assert t.topLevelItemCount() == 3    # the document, planes, boxes
     assert t.topLevelItem(1).isHidden()          # no planes: no folder
+    assert t.topLevelItem(2).isHidden()          # no boxes: no folder
     doc = t.topLevelItem(0)
     assert doc.text(0) == "Untitled" and doc.isExpanded()
     assert doc.childCount() == 2
