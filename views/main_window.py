@@ -2276,6 +2276,12 @@ class MainWindow(QMainWindow):
             "Open the IngeTrazo documentation in the web browser."))
         docs_action.triggered.connect(self._on_documentation)
         help_menu.addAction(docs_action)
+        news_action = QAction(tr("What's New"), self)
+        news_action.setStatusTip(tr(
+            "See what changed in each version of IngeTrazo."))
+        news_action.setObjectName("whats_new")
+        news_action.triggered.connect(self._on_whats_new)
+        help_menu.addAction(news_action)
         help_menu.addSeparator()
         get_models_action = QAction(tr("Get more models and textures…"), self)
         get_models_action.setStatusTip(tr(
@@ -9316,6 +9322,12 @@ class MainWindow(QMainWindow):
     def _on_documentation(self) -> None:
         from core.desktop_open import open_url
         open_url(self.DOCUMENTATION_URL)
+
+    def _on_whats_new(self) -> None:
+        """Help ▸ What's New: the release notes of every version."""
+        from core.desktop_open import open_url
+        from core.update_check import RELEASES_PAGE
+        open_url(RELEASES_PAGE)
 
     def _on_get_models(self) -> None:
         QMessageBox.information(

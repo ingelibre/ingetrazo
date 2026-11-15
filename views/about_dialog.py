@@ -517,8 +517,12 @@ class AboutDialog(QDialog):
         # Which engine computes the heavy parts (Rust when the experimental
         # native engine is on and loads) — the first thing a report needs.
         gl += f"<br><small>{tr('Engine')}: {engine()}</small>"
+        # What changed in this and every version, beside the number.
+        from core.update_check import RELEASES_PAGE
+        news_text = tr("What's New")
+        news = f" · <a href='{RELEASES_PAGE}'>{news_text}</a>"
         para("<b style='font-size:15px'>IngeTrazo</b> "
-             f"{tr('Version')} {version}{gl}<br>"
+             f"{tr('Version')} {version}{news}{gl}<br>"
              f"{tr('Free 3D modeler for architecture, engineering and 3D design.')}<br>"
              f"{tr('Created by')} <b>Marco Sumari Tellez</b> — "
              f"{tr('Civil Engineer — Arequipa, Peru')}")

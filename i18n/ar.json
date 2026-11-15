@@ -3306,6 +3306,8 @@
  "Traced paths": "المسارات التخطيطية",
  "Documentation": "التوثيق",
  "Open the IngeTrazo documentation in the web browser.": "فتح توثيق IngeTrazo في متصفح الويب.",
+ "What's New": "ما الجديد",
+ "See what changed in each version of IngeTrazo.": "اطّلع على ما تغيّر في كل إصدار من IngeTrazo.",
  "Front color saved — Wireframe draws no faces.": "تم حفظ اللون الأمامي — نمط الإطار السلكي لا يرسم الأوجه.",
  "Front color — paints the faces with no material (every face in Hidden line and Monochrome)": "اللون الأمامي — يلوّن الأوجه التي لا مادة لها (كل الأوجه في نمطي الخطوط المخفية وأحادي اللون)",
  "DWG import cancelled.": "أُلغي استيراد DWG.",
