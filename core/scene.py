@@ -54,6 +54,12 @@ def _inside(local, d, lo, hi) -> bool:
     return True
 
 
+#: The annotations a section box leaves out when they stand outside it
+#: (``Scene.outside_section_box``), by class name: asked for every face and
+#: edge, the test must cost nothing for them.
+_ANNOTATION_KINDS = frozenset({"Dimension", "TextLabel", "Guide", "GeoPoint"})
+
+
 @dataclass
 class Scene:
     mesh: Mesh = field(default_factory=Mesh)
@@ -203,6 +209,9 @@ class Scene:
     # View ▸ Section Planes / Section Cuts toggles.
     section_planes: list = field(default_factory=list)
     show_section_planes: bool = True
+    # Section boxes (core.section.SectionBox), named. At most ONE is
+    # ``active``: it cuts with its six faces beside the active plane.
+    section_boxes: list = field(default_factory=list)
     # View ▸ Hidden Objects / Hidden Geometry: hidden objects
     # (groups, components) and hidden geometry (faces, edges) are drawn
     # as a see-through grid and become selectable — the way back to
@@ -353,7 +362,22 @@ class Scene:
         # ghost in its own pass and only makes them selectable.
         if self.entity_hidden(entity) or self.similar_hidden(entity):
             return False
+        if self.outside_section_box(entity):
+            return False
         return self._layer_state(entity)[0]
+
+    def outside_section_box(self, entity) -> bool:
+        """Whether the section box cutting now leaves this annotation out —
+        a dimension, a text, a guide point or a survey point standing
+        outside it goes with the geometry the box takes away: off the
+        screen, out of the pick, the snap and the sheets."""
+        if not self.section_boxes or not self.show_section_cuts                 or type(entity).__name__ not in _ANNOTATION_KINDS:
+            return False                # the common case, asked per face
+        box = self.active_section_box()
+        if box is None:
+            return False
+        from core.section import annotation_points
+        return any(box.side(p) > 1e-6 for p in annotation_points(entity))
 
     def edge_snappable(self, edge) -> bool:
         """Whether the inference may land on ``edge`` — the visibility rule
@@ -415,7 +439,7 @@ class Scene:
         return False
 
     def entity_selectable(self, entity) -> bool:
-        if self.similar_hidden(entity):
+        if self.similar_hidden(entity) or self.outside_section_box(entity):
             return False
         if self._object_hidden(entity) and not self.show_hidden_objects:
             return False
@@ -449,6 +473,18 @@ class Scene:
                 # A plane on a hidden layer cuts nothing (#316).
                 return sp if self._layer_state(sp)[0] else None
         return None
+
+    def active_section_box(self):
+        """The section box cutting the model now, or ``None``."""
+        for box in self.section_boxes:
+            if box.active:
+                return box
+        return None
+
+    def set_active_section_box(self, box) -> None:
+        """Make ``box`` the ONE box that cuts (``None``: none does)."""
+        for b in self.section_boxes:
+            b.active = b is box
 
     def set_active_section(self, plane) -> None:
         """Make ``plane`` the ONE active cut (None deactivates all) —
@@ -802,6 +838,7 @@ class Scene:
                 or self.scene_folders
                 or self.image_planes or self.plugin_data
                 or self.kept_components or self.section_planes
+                or self.section_boxes
                 or self.materials or self.animation.to_dict()
                 or not self.show_section_planes
                 or not self.show_section_cuts
@@ -846,6 +883,7 @@ class Scene:
             self.shadows = _make_shadows()
             self.animation = _make_animation()
             self.section_planes.clear()
+            self.section_boxes.clear()
             self.show_section_planes = True
             self.show_section_cuts = True
             self.show_hidden_objects = False

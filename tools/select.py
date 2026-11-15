@@ -27,7 +27,7 @@ from core.textlabel import TextLabel
 from core.group import Group
 from core.mesh import Edge, Face
 from core.guide import is_guide
-from core.section import SectionPlane
+from core.section import SectionBox, SectionPlane
 from core.history import (
     CompoundCommand,
     DeleteDimensionsCommand,
@@ -37,6 +37,7 @@ from core.history import (
     DeleteSectionPlanesCommand,
     DeleteTextLabelsCommand,
     SetActiveSectionCommand,
+    section_boxes_removed,
     EditTextLabelCommand,
     EraseSelectionCommand,
 )
@@ -410,6 +411,11 @@ class SelectTool(Tool):
         sec = pick_sec(screen_x, screen_y) if pick_sec else None
         if sec is not None:
             return sec
+        # The section box picks by its edges, like a plane by its frame.
+        pick_box = getattr(viewport, "pick_section_box", None)
+        box = pick_box(screen_x, screen_y) if pick_box else None
+        if box is not None:
+            return box
         # Guides select the usual way (click + Delete / right-click). Real
         # geometry outranks them; a guide crossing a face still beats the face
         # (a thin line is the more deliberate target).
@@ -428,6 +434,38 @@ class SelectTool(Tool):
         # selects the picture — which is how you then move or resize it.
         pick_image = getattr(viewport, "pick_image_plane", None)
         return pick_image(screen_x, screen_y) if pick_image else None
+
+    def on_press_grab(self, ctx: ToolContext) -> bool:
+        """The viewport asks before a press turns into a rubber band: a
+        press on an arrow of the SELECTED section box picks up the Section
+        Box tool and starts sliding that face — the arrows are there to be
+        pulled. True if it took the press."""
+        viewport = ctx.viewport
+        shown = getattr(viewport, "_section_boxes_shown", None)
+        if shown is None:
+            return False
+        from tools.section_box import pick_arrow
+        box = face = None
+        for b in shown():
+            if b in viewport.scene.selection:
+                face = pick_arrow(viewport, b, ctx.screen.x(), ctx.screen.y())
+                if face is not None:
+                    box = b
+                    break
+        if box is None:
+            return False
+        # The tool works on the box that cuts: this one, from now on.
+        viewport.scene.select([box])
+        window = viewport.window() if hasattr(viewport, "window") else None
+        activate = getattr(window, "_activate_tool", None)
+        if not callable(activate):
+            return False
+        activate("section_box")
+        tool = viewport.active_tool
+        begin = getattr(tool, "begin_drag", None)
+        if callable(begin):
+            begin(viewport, face, ctx.screen.x(), ctx.screen.y())
+        return True
 
     def on_click(self, ctx: ToolContext) -> None:
         viewport = ctx.viewport
@@ -488,6 +526,15 @@ class SelectTool(Tool):
             # letters are groups); re-editing the text is the right-click's
             # «Edit 3D Text…» (Marco, 2026-09-18).
             viewport.begin_group_edit(entity)
+            return
+        if isinstance(entity, SectionBox):
+            # Double-clicking the section box takes up its tool: its faces
+            # and arrows to drag.
+            window = viewport.window() if hasattr(viewport, "window") \
+                else None
+            activate = getattr(window, "_activate_tool", None)
+            if callable(activate):
+                activate("section_box")
             return
         if isinstance(entity, SectionPlane):
             # Double-clicking a section plane toggles the active cut.
@@ -778,6 +825,7 @@ def erase_entities(viewport, entities) -> bool:
     paths = [p for p in entities if isinstance(p, GeoPath)]
     guides = [g for g in entities if is_guide(g)]
     splanes = [p for p in entities if isinstance(p, SectionPlane)]
+    boxes = [b for b in entities if isinstance(b, SectionBox)]
     commands = []
     if edges or faces:
         # Erasing an edge between two coplanar faces merges them back
@@ -788,6 +836,8 @@ def erase_entities(viewport, entities) -> bool:
         commands.append(DeleteGuidesCommand(guides))
     if splanes:
         commands.append(DeleteSectionPlanesCommand(splanes))
+    if boxes:
+        commands.append(section_boxes_removed(viewport.scene, boxes))
     if dims:
         commands.append(DeleteDimensionsCommand(dims))
     if labels:

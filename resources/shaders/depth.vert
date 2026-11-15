@@ -11,16 +11,21 @@ layout(location = 5) in vec4 a_inst2;
 layout(location = 6) in vec4 a_inst3;
 
 uniform mat4 u_mvp;            // the SUN's view-projection
-uniform vec4 u_clip_plane;
-uniform int u_clip_enable;
+// The section cut as in basic.vert — up to SEVEN planes, the active one
+// and the six faces of the section box; u_clip_count says how many are set (0 = nothing cuts). Sized here,
+// as GLSL asks of a clip-distance array indexed in a loop.
+uniform vec4 u_clip_planes[7];
+uniform int u_clip_count;
+out float gl_ClipDistance[7];
 
 out vec2 v_uv;
 
 void main() {
     v_uv = a_uv;
     vec4 world = mat4(a_inst0, a_inst1, a_inst2, a_inst3) * vec4(a_pos, 1.0);
-    gl_ClipDistance[0] = (u_clip_enable == 1)
-        ? dot(world, u_clip_plane)
-        : 1.0;
+    for (int i = 0; i < 7; ++i)
+        gl_ClipDistance[i] = (i < u_clip_count)
+            ? dot(world, u_clip_planes[i])
+            : 1.0;
     gl_Position = u_mvp * world;
 }

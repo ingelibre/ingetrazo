@@ -50,7 +50,7 @@ from PySide6.QtWidgets import (QAbstractItemView, QApplication, QDialog,
 from core import outliner
 from core.group import Group
 from core.i18n import tr
-from core.section import SectionPlane
+from core.section import SectionBox, SectionPlane
 from views.layers_toolbar import isolate_icon
 from views.side_tree import SideTree, StayOpenMenu, _HeaderButton
 
@@ -910,6 +910,10 @@ class _Tree(SideTree):
                 if plane is not None:
                     self._panel.rename_plane(plane)
                     return
+                box = self._panel._box_of(self.currentItem())
+                if box is not None:
+                    self._panel.rename_box(box)
+                    return
                 picked = self._panel._selected_groups()
                 if len(picked) > 1:         # several rows: all at once
                     self._panel.ask_batch_rename(picked)
@@ -956,8 +960,9 @@ class _Tree(SideTree):
         if item is None or self._panel._head_of(item) is not None:
             return None             # a layer heading: the model's top level
         group = self._panel._group_of(item)
-        if (group is None or item is self._panel._sec_root
-                or self._panel._plane_of(item) is not None):
+        if (group is None
+                or item in (self._panel._sec_root, self._panel._box_root)
+                or self._panel._cut_of(item) is not None):
             return ("beside", item)
         rect = self.visualItemRect(item)
         rel = ((pos.y() - rect.top()) / rect.height()
@@ -998,14 +1003,14 @@ class _Tree(SideTree):
         """Re-nest through the panel — one undoable command — and never
         let Qt move the rows itself: the tree follows the model, not the
         other way round."""
-        sections = self._panel._sec_root
+        folders = [f for f in (self._panel._sec_root, self._panel._box_root)
+                   if f is not None]
         if token is None:
             target = None
         else:
             kind, item = token
-            if item is None or (sections is not None and (
-                    item is sections or item.parent() is sections)):
-                return                      # planes are not containers
+            if item is None or item in folders or item.parent() in folders:
+                return                      # cuts are not containers
             target = item if kind == "into" else item.parent()
         picked = [g for g in (self._panel._group_of(it) for it in rows)
                   if g is not None]
@@ -1047,6 +1052,10 @@ class OutlinerPanel(QWidget):
         self._sec_items: dict = {}          # id(plane) -> its row
         self._sec_state: dict = {}
         self._sec_shape = None
+        self._box_root = None               # the «Section boxes» folder
+        self._box_items: dict = {}          # id(box) -> its row
+        self._box_state: dict = {}
+        self._box_shape = None
         #: Ordering by layer: ``(kind, name)`` -> the heading row of a layer
         #: or a layer folder, and the headings folded by hand — remembered
         #: while the document stays open, as the rows' own branches.
@@ -1494,6 +1503,15 @@ class OutlinerPanel(QWidget):
             self._sec_shape = None
             self._sec_state = {}
             self._sec_folder = None         # a new row: its texts to write
+            box = self._box_root = QTreeWidgetItem(["", "", "", "", ""])
+            box.setIcon(COL_NAME, node_icon("sections"))
+            box.setFlags(Qt.ItemIsEnabled)
+            box.setFont(COL_NAME, font)
+            self.tree.addTopLevelItem(box)
+            self._box_items = {}
+            self._box_shape = None
+            self._box_state = {}
+            self._box_folder = None
             for key, item in self._items.items():
                 if self._groups[key].uid in expanded:
                     item.setExpanded(True)
@@ -2226,6 +2244,16 @@ class OutlinerPanel(QWidget):
         data = item.data(COL_NAME, Qt.UserRole) if item is not None else None
         return data if isinstance(data, SectionPlane) else None
 
+    def _box_of(self, item):
+        """The section box on its row, or ``None``."""
+        data = item.data(COL_NAME, Qt.UserRole) if item is not None else None
+        return data if isinstance(data, SectionBox) else None
+
+    def _cut_of(self, item):
+        """A section plane or the section box: the rows with a cut, a frame
+        and a fill."""
+        return self._plane_of(item) or self._box_of(item)
+
     # ---- Section planes ------------------------------------------------------
     _SECTION_MODE_TEXT = {
         "both": "Cut and frame", "cut": "Cut only (no frame)",
@@ -2235,54 +2263,24 @@ class OutlinerPanel(QWidget):
         """The «Section planes» folder: one row per plane, its mode in
         words, the eye for its frame and the slice for its cut; the folder
         row carries the two global switches (View ▸ Section Planes and
-        Section Cuts)."""
+        Section Cuts). Then the «Section boxes» folder, the same way."""
         sec = self._sec_root
         if sec is None:
             return
         planes = list(getattr(scene, "section_planes", None) or ())
-        shape = tuple(id(sp) for sp in planes)
         self._updating = True
         try:
-            if shape != self._sec_shape:
-                expanded = sec.isExpanded() or self._sec_shape is None
-                sec.takeChildren()
-                self._sec_items = {}
-                self._sec_state = {}
-                for sp in planes:
-                    item = QTreeWidgetItem(["", "", "", "", ""])
-                    item.setData(COL_NAME, Qt.UserRole, sp)
-                    item.setFlags(Qt.ItemIsEnabled | Qt.ItemIsSelectable)
-                    item.setIcon(COL_NAME, node_icon("sections"))
-                    item.setToolTip(COL_LOCK, tr(
-                        "Click: this plane cuts the model (or stops)"))
-                    sec.addChild(item)
-                    self._sec_items[id(sp)] = item
-                self._sec_shape = shape
-                sec.setExpanded(expanded)
             fill = self._fill_state(scene)
+            shape = tuple(id(sp) for sp in planes)
+            if shape != self._sec_shape:
+                self._fill_cut_folder(sec, planes, self._sec_shape is None,
+                                      self._sec_items)
+                self._sec_state = {}
+                self._sec_shape = shape
             for sp in planes:
-                item = self._sec_items[id(sp)]
-                mode = outliner.section_mode(sp)
-                own = dict(getattr(sp, "fill", None) or {})
-                state = (outliner.section_label(sp), mode, fill,
-                         tuple(sorted((k, tuple(v) if k == "color" else v)
-                                      for k, v in own.items())))
-                if self._sec_state.get(id(sp)) == state:
-                    continue
-                self._sec_state[id(sp)] = state
-                item.setText(COL_NAME, state[0])
-                item.setText(COL_TYPE, tr(self._SECTION_MODE_TEXT[mode]))
-                cut, frame = outliner.SECTION_MODES[mode]
-                item.setData(COL_EYE, Qt.UserRole, not frame)
-                item.setIcon(COL_EYE, node_icon("eye" if frame else "eye_off"))
-                item.setToolTip(COL_EYE, tr("Hide the frame, keep the cut")
-                                if frame else tr("Show the frame"))
-                item.setData(COL_LOCK, Qt.UserRole, cut)
-                item.setIcon(COL_LOCK, node_icon("cut" if cut else "cut_off"))
-                self._paint_fill(item, cut, fill, sp)
-                item.setForeground(COL_NAME, self.tree.palette().brush(
-                    QPalette.PlaceholderText if mode == "off"
-                    else QPalette.Text))
+                self._paint_cut_row(self._sec_items[id(sp)], sp,
+                                    outliner.section_label(sp), fill,
+                                    self._sec_state)
             # The folder: the global switches, and the count.
             shown = bool(getattr(scene, "show_section_planes", True))
             cuts = bool(getattr(scene, "show_section_cuts", True))
@@ -2299,27 +2297,130 @@ class OutlinerPanel(QWidget):
                     "Section cuts in the model (View ▸ Section Cuts)"))
                 self._paint_fill(sec, True, fill)
             sec.setHidden(not planes)
+            self._sync_box_folder(scene, fill)
         finally:
             self._updating = False
 
-    def _filter_sections(self) -> None:
-        """The section planes follow the same search and funnel as the
-        groups; the folder shows only when one of its rows does."""
-        sec = self._sec_root
-        if sec is None:
+    def _sync_box_folder(self, scene, fill) -> None:
+        """The «Section boxes» folder: one row per box, by its name; the
+        folder row's eye shows or hides every box's frame and its slice
+        switches the cut of the boxes (one box cuts at a time)."""
+        root = self._box_root
+        if root is None:
             return
-        any_shown = False
-        for i in range(sec.childCount()):
-            item = sec.child(i)
-            plane = self._plane_of(item)
-            show = True
-            if plane is not None:
-                show = (outliner.text_matches(plane.name or "", self._query)
-                        and self._plane_passes_state(plane))
-                show = show != self.invert_filter
-            item.setHidden(not show)
-            any_shown = any_shown or show
-        sec.setHidden(sec.childCount() == 0 or not any_shown)
+        boxes = list(getattr(scene, "section_boxes", None) or ())
+        shape = tuple(id(b) for b in boxes)
+        if shape != self._box_shape:
+            self._fill_cut_folder(root, boxes, self._box_shape is None,
+                                  self._box_items)
+            self._box_state = {}
+            self._box_shape = shape
+        for box in boxes:
+            self._paint_cut_row(self._box_items[id(box)], box,
+                                box.name or tr("Section Box"), fill,
+                                self._box_state)
+        cutting = (scene.active_section_box() is not None
+                   and bool(getattr(scene, "show_section_cuts", True)))
+        folder = (tr("Section boxes"), cutting, len(boxes), fill)
+        if getattr(self, "_box_folder", None) != folder:
+            self._box_folder = folder
+            root.setText(COL_NAME, folder[0])
+            root.setText(COL_TYPE, tr("{n} boxes", n=len(boxes)))
+            root.setIcon(COL_LOCK, node_icon("cut" if cutting else "cut_off"))
+            root.setToolTip(COL_LOCK, tr(
+                "A section box cuts the model (one at a time)"))
+            self._paint_fill(root, True, fill)
+        root.setHidden(not boxes)
+
+    def _fill_cut_folder(self, folder, cuts, first: bool, items: dict) -> None:
+        """Make ``folder``'s rows again, one per plane or box of ``cuts``."""
+        expanded = folder.isExpanded() or first
+        folder.takeChildren()
+        items.clear()
+        for sp in cuts:
+            item = QTreeWidgetItem(["", "", "", "", ""])
+            item.setData(COL_NAME, Qt.UserRole, sp)
+            item.setFlags(Qt.ItemIsEnabled | Qt.ItemIsSelectable)
+            item.setIcon(COL_NAME, node_icon("sections"))
+            item.setToolTip(COL_LOCK, tr(
+                "Click: the section box cuts the model (or stops)")
+                if isinstance(sp, SectionBox) else tr(
+                "Click: this plane cuts the model (or stops)"))
+            folder.addChild(item)
+            items[id(sp)] = item
+        folder.setExpanded(expanded)
+
+    def _paint_cut_row(self, item, sp, label: str, fill, memo: dict) -> None:
+        """One plane's or box's row: its name, its mode in words, the eye
+        for its frame, the slice for its cut and its fill."""
+        mode = outliner.section_mode(sp)
+        own = dict(getattr(sp, "fill", None) or {})
+        state = (label, mode, fill,
+                 tuple(sorted((k, tuple(v) if k == "color" else v)
+                              for k, v in own.items())))
+        if memo.get(id(sp)) == state:
+            return
+        memo[id(sp)] = state
+        item.setText(COL_NAME, state[0])
+        cut, frame = outliner.SECTION_MODES[mode]
+        if isinstance(sp, SectionBox):
+            # It cuts or it is off, in words; a box that is off shows
+            # nothing, so it has no frame to switch.
+            item.setText(COL_TYPE, tr(
+                "Off" if not cut else "Cutting" if frame
+                else "Cut only (no frame)"))
+        else:
+            item.setText(COL_TYPE, tr(self._SECTION_MODE_TEXT[mode]))
+        if isinstance(sp, SectionBox) and not cut:
+            item.setData(COL_EYE, Qt.UserRole, None)
+            item.setIcon(COL_EYE, QIcon())
+            item.setToolTip(COL_EYE, "")
+        else:
+            item.setData(COL_EYE, Qt.UserRole, not frame)
+            item.setIcon(COL_EYE, node_icon("eye" if frame else "eye_off"))
+            item.setToolTip(COL_EYE, tr("Hide the frame, keep the cut")
+                            if frame else tr("Show the frame"))
+        item.setData(COL_LOCK, Qt.UserRole, cut)
+        item.setIcon(COL_LOCK, node_icon("cut" if cut else "cut_off"))
+        self._paint_fill(item, cut, fill, sp)
+        item.setForeground(COL_NAME, self.tree.palette().brush(
+            QPalette.PlaceholderText if mode == "off"
+            else QPalette.Text))
+
+    def toggle_box_folder(self) -> None:
+        """The «Section boxes» folder's slice: the whole model back; or,
+        with none cutting, the box selected or the last one."""
+        scene = self._scene()
+        if scene.active_section_box() is not None:
+            self._window._show_whole_model()
+        else:
+            box = next((e for e in reversed(list(scene.selection))
+                        if isinstance(e, SectionBox)),
+                       scene.section_boxes[-1] if scene.section_boxes
+                       else None)
+            if box is not None:
+                self.set_section_mode(box, "both")
+        self.refresh()
+
+    def _filter_sections(self) -> None:
+        """The section planes and boxes follow the same search and funnel
+        as the groups; each folder shows only when one of its rows does."""
+        for sec in (self._sec_root, self._box_root):
+            if sec is None:
+                continue
+            any_shown = False
+            for i in range(sec.childCount()):
+                item = sec.child(i)
+                cut = self._cut_of(item)
+                show = True
+                if cut is not None:
+                    show = (outliner.text_matches(cut.name or "",
+                                                  self._query)
+                            and self._plane_passes_state(cut))
+                    show = show != self.invert_filter
+                item.setHidden(not show)
+                any_shown = any_shown or show
+            sec.setHidden(sec.childCount() == 0 or not any_shown)
 
     _PATTERN_TEXT = {"solid": "Solid", "hatch": "Hatched 45°",
                      "cross": "Cross-hatched", "none": "No fill",
@@ -2374,6 +2475,67 @@ class OutlinerPanel(QWidget):
                 tr("Not a length: {text}", text=text), 3000)
             return
         self.set_plane_fill(plane, spacing=float(value))
+
+    def section_box_menu(self, menu, box) -> None:
+        """The section box's entries — the Browser row's right-click and
+        the model's, the same list. First what a user comes for: this box
+        cuts, or the model shows whole."""
+        from PySide6.QtCore import QTimer
+        if box.active:
+            menu.addAction(tr("Show the whole model"),
+                           self._window._show_whole_model)
+        else:
+            menu.addAction(tr("Cut with this box"),
+                           lambda: self.set_section_mode(box, "both"))
+        menu.addAction(tr("Edit Section Box"), lambda: QTimer.singleShot(
+            0, lambda: self._edit_box(box)))
+        menu.addSeparator()
+        if box.active:
+            act = menu.addAction(tr("Show the frame"), lambda: (
+                self.set_section_mode(box, "cut" if not box.hidden
+                                      else "both")))
+            act.setCheckable(True)
+            act.setChecked(not box.hidden)
+        self._plane_fill_menu(menu, box)
+        menu.addSeparator()
+        menu.addAction(tr("Rename…"), lambda: QTimer.singleShot(
+            0, lambda: self.rename_box(box)))
+        menu.addAction(tr("Remove Section Box"),
+                       lambda: self._window._on_remove_section_box(box))
+
+    def _edit_box(self, box) -> None:
+        """Take up the Section Box tool on ``box``: it cuts, its grips out."""
+        self._scene().select([box])
+        self._window._activate_tool("section_box")
+
+    def new_section_box(self) -> None:
+        """A new box around what is selected, else around the whole model,
+        with the tool out to adjust it."""
+        from tools.section_box import _fit_targets, place_box
+        scene = self._scene()
+        if not _fit_targets(scene):
+            scene.clear_selection()
+            place_box(self._window.viewport, fit_selection=False)
+        self._window._activate_tool("section_box")
+        self.refresh()
+
+    def rename_box(self, box) -> bool:
+        """A section box's name, undoable — the Browser and the scenes'
+        boxes read by it."""
+        from core.history import section_box_changed
+        from views import prompts
+        text, ok = prompts.get_text(self, tr("Rename section box"),
+                                    tr("Name:"), text=box.name)
+        name = (text or "").strip()
+        if not ok or not name or name == box.name:
+            return False
+        changed = box.copy()
+        changed.name = name
+        self._window.viewport.history.execute(
+            section_box_changed(self._scene(), box, changed))
+        self._window.viewport.update()
+        self.refresh()
+        return True
 
     def _plane_fill_menu(self, menu, plane) -> None:
         """The cut's own fill: pattern, colour, spacing, or the style's."""
@@ -2506,17 +2668,37 @@ class OutlinerPanel(QWidget):
     def set_section_mode(self, plane, mode: str) -> None:
         """One plane: ``"both"``, ``"cut"``, ``"frame"`` or ``"off"`` —
         one undoable step."""
-        from core.history import SetSectionModeCommand
+        from core.history import SetSectionModeCommand, section_box_changed
         if outliner.section_mode(plane) == mode:
             return
         cut, frame = outliner.SECTION_MODES[mode]
-        self._window.viewport.history.execute(
-            SetSectionModeCommand(plane, cut, frame))
+        if isinstance(plane, SectionBox):
+            # A box cuts beside the active plane, never instead of it; it
+            # takes the cut off the other boxes.
+            changed = plane.copy()
+            changed.active, changed.hidden = cut, not frame
+            self._window.viewport.history.execute(
+                section_box_changed(self._scene(), plane, changed))
+        else:
+            self._window.viewport.history.execute(
+                SetSectionModeCommand(plane, cut, frame))
         self._window.viewport.update()
         self.refresh()
 
     def _toggle_section(self, plane, column) -> None:
         cut, frame = outliner.SECTION_MODES[outliner.section_mode(plane)]
+        if isinstance(plane, SectionBox):
+            if column != COL_EYE:
+                # Whatever it was, a box that comes on shows its frame; and
+                # going off is the whole model, with its tool put away.
+                if cut:
+                    self._window._show_whole_model()
+                else:
+                    self.set_section_mode(plane, "both")
+                self.refresh()
+                return
+            if not cut:
+                return                      # off: no frame to switch
         if column == COL_EYE:
             frame = not frame
         else:
@@ -2559,7 +2741,7 @@ class OutlinerPanel(QWidget):
         if self._updating:
             return
         current = self.tree.currentItem()
-        plane = self._plane_of(current)
+        plane = self._cut_of(current)
         if plane is not None and current.isSelected():
             self._select_plane(plane)
             return
@@ -2634,14 +2816,18 @@ class OutlinerPanel(QWidget):
             self.toggle_isolated(selected if group in selected else [group])
             return
         if column == COL_LAYER and item.data(COL_LAYER, Qt.UserRole) \
-                is not None and (item is self._sec_root
-                                 or self._plane_of(item) is not None):
+                is not None and (item in (self._sec_root, self._box_root)
+                                 or self._cut_of(item) is not None):
             self.set_section_fill(not self._fill_state(self._scene())[0])
             return
         if column in (COL_EYE, COL_LOCK):
-            plane = self._plane_of(item)
+            plane = self._cut_of(item)
             if plane is not None:
                 self._toggle_section(plane, column)
+                return
+            if item is not None and item is self._box_root:
+                if column == COL_LOCK:
+                    self.toggle_box_folder()
                 return
             if item is self._sec_root:
                 scene = self._scene()
@@ -2690,8 +2876,9 @@ class OutlinerPanel(QWidget):
 
     def open_item(self, item) -> None:
         """Open the row's group for editing — double-click or Enter. On a
-        section plane: it cuts, or stops cutting. On a layer heading: its
-        objects selected in the model."""
+        section plane: it cuts, or stops cutting. On a section box: its
+        tool, to drag its faces. On a layer heading: its objects selected
+        in the model."""
         head = self._head_of(item)
         if head is not None:
             self.select_head(head)
@@ -2699,6 +2886,9 @@ class OutlinerPanel(QWidget):
         plane = self._plane_of(item)
         if plane is not None:
             self._toggle_section(plane, COL_LOCK)
+            return
+        if self._box_of(item) is not None:
+            self._window._activate_tool("section_box")
             return
         group = self._group_of(item)
         if group is None or group.hidden or getattr(group, "locked", False):
@@ -4022,6 +4212,11 @@ class OutlinerPanel(QWidget):
         item = self.tree.itemAt(pos)
         group = self._group_of(item)
         menu = QMenu(self)
+        box = self._box_of(item)
+        if box is not None:
+            self.section_box_menu(menu, box)
+            menu.exec(self.tree.viewport().mapToGlobal(pos))
+            return
         plane = self._plane_of(item)
         if plane is not None:
             menu.addAction(tr("Rename… (F2)"),
@@ -4044,6 +4239,16 @@ class OutlinerPanel(QWidget):
             menu.addSeparator()
             self._fill_actions(menu)
             self._plane_fill_menu(menu, plane)
+            menu.exec(self.tree.viewport().mapToGlobal(pos))
+            return
+        if item is not None and item is self._box_root:
+            menu.addAction(tr("New Section Box"), lambda: QTimer.singleShot(
+                0, self.new_section_box))
+            act = menu.addAction(tr("Show the whole model"),
+                                 self._window._show_whole_model)
+            act.setEnabled(self._scene().active_section_box() is not None)
+            menu.addSeparator()
+            self._fill_actions(menu)
             menu.exec(self.tree.viewport().mapToGlobal(pos))
             return
         if item is not None and item is self._sec_root:

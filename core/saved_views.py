@@ -105,14 +105,7 @@ class SavedView:
                    hidden_layers=[ly.name for ly in scene.layers
                                   if not ly.visible],
                    style=style.to_dict() if style else None,
-                   section={
-                       "active": (scene.active_section().uid
-                                  if scene.active_section() else None),
-                       "planes_shown": getattr(scene, "show_section_planes",
-                                               True),
-                       "cuts_shown": getattr(scene, "show_section_cuts",
-                                             True),
-                   },
+                   section=section_state(scene),
                    georef=georef_state(scene),
                    shadows=(scene.shadows.to_dict()
                             if getattr(scene, "shadows", None) is not None
@@ -194,6 +187,13 @@ class SavedView:
                 self.section.get("planes_shown", True))
             scene.show_section_cuts = bool(
                 self.section.get("cuts_shown", True))
+            # The section box the scene was made with cuts again, by uid
+            # as the plane; a scene made without one (or before boxes)
+            # leaves every box in the model, none cutting.
+            if hasattr(scene, "set_active_section_box"):
+                uid = self.section.get("box")
+                scene.set_active_section_box(next(
+                    (b for b in scene.section_boxes if b.uid == uid), None))
         if self.georef is not None:
             for key, obj in georef_objects(scene):
                 if obj is not None and key in self.georef:
@@ -283,6 +283,22 @@ def georef_objects(scene) -> list[tuple[str, object]]:
             ("survey", getattr(scene, "photo_mesh", None))]
 
 
+def section_state(scene) -> dict:
+    """What a scene keeps of the sections: the active plane, the two
+    View switches and, when one cuts, the section box (its uid)."""
+    state = {
+        "active": (scene.active_section().uid
+                   if scene.active_section() else None),
+        "planes_shown": getattr(scene, "show_section_planes", True),
+        "cuts_shown": getattr(scene, "show_section_cuts", True),
+    }
+    active_box = getattr(scene, "active_section_box", None)
+    box = active_box() if callable(active_box) else None
+    if box is not None:
+        state["box"] = box.uid
+    return state
+
+
 def shown_state(scene) -> tuple:
     """Everything a recalled view can change besides the camera, as a value
     to compare: layer visibility, style, section, geographic layers,
@@ -293,9 +309,12 @@ def shown_state(scene) -> tuple:
     shadows = getattr(scene, "shadows", None)
     section = (scene.active_section()
                if hasattr(scene, "active_section") else None)
+    active_box = getattr(scene, "active_section_box", None)
+    box = active_box() if callable(active_box) else None
     return (tuple((ly.name, ly.visible) for ly in scene.layers),
             style.to_dict() if style is not None else None,
             getattr(section, "uid", None),
+            getattr(box, "uid", None),
             getattr(scene, "show_section_planes", None),
             getattr(scene, "show_section_cuts", None),
             tuple(sorted(georef_state(scene).items())),
