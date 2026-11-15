@@ -134,6 +134,18 @@ class _CellHeader(QToolButton):
                 act = menu.addAction(tr(label))
                 act.triggered.connect(
                     lambda _c=False, k=key: self._cell.pick_view(k))
+            # The composition guides of THIS view (its tick box) and the
+            # list, as in the scene row's menus (views/scene_tabs.py).
+            if self._cell.viewport is not None:
+                from views.scene_tabs import CompositionGuidesAction
+                menu.addSeparator()
+                views = getattr(self.window(), "shown_viewports", None)
+                self._composition_action = CompositionGuidesAction(
+                    self._cell.viewport, menu, views)
+                menu.addAction(self._composition_action)
+        row = getattr(getattr(self, "_composition_action", None), "row", None)
+        if row is not None:
+            row.sync()
         # The key only shown, after a tab, so that people learn it: the
         # window's action is the one that holds it.
         text = self._cell.maximize_label()
