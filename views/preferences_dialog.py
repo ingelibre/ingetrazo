@@ -698,7 +698,8 @@ class PreferencesDialog(QDialog):
         self._defaults_btn.clicked.connect(self._ask_restore_defaults)
         layout.addWidget(buttons)
         self._buttons = buttons
-        screen = (window.screen() if window is not None else None)             or QGuiApplication.primaryScreen()
+        screen = ((window.screen() if window is not None else None)
+                  or QGuiApplication.primaryScreen())
         if screen is not None:
             self.fit_to(screen.availableGeometry())
 
