@@ -3666,7 +3666,9 @@ class ShadowsPanel(QWidget):
     ``.igz``) and repaint — the viewport re-derives the sun position and
     rebuilds its shadow map from the changed key, so dragging the time
     slider sweeps the shadows live: the asoleamiento study. The site is
-    the model's geolocation; without one, Arequipa."""
+    the model's geolocation; without one, Arequipa. When the sun stands
+    below the horizon for the stored hour the panel says so in words
+    (#1312), instead of letting the shadows vanish without a reason."""
 
     def __init__(self, window) -> None:
         super().__init__()
@@ -3706,8 +3708,11 @@ class ShadowsPanel(QWidget):
         self._time = QSlider(Qt.Horizontal)
         style_slider(self._time)
         # Range follows DAYLIGHT for the date/zone/site (the
-        # slider runs sunrise → sunset, so the sun can never be dragged
-        # below the horizon and "shadows silently off" cannot happen).
+        # slider runs sunrise → sunset, so the sun can hardly be dragged
+        # below the horizon). A stored hour can still sit at night — a
+        # loaded document, a polar night, the sampled minutes past
+        # sunset — and the note under the slider says so when it does
+        # (#1312: shadows that vanish with no reason given read as a bug).
         self._time.setRange(0, 24 * 60 - 1)
         self._time.setSingleStep(5)
         self._time.valueChanged.connect(self._apply)
@@ -3726,24 +3731,35 @@ class ShadowsPanel(QWidget):
         span.addWidget(self._sunset_lbl)
         grid.addLayout(span, 5, 1)
 
-        grid.addWidget(QLabel(tr("Darkness:")), 6, 0)
+        # Why there are no shadows, when there are none to draw: the sun
+        # under the horizon casts nothing, and without this line the
+        # panel just looks broken (#1312). Hidden while the sun is up.
+        self._below_horizon_note = QLabel(
+            tr("The sun is below the horizon: no shadows."))
+        self._below_horizon_note.setWordWrap(True)
+        theme_style(self._below_horizon_note,
+                    "color:{muted}; font-size: 11px;")
+        self._below_horizon_note.setVisible(False)
+        grid.addWidget(self._below_horizon_note, 6, 0, 1, 2)
+
+        grid.addWidget(QLabel(tr("Darkness:")), 7, 0)
         self._dark = QSlider(Qt.Horizontal)
         style_slider(self._dark)
         self._dark.setRange(0, 80)              # 100 % black is never useful
         self._dark.valueChanged.connect(self._apply)
-        grid.addWidget(self._dark, 6, 1)
+        grid.addWidget(self._dark, 7, 1)
 
-        grid.addWidget(QLabel(tr("Time zone:")), 7, 0)
+        grid.addWidget(QLabel(tr("Time zone:")), 8, 0)
         self._tz = QComboBox()
         self._tz.addItem(tr("Automatic (by longitude)"), None)
         for off in range(-12, 15):
             self._tz.addItem(f"UTC{off:+03d}:00", off)
         self._tz.currentIndexChanged.connect(self._apply)
-        grid.addWidget(self._tz, 7, 1)
+        grid.addWidget(self._tz, 8, 1)
 
         # Where true north lies (core.sun.scene_north_deg): typed here, or
         # aimed on screen with Tools ▸ North — the button picks it up.
-        grid.addWidget(QLabel(tr("North:")), 8, 0)
+        grid.addWidget(QLabel(tr("North:")), 9, 0)
         north_row = QHBoxLayout()
         self._north = QDoubleSpinBox()
         self._north.setRange(-180.0, 180.0)
@@ -3761,16 +3777,16 @@ class ShadowsPanel(QWidget):
             "Tools ▸ North: click a centre, then click toward north."))
         self._north_btn.clicked.connect(self._on_north_tool)
         north_row.addWidget(self._north_btn)
-        grid.addLayout(north_row, 8, 1)
+        grid.addLayout(north_row, 9, 1)
 
         self._site = QLabel("")
         self._site.setWordWrap(True)
         theme_style(self._site, "color:{muted}; font-size: 11px;")
-        grid.addWidget(self._site, 9, 0, 1, 2)
+        grid.addWidget(self._site, 10, 0, 1, 2)
 
         self._locate_btn = QPushButton(tr("Add location…"))
         self._locate_btn.clicked.connect(self._on_add_location)
-        grid.addWidget(self._locate_btn, 10, 0, 1, 2)
+        grid.addWidget(self._locate_btn, 11, 0, 1, 2)
 
         self.refresh()
 
@@ -3813,18 +3829,53 @@ class ShadowsPanel(QWidget):
             rng = None
         if rng is None:                     # polar night: leave the full day
             self._time.setRange(0, 24 * 60 - 1)
-            self._sunrise_lbl.setText("—")
-            self._sunset_lbl.setText("—")
+            self._sunrise_lbl.setText(tr("Sunrise: {time}", time="—"))
+            self._sunset_lbl.setText(tr("Sunset: {time}", time="—"))
             return
         lo, hi = rng
         self._time.setRange(lo, hi)         # Qt clamps the value for us
-        self._sunrise_lbl.setText(f"{lo // 60:02d}:{lo % 60:02d}")
-        self._sunset_lbl.setText(f"{hi // 60:02d}:{hi % 60:02d}")
+        self._sunrise_lbl.setText(tr(
+            "Sunrise: {time}", time=f"{lo // 60:02d}:{lo % 60:02d}"))
+        self._sunset_lbl.setText(tr(
+            "Sunset: {time}", time=f"{hi // 60:02d}:{hi % 60:02d}"))
         if write_back:
             v = self._time.value()
             if (sh.hour, sh.minute) != (v // 60, v % 60):
                 sh.hour, sh.minute = v // 60, v % 60
             self._time_lbl.setText(f"{sh.hour:02d}:{sh.minute:02d}")
+
+    def _sun_elevation(self, sh) -> float | None:
+        """Elevation in degrees of the sun at the panel's date, time,
+        zone and site — the same NOAA position the viewport casts with —
+        or ``None`` when the stored date does not exist."""
+        from core.sun import solar_position
+        lat, lon = self._site_latlon()
+        try:
+            when = sh.when_utc(lon)
+        except ValueError:
+            return None
+        elevation, _azimuth = solar_position(lat, lon, when)
+        return elevation
+
+    def _sync_sun_note(self, sh) -> None:
+        """The below-horizon note follows the sun: shown while shadows
+        are on and the sun cannot cast any (#1312), hidden otherwise.
+        Reads ``sh`` itself, not the slider — a refresh must not clamp a
+        loaded night hour away before the note can explain it."""
+        elevation = self._sun_elevation(sh)
+        self._below_horizon_note.setVisible(
+            bool(sh.enabled) and elevation is not None and elevation <= 0.0)
+
+    def _sync_tz_label(self) -> None:
+        """The Automatic zone entry names the UTC offset it ends up
+        using for this site (#1312): the by-longitude approximation of
+        ``core.sun``, recomputed whenever the panel refreshes, so a new
+        location rewrites it."""
+        from core.sun import default_utc_offset
+        _lat, lon = self._site_latlon()
+        self._tz.setItemText(0, tr(
+            "Automatic (by longitude) — UTC{off:+03d}:00",
+            off=default_utc_offset(lon)))
 
     def refresh(self) -> None:
         sh = self._shadows()
@@ -3853,6 +3904,8 @@ class ShadowsPanel(QWidget):
                 self._site.setText(tr(
                     "No geolocation — using Arequipa. Add the real site for "
                     "a true sun study."))
+            self._sync_tz_label()
+            self._sync_sun_note(sh)
         finally:
             self._updating = False
 
@@ -3942,6 +3995,7 @@ class ShadowsPanel(QWidget):
             self._sync_daylight(sh, write_back=True)
         finally:
             self._updating = False
+        self._sync_sun_note(sh)
         act = getattr(self._window, "_act_shadows", None)
         if act is not None:
             act.blockSignals(True)
