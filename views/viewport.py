@@ -158,6 +158,29 @@ class _HoverEvent:
         return self._mods
 
 
+def label_clear_of(text: QRectF, avoid: QRectF, bounds: QRectF,
+                   gap: float = 4.0) -> QRectF:
+    """Where to draw a live value label ``text`` so the pointer (``avoid``)
+    does not cover it (#1262): where it is when they do not touch; else
+    just right of the pointer, at the same height; else, at the view's
+    right edge, just below it; else just above it. All in widget pixels;
+    ``bounds`` is the view."""
+    if not text.intersects(avoid):
+        return QRectF(text)
+    right = QRectF(text)
+    right.moveLeft(avoid.right() + gap)
+    if right.right() <= bounds.right():
+        return right
+    x = min(text.left(), bounds.right() - text.width())
+    below = QRectF(text)
+    below.moveTopLeft(QPointF(x, avoid.bottom() + gap))
+    if below.bottom() <= bounds.bottom():
+        return below
+    above = QRectF(text)
+    above.moveTopLeft(QPointF(x, avoid.top() - gap - text.height()))
+    return above
+
+
 def _active_cut(scene):
     """The section plane actually CUTTING (cuts shown + one active), or
     None. A module function so stub viewports in tests degrade gracefully;
@@ -11617,10 +11640,47 @@ class Viewport(QOpenGLWidget):
         font.setPointSize(10)
         font.setBold(True)
         painter.setFont(font)
+        base = QPointF(pixel[0] + 11, pixel[1] - 8)
+        # On a short measurement the middle sits by the pointer, and the
+        # tool's icon covered the number (#1262): moved clear of it.
+        cursor_box = self._pointer_rect()
+        if cursor_box is not None:
+            box = QRectF(painter.fontMetrics().boundingRect(text))
+            box.translate(base)
+            box.adjust(-1, -1, 2, 2)                # the shadow's pixel
+            clear = label_clear_of(box, cursor_box,
+                                   QRectF(0, 0, self.width(), self.height()))
+            base += clear.topLeft() - box.topLeft()
         painter.setPen(QPen(shadow))
-        painter.drawText(QPointF(pixel[0] + 12, pixel[1] - 7), text)
+        painter.drawText(base + QPointF(1, 1), text)
         painter.setPen(QPen(fg))
-        painter.drawText(QPointF(pixel[0] + 11, pixel[1] - 8), text)
+        painter.drawText(base, text)
+        self._length_label_rect = QRectF(
+            painter.fontMetrics().boundingRect(text)).translated(base)
+
+    def _pointer_rect(self) -> QRectF | None:
+        """The pointer's picture, in widget pixels, at the last mouse
+        position: the tool icon the view shows as its cursor (or a stock
+        arrow's size). ``None`` before the mouse has been over the view."""
+        pos = getattr(self, "_last_mouse_pos", None)
+        if pos is None:
+            return None
+        cur = self.cursor()
+        pm = cur.pixmap()
+        if pm.isNull():
+            # A stock pointer (arrow, cross): about this big, hanging down
+            # and right from its tip.
+            return QRectF(pos.x() - 2.0, pos.y() - 2.0, 20.0, 24.0)
+        size = pm.deviceIndependentSize()
+        hot = QPointF(cur.hotSpot())
+        from PySide6.QtWidgets import QApplication
+        app = QApplication.instance()
+        if app is not None and app.platformName() == "xcb":
+            # X11 reads the hotspot in the image's own pixels
+            # (views.icons.cursor_hotspot).
+            hot /= max(pm.devicePixelRatio(), 1.0)
+        return QRectF(pos.x() - hot.x(), pos.y() - hot.y(),
+                      size.width(), size.height())
 
     def _measurement_text(self) -> str:
         """Live measurement string for the VCB box: the active tool's
