@@ -3,7 +3,8 @@
 A placement with a negative determinant reverses the winding of every ring it
 maps, so a face copied through it shows its back unless its ring is reversed
 back. Instances that stay instances (``Group.xform``) are handled by the
-viewport; these tests cover the nested ones the importer flattens.
+viewport (nested ones too, kept as children); these tests cover the nested
+ones the importer flattens.
 """
 from __future__ import annotations
 
@@ -73,11 +74,13 @@ def test_an_unmirrored_placement_is_left_as_it_was():
     ([1, 0, 0, 0, -1, 0, 0, 0, 1, 0, 40, 0, 1], True),     # scaled -1 in Y
     ([-1, 0, 0, 0, -1, 0, 0, 0, 1, 40, 40, 0, 1], False),  # a half turn, not a mirror
 ])
-def test_a_nested_door_and_its_mirrored_twin_both_face_out(matrix, mirrored):
+def test_a_nested_door_and_its_mirrored_twin_both_face_out(matrix, mirrored,
+                                                          monkeypatch):
     # The report: a cupboard door made a component, copied and scaled by -1
-    # in X for the other hand. Both doors sit inside one cupboard group; the
-    # importer flattens them into the cupboard, and both must keep their
-    # painted side out.
+    # in X for the other hand. Both doors sit inside one cupboard group; when
+    # the importer flattens them into the cupboard (past the budget for
+    # parts kept as children), both must keep their painted side out.
+    monkeypatch.setattr(skp_openskp, "_NESTED_KEEP_BUDGET", 0)
     door = _square_def(6, "Door")
     left = NS(ref_idx=6, matrix=[1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1])
     right = NS(ref_idx=6, matrix=matrix)
@@ -92,3 +95,23 @@ def test_a_nested_door_and_its_mirrored_twin_both_face_out(matrix, mirrored):
     assert len(faces) == 2
     for outer, _holes, _attrs in faces:
         assert _ring_normal_z(outer) > 0
+
+
+def test_the_doors_kept_as_children_carry_the_mirror_in_their_placement():
+    # Within the budget the two doors stay the cupboard's children: the
+    # door's own face is untouched and the -1 rides on the placement, which
+    # the viewport draws with the winding flipped.
+    door = _square_def(6, "Door")
+    ident = [1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1]
+    cupboard = _empty_def(5, "Cupboard", instances=[
+        NS(ref_idx=6, matrix=ident),
+        NS(ref_idx=6, matrix=[-1, 0, 0, 0, 1, 0, 0, 0, 1, 40, 0, 0, 1])])
+    root = _empty_def(0, "ROOT_MODEL", instances=[NS(ref_idx=5, matrix=ident)])
+    payload = skp_openskp._adapt(
+        NS(definitions={0: root, 5: cupboard, 6: door}), "kitchen")
+    [cup] = [p for p in payload["protos"] if p["name"] == "Cupboard"]
+    [door_p] = [p for p in payload["protos"] if p["name"] == "Door"]
+    assert not cup["faces"]
+    signs = sorted(k["xform"].determinant() < 0 for k in cup["children"])
+    assert signs == [False, True]
+    assert all(_ring_normal_z(f[0]) > 0 for f in door_p["faces"])
