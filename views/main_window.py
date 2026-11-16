@@ -5774,7 +5774,8 @@ class MainWindow(QMainWindow):
                 # by another road. (No parameters on the slot:
                 # ``triggered`` would hand its bool to one.)
                 one = groups[0]
-                menu.addAction(tr("Edit Group"),
+                from core.group import edit_label
+                menu.addAction(tr(edit_label(one)),
                                lambda: self.viewport.begin_group_edit(one))
             text = self._selected_text3d()
             if text is not None:
@@ -5798,7 +5799,10 @@ class MainWindow(QMainWindow):
                 # Convert a classic group into a component IN PLACE (free —
                 # no explode detour): the door the piscina hedge needed.
                 menu.addAction(tr("Make Component…"), self._on_make_component)
-            menu.addAction(tr("Explode Group"), self._on_explode_group)
+            from core.group import explode_label
+            menu.addAction(tr(explode_label(e for e in sel
+                                            if isinstance(e, Group))),
+                           self._on_explode_group)
             if sum(1 for e in sel if isinstance(e, Group)
                    and not getattr(e, "billboard", False)) == 1:
                 menu.addAction(tr("Split into Pieces"),
