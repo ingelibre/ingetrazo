@@ -3766,5 +3766,15 @@
  "Architect. The units system, the Browser, Layers 2.0, the Solid Inspector, Fillet 3D bevels, Bridge, Join Segments, Camera ▸ Axes, soft ambient occlusion, round curved surfaces, view layouts, scenes as tabs, cleaner exports and many everyday editing tools. And for 0.6.2: the North tool, camera settings, scene transitions with video and the view as layered SVG.": "Архитект. Системата от мерни единици, Браузърът, Слоеве 2.0, Проверката на плътни тела, фаските на Fillet 3D, Свързваща повърхнина, Обединяване на сегменти, Камера ▸ Оси, мекото фоново засенчване, заоблените криволинейни повърхнини, оформленията на изгледи, сцените като раздели, по-чистите експорти и много ежедневни инструменти за редактиране. А за 0.6.2: инструментът Север, настройките на камерата, преходите между сцени с видео и изгледът като SVG на слоеве.",
  "Korean translation of the interface, and the AI key from an environment variable. In 0.6.2, soft shadows and fixes for macOS.": "Корейски превод на интерфейса и ключът за ИИ от променлива на средата. В 0.6.2 – меките сенки и поправки за macOS.",
  "Exact Move+Ctrl copies, overlapping rotated copies, faster box selection on huge models and the reviewed Indonesian translation.": "Точни копия с Move+Ctrl, припокриващи се завъртени копия, по-бърз избор с рамка в огромни модели и прегледаният превод на индонезийски.",
- "Snapping to the rest of the model from inside a group or component.": "Прихващане към останалата част от модела отвътре на група или компонент."
+ "Snapping to the rest of the model from inside a group or component.": "Прихващане към останалата част от модела отвътре на група или компонент.",
+ "Inferences": "Привличания",
+ "Turn all inferences on": "Включи всички привличания",
+ "Switch every point inference of this menu back on.": "Включва отново всички точкови привличания от това меню.",
+ "Snap to the ends of edges.": "Привличане към краищата на ръбовете.",
+ "Snap to the middle of edges and arcs.": "Привличане към средата на ръбове и дъги.",
+ "Snap where edges, guides and faces cross.": "Привличане там, където се пресичат ръбове, помощни линии и повърхнини.",
+ "Snap to any point along an edge, a guide line or a guide circle.": "Привличане към всяка точка по ръб, помощна линия или помощна окръжност.",
+ "Snap to the centre of faces, and show a dot at the centre of the selected ones.": "Привличане към центъра на повърхнините и точка в центъра на избраните.",
+ "Snap to the centre, quadrants and tangent points of circles and arcs.": "Привличане към центъра, квадрантите и допирните точки на окръжности и дъги.",
+ "Snap to the model origin and to the origin of groups and components.": "Привличане към началото на модела и към началото на групи и компоненти."
 }

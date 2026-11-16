@@ -12503,7 +12503,11 @@ class Viewport(QOpenGLWidget):
         selected group offers none (a whole object would fill with dots).
         An open group's faces are loose and already in world space. A face
         a tool is bending is left out (its centre would chase the cursor).
-        Cached per scene version and selection."""
+        Cached per scene version and selection. None at all while the
+        «Face center» switch is off (Tools ▸ Inferences, #1410)."""
+        from core.snap import snap_toggle_enabled
+        if not snap_toggle_enabled("face_center"):
+            return []
         faces = [e for e in self.scene.selection if isinstance(e, Face)]
         if not faces or len(faces) > self.FACE_CENTER_SELECTION_MAX:
             return []
