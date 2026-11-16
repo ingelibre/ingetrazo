@@ -376,9 +376,9 @@ def test_the_labels_menu_says_maximize_or_restore(win):
     assert entry().text() == tr("Restore") + keys
     entry().trigger()
     assert _shown(win) == [0, 1, 2, 3]
-    # Maximize, Style, Perspective, the eight views and Lock view, with two
-    # separators.
-    assert len(header.menu().actions()) == 14, "the views, once"
+    # Maximize, Style, Perspective, the eight views, Lock view and
+    # Composition Guides, with three separators.
+    assert len(header.menu().actions()) == 16, "the views, once"
 
 
 def test_a_double_click_on_the_label_maximizes_nothing(win):

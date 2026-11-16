@@ -9970,6 +9970,72 @@ class Viewport(QOpenGLWidget):
         painter.drawRect(QRectF(x + 0.5, y + 0.5, w - 1.0, h - 1.0))
         painter.restore()
 
+    def composition_rect(self) -> QRectF:
+        """Where the composition guides go: inside the camera's frame when
+        it has one, over the whole view otherwise."""
+        from core.camera import frame_rect
+        rect = frame_rect(self.width(), self.height(),
+                          getattr(self.camera, "frame_aspect", None))
+        if rect is None:
+            return QRectF(0.0, 0.0, float(self.width()), float(self.height()))
+        return QRectF(*rect)
+
+    def _draw_composition_guide(self, painter: QPainter) -> None:
+        """The camera's composition guide (rule of thirds, golden ratio…)
+        over the picture. Only on screen: a render or an export never draws
+        this overlay."""
+        key = getattr(self.camera, "composition_guide", None)
+        if key:
+            from views.composition_guides import draw_guides
+            draw_guides(painter, self.composition_rect(), key,
+                        getattr(self.camera, "composition_turn", 0))
+
+    def set_composition_guide(self, key) -> None:
+        """Show the composition guide ``key`` over this view, or none
+        (``None``). The last one shown is what :meth:`toggle_composition_guide`
+        turns back on."""
+        from views.composition_guides import read_guide
+        key = read_guide(key)
+        if key:
+            self.last_composition_guide = key
+        if key != self.camera.composition_guide:
+            self.camera.composition_guide = key
+            self.update()
+
+    def set_composition_turn(self, turn) -> None:
+        """Orient the golden triangle and spiral of this view: ``turn`` is
+        0–7, its flips and 90° turn (see views/composition_guides.py)."""
+        from views.composition_guides import read_turn
+        turn = read_turn(turn)
+        if turn != self.camera.composition_turn:
+            self.camera.composition_turn = turn
+            self.update()
+
+    def flip_composition_guide(self, part: int, key=None) -> None:
+        """«Flip horizontally», «Flip vertically» or «Rotate 90°» (``part``,
+        one of FLIP_H, FLIP_V, TURN_90): the golden triangle or spiral
+        ``key`` (the one shown when ``None``) on, with that part of its
+        orientation changed. A part the guide does not have does nothing."""
+        from views.composition_guides import turn_parts
+        key = key or self.camera.composition_guide
+        if part not in turn_parts(key):
+            return
+        self.set_composition_guide(key)
+        self.set_composition_turn(self.camera.composition_turn ^ part)
+
+    def toggle_composition_guide(self, on: bool | None = None) -> None:
+        """The composition guide on (the last one chosen; the rule of thirds
+        the first time) or off; ``None`` turns it the other way."""
+        if on is None:
+            on = not self.camera.composition_guide
+        if on:
+            from views.composition_guides import DEFAULT_GUIDES
+            self.set_composition_guide(
+                getattr(self, "last_composition_guide", None)
+                or DEFAULT_GUIDES)
+        else:
+            self.set_composition_guide(None)
+
     # ---- 2D overlay (QPainter on top of OpenGL) -----------------------------
     def _draw_overlay(self) -> None:
         painter = QPainter(self)
@@ -9979,6 +10045,7 @@ class Viewport(QOpenGLWidget):
         # The camera's picture frame first: what lies outside it is
         # shaded, and everything below still draws over it.
         self._draw_camera_frame(painter)
+        self._draw_composition_guide(painter)
 
         # Rubber band for the "always on top" tools (Line/Rectangle/Move),
         # drawn here with a thick, reliable pen.

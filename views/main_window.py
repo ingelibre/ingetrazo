@@ -208,6 +208,11 @@ def _keep_on_top(bar, *ours) -> None:
         w.raise_()
 
 
+
+#: Show or hide the scenes as tabs: Ctrl+E (shown in the menus), and Alt+E
+#: as it always was.
+SCENE_TABS_KEYS = (QKeySequence("Ctrl+E"), QKeySequence("Alt+E"))
+
 class _IconTabStyle(QProxyStyle):
     """The side trays' tabs show only their icon, so many fit on the bar
     without scrolling. The name stays the tab's text — Qt writes it there
@@ -2314,11 +2319,12 @@ class MainWindow(QMainWindow):
         window_menu.addAction(self._act_sidebar)
         window_menu.addAction(self._act_left_sidebar)
         # The scenes as tabs under the viewport, for the project in front
-        # (Alt+E: E for «escenas»; each project keeps its own choice).
+        # (Ctrl+E, and Alt+E as before: E for «escenas»; each project keeps
+        # its own choice).
         scenes_action = QAction(tr("Show scenes as tabs"), self)
         scenes_action.setCheckable(True)
         scenes_action.setChecked(bool(self._doc.scene_tabs))
-        scenes_action.setShortcut(QKeySequence("Alt+E"))
+        scenes_action.setShortcuts(list(SCENE_TABS_KEYS))
         scenes_action.setStatusTip(tr(
             "This project's scenes as tabs under the view; a click shows one."))
         scenes_action.toggled.connect(lambda on: self.set_scene_tabs(on))
@@ -7878,6 +7884,8 @@ class MainWindow(QMainWindow):
         for k in self._CAMERA_FIELDS:
             setattr(cam, k, getattr(fresh, k))
         cam.reset_lens()
+        cam.composition_guide = None        # nor the last one's guides
+        cam.composition_turn = 0
         self.viewport.update()
 
     @staticmethod
@@ -7957,6 +7965,21 @@ class MainWindow(QMainWindow):
 
     def all_viewports(self) -> list:
         return [d.viewport for d in self._documents if d.viewport is not None]
+
+    def shown_viewports(self) -> list:
+        """The views the project in front shows now: its own, and the
+        others of a layout of several views (views/multi_view.py)."""
+        doc = self.__dict__.get("_doc")
+        if doc is None or doc.viewport is None:
+            return []
+        out = [doc.viewport]
+        grid = getattr(doc, "view_grid", None)
+        if grid is not None and grid.is_enabled():
+            out += [v for v in grid.visible_extras() if v not in out]
+        front = self.viewport
+        if front is not None and front not in out:
+            out.append(front)
+        return out
 
     def _make_viewport(self):
         """A viewport for a project, set up the way the window's first one
@@ -8695,21 +8718,37 @@ class MainWindow(QMainWindow):
 
     def _build_scene_bar_menu(self):
         """The scene row's own right-click menu (off the tabs): play the
-        scenes, or hide the row. Alt+E, Window ▸ and the project tab's menu
-        bring it back."""
-        from PySide6.QtGui import QKeySequence
+        scenes, the composition guides, or hide the row. Ctrl+E, Window ▸
+        and the project tab's menu bring it back."""
         from PySide6.QtWidgets import QMenu
         menu = QMenu(self)
         menu.setAttribute(Qt.WA_DeleteOnClose)
         self._add_play_entry(menu)
         menu.addSeparator()
+        self._add_view_entries(menu)
+        return menu
+
+    def _add_view_entries(self, menu) -> None:
+        """What both of the scene row's menus end with: «Composition
+        Guides» with its switch and list, and «Hide scenes» (Ctrl+E)."""
+        self._add_composition_entry(menu)
+        menu.addSeparator()
         act = menu.addAction(tr("Hide scenes"))
-        act.setShortcut(QKeySequence("Alt+E"))
+        act.setShortcut(SCENE_TABS_KEYS[0])
         act.setShortcutVisibleInContextMenu(True)
         act.setStatusTip(tr(
-            "Hide this project's scene tabs; Alt+E shows them again."))
+            "Hide this project's scene tabs; Ctrl+E shows them again."))
         act.triggered.connect(lambda _c=False: self.set_scene_tabs(False))
-        return menu
+
+    def _add_composition_entry(self, menu) -> None:
+        """«Composition Guides»: a row with a switch beside it that turns
+        the guides of the active view on or off, and the list of guides to
+        choose from as its submenu (views/composition_guides.py)."""
+        from views.scene_tabs import CompositionGuidesAction
+        act = CompositionGuidesAction(self.viewport, menu,
+                                      self.shown_viewports)
+        menu.addAction(act)
+        menu._composition_action = act         # kept for the tests
 
     def _build_scene_tab_menu(self, index: int):
         """A scene tab's right-click menu: keep the current view in that
@@ -8739,6 +8778,8 @@ class MainWindow(QMainWindow):
         rename.setEnabled(view is not None)
         rename.triggered.connect(
             lambda _c=False, i=index: self._rename_scene_tab(i))
+        menu.addSeparator()
+        self._add_view_entries(menu)
         menu.addSeparator()
         act = menu.addAction(tr("Delete"))
         act.setShortcut(QKeySequence.Delete)
@@ -8829,7 +8870,7 @@ class MainWindow(QMainWindow):
         add(tr("Close All Projects"), lambda: self.close_documents(docs))
         menu.addSeparator()
         act = menu.addAction(tr("Show scenes as tabs"))
-        act.setShortcut(QKeySequence("Alt+E"))
+        act.setShortcut(SCENE_TABS_KEYS[0])
         act.setShortcutVisibleInContextMenu(True)
         act.setCheckable(True)
         act.setChecked(bool(doc.scene_tabs))
