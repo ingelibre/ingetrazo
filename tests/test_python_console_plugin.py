@@ -193,3 +193,67 @@ def test_showcase_script_produces_real_bim(console, win):
     assert win.viewport.history.undo()              # one Ctrl+Z, all gone
     assert bim.collect_objects(scene) == []
     assert not any(g.name.startswith("Columna") for g in scene.groups)
+
+
+REFUSED = ("from core.history import CommandRejected\n"
+           "raise CommandRejected('layer cannot be deleted')")
+
+
+def test_refused_command_is_reported_as_rolled_back(console, win):
+    """A CommandRejected raised by the code is rolled back by History without
+    last_error; the console must still say so."""
+    history = win.viewport.history
+    depth0 = len(history.undo_stack)
+
+    console._run_code(ADD_FACE + "\n" + REFUSED, "<test>")
+
+    assert len(history.undo_stack) == depth0
+    assert "rolled back" in console._output.toPlainText()
+
+
+def test_run_transactional_returns_a_refusal_as_error(win):
+    from core import ai
+    history = win.viewport.history
+    depth0 = len(history.undo_stack)
+
+    r = ai.run_transactional(win.viewport, ADD_FACE + "\n" + REFUSED,
+                             {"__name__": "__ai__"})
+
+    assert r["error"] == "layer cannot be deleted"
+    assert r["changed"] is False
+    assert len(history.undo_stack) == depth0
+
+
+NESTED_REFUSAL = (
+    ADD_FACE + "\n"
+    "import sys\n"
+    "print('a warning', file=sys.stderr)\n"
+    "from core.history import Command, CommandRejected\n"
+    "class Refuse(Command):\n"
+    "    def do(self, scene):\n"
+    "        raise CommandRejected('inner refusal')\n"
+    "    def undo(self, scene):\n"
+    "        pass\n"
+    "viewport.history.execute(Refuse())")
+
+
+def test_nested_refusal_in_successful_code_is_not_a_rollback(console, win):
+    history = win.viewport.history
+    depth0 = len(history.undo_stack)
+
+    console._run_code(NESTED_REFUSAL, "<test>")
+
+    assert len(history.undo_stack) == depth0 + 1
+    assert "rolled back" not in console._output.toPlainText()
+
+
+def test_run_transactional_nested_refusal_still_commits(win):
+    from core import ai
+    history = win.viewport.history
+    depth0 = len(history.undo_stack)
+
+    r = ai.run_transactional(win.viewport, NESTED_REFUSAL,
+                             {"__name__": "__ai__"})
+
+    assert r["error"] is None and r["changed"] is True
+    assert len(history.undo_stack) == depth0 + 1
