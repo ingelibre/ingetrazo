@@ -1050,6 +1050,13 @@ class MainWindow(QMainWindow):
         if self.size() != size:
             self.layout().activate()
             self.resize(size)
+        # Not in the factory layout: shown, as it starts, and back in its
+        # first place beside the camera buttons.
+        photo_tb = getattr(self, "_photo_toolbar", None)
+        if photo_tb is not None:
+            QSettings().remove(self._PHOTO_TOOLBAR_PLACED)
+            photo_tb.hide()
+            photo_tb.show()
         QTimer.singleShot(0, self, self._pack_toolbars)
 
     def _dock_tab_rows(self, docks) -> list:
@@ -2049,6 +2056,52 @@ class MainWindow(QMainWindow):
         self._act_camera_settings.triggered.connect(
             lambda _c=False: self._show_camera_settings())
         camera_menu.addAction(self._act_camera_settings)
+        # Camera from Photo (core/photo_match.py): the camera that took a
+        # photo, from lines laid over its edges; the photo becomes a scene
+        # that shows it behind the model. Its own submenu: a new photo,
+        # its lines again, and those lines back where they start.
+        photo_menu = camera_menu.addMenu(tr("Camera from Photo"))
+        self._photo_menu = photo_menu
+        self._act_camera_from_photo = QAction(tr("New Photo…"), self)
+        self._act_camera_from_photo.setObjectName("camera_from_photo")
+        self._act_camera_from_photo.setStatusTip(tr(
+            "Open a photo and find the camera that took it, so the model "
+            "lines up with it: a new scene with the photo behind."))
+        self._act_camera_from_photo.triggered.connect(
+            lambda _c=False: self._on_camera_from_photo())
+        photo_menu.addAction(self._act_camera_from_photo)
+        self._act_edit_photo_lines = QAction(tr("Edit Photo Lines"), self)
+        self._act_edit_photo_lines.setObjectName("edit_photo_lines")
+        self._act_edit_photo_lines.setStatusTip(tr(
+            "Move the lines of the photo scene shown, or of the one "
+            "selected in Scenes."))
+        self._act_edit_photo_lines.triggered.connect(
+            lambda _c=False: self.edit_photo_lines())
+        photo_menu.addAction(self._act_edit_photo_lines)
+        self._act_reset_photo_lines = QAction(tr("Reset Photo Lines"), self)
+        self._act_reset_photo_lines.setObjectName("reset_photo_lines")
+        self._act_reset_photo_lines.setStatusTip(tr(
+            "Put the lines of the photo scene back where they start, to "
+            "lay them again."))
+        self._act_reset_photo_lines.triggered.connect(
+            lambda _c=False: self.reset_photo_lines())
+        photo_menu.addAction(self._act_reset_photo_lines)
+        photo_menu.aboutToShow.connect(self._sync_photo_menu)
+        for act, icon in ((self._act_camera_from_photo, "photo_new"),
+                          (self._act_edit_photo_lines, "photo_lines"),
+                          (self._act_reset_photo_lines, "photo_reset")):
+            act.setIcon(tool_icon(icon))
+            self._icon_actions.append((act, icon))
+        # The same three as a toolbar of their own, shown from the start;
+        # hidden from the toolbars' right-click list, the saved layout
+        # keeps it hidden. Its first place is beside the camera buttons
+        # (_on_photo_toolbar_shown), not where Qt leaves a new bar.
+        tb = self._new_toolbar(tr("Camera from Photo"), "photo_match_toolbar")
+        tb.addAction(self._act_camera_from_photo)
+        tb.addAction(self._act_edit_photo_lines)
+        tb.addAction(self._act_reset_photo_lines)
+        self._photo_toolbar = tb
+        tb.visibilityChanged.connect(self._on_photo_toolbar_shown)
 
         # Scene transitions (views/scene_player.py): the camera glides from
         # scene to scene, and Play runs through them all, for a presentation.
@@ -2819,7 +2872,12 @@ class MainWindow(QMainWindow):
                             getattr(self, "project_browser", None),
                             getattr(self, "layers_dock", None),
                             getattr(self, "scenes_dock", None),
-                            *getattr(self, "_extension_docks", ()))
+                            *getattr(self, "_extension_docks", ()),
+                            # Camera from Photo's tab, only while it is
+                            # there (show_photo_dock): never kept as one.
+                            (getattr(self, "_photo_dock", None)
+                             if getattr(self, "_photo_dock_live", False)
+                             else None))
                 if d is not None]
 
     def _build_sidebar_handle(self) -> None:
@@ -7986,6 +8044,285 @@ class MainWindow(QMainWindow):
         if ok:
             self.set_field_of_view(value)
 
+    # ---- Camera ▸ Camera from Photo (core/photo_match.py) ---------------------
+    def _on_camera_from_photo(self) -> None:
+        path, _f = QFileDialog.getOpenFileName(
+            self, tr("Camera from Photo"), "",
+            tr("Photos") + " (*.jpg *.jpeg *.png *.tif *.tiff *.bmp *.webp)")
+        if path:
+            self.start_camera_from_photo(path)
+
+    def start_camera_from_photo(self, path: str):
+        """A new scene for the photo at ``path``, shown with the photo
+        behind the model, and its lines ready to drag. The scene, or
+        ``None`` when the photo could not be read."""
+        from pathlib import Path
+        from core.history import AddSceneCommand
+        from core.photo_match import load_photo
+        from core.saved_views import SavedView
+        try:
+            pm = load_photo(path)
+        except OSError:
+            QMessageBox.warning(self, tr("Camera from Photo"), tr(
+                "Could not open {name} as a photo.", name=Path(path).name))
+            return None
+        vp = self.viewport
+        scene = vp.scene
+        taken = {v.name for v in scene.saved_views}
+        base = Path(path).stem or tr("Photo")
+        name, n = base, 2
+        while name in taken:
+            name, n = f"{base} {n}", n + 1
+        view = SavedView.capture(name, scene, vp.camera)
+        view.photo = pm
+        panel = self.tray.scenes
+        panel._begin_own()
+        vp.history.execute(AddSceneCommand(view))
+        panel.select_view(view)
+        panel._touch()
+        vp.enter_photo(view)
+        view.take_camera(vp.camera)
+        row = getattr(self, "_scene_tabs", None)
+        if row is not None:
+            row.mark_view(view)
+        self.edit_photo_lines(view)
+        return view
+
+    #: Set once the Camera from Photo toolbar has had its first place.
+    _PHOTO_TOOLBAR_PLACED = "ui/placed/photo_match_toolbar"
+
+    def _on_photo_toolbar_shown(self, shown: bool) -> None:
+        """The first time the Camera from Photo toolbar is shown it goes
+        beside the other camera buttons — right after Standard Views, in
+        its row — not at the head of the top row where Qt left it. From
+        then on it stays where the user puts it."""
+        # Seating it shows it again: that show must not seat it again,
+        # whether or not the settings could keep the mark.
+        if not shown or getattr(self, "_seating_photo_toolbar", False):
+            return
+        st = QSettings()
+        if st.value(self._PHOTO_TOOLBAR_PLACED) is not None:
+            return
+        st.setValue(self._PHOTO_TOOLBAR_PLACED, 1)
+        # Once the window has laid its bars out: shown with the window,
+        # the bars have no places yet to put it beside.
+        QTimer.singleShot(0, self, self._seat_photo_toolbar_now)
+
+    def _seat_photo_toolbar_now(self) -> None:
+        if self._photo_toolbar.isHidden():
+            return
+        self.layout().activate()
+        self._seating_photo_toolbar = True
+        try:
+            self.seat_photo_toolbar()
+        finally:
+            self._seating_photo_toolbar = False
+
+    def seat_photo_toolbar(self) -> None:
+        """Put the Camera from Photo toolbar right after Standard Views,
+        in the same row (or at the end of the top area without it)."""
+        tb = self._photo_toolbar
+        anchor = self.toolbars.get("views")
+        area = (self.toolBarArea(anchor) if anchor is not None
+                and not anchor.isHidden() else Qt.TopToolBarArea)
+        self.removeToolBar(tb)
+        if anchor is None or anchor.isHidden():
+            self.addToolBar(area, tb)
+            tb.show()
+            return
+        vertical = area in (Qt.LeftToolBarArea, Qt.RightToolBarArea)
+        key = self._toolbar_seat_key(vertical)
+        bars = sorted((b for b in self.findChildren(QToolBar)
+                       if b.parent() is self and b is not tb
+                       and not b.isHidden() and not b.isFloating()
+                       and self.toolBarArea(b) == area), key=key)
+        after = bars[bars.index(anchor) + 1:] if anchor in bars else []
+        nxt = after[0] if after else None
+        if nxt is None:
+            self.addToolBar(area, tb)
+        elif self.toolBarBreak(nxt):
+            # The anchor ends its row: ours ends it too, and the next row
+            # keeps its break.
+            self.insertToolBar(nxt, tb)
+            self.removeToolBarBreak(tb)
+            self.insertToolBarBreak(nxt)
+        else:
+            self.insertToolBar(nxt, tb)
+        tb.show()
+        QTimer.singleShot(0, self, self._pack_toolbars)
+        # After the repack: a full row leaves only its first button and
+        # the rest behind the overflow arrow.
+        QTimer.singleShot(0, self, lambda: self._give_photo_toolbar_room(0))
+
+    def _photo_toolbar_cramped(self) -> bool:
+        tb = self._photo_toolbar
+        if tb.isHidden() or tb.isFloating():
+            return False
+        vertical = self.toolBarArea(tb) in (Qt.LeftToolBarArea,
+                                            Qt.RightToolBarArea)
+        hint = tb.sizeHint()
+        have = tb.height() if vertical else tb.width()
+        need = hint.height() if vertical else hint.width()
+        return have + 2 < need
+
+    def _give_photo_toolbar_room(self, step: int) -> None:
+        """The Camera from Photo toolbar squeezed into a full row: to the
+        end of the last row of its area (step 0), then to a row of its own
+        (step 1) — its three buttons always in sight."""
+        if step > 1 or not self._photo_toolbar_cramped():
+            return
+        tb = self._photo_toolbar
+        area = self.toolBarArea(tb)
+        self._seating_photo_toolbar = True
+        try:
+            self.removeToolBar(tb)
+            if step == 1:
+                self.addToolBarBreak(area)
+            self.addToolBar(area, tb)
+            tb.show()
+        finally:
+            self._seating_photo_toolbar = False
+        QTimer.singleShot(0, self,
+                          lambda: self._give_photo_toolbar_room(step + 1))
+
+    def _photo_scene_in_reach(self):
+        """The photo scene Edit and Reset act on: the one shown with its
+        photo, else the one selected in Scenes; ``None`` without one."""
+        vp = self.viewport
+        view = vp.photo_view
+        if view is None:
+            cur = self.tray.scenes.current_view()
+            if cur is not None and getattr(cur, "photo", None) is not None:
+                view = cur
+        if (view is None or getattr(view, "photo", None) is None
+                or view not in vp.scene.saved_views):
+            return None
+        return view
+
+    def _sync_photo_menu(self) -> None:
+        on = self._photo_scene_in_reach() is not None
+        self._act_edit_photo_lines.setEnabled(on)
+        self._act_reset_photo_lines.setEnabled(on)
+
+    def reset_photo_lines(self):
+        """Camera ▸ Camera from Photo ▸ Reset Photo Lines: the lines being
+        laid — or those of the photo scene in reach, opened for it — back
+        where they start. The tool, or ``None``."""
+        from tools.photo_match import PhotoMatchTool
+        tool = self.viewport.active_tool
+        if not isinstance(tool, PhotoMatchTool) or tool.done:
+            tool = self.edit_photo_lines()
+        if tool is not None:
+            tool.reset_lines(self.viewport, "outside")
+        return tool
+
+    def photo_panel(self):
+        panel = getattr(self, "_photo_panel", None)
+        if panel is None:
+            from views.photo_match_panel import PhotoMatchPanel
+            panel = self._photo_panel = PhotoMatchPanel(self)
+            self.photo_dock()
+        return panel
+
+    def photo_dock(self):
+        """The side-tray tab that holds the Camera from Photo panel. Made
+        once; shown only while a photo's lines are being laid."""
+        dock = getattr(self, "_photo_dock", None)
+        if dock is None:
+            from PySide6.QtWidgets import QDockWidget, QScrollArea
+            panel = self.photo_panel()
+            dock = QDockWidget(tr("Camera from Photo"), self)
+            dock.setObjectName("tray_photo_match")
+            dock.setWindowIcon(tool_icon("photo_match"))
+            # Not closed nor floated by hand: it goes when the editing ends.
+            dock.setFeatures(QDockWidget.DockWidgetMovable)
+            # Nor listed among Qt's own panels (right-click on a toolbar).
+            dock.toggleViewAction().setVisible(False)
+            scroll = QScrollArea()
+            scroll.setWidgetResizable(True)
+            scroll.setFrameShape(QScrollArea.NoFrame)
+            scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+            scroll.setWidget(panel)
+            dock.setWidget(scroll)
+            dock.hide()
+            self._photo_dock = dock
+            self._photo_dock_live = False
+            self._photo_dock_prev = None
+        return dock
+
+    def show_photo_dock(self) -> None:
+        """The panel's tab among the side tray's, in front — tabbed with
+        Properties (or with whatever tray is open on that side)."""
+        from PySide6.QtWidgets import QDockWidget
+        dock = self.photo_dock()
+        if getattr(self, "_photo_dock_live", False) and not dock.isHidden():
+            dock.raise_()
+            return
+        area = self.dockWidgetArea(self.tray)
+        if area == Qt.NoDockWidgetArea:
+            area = Qt.RightDockWidgetArea
+        mates = [d for d in self._sidebar_docks()
+                 if d is not dock and not d.isHidden()
+                 and self.dockWidgetArea(d) == area]
+        # The tab in front now, to give it back at the end.
+        self._photo_dock_prev = next(
+            (d for d in mates if d.isVisible() and not d.visibleRegion()
+             .isEmpty()), None)
+        if self.dockWidgetArea(dock) != area:
+            self.addDockWidget(area, dock)
+        if mates:
+            anchor = self.tray if self.tray in mates else mates[0]
+            if dock not in self.tabifiedDockWidgets(anchor):
+                self.tabifyDockWidget(anchor, dock)
+        self._photo_dock_live = True
+        self._keep_docked(dock)
+        dock.setFeatures(QDockWidget.DockWidgetMovable)
+        dock.show()
+        dock.raise_()
+        QTimer.singleShot(0, self, self._style_dock_tabs)
+
+    def hide_photo_dock(self) -> None:
+        """The editing ended: the tab goes, and the one that was in front
+        before comes back."""
+        dock = getattr(self, "_photo_dock", None)
+        if dock is None or not getattr(self, "_photo_dock_live", False):
+            return
+        self._photo_dock_live = False
+        dock.hide()
+        prev = getattr(self, "_photo_dock_prev", None)
+        self._photo_dock_prev = None
+        if prev is not None and not prev.isHidden():
+            prev.raise_()
+        QTimer.singleShot(0, self, self._style_dock_tabs)
+
+    def edit_photo_lines(self, view=None):
+        """Lay the lines of the photo scene ``view`` — by default the one
+        shown with its photo, else the one selected in Scenes. The tool,
+        or ``None`` when there is no photo scene to edit."""
+        vp = self.viewport
+        if view is None:
+            view = self._photo_scene_in_reach()
+        if (view is None or getattr(view, "photo", None) is None
+                or view not in vp.scene.saved_views):
+            self.statusBar().showMessage(tr(
+                "Show or select a scene made from a photo first."), 3500)
+            return None
+        if vp.photo_view is not view:
+            self.tray.scenes.show_view(view, animate=False)
+        from tools.photo_match import PhotoMatchTool
+        tool = PhotoMatchTool(view, on_done=lambda: self._activate_tool(
+            "select"))
+        vp.set_active_tool(tool)
+        self.photo_panel().bind(tool, vp)
+        for action in self._tool_actions.values():
+            if action.isChecked():
+                action.setChecked(False)
+        self._tool_label.setText(tr("Tool: {name}", name=tr(tool.name)))
+        self._refresh_vcb()
+        self._update_status_hint()
+        vp.setFocus(Qt.OtherFocusReason)
+        return tool
+
     def _show_camera_settings(self):
         """Camera ▸ Camera Settings…: one window, kept, raised if open —
         on the live view (it stops editing a scene, if it was)."""
@@ -8915,6 +9252,12 @@ class MainWindow(QMainWindow):
         camera.setEnabled(view is not None)
         camera.triggered.connect(
             lambda _c=False, v=view: self.edit_scene_camera(v))
+        if view is not None and getattr(view, "photo", None) is not None:
+            lines = menu.addAction(tr("Edit Photo Lines"))
+            lines.setStatusTip(tr(
+                "Show this scene's photo and move the lines laid over it."))
+            lines.triggered.connect(
+                lambda _c=False, v=view: self.edit_photo_lines(v))
         rename = menu.addAction(tr("Rename…"))
         rename.setEnabled(view is not None)
         rename.triggered.connect(

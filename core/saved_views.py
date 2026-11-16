@@ -25,7 +25,8 @@ class SavedView:
                  fov_deg: float = 45.0, perspective: bool = True,
                  two_point: bool = False, hidden_layers=None, style=None, section=None,
                  georef=None, shadows=None, hidden_objects=None,
-                 hidden_shown=None, folder=None, lens=None) -> None:
+                 hidden_shown=None, folder=None, lens=None,
+                 photo=None) -> None:
         self.name = name
         #: The folder of the Scenes tab the scene is filed under, or
         #: ``None`` at the top (core.scene_folders, #1158). Only organises
@@ -85,6 +86,11 @@ class SavedView:
         #: ordinary lens, and recalling it takes off whatever lens the view
         #: had before: every scene stands on its own, like sections.
         self.lens = dict(lens) if lens else {}
+        #: Camera ▸ Camera from Photo: the photo this scene was matched to
+        #: and the lines laid over it (:class:`core.photo_match.PhotoMatch`),
+        #: or ``None``. Showing the scene shows the photo behind the model
+        #: until the camera moves.
+        self.photo = photo
 
     # ---- Snapshot / recall ---------------------------------------------------
     @classmethod
@@ -138,6 +144,8 @@ class SavedView:
         and the folder). ``style``: as in :meth:`capture`."""
         fresh = SavedView.capture(self.name, scene, camera, style)
         fresh.folder = self.folder
+        # A photo scene stays one: Update keeps the photo and its lines.
+        fresh.photo = self.photo
         self.__dict__.update(fresh.__dict__)
 
     def apply(self, scene, camera, put_style=None) -> None:
@@ -241,6 +249,8 @@ class SavedView:
             entry["hidden_shown"] = dict(self.hidden_shown)
         if self.folder:
             entry["folder"] = self.folder
+        if self.photo is not None:
+            entry["photo"] = self.photo.to_dict()
         return entry
 
     @classmethod
@@ -264,7 +274,55 @@ class SavedView:
                    folder=(raw.get("folder")
                            if isinstance(raw.get("folder"), str) else None),
                    lens=(raw.get("lens")
-                         if isinstance(raw.get("lens"), dict) else None))
+                         if isinstance(raw.get("lens"), dict) else None),
+                   photo=_photo_from(raw.get("photo")))
+
+    # ---- The camera alone (Camera from Photo's undo) -------------------------
+    def camera_state(self) -> dict:
+        """The scene's camera as a value."""
+        return {"target": tuple(self.target), "distance": self.distance,
+                "yaw": self.yaw, "pitch": self.pitch,
+                "fov_deg": self.fov_deg, "perspective": self.perspective,
+                "two_point": self.two_point, "lens": dict(self.lens)}
+
+    def set_camera_state(self, state: dict) -> None:
+        for k, v in state.items():
+            setattr(self, k, dict(v) if k == "lens" else
+                    tuple(v) if k == "target" else v)
+
+
+def _photo_from(raw):
+    if raw is None:
+        return None
+    from core.photo_match import PhotoMatch
+    return PhotoMatch.from_dict(raw)
+
+
+class PhotoCalibrationCommand(Command):
+    """The lines of a photo scene moved (Camera ▸ Camera from Photo): its
+    calibration and the camera it gives, as one undo step."""
+
+    keeps_paint = True
+    keeps_groups = True
+
+    def __init__(self, view, before_photo: dict, after_photo: dict,
+                 before_camera: dict, after_camera: dict) -> None:
+        self.view = view
+        self.before = (dict(before_photo), dict(before_camera))
+        self.after = (dict(after_photo), dict(after_camera))
+
+    def _put(self, scene, state) -> None:
+        from core.photo_match import PhotoMatch
+        photo, camera = state
+        self.view.photo = PhotoMatch.from_dict(photo)
+        self.view.set_camera_state(camera)
+        scene.version += 1
+
+    def do(self, scene) -> None:
+        self._put(scene, self.after)
+
+    def undo(self, scene) -> None:
+        self._put(scene, self.before)
 
 
 def apply_shadow_state(scene, raw: dict) -> None:

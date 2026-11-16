@@ -5132,6 +5132,13 @@ class ScenesPanel(QWidget):
                     "Show this scene and set its camera: lens, shift, frame "
                     "and more. The changes are kept in the scene."))
                 act.triggered.connect(lambda _c=False, v=view: edit(v))
+            lines = getattr(self._window, "edit_photo_lines", None)
+            if lines is not None and getattr(view, "photo", None) is not None:
+                act = menu.addAction(tr("Edit Photo Lines"))
+                act.setStatusTip(tr(
+                    "Show this scene's photo and move the lines laid over "
+                    "it."))
+                act.triggered.connect(lambda _c=False, v=view: lines(v))
             mates = list(SF.scenes_in(scene, SF.folder_of(scene, view)))
             at = next(i for i, v in enumerate(mates) if v is view)
             menu.addSeparator()
@@ -5198,6 +5205,12 @@ class ScenesPanel(QWidget):
                 vp.view_style = style
             view.apply(scene, vp.camera, own)
             vp.update()
+        # Camera from Photo: a photo scene shows its photo behind the model
+        # (the camera put back on it); any other takes the photo away.
+        enter = getattr(vp, "enter_photo", None)
+        if callable(enter):
+            enter(view if getattr(view, "photo", None) is not None
+                  else None)
         # A scene that only moves the camera changes nothing the caches
         # keyed on ``scene.version`` hold: bumping it re-synced every edge
         # and profile of the model (120 ms on a 1 M-face building) and

@@ -2360,6 +2360,15 @@ class Viewport(QOpenGLWidget):
         # and writing through to it.
         self.inference = InferenceEngine(self)
         self.active_tool: Optional[Tool] = None
+        # Camera ▸ Camera from Photo: the scene whose photo shows behind the
+        # model while the camera stays the photo's (``enter_photo``).
+        self.photo_view = None
+        self._photo_sig = None
+        self._photo_size = None
+        self._photo_state = None
+        self._photo_prev_frame = None
+        #: A tool with ``on_screen_press`` holding the left button.
+        self._screen_drag = False
         # Extensions' overlays and snap providers (views.extension_api).
         self._ext_overlays: list = []
         self._ext_snap_providers: list = []
@@ -2976,6 +2985,11 @@ class Viewport(QOpenGLWidget):
         self._tick = getattr(self, "_tick", 0) + 1     # a new epoch memo
         self._depth_clean = None          # see the read-back at the end
         self._sync_axes()
+        # Camera from Photo: a stand-in viewport (tests, a context below
+        # GL 3.3) may not have it.
+        check_photo = getattr(self, "_check_photo", None)
+        if check_photo is not None:
+            check_photo()
         self._sync_projection()
         if self._program is None:
             if self._gl is not None:          # a context below GL 3.3
@@ -3090,9 +3104,14 @@ class Viewport(QOpenGLWidget):
                 and not self._export_transparent
                 and not self._base_map_showing()
                 and not self._terrain_showing()
-                and not self._photo_showing()):
+                and not self._photo_showing()
+                and getattr(self, "photo_view", None) is None):
             self._draw_sky(mvp)
             self._program.setUniformValue(self._loc_mvp, mvp)
+        # Camera from Photo: the photo is the backdrop.
+        if (getattr(self, "photo_view", None) is not None
+                and not self._export_transparent):
+            self._draw_photo_backdrop(mvp)
 
         # Base-map tiles (Track G) — the ground image, drawn before the grid so
         # the grid lines read on top of the imagery. Depth-write OFF: it's a
@@ -5944,6 +5963,165 @@ class Viewport(QOpenGLWidget):
                                             entry["edge_count"], n)
                 entry["edges_vao"].release()
         self._program.setUniformValue1f(self._loc_fade, 0.0)
+
+    # ---- Camera ▸ Camera from Photo -----------------------------------------
+    def enter_photo(self, view) -> bool:
+        """Show the scene ``view``'s photo behind the model, the camera put
+        where the photo was taken (``core.photo_match``). ``None``, or a
+        scene without a photo, leaves the photo. Whether the photo shows."""
+        if view is None or getattr(view, "photo", None) is None:
+            self.leave_photo(restore=False)
+            return False
+        if self.photo_view is None:
+            self._photo_prev_frame = getattr(self.camera, "frame_aspect",
+                                             None)
+        self.photo_view = view
+        self.apply_photo_camera()
+        self.update()
+        return True
+
+    def apply_photo_camera(self):
+        """Put the camera where the shown photo's lines say, for this
+        view's size. The solution, or the ``CalibrationError`` that stopped
+        it (the camera then stays as it was)."""
+        from core import photo_match as PM
+        view = self.photo_view
+        if view is None:
+            return None
+        pm = view.photo
+        try:
+            sol = PM.solve_match(pm)
+        except PM.CalibrationError as err:
+            result = err
+        else:
+            PM.apply_to_camera(sol, pm.aspect, self.camera,
+                               max(self.width(), 1), max(self.height(), 1))
+            result = sol
+        self._photo_sig = PM.camera_signature(self.camera)
+        self._photo_size = (self.width(), self.height())
+        self._photo_state = pm.to_dict()
+        return result
+
+    def leave_photo(self, restore: bool = True) -> None:
+        """The photo goes. ``restore``: the camera moved away from it (an
+        orbit...), and the frame the photo put on it comes off again; a
+        scene shown next brings its own lens instead."""
+        view = self.photo_view
+        if view is None:
+            return
+        self.photo_view = None
+        self._photo_sig = None
+        cam = self.camera
+        frame = getattr(cam, "frame_aspect", None)
+        if (restore and view.photo is not None and frame is not None
+                and abs(frame - view.photo.aspect) < 1e-9):
+            cam.frame_aspect = self._photo_prev_frame
+        hook = getattr(self.active_tool, "on_photo_left", None)
+        if callable(hook):
+            hook(self)
+        self.update()
+
+    def _check_photo(self) -> None:
+        """Every frame: a camera that moved (orbit, pan, zoom, another
+        view) leaves the photo; a new size of the view, or lines changed
+        by an undo, put the camera back on the photo."""
+        view = self.photo_view
+        if view is None or self._export_size is not None:
+            return
+        if view.photo is None or view not in getattr(self.scene,
+                                                     "saved_views", ()):
+            self.leave_photo(restore=False)
+            return
+        from core.photo_match import camera_signature
+        if camera_signature(self.camera) != self._photo_sig:
+            self.leave_photo()
+            return
+        if ((self.width(), self.height()) != self._photo_size
+                or view.photo.to_dict() != self._photo_state):
+            self.apply_photo_camera()
+
+    def _draw_photo_backdrop(self, mvp) -> None:
+        """The photo inside the camera's frame, behind everything: no depth
+        test, no depth written, at its true tones."""
+        import struct
+        from core.camera import frame_rect
+        pm = self.photo_view.photo
+        tex = self._get_texture(pm.path) if pm.path else None
+        if tex is None:
+            return
+        W, H = float(max(self.width(), 1)), float(max(self.height(), 1))
+        rect = frame_rect(W, H, pm.aspect)
+        inv, ok = mvp.inverted()
+        if rect is None or not ok:
+            return
+        x, y, w, h = rect
+
+        def corner(px, py):
+            p = inv.map(QVector4D(2.0 * px / W - 1.0, 1.0 - 2.0 * py / H,
+                                  0.0, 1.0))
+            return QVector3D(p.x() / p.w(), p.y() / p.w(), p.z() / p.w())
+        bl, br = corner(x, y + h), corner(x + w, y + h)
+        top_r, top_l = corner(x + w, y), corner(x, y)
+        # _get_texture uploads the image bottom-up: v = 0 at its foot.
+        quad = ((bl, 0.0, 0.0), (br, 1.0, 0.0), (top_r, 1.0, 1.0),
+                (bl, 0.0, 0.0), (top_r, 1.0, 1.0), (top_l, 0.0, 1.0))
+        raw = b"".join(struct.pack("<5f", v.x(), v.y(), v.z(), u, t)
+                       for v, u, t in quad)
+        vao = getattr(self, "_img_vao", None)
+        if vao is None:
+            self._img_vao, self._img_vbo = self._create_dynamic_uv()
+            vao = self._img_vao
+        prog = self._program
+        prog.setUniformValue(self._loc_use_tex, 1)
+        prog.setUniformValue(self._loc_use_vcolor, 0)
+        prog.setUniformValue1f(self._loc_shade, 1.0)
+        prog.setUniformValue1f(self._loc_opacity, 1.0)
+        prog.setUniformValue1f(self._loc_fade, 0.0)
+        prog.setUniformValue(self._loc_hard_cutout, 0)
+        self._gl.glDisable(GL_DEPTH_TEST)
+        self._gl.glDepthMask(GL_FALSE)
+        self._img_vbo.bind()
+        self._img_vbo.allocate(raw, len(raw))
+        self._img_vbo.release()
+        vao.bind()
+        tex.bind(0)
+        self._gl.glDrawArrays(GL_TRIANGLES, 0, 6)
+        tex.release(0)
+        vao.release()
+        self._gl.glDepthMask(GL_TRUE)
+        self._gl.glEnable(GL_DEPTH_TEST)
+        prog.setUniformValue(self._loc_use_tex, 0)
+
+    def _draw_photo_in_front(self, painter) -> None:
+        """The shown photo OVER the model, in the camera's frame: at its
+        opacity when set in front, whole when the model is hidden."""
+        view = self.photo_view
+        pm = getattr(view, "photo", None)
+        opacity = pm.overlay_opacity() if pm is not None else None
+        if opacity is None or not pm.path:
+            return
+        from core.camera import frame_rect
+        rect = frame_rect(max(self.width(), 1), max(self.height(), 1),
+                          pm.aspect)
+        if rect is None:
+            return
+        x, y, w, h = rect
+        key = (pm.path, int(round(w)), int(round(h)))
+        cached = getattr(self, "_photo_front_pix", None)
+        if cached is None or cached[0] != key:
+            from PySide6.QtGui import QPixmap
+            pix = QPixmap(pm.path)
+            if pix.isNull():
+                return
+            pix = pix.scaled(key[1], key[2], Qt.IgnoreAspectRatio,
+                             Qt.SmoothTransformation)
+            cached = self._photo_front_pix = (key, pix)
+        painter.save()
+        painter.setOpacity(opacity)
+        painter.drawPixmap(QRectF(x, y, w, h), cached[1],
+                           QRectF(0, 0, cached[1].width(),
+                                  cached[1].height()))
+        painter.restore()
 
     def _draw_image_planes(self) -> None:
         """Reference images, as textured quads under the model.
@@ -10055,6 +10233,13 @@ class Viewport(QOpenGLWidget):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing, True)
         painter.setRenderHint(QPainter.TextAntialiasing, True)
+
+        # Camera from Photo: the photo over the model, when it is set in
+        # front (or the model is hidden); the frame and the tool's lines
+        # still draw over it.
+        draw_photo = getattr(self, "_draw_photo_in_front", None)
+        if draw_photo is not None:
+            draw_photo(painter)
 
         # The camera's picture frame first: what lies outside it is
         # shaded, and everything below still draws over it.
@@ -19942,6 +20127,14 @@ class Viewport(QOpenGLWidget):
             # The orbit/pan icon stays through the drag.
             self._apply_nav_cursor()
             return
+        if (ev.button() == Qt.LeftButton and callable(getattr(
+                self.active_tool, "on_screen_press", None))
+                and self.active_tool.on_screen_press(self, ev.position())):
+            # A tool that drags handles of its own on the screen (Camera
+            # from Photo): the press is its own, the move and release follow.
+            self._screen_drag = True
+            self.update()
+            return
         if ev.button() == Qt.LeftButton and self.active_tool is not None:
             # Triple click: a press landing right after a double-click at the
             # same spot (Qt has no native triple event): select all
@@ -20174,6 +20367,19 @@ class Viewport(QOpenGLWidget):
                     self.camera.orbit_about(pivot, dx, ody, self.height())
                 else:
                     self.camera.orbit(dx, ody, self.height())
+            self.update()
+            return
+
+        if self._screen_drag:
+            if ev.buttons() & Qt.LeftButton and callable(getattr(
+                    self.active_tool, "on_screen_drag", None)):
+                self.active_tool.on_screen_drag(self, ev.position())
+            else:                       # the release was lost, or the tool
+                self._screen_drag = False
+            self.update()
+            return
+        hover = getattr(self.active_tool, "on_screen_hover", None)
+        if callable(hover) and hover(self, ev.position()):
             self.update()
             return
 
@@ -20435,6 +20641,13 @@ class Viewport(QOpenGLWidget):
     def mouseReleaseEvent(self, ev) -> None:
         if self._look_drag is not None and ev.button() == self._look_drag[0]:
             self._end_look()
+            return
+        if self._screen_drag and ev.button() == Qt.LeftButton:
+            self._screen_drag = False
+            release = getattr(self.active_tool, "on_screen_release", None)
+            if callable(release):
+                release(self, ev.position())
+            self.update()
             return
         if ev.button() == Qt.MiddleButton:
             self._last_pos = None
