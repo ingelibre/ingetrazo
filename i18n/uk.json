@@ -3833,5 +3833,7 @@
  "Rotate 90°": "Повернути на 90°",
  "Flip the golden triangle or spiral left to right.": "Віддзеркалює золотий трикутник або спіраль зліва направо.",
  "Flip the golden triangle or spiral top to bottom.": "Віддзеркалює золотий трикутник або спіраль згори донизу.",
- "Turn the golden spiral a quarter turn: it starts from the top or the side.": "Повертає золоту спіраль на чверть оберту: вона починається згори або збоку."
+ "Turn the golden spiral a quarter turn: it starts from the top or the side.": "Повертає золоту спіраль на чверть оберту: вона починається згори або збоку.",
+ "Save a picture of the model in the document": "Зберігати мініатюру моделі в документі",
+ "A small picture of the first scene (or of the view, when there are no scenes), shown by the file manager. Off, a model without textures is saved as plain text (JSON).": "Невелике зображення першої сцени (або вигляду, якщо сцен немає), яке показує файловий менеджер. Якщо вимкнено, модель без текстур зберігається як звичайний текст (JSON)."
 }

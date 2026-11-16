@@ -3829,5 +3829,7 @@
  "Rotate 90°": "ໝຸນ 90°",
  "Flip the golden triangle or spiral left to right.": "ປີ້ນສາມແຈ ຫຼື ກ້ຽວວຽນຄຳ ຈາກຊ້າຍຫາຂວາ.",
  "Flip the golden triangle or spiral top to bottom.": "ປີ້ນສາມແຈ ຫຼື ກ້ຽວວຽນຄຳ ຈາກເທິງລົງລຸ່ມ.",
- "Turn the golden spiral a quarter turn: it starts from the top or the side.": "ໝຸນກ້ຽວວຽນຄຳໜຶ່ງສ່ວນສີ່ຮອບ: ເລີ່ມຈາກເທິງ ຫຼື ຂ້າງ."
+ "Turn the golden spiral a quarter turn: it starts from the top or the side.": "ໝຸນກ້ຽວວຽນຄຳໜຶ່ງສ່ວນສີ່ຮອບ: ເລີ່ມຈາກເທິງ ຫຼື ຂ້າງ.",
+ "Save a picture of the model in the document": "ບັນທຶກຮູບນ້ອຍຂອງແບບຈຳລອງໄວ້ໃນເອກະສານ",
+ "A small picture of the first scene (or of the view, when there are no scenes), shown by the file manager. Off, a model without textures is saved as plain text (JSON).": "ຮູບນ້ອຍຂອງສາກທຳອິດ (ຫຼື ຂອງມຸມມອງ ຖ້າບໍ່ມີສາກ) ທີ່ຕົວຈັດການໄຟລ໌ສະແດງ. ເມື່ອປິດ, ແບບຈຳລອງທີ່ບໍ່ມີພື້ນຜິວຈະຖືກບັນທຶກເປັນຂໍ້ຄວາມທຳມະດາ (JSON)."
 }

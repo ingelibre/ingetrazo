@@ -3829,5 +3829,7 @@
  "Rotate 90°": "Putar 90°",
  "Flip the golden triangle or spiral left to right.": "Membalik segitiga atau spiral emas dari kiri ke kanan.",
  "Flip the golden triangle or spiral top to bottom.": "Membalik segitiga atau spiral emas dari atas ke bawah.",
- "Turn the golden spiral a quarter turn: it starts from the top or the side.": "Memutar spiral emas seperempat putaran: dimulai dari atas atau samping."
+ "Turn the golden spiral a quarter turn: it starts from the top or the side.": "Memutar spiral emas seperempat putaran: dimulai dari atas atau samping.",
+ "Save a picture of the model in the document": "Simpan gambar kecil model di dalam dokumen",
+ "A small picture of the first scene (or of the view, when there are no scenes), shown by the file manager. Off, a model without textures is saved as plain text (JSON).": "Gambar kecil dari adegan pertama (atau dari tampilan, jika tidak ada adegan) yang ditampilkan pengelola berkas. Jika dimatikan, model tanpa tekstur disimpan sebagai teks biasa (JSON)."
 }

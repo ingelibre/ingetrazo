@@ -3827,5 +3827,7 @@
  "Rotate 90°": "Ruota di 90°",
  "Flip the golden triangle or spiral left to right.": "Riflette il triangolo o la spirale aurea da sinistra a destra.",
  "Flip the golden triangle or spiral top to bottom.": "Riflette il triangolo o la spirale aurea dall'alto in basso.",
- "Turn the golden spiral a quarter turn: it starts from the top or the side.": "Ruota la spirale aurea di un quarto di giro: parte dall'alto o dal lato."
+ "Turn the golden spiral a quarter turn: it starts from the top or the side.": "Ruota la spirale aurea di un quarto di giro: parte dall'alto o dal lato.",
+ "Save a picture of the model in the document": "Salva una miniatura del modello nel documento",
+ "A small picture of the first scene (or of the view, when there are no scenes), shown by the file manager. Off, a model without textures is saved as plain text (JSON).": "Una piccola immagine della prima scena (o della vista, se non ci sono scene), mostrata dal gestore di file. Disattivata, un modello senza texture viene salvato come testo semplice (JSON)."
 }

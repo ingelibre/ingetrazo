@@ -3827,5 +3827,7 @@
  "Rotate 90°": "旋转 90°",
  "Flip the golden triangle or spiral left to right.": "将黄金三角或黄金螺旋左右翻转。",
  "Flip the golden triangle or spiral top to bottom.": "将黄金三角或黄金螺旋上下翻转。",
- "Turn the golden spiral a quarter turn: it starts from the top or the side.": "将黄金螺旋旋转四分之一圈：从上方或侧面开始。"
+ "Turn the golden spiral a quarter turn: it starts from the top or the side.": "将黄金螺旋旋转四分之一圈：从上方或侧面开始。",
+ "Save a picture of the model in the document": "在文档中保存模型缩略图",
+ "A small picture of the first scene (or of the view, when there are no scenes), shown by the file manager. Off, a model without textures is saved as plain text (JSON).": "第一个场景（没有场景时为当前视图）的小图，由文件管理器显示。关闭后，没有纹理的模型将保存为纯文本（JSON）。"
 }

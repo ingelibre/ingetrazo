@@ -3827,5 +3827,7 @@
  "Rotate 90°": "Завърти на 90°",
  "Flip the golden triangle or spiral left to right.": "Обръща златния триъгълник или спирала отляво надясно.",
  "Flip the golden triangle or spiral top to bottom.": "Обръща златния триъгълник или спирала отгоре надолу.",
- "Turn the golden spiral a quarter turn: it starts from the top or the side.": "Завърта златната спирала на четвърт оборот: започва отгоре или отстрани."
+ "Turn the golden spiral a quarter turn: it starts from the top or the side.": "Завърта златната спирала на четвърт оборот: започва отгоре или отстрани.",
+ "Save a picture of the model in the document": "Запазване на миниатюра на модела в документа",
+ "A small picture of the first scene (or of the view, when there are no scenes), shown by the file manager. Off, a model without textures is saved as plain text (JSON).": "Малка картина на първата сцена (или на изгледа, ако няма сцени), която файловият мениджър показва. Изключено, модел без текстури се записва като обикновен текст (JSON)."
 }

@@ -3861,5 +3861,7 @@
  "Rotate 90°": "تدوير 90°",
  "Flip the golden triangle or spiral left to right.": "يقلب المثلث أو الحلزون الذهبي من اليسار إلى اليمين.",
  "Flip the golden triangle or spiral top to bottom.": "يقلب المثلث أو الحلزون الذهبي من الأعلى إلى الأسفل.",
- "Turn the golden spiral a quarter turn: it starts from the top or the side.": "يدير الحلزون الذهبي ربع دورة: يبدأ من الأعلى أو من الجانب."
+ "Turn the golden spiral a quarter turn: it starts from the top or the side.": "يدير الحلزون الذهبي ربع دورة: يبدأ من الأعلى أو من الجانب.",
+ "Save a picture of the model in the document": "حفظ صورة مصغّرة للنموذج داخل المستند",
+ "A small picture of the first scene (or of the view, when there are no scenes), shown by the file manager. Off, a model without textures is saved as plain text (JSON).": "صورة صغيرة للمشهد الأول (أو للعرض إن لم تكن هناك مشاهد) يعرضها مدير الملفات. عند تعطيلها يُحفظ النموذج بلا خامات نصًا عاديًا (JSON)."
 }

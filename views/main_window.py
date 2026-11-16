@@ -9629,7 +9629,12 @@ class MainWindow(QMainWindow):
         try:
             vp.scene.camera_home = self._camera_dict(vp)
             vp.scene.views_home = self._views_dict(doc)
-            stats = igz_format.save_scene(vp.scene, path) or {}
+            # The picture the file manager shows (None when it is off or
+            # cannot be drawn: the document is saved all the same).
+            from views import document_thumbnail
+            picture = document_thumbnail.for_save(vp)
+            stats = igz_format.save_scene(vp.scene, path,
+                                          thumbnail=picture) or {}
         except Exception as exc:  # noqa: BLE001
             QMessageBox.critical(self, tr("Save failed"), str(exc))
             return

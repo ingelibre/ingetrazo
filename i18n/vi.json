@@ -3853,5 +3853,7 @@
  "Rotate 90°": "Xoay 90°",
  "Flip the golden triangle or spiral left to right.": "Lật tam giác hoặc xoắn ốc vàng từ trái sang phải.",
  "Flip the golden triangle or spiral top to bottom.": "Lật tam giác hoặc xoắn ốc vàng từ trên xuống dưới.",
- "Turn the golden spiral a quarter turn: it starts from the top or the side.": "Xoay xoắn ốc vàng một phần tư vòng: bắt đầu từ trên hoặc từ cạnh."
+ "Turn the golden spiral a quarter turn: it starts from the top or the side.": "Xoay xoắn ốc vàng một phần tư vòng: bắt đầu từ trên hoặc từ cạnh.",
+ "Save a picture of the model in the document": "Lưu ảnh thu nhỏ của mô hình trong tài liệu",
+ "A small picture of the first scene (or of the view, when there are no scenes), shown by the file manager. Off, a model without textures is saved as plain text (JSON).": "Một ảnh nhỏ của cảnh đầu tiên (hoặc của khung nhìn, nếu không có cảnh) do trình quản lý tệp hiển thị. Khi tắt, mô hình không có vân liệu được lưu dưới dạng văn bản thuần (JSON)."
 }

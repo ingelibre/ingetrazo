@@ -3826,5 +3826,7 @@
  "Rotate 90°": "90° 회전",
  "Flip the golden triangle or spiral left to right.": "황금 삼각형이나 나선을 좌우로 뒤집습니다.",
  "Flip the golden triangle or spiral top to bottom.": "황금 삼각형이나 나선을 상하로 뒤집습니다.",
- "Turn the golden spiral a quarter turn: it starts from the top or the side.": "황금 나선을 90도 돌려 위나 옆에서 시작하게 합니다."
+ "Turn the golden spiral a quarter turn: it starts from the top or the side.": "황금 나선을 90도 돌려 위나 옆에서 시작하게 합니다.",
+ "Save a picture of the model in the document": "모델 썸네일을 문서에 저장",
+ "A small picture of the first scene (or of the view, when there are no scenes), shown by the file manager. Off, a model without textures is saved as plain text (JSON).": "첫 번째 장면(장면이 없으면 뷰)의 작은 그림으로, 파일 관리자에 표시됩니다. 끄면 텍스처가 없는 모델은 일반 텍스트(JSON)로 저장됩니다."
 }

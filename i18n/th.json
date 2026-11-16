@@ -3829,5 +3829,7 @@
  "Rotate 90°": "หมุน 90°",
  "Flip the golden triangle or spiral left to right.": "พลิกสามเหลี่ยมหรือเกลียวทองคำจากซ้ายไปขวา",
  "Flip the golden triangle or spiral top to bottom.": "พลิกสามเหลี่ยมหรือเกลียวทองคำจากบนลงล่าง",
- "Turn the golden spiral a quarter turn: it starts from the top or the side.": "หมุนเกลียวทองคำหนึ่งในสี่รอบ: เริ่มจากด้านบนหรือด้านข้าง"
+ "Turn the golden spiral a quarter turn: it starts from the top or the side.": "หมุนเกลียวทองคำหนึ่งในสี่รอบ: เริ่มจากด้านบนหรือด้านข้าง",
+ "Save a picture of the model in the document": "บันทึกภาพขนาดย่อของแบบจำลองไว้ในเอกสาร",
+ "A small picture of the first scene (or of the view, when there are no scenes), shown by the file manager. Off, a model without textures is saved as plain text (JSON).": "ภาพเล็กของฉากแรก (หรือของมุมมอง หากไม่มีฉาก) ที่ตัวจัดการไฟล์แสดง เมื่อปิด แบบจำลองที่ไม่มีพื้นผิวจะถูกบันทึกเป็นข้อความธรรมดา (JSON)"
 }
