@@ -236,6 +236,19 @@ def test_focal_in_millimetres_matches_the_camera_settings():
     assert PM.focal_from_35mm(f_mm, 1.5) == pytest.approx(focal)
 
 
+def test_an_upright_photo_reads_its_focal_on_the_turned_sensor():
+    """A 2:3 photo is taken with the camera turned: its height is the
+    full frame's 36 mm, so a 50 mm lens gives 2·atan(18/50) of vertical
+    angle — not 2·atan(12/50), which made an upright photo's EXIF focal
+    disagree by a third with every calibration."""
+    f_mm = 50.0
+    focal = 1.0 / math.tan(math.atan(18.0 / f_mm))
+    assert PM.focal_35mm(focal, 2.0 / 3.0) == pytest.approx(f_mm)
+    assert PM.focal_from_35mm(f_mm, 2.0 / 3.0) == pytest.approx(focal)
+    # Landscape stays as it was.
+    assert PM.focal_from_35mm(f_mm, 1.5) == pytest.approx(f_mm / 12.0)
+
+
 def test_mismatch_with_the_exif_focal_length():
     cam = FakeCamera(**CAMERAS[0])
     pm = _photo(cam)

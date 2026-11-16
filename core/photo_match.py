@@ -575,18 +575,28 @@ def horizon(sol: Solution) -> tuple:
 
 
 # ---- Focal lengths in millimetres -------------------------------------------
+def _photo_height_mm(aspect: float) -> float:
+    """How much of the full frame's height a photo of shape ``aspect``
+    uses: ``sensor_picture_height`` of its 24 mm — or, for an upright
+    photo, of its 36 mm, as the camera was held turned (the 35 mm
+    equivalent of an upright photo counts the sensor turned with it)."""
+    from core.camera import FULL_FRAME, sensor_picture_height
+    w, h = FULL_FRAME
+    sensor = (h, w) if aspect and 0.0 < aspect < 1.0 else (w, h)
+    return sensor_picture_height(sensor, aspect)
+
+
 def focal_35mm(focal: float, aspect: float) -> float:
     """A focal length in image units as the 35 mm equivalent: on the full
     frame, a picture of shape ``aspect`` uses ``sensor_picture_height`` of
-    its 24 mm — the same reading the camera settings give."""
-    from core.camera import FULL_FRAME, sensor_picture_height
-    return focal * sensor_picture_height(FULL_FRAME, aspect) / 2.0
+    its 24 mm — the same reading the camera settings give — and an upright
+    one of its 36 mm (:func:`_photo_height_mm`)."""
+    return focal * _photo_height_mm(aspect) / 2.0
 
 
 def focal_from_35mm(focal_mm: float, aspect: float) -> float:
     """Inverse of :func:`focal_35mm`."""
-    from core.camera import FULL_FRAME, sensor_picture_height
-    return 2.0 * focal_mm / sensor_picture_height(FULL_FRAME, aspect)
+    return 2.0 * focal_mm / _photo_height_mm(aspect)
 
 
 def focal_mismatch(pm: PhotoMatch, sol: Solution) -> float | None:
