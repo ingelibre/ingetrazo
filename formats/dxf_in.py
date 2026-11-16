@@ -19,7 +19,10 @@ our machinery. D1 + D2:
   faces runs the stitch + coplanar merge every importer here uses — a
   triangulated CAD terrain comes back as clean polygons, as with a "merge
   coplanar faces" option always on.
-- Text, dimensions, hatches and points are skipped, the usual convention.
+- POINT entities — a survey's spot heights — come in as **guide points**
+  at their place and height, on their layer's tag, ready for Draw ▸
+  Terrain ▸ Terrain from Points.
+- Text, dimensions and hatches are skipped, the usual convention.
 - CAD layers become groups-with-tags — the classic "import layers as
   groups" behaviour, the shape that works with our layer system. Block
   instances carry their INSERT's layer the same way.
@@ -319,12 +322,13 @@ def _entity_face(e):
 class _Bucket:
     """Linework + faces collected for one destination mesh."""
 
-    __slots__ = ("runs", "faces", "meshes")
+    __slots__ = ("runs", "faces", "meshes", "points")
 
     def __init__(self) -> None:
         self.runs: list = []                # (point_run, curved)
         self.faces: list = []               # point loops
         self.meshes: list = []              # one list of point loops per mesh entity
+        self.points: list = []              # POINT locations (guide points)
 
 
 def _scan(space, sagitta, skipped, counter, per_layer, depth=0):
@@ -386,6 +390,14 @@ def _expand_assemblies(doc, placements, depth: int = 0) -> list:
 
 def _bucket_one(e, layer, sagitta, skipped, counter, per_layer) -> None:
     kind = e.dxftype()
+    if kind == "POINT":
+        try:
+            loc = e.dxf.location
+        except Exception:
+            return
+        counter[0] += 1
+        per_layer.setdefault(layer, _Bucket()).points.append(loc)
+        return
     loops = _mesh_faces(e)
     if loops is not None:
         if loops:
@@ -620,6 +632,8 @@ def _load_dxf_inner(scene, path, progress=None, scale: float = 1.0,
         for loop in bucket.faces + [l for m in bucket.meshes for l in m]:
             for p in loop:
                 absorb(p.x * scale, p.y * scale, p.z * scale)
+        for p in bucket.points:
+            absorb(p.x * scale, p.y * scale, p.z * scale)
     for _bname, m, _layer in placements:
         t = m.get_row(3)
         absorb(t[0] * scale, t[1] * scale, t[2] * scale)
@@ -636,6 +650,18 @@ def _load_dxf_inner(scene, path, progress=None, scale: float = 1.0,
     def ensure_tag(layer_name: str) -> None:
         if layer_name != "0" and scene.layer(layer_name) is None:
             scene.layers.append(Layer(layer_name))
+
+    points_made = 0
+    from core.guide import Guide
+    for layer in sorted(per_layer):
+        for p in per_layer[layer].points:
+            scene.guides.append(Guide(
+                QVector3D(p.x * scale - offset[0], p.y * scale - offset[1],
+                          p.z * scale - offset[2]),
+                layer=layer if layer != "0" else None))
+            points_made += 1
+        if per_layer[layer].points and layer != "0":
+            ensure_tag(layer)
 
     for layer in sorted(per_layer):
         mesh = _build_mesh(per_layer[layer], scale, offset)
@@ -679,7 +705,7 @@ def _load_dxf_inner(scene, path, progress=None, scale: float = 1.0,
         edges_made += (len(proto.edges)
                        if components[block_name] == 1 else 0)
 
-    if groups_made == 0:
+    if groups_made == 0 and points_made == 0:
         raise NothingToImport(skipped)
 
     scene.version += 1
@@ -690,6 +716,7 @@ def _load_dxf_inner(scene, path, progress=None, scale: float = 1.0,
         "faces": faces_made,
         "outline_faces": outline_faces,
         "groups": groups_made,
+        "points": points_made,
         "components": components,
         "skipped": skipped,
         "offset": offset if offset != (0.0, 0.0, 0.0) else None,
