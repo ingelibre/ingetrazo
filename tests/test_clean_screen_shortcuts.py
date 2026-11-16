@@ -21,12 +21,14 @@ _app = QApplication.instance() or QApplication([])
 
 @pytest.fixture
 def settings_file(tmp_path, monkeypatch):
-    """A throwaway INI for every QSettings() the windows open."""
+    """A throwaway INI for the main window's QSettings(). Only the window's
+    module is patched: patching ``PySide6.QtCore.QSettings`` itself left
+    the factory behind in every module first imported during these tests
+    (views/multi_view.py among them), pointing at a deleted file for the
+    rest of the run. conftest.py already keeps the real store aside."""
     path = tmp_path / "prefs.ini"
     factory = lambda *a: QSettings(str(path), QSettings.IniFormat)  # noqa: E731
-    import PySide6.QtCore as qc
     import views.main_window as mw
-    monkeypatch.setattr(qc, "QSettings", factory)
     monkeypatch.setattr(mw, "QSettings", factory)
     return path
 
