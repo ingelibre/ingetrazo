@@ -24,6 +24,7 @@ from PySide6.QtGui import (
     QColor,
     QCursor,
     QIcon,
+    QImage,
     QPainter,
     QPainterPath,
     QPen,
@@ -77,7 +78,25 @@ class _weighted:
 
 
 _PX = 48          # render size (QIcon scales down; big = crisp on HiDPI)
-_M = 8.0          # margin — drawing happens in [_M, _PX-_M]
+#: Margin of the toolbar and menu icons, in render pixels: each drawing is
+#: written by hand in about the middle two thirds of the canvas, and
+#: :func:`tool_icon` scales it up and centres it until its ink stops this
+#: far from the nearest edge, so the icons fill their buttons and the bars
+#: can stay narrow. The line weight is kept as it was: only the drawing grows.
+_M = 1.0
+#: Optical size, in render pixels: the side of the square every drawing is
+#: matched to by area (:func:`_target_side`). Squares, circles and other
+#: compact shapes stop there; long ones reach the _M margin with their long
+#: side. One number for all, so the bars read as one even row.
+_OPTICAL = 42.0
+#: How much ink a typical drawing lays in its box (alpha over box area,
+#: the median of the toolbar set): an outline. Solid shapes — the select
+#: arrow, the filled house views, Text 3D — carry more and look bigger at
+#: the same size, outline-only ones less; :func:`_ink_factor` shrinks or
+#: grows each by a little so they weigh the same. Clamped, so no icon
+#: strays far from the common size.
+_INK_REF = 0.28
+_INK_RANGE = (0.80, 1.05)
 
 
 def _ink() -> QColor:
@@ -419,6 +438,45 @@ def _section(p, ink):
     _solid_arrow(p, _accent(), 28, 9, 38, 9)                # the side cut away
 
 
+def _section_box(p, ink):
+    # What the box keeps: a block, inside a dashed box in the accent.
+    p.save()
+    p.setPen(Qt.NoPen)
+    p.setBrush(QColor(ink.red(), ink.green(), ink.blue(), 150))
+    p.drawRect(QRectF(15, 24, 12, 10))
+    p.restore()
+    pen = QPen(_accent(), 2.4, Qt.DashLine)
+    pen.setCapStyle(Qt.RoundCap)
+    p.save()
+    p.setPen(pen)
+    p.setBrush(Qt.NoBrush)
+    front = QRectF(8, 18, 22, 22)
+    p.drawRect(front)
+    p.drawRect(front.translated(9, -9))
+    for x, y in ((8, 18), (30, 18), (30, 40), (8, 40)):
+        p.drawLine(QPointF(x, y), QPointF(x + 9, y - 9))
+    p.restore()
+
+
+def _section_box_cut(p, ink):
+    # The box's cut as a switch: a solid block sliced by the box's corner.
+    p.save()
+    p.setPen(Qt.NoPen)
+    p.setBrush(QColor(ink.red(), ink.green(), ink.blue(), 170))
+    p.drawRect(QRectF(9, 19, 20, 20))
+    p.setBrush(_accent())
+    p.drawPolygon(QPolygonF([QPointF(29, 19), QPointF(39, 9),
+                             QPointF(39, 29), QPointF(29, 39)]))
+    p.restore()
+    pen = QPen(ink, 2.4)
+    p.save()
+    p.setPen(pen)
+    p.setBrush(Qt.NoBrush)
+    p.drawLine(QPointF(9, 19), QPointF(19, 9))
+    p.drawLine(QPointF(19, 9), QPointF(39, 9))
+    p.restore()
+
+
 def _section_planes(p, ink):
     quad = QPolygonF(_SECTION_FRAME)
     dash = _Pen(QColor(ink.red(), ink.green(), ink.blue(), 110), 1.8,
@@ -563,6 +621,42 @@ def _make_faces(p, ink):
     p.setPen(plus)
     p.drawLine(QPointF(34, 9), QPointF(44, 9))
     p.drawLine(QPointF(39, 4), QPointF(39, 14))
+    p.restore()
+
+
+def _make_faces_extrude(p, ink):
+    """Make Faces and Extrude: Make Faces' loop with its corners in the
+    accent, at the bottom, and the solid it rises into: the same outline
+    lifted, joined by its upright edges, and an arrow going up."""
+    lift = 16.0
+    base = [QPointF(4, 36), QPointF(18, 28), QPointF(32, 36), QPointF(18, 44)]
+    top = [QPointF(q.x(), q.y() - lift) for q in base]
+    acc = _accent()
+    p.save()
+    p.setPen(Qt.NoPen)
+    p.setBrush(QColor(acc.red(), acc.green(), acc.blue(), 130))
+    p.drawPolygon(QPolygonF(base))
+    p.restore()
+    p.setBrush(Qt.NoBrush)
+    p.drawPolygon(QPolygonF(base))
+    p.drawPolygon(QPolygonF(top))
+    for a, b in zip(base, top):
+        if a.y() > 30:                       # the hidden back edge stays off
+            p.drawLine(a, b)
+    p.save()
+    p.setPen(QPen(ink, 1.4))
+    p.setBrush(QBrush(acc))
+    for q in base:
+        p.drawEllipse(q, 3.0, 3.0)
+    p.restore()
+    p.save()
+    arrow = QPen(ink, 3.0)
+    arrow.setCapStyle(Qt.RoundCap)
+    arrow.setJoinStyle(Qt.RoundJoin)
+    p.setPen(arrow)
+    p.drawLine(QPointF(40, 22), QPointF(40, 5))
+    p.drawPolyline(QPolygonF([QPointF(35, 10), QPointF(40, 5),
+                              QPointF(45, 10)]))
     p.restore()
 
 
@@ -2124,6 +2218,69 @@ def _camera_settings(p, ink):
     p.drawEllipse(QPointF(30, 42), 3.4, 3.4)
 
 
+def _photo_frame(p, ink) -> None:
+    """Camera from Photo's photo: the frame of Image's icon, a little
+    larger, in the tools' ink."""
+    p.save()
+    p.setPen(_rpen(ink, 2.6))
+    p.setBrush(Qt.NoBrush)
+    p.drawRoundedRect(QRectF(5, 8, 38, 32), 3.0, 3.0)
+    p.restore()
+
+
+#: The building in the photo: a box seen corner-on, as in Two-Point
+#: Perspective — (top, bottom) of its left, front and right edges.
+_PHOTO_BOX = ((QPointF(12, 19), QPointF(12, 31)),
+              (QPointF(24, 14), QPointF(24, 35)),
+              (QPointF(36, 19), QPointF(36, 31)))
+
+
+def _photo_match(p, ink):
+    # Camera from Photo: a photo of a building corner, drawn as Two-Point
+    # Perspective draws its box — the picture the camera is found from.
+    _photo_frame(p, ink)
+    p.save()
+    p.setPen(_rpen(ink, 2.4))
+    _box(p, ink, *_PHOTO_BOX)
+    p.restore()
+
+
+def _photo_lines(p, ink):
+    # Edit the lines: the corner's edges only, each run on (thin) toward
+    # where it vanishes, with the accent handles the user drags.
+    _photo_frame(p, ink)
+    (lt, lb), (ft, fb), (rt, rb) = _PHOTO_BOX
+    p.save()
+    faint = QColor(ink)
+    faint.setAlpha(140)
+    p.setPen(_rpen(faint, 1.4))
+    for a, b in ((ft, lt), (fb, lb), (ft, rt), (fb, rb)):
+        far = QPointF(b.x() + (b.x() - a.x()) * 0.45,
+                      b.y() + (b.y() - a.y()) * 0.45)
+        p.drawLine(b, far)
+    p.setPen(_rpen(ink, 2.4))
+    for a, b in ((ft, lt), (fb, lb), (ft, rt), (fb, rb), (ft, fb)):
+        p.drawLine(a, b)
+    p.restore()
+    for pt in (lt, lb, rt, rb):
+        _dot(p, pt.x(), pt.y(), r=2.8)
+
+
+def _photo_new(p, ink):
+    # A new photo: the sign at its full size, as its three siblings, and
+    # the «+» on its plate over the frame's corner.
+    _photo_match(p, ink)
+    _badge_plate(p)
+    _badge_plus(p, ink)
+
+
+def _photo_reset(p, ink):
+    # Reset the lines: the lines at their full size, and Undo's arrow on
+    # its plate over the frame's corner.
+    _photo_lines(p, ink)
+    _badge_back(p, ink)
+
+
 def _walk(p, ink):
     # Walk: two footprints stepping forward up the icon, the leading one in
     # the accent — the camera advances as you walk.
@@ -2544,6 +2701,7 @@ _DRAW = {
     "arc": _arc, "arc3": _arc3, "center_arc": _center_arc, "pie": _pie,
     "rotate": _rotate, "scale": _scale, "flip": _flip, "followme": _followme, "pushpull": _pushpull, "offset": _offset, "fillet": _fillet,
     "bridge": _bridge, "make_faces": _make_faces,
+    "make_faces_extrude": _make_faces_extrude,
     "move": _move, "paint": _paint, "eyedropper": _eyedropper,
     "dimension": _dimension, "dimension_chain": _dimension_chain,
     "dimension_radius": _dimension_radius,
@@ -2556,7 +2714,8 @@ _DRAW = {
     "text": _text, "text3d": _text3d,
     "eraser": _eraser, "tape": _tape, "protractor": _protractor,
     "north": _north,
-    "section": _section,
+    "section": _section, "section_box": _section_box,
+    "section_box_cut": _section_box_cut,
     "styles": _styles_icon, "shadows": _shadows_icon,
     "panel_properties": _panel_properties, "panel_bim": _panel_bim,
     "panel_terrain": _panel_terrain, "panel_browser": _panel_browser,
@@ -2583,6 +2742,8 @@ _DRAW = {
     "zoom": _zoom, "zoom_window": _zoom_window,
     "position_camera": _position_camera, "walk": _walk,
     "camera_settings": _camera_settings,
+    "photo_match": _photo_match, "photo_new": _photo_new,
+    "photo_lines": _photo_lines, "photo_reset": _photo_reset,
     "look_around": _look_around, "first_person": _first_person,
     "four_views": _four_views, "close": _close,
     "zoom_extents": _zoom_extents, "zoom_selection": _zoom_selection,
@@ -2599,16 +2760,120 @@ _DRAW = {
 }
 
 
+def ink_bounds(pm: QPixmap) -> QRectF | None:
+    """The box of the pixels a drawing left on ``pm`` (alpha above a
+    faint antialiasing fringe), in pixel units; None when it is blank."""
+    img = pm.toImage().convertToFormat(QImage.Format_ARGB32)
+    w, h = img.width(), img.height()
+    alpha = bytes(img.constBits())[3::4]          # BGRA in memory
+    stride = img.bytesPerLine() // 4
+    rows = [y for y in range(h)
+            if max(alpha[y * stride:y * stride + w]) > 20]
+    if not rows:
+        return None
+    cols = [x for x in range(w)
+            if any(alpha[y * stride + x] > 20 for y in rows)]
+    return QRectF(cols[0], rows[0], cols[-1] + 1 - cols[0],
+                  rows[-1] + 1 - rows[0])
+
+
+#: key -> (scale, dx, dy) that fits that drawing into the _M margin.
+_fit_cache: dict = {}
+#: key -> its _ink_factor, kept for the tests and for whoever tunes _INK_*.
+_factor_cache: dict = {}
+
+
+def _render(draw, weight: float, fit=None) -> QPixmap:
+    """One drawing on a fresh canvas; ``fit`` = (scale, dx, dy) to apply
+    first, with the lines thinned by the scale so they keep their weight."""
+    scale = fit[0] if fit else 1.0
+    with _weighted(weight / scale):
+        pm, p, ink = _canvas()
+        if fit:
+            p.translate(fit[1], fit[2])
+            p.scale(scale, scale)
+        draw(p, ink)
+        p.end()
+    return pm
+
+
+def ink_density(pm: QPixmap) -> float:
+    """Share of its ink box a drawing covers (0 blank … 1 solid)."""
+    box = ink_bounds(pm)
+    if box is None:
+        return 0.0
+    img = pm.toImage().convertToFormat(QImage.Format_ARGB32)
+    ink = sum(bytes(img.constBits())[3::4]) / 255.0
+    return ink / max(box.width() * box.height(), 1.0)
+
+
+def _ink_factor(density: float) -> float:
+    """Size factor that evens out how heavy a drawing looks: below 1 for
+    solid shapes, a touch above for thin outlines (see _INK_REF)."""
+    if density <= 0:
+        return 1.0
+    lo, hi = _INK_RANGE
+    return max(lo, min(hi, (_INK_REF / density) ** 0.3))
+
+
+def _target_side(w: float, h: float, factor: float = 1.0) -> float:
+    """How long the longer side of a drawing whose ink box is ``w`` × ``h``
+    should end up: as large as gives it the visual size of an _OPTICAL
+    square (the same area), never past the _M margin. A square stops at
+    _OPTICAL, a wide or tall one stretches its long side to the margin —
+    so a level line and a filled square read as the same size instead of
+    the square shouting, as when every drawing touched the margin.
+    ``factor`` is the drawing's :func:`_ink_factor`."""
+    room = _PX - 2 * _M
+    side, other = max(w, h), max(min(w, h), 1.0)
+    return min(room, _OPTICAL * factor * (side / other) ** 0.5)
+
+
+def _fit_for(key: str, draw, weight: float):
+    """The scale and shift that give ``draw`` its optical size
+    (:func:`_target_side`), centred on the canvas. Measured on the drawing
+    as it is, then checked scaled and nudged until it lands (dots grow
+    with the drawing, lines keep their width, so one pass is not exact)."""
+    if key in _fit_cache:
+        return _fit_cache[key]
+    fit = None
+    raw = _render(draw, weight)
+    box = ink_bounds(raw)
+    factor = _ink_factor(ink_density(raw))
+    _factor_cache[key] = factor
+    if box is not None:
+        fit = (1.0, 0.0, 0.0)
+        for _ in range(6):
+            side = max(box.width(), box.height())
+            want = _target_side(box.width(), box.height(), factor)
+            scale = fit[0] * want / side
+            # The ink box of the current fit, back in the drawing's units.
+            cx = (box.center().x() - fit[1]) / fit[0]
+            cy = (box.center().y() - fit[2]) / fit[0]
+            fit = (scale, _PX / 2 - cx * scale, _PX / 2 - cy * scale)
+            box = ink_bounds(_render(draw, weight, fit))
+            if box is None:
+                break
+            side = max(box.width(), box.height())
+            if (abs(side - _target_side(box.width(), box.height(), factor)) <= 1
+                    and box.left() >= _M - 0.5 and box.top() >= _M - 0.5
+                    and box.right() <= _PX - _M + 0.5
+                    and box.bottom() <= _PX - _M + 0.5):
+                break
+    _fit_cache[key] = fit
+    return fit
+
+
 def tool_icon(key: str) -> QIcon:
-    """Programmatic :class:`QIcon` for a tool/nav ``key`` (null if unknown)."""
+    """Programmatic :class:`QIcon` for a tool/nav ``key`` (null if unknown),
+    scaled to fill its canvas but for the _M margin. The «more tools»
+    chevrons keep their own size: they sit on a 12 px button."""
     draw = _DRAW.get(key)
     if draw is None:
         return QIcon()
-    with _weighted(1.0 if key in FULL_WEIGHT else ICON_STROKE):
-        pm, p, ink = _canvas()
-        draw(p, ink)
-        p.end()
-    return QIcon(pm)
+    weight = 1.0 if key in FULL_WEIGHT else ICON_STROKE
+    fit = None if key in FULL_WEIGHT else _fit_for(key, draw, weight)
+    return QIcon(_render(draw, weight, fit))
 
 
 def letter_icon(name: str) -> QIcon:
@@ -2676,6 +2941,7 @@ _CURSOR_HOTSPOTS = {
     "zoom": (21, 21),               # the magnifier's lens centre
     "zoom_window": (21, 22),
     "section": (24, 27),            # the plane's centre
+    "section_box": (24, 24),
     "position_camera": (23, 44),    # the marker's tip: where the camera goes
     "walk": (24, 24),
     "look_around": (24, 26),        # the pupil
@@ -2860,14 +3126,16 @@ def tool_cursor(key: str | None, plus: bool = False) -> QCursor | None:
 #: persona que instale el programa»).
 TOOLBAR_ICON_SIZES = ((20, "Small"), (24, "Normal"), (32, "Large"),
                       (40, "Extra large"))
-DEFAULT_TOOLBAR_ICON_PX = 24
+DEFAULT_TOOLBAR_ICON_PX = 20
 
 
 def default_toolbar_icon_px() -> int:
-    """The size a profile that never chose gets: normal (24 px). Large was
+    """The size a profile that never chose gets: small (20 px). Large was
     the default for one release (Marco liked it on his 27" monitor) and
-    looked clumsy on his laptop — «se ven mejor los tamaños normales»
-    (2026-09-14); Preferences keeps 20/24/32/40 for whoever wants more."""
+    looked clumsy on his laptop; normal (24 px) followed. Since the icons
+    fill their buttons (_M) a 20 px icon reads as a 24 px one did and the
+    bars take less room; Preferences keeps 20/24/32/40 for whoever wants
+    more."""
     return DEFAULT_TOOLBAR_ICON_PX
 
 

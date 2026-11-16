@@ -30,8 +30,8 @@ does the showing and the adding (``MainWindow._refresh_scene_tabs``).
 from __future__ import annotations
 
 from PySide6.QtCore import QPoint, QRect, QSize, Qt, Signal
-from PySide6.QtWidgets import (QHBoxLayout, QStyle, QStyleOptionTab, QTabBar,
-                               QToolButton, QWidget)
+from PySide6.QtWidgets import (QCheckBox, QHBoxLayout, QStyle,
+                               QStyleOptionTab, QTabBar, QToolButton, QWidget)
 
 from core.i18n import tr
 
@@ -311,5 +311,227 @@ class SceneTabRow(QWidget):
 
 def menu_upwards(menu, global_pos) -> QPoint:
     """Where to open ``menu`` so it grows UP from ``global_pos`` (the scene
-    row sits at the window's foot: downwards it ran off the screen)."""
-    return QPoint(global_pos.x(), global_pos.y() - menu.sizeHint().height())
+    row sits at the window's foot: downwards it ran off the screen), kept
+    inside the program's window."""
+    size = menu.sizeHint()
+    at = QPoint(global_pos.x(), global_pos.y() - size.height())
+    return keep_inside(at, size, window_bounds(menu))
+
+
+def window_bounds(menu):
+    """The program's window a menu belongs to, in screen coordinates (and
+    within its screen), or None while that window is not shown."""
+    parent = menu.parentWidget() if menu is not None else None
+    win = parent.window() if parent is not None else None
+    if win is None or not win.isVisible():
+        return None
+    rect = win.frameGeometry()
+    screen = win.screen()
+    if screen is not None:
+        rect = rect.intersected(screen.availableGeometry())
+    return rect if not rect.isEmpty() else None
+
+
+def keep_inside(at: QPoint, size, bounds) -> QPoint:
+    """``at`` moved just enough for a popup of ``size`` to stay in
+    ``bounds`` (a menu opened near the window's edge stays in the program);
+    a popup bigger than the window keeps to its top-left corner."""
+    if bounds is None:
+        return QPoint(at)
+    x = min(at.x(), bounds.right() + 1 - size.width())
+    y = min(at.y(), bounds.bottom() + 1 - size.height())
+    return QPoint(max(x, bounds.left()), max(y, bounds.top()))
+
+
+class CompositionGuidesRow(QWidget):
+    """A menu row: a tick box, as the menu's other on/off entries have,
+    that shows or hides the composition guides in ``viewport`` — the active
+    view — and «Composition Guides», which opens the list of guides beside
+    it."""
+
+    #: How long the pointer rests on the name before the list opens (ms),
+    #: as a menu's own submenus wait.
+    HOVER_MS = 250
+    #: Where the tick box and the name start (px from the row's left edge).
+    BOX_LEFT = 6
+    TEXT_LEFT = 28
+
+    def __init__(self, viewport, menu, parent=None, views=None) -> None:
+        super().__init__(parent)
+        from PySide6.QtCore import QTimer
+        from PySide6.QtGui import QActionGroup
+        from PySide6.QtWidgets import QLabel, QMenu
+        from views.composition_guides import GUIDES, guide_names
+        self.viewport = viewport
+        self.menu = menu
+        #: Every view shown (a callable): «in all views» acts on them.
+        self.views = views or (lambda: [viewport])
+        self.setObjectName("composition_guides_row")
+        self.setMouseTracking(True)
+        row = QHBoxLayout(self)
+        # The box sits in the column where the menu ticks its other
+        # entries, so the name starts where theirs do.
+        row.setContentsMargins(self.BOX_LEFT, 2, 10, 2)
+        row.setSpacing(0)
+        switch = self.switch = QCheckBox(self)
+        switch.setObjectName("composition_guides_switch")
+        switch.setFixedWidth(self.TEXT_LEFT - self.BOX_LEFT)
+        switch.setToolTip(tr(
+            "Show or hide the composition guides in the active view"))
+        switch.setAccessibleName(tr("Composition Guides"))
+        switch.toggled.connect(self._on_switch)
+        row.addWidget(switch)
+        self.label = QLabel(tr("Composition Guides"), self)
+        row.addWidget(self.label, 1)
+        self.arrow = QLabel("▸", self)
+        row.addWidget(self.arrow)
+        names = guide_names()
+        sub = self.list_menu = QMenu(tr("Composition Guides"), self)
+        group = QActionGroup(sub)
+        group.setExclusive(True)
+        self.guide_actions = {}
+        for key in GUIDES[1:]:
+            act = sub.addAction(names[key])
+            act.setCheckable(True)
+            act.setData(key)
+            group.addAction(act)
+            act.triggered.connect(lambda _c=False, k=key: self.choose(k))
+            self.guide_actions[key] = act
+        # The golden triangle and spiral have a side: these flip them (and
+        # turn the spiral) so their strong point falls where it should.
+        # Ticked when that part of the orientation is on.
+        from views.composition_guides import turn_names
+        sub.addSeparator()
+        self.turn_actions = {}
+        for part, (name, tip) in turn_names().items():
+            act = sub.addAction(name)
+            act.setCheckable(True)
+            act.setStatusTip(tip)
+            act.triggered.connect(lambda _c=False, b=part: self.flip(b))
+            self.turn_actions[part] = act
+        # With several views, each keeps its own guides; these two put
+        # them on or off in all of them at once.
+        sub.addSeparator()
+        several = len(self.views()) > 1        # updated by sync()
+        show_all = self.show_all_action = sub.addAction(
+            tr("Show in all views"))
+        show_all.setStatusTip(tr(
+            "The composition guide chosen, in every view shown."))
+        show_all.setEnabled(several)
+        show_all.triggered.connect(lambda _c=False: self.set_all(True))
+        hide_all = self.hide_all_action = sub.addAction(
+            tr("Hide in all views"))
+        hide_all.setStatusTip(tr(
+            "No composition guides in any view shown."))
+        hide_all.setEnabled(several)
+        hide_all.triggered.connect(lambda _c=False: self.set_all(False))
+        self._hover = QTimer(self)
+        self._hover.setSingleShot(True)
+        self._hover.setInterval(self.HOVER_MS)
+        self._hover.timeout.connect(self.open_list)
+        self.sync()
+
+    def chosen(self) -> str:
+        """The guide shown, or the one the switch would turn on."""
+        from views.composition_guides import DEFAULT_GUIDES
+        vp = self.viewport
+        return (getattr(vp.camera, "composition_guide", None)
+                or getattr(vp, "last_composition_guide", None)
+                or DEFAULT_GUIDES)
+
+    def sync(self) -> None:
+        """The switch and the list show the active view's guide."""
+        on = bool(getattr(self.viewport.camera, "composition_guide", None))
+        self.switch.blockSignals(True)
+        self.switch.setChecked(on)
+        self.switch.blockSignals(False)
+        act = self.guide_actions.get(self.chosen())
+        if act is not None:
+            act.setChecked(True)
+        from views.composition_guides import turn_parts
+        parts = turn_parts(self.chosen())
+        turn = getattr(self.viewport.camera, "composition_turn", 0)
+        for part, act in self.turn_actions.items():
+            act.setEnabled(part in parts)
+            act.setChecked(part in parts and bool(turn & part))
+        several = len(self.views()) > 1
+        self.show_all_action.setEnabled(several)
+        self.hide_all_action.setEnabled(several)
+
+    def _on_switch(self, on: bool) -> None:
+        self.viewport.toggle_composition_guide(bool(on))
+        self.sync()
+
+    def choose(self, key: str) -> None:
+        """Show the guide ``key`` in the active view, and close the menu."""
+        self.viewport.set_composition_guide(key)
+        self.sync()
+        self.menu.close()
+
+    def flip(self, part: int) -> None:
+        """«Flip horizontally», «Flip vertically» or «Rotate 90°»: the
+        golden triangle or spiral chosen, shown in the active view with
+        that part of its orientation changed; then close the menu."""
+        self.viewport.flip_composition_guide(part, self.chosen())
+        self.sync()
+        self.menu.close()
+
+    def set_all(self, on: bool) -> None:
+        """The guide chosen in every view shown (on), or none in any (off);
+        then close the menu."""
+        key = self.chosen() if on else None
+        turn = getattr(self.viewport.camera, "composition_turn", 0)
+        for vp in self.views():
+            vp.set_composition_guide(key)
+            if on and hasattr(vp, "set_composition_turn"):
+                vp.set_composition_turn(turn)
+        self.sync()
+        self.menu.close()
+
+    def open_list(self) -> None:
+        """The list of guides, beside the row: on its right, or on its left
+        when the window has no room there — never out of the window."""
+        if self.list_menu.isVisible():
+            return
+        size = self.list_menu.sizeHint()
+        right = self.mapToGlobal(QPoint(self.width(), 0))
+        left = self.mapToGlobal(QPoint(-size.width(), 0))
+        bounds = window_bounds(self.menu)
+        at = right
+        if bounds is not None and right.x() + size.width() > bounds.right() + 1:
+            at = left
+        self.list_menu.popup(keep_inside(at, size, bounds))
+
+    def _over_switch(self, pos) -> bool:
+        return self.switch.geometry().contains(pos)
+
+    def mouseMoveEvent(self, ev) -> None:  # noqa: N802 — Qt override
+        if self._over_switch(ev.position().toPoint()):
+            self._hover.stop()
+        elif not self._hover.isActive() and not self.list_menu.isVisible():
+            self._hover.start()
+        super().mouseMoveEvent(ev)
+
+    def leaveEvent(self, ev) -> None:  # noqa: N802 — Qt override
+        self._hover.stop()
+        super().leaveEvent(ev)
+
+    def mouseReleaseEvent(self, ev) -> None:  # noqa: N802 — Qt override
+        if ev.button() == Qt.LeftButton \
+                and not self._over_switch(ev.position().toPoint()):
+            self._hover.stop()
+            self.open_list()
+            return
+        super().mouseReleaseEvent(ev)
+
+
+def CompositionGuidesAction(viewport, menu, views=None):  # noqa: N802
+    """The «Composition Guides» row as an entry of ``menu``; ``views``
+    gives every view shown, for «Show/Hide in all views»."""
+    from PySide6.QtWidgets import QWidgetAction
+    act = QWidgetAction(menu)
+    act.setText(tr("Composition Guides"))
+    row = CompositionGuidesRow(viewport, menu, menu, views)
+    act.setDefaultWidget(row)
+    act.row = row
+    return act

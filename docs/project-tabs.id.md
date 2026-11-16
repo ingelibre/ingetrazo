@@ -58,7 +58,7 @@ dan **Simpan Sebagai** berlaku untuk proyek tersebut.
 | Tutup Proyek | Tutup proyek ini (Ctrl+W). |
 | Tutup Proyek di Kanan / di Kiri | Tutup tab di sisi tersebut satu per satu. Setiap proyek menanyakan penyimpanan perubahannya sendiri; Batal menghentikan proses. Perintah dinonaktifkan jika tidak ada tab di sisi itu. |
 | Tutup Semua Proyek | Tutup semuanya hingga tersisa [area kosong](#4-saat-semua-proyek-ditutup). |
-| Tampilkan scene sebagai tab | Tampilkan atau sembunyikan baris scene proyek ini (Alt+E). |
+| Tampilkan scene sebagai tab | Tampilkan atau sembunyikan baris scene proyek ini (Ctrl+E atau Alt+E). |
 | Tampilkan gambar proyek saat penunjuk berada di atas tabnya | Aktifkan atau nonaktifkan pratinjau pada semua tab. |
 
 ### Pintasan
@@ -68,7 +68,7 @@ dan **Simpan Sebagai** berlaku untuk proyek tersebut.
 | Ctrl+W | Tutup proyek aktif |
 | Ctrl+PgDown / Ctrl+PgUp | Proyek berikutnya / sebelumnya |
 | Ctrl+Tab | Jika beberapa proyek terbuka: proyek berikutnya. Jika hanya satu: beralih ke lembar |
-| Alt+E | Tampilkan atau sembunyikan baris scene proyek aktif |
+| Ctrl+E (atau Alt+E) | Tampilkan atau sembunyikan baris scene proyek aktif |
 | Alt+T | Tampilkan atau sembunyikan tab proyek |
 | Ctrl+Space | Pada susunan beberapa tampilan: maksimalkan tampilan di bawah penunjuk, atau pulihkan susunannya |
 
@@ -115,7 +115,7 @@ baris tab selalu sama; urutan itulah yang disimpan dalam dokumen.
 Proyek tanpa scene tidak menampilkan baris ini. Membuat scene pertama
 melalui **+ Scene** pada panel Scene memunculkannya, dan menghapus scene
 terakhir menyembunyikannya. Setiap proyek menyimpan pilihan tampil/sembunyi
-sendiri. Gunakan **Alt+E**, **Jendela ▸ Tampilkan scene sebagai tab**, menu
+sendiri. Gunakan **Ctrl+E** (atau **Alt+E**), **Jendela ▸ Tampilkan scene sebagai tab**, menu
 tab proyek, atau **Sembunyikan scene** pada baris. Jika dinonaktifkan, baris
 tetap tersembunyi meskipun proyek memiliki scene.
 

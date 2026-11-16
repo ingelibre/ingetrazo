@@ -15,7 +15,8 @@ from typing import Optional
 
 from PySide6.QtCore import (Qt, QSettings, QEvent, QCoreApplication, QPoint,
                             QRect, QSize, QTimer, Signal)
-from PySide6.QtGui import QAction, QActionGroup, QIcon, QKeySequence, QVector3D
+from PySide6.QtGui import (QAction, QActionGroup, QCursor, QIcon,
+                           QKeySequence, QVector3D)
 from PySide6.QtWidgets import (
     QApplication,
     QFileDialog,
@@ -85,6 +86,7 @@ from tools.arc import PieTool
 from tools.flip import FlipTool
 from tools.freehand import FreehandTool
 from tools.section import SectionPlaneTool
+from tools.section_box import SectionBoxTool
 from tools.pushpull import PushPullTool
 from tools.rectangle import RectangleTool
 from tools.select import SelectTool
@@ -206,6 +208,11 @@ def _keep_on_top(bar, *ours) -> None:
     for w in ours:
         w.raise_()
 
+
+
+#: Show or hide the scenes as tabs: Ctrl+E (shown in the menus), and Alt+E
+#: as it always was.
+SCENE_TABS_KEYS = (QKeySequence("Ctrl+E"), QKeySequence("Alt+E"))
 
 class _IconTabStyle(QProxyStyle):
     """The side trays' tabs show only their icon, so many fit on the bar
@@ -481,6 +488,84 @@ class _SceneSwitch:
             w._update_title()
 
 
+#: Where a tray stands while the panels float (gear ▸ Floating panels):
+#: never a real side for them — the trays only go left or right — so it
+#: can travel as an «area» through the code that moves them about.
+FLOAT_AREA = Qt.DockWidgetArea.TopDockWidgetArea
+
+
+class _FloatingPanels(QMainWindow):
+    """The side trays' own window while they float: the same panels, tabs,
+    «+» and gear, in a tool window over IngeTrazo that can go to another
+    screen. Its docks sit in its right area; MainWindow treats that as the
+    side :data:`FLOAT_AREA`. Closing it docks the panels back."""
+
+    def __init__(self, window) -> None:
+        super().__init__(window, Qt.Tool)
+        self.setObjectName("floating_panels")
+        self.setWindowTitle(tr("Panels"))
+        self.setDockNestingEnabled(False)
+        self._window = window
+        self.installEventFilter(window)          # new tab bars, as Qt makes them
+
+    def closeEvent(self, event) -> None:  # noqa: N802 — Qt override
+        event.ignore()
+        QTimer.singleShot(0, self._window,
+                          lambda: self._window.set_panels_floating(False))
+
+    def contextMenuEvent(self, event) -> None:  # noqa: N802 — Qt override
+        # Its tab bars answer as the window's do (the gear's menu).
+        self._window.panels_context_menu(self, event)
+
+    # Dragged by its title bar near a side of IngeTrazo, it docks there
+    # (the side lights up as a dragged tab's does). The title bar is the
+    # system's: Windows says when its drag starts and ends; elsewhere the
+    # drag ends when the moves stop with no button down.
+    _WM_ENTERSIZEMOVE = 0x0231
+    _WM_EXITSIZEMOVE = 0x0232
+    _native_drag = False
+    _placing = False
+
+    def nativeEvent(self, event_type, message):  # noqa: N802 — Qt override
+        if bytes(event_type) == b"windows_generic_MSG":
+            try:
+                import ctypes.wintypes
+                msg = ctypes.wintypes.MSG.from_address(int(message))
+                if msg.message == self._WM_ENTERSIZEMOVE:
+                    self._native_drag = True
+                    self._window._float_drag_start()
+                elif msg.message == self._WM_EXITSIZEMOVE:
+                    self._native_drag = False
+                    self._window._float_drag_end(QCursor.pos())
+            except (ValueError, TypeError, OSError):
+                pass
+        return super().nativeEvent(event_type, message)
+
+    def moveEvent(self, event) -> None:  # noqa: N802 — Qt override
+        super().moveEvent(event)
+        if self._placing or not self.isVisible():
+            return
+        import sys
+        if sys.platform == "win32":
+            if self._native_drag:
+                self._window._float_drag_move(QCursor.pos())
+            return
+        self._window._float_drag_move(QCursor.pos())
+        timer = self.__dict__.get("_still")
+        if timer is None:
+            timer = self._still = QTimer(self)
+            timer.setSingleShot(True)
+            timer.setInterval(350)
+            timer.timeout.connect(self._moves_stopped)
+        timer.start()
+
+    def _moves_stopped(self) -> None:
+        if QApplication.mouseButtons() != Qt.NoButton:
+            self._still.start()                    # still held: wait on
+            return
+        self._window._float_drag_end(QCursor.pos())
+
+
 class MainWindow(QMainWindow):
     """Top-level IngeTrazo window."""
 
@@ -530,6 +615,8 @@ class MainWindow(QMainWindow):
             "geopath": GeoPathTool(),
             # Tools ▸ Section Plane (core/section.py).
             "section": SectionPlaneTool(),
+            # Tools ▸ Section Box: six cuts at once (core.section.SectionBox).
+            "section_box": SectionBoxTool(),
             # Camera ▸ Position Camera / Walk / Look Around
             # (tools/walkthrough.py) — Rafael's «pasitos» for interiors.
             "position_camera": PositionCameraTool(),
@@ -676,6 +763,9 @@ class MainWindow(QMainWindow):
         # exists — saveState matches them by objectName.
         st = QSettings()
         state = st.value("ui/window_state")
+        # A first run: the side tray takes the factory width once the
+        # window is up (see showEvent), not the one the blob was saved at.
+        self._tray_width_pending = state is None
         if state is None:
             from core.paths import app_root
             factory = app_root() / "resources" / "ui" / "default_layout.state"
@@ -708,8 +798,15 @@ class MainWindow(QMainWindow):
             from PySide6.QtCore import QTimer
             self._toolbars_packed = True
             QTimer.singleShot(0, self, self._pack_toolbars)
+        if getattr(self, "_tray_width_pending", False):
+            self._tray_width_pending = False
+            self._give_tray_factory_width()
         if not getattr(self, "_ndof_connected", False):
             self._connect_ndof()
+        if not self.__dict__.get("_float_restored"):
+            # Floating panels come back once the window is up, over it.
+            self._float_restored = True
+            QTimer.singleShot(0, self, self._restore_floating_panels)
 
     # ---- 3D mouse (issue #108) ----------------------------------------------
     def _route_window_toggle(self, name: str, own):
@@ -953,6 +1050,13 @@ class MainWindow(QMainWindow):
         if self.size() != size:
             self.layout().activate()
             self.resize(size)
+        # Not in the factory layout: shown, as it starts, and back in its
+        # first place beside the camera buttons.
+        photo_tb = getattr(self, "_photo_toolbar", None)
+        if photo_tb is not None:
+            QSettings().remove(self._PHOTO_TOOLBAR_PLACED)
+            photo_tb.hide()
+            photo_tb.show()
         QTimer.singleShot(0, self, self._pack_toolbars)
 
     def _dock_tab_rows(self, docks) -> list:
@@ -1263,7 +1367,7 @@ class MainWindow(QMainWindow):
             # Push/Pull first (Marco, 2026-09-14), then move, rotate, scale, flip…
             ("modify", tr("Modify"), ["pushpull", "move", "rotate", "scale", "flip", "followme", "offset", "fillet"]),
             ("annotate", tr("Annotate"), ["tape", "protractor", "north", "dimension", "text", "geopath"]),
-            ("sections", tr("Sections"), ["section"]),
+            ("sections", tr("Sections"), ["section", "section_box"]),
             # The Solid Tools toolbar, in the usual order.
             ("solids", tr("Solid Tools"),
              ["outer_shell", "solid_union", "solid_subtract", "solid_trim",
@@ -1303,6 +1407,22 @@ class MainWindow(QMainWindow):
         self._act_make_faces.triggered.connect(self._on_make_faces)
         self.toolbars["modify"].addAction(self._act_make_faces)
         self._icon_actions.append((self._act_make_faces, "make_faces"))
+        # Make Faces and Extrude: the same faces, each one straight into its
+        # own solid of the height asked for — the step that nearly always
+        # follows on an imported plan (walls, a slab, kerbs).
+        self._act_make_faces_extrude = QAction(
+            tool_icon("make_faces_extrude"), tr("Make Faces and Extrude…"),
+            self)
+        self._act_make_faces_extrude.setStatusTip(tr(
+            "Make the faces that the selected edges close and extrude each "
+            "one into its own solid group."))
+        set_tooltip(self._act_make_faces_extrude,
+                    tr("Make Faces and Extrude…"))
+        self._act_make_faces_extrude.triggered.connect(
+            lambda: self._on_make_faces_extrude())
+        self.toolbars["modify"].addAction(self._act_make_faces_extrude)
+        self._icon_actions.append((self._act_make_faces_extrude,
+                                   "make_faces_extrude"))
 
         # Save, first on the Main bar (the composer's Sheet bar has had it
         # since the start; Marco, 2026-09-14: «el icono de guardar también en
@@ -1366,6 +1486,26 @@ class MainWindow(QMainWindow):
             "section_fill", tr("Section Fill"),
             tr("Fill the cut faces of a section with a solid colour."),
             lambda on: self._set_style_field("section_fill", on))
+        # The section box's cut on and off: a button beside the tool (which
+        # makes and edits boxes) and Camera ▸ Section Box — the same action.
+        # Away: Tools ▸ Remove Section Box.
+        self._act_section_box = QAction(tool_icon("section_box_cut"),
+                                        tr("Section Box"), self)
+        self._act_section_box.setCheckable(True)
+        self._act_section_box.setText(tr("Cut with a section box"))
+        self._act_section_box.setToolTip(tr("Cut with a section box"))
+        self._icon_actions.append((self._act_section_box, "section_box_cut"))
+        sec_tb.addAction(self._act_section_box)
+        self._act_section_box.setStatusTip(tr(
+            "Keep only what lies inside the section box; off, the box stays "
+            "and the model shows whole."))
+        self._act_section_box.toggled.connect(self._on_toggle_section_box)
+        self._act_remove_section_box = QAction(
+            tr("Remove Section Box"), self)
+        self._act_remove_section_box.setStatusTip(tr(
+            "Take the section box away; the model shows whole again."))
+        self._act_remove_section_box.triggered.connect(
+            self._on_remove_section_box)
 
         # 3D Text opens a dialog (it's a one-shot action, not a checkable tool),
         # so it gets its own button on the Annotate bar next to the 2D Text tool.
@@ -1916,6 +2056,52 @@ class MainWindow(QMainWindow):
         self._act_camera_settings.triggered.connect(
             lambda _c=False: self._show_camera_settings())
         camera_menu.addAction(self._act_camera_settings)
+        # Camera from Photo (core/photo_match.py): the camera that took a
+        # photo, from lines laid over its edges; the photo becomes a scene
+        # that shows it behind the model. Its own submenu: a new photo,
+        # its lines again, and those lines back where they start.
+        photo_menu = camera_menu.addMenu(tr("Camera from Photo"))
+        self._photo_menu = photo_menu
+        self._act_camera_from_photo = QAction(tr("New Photo…"), self)
+        self._act_camera_from_photo.setObjectName("camera_from_photo")
+        self._act_camera_from_photo.setStatusTip(tr(
+            "Open a photo and find the camera that took it, so the model "
+            "lines up with it: a new scene with the photo behind."))
+        self._act_camera_from_photo.triggered.connect(
+            lambda _c=False: self._on_camera_from_photo())
+        photo_menu.addAction(self._act_camera_from_photo)
+        self._act_edit_photo_lines = QAction(tr("Edit Photo Lines"), self)
+        self._act_edit_photo_lines.setObjectName("edit_photo_lines")
+        self._act_edit_photo_lines.setStatusTip(tr(
+            "Move the lines of the photo scene shown, or of the one "
+            "selected in Scenes."))
+        self._act_edit_photo_lines.triggered.connect(
+            lambda _c=False: self.edit_photo_lines())
+        photo_menu.addAction(self._act_edit_photo_lines)
+        self._act_reset_photo_lines = QAction(tr("Reset Photo Lines"), self)
+        self._act_reset_photo_lines.setObjectName("reset_photo_lines")
+        self._act_reset_photo_lines.setStatusTip(tr(
+            "Put the lines of the photo scene back where they start, to "
+            "lay them again."))
+        self._act_reset_photo_lines.triggered.connect(
+            lambda _c=False: self.reset_photo_lines())
+        photo_menu.addAction(self._act_reset_photo_lines)
+        photo_menu.aboutToShow.connect(self._sync_photo_menu)
+        for act, icon in ((self._act_camera_from_photo, "photo_new"),
+                          (self._act_edit_photo_lines, "photo_lines"),
+                          (self._act_reset_photo_lines, "photo_reset")):
+            act.setIcon(tool_icon(icon))
+            self._icon_actions.append((act, icon))
+        # The same three as a toolbar of their own, shown from the start;
+        # hidden from the toolbars' right-click list, the saved layout
+        # keeps it hidden. Its first place is beside the camera buttons
+        # (_on_photo_toolbar_shown), not where Qt leaves a new bar.
+        tb = self._new_toolbar(tr("Camera from Photo"), "photo_match_toolbar")
+        tb.addAction(self._act_camera_from_photo)
+        tb.addAction(self._act_edit_photo_lines)
+        tb.addAction(self._act_reset_photo_lines)
+        self._photo_toolbar = tb
+        tb.visibilityChanged.connect(self._on_photo_toolbar_shown)
 
         # Scene transitions (views/scene_player.py): the camera glides from
         # scene to scene, and Play runs through them all, for a presentation.
@@ -2058,6 +2244,8 @@ class MainWindow(QMainWindow):
         camera_menu.addAction(self._act_show_splanes)
         camera_menu.addAction(self._act_show_scuts)
         camera_menu.addAction(self._act_section_fill)
+        camera_menu.addAction(self._act_section_box)
+        camera_menu.aboutToShow.connect(self._sync_section_box_actions)
 
         # View ▸ Hidden Objects / Hidden Geometry: what Hide put
         # away comes back as a see-through grid and can be selected again
@@ -2118,14 +2306,19 @@ class MainWindow(QMainWindow):
                      ("pushpull", "followme", "offset", "fillet"),
                      ("tape", "protractor", "north"),
                      ("dimension", "text"),
-                     ("section",)):
+                     ("section", "section_box")):
             for key in keys:
                 tools_menu.addAction(self._tool_actions[key])
+            if "section_box" in keys:
+                tools_menu.addAction(self._act_remove_section_box)
+                tools_menu.aboutToShow.connect(
+                    self._sync_section_box_actions)
             if "followme" in keys:
                 # Bridge (issue #614), with the tools that build faces
                 # out of others: the Modify toolbar's own action.
                 tools_menu.addAction(self._act_bridge)
                 tools_menu.addAction(self._act_make_faces)
+                tools_menu.addAction(self._act_make_faces_extrude)
             tools_menu.addSeparator()
         # Tools ▸ Outer Shell, and Tools ▸ Solid Tools ▸ the rest.
         tools_menu.addAction(self._tool_actions["outer_shell"])
@@ -2208,11 +2401,12 @@ class MainWindow(QMainWindow):
         window_menu.addAction(self._act_sidebar)
         window_menu.addAction(self._act_left_sidebar)
         # The scenes as tabs under the viewport, for the project in front
-        # (Alt+E: E for «escenas»; each project keeps its own choice).
+        # (Ctrl+E, and Alt+E as before: E for «escenas»; each project keeps
+        # its own choice).
         scenes_action = QAction(tr("Show scenes as tabs"), self)
         scenes_action.setCheckable(True)
         scenes_action.setChecked(bool(self._doc.scene_tabs))
-        scenes_action.setShortcut(QKeySequence("Alt+E"))
+        scenes_action.setShortcuts(list(SCENE_TABS_KEYS))
         scenes_action.setStatusTip(tr(
             "This project's scenes as tabs under the view; a click shows one."))
         scenes_action.toggled.connect(lambda on: self.set_scene_tabs(on))
@@ -2529,10 +2723,24 @@ class MainWindow(QMainWindow):
         for first, nxt in zip(order, order[1:]):
             self.tabifyDockWidget(first, nxt)
 
-    #: The side tray's width on a first run — the one the factory layout
-    #: (resources/ui/default_layout.state) gives it; Restore default
-    #: panels puts it back (tests/test_sidebar_trays.py checks they agree).
-    FACTORY_TRAY_WIDTH = 439
+    #: The side tray's width on a first run and after Restore default
+    #: panels. The tabs are icons now, so the tray no longer has to be as
+    #: wide as their names: 400 px still holds the Browser's Name, Type
+    #: and Layer uncut (tests/test_browser_columns_fit.py; at 370 the Layer
+    #: column was cut with the fonts of a Linux desktop) and Properties
+    #: whole. The factory layout blob was saved wider; a first run sets
+    #: this one over it (``_give_tray_factory_width``).
+    FACTORY_TRAY_WIDTH = 400
+
+    def _give_tray_factory_width(self) -> None:
+        """The side tray at :attr:`FACTORY_TRAY_WIDTH` — now and once more
+        after the pending layout settles (a dock resized before it has
+        laid out keeps the old width)."""
+        from PySide6.QtCore import QTimer
+        width = self.FACTORY_TRAY_WIDTH
+        self.resizeDocks([self.tray], [width], Qt.Horizontal)
+        QTimer.singleShot(0, self, lambda: self.resizeDocks(
+            [self.tray], [width], Qt.Horizontal))
 
     def restore_default_trays(self) -> None:
         """Window ▸ Panels ▸ Restore default panels: the factory layout of
@@ -2542,7 +2750,11 @@ class MainWindow(QMainWindow):
         the choice
         forgotten, so it stands as a first run's would."""
         from PySide6.QtCore import QTimer
+        # Floating, they come back to their side first: the factory
+        # layout has them there.
+        self.set_panels_floating(False)
         st = QSettings()
+        st.remove("ui/panels_float_geometry")
         st.remove("ui/hidden_trays")
         st.remove("ui/known_trays")
         st.remove("ui/dock_tabs_vertical")
@@ -2569,10 +2781,7 @@ class MainWindow(QMainWindow):
         # And the side tray's width: the factory one. Not the width the
         # window opened with — the layout is saved on closing, so a tray
         # left wide opened wide, and «restoring» to that changed nothing.
-        width = self.FACTORY_TRAY_WIDTH
-        self.resizeDocks([self.tray], [width], Qt.Horizontal)
-        QTimer.singleShot(0, self, lambda: self.resizeDocks(
-            [self.tray], [width], Qt.Horizontal))
+        self._give_tray_factory_width()
         QTimer.singleShot(0, self, self._style_dock_tabs)
         QTimer.singleShot(0, self, self._place_sidebar_handle)
 
@@ -2611,6 +2820,8 @@ class MainWindow(QMainWindow):
             act = getattr(self, "_act_sidebar", None)
             if act is not None and not act.isChecked():
                 act.setChecked(True)
+            if self._floats(dock):
+                self._float_window().show()
             dock.show()
             dock.raise_()
         else:
@@ -2661,7 +2872,12 @@ class MainWindow(QMainWindow):
                             getattr(self, "project_browser", None),
                             getattr(self, "layers_dock", None),
                             getattr(self, "scenes_dock", None),
-                            *getattr(self, "_extension_docks", ()))
+                            *getattr(self, "_extension_docks", ()),
+                            # Camera from Photo's tab, only while it is
+                            # there (show_photo_dock): never kept as one.
+                            (getattr(self, "_photo_dock", None)
+                             if getattr(self, "_photo_dock_live", False)
+                             else None))
                 if d is not None]
 
     def _build_sidebar_handle(self) -> None:
@@ -2756,8 +2972,12 @@ class MainWindow(QMainWindow):
         """Fold the trays away (remembering which were open) or bring
         them back; the chevron turns to point the way. The RIGHT side's
         trays — the left side folds on its own (Ctrl+F6)."""
+        win = self.__dict__.get("_panels_float")
+        if self.panels_floating() and win is not None:
+            win.setVisible(on)
         docks = [d for d in self._sidebar_docks()
-                 if self.dockWidgetArea(d) != Qt.LeftDockWidgetArea]
+                 if self.dockWidgetArea(d) not in (Qt.LeftDockWidgetArea,
+                                                   FLOAT_AREA)]
         if on:
             shown = getattr(self, "_sidebar_was", None) or docks[:1]
             from shiboken6 import isValid
@@ -2802,7 +3022,11 @@ class MainWindow(QMainWindow):
             for tb in self.findChildren(QToolBar):
                 tb.hide()
             for dock in self.findChildren(QDockWidget):
-                dock.hide()
+                if not self._floats(dock):
+                    dock.hide()
+            win = self.__dict__.get("_panels_float")
+            if win is not None:
+                win.hide()
             self.menuBar().hide()
             self.statusBar().show()
             self._clean_screen_exit_button()
@@ -2821,6 +3045,9 @@ class MainWindow(QMainWindow):
             state = getattr(self, "_clean_screen_state", None)
             if state is not None:
                 self.restoreState(state)
+            win = self.__dict__.get("_panels_float")
+            if win is not None and self.panels_floating():
+                win.show()
             self.menuBar().show()
             self.statusBar().show()
             from PySide6.QtCore import QTimer
@@ -2879,7 +3106,7 @@ class MainWindow(QMainWindow):
             self._place_clean_screen_exit()
             self._place_sidebar_handle()
         if event.type() == QEvent.ToolTip and isinstance(obj, QTabBar) \
-                and obj.parent() is self:
+                and obj.parent() in (self, self.__dict__.get("_panels_float")):
             self._show_tab_tip(obj, event)
             return True
         if self._side_dock_event(obj, event):
@@ -2942,9 +3169,12 @@ class MainWindow(QMainWindow):
 
     def _apply_dock_tabs_position(self) -> None:
         from PySide6.QtWidgets import QTabWidget
-        self.setTabPosition(
-            Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea,
-            QTabWidget.East if self.dock_tabs_vertical() else QTabWidget.North)
+        for host in (self, self.__dict__.get("_panels_float")):
+            if host is not None:
+                host.setTabPosition(
+                    Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea,
+                    QTabWidget.East if self.dock_tabs_vertical()
+                    else QTabWidget.North)
 
     def restoreState(self, state, version=0) -> bool:  # noqa: N802 — Qt override
         # A saved layout brings the shape its tab bars had when it was saved.
@@ -2999,8 +3229,9 @@ class MainWindow(QMainWindow):
         from PySide6.QtWidgets import QDockWidget
         from views.icons import letter_icon
         self._tab_icons_due = False
+        hosts = (self, self.__dict__.get("_panels_float"))
         for d in self.findChildren(QDockWidget):
-            if d.parent() is self and not d.testAttribute(Qt.WA_SetWindowIcon):
+            if d.parent() in hosts and not d.testAttribute(Qt.WA_SetWindowIcon):
                 d.setWindowIcon(letter_icon(d.windowTitle()))
                 # Noted, so a change of theme draws it again in the new ink.
                 d.setProperty("icon_letter", d.windowTitle())
@@ -3013,8 +3244,9 @@ class MainWindow(QMainWindow):
         in here."""
         from PySide6.QtWidgets import QDockWidget
         from shiboken6 import isValid
+        hosts = (self, self.__dict__.get("_panels_float"))
         docks = [d for d in self.findChildren(QDockWidget)
-                 if d.parent() is self]
+                 if d.parent() in hosts]
         for tb in self._dock_tab_bars():
             if not isValid(tb):
                 continue
@@ -3038,8 +3270,9 @@ class MainWindow(QMainWindow):
 
     def _dock_tab_bars(self) -> list:
         from PySide6.QtWidgets import QTabBar
+        hosts = (self, self.__dict__.get("_panels_float"))
         return [tb for tb in self.findChildren(QTabBar)
-                if tb.parent() is self]
+                if tb.parent() in hosts]
 
     def _style_dock_tabs(self) -> None:
         """Icons only (the name is the tooltip and heads the panel), scroll
@@ -3312,6 +3545,15 @@ class MainWindow(QMainWindow):
         move.triggered.connect(lambda: self.move_dock(
             dock, Qt.RightDockWidgetArea if left else Qt.LeftDockWidgetArea))
         menu.insertAction(first, move)
+        floating = QAction(tr("Floating panels"), menu)
+        floating.setCheckable(True)
+        floating.setChecked(self._floats(dock))
+        floating.setStatusTip(tr(
+            "The panels of this side in a window of their own, which can "
+            "go anywhere, also to another screen."))
+        floating.triggered.connect(
+            lambda on: self.set_panels_floating(on, dock))
+        menu.insertAction(first, floating)
         menu.insertSeparator(first)
 
     def _popup_menu(self, menu, pos) -> None:
@@ -3402,7 +3644,7 @@ class MainWindow(QMainWindow):
         when the event was taken."""
         from PySide6.QtCore import QEvent, QTimer
         t = event.type()
-        if obj is self:
+        if obj is self or obj is self.__dict__.get("_panels_float"):
             if t == QEvent.ChildAdded:
                 QTimer.singleShot(0, self, self._style_dock_tabs)
             return False
@@ -3489,6 +3731,330 @@ class MainWindow(QMainWindow):
         for d in docks:
             self.move_dock(d, to_area)
         front.raise_()
+
+    # ---- Floating panels: the side's trays in a window of their own --------
+    def _float_window(self, make: bool = False):
+        """The floating panels' window, made the first time it is needed."""
+        win = self.__dict__.get("_panels_float")
+        if win is None and make:
+            win = self._panels_float = _FloatingPanels(self)
+            win.setTabPosition(
+                Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea,
+                self.tabPosition(Qt.RightDockWidgetArea))
+        return win
+
+    def _floats(self, dock) -> bool:
+        win = self.__dict__.get("_panels_float")
+        return win is not None and dock is not None and dock.parent() is win
+
+    def panels_floating(self) -> bool:
+        """Whether the side trays are in their own window now."""
+        return bool(self.__dict__.get("_floating_on"))
+
+    # The window's dock calls, taught the floating window: a tray in it is
+    # on the side FLOAT_AREA, and putting one there moves it in. The code
+    # that moves trays between the sides works for it as it is.
+    def dockWidgetArea(self, dock):  # noqa: N802 — Qt override
+        if self._floats(dock):
+            return FLOAT_AREA
+        return super().dockWidgetArea(dock)
+
+    def addDockWidget(self, area, dock, *args):  # noqa: N802 — Qt override
+        win = self.__dict__.get("_panels_float")
+        if area == FLOAT_AREA:
+            if not self._floats(dock):
+                super().removeDockWidget(dock)
+            self._float_window(make=True).addDockWidget(
+                Qt.RightDockWidgetArea, dock)
+            return
+        if win is not None and dock.parent() is win:
+            win.removeDockWidget(dock)
+            QTimer.singleShot(0, self, self._end_float_if_empty)
+        super().addDockWidget(area, dock, *args)
+
+    def tabifyDockWidget(self, first, second):  # noqa: N802 — Qt override
+        if self._floats(first):
+            if not self._floats(second):
+                self.addDockWidget(FLOAT_AREA, second)
+            self.__dict__["_panels_float"].tabifyDockWidget(first, second)
+            return
+        if self._floats(second):
+            self.addDockWidget(super().dockWidgetArea(first), second)
+        super().tabifyDockWidget(first, second)
+
+    def tabifiedDockWidgets(self, dock):  # noqa: N802 — Qt override
+        if self._floats(dock):
+            return self.__dict__["_panels_float"].tabifiedDockWidgets(dock)
+        return super().tabifiedDockWidgets(dock)
+
+    def _tab_row(self, dock) -> list:
+        """The trays tabbed with ``dock``, in their tab order, itself among
+        them; ``[dock]`` when it stands alone."""
+        for tb in self._dock_tab_bars():
+            row = [self._dock_of_tab(tb, i) for i in range(tb.count())]
+            if dock in row:
+                return [d for d in row if d is not None]
+        return [dock]
+
+    def set_panels_floating(self, on: bool, dock=None) -> None:
+        """Gear ▸ Floating panels: the trays of ``dock``'s side (the right
+        one without it) out to a window of their own, in their order, the
+        one in front still in front — or, off, back to the side they came
+        from. Remembered for the next start."""
+        st = QSettings()
+        if on == self.panels_floating():
+            if on:
+                self._float_window().raise_()
+            return
+        if on:
+            area = (super().dockWidgetArea(dock) if dock is not None
+                    else Qt.RightDockWidgetArea)
+            if area not in (Qt.LeftDockWidgetArea, Qt.RightDockWidgetArea):
+                area = Qt.RightDockWidgetArea
+            side = self._side_docks(area)
+            if not side:
+                return
+            row = self._tab_row(dock if dock in side else side[0])
+            docks = [d for d in row if d in side] + \
+                [d for d in side if d not in row]
+            front = next((d for d in docks
+                          if not d.visibleRegion().isEmpty()), docks[0])
+            self._float_docks(docks, front)
+            st.setValue("ui/panels_floating", "1")
+            st.setValue("ui/panels_float_from", int(area.value))
+        else:
+            win = self._float_window()
+            area = Qt.DockWidgetArea(int(st.value(
+                "ui/panels_float_from", int(Qt.RightDockWidgetArea.value))))
+            self._remember_float_geometry()
+            self._dock_floating_back(area)
+            st.setValue("ui/panels_floating", "0")
+            if win is not None:
+                win.hide()
+        QTimer.singleShot(0, self, self._style_dock_tabs)
+        QTimer.singleShot(0, self, self._place_sidebar_handle)
+
+    def _float_docks(self, docks, front) -> None:
+        """``docks`` into the floating window, tabbed in this order."""
+        win = self._float_window(make=True)
+        self._floating_on = True
+        width = max(d.width() for d in docks) or 360
+        for d in docks:
+            self.addDockWidget(FLOAT_AREA, d)
+        for a, b in zip(docks, docks[1:]):
+            win.tabifyDockWidget(a, b)
+        for d in docks:
+            d.show()
+        win._placing = True
+        try:
+            geo = QSettings().value("ui/panels_float_geometry")
+            if not (geo and win.restoreGeometry(geo)):
+                # Where the side was: as wide as it, most of the window's
+                # height, clear of the window's right edge (that close, a
+                # drag would dock it straight back).
+                top = self.mapToGlobal(QPoint(0, 0))
+                win.resize(width, max(400, int(self.height() * 0.8)))
+                win.move(top.x() + max(0, self.width() - width
+                                       - 3 * self.FLOAT_DOCK_PX),
+                         top.y() + 60)
+            win.show()
+            QApplication.processEvents()
+        finally:
+            win._placing = False
+        front.raise_()
+        act = getattr(self, "_act_sidebar", None)
+        if act is not None and not act.isChecked():
+            act.blockSignals(True)
+            act.setChecked(True)
+            act.blockSignals(False)
+
+    def _floating_docks(self) -> list:
+        """The trays in the floating window, in tab order (closed ones,
+        which have no tab, at the end)."""
+        win = self.__dict__.get("_panels_float")
+        if win is None:
+            return []
+        mine = [d for d in self._sidebar_docks() if d.parent() is win]
+        shown = [d for d in mine if not d.isHidden()]
+        row = self._tab_row(shown[0]) if shown else []
+        return [d for d in row if d in mine] + [d for d in mine
+                                                if d not in row]
+
+    def _dock_floating_back(self, area) -> None:
+        """Every tray of the floating window back to ``area``, tabbed after
+        what is there, in their order; the closed ones stay closed."""
+        docks = self._floating_docks()
+        self._floating_on = False
+        if not docks:
+            return
+        front = next((d for d in docks if not d.isHidden()
+                      and not d.visibleRegion().isEmpty()), None)
+        hidden = {d for d in docks if d.isHidden()}
+        here = self._side_docks(area)
+        last = here[-1] if here else None
+        for d in docks:
+            self.addDockWidget(area, d)
+            if last is not None:
+                self.tabifyDockWidget(last, d)
+            last = d
+        for d in docks:
+            d.setVisible(d not in hidden)
+        if front is not None:
+            front.raise_()
+        act = (getattr(self, "_act_left_sidebar", None)
+               if area == Qt.LeftDockWidgetArea
+               else getattr(self, "_act_sidebar", None))
+        if act is not None and not act.isChecked():
+            act.blockSignals(True)
+            act.setChecked(True)
+            act.blockSignals(False)
+
+    def _end_float_if_empty(self) -> None:
+        """Every tray dragged out of the floating window: it goes too."""
+        if self.panels_floating() and not self._floating_docks():
+            self.set_panels_floating(False)
+
+    def _remember_float_geometry(self) -> None:
+        win = self.__dict__.get("_panels_float")
+        if win is None or not self.panels_floating():
+            return
+        st = QSettings()
+        st.setValue("ui/panels_float_geometry", win.saveGeometry())
+        docks = self._floating_docks()
+        st.setValue("ui/panels_float_order",
+                    ",".join(d.objectName() for d in docks))
+        front = next((d for d in docks if not d.isHidden()
+                      and not d.visibleRegion().isEmpty()), None)
+        st.setValue("ui/panels_float_front",
+                    front.objectName() if front is not None else "")
+
+    def _restore_floating_panels(self) -> None:
+        """At start-up: the panels float again if they floated when the
+        window closed, the same ones in the same order. (The window saves
+        its layout with them docked back, so a start without this — an
+        older version — finds them on their side.)"""
+        st = QSettings()
+        if str(st.value("ui/panels_floating", "0")) != "1":
+            return
+        names = [n for n in str(st.value("ui/panels_float_order", "")
+                                ).split(",") if n]
+        trays = {d.objectName(): d for d in self._sidebar_docks()}
+        docks = [trays[n] for n in names
+                 if n in trays and not trays[n].isHidden()]
+        if not docks:
+            area = Qt.DockWidgetArea(int(st.value(
+                "ui/panels_float_from", int(Qt.RightDockWidgetArea.value))))
+            docks = self._side_docks(area)
+        if not docks:
+            st.setValue("ui/panels_floating", "0")
+            return
+        front = trays.get(str(st.value("ui/panels_float_front", "")))
+        self._float_docks(docks, front if front in docks else docks[0])
+        QTimer.singleShot(0, self, self._style_dock_tabs)
+        QTimer.singleShot(0, self, self._place_sidebar_handle)
+
+    def _dock_panels_for_saving(self) -> None:
+        """On closing: the floating panels remembered, then docked back,
+        so the window's saved layout has every tray in it."""
+        if not self.panels_floating():
+            return
+        st = QSettings()
+        self._remember_float_geometry()
+        area = Qt.DockWidgetArea(int(st.value(
+            "ui/panels_float_from", int(Qt.RightDockWidgetArea.value))))
+        self._dock_floating_back(area)
+        win = self.__dict__.get("_panels_float")
+        if win is not None:
+            win.hide()
+
+    #: How near a side of the window (px) the floating panels dragged by
+    #: their title bar light it up and, let go there, dock on it.
+    FLOAT_DOCK_PX = 40
+
+    def _float_drop_side(self, pointer):
+        """The side the floating panels would dock on if let go now: the
+        pointer over that side's drop zone, or the floating window's edge
+        within FLOAT_DOCK_PX of the window's side. None: not near one."""
+        win = self.__dict__.get("_panels_float")
+        if win is None or not self.panels_floating():
+            return None
+        vp = self.viewport
+        top_left = vp.mapToGlobal(vp.rect().topLeft())
+        inner = QRect(top_left, vp.size())
+        w = max(120, min(220, vp.width() // 4))
+        frame = win.frameGeometry()
+        if not (frame.bottom() > inner.top() and frame.top() < inner.bottom()):
+            return None
+        near = self.FLOAT_DOCK_PX
+        left = QRect(inner.left(), inner.top(), w, inner.height())
+        right = QRect(inner.right() - w + 1, inner.top(), w, inner.height())
+        if left.contains(pointer) or abs(frame.left() - inner.left()) <= near:
+            return Qt.LeftDockWidgetArea
+        if right.contains(pointer) \
+                or abs(frame.right() - inner.right()) <= near:
+            return Qt.RightDockWidgetArea
+        return None
+
+    def _float_drag_start(self) -> None:
+        """A drag of the floating panels begins (Windows says so; elsewhere
+        the first move does): where they were is kept — if they dock,
+        that is where they float again next time, not at the edge they
+        were dropped on."""
+        win = self.__dict__.get("_panels_float")
+        if win is None or not self.panels_floating()                 or self.__dict__.get("_float_dragging"):
+            return
+        self._float_dragging = True
+        self._float_drag_geo = win.saveGeometry()
+        self.show_drop_zones(True)
+
+    def _float_drag_move(self, pointer) -> None:
+        """The floating panels moved by a drag: the side they would dock
+        on lights up."""
+        if not self.panels_floating():
+            return
+        self._float_drag_start()
+        side = self._float_drop_side(pointer)
+        for zone in self._drop_zones():
+            zone.set_hot(zone.area == side)
+
+    def _float_drag_end(self, pointer) -> None:
+        """The drag let go: near a side, the panels dock on it."""
+        if not self.__dict__.get("_float_dragging"):
+            return
+        self._float_dragging = False
+        self.show_drop_zones(False)
+        side = self._float_drop_side(pointer)
+        if side is None:
+            return
+        before = self.__dict__.get("_float_drag_geo")
+        st = QSettings()
+        st.setValue("ui/panels_float_from", int(side.value))
+        self.set_panels_floating(False)
+        if before is not None:
+            st.setValue("ui/panels_float_geometry", before)
+
+    def panels_context_menu(self, host, event) -> None:
+        """Right-click on a tray tab bar of the floating panels: the gear's
+        menu for the tab under it, or the panels list off the tabs."""
+        bar = None
+        child = host.childAt(event.pos())
+        while child is not None and child is not host:
+            if isinstance(child, QTabBar):
+                bar = child
+                break
+            child = child.parentWidget()
+        if bar is None:
+            event.ignore()
+            return
+        menu = _StayOpenMenu(self)
+        dock = self._dock_of_tab(bar, self._tab_on_bar_at(
+            bar, bar.mapFrom(host, event.pos())))
+        if dock is not None:
+            self._fill_panel_options_menu(menu, dock)
+        else:
+            self._fill_panels_menu(menu, self._area_of_bar(bar))
+        self._popup_menu(menu, event.globalPos())
+        event.accept()
 
     # ---- Drop zones: where a dragged tab can go -------------------------------
     def _drop_zones(self) -> list:
@@ -5134,7 +5700,104 @@ class MainWindow(QMainWindow):
         if browser is not None:
             browser.outliner.on_scene_changed()
 
+    def _picked_box(self):
+        """The section box the menus act on: the one selected, else the one
+        that cuts, else the last made — or ``None``."""
+        from core.section import SectionBox
+        scene = self.viewport.scene
+        picked = [e for e in scene.selection if isinstance(e, SectionBox)]
+        if picked:
+            return picked[-1]
+        return scene.active_section_box() or (
+            scene.section_boxes[-1] if scene.section_boxes else None)
+
+    def _on_toggle_section_box(self, on: bool) -> None:
+        """Camera ▸ Section Box: a box cuts or none does, one undo step.
+        On, the box selected (or the last one) cuts; with no box yet, one
+        is put in (the tool's way)."""
+        scene = self.viewport.scene
+        if not on:
+            self._show_whole_model()
+            return
+        box = self._picked_box()
+        if box is None:
+            from tools.section_box import place_box
+            place_box(self.viewport, fit_selection=True)
+        elif not box.active:
+            self._set_section_box(box, active=True)
+        if not getattr(scene, "show_section_cuts", True):
+            self._set_section_visibility("show_section_cuts", True)
+            self._sync_section_menu()
+        self._sync_section_box_actions()
+        self.viewport.update()
+
+    def _show_whole_model(self) -> None:
+        """No section box cuts: the model whole, as if there were none. The
+        boxes stay, to turn on again. One undo step; the Section Box tool
+        puts itself away, with nothing left to drag."""
+        active = self.viewport.scene.active_section_box()
+        if self.viewport.active_tool is self._tools.get("section_box"):
+            self._activate_tool("select")
+        if active is not None:
+            self._set_section_box(active, active=False)
+        self._sync_section_box_actions()
+        self.viewport.update()
+
+    def _on_remove_section_box(self, box=None) -> None:
+        """Take a section box away: ``box``, else the one the menus act on
+        (selected, cutting, last)."""
+        from core.history import section_boxes_removed
+        box = box or self._picked_box()
+        if box is None:
+            return
+        tool = self.viewport.active_tool
+        if tool is self._tools.get("section_box") and box.active:
+            self._activate_tool("select")      # nothing left to drag
+        self.viewport.history.execute(
+            section_boxes_removed(self.viewport.scene, [box]))
+        self._sync_section_box_actions()
+        self.viewport.update()
+
+    def _section_box_menu(self, menu, box) -> None:
+        """The section box's right-click entries in the model: the same
+        list as its row in the Browser."""
+        browser = getattr(self, "project_browser", None)
+        panel = getattr(browser, "outliner", None)
+        if panel is not None:
+            panel.section_box_menu(menu, box)
+
+    def _set_section_box(self, box, **changes) -> None:
+        """Change ``box``'s ``active`` / ``hidden`` — one undo step (a box
+        set to cut takes the cut off the others)."""
+        from core.history import section_box_changed
+        changed = box.copy()
+        for key, value in changes.items():
+            setattr(changed, key, bool(value))
+        if changed.same_as(box):
+            return
+        if changed.hidden:
+            self.viewport.scene.selection.discard(box)
+        self.viewport.history.execute(
+            section_box_changed(self.viewport.scene, box, changed))
+        self._sync_section_box_actions()
+        self.viewport.update()
+
+    def _sync_section_box_actions(self) -> None:
+        """Camera ▸ Section Box ticked while a box cuts; Remove only with
+        a box to remove. Read when the menus open: undo, scenes and files
+        change the boxes behind them."""
+        scene = self.viewport.scene
+        act = getattr(self, "_act_section_box", None)
+        if act is not None:
+            act.blockSignals(True)
+            act.setChecked(scene.active_section_box() is not None)
+            act.blockSignals(False)
+        rem = getattr(self, "_act_remove_section_box", None)
+        if rem is not None:
+            rem.setEnabled(bool(scene.section_boxes))
+
     def _sync_section_menu(self) -> None:
+        self._sync_section_box_actions()
         scene = self.viewport.scene
         for act, value in (
                 (self._act_show_splanes,
@@ -5498,6 +6161,11 @@ class MainWindow(QMainWindow):
         if splanes:
             from core.history import DeleteSectionPlanesCommand
             cmds.append(DeleteSectionPlanesCommand(splanes))
+        from core.section import SectionBox
+        boxes = [e for e in sel if isinstance(e, SectionBox)]
+        if boxes:
+            from core.history import section_boxes_removed
+            cmds.append(section_boxes_removed(self.viewport.scene, boxes))
         if dims:
             cmds.append(DeleteDimensionsCommand(dims))
         if labels:
@@ -5768,6 +6436,12 @@ class MainWindow(QMainWindow):
                            lambda g=locked_group: self._unlock_group(g))
             menu.addSeparator()
 
+        from core.section import SectionBox
+        boxes = [e for e in sel if isinstance(e, SectionBox)]
+        if boxes:
+            self._section_box_menu(menu, boxes[0])
+            menu.addSeparator()
+
         if sec_planes:
             # The section-plane context menu.
             menu.addAction(tr("Reverse"), self._on_reverse_section)
@@ -5838,6 +6512,8 @@ class MainWindow(QMainWindow):
             menu.addAction(tr("Bridge"), self._on_bridge)
         if self._makes_faces(sel):
             menu.addAction(tr("Make Faces"), self._on_make_faces)
+            menu.addAction(tr("Make Faces and Extrude…"),
+                           lambda: self._on_make_faces_extrude())
         if has_mesh or has_group:
             # Flip Along ▸ Red / Green / Blue: a mirror in place about the
             # selection's centre in one click, the way modelling tutorials
@@ -6467,6 +7143,93 @@ class MainWindow(QMainWindow):
             msg = tr("Make Faces: {n} faces made", n=result["new"])
         elif faces:
             msg = tr("Make Faces: those loops already had their faces")
+        else:
+            msg = tr("Make Faces: an existing face already covers those "
+                     "loops")
+        self.viewport.flash_status(msg, 3000)
+
+    #: Where the last height of Make Faces and Extrude is remembered, and
+    #: whether it extrudes the inner loops too.
+    _MFE_HEIGHT_KEY = "tools/make_faces_extrude_height"
+    _MFE_FILL_KEY = "tools/make_faces_extrude_fill_holes"
+
+    def _make_faces_extrude_dialog(self):
+        """``(height, fill_holes)`` for Make Faces and Extrude — the height
+        in the document's units (negative = the other way) and whether a
+        loop inside another becomes a solid too — or ``None`` if cancelled.
+        Opens with what was used last."""
+        from PySide6.QtWidgets import (QCheckBox, QDialog, QDialogButtonBox,
+                                       QFormLayout)
+        from views.length_field import LengthSpinBox
+        dlg = QDialog(self)
+        dlg.setWindowTitle(tr("Make Faces and Extrude"))
+        form = QFormLayout(dlg)
+        spin = LengthSpinBox(minimum=-1000.0, maximum=1000.0)
+        try:
+            last = float(QSettings().value(self._MFE_HEIGHT_KEY, 3.0))
+        except (TypeError, ValueError):
+            last = 3.0
+        spin.setValue(last)
+        spin.setToolTip(tr("A negative height extrudes the other way."))
+        form.addRow(tr("Height:"), spin)
+        fill = QCheckBox(tr("Extrude inner loops too"))
+        fill.setToolTip(tr(
+            "Off: a loop inside another is left as a hole (the room inside "
+            "the walls, the bore of a tube).\nOn: it becomes a solid of its "
+            "own too (a column inside a slab)."))
+        fill.setChecked(QSettings().value(self._MFE_FILL_KEY, False,
+                                          type=bool))
+        form.addRow(fill)
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok
+                                   | QDialogButtonBox.Cancel)
+        buttons.accepted.connect(dlg.accept)
+        buttons.rejected.connect(dlg.reject)
+        form.addRow(buttons)
+        spin.setFocus()
+        spin.selectAll()
+        if dlg.exec() != QDialog.Accepted:
+            return None
+        QSettings().setValue(self._MFE_HEIGHT_KEY, float(spin.value()))
+        QSettings().setValue(self._MFE_FILL_KEY, fill.isChecked())
+        return float(spin.value()), fill.isChecked()
+
+    def _on_make_faces_extrude(self, height: float | None = None,
+                               fill_holes: bool = False) -> None:
+        """Make Faces and Extrude (core/make_faces_extrude.py): the faces
+        the selected edges close, each one turned into its own solid group
+        of the height asked for, in one undo step. The solids end up
+        selected; the lines stay. ``height`` skips the dialog (tests)."""
+        from core.make_faces import MakeFacesError, plan, selected_edges
+        from core.make_faces_extrude import MakeFacesExtrudeCommand, check
+        scene = self.viewport.scene
+        edges = selected_edges(scene.mesh, scene.selection)
+        try:
+            plan(edges)
+        except MakeFacesError as err:
+            self.viewport.flash_status(tr(str(err)), 4000)
+            return
+        if height is None:
+            asked = self._make_faces_extrude_dialog()
+            if asked is None:
+                return
+            height, fill_holes = asked
+        try:
+            check(edges, height)
+        except MakeFacesError as err:
+            self.viewport.flash_status(tr(str(err)), 4000)
+            return
+        cam = getattr(self.viewport, "camera", None)
+        eye = cam.eye() if cam is not None and hasattr(cam, "eye") else None
+        cmd = MakeFacesExtrudeCommand(edges, height, eye,
+                                      fill_holes=fill_holes)
+        self.viewport.history.execute(cmd)
+        self.viewport.notify_scene_changed()
+        self.viewport.update()
+        n = len(cmd.groups)
+        if n:
+            from core.units import fmt_len
+            msg = tr("Make Faces and Extrude: {n} solids, {h} high",
+                     n=n, h=fmt_len(abs(height)))
         else:
             msg = tr("Make Faces: an existing face already covers those "
                      "loops")
@@ -7281,6 +8044,285 @@ class MainWindow(QMainWindow):
         if ok:
             self.set_field_of_view(value)
 
+    # ---- Camera ▸ Camera from Photo (core/photo_match.py) ---------------------
+    def _on_camera_from_photo(self) -> None:
+        path, _f = QFileDialog.getOpenFileName(
+            self, tr("Camera from Photo"), "",
+            tr("Photos") + " (*.jpg *.jpeg *.png *.tif *.tiff *.bmp *.webp)")
+        if path:
+            self.start_camera_from_photo(path)
+
+    def start_camera_from_photo(self, path: str):
+        """A new scene for the photo at ``path``, shown with the photo
+        behind the model, and its lines ready to drag. The scene, or
+        ``None`` when the photo could not be read."""
+        from pathlib import Path
+        from core.history import AddSceneCommand
+        from core.photo_match import load_photo
+        from core.saved_views import SavedView
+        try:
+            pm = load_photo(path)
+        except OSError:
+            QMessageBox.warning(self, tr("Camera from Photo"), tr(
+                "Could not open {name} as a photo.", name=Path(path).name))
+            return None
+        vp = self.viewport
+        scene = vp.scene
+        taken = {v.name for v in scene.saved_views}
+        base = Path(path).stem or tr("Photo")
+        name, n = base, 2
+        while name in taken:
+            name, n = f"{base} {n}", n + 1
+        view = SavedView.capture(name, scene, vp.camera)
+        view.photo = pm
+        panel = self.tray.scenes
+        panel._begin_own()
+        vp.history.execute(AddSceneCommand(view))
+        panel.select_view(view)
+        panel._touch()
+        vp.enter_photo(view)
+        view.take_camera(vp.camera)
+        row = getattr(self, "_scene_tabs", None)
+        if row is not None:
+            row.mark_view(view)
+        self.edit_photo_lines(view)
+        return view
+
+    #: Set once the Camera from Photo toolbar has had its first place.
+    _PHOTO_TOOLBAR_PLACED = "ui/placed/photo_match_toolbar"
+
+    def _on_photo_toolbar_shown(self, shown: bool) -> None:
+        """The first time the Camera from Photo toolbar is shown it goes
+        beside the other camera buttons — right after Standard Views, in
+        its row — not at the head of the top row where Qt left it. From
+        then on it stays where the user puts it."""
+        # Seating it shows it again: that show must not seat it again,
+        # whether or not the settings could keep the mark.
+        if not shown or getattr(self, "_seating_photo_toolbar", False):
+            return
+        st = QSettings()
+        if st.value(self._PHOTO_TOOLBAR_PLACED) is not None:
+            return
+        st.setValue(self._PHOTO_TOOLBAR_PLACED, 1)
+        # Once the window has laid its bars out: shown with the window,
+        # the bars have no places yet to put it beside.
+        QTimer.singleShot(0, self, self._seat_photo_toolbar_now)
+
+    def _seat_photo_toolbar_now(self) -> None:
+        if self._photo_toolbar.isHidden():
+            return
+        self.layout().activate()
+        self._seating_photo_toolbar = True
+        try:
+            self.seat_photo_toolbar()
+        finally:
+            self._seating_photo_toolbar = False
+
+    def seat_photo_toolbar(self) -> None:
+        """Put the Camera from Photo toolbar right after Standard Views,
+        in the same row (or at the end of the top area without it)."""
+        tb = self._photo_toolbar
+        anchor = self.toolbars.get("views")
+        area = (self.toolBarArea(anchor) if anchor is not None
+                and not anchor.isHidden() else Qt.TopToolBarArea)
+        self.removeToolBar(tb)
+        if anchor is None or anchor.isHidden():
+            self.addToolBar(area, tb)
+            tb.show()
+            return
+        vertical = area in (Qt.LeftToolBarArea, Qt.RightToolBarArea)
+        key = self._toolbar_seat_key(vertical)
+        bars = sorted((b for b in self.findChildren(QToolBar)
+                       if b.parent() is self and b is not tb
+                       and not b.isHidden() and not b.isFloating()
+                       and self.toolBarArea(b) == area), key=key)
+        after = bars[bars.index(anchor) + 1:] if anchor in bars else []
+        nxt = after[0] if after else None
+        if nxt is None:
+            self.addToolBar(area, tb)
+        elif self.toolBarBreak(nxt):
+            # The anchor ends its row: ours ends it too, and the next row
+            # keeps its break.
+            self.insertToolBar(nxt, tb)
+            self.removeToolBarBreak(tb)
+            self.insertToolBarBreak(nxt)
+        else:
+            self.insertToolBar(nxt, tb)
+        tb.show()
+        QTimer.singleShot(0, self, self._pack_toolbars)
+        # After the repack: a full row leaves only its first button and
+        # the rest behind the overflow arrow.
+        QTimer.singleShot(0, self, lambda: self._give_photo_toolbar_room(0))
+
+    def _photo_toolbar_cramped(self) -> bool:
+        tb = self._photo_toolbar
+        if tb.isHidden() or tb.isFloating():
+            return False
+        vertical = self.toolBarArea(tb) in (Qt.LeftToolBarArea,
+                                            Qt.RightToolBarArea)
+        hint = tb.sizeHint()
+        have = tb.height() if vertical else tb.width()
+        need = hint.height() if vertical else hint.width()
+        return have + 2 < need
+
+    def _give_photo_toolbar_room(self, step: int) -> None:
+        """The Camera from Photo toolbar squeezed into a full row: to the
+        end of the last row of its area (step 0), then to a row of its own
+        (step 1) — its three buttons always in sight."""
+        if step > 1 or not self._photo_toolbar_cramped():
+            return
+        tb = self._photo_toolbar
+        area = self.toolBarArea(tb)
+        self._seating_photo_toolbar = True
+        try:
+            self.removeToolBar(tb)
+            if step == 1:
+                self.addToolBarBreak(area)
+            self.addToolBar(area, tb)
+            tb.show()
+        finally:
+            self._seating_photo_toolbar = False
+        QTimer.singleShot(0, self,
+                          lambda: self._give_photo_toolbar_room(step + 1))
+
+    def _photo_scene_in_reach(self):
+        """The photo scene Edit and Reset act on: the one shown with its
+        photo, else the one selected in Scenes; ``None`` without one."""
+        vp = self.viewport
+        view = vp.photo_view
+        if view is None:
+            cur = self.tray.scenes.current_view()
+            if cur is not None and getattr(cur, "photo", None) is not None:
+                view = cur
+        if (view is None or getattr(view, "photo", None) is None
+                or view not in vp.scene.saved_views):
+            return None
+        return view
+
+    def _sync_photo_menu(self) -> None:
+        on = self._photo_scene_in_reach() is not None
+        self._act_edit_photo_lines.setEnabled(on)
+        self._act_reset_photo_lines.setEnabled(on)
+
+    def reset_photo_lines(self):
+        """Camera ▸ Camera from Photo ▸ Reset Photo Lines: the lines being
+        laid — or those of the photo scene in reach, opened for it — back
+        where they start. The tool, or ``None``."""
+        from tools.photo_match import PhotoMatchTool
+        tool = self.viewport.active_tool
+        if not isinstance(tool, PhotoMatchTool) or tool.done:
+            tool = self.edit_photo_lines()
+        if tool is not None:
+            tool.reset_lines(self.viewport, "outside")
+        return tool
+
+    def photo_panel(self):
+        panel = getattr(self, "_photo_panel", None)
+        if panel is None:
+            from views.photo_match_panel import PhotoMatchPanel
+            panel = self._photo_panel = PhotoMatchPanel(self)
+            self.photo_dock()
+        return panel
+
+    def photo_dock(self):
+        """The side-tray tab that holds the Camera from Photo panel. Made
+        once; shown only while a photo's lines are being laid."""
+        dock = getattr(self, "_photo_dock", None)
+        if dock is None:
+            from PySide6.QtWidgets import QDockWidget, QScrollArea
+            panel = self.photo_panel()
+            dock = QDockWidget(tr("Camera from Photo"), self)
+            dock.setObjectName("tray_photo_match")
+            dock.setWindowIcon(tool_icon("photo_match"))
+            # Not closed nor floated by hand: it goes when the editing ends.
+            dock.setFeatures(QDockWidget.DockWidgetMovable)
+            # Nor listed among Qt's own panels (right-click on a toolbar).
+            dock.toggleViewAction().setVisible(False)
+            scroll = QScrollArea()
+            scroll.setWidgetResizable(True)
+            scroll.setFrameShape(QScrollArea.NoFrame)
+            scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+            scroll.setWidget(panel)
+            dock.setWidget(scroll)
+            dock.hide()
+            self._photo_dock = dock
+            self._photo_dock_live = False
+            self._photo_dock_prev = None
+        return dock
+
+    def show_photo_dock(self) -> None:
+        """The panel's tab among the side tray's, in front — tabbed with
+        Properties (or with whatever tray is open on that side)."""
+        from PySide6.QtWidgets import QDockWidget
+        dock = self.photo_dock()
+        if getattr(self, "_photo_dock_live", False) and not dock.isHidden():
+            dock.raise_()
+            return
+        area = self.dockWidgetArea(self.tray)
+        if area == Qt.NoDockWidgetArea:
+            area = Qt.RightDockWidgetArea
+        mates = [d for d in self._sidebar_docks()
+                 if d is not dock and not d.isHidden()
+                 and self.dockWidgetArea(d) == area]
+        # The tab in front now, to give it back at the end.
+        self._photo_dock_prev = next(
+            (d for d in mates if d.isVisible() and not d.visibleRegion()
+             .isEmpty()), None)
+        if self.dockWidgetArea(dock) != area:
+            self.addDockWidget(area, dock)
+        if mates:
+            anchor = self.tray if self.tray in mates else mates[0]
+            if dock not in self.tabifiedDockWidgets(anchor):
+                self.tabifyDockWidget(anchor, dock)
+        self._photo_dock_live = True
+        self._keep_docked(dock)
+        dock.setFeatures(QDockWidget.DockWidgetMovable)
+        dock.show()
+        dock.raise_()
+        QTimer.singleShot(0, self, self._style_dock_tabs)
+
+    def hide_photo_dock(self) -> None:
+        """The editing ended: the tab goes, and the one that was in front
+        before comes back."""
+        dock = getattr(self, "_photo_dock", None)
+        if dock is None or not getattr(self, "_photo_dock_live", False):
+            return
+        self._photo_dock_live = False
+        dock.hide()
+        prev = getattr(self, "_photo_dock_prev", None)
+        self._photo_dock_prev = None
+        if prev is not None and not prev.isHidden():
+            prev.raise_()
+        QTimer.singleShot(0, self, self._style_dock_tabs)
+
+    def edit_photo_lines(self, view=None):
+        """Lay the lines of the photo scene ``view`` — by default the one
+        shown with its photo, else the one selected in Scenes. The tool,
+        or ``None`` when there is no photo scene to edit."""
+        vp = self.viewport
+        if view is None:
+            view = self._photo_scene_in_reach()
+        if (view is None or getattr(view, "photo", None) is None
+                or view not in vp.scene.saved_views):
+            self.statusBar().showMessage(tr(
+                "Show or select a scene made from a photo first."), 3500)
+            return None
+        if vp.photo_view is not view:
+            self.tray.scenes.show_view(view, animate=False)
+        from tools.photo_match import PhotoMatchTool
+        tool = PhotoMatchTool(view, on_done=lambda: self._activate_tool(
+            "select"))
+        vp.set_active_tool(tool)
+        self.photo_panel().bind(tool, vp)
+        for action in self._tool_actions.values():
+            if action.isChecked():
+                action.setChecked(False)
+        self._tool_label.setText(tr("Tool: {name}", name=tr(tool.name)))
+        self._refresh_vcb()
+        self._update_status_hint()
+        vp.setFocus(Qt.OtherFocusReason)
+        return tool
+
     def _show_camera_settings(self):
         """Camera ▸ Camera Settings…: one window, kept, raised if open —
         on the live view (it stops editing a scene, if it was)."""
@@ -7316,6 +8358,8 @@ class MainWindow(QMainWindow):
         for k in self._CAMERA_FIELDS:
             setattr(cam, k, getattr(fresh, k))
         cam.reset_lens()
+        cam.composition_guide = None        # nor the last one's guides
+        cam.composition_turn = 0
         self.viewport.update()
 
     @staticmethod
@@ -7396,6 +8440,21 @@ class MainWindow(QMainWindow):
     def all_viewports(self) -> list:
         return [d.viewport for d in self._documents if d.viewport is not None]
 
+    def shown_viewports(self) -> list:
+        """The views the project in front shows now: its own, and the
+        others of a layout of several views (views/multi_view.py)."""
+        doc = self.__dict__.get("_doc")
+        if doc is None or doc.viewport is None:
+            return []
+        out = [doc.viewport]
+        grid = getattr(doc, "view_grid", None)
+        if grid is not None and grid.is_enabled():
+            out += [v for v in grid.visible_extras() if v not in out]
+        front = self.viewport
+        if front is not None and front not in out:
+            out.append(front)
+        return out
+
     def _make_viewport(self):
         """A viewport for a project, set up the way the window's first one
         always was."""
@@ -7435,6 +8494,10 @@ class MainWindow(QMainWindow):
                     live(lambda _v, p=panel: p.on_scene_changed()))
         vp.sceneVersionChanged.connect(
             live(lambda _v: self._on_surfaces_scene_changed()))
+        # The button of the section box says what undo, a scene or a file
+        # just did to it.
+        vp.sceneVersionChanged.connect(
+            live(lambda _v: self._sync_section_box_actions()))
         vp.tilesChanged.connect(live(lambda: self._build_terrain()))
         vp.valueBufferChanged.connect(live(self._on_value_buffer))
         vp.measurementChanged.connect(
@@ -7767,8 +8830,16 @@ class MainWindow(QMainWindow):
                     and not d.visibleRegion().isEmpty()])
         for d in docks:
             d.hide()
+        win = self.__dict__.get("_panels_float")
+        self._float_hidden = bool(win is not None and win.isVisible())
+        if self._float_hidden:
+            win.hide()
 
     def _show_panels_again(self) -> None:
+        win = self.__dict__.get("_panels_float")
+        if self.__dict__.get("_float_hidden") and win is not None:
+            self._float_hidden = False
+            win.show()
         saved = self.__dict__.get("_panels_hidden")
         if not saved:
             return
@@ -8125,21 +9196,37 @@ class MainWindow(QMainWindow):
 
     def _build_scene_bar_menu(self):
         """The scene row's own right-click menu (off the tabs): play the
-        scenes, or hide the row. Alt+E, Window ▸ and the project tab's menu
-        bring it back."""
-        from PySide6.QtGui import QKeySequence
+        scenes, the composition guides, or hide the row. Ctrl+E, Window ▸
+        and the project tab's menu bring it back."""
         from PySide6.QtWidgets import QMenu
         menu = QMenu(self)
         menu.setAttribute(Qt.WA_DeleteOnClose)
         self._add_play_entry(menu)
         menu.addSeparator()
+        self._add_view_entries(menu)
+        return menu
+
+    def _add_view_entries(self, menu) -> None:
+        """What both of the scene row's menus end with: «Composition
+        Guides» with its switch and list, and «Hide scenes» (Ctrl+E)."""
+        self._add_composition_entry(menu)
+        menu.addSeparator()
         act = menu.addAction(tr("Hide scenes"))
-        act.setShortcut(QKeySequence("Alt+E"))
+        act.setShortcut(SCENE_TABS_KEYS[0])
         act.setShortcutVisibleInContextMenu(True)
         act.setStatusTip(tr(
-            "Hide this project's scene tabs; Alt+E shows them again."))
+            "Hide this project's scene tabs; Ctrl+E shows them again."))
         act.triggered.connect(lambda _c=False: self.set_scene_tabs(False))
-        return menu
+
+    def _add_composition_entry(self, menu) -> None:
+        """«Composition Guides»: a row with a switch beside it that turns
+        the guides of the active view on or off, and the list of guides to
+        choose from as its submenu (views/composition_guides.py)."""
+        from views.scene_tabs import CompositionGuidesAction
+        act = CompositionGuidesAction(self.viewport, menu,
+                                      self.shown_viewports)
+        menu.addAction(act)
+        menu._composition_action = act         # kept for the tests
 
     def _build_scene_tab_menu(self, index: int):
         """A scene tab's right-click menu: keep the current view in that
@@ -8165,10 +9252,18 @@ class MainWindow(QMainWindow):
         camera.setEnabled(view is not None)
         camera.triggered.connect(
             lambda _c=False, v=view: self.edit_scene_camera(v))
+        if view is not None and getattr(view, "photo", None) is not None:
+            lines = menu.addAction(tr("Edit Photo Lines"))
+            lines.setStatusTip(tr(
+                "Show this scene's photo and move the lines laid over it."))
+            lines.triggered.connect(
+                lambda _c=False, v=view: self.edit_photo_lines(v))
         rename = menu.addAction(tr("Rename…"))
         rename.setEnabled(view is not None)
         rename.triggered.connect(
             lambda _c=False, i=index: self._rename_scene_tab(i))
+        menu.addSeparator()
+        self._add_view_entries(menu)
         menu.addSeparator()
         act = menu.addAction(tr("Delete"))
         act.setShortcut(QKeySequence.Delete)
@@ -8259,7 +9354,7 @@ class MainWindow(QMainWindow):
         add(tr("Close All Projects"), lambda: self.close_documents(docs))
         menu.addSeparator()
         act = menu.addAction(tr("Show scenes as tabs"))
-        act.setShortcut(QKeySequence("Alt+E"))
+        act.setShortcut(SCENE_TABS_KEYS[0])
         act.setShortcutVisibleInContextMenu(True)
         act.setCheckable(True)
         act.setChecked(bool(doc.scene_tabs))
@@ -9018,7 +10113,12 @@ class MainWindow(QMainWindow):
         try:
             vp.scene.camera_home = self._camera_dict(vp)
             vp.scene.views_home = self._views_dict(doc)
-            stats = igz_format.save_scene(vp.scene, path) or {}
+            # The picture the file manager shows (None when it is off or
+            # cannot be drawn: the document is saved all the same).
+            from views import document_thumbnail
+            picture = document_thumbnail.for_save(vp)
+            stats = igz_format.save_scene(vp.scene, path,
+                                          thumbnail=picture) or {}
         except Exception as exc:  # noqa: BLE001
             QMessageBox.critical(self, tr("Save failed"), str(exc))
             return
@@ -11276,6 +12376,7 @@ class MainWindow(QMainWindow):
         # Quitting from the empty area: the panels it hid are the user's
         # arrangement, kept for the next session.
         self._show_panels_again()
+        self._dock_panels_for_saving()
         # The window arrangement (toolbars, docks, size) IS a preference.
         # Closing mid-presentation must remember the WORKSPACE, not the
         # clean screen's everything-hidden state.

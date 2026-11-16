@@ -639,7 +639,10 @@ class CameraSettingsDialog(QDialog):
         raw = {"shift_x": self.shift_x.value() / 100.0,
                "shift_y": self.shift_y.value() / 100.0,
                "roll_deg": self.roll.value(),
-               "frame_aspect": self.frame.currentData()}
+               "frame_aspect": self.frame.currentData(),
+               # Not one of these fields: the guide over the view stays.
+               "composition_guide": cam.composition_guide,
+               "composition_turn": cam.composition_turn}
         if self.near_on.isChecked():
             raw["clip_near"] = self.near.value()
         if self.far_on.isChecked():

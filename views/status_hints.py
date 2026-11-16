@@ -93,6 +93,7 @@ HINTS: dict = {
              "Click where the label goes; the text is asked for next."),
     "geopath": "Click the points of the path; Enter or double-click finishes.",
     "section": "Click a face to place the section plane. Shift keeps the orientation.",
+    "section_box": "Drag a face of the box to move it; type a distance while dragging to set it",
     "texture_position": "Drag a pin: red moves, green scales/rotates, blue shears. Enter finishes.",
     "image": "Click the first corner of the image, then the opposite one. Shift frees the aspect.",
     "paste": "Click where the copy goes. Arrows lock an axis.",
@@ -164,6 +165,12 @@ def hint_for(key: str | None, tool, nav_mode: str | None = None,
         return tr(NAV_HINTS[nav_mode])
     entry = HINTS.get(key or "")
     if entry is None:
+        # A tool with no entry of its own here (Camera from Photo, opened
+        # from a menu) may still say what it does.
+        clause = getattr(tool, "status_clause", None)
+        clause = clause() if callable(clause) else ""
+        if clause:
+            return clause
         name = getattr(tool, "name", None)
         return tr("{name}: Esc cancels.", name=tr(name)) if name else ""
     if isinstance(entry, str):

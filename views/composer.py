@@ -13075,6 +13075,10 @@ class ComposerWindow(QMainWindow):
             else None,
             getattr(scene, "show_section_planes", True),
             getattr(scene, "show_section_cuts", True))
+        # The section box too: a scene brings its own (or none) to cut,
+        # and the one cutting live must come back.
+        live_box = (scene.active_section_box()
+                    if hasattr(scene, "active_section_box") else None)
         keep_style = getattr(scene, "display_style", None)
         # Base map / terrain / survey: a scene records their visibility too
         # (a plan sheet WITH the map next to a detail WITHOUT it).
@@ -13115,6 +13119,8 @@ class ComposerWindow(QMainWindow):
                 scene.set_active_section(keep_section[0])
                 scene.show_section_planes = keep_section[1]
                 scene.show_section_cuts = keep_section[2]
+            if hasattr(scene, "set_active_section_box"):
+                scene.set_active_section_box(live_box)
             if hasattr(scene, "display_style"):
                 scene.display_style = keep_style
             for obj, visible in keep_georef:

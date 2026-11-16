@@ -2976,7 +2976,7 @@ def test_the_viewer_draws_each_layers_cut_weight_with_its_hatches():
     vp._frame_style = vp._effective_style()
     assert set(vp._cut_edge_weights(sp, keep)) == {1.0}     # all alike
     sp.fill = {"pattern": "layers"}
-    tags = vp._section_cut_cache[2]
+    tags = vp._section_cut_tags()
     weights = vp._cut_edge_weights(sp, keep)
     assert weights[tags == "Muros"] == pytest.approx(1.4)
     assert weights[tags == "Carpinterías"] == pytest.approx(0.4)   # floor

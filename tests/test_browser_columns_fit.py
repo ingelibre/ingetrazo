@@ -160,6 +160,43 @@ def _sized(panel, width):
     return {c: head.sectionSize(c) for c in (COL_NAME, COL_TYPE, COL_LAYER)}
 
 
+def _factory_width() -> int:
+    from views.main_window import MainWindow
+    return MainWindow.FACTORY_TRAY_WIDTH
+
+
+def _fits(panel, col) -> bool:
+    """The column wide enough for its heading and its widest cell, with
+    the room Qt keeps around a text: nothing cut to «Laye..»."""
+    from PySide6.QtWidgets import QStyle
+    tree = panel.tree
+    head = tree.header()
+    pad = 2 * (tree.style().pixelMetric(QStyle.PM_HeaderMargin) + 1)
+    need = head.fontMetrics().horizontalAdvance(
+        tree.headerItem().text(col)) + pad
+    for item in panel._items.values():
+        need = max(need, tree.fontMetrics().horizontalAdvance(
+            item.text(col)) + pad)
+    return head.sectionSize(col) >= need
+
+
+def test_the_factory_tray_holds_name_type_and_layer_uncut():
+    """The tabs are icons now and the tray came narrower (439 → 400 px):
+    at the factory width the daily set still reads whole, with no
+    horizontal scroll (Copies turned on fits too: see below — at 360 px
+    it ran 6 px past the edge)."""
+    win, panel = _panel()
+    try:
+        panel._auto_fit = True
+        _sized(panel, _factory_width())
+        assert panel.tree.horizontalScrollBar().maximum() == 0
+        for col in (COL_TYPE, COL_LAYER):
+            assert _fits(panel, col), col
+        assert panel.tree.header().sectionSize(COL_NAME) >=             panel._name_floor()
+    finally:
+        _close(win, panel)
+
+
 def test_the_columns_fit_a_sidebar_wide_panel_without_scrolling():
     win, panel = _panel()
     try:
@@ -510,7 +547,7 @@ def test_copies_turned_on_sit_after_the_layer_and_read_the_count():
         COL_MATERIAL, COL_COPIES, COL_IFC)))
     win, panel = _panel()
     try:
-        _sized(panel, 439)                    # the factory tray's width
+        _sized(panel, _factory_width())       # the factory tray's
         assert panel.tree.isColumnHidden(COL_COPIES)     # off by default
         copies, plain = _copies_model(win, panel)
         panel.set_column_shown(COL_COPIES, True)
@@ -529,7 +566,7 @@ def test_copies_turned_on_sit_after_the_layer_and_read_the_count():
     # The next start keeps it there, in view.
     win, panel = _panel()
     try:
-        _sized(panel, 439)
+        _sized(panel, _factory_width())
         copies, _plain = _copies_model(win, panel)
         head = panel.tree.header()
         assert not panel.tree.isColumnHidden(COL_COPIES)
