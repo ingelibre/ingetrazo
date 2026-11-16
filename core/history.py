@@ -4679,6 +4679,7 @@ class ExplodeGroupCommand(Command):
         self._selection = None
 
     def do(self, scene) -> None:
+        from core.group import transformed_attrs
         from core.materials import effective_attrs
         m = scene.mesh
         g = self.group
@@ -4702,6 +4703,13 @@ class ExplodeGroupCommand(Command):
             # paint, or — a default face — the group's on BOTH sides
             # (issue #47: the back used to fall back to default).
             drawn = effective_attrs(dict(f.attrs or {}), paint)
+            if P is not None:
+                # The face lands in world coordinates, but its texture's
+                # world→UV map is anchored to the prototype's local frame:
+                # re-fit it through the placement, or the texture stays
+                # behind at the local origin and reads as lost — the
+                # copied-and-pasted group that is then ungrouped (#1278).
+                drawn = transformed_attrs(drawn, P)
             for key, val in drawn.items():
                 nf.attrs[key] = dict(val) if isinstance(val, dict) else val
         for e in g.mesh.edges:
