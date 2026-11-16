@@ -3673,6 +3673,8 @@
  "Duplicate Scene": "ทำสำเนาฉาก",
  "Make a copy of the selected scene": "สร้างสำเนาของฉากที่เลือก",
  "Tabs on top": "แท็บด้านบน",
+ "Floating panels": "แผงลอย",
+ "The panels of this side in a window of their own, which can go anywhere, also to another screen.": "แผงของด้านนี้อยู่ในหน้าต่างของตัวเอง ย้ายไปที่ใดก็ได้ รวมถึงหน้าจออื่น",
  "Tabs on the right, vertical": "แท็บด้านขวา แนวตั้ง",
  "Panel options": "ตัวเลือกแผง",
  "Set where north lies: click a centre, then click toward north. The sun's shadows turn with it.": "กำหนดทิศเหนือ: คลิกจุดศูนย์กลาง แล้วคลิกไปทางทิศเหนือ เงาของดวงอาทิตย์จะหมุนตาม",

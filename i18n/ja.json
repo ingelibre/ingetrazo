@@ -3670,6 +3670,8 @@
  "Duplicate Scene": "シーンを複製",
  "Make a copy of the selected scene": "選択したシーンのコピーを作成",
  "Tabs on top": "タブを上に表示",
+ "Floating panels": "フローティングパネル",
+ "The panels of this side in a window of their own, which can go anywhere, also to another screen.": "この側のパネルを独立したウィンドウにまとめ、別の画面を含めどこにでも移動できます。",
  "Tabs on the right, vertical": "タブを右に縦表示",
  "Panel options": "パネルのオプション",
  "Set where north lies: click a centre, then click toward north. The sun's shadows turn with it.": "北の向きを設定します：中心をクリックし、次に北の方向をクリックします。太陽の影も一緒に回転します。",

@@ -3673,6 +3673,8 @@
  "Duplicate Scene": "ສຳເນົາສາກ",
  "Make a copy of the selected scene": "ສ້າງສຳເນົາຂອງສາກທີ່ເລືອກ",
  "Tabs on top": "ແຖບຢູ່ດ້ານເທິງ",
+ "Floating panels": "ແຜງລອຍ",
+ "The panels of this side in a window of their own, which can go anywhere, also to another screen.": "ແຜງຂອງດ້ານນີ້ຢູ່ໃນໜ້າຕ່າງຂອງມັນເອງ ທີ່ຍ້າຍໄປໃສກໍໄດ້ ລວມທັງໜ້າຈໍອື່ນ.",
  "Tabs on the right, vertical": "ແຖບຢູ່ດ້ານຂວາ, ແນວຕັ້ງ",
  "Panel options": "ຕົວເລືອກແຜງ",
  "Set where north lies: click a centre, then click toward north. The sun's shadows turn with it.": "ກຳນົດທິດເໜືອ: ຄລິກຈຸດສູນກາງ ແລ້ວຄລິກໄປທາງທິດເໜືອ. ເງົາຂອງຕາເວັນຈະໝຸນຕາມ.",
