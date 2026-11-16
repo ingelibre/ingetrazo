@@ -622,8 +622,11 @@ _follower: _Follower | None = None
 
 def apply_accent(app) -> None:
     """Repaint what wears the accent after Preferences changed it."""
-    from views import icons
+    from views import icons, outliner
     icons.clear_cursor_cache()
+    # The Browser's and the Layers tab's row and button icons are kept per
+    # palette, and the accent is not in the palette: drawn again.
+    outliner.clear_icon_cache()
     if _applied in SHEET_THEMES:        # its hovers wear the accent
         _set_app_sheet(app, app_sheet(_applied))
     _restyle()
