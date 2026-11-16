@@ -163,6 +163,157 @@ def test_align_distribute_and_duplicate_are_single_undo_steps(monkeypatch, tmp_p
         _close(win, comp)
 
 
+def _cota_composer(monkeypatch, tmp_path, cotas):
+    from views.composer import CotaCanvasItem
+    win, comp = _composer(monkeypatch, tmp_path)
+    comp.comp.cotas += cotas
+    comp._rebuild_canvas()
+
+    def select_all():
+        for it in comp.canvas.items():
+            if isinstance(it, CotaCanvasItem):
+                it.setSelected(True)
+    select_all()
+    return win, comp, select_all
+
+
+def test_align_vertical_cotas_lines_up_dimension_lines(monkeypatch, tmp_path):
+    """#1089, the report's own numbers: both cotas already share x_mm, so
+    aligning the measured points did nothing while the dimension lines
+    (x_mm + sep_mm) stood 9 mm apart. Align must move the LINES, by
+    sep_mm, and leave the measured points where they are."""
+    a = CotaItem(x_mm=245.6, y_mm=100.0, dx_mm=0.0, dy_mm=-14.9,
+                 sep_mm=-30.9, axis="v")
+    b = CotaItem(x_mm=245.6, y_mm=140.0, dx_mm=0.0, dy_mm=-25.0,
+                 sep_mm=-39.9, axis="v")
+    win, comp, select_all = _cota_composer(monkeypatch, tmp_path, [a, b])
+    try:
+        comp.align_selected("left")
+        assert a.x_mm + a.sep_mm == pytest.approx(205.7)   # the leftmost line
+        assert b.x_mm + b.sep_mm == pytest.approx(205.7)
+        assert (a.x_mm, b.x_mm) == (245.6, 245.6)          # points untouched
+        assert a.sep_mm == pytest.approx(-39.9)
+        comp.history.undo()                                # one undo step
+        assert a.sep_mm == pytest.approx(-30.9)
+        select_all()
+        comp.align_selected("right")
+        assert a.x_mm + a.sep_mm == pytest.approx(214.7)   # the rightmost line
+        assert b.x_mm + b.sep_mm == pytest.approx(214.7)
+        assert (a.x_mm, b.x_mm) == (245.6, 245.6)
+    finally:
+        _close(win, comp)
+
+
+def test_align_vertical_cotas_with_a_shared_separation(monkeypatch, tmp_path):
+    """#1089's second case: the same sep_mm typed for all, different x_mm —
+    the lines still land apart, and Align closes the gap via sep_mm."""
+    cotas = [CotaItem(x_mm=x, y_mm=20.0 + 30.0 * i, dx_mm=0.0, dy_mm=20.0,
+                      sep_mm=15.0, axis="v")
+             for i, x in enumerate((269.5, 272.6, 269.7))]
+    win, comp, _sel = _cota_composer(monkeypatch, tmp_path, cotas)
+    try:
+        comp.align_selected("left")
+        lines = [c.x_mm + c.sep_mm for c in cotas]
+        assert lines == pytest.approx([284.5, 284.5, 284.5])
+        assert [c.x_mm for c in cotas] == [269.5, 272.6, 269.7]
+        assert [c.sep_mm for c in cotas] == pytest.approx([15.0, 11.9, 14.8])
+    finally:
+        _close(win, comp)
+
+
+def test_align_horizontal_cotas_lines_up_dimension_lines(monkeypatch, tmp_path):
+    """The horizontal twin: the line sits at y_mm + sep_mm (either sign of
+    sep), Align top/bottom moves it by sep_mm, points untouched."""
+    a = CotaItem(x_mm=20.0, y_mm=80.0, dx_mm=50.0, dy_mm=0.0,
+                 sep_mm=12.0, axis="h")
+    b = CotaItem(x_mm=30.0, y_mm=80.0, dx_mm=40.0, dy_mm=0.0,
+                 sep_mm=-6.0, axis="h")
+    win, comp, select_all = _cota_composer(monkeypatch, tmp_path, [a, b])
+    try:
+        comp.align_selected("top")
+        assert a.y_mm + a.sep_mm == pytest.approx(74.0)    # the topmost line
+        assert b.y_mm + b.sep_mm == pytest.approx(74.0)
+        assert (a.y_mm, b.y_mm) == (80.0, 80.0)
+        comp.history.undo()
+        select_all()
+        comp.align_selected("bottom")
+        assert a.y_mm + a.sep_mm == pytest.approx(92.0)    # the bottom line
+        assert b.y_mm + b.sep_mm == pytest.approx(92.0)
+        assert (a.y_mm, b.y_mm) == (80.0, 80.0)
+    finally:
+        _close(win, comp)
+
+
+def test_distribute_cotas_spaces_the_dimension_lines(monkeypatch, tmp_path):
+    """Distribute follows the same rule: vertical cotas space their lines
+    along x by sep_mm, horizontal ones along y."""
+    vs = [CotaItem(x_mm=50.0, y_mm=20.0, dx_mm=0.0, dy_mm=30.0,
+                   sep_mm=50.0, axis="v"),                 # line x = 100
+          CotaItem(x_mm=70.0, y_mm=20.0, dx_mm=0.0, dy_mm=30.0,
+                   sep_mm=40.0, axis="v"),                 # line x = 110
+          CotaItem(x_mm=90.0, y_mm=20.0, dx_mm=0.0, dy_mm=30.0,
+                   sep_mm=70.0, axis="v")]                 # line x = 160
+    win, comp, _sel = _cota_composer(monkeypatch, tmp_path, vs)
+    try:
+        comp.distribute_selected("x")
+        assert [c.x_mm + c.sep_mm for c in vs] == pytest.approx(
+            [100.0, 130.0, 160.0])
+        assert [c.x_mm for c in vs] == [50.0, 70.0, 90.0]  # points untouched
+    finally:
+        _close(win, comp)
+
+    hs = [CotaItem(x_mm=20.0, y_mm=40.0, dx_mm=30.0, dy_mm=0.0,
+                   sep_mm=10.0, axis="h"),                 # line y = 50
+          CotaItem(x_mm=20.0, y_mm=60.0, dx_mm=30.0, dy_mm=0.0,
+                   sep_mm=5.0, axis="h"),                  # line y = 65
+          CotaItem(x_mm=20.0, y_mm=80.0, dx_mm=30.0, dy_mm=0.0,
+                   sep_mm=30.0, axis="h")]                 # line y = 110
+    win, comp, _sel = _cota_composer(monkeypatch, tmp_path, hs)
+    try:
+        comp.distribute_selected("y")
+        assert [c.y_mm + c.sep_mm for c in hs] == pytest.approx(
+            [50.0, 80.0, 110.0])
+        assert [c.y_mm for c in hs] == [40.0, 60.0, 80.0]
+    finally:
+        _close(win, comp)
+
+
+def test_align_cota_along_its_line_and_next_to_other_items(monkeypatch, tmp_path):
+    """Along the line a cota slides like any item (a vertical cota's top
+    is the top of the segment it draws, negative dy included); mixed with
+    another item, Align lines the cota's LINE up with the item's edge."""
+    from views.composer import TextItem
+    a = CotaItem(x_mm=140.0, y_mm=140.0, dx_mm=0.0, dy_mm=-25.0,
+                 sep_mm=-10.0, axis="v")                   # line spans 115..140
+    b = CotaItem(x_mm=180.0, y_mm=100.0, dx_mm=0.0, dy_mm=20.0,
+                 sep_mm=8.0, axis="v")                     # line spans 100..120
+    win, comp, _sel = _cota_composer(monkeypatch, tmp_path, [a, b])
+    try:
+        comp.align_selected("top")
+        assert (a.y_mm, b.y_mm) == pytest.approx((125.0, 100.0))
+        assert (a.sep_mm, b.sep_mm) == (-10.0, 8.0)        # along: no sep
+    finally:
+        _close(win, comp)
+
+    cota = CotaItem(x_mm=100.0, y_mm=20.0, dx_mm=0.0, dy_mm=30.0,
+                    sep_mm=-50.0, axis="v")                # line x = 50
+    win, comp = _composer(monkeypatch, tmp_path)
+    try:
+        text = TextoItem(x_mm=10, y_mm=10, w_mm=40, text="t")
+        comp.comp.texts.append(text)
+        comp.comp.cotas.append(cota)
+        comp._rebuild_canvas()
+        from views.composer import CotaCanvasItem, TextItem as _TextItem
+        for it in comp.canvas.items():
+            if isinstance(it, (CotaCanvasItem, _TextItem)):
+                it.setSelected(True)
+        comp.align_selected("left")
+        assert cota.x_mm + cota.sep_mm == pytest.approx(10.0)
+        assert cota.x_mm == 100.0 and text.x_mm == 10
+    finally:
+        _close(win, comp)
+
+
 def test_movable_scale_label_is_a_bound_text_that_follows_its_frame(monkeypatch, tmp_path):
     from views.composer import FrameItem, TextItem
     win, comp = _composer(monkeypatch, tmp_path)

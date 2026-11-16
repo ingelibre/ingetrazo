@@ -1,5 +1,9 @@
 {
  "_comment": "English is the source language: keys ARE the English strings, so this identity map stays empty. Translations live in es.json and future <lang>.json files.",
+ "The sun is below the horizon: no shadows.": "The sun is below the horizon: no shadows.",
+ "Sunrise: {time}": "Sunrise: {time}",
+ "Sunset: {time}": "Sunset: {time}",
+ "Automatic (by longitude) — UTC{off:+03d}:00": "Automatic (by longitude) — UTC{off:+03d}:00",
  "Check for Updates…": "Check for Updates…",
  "See whether a newer version of IngeTrazo is out.": "See whether a newer version of IngeTrazo is out.",
  "Check for new versions at startup": "Check for new versions at startup",
@@ -21,5 +25,7 @@
  "Slight": "Slight",
  "Moderate": "Moderate",
  "Strong": "Strong",
- "Shadow edges that soften away from what casts them, as in daylight. They cost the graphics card more while the sun casts shadows.": "Shadow edges that soften away from what casts them, as in daylight. They cost the graphics card more while the sun casts shadows."
+ "Shadow edges that soften away from what casts them, as in daylight. They cost the graphics card more while the sun casts shadows.": "Shadow edges that soften away from what casts them, as in daylight. They cost the graphics card more while the sun casts shadows.",
+ "Export materials CSV": "Export materials CSV",
+ "Export materials CSV…": "Export materials CSV…"
 }

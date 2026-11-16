@@ -619,14 +619,22 @@ def signed_volume(mesh) -> float:
     winding (positive == outward by the right-hand rule). Mixed winding gives a
     meaningless value — use it only to confirm consistency. Interior partitions
     (marked by :func:`orient_outward`) are not boundary and are skipped — their
-    arbitrary winding would bias the sum."""
+    arbitrary winding would bias the sum.
+
+    Summed in double from the float32 corners: with ``QVector3D``'s float32
+    dot and cross products the total moved by a few millionths when a face
+    was cut into other triangles, by a different amount on each platform."""
     total = 0.0
     for f in mesh.faces:
         if f.interior:
             continue
         for a, b, c in f.triangulate():
-            total += QVector3D.dotProduct(a, QVector3D.crossProduct(b, c)) / 6.0
-    return total
+            ax, ay, az = a.x(), a.y(), a.z()
+            bx, by, bz = b.x(), b.y(), b.z()
+            cx, cy, cz = c.x(), c.y(), c.z()
+            total += (ax * (by * cz - bz * cy) + ay * (bz * cx - bx * cz)
+                      + az * (bx * cy - by * cx))
+    return total / 6.0
 
 
 def orient_outward(mesh, seed: int = 12345, only=None) -> list:

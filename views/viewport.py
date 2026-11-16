@@ -3803,8 +3803,10 @@ class Viewport(QOpenGLWidget):
 
         # Profile (silhouette) edges: soft seams of a curved surface are hidden,
         # except where the surface turns away from the viewer — the cylinder's
-        # outline. View-dependent, so rebuilt every frame.
-        if show_edges and style.profiles:
+        # outline. View-dependent, so rebuilt every frame. An independent
+        # style option, not part of Edges: with Edges off and Profiles on a
+        # curved surface still shows its outline (#1253).
+        if style.profiles:
             sil_count = self._upload_silhouette_edges()
             if sil_count > 0:
                 self._set_color(ec[0], ec[1], ec[2], 1.0)
@@ -20508,12 +20510,18 @@ class Viewport(QOpenGLWidget):
         calls this too: it used to carry its own copy of the cascade,
         without the group step, so Esc never left a group (Marco,
         2026-09-14: «he hecho Esc varias veces y no salgo»)."""
+        tool = self.active_tool
+        if tool is not None and getattr(tool, "cancel_before_constraints", False):
+            self._set_value_buffer("")
+            self.release_constraints()
+            tool.on_cancel(self)
+            self._release_linear_mode()
+            return
         if self._value_buffer:
             self._set_value_buffer("")
             return
         if self.release_constraints():
             return
-        tool = self.active_tool
         close = getattr(tool, "close_array_window", None)
         if callable(close) and self._array_pending():
             # Right after a copy the array window is what is open: Esc

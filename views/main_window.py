@@ -2184,14 +2184,14 @@ class MainWindow(QMainWindow):
         window_menu.addAction(toggle_profile)
 
 
-        # AutoCAD's Ctrl+0 clean screen: nothing but the model, for
-        # presenting. Added to the WINDOW too, so the shortcut keeps
-        # working while the menu bar itself is hidden.
+        # Ctrl+0 clean screen: the model and the status bar (hint and
+        # value box), nothing else. Added to the WINDOW too, so the
+        # shortcut keeps working while the menu bar itself is hidden.
         window_menu.addSeparator()
         clean_action = QAction(tr("Clean screen"), self)
         clean_action.setStatusTip(tr(
-            "Fold away every toolbar, panel and bar so only the model "
-            "shows; once more brings them all back."))
+            "Fold away every toolbar and panel so only the model and the "
+            "status bar show; once more brings them all back."))
         clean_action.setShortcut(QKeySequence("Ctrl+0"))
         clean_action.setCheckable(True)
         clean_action.toggled.connect(self._route_window_toggle(
@@ -2783,28 +2783,38 @@ class MainWindow(QMainWindow):
             QTimer.singleShot(0, self, self._place_sidebar_handle)   # after the relayout
 
     def _toggle_clean_screen(self, on: bool) -> None:
-        """AutoCAD's Ctrl+0: fold away every toolbar, dock and bar so only
-        the model remains (presentations); Ctrl+0 again restores the
-        workspace exactly as it was."""
+        """Ctrl+0: fold away every toolbar, dock and the menu bar so only
+        the model remains; Ctrl+0 again restores the workspace exactly as
+        it was. The status bar stays — the tool's hint and the value box
+        are how a measure is typed — and so do the shortcuts of the
+        hidden bars and menus (L for Line, F3…: views/clean_screen.py)."""
         from PySide6.QtWidgets import QDockWidget
+        from views.clean_screen import keep_shortcuts_alive, release_shortcuts
         if on:
             self._clean_screen_state = self.saveState()
+            # Before hiding: the bars still hold their actions either way,
+            # but read them while the workspace is whole.
+            release_shortcuts(self, getattr(self, "_clean_screen_actions", None))
+            self._clean_screen_actions = keep_shortcuts_alive(self)
             for tb in self.findChildren(QToolBar):
                 tb.hide()
             for dock in self.findChildren(QDockWidget):
                 dock.hide()
             self.menuBar().hide()
-            self.statusBar().hide()
-            self._clean_screen_exit_button().show()
+            self.statusBar().show()
+            self._clean_screen_exit_button()
+            self._clean_exit_fader.start()      # shows it, gone in 3 s
             self._place_clean_screen_exit()
             if getattr(self, "_sidebar_handle", None) is not None:
                 self._sidebar_handle.hide()
             if getattr(self, "_left_handle", None) is not None:
                 self._left_handle.hide()
         else:
-            btn = getattr(self, "_clean_exit_btn", None)
-            if btn is not None:
-                btn.hide()
+            fader = getattr(self, "_clean_exit_fader", None)
+            if fader is not None:
+                fader.stop()                    # hides the button too
+            release_shortcuts(self, getattr(self, "_clean_screen_actions", None))
+            self._clean_screen_actions = []
             state = getattr(self, "_clean_screen_state", None)
             if state is not None:
                 self.restoreState(state)
@@ -2816,7 +2826,9 @@ class MainWindow(QMainWindow):
     def _clean_screen_exit_button(self):
         """A small «Exit clean screen» button floating at the viewport's
         top-right corner while everything else is hidden — the way out for
-        whoever does not know Ctrl+0 (Marco, 2026-09-14)."""
+        whoever does not know Ctrl+0 (Marco, 2026-09-14). It goes after a
+        few seconds and comes back with the mouse near that corner
+        (views/clean_screen.py, ExitButtonFader)."""
         btn = getattr(self, "_clean_exit_btn", None)
         if btn is not None:
             return btn
@@ -2838,6 +2850,9 @@ class MainWindow(QMainWindow):
         btn.clicked.connect(lambda: self._act_clean_screen.setChecked(False))
         btn.hide()
         self._clean_exit_btn = btn
+        from views.clean_screen import ExitButtonFader
+        self._clean_exit_fader = ExitButtonFader(btn, self._doc_stack)
+        self._clean_exit_fader.shown.connect(self._place_clean_screen_exit)
         self.viewport.installEventFilter(self)
         return btn
 
@@ -4140,7 +4155,7 @@ class MainWindow(QMainWindow):
              tr("Save the view on screen as a PNG or JPG picture at the "
                 "width you choose."),
              self._on_export_image),
-            (tr("Scenes as Video (.mkv)…"),
+            (tr("Scenes as Video…"),
              tr("Save the scenes as a video: the camera glides from one to "
                 "the next, with the times of Camera ▸ Animation."),
              self.export_video),
@@ -7932,7 +7947,7 @@ class MainWindow(QMainWindow):
             self.addAction(act)
             menu.addAction(act)
         menu.addSeparator()
-        video = QAction(tr("Export Video (.mkv)…"), self)
+        video = QAction(tr("Export Video…"), self)
         video.setStatusTip(tr(
             "Save the scenes as a video: the camera glides from one to "
             "the next, with the times of Camera ▸ Animation."))
@@ -8022,7 +8037,7 @@ class MainWindow(QMainWindow):
         self.tray.scenes.show_view(views[(at + step) % len(views)])
 
     def export_video(self) -> None:
-        """The scenes as a .mkv video (views/video_export.py)."""
+        """The scenes as a .mkv video or a PNG sequence (views/video_export.py)."""
         from views.video_export import run_export
         run_export(self)
 
