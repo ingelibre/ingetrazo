@@ -3806,5 +3806,15 @@
  "Open File Location": "فتح موقع الملف",
  "Open the folder that holds the project's file, with the file picked out in it.": "يفتح المجلد الذي يحتوي على ملف المشروع، مع تحديد الملف فيه.",
  "Edit Component": "تحرير المكوّن",
- "Explode Component": "تفجير المكوّن"
+ "Explode Component": "تفجير المكوّن",
+ "Inferences": "الاستدلالات",
+ "Turn all inferences on": "تشغيل كل الاستدلالات",
+ "Switch every point inference of this menu back on.": "يعيد تشغيل كل استدلالات النقاط في هذه القائمة.",
+ "Snap to the ends of edges.": "الالتقاط عند نهايات الحواف.",
+ "Snap to the middle of edges and arcs.": "الالتقاط عند منتصف الحواف والأقواس.",
+ "Snap where edges, guides and faces cross.": "الالتقاط حيث تتقاطع الحواف والأدلة والأوجه.",
+ "Snap to any point along an edge, a guide line or a guide circle.": "الالتقاط عند أي نقطة على حافة أو خط دليل أو دائرة دليل.",
+ "Snap to the centre of faces, and show a dot at the centre of the selected ones.": "الالتقاط عند مركز الأوجه، وإظهار نقطة في مركز الأوجه المحددة.",
+ "Snap to the centre, quadrants and tangent points of circles and arcs.": "الالتقاط عند مركز الدوائر والأقواس وأرباعها ونقاط التماس.",
+ "Snap to the model origin and to the origin of groups and components.": "الالتقاط عند أصل النموذج وأصل المجموعات والمكونات."
 }

@@ -3778,5 +3778,15 @@
  "Open File Location": "Відкрити розташування файлу",
  "Open the folder that holds the project's file, with the file picked out in it.": "Відкриває теку з файлом проєкту й виділяє в ній цей файл.",
  "Edit Component": "Редагувати компонент",
- "Explode Component": "Розбити компонент"
+ "Explode Component": "Розбити компонент",
+ "Inferences": "Прив'язки",
+ "Turn all inferences on": "Увімкнути всі прив'язки",
+ "Switch every point inference of this menu back on.": "Знову вмикає всі точкові прив'язки цього меню.",
+ "Snap to the ends of edges.": "Прив'язка до кінців ребер.",
+ "Snap to the middle of edges and arcs.": "Прив'язка до середин ребер і дуг.",
+ "Snap where edges, guides and faces cross.": "Прив'язка до перетинів ребер, напрямних і граней.",
+ "Snap to any point along an edge, a guide line or a guide circle.": "Прив'язка до будь-якої точки ребра, напрямної лінії або напрямного кола.",
+ "Snap to the centre of faces, and show a dot at the centre of the selected ones.": "Прив'язка до центру граней і точка в центрі вибраних граней.",
+ "Snap to the centre, quadrants and tangent points of circles and arcs.": "Прив'язка до центру, квадрантів і точок дотику кіл і дуг.",
+ "Snap to the model origin and to the origin of groups and components.": "Прив'язка до початку координат моделі та до початку груп і компонентів."
 }

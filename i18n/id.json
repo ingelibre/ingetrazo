@@ -3774,5 +3774,15 @@
  "Open File Location": "Buka Lokasi File",
  "Open the folder that holds the project's file, with the file picked out in it.": "Membuka folder yang berisi file proyek, dengan file tersebut terpilih.",
  "Edit Component": "Edit Komponen",
- "Explode Component": "Bongkar Komponen"
+ "Explode Component": "Bongkar Komponen",
+ "Inferences": "Inferensi",
+ "Turn all inferences on": "Nyalakan semua inferensi",
+ "Switch every point inference of this menu back on.": "Menyalakan kembali semua inferensi titik di menu ini.",
+ "Snap to the ends of edges.": "Menempel ke ujung tepi.",
+ "Snap to the middle of edges and arcs.": "Menempel ke titik tengah tepi dan busur.",
+ "Snap where edges, guides and faces cross.": "Menempel di persilangan tepi, garis bantu, dan bidang.",
+ "Snap to any point along an edge, a guide line or a guide circle.": "Menempel ke titik mana pun di sepanjang tepi, garis bantu, atau lingkaran bantu.",
+ "Snap to the centre of faces, and show a dot at the centre of the selected ones.": "Menempel ke pusat bidang, dan menampilkan titik di pusat bidang yang dipilih.",
+ "Snap to the centre, quadrants and tangent points of circles and arcs.": "Menempel ke pusat, kuadran, dan titik singgung lingkaran dan busur.",
+ "Snap to the model origin and to the origin of groups and components.": "Menempel ke titik asal model dan titik asal grup serta komponen."
 }

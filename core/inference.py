@@ -33,7 +33,8 @@ from typing import Optional
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QVector3D
 
-from core.snap import COLOR_NONE, SnapResult, compute_snap
+from core.snap import (COLOR_NONE, SnapResult, compute_snap,
+                       disabled_snap_kinds)
 
 
 def _no_snap_fast() -> bool:
@@ -236,6 +237,7 @@ class InferenceEngine:
             lock_edge = self._hover_edge
             if lock_edge is None:
                 lock_plane = self._hover_lock_plane(px_x, px_y)
+        off = disabled_snap_kinds()
         snap = compute_snap(
             candidate_world=world_raw,
             candidate_pixel=(px_x, px_y),
@@ -284,13 +286,14 @@ class InferenceEngine:
             face_outline=(lambda: vp._face_outline_world(px_x, px_y))
             if hasattr(vp, "_face_outline_world") else None,
             face_centers=self._face_centers(px_x, px_y),
+            disabled_kinds=off,
         )
         if snap is not None and snap.kind == "axis" and snap.axis:
             self._sticky_axis = snap.axis
         else:
             self._sticky_axis = None
         snap = self._axis_source_cue(snap, px_x, px_y)
-        snap = self._extension_snap(snap, px_x, px_y)
+        snap = self._extension_snap(snap, px_x, px_y, off)
         return self._limit_snap(snap, tool)
 
     def _limit_snap(self, snap, tool):
@@ -308,6 +311,8 @@ class InferenceEngine:
         """The «Face center» points near the cursor — the face under it and
         the selected faces — as the viewport sees them (``None`` from a
         stand-in viewport without the method)."""
+        if "face_center" in disabled_snap_kinds():
+            return None
         near = getattr(self.viewport, "_face_centers_near", None)
         return near(px_x, px_y) if callable(near) else None
 
@@ -357,7 +362,8 @@ class InferenceEngine:
             foot = o + axis * QVector3D.dotProduct(snap.point - o, axis)
         return SnapResult(foot, "on_axis", AXIS_COLORS[name], axis=name)
 
-    def _extension_snap(self, snap, px_x: float, px_y: float):
+    def _extension_snap(self, snap, px_x: float, px_y: float,
+                        off=frozenset()):
         """Offer the snap engine's answer to each extension's provider
         (``ExtensionApp.add_snap_provider``); the first that returns a
         :class:`SnapResult` wins. A named point is never overridden, and a
@@ -370,7 +376,11 @@ class InferenceEngine:
         Careful with the homonym: ``core.snap._extension_snap`` is the
         *geometric* extension inference inside ``compute_snap`` (step 5 of the
         search — an edge's dashed continuation, green connection points);
-        this one is the *extension-API* provider hook."""
+        this one is the *extension-API* provider hook.
+
+        A snap whose kind is in ``off`` — its switch in Tools ▸ Inferences
+        is off (``ExtensionApp.add_snap_toggle``) — is passed over, as if
+        that provider had returned ``None``."""
         vp = self.viewport
         providers = getattr(vp, "_ext_snap_providers", None)
         if not providers or snap is None or snap.kind in self._NAMED_SNAPS:
@@ -383,7 +393,7 @@ class InferenceEngine:
                 logging.getLogger("ingetrazo.plugins").exception(
                     "extension snap provider failed")
                 continue
-            if got is not None:
+            if got is not None and got.kind not in off:
                 return got
         return snap
 

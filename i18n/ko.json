@@ -3771,5 +3771,15 @@
  "Open File Location": "파일 위치 열기",
  "Open the folder that holds the project's file, with the file picked out in it.": "프로젝트 파일이 있는 폴더를 열고 해당 파일을 선택합니다.",
  "Edit Component": "컴포넌트 편집",
- "Explode Component": "컴포넌트 분해"
+ "Explode Component": "컴포넌트 분해",
+ "Inferences": "추정",
+ "Turn all inferences on": "모든 추정 켜기",
+ "Switch every point inference of this menu back on.": "이 메뉴의 모든 점 추정을 다시 켭니다.",
+ "Snap to the ends of edges.": "모서리의 끝점에 스냅합니다.",
+ "Snap to the middle of edges and arcs.": "모서리와 호의 중점에 스냅합니다.",
+ "Snap where edges, guides and faces cross.": "모서리, 가이드, 면이 교차하는 곳에 스냅합니다.",
+ "Snap to any point along an edge, a guide line or a guide circle.": "모서리, 가이드 선 또는 가이드 원 위의 임의의 점에 스냅합니다.",
+ "Snap to the centre of faces, and show a dot at the centre of the selected ones.": "면의 중심에 스냅하고 선택한 면의 중심에 점을 표시합니다.",
+ "Snap to the centre, quadrants and tangent points of circles and arcs.": "원과 호의 중심, 사분점, 접점에 스냅합니다.",
+ "Snap to the model origin and to the origin of groups and components.": "모델 원점과 그룹 및 컴포넌트의 원점에 스냅합니다."
 }

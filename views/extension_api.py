@@ -385,6 +385,14 @@ class ExtensionApp:
         or ``None`` to leave the engine's answer."""
         self.viewport._ext_snap_providers.append(fn)
 
+    def add_snap_toggle(self, key: str, label: str, kinds, tip: str = ""):
+        """A switch in Tools ▸ Inferences for this extension's own snap
+        ``kinds`` (the ``kind`` of the ``SnapResult`` its provider returns):
+        while it is off, those snaps are dropped. ``label`` and ``tip`` are
+        shown as given. The same ``key`` again replaces the switch."""
+        from core.snap import register_snap_toggle
+        return register_snap_toggle(key, label, kinds, tip)
+
     def add_pickable(self, pick, on_select=None, delete=None) -> None:
         """Let the user SELECT this extension's own items with the Select
         tool and DELETE them with Supr (issue #205; moving comes later).
