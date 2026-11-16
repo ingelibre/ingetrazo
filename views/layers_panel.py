@@ -2911,15 +2911,20 @@ class LayersPanel(QWidget):
             self._retheming = False
 
     def retheme(self) -> None:
-        from views.icons import tool_icon
         self._header_icons()
+        self._bar_icons()
+        self.refresh()
+
+    def _bar_icons(self) -> None:
+        """The buttons above the list, drawn in the palette's ink and the
+        accent: again after a theme or an accent change."""
+        from views.icons import tool_icon
         self.add_layer_btn.setIcon(add_icon(KIND_LAYER))
         self.add_folder_btn.setIcon(add_icon(KIND_FOLDER))
         self.color_by_layer.setIcon(tool_icon("layers_colour"))
         self.more_btn.setIcon(tool_icon("layers_templates"))
         self._show_filter_state()
         self._update_expand_button()
-        self.refresh()
 
     @staticmethod
     def _tool_button(icon, tip: str, slot) -> QToolButton:
@@ -3029,8 +3034,12 @@ class LayersPanel(QWidget):
 
     def refresh_icons(self) -> None:
         """Repaint the marks drawn in the palette's ink and accent after the
-        theme or accent changes: the header's and every row's (#1086)."""
+        theme or accent changes: the bar's buttons, the header's and every
+        row's (#1086). Without the bar, a new accent left «Add layer», «Add
+        folder», «Colour by layer» and «Templates» in the old one until the
+        app was opened again."""
         from views.layers_toolbar import isolate_icon
+        self._bar_icons()
         hi = self.tree.headerItem()
         hi.setIcon(COL_ACTIVE, _pencil_icon(True))
         hi.setIcon(COL_EYE, node_icon("eye"))
