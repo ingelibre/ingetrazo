@@ -4090,7 +4090,8 @@ class OutlinerPanel(QWidget):
             entries.append(("Make Component", "component"))
             # Explode: one level dissolved — a group's own geometry left
             # loose, the groups it holds out whole in its place.
-            entries.append(("Explode Group", "explode"))
+            from core.group import explode_label
+            entries.append((explode_label(targets), "explode"))
             for text, kind in entries:
                 act = menu.addAction(tr(text), lambda k=kind:
                                      QTimer.singleShot(0, lambda:
