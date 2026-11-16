@@ -15309,10 +15309,20 @@ class Viewport(QOpenGLWidget):
                              False, infer=scene.entity_selectable(f),
                              loose=True)
             # Loose part → arrays; groups append their cached chunk arrays.
+            cells = None
             if tris:
                 t = np.asarray(tris, dtype=np.float64).reshape(-1, 3, 3)
-                lt = (t[:, 0], t[:, 1] - t[:, 0], t[:, 2] - t[:, 0],
-                      np.asarray(tri_ent, dtype=np.int64))
+                # The loose part on the span grid a group's chunk gets: an
+                # open group's own faces are loose, and as ONE span every
+                # ray that met the model ran Möller–Trumbore over all of
+                # them — 25 800 faces, ~2.5 ms a ray, a few rays a hover
+                # (#1392). The order is free: each triangle carries its
+                # entity.
+                *lt, cells = _split_chunk_spans(
+                    {"v0": t[:, 0], "e1": t[:, 1] - t[:, 0],
+                     "e2": t[:, 2] - t[:, 0],
+                     "tri_ent": np.asarray(tri_ent, dtype=np.int64)})
+                lt = tuple(lt)
             else:
                 lt = None
             loose = (list(entities), lt, len(tris),
@@ -15320,7 +15330,7 @@ class Viewport(QOpenGLWidget):
                      np.asarray(ent_vis, dtype=bool),
                      np.asarray(ent_sel, dtype=bool),
                      np.asarray(ent_infer, dtype=bool),
-                     np.asarray(ent_loose, dtype=bool))
+                     np.asarray(ent_loose, dtype=bool), cells)
             self._pick_loose_memo = (key[:4], loose)
         entities = list(loose[0])
         lt, n_loose_tris = loose[1], loose[2]
@@ -15333,7 +15343,9 @@ class Viewport(QOpenGLWidget):
 
         # Per-chunk triangle spans (P3): a hover/zoom ray prefilters chunks
         # by AABB and runs Möller-Trumbore only on the spans it crosses.
-        tri_spans: list = [(None, 0, n_loose_tris)] if n_loose_tris else []
+        tri_spans: list = ((list(loose[8]) if loose[8]
+                            else [(None, 0, n_loose_tris)])
+                           if n_loose_tris else [])
         own_spans: list = []      # lazy placements' own arrays (#158)
         # What the current context lets you TOUCH: the whole scene at the
         # root, the children of the group you are inside otherwise. This
@@ -15730,6 +15742,57 @@ class Viewport(QOpenGLWidget):
                     np.minimum.at(face_t, te[hit_rows], t[hit_rows])
         return best if reduce_global else face_t
 
+    @staticmethod
+    def _sel_infer_union(idx):
+        """``ent_sel | ent_infer`` of the pick index, or None where the two
+        masks are the same (at the model root, with the rest hidden): worked
+        out once per index (#1392)."""
+        sel = getattr(idx, "ent_sel", None)
+        inf = getattr(idx, "ent_infer", None)
+        if sel is None or inf is None or inf is sel:
+            return None
+        memo = getattr(idx, "_sel_infer_union_memo", None)
+        if memo is not None and memo[0] is sel and memo[1] is inf:
+            return memo[2]
+        union = (sel | inf if len(sel) == len(inf)
+                 and bool((sel != inf).any()) else None)
+        try:
+            idx._sel_infer_union_memo = (sel, inf, union)
+        except AttributeError:          # a bare stand-in index (tests)
+            pass
+        return union
+
+    def _ray_hits_sel_infer(self, idx, origin, direction, nat, union):
+        """:meth:`_ray_hits` over the entities that are selectable OR
+        inferable, memoised for this ray, index and scene version: ``(t,
+        rows)`` — the per-entity nearest t and the rows the ray met — that
+        both :meth:`_face_hits` "sel" and "infer" mask afterwards (#1392),
+        or None. Read-only: the two share it."""
+        key = (origin.x(), origin.y(), origin.z(),
+               direction.x(), direction.y(), direction.z(),
+               getattr(self.scene, "version", None),
+               id(getattr(self.scene, "mesh", None)))
+        # Two rays kept: a hover reads the cursor at the event's own
+        # position (the references) and at the whole pixel (the snap, the
+        # coordinate readout), interleaved — one slot lost each to the
+        # other.
+        last = getattr(self, "_ray_union_memo", None)
+        for memo in (last, getattr(self, "_ray_union_prev", None)):
+            if (memo is not None and memo[0] == key and memo[2] is idx
+                    and memo[3] is nat and memo[4] is union):
+                return memo[1]
+        self._ray_union_prev = last
+        face_t = self._ray_hits(idx, origin, direction, union,
+                                own=nat is None)
+        if face_t is not None:
+            import numpy as np
+            face_t.flags.writeable = False
+            hit = np.flatnonzero(np.isfinite(face_t))
+            hit.flags.writeable = False
+            face_t = (face_t, hit)
+        self._ray_union_memo = (key, face_t, idx, nat, union)
+        return face_t
+
     def _ray_near(self, x: float, y: float):
         """What a ray pick at widget pixel ``(x, y)`` asks the pick index
         to bake: nothing with the engine, which answers for the lazy
@@ -15761,15 +15824,34 @@ class Viewport(QOpenGLWidget):
             mask = getattr(idx, "ent_infer", idx.ent_sel)
         else:
             mask = idx.ent_vis
-        face_t = (self._ray_hits(idx, origin, direction, mask,
-                                 own=nat is None)
-                  if len(idx.entities) else None)
+        union = (Viewport._sel_infer_union(idx)
+                 if which in ("sel", "infer") else None)
+        rows = None
+        if not len(idx.entities):
+            face_t = None
+        elif union is not None:
+            # Inside an open group a hover asks for both readings of the
+            # same ray — the snap engine's ("infer", #1327) and the pick's
+            # ("sel": the «Face center» of #736, the tools' planes): one
+            # pass over the union answers both, each masked after. The
+            # nearest t of an entity does not depend on which others pass,
+            # and the pass costs the same whatever the mask (#1392).
+            shared = Viewport._ray_hits_sel_infer(self, idx, origin,
+                                                  direction, nat, union)
+            face_t = None if shared is None else shared[0]
+            if face_t is not None:
+                hit = shared[1]                 # the union's rows met
+                rows = hit[mask[hit]]
+        else:
+            face_t = self._ray_hits(idx, origin, direction, mask,
+                                    own=nat is None)
         lazy = (Viewport._lazy_face_hits(self, nat, origin, direction, which)
                 if nat is not None else None)
         if face_t is None and lazy is None:
             return None
-        rows = (np.flatnonzero(np.isfinite(face_t)) if face_t is not None
-                else np.empty(0, np.int64))
+        if rows is None:
+            rows = (np.flatnonzero(np.isfinite(face_t)) if face_t is not None
+                    else np.empty(0, np.int64))
         pidx = getattr(idx, "ent_place_idx", None)
         n = len(rows)
 
