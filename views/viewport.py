@@ -10804,7 +10804,15 @@ class Viewport(QOpenGLWidget):
             reach = reaches.get(ident)
             if reach is None or not reach.fits(idx.tri_v0, n, idx.tri_e1,
                                                idx.tri_e2):
-                from core.section import PlaneReach
+                from core.section import PlaneReach, cut_planes
+                # Each reach holds ~110 bytes per triangle and the pick
+                # index it was made from: only the cuts cutting now keep
+                # one, and none of an older model's arrays stays alive.
+                live = {self._cut_ident(c) for c in cut_planes(self.scene)}
+                for k in [k for k, r in reaches.items()
+                          if k != ident and (k not in live
+                                             or r._v0 is not idx.tri_v0)]:
+                    del reaches[k]
                 reach = reaches[ident] = PlaneReach(
                     idx.tri_v0, idx.tri_e1, idx.tri_e2, n)
             segs, rows = cut_chords(idx.tri_v0, idx.tri_e1, idx.tri_e2, n, o,
