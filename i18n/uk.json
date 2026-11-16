@@ -3776,5 +3776,7 @@
  "Exact Move+Ctrl copies, overlapping rotated copies, faster box selection on huge models and the reviewed Indonesian translation.": "Точні копії через Переміщення+Ctrl, повернуті копії, що перекриваються, швидший вибір рамкою у величезних моделях і вивірений індонезійський переклад.",
  "Snapping to the rest of the model from inside a group or component.": "Прив’язка до решти моделі зсередини групи чи компонента.",
  "Open File Location": "Відкрити розташування файлу",
- "Open the folder that holds the project's file, with the file picked out in it.": "Відкриває теку з файлом проєкту й виділяє в ній цей файл."
+ "Open the folder that holds the project's file, with the file picked out in it.": "Відкриває теку з файлом проєкту й виділяє в ній цей файл.",
+ "Edit Component": "Редагувати компонент",
+ "Explode Component": "Розбити компонент"
 }

@@ -3804,5 +3804,7 @@
  "Exact Move+Ctrl copies, overlapping rotated copies, faster box selection on huge models and the reviewed Indonesian translation.": "نسخ دقيقة بـ Move+Ctrl، ونسخ مدوَّرة متداخلة، وتحديد بالمربع أسرع في النماذج الضخمة، ومراجعة الترجمة الإندونيسية.",
  "Snapping to the rest of the model from inside a group or component.": "الالتقاط إلى بقية النموذج من داخل مجموعة أو مكوّن.",
  "Open File Location": "فتح موقع الملف",
- "Open the folder that holds the project's file, with the file picked out in it.": "يفتح المجلد الذي يحتوي على ملف المشروع، مع تحديد الملف فيه."
+ "Open the folder that holds the project's file, with the file picked out in it.": "يفتح المجلد الذي يحتوي على ملف المشروع، مع تحديد الملف فيه.",
+ "Edit Component": "تحرير المكوّن",
+ "Explode Component": "تفجير المكوّن"
 }

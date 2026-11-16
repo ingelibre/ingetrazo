@@ -3770,5 +3770,7 @@
  "Exact Move+Ctrl copies, overlapping rotated copies, faster box selection on huge models and the reviewed Indonesian translation.": "精確的移動+Ctrl 複製、相互重疊的旋轉複製、在超大模型上更快的框選，以及校訂後的印尼文翻譯。",
  "Snapping to the rest of the model from inside a group or component.": "在群組或元件內部鎖點到模型其餘部分。",
  "Open File Location": "開啟檔案位置",
- "Open the folder that holds the project's file, with the file picked out in it.": "開啟專案檔案所在的資料夾，並選取該檔案。"
+ "Open the folder that holds the project's file, with the file picked out in it.": "開啟專案檔案所在的資料夾，並選取該檔案。",
+ "Edit Component": "編輯元件",
+ "Explode Component": "分解元件"
 }

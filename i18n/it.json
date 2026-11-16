@@ -3770,5 +3770,7 @@
  "Exact Move+Ctrl copies, overlapping rotated copies, faster box selection on huge models and the reviewed Indonesian translation.": "Copie esatte con Sposta+Ctrl, copie ruotate sovrapposte, selezione a riquadro più veloce nei modelli enormi e la traduzione indonesiana rivista.",
  "Snapping to the rest of the model from inside a group or component.": "Lo snap al resto del modello dall’interno di un gruppo o componente.",
  "Open File Location": "Apri percorso file",
- "Open the folder that holds the project's file, with the file picked out in it.": "Apre la cartella che contiene il file del progetto, con il file selezionato."
+ "Open the folder that holds the project's file, with the file picked out in it.": "Apre la cartella che contiene il file del progetto, con il file selezionato.",
+ "Edit Component": "Modifica componente",
+ "Explode Component": "Esplodi componente"
 }

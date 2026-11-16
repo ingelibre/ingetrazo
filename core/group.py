@@ -1044,3 +1044,19 @@ def effective_material(group):
     if owner is not None and owner is not group:
         return getattr(owner, "material", None) or None
     return None
+
+
+def edit_label(group) -> str:
+    """The (untranslated) right-click entry that opens ``group`` for
+    editing: a component says so, a classic group keeps its name (#1412)."""
+    return "Edit Component" if group.is_component() else "Edit Group"
+
+
+def explode_label(groups) -> str:
+    """The (untranslated) right-click entry that explodes ``groups``:
+    "Explode Component" only when every one of them is a component —
+    with a classic group among them it stays "Explode Group" (#1412)."""
+    groups = list(groups)
+    if groups and all(g.is_component() for g in groups):
+        return "Explode Component"
+    return "Explode Group"

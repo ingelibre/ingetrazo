@@ -3769,5 +3769,7 @@
  "Exact Move+Ctrl copies, overlapping rotated copies, faster box selection on huge models and the reviewed Indonesian translation.": "정확한 이동+Ctrl 복사, 겹치는 회전 복사, 거대한 모델에서 더 빠른 상자 선택, 그리고 검토된 인도네시아어 번역.",
  "Snapping to the rest of the model from inside a group or component.": "그룹이나 컴포넌트 안에서 모델의 나머지 부분으로 스냅.",
  "Open File Location": "파일 위치 열기",
- "Open the folder that holds the project's file, with the file picked out in it.": "프로젝트 파일이 있는 폴더를 열고 해당 파일을 선택합니다."
+ "Open the folder that holds the project's file, with the file picked out in it.": "프로젝트 파일이 있는 폴더를 열고 해당 파일을 선택합니다.",
+ "Edit Component": "컴포넌트 편집",
+ "Explode Component": "컴포넌트 분해"
 }

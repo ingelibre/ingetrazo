@@ -3796,5 +3796,7 @@
  "Exact Move+Ctrl copies, overlapping rotated copies, faster box selection on huge models and the reviewed Indonesian translation.": "Bản sao chính xác bằng Di chuyển+Ctrl, bản sao xoay chồng lên nhau, chọn bằng khung nhanh hơn trên mô hình rất lớn và bản dịch tiếng Indonesia đã được rà soát.",
  "Snapping to the rest of the model from inside a group or component.": "Bắt điểm vào phần còn lại của mô hình từ bên trong nhóm hoặc thành phần.",
  "Open File Location": "Mở vị trí tệp",
- "Open the folder that holds the project's file, with the file picked out in it.": "Mở thư mục chứa tệp của dự án, với tệp đó được chọn sẵn."
+ "Open the folder that holds the project's file, with the file picked out in it.": "Mở thư mục chứa tệp của dự án, với tệp đó được chọn sẵn.",
+ "Edit Component": "Chỉnh sửa cấu kiện",
+ "Explode Component": "Rã cấu kiện"
 }

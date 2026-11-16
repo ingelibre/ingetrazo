@@ -3772,5 +3772,7 @@
  "Exact Move+Ctrl copies, overlapping rotated copies, faster box selection on huge models and the reviewed Indonesian translation.": "ການສຳເນົາດ້ວຍ ຍ້າຍ+Ctrl ທີ່ຖືກຕ້ອງ, ສຳເນົາທີ່ໝູນແລ້ວຊ້ອນກັນ, ການເລືອກແບບກອບທີ່ໄວຂຶ້ນໃນແບບຈຳລອງຂະໜາດໃຫຍ່ ແລະ ການແປພາສາອິນໂດເນເຊຍທີ່ທົບທວນແລ້ວ.",
  "Snapping to the rest of the model from inside a group or component.": "ການຍຶດຕິດກັບສ່ວນອື່ນຂອງແບບຈຳລອງຈາກພາຍໃນກຸ່ມ ຫຼື ອົງປະກອບ.",
  "Open File Location": "ເປີດບ່ອນຢູ່ຂອງໄຟລ໌",
- "Open the folder that holds the project's file, with the file picked out in it.": "ເປີດໂຟນເດີທີ່ມີໄຟລ໌ຂອງໂຄງການ ພ້ອມເລືອກໄຟລ໌ນັ້ນໄວ້."
+ "Open the folder that holds the project's file, with the file picked out in it.": "ເປີດໂຟນເດີທີ່ມີໄຟລ໌ຂອງໂຄງການ ພ້ອມເລືອກໄຟລ໌ນັ້ນໄວ້.",
+ "Edit Component": "ແກ້ໄຂອົງປະກອບ",
+ "Explode Component": "ແຍກອົງປະກອບ (Explode)"
 }
