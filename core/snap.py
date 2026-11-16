@@ -2852,6 +2852,26 @@ def compute_snap(
     #    as the arrow lock does. Point inferences were left untouched, so a
     #    vertex, a 'through point' or the origin fetched with the mouse still
     #    wins.
+    #
+    #    9a. …but the engaged axis still lines up with a corner, a midpoint
+    #    or the origin, as the arrow lock does (_lock_line_snaps): the foot
+    #    of that point on the axis line. It lies ON the line, so it steals
+    #    nothing from it — the rule above is about pulling the point off
+    #    the line, as the crossing of 7a. Silenced with the rest, the
+    #    magnet lost the origin: drawing back along green from a far
+    #    corner, the end could not be put on the red axis (#1418,
+    #    @PedroE200), while the same line under the arrow lock could.
+    if (axis_engaged is not None and line_inferences
+            and line_start is not None and start_point is not None):
+        adir = QVector3D(_AXIS_VECTORS[axis_engaged])
+        if QVector3D.dotProduct(candidate_world - line_start, adir) < 0:
+            adir = -adir
+        fp = _from_point_snap(
+            scene, line_start, adir, cx, cy, world_to_pixel, threshold_px,
+            is_occluded, extra_point=acquired_point, line_dir=adir,
+        )
+        if fp is not None:
+            return fp
     if axis_engaged is not None:
         return SnapResult(
             project_onto_line(start_point, _AXIS_VECTORS[axis_engaged]),
