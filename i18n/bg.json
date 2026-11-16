@@ -3766,5 +3766,9 @@
  "Architect. The units system, the Browser, Layers 2.0, the Solid Inspector, Fillet 3D bevels, Bridge, Join Segments, Camera ▸ Axes, soft ambient occlusion, round curved surfaces, view layouts, scenes as tabs, cleaner exports and many everyday editing tools. And for 0.6.2: the North tool, camera settings, scene transitions with video and the view as layered SVG.": "Архитект. Системата от мерни единици, Браузърът, Слоеве 2.0, Проверката на плътни тела, фаските на Fillet 3D, Свързваща повърхнина, Обединяване на сегменти, Камера ▸ Оси, мекото фоново засенчване, заоблените криволинейни повърхнини, оформленията на изгледи, сцените като раздели, по-чистите експорти и много ежедневни инструменти за редактиране. А за 0.6.2: инструментът Север, настройките на камерата, преходите между сцени с видео и изгледът като SVG на слоеве.",
  "Korean translation of the interface, and the AI key from an environment variable. In 0.6.2, soft shadows and fixes for macOS.": "Корейски превод на интерфейса и ключът за ИИ от променлива на средата. В 0.6.2 – меките сенки и поправки за macOS.",
  "Exact Move+Ctrl copies, overlapping rotated copies, faster box selection on huge models and the reviewed Indonesian translation.": "Точни копия с Move+Ctrl, припокриващи се завъртени копия, по-бърз избор с рамка в огромни модели и прегледаният превод на индонезийски.",
- "Snapping to the rest of the model from inside a group or component.": "Прихващане към останалата част от модела отвътре на група или компонент."
+ "Snapping to the rest of the model from inside a group or component.": "Прихващане към останалата част от модела отвътре на група или компонент.",
+ "Guide Point": "Помощна точка",
+ "Leave a guide point with one click, on any point you snap to; or type x;y;z for exact coordinates.": "Поставя помощна точка с едно щракване във всяка прихваната точка; или въведете x;y;z за точни координати.",
+ "Click to leave a guide point, or type x;y;z and Enter.": "Щракнете, за да поставите помощна точка, или въведете x;y;z и натиснете Enter.",
+ "Guide point at ({x}; {y}; {z})": "Помощна точка в ({x}; {y}; {z})"
 }

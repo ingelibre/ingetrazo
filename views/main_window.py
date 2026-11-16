@@ -67,6 +67,7 @@ from tools.geopath import GeoPathTool
 from tools.line import LineTool
 from tools.protractor import ProtractorTool
 from tools.north import NorthTool
+from tools.guide_point import GuidePointTool
 from tools.tape import TapeMeasureTool
 from tools.text import TextTool
 from tools.move import MoveTool
@@ -521,6 +522,8 @@ class MainWindow(QMainWindow):
             "eraser": EraserTool(),
             "tape": TapeMeasureTool(),
             "protractor": ProtractorTool(),
+            # Tools ▸ Guide Point: one click, one guide point (#616).
+            "guide_point": GuidePointTool(),
             # Tools ▸ North: aim true north on screen, the sun turns with it.
             "north": NorthTool(),
             "text": TextTool(),
@@ -1260,7 +1263,7 @@ class MainWindow(QMainWindow):
               "polygon", "arc", "arc3", "center_arc", "pie"]),
             # Push/Pull first (Marco, 2026-09-14), then move, rotate, scale, flip…
             ("modify", tr("Modify"), ["pushpull", "move", "rotate", "scale", "flip", "followme", "offset", "fillet"]),
-            ("annotate", tr("Annotate"), ["tape", "protractor", "north", "dimension", "text", "geopath"]),
+            ("annotate", tr("Annotate"), ["tape", "protractor", "guide_point", "north", "dimension", "text", "geopath"]),
             ("sections", tr("Sections"), ["section"]),
             # The Solid Tools toolbar, in the usual order.
             ("solids", tr("Solid Tools"),
@@ -2112,7 +2115,7 @@ class MainWindow(QMainWindow):
         for keys in (("select", "eraser", "paint"),
                      ("move", "rotate", "scale", "flip"),
                      ("pushpull", "followme", "offset", "fillet"),
-                     ("tape", "protractor", "north"),
+                     ("tape", "protractor", "guide_point", "north"),
                      ("dimension", "text"),
                      ("section",)):
             for key in keys:

@@ -3765,5 +3765,9 @@
  "Architect. The units system, the Browser, Layers 2.0, the Solid Inspector, Fillet 3D bevels, Bridge, Join Segments, Camera ▸ Axes, soft ambient occlusion, round curved surfaces, view layouts, scenes as tabs, cleaner exports and many everyday editing tools. And for 0.6.2: the North tool, camera settings, scene transitions with video and the view as layered SVG.": "Architekt. Das Einheitensystem, der Browser, Ebenen 2.0, der Körper-Prüfer, die Fasen von Fillet 3D, Brücke, Segmente verbinden, Kamera ▸ Achsen, weiche Umgebungsverdeckung, gerundete gekrümmte Flächen, Ansichtslayouts, Szenen als Registerkarten, sauberere Exporte und viele alltägliche Bearbeitungswerkzeuge. Und für 0.6.2: das Nord-Werkzeug, die Kameraeinstellungen, Szenenübergänge mit Video und die Ansicht als SVG in Ebenen.",
  "Korean translation of the interface, and the AI key from an environment variable. In 0.6.2, soft shadows and fixes for macOS.": "Koreanische Übersetzung der Oberfläche und der KI-Schlüssel aus einer Umgebungsvariablen. In 0.6.2 die weichen Schatten und Korrekturen für macOS.",
  "Exact Move+Ctrl copies, overlapping rotated copies, faster box selection on huge models and the reviewed Indonesian translation.": "Exakte Kopien mit Verschieben+Strg, sich überlappende gedrehte Kopien, schnellere Rahmenauswahl in riesigen Modellen und die überarbeitete indonesische Übersetzung.",
- "Snapping to the rest of the model from inside a group or component.": "Fangen am übrigen Modell aus einer Gruppe oder Komponente heraus."
+ "Snapping to the rest of the model from inside a group or component.": "Fangen am übrigen Modell aus einer Gruppe oder Komponente heraus.",
+ "Guide Point": "Hilfspunkt",
+ "Leave a guide point with one click, on any point you snap to; or type x;y;z for exact coordinates.": "Setzt mit einem Klick einen Hilfspunkt auf jeden gefangenen Punkt; oder geben Sie x;y;z für genaue Koordinaten ein.",
+ "Click to leave a guide point, or type x;y;z and Enter.": "Klicken Sie, um einen Hilfspunkt zu setzen, oder geben Sie x;y;z ein und drücken Sie Enter.",
+ "Guide point at ({x}; {y}; {z})": "Hilfspunkt bei ({x}; {y}; {z})"
 }
