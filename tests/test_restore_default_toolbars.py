@@ -89,7 +89,10 @@ def test_restore_puts_every_toolbar_back_and_shows_the_hidden(win):
     win.restore_default_toolbars()
     _settle()
     assert _layout(win) == factory
-    assert all(tb.isVisibleTo(win) for tb in _own_bars(win))
+    from views.main_window import TOOLBARS_HIDDEN_BY_DEFAULT
+    off = {win.toolbars[k] for k in TOOLBARS_HIDDEN_BY_DEFAULT}
+    assert all(tb.isVisibleTo(win) for tb in _own_bars(win) if tb not in off)
+    assert not any(tb.isVisibleTo(win) for tb in off)
 
 
 def test_restore_leaves_the_side_panels_as_they_are(win):
