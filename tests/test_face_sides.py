@@ -370,7 +370,7 @@ def test_una_instancia_espejada_conserva_el_frente_de_sus_caras():
     scene.groups.append(inst)
     vp = _bind(_VP(scene))
     for name in ("_proto_base_chunk", "_normal_of", "_tris_of", "_area_of",
-                 "_newell_of", "_instanced_eligible"):
+                 "_newell_of", "_instanced_eligible", "_proto_instanceable"):
         setattr(vp, name, getattr(Viewport, name).__get__(vp))
     assert vp._instanced_eligible(inst) is True
     ch = vp._group_chunk(inst)
