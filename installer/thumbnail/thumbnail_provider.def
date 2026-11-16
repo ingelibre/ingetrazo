@@ -1,0 +1,4 @@
+LIBRARY ingetrazo-thumbnail
+EXPORTS
+    DllGetClassObject PRIVATE
+    DllCanUnloadNow PRIVATE

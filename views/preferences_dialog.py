@@ -188,6 +188,16 @@ class PreferencesDialog(QDialog):
         self._backup.setChecked(str(_gs.value("backup", "1", st)) != "0")
         form.addRow("", self._backup)
 
+        self._thumbnail = QCheckBox(tr("Save a picture of the model in the "
+                                       "document"))
+        self._thumbnail.setToolTip(tr(
+            "A small picture of the first scene (or of the view, when there "
+            "are no scenes), shown by the file manager. Off, a model without "
+            "textures is saved as plain text (JSON)."))
+        self._thumbnail.setChecked(
+            str(_gs.value("save_thumbnail", "1", st)) != "0")
+        form.addRow("", self._thumbnail)
+
         self._undo_steps = QSpinBox()
         self._undo_steps.setRange(0, 5000)
         self._undo_steps.setSpecialValueText(tr("unlimited"))
@@ -965,6 +975,7 @@ class PreferencesDialog(QDialog):
         self._autosave.setChecked(True)
         self._autosave_min.setValue(5)
         self._backup.setChecked(True)
+        self._thumbnail.setChecked(True)
         self._undo_steps.setValue(200)
         self._ask_section.setChecked(True)
         self._hover_picture.setChecked(True)
@@ -1080,6 +1091,8 @@ class PreferencesDialog(QDialog):
                       st)
         _gs.set_value("autosave_min", self._autosave_min.value(), st)
         _gs.set_value("backup", "1" if self._backup.isChecked() else "0", st)
+        _gs.set_value("save_thumbnail",
+                      "1" if self._thumbnail.isChecked() else "0", st)
         st.setValue("section/ask_name",
                     "1" if self._ask_section.isChecked() else "0")
         st.setValue("tabs/hover_picture",

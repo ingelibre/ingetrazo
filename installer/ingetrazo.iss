@@ -125,6 +125,12 @@ Source: "..\resources\icons\mimetypes\ingetrazo-dae.ico"; DestDir: "{app}"; \
     Flags: ignoreversion
 Source: "..\resources\icons\mimetypes\ingetrazo-skp.ico"; DestDir: "{app}"; \
     Flags: ignoreversion
+; The .igz thumbnail handler (installer\thumbnail, built by its build.cmd):
+; the picture of each document in Explorer and the file dialogs. Explorer
+; may hold it loaded (dllhost.exe) during an upgrade or an uninstall: then
+; it is replaced or removed at the next restart.
+Source: "thumbnail\build\ingetrazo-thumbnail.dll"; DestDir: "{app}"; \
+    Flags: ignoreversion restartreplace uninsrestartdelete
 
 [Icons]
 Name: "{autoprograms}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
@@ -151,6 +157,18 @@ Root: HKA; Subkey: "Software\Classes\IngeTrazo.Document\DefaultIcon"; \
     ValueType: string; ValueData: "{app}\ingetrazo-igz.ico,0"
 Root: HKA; Subkey: "Software\Classes\IngeTrazo.Document\shell\open\command"; \
     ValueType: string; ValueData: """{app}\{#MyAppExeName}"" ""%1"""
+; The picture of the model (thumbnail.png inside the .igz) in place of the
+; icon: the thumbnail handler's class, and the ProgID pointing at it. The
+; ShellEx key goes with IngeTrazo.Document (uninsdeletekey above); the class
+; goes with its own key. Never change the CLSID: upgrades must find it.
+Root: HKA; Subkey: "Software\Classes\CLSID\{{78547A98-072B-4C96-98A2-EFE80F7C48FA}"; \
+    ValueType: string; ValueData: "IngeTrazo .igz thumbnail handler"; Flags: uninsdeletekey
+Root: HKA; Subkey: "Software\Classes\CLSID\{{78547A98-072B-4C96-98A2-EFE80F7C48FA}\InprocServer32"; \
+    ValueType: string; ValueData: "{app}\ingetrazo-thumbnail.dll"
+Root: HKA; Subkey: "Software\Classes\CLSID\{{78547A98-072B-4C96-98A2-EFE80F7C48FA}\InprocServer32"; \
+    ValueType: string; ValueName: "ThreadingModel"; ValueData: "Apartment"
+Root: HKA; Subkey: "Software\Classes\IngeTrazo.Document\ShellEx\{{E357FCCD-A995-4576-B01F-234630154E96}"; \
+    ValueType: string; ValueData: "{{78547A98-072B-4C96-98A2-EFE80F7C48FA}"
 
 ; ── .dae / .skp — standard interchange formats: "Open with" only ────────────
 ; We DO NOT take over the default program or the file icon (Windows ties the
@@ -198,7 +216,7 @@ Filename: "{app}\{#MyAppExeName}"; \
 [Code]
 // Explorer previews a file with the thumbnail handler of its ProgID, so making
 // IngeTrazo.skp the default for .skp hides the previews of the program that
-// owned the extension before (issue #804). IngeTrazo has no handler of its own,
+// owned the extension before (issue #804). IngeTrazo has no .skp handler of its own,
 // so IngeTrazo.skp borrows the one Windows used until now.
 const
   SkpProgId = 'IngeTrazo.skp';
