@@ -839,6 +839,12 @@ class OrbitCamera:
     #: four below). -45° comes first so it wins the ties — the classic corner.
     _ISO_YAWS = (-45.0, 45.0, 135.0, 225.0)
     _ISO_PITCH_DEG = 30.0
+    #: How far UP the camera must look before the Iso command picks a view
+    #: from below (#1181): a camera held about level — at eye height, after
+    #: Walk or Look Around — still gets a corner above, as the command's
+    #: tooltip says; only a camera clearly looking up from underneath the
+    #: model gets one of the four below.
+    _ISO_BELOW_DEG = 10.0
 
     def set_view(self, name: str) -> None:
         preset = self._STANDARD_VIEWS.get(name)
@@ -856,12 +862,17 @@ class OrbitCamera:
         lands on whichever one the camera already points nearest to, so
         the swing is the shortest available. ``set_view("iso")`` stays
         the deterministic corner for sheets and scripts.
+
+        Above or below is decided first: below only when the camera looks
+        up by more than ``_ISO_BELOW_DEG`` (#1181) — nearly level, a
+        degree up was enough to land underneath the model.
         """
         f = self.forward()
+        below = f.z() > math.sin(math.radians(self._ISO_BELOW_DEG))
         best_yaw = math.radians(self._ISO_YAWS[0])
         best_pitch = math.radians(self._ISO_PITCH_DEG)
         best_dot = -2.0
-        for sign in (1.0, -1.0):
+        for sign in ((-1.0,) if below else (1.0,)):
             pitch = sign * math.radians(self._ISO_PITCH_DEG)
             cp = math.cos(pitch)
             sp = math.sin(pitch)
