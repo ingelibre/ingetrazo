@@ -3765,5 +3765,15 @@
  "Architect. The units system, the Browser, Layers 2.0, the Solid Inspector, Fillet 3D bevels, Bridge, Join Segments, Camera ▸ Axes, soft ambient occlusion, round curved surfaces, view layouts, scenes as tabs, cleaner exports and many everyday editing tools. And for 0.6.2: the North tool, camera settings, scene transitions with video and the view as layered SVG.": "Architekt. Das Einheitensystem, der Browser, Ebenen 2.0, der Körper-Prüfer, die Fasen von Fillet 3D, Brücke, Segmente verbinden, Kamera ▸ Achsen, weiche Umgebungsverdeckung, gerundete gekrümmte Flächen, Ansichtslayouts, Szenen als Registerkarten, sauberere Exporte und viele alltägliche Bearbeitungswerkzeuge. Und für 0.6.2: das Nord-Werkzeug, die Kameraeinstellungen, Szenenübergänge mit Video und die Ansicht als SVG in Ebenen.",
  "Korean translation of the interface, and the AI key from an environment variable. In 0.6.2, soft shadows and fixes for macOS.": "Koreanische Übersetzung der Oberfläche und der KI-Schlüssel aus einer Umgebungsvariablen. In 0.6.2 die weichen Schatten und Korrekturen für macOS.",
  "Exact Move+Ctrl copies, overlapping rotated copies, faster box selection on huge models and the reviewed Indonesian translation.": "Exakte Kopien mit Verschieben+Strg, sich überlappende gedrehte Kopien, schnellere Rahmenauswahl in riesigen Modellen und die überarbeitete indonesische Übersetzung.",
- "Snapping to the rest of the model from inside a group or component.": "Fangen am übrigen Modell aus einer Gruppe oder Komponente heraus."
+ "Snapping to the rest of the model from inside a group or component.": "Fangen am übrigen Modell aus einer Gruppe oder Komponente heraus.",
+ "Inferences": "Inferenzen",
+ "Turn all inferences on": "Alle Inferenzen einschalten",
+ "Switch every point inference of this menu back on.": "Schaltet alle Punkt-Inferenzen dieses Menüs wieder ein.",
+ "Snap to the ends of edges.": "Fängt an den Endpunkten von Kanten.",
+ "Snap to the middle of edges and arcs.": "Fängt an der Mitte von Kanten und Bögen.",
+ "Snap where edges, guides and faces cross.": "Fängt dort, wo sich Kanten, Hilfslinien und Flächen kreuzen.",
+ "Snap to any point along an edge, a guide line or a guide circle.": "Fängt an jedem Punkt entlang einer Kante, einer Hilfslinie oder eines Hilfskreises.",
+ "Snap to the centre of faces, and show a dot at the centre of the selected ones.": "Fängt am Mittelpunkt von Flächen und zeigt einen Punkt in der Mitte der ausgewählten.",
+ "Snap to the centre, quadrants and tangent points of circles and arcs.": "Fängt am Mittelpunkt, an den Quadranten und an den Tangentenpunkten von Kreisen und Bögen.",
+ "Snap to the model origin and to the origin of groups and components.": "Fängt am Modellursprung und am Ursprung von Gruppen und Komponenten."
 }

@@ -3768,5 +3768,15 @@
  "Architect. The units system, the Browser, Layers 2.0, the Solid Inspector, Fillet 3D bevels, Bridge, Join Segments, Camera ▸ Axes, soft ambient occlusion, round curved surfaces, view layouts, scenes as tabs, cleaner exports and many everyday editing tools. And for 0.6.2: the North tool, camera settings, scene transitions with video and the view as layered SVG.": "Arsitek. Sistem satuan, Penjelajah, Layer 2.0, Pemeriksa Solid, bevel Fillet 3D, Jembatan, Gabungkan segmen, Kamera ▸ Sumbu, ambient occlusion halus, permukaan lengkung yang membulat, tata letak tampilan, scene sebagai tab, ekspor yang lebih bersih, dan banyak alat penyuntingan sehari-hari. Dan untuk 0.6.2: alat Utara, pengaturan kamera, transisi adegan dengan video, dan tampilan sebagai SVG berlapis.",
  "Korean translation of the interface, and the AI key from an environment variable. In 0.6.2, soft shadows and fixes for macOS.": "Terjemahan antarmuka ke bahasa Korea, dan kunci AI dari variabel lingkungan. Di 0.6.2, bayangan lembut dan perbaikan untuk macOS.",
  "Exact Move+Ctrl copies, overlapping rotated copies, faster box selection on huge models and the reviewed Indonesian translation.": "Salinan Pindah+Ctrl yang persis, salinan putar yang saling tumpang tindih, seleksi kotak yang lebih cepat pada model sangat besar, dan terjemahan bahasa Indonesia yang direvisi.",
- "Snapping to the rest of the model from inside a group or component.": "Snap ke bagian lain model dari dalam grup atau komponen."
+ "Snapping to the rest of the model from inside a group or component.": "Snap ke bagian lain model dari dalam grup atau komponen.",
+ "Inferences": "Inferensi",
+ "Turn all inferences on": "Nyalakan semua inferensi",
+ "Switch every point inference of this menu back on.": "Menyalakan kembali semua inferensi titik di menu ini.",
+ "Snap to the ends of edges.": "Menempel ke ujung tepi.",
+ "Snap to the middle of edges and arcs.": "Menempel ke titik tengah tepi dan busur.",
+ "Snap where edges, guides and faces cross.": "Menempel di persilangan tepi, garis bantu, dan bidang.",
+ "Snap to any point along an edge, a guide line or a guide circle.": "Menempel ke titik mana pun di sepanjang tepi, garis bantu, atau lingkaran bantu.",
+ "Snap to the centre of faces, and show a dot at the centre of the selected ones.": "Menempel ke pusat bidang, dan menampilkan titik di pusat bidang yang dipilih.",
+ "Snap to the centre, quadrants and tangent points of circles and arcs.": "Menempel ke pusat, kuadran, dan titik singgung lingkaran dan busur.",
+ "Snap to the model origin and to the origin of groups and components.": "Menempel ke titik asal model dan titik asal grup serta komponen."
 }

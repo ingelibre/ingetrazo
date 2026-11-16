@@ -3772,5 +3772,15 @@
  "Architect. The units system, the Browser, Layers 2.0, the Solid Inspector, Fillet 3D bevels, Bridge, Join Segments, Camera ▸ Axes, soft ambient occlusion, round curved surfaces, view layouts, scenes as tabs, cleaner exports and many everyday editing tools. And for 0.6.2: the North tool, camera settings, scene transitions with video and the view as layered SVG.": "Arquiteto. O sistema de unidades, o Navegador, Camadas 2.0, o Inspetor de Sólidos, os chanfros do Fillet 3D, Ponte, Unir segmentos, Câmera ▸ Eixos, a oclusão ambiente suave, as superfícies curvas arredondadas, os layouts de vista, as cenas como abas, exportações mais limpas e muitas ferramentas de edição do dia a dia. E na 0.6.2: a ferramenta Norte, os ajustes de câmera, as transições de cena com vídeo e a vista como SVG em camadas.",
  "Korean translation of the interface, and the AI key from an environment variable. In 0.6.2, soft shadows and fixes for macOS.": "Tradução da interface para o coreano, e a chave de IA a partir de uma variável de ambiente. Na 0.6.2, as sombras suaves e correções para macOS.",
  "Exact Move+Ctrl copies, overlapping rotated copies, faster box selection on huge models and the reviewed Indonesian translation.": "Cópias exatas com Mover+Ctrl, cópias giradas sobrepostas, seleção por caixa mais rápida em modelos enormes e a tradução para o indonésio revisada.",
- "Snapping to the rest of the model from inside a group or component.": "O snap ao resto do modelo de dentro de um grupo ou componente."
+ "Snapping to the rest of the model from inside a group or component.": "O snap ao resto do modelo de dentro de um grupo ou componente.",
+ "Inferences": "Inferências",
+ "Turn all inferences on": "Ativar todas as inferências",
+ "Switch every point inference of this menu back on.": "Reativa todas as inferências de ponto deste menu.",
+ "Snap to the ends of edges.": "Encaixa nas extremidades das arestas.",
+ "Snap to the middle of edges and arcs.": "Encaixa no ponto médio de arestas e arcos.",
+ "Snap where edges, guides and faces cross.": "Encaixa onde arestas, guias e faces se cruzam.",
+ "Snap to any point along an edge, a guide line or a guide circle.": "Encaixa em qualquer ponto de uma aresta, linha guia ou círculo guia.",
+ "Snap to the centre of faces, and show a dot at the centre of the selected ones.": "Encaixa no centro das faces e mostra um ponto no centro das selecionadas.",
+ "Snap to the centre, quadrants and tangent points of circles and arcs.": "Encaixa no centro, nos quadrantes e nos pontos de tangência de círculos e arcos.",
+ "Snap to the model origin and to the origin of groups and components.": "Encaixa na origem do modelo e na origem de grupos e componentes."
 }

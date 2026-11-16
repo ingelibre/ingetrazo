@@ -2145,6 +2145,9 @@ class MainWindow(QMainWindow):
         action_profile.triggered.connect(self._on_terrain_profile)
         tools_menu.addAction(action_profile)
         tools_menu.addSeparator()
+        # Tools ▸ Inferences: one switch per point inference (#1410).
+        tools_menu.addMenu(self._build_inference_menu(tools_menu))
+        tools_menu.addSeparator()
         action_cancel = QAction(tr("Cancel current tool"), self)
         action_cancel.setStatusTip(tr(
             "Stop what the tool is doing; with nothing in progress, clear "
@@ -3570,6 +3573,74 @@ class MainWindow(QMainWindow):
             tr("Language changed"),
             tr("Restart IngeTrazo to apply the new language."),
         )
+
+    # ---- Tools ▸ Inferences (#1410) -----------------------------------------
+
+    #: QSettings key: the keys of the switches that are off, comma-separated.
+    _INFERENCES_OFF_KEY = "inference/disabled"
+
+    def _build_inference_menu(self, parent) -> QMenu:
+        """Tools ▸ Inferences: a check per point inference of
+        :data:`core.snap.SNAP_TOGGLES` (an extension's, added with
+        ``register_snap_toggle``, shows up the next time the menu opens),
+        and «Turn all inferences on». The choice is remembered and holds in
+        every view."""
+        from core.snap import set_disabled_snap_toggles
+        raw = str(QSettings().value(self._INFERENCES_OFF_KEY, "") or "")
+        set_disabled_snap_toggles(k.strip() for k in raw.split(","))
+        menu = QMenu(tr("Inferences"), parent)
+        self._inference_menu = menu         # a QMenu dies with its locals
+        self._inference_actions = {}
+        act_all = QAction(tr("Turn all inferences on"), self)
+        act_all.setStatusTip(tr(
+            "Switch every point inference of this menu back on."))
+        act_all.triggered.connect(self._on_all_inferences_on)
+        menu.addAction(act_all)
+        menu.addSeparator()
+        self._act_inferences_all = act_all
+        self._sync_inference_menu()
+        menu.aboutToShow.connect(self._sync_inference_menu)
+        return menu
+
+    def _sync_inference_menu(self) -> None:
+        """One checkable action per switch, checked while it is on."""
+        from core.snap import (SNAP_TOGGLES, disabled_snap_toggles,
+                               snap_toggle_enabled)
+        for toggle in SNAP_TOGGLES:
+            act = self._inference_actions.get(toggle.key)
+            if act is None:
+                act = QAction(tr(toggle.label), self)
+                act.setCheckable(True)
+                if toggle.tip:
+                    act.setStatusTip(tr(toggle.tip))
+                act.toggled.connect(
+                    lambda on, k=toggle.key: self._on_inference_toggled(k, on))
+                self._inference_menu.addAction(act)
+                self._inference_actions[toggle.key] = act
+            act.blockSignals(True)
+            act.setChecked(snap_toggle_enabled(toggle.key))
+            act.blockSignals(False)
+        self._act_inferences_all.setEnabled(bool(disabled_snap_toggles()))
+
+    def _on_inference_toggled(self, key: str, on: bool) -> None:
+        from core.snap import set_snap_toggle_enabled
+        set_snap_toggle_enabled(key, on)
+        self._inferences_changed()
+
+    def _on_all_inferences_on(self) -> None:
+        from core.snap import set_disabled_snap_toggles
+        set_disabled_snap_toggles(())
+        self._inferences_changed()
+
+    def _inferences_changed(self) -> None:
+        """Remember the switches and redraw: the dots at the centre of the
+        selected faces come and go with «Face center»."""
+        from core.snap import disabled_snap_toggles
+        QSettings().setValue(self._INFERENCES_OFF_KEY,
+                             ",".join(sorted(disabled_snap_toggles())))
+        self._sync_inference_menu()
+        for vp in self.all_viewports():
+            vp.update()
 
     def _build_extensions_menu(self, menubar) -> None:
         """The Extensions menu: one entry per plugin tool discovered by
