@@ -14,12 +14,17 @@ Two invariants hold the rule together and this file pins both.
 
 * The DERIVED linear inferences go quiet while the axis is engaged, so none
   of them can steal the point off the line: the perpendicular to the wall you
-  started on (4b), the extension (5), 'from point' (5b), the edge/guide
-  intersection (5c), the on-edge point (7) and the parallel/perpendicular
-  locks learned from an acquired edge or face (8b, 8c). Each is exercised
-  against its own control - the same call with the magnet not asked for -
-  which proves the inference was really there and that the axis is what
-  silenced it.
+  started on (4b), the extension (5), the edge/guide intersection (5c), the
+  on-edge point (7) and the parallel/perpendicular locks learned from an
+  acquired edge or face (8b, 8c). Each is exercised against its own control
+  - the same call with the magnet not asked for - which proves the inference
+  was really there and that the axis is what silenced it.
+
+  'From point' (5b) is the exception (#1418): the one it offers under the
+  magnet runs ALONG the engaged axis, so its foot is ON the line and it
+  steals nothing from it - the same reason the edge crossing the axis (7a)
+  is offered. Without it a line drawn along green could not end exactly on
+  the red axis, level with the origin, unless the arrow lock was on.
 
 * The POINT inferences are deliberately NOT silenced: fetching a vertex with
   the mouse - an endpoint, 'through point', the origin - is the one thing that
@@ -103,10 +108,6 @@ _DERIVED = [
         id="5-extension",
     ),
     pytest.param(
-        [_edge(V(2, 1), V(3, 1))], V(0, 0, 0), V(2.0, 0.05), 3.0, {}, "from_point",
-        id="5b-from-point",
-    ),
-    pytest.param(
         [_edge(V(0, -2), V(5, 3)), _edge(V(1, 1), V(5, -3))],
         V(0, 0, 0), V(2.0, 0.05), 3.0, {}, "intersection",
         id="5c-edge-intersection",
@@ -147,6 +148,24 @@ def test_the_axis_silences_the_derived_inference(edges, start, cand, magnetic, e
     # ...and it lands on the axis line through the start, at the cursor's foot.
     on_the_line = _closest_on_line(cand)(start, _AXIS_VECTORS[axis])
     assert _same(held.point, on_the_line), (held.point, on_the_line)
+
+
+def test_the_axis_keeps_from_point_along_itself():
+    """5b under the magnet (#1418): drawing along red past a corner at
+    (2, 1), the corner's foot on the red line is offered as 'from point' —
+    a point ON the axis line, at the cursor's foot, drawn in the axis'
+    colour — instead of being silenced."""
+    edges = [_edge(V(2, 1), V(3, 1))]
+    cand = V(2.0, 0.05)
+    loose = _snap(cand, edges=edges, engaged=False)
+    assert loose.kind == "from_point", (loose.kind, loose.point)
+    held = _snap(cand, edges=edges, engaged=True)
+    assert held.kind == "from_point", (held.kind, held.point)
+    on_the_line = _closest_on_line(cand)(V(0, 0, 0), _AXIS_VECTORS["x"])
+    assert _same(held.point, on_the_line), (held.point, on_the_line)
+    assert _same(held.point, V(2, 0, 0))                # the corner's foot
+    from core.snap import AXIS_COLORS
+    assert held.lock_color == AXIS_COLORS["x"]          # the line stays red
 
 
 def _engaged_name(start, p):
