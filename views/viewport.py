@@ -50,6 +50,8 @@ from pathlib import Path
 from typing import Optional
 from core.units import fmt_len as _fmt_len
 from core.units import typed_value_text as _typed_value_text
+from core.units import is_expression
+from core.units import parse as parse_units
 
 # Perf telemetry (INGETRAZO_PERF=1): every operation slower than 50 ms and a
 # once-per-second frame summary land in ~/ingetrazo-perf.log — the tool for
@@ -2035,6 +2037,31 @@ def _merge_mixed_numbers(fields: list) -> list:
         else:
             joined.append(f)
     return joined
+
+
+def _expression_fields(buffer: str) -> list:
+    """The ``;`` fields of a calculation typed in the value box, each one
+    starting with ``=`` (#630): ``=3/2;1+0,5`` → ``["=3/2", "=1+0,5"]``.
+    A comma followed by a space separates too, as everywhere in the box."""
+    fields = re.split(r";|,\s+", buffer.strip())
+    return ["=" + f.strip().lstrip("=") for f in fields]
+
+
+def _expression_result_text(value, plain: bool) -> str:
+    """What a calculation drew, for the value box: ``3.725 m``, or the
+    number alone for an angle or a factor (``plain``)."""
+    from core.units import localized
+
+    def one(v):
+        if plain:
+            return localized(f"{v:.6g}")
+        return _fmt_len(v)
+
+    if isinstance(value, tuple) and value and value[0] == "abs_len":
+        return _fmt_len(value[1])
+    if isinstance(value, tuple):
+        return "; ".join(one(v) for v in value)
+    return one(value)
 
 
 def _parse_length_field(field: str):
@@ -20015,6 +20042,16 @@ class Viewport(QOpenGLWidget):
                     t in ("m", "d", "e", "g", " ", "°")))):
                 ev.accept()
                 return True
+        # «=» opens a calculation (#630); inside one every printable key is
+        # typing — «m» is a metre there, not Move, and «(» no shortcut.
+        if (ev.type() == QEvent.ShortcutOverride
+                and self.active_tool is not None
+                and not _is_chord(ev.modifiers())):
+            t = ev.text()
+            if ((t == "=" and not self._value_buffer)
+                    or (self._typing_expression() and t and t.isprintable())):
+                ev.accept()
+                return True
         if (ev.type() == QEvent.ShortcutOverride and self._value_buffer
                 and not _is_chord(ev.modifiers())):
             t = ev.text().lower()
@@ -20631,6 +20668,12 @@ class Viewport(QOpenGLWidget):
                     self._value_buffer,
                     comma_lists=getattr(self.active_tool, "vcb_comma_lists",
                                         False))
+            if value is None and self._typing_expression():
+                # A calculation that doesn't add up stays in the box with
+                # the reason, to be fixed with Backspace — not thrown away.
+                self.flash_status(
+                    self._expression_error(self._value_buffer), 4000)
+                return True
             if value is None:
                 self._set_value_buffer("")
                 return True
@@ -20713,9 +20756,14 @@ class Viewport(QOpenGLWidget):
             # drawn: the preview the box shows is still the live one.
             if _drew or _redrew:
                 unitless = getattr(self.active_tool, "value_is_unitless", None)
-                self.measurementChanged.emit(
-                    typed if callable(unitless) and unitless()
-                    else _typed_value_text(typed))
+                plain = callable(unitless) and unitless()
+                if is_expression(typed):
+                    # «=1.25*2+2.45/2» drew 3.725 m: the box says so.
+                    self.measurementChanged.emit(
+                        _expression_result_text(value, plain))
+                else:
+                    self.measurementChanged.emit(
+                        typed if plain else _typed_value_text(typed))
             self._release_axis_lock_after_operation(committed=_drew)
             return True
 
@@ -20742,6 +20790,16 @@ class Viewport(QOpenGLWidget):
                 self._set_value_buffer(plain_marks(self._value_buffer + text))
             return True
         text = plain_marks(text)
+        if text == "=" and not self._value_buffer:
+            # «=» opens a calculation: =1.25*2+2.45/2 (#630).
+            self._set_value_buffer("=")
+            return True
+        if self._typing_expression():
+            # Inside a calculation every printable key is part of it —
+            # operators, parentheses, units — and none is a shortcut.
+            if text and text.isprintable():
+                self._set_value_buffer(self._value_buffer + text)
+            return True
         arrays = getattr(self.active_tool, "accepts_array", False)
         if arrays and text == "*":
             # "*3" / "3*": the array multiplier ("x" works too).
@@ -20833,9 +20891,24 @@ class Viewport(QOpenGLWidget):
         usual. ``comma_lists`` is the caller's word that the tool takes
         only several values (the Rectangle), where a lone decimal could never
         be meant; a user who wants decimals there separates with ``;``
-        (``1,5;2,5``), which is the usual rule in comma-decimal locales."""
+        (``1,5;2,5``), which is the usual rule in comma-decimal locales.
+
+        **Calculations (#630).** An entry that starts with ``=`` is read as
+        arithmetic, one result per ``;`` field: ``=1.25*2+2.45/2``,
+        ``=3/2;=1+0,5`` (the ``=`` of the later fields may be left out).
+        Spaces are free inside it and a comma is always a decimal."""
         from core.units import plain_marks
         buffer = plain_marks(buffer)
+        if is_expression(buffer):
+            nums = []
+            for field in _expression_fields(buffer):
+                r = parse_units(field, "length")
+                if not r.ok:
+                    return None
+                nums.append(r.value)
+            if len(nums) == 1:
+                return nums[0]
+            return tuple(nums) if len(nums) in (2, 3) else None
         # A comma followed by a space separates values: a decimal comma
         # never has one after it. «1 3/8", 1 3/16"» is two lengths (#189).
         buffer = re.sub(r",\s+", ";", buffer.strip())
@@ -20912,6 +20985,21 @@ class Viewport(QOpenGLWidget):
         into an array (#542)."""
         pending = getattr(self.active_tool, "array_pending", None)
         return bool(pending(self)) if callable(pending) else False
+
+    def _typing_expression(self) -> bool:
+        """Whether the value box holds a calculation (``=…``, #630)."""
+        return is_expression(self._value_buffer)
+
+    @staticmethod
+    def _expression_error(buffer: str) -> str:
+        """Why the calculation in ``buffer`` can't be read, translated."""
+        from core.units import plain_marks
+        buffer = plain_marks(buffer)
+        for field in _expression_fields(buffer):
+            r = parse_units(field, "length")
+            if not r.ok:
+                return r.message()
+        return tr("Type one, two or three values")
 
     def _current_token_tail(self) -> str:
         """The portion of the buffer after the last ``;`` or space."""
