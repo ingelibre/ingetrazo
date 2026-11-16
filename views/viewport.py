@@ -18880,6 +18880,12 @@ class Viewport(QOpenGLWidget):
         self.scene.begin_group_edit(group)
         _ctx_changed(self, before)
         self._edit_undo_mark = len(self.history.undo_stack)
+        # Each level remembers where its own session starts: leaving an
+        # inner level must not move the mark of the one around it, which
+        # absorbs everything done inside it too (#1339).
+        stack = getattr(self.scene, "_edit_stack", None)
+        if stack:
+            stack[-1]["undo_mark"] = self._edit_undo_mark
         self._hover_entity = None
         self._edges_version = -1     # the rest may fade out or leave the VBOs
         share = getattr(self.scene, "_edit_share", None)
@@ -18969,6 +18975,11 @@ class Viewport(QOpenGLWidget):
     def _leave_group_edit(self, todos: bool) -> None:
         if self.scene.edit_group is None:
             return
+        stack = getattr(self.scene, "_edit_stack", None) or ()
+        mark = stack[-1].get("undo_mark") if stack else None
+        if mark is None:
+            mark = getattr(self, "_edit_undo_mark",
+                           len(self.history.undo_stack))
         share = self.scene.take_edit_share()
         before = getattr(self.scene, "content_version", None)
         if todos:
@@ -18978,7 +18989,28 @@ class Viewport(QOpenGLWidget):
         _ctx_changed(self, before)
         self._hover_entity = None
         self._edges_version = -1     # the rest comes back
-        if share is not None:
+        parts = getattr(share, "parts", None) if share is not None else None
+        if parts is not None and not (parts.kids or share[0].children
+                                      or parts.changed()):
+            parts = None                # a plain instance: as it always was
+        if parts is not None:
+            group, proto = share[0], share[1]
+            inner = self.history.undo_stack[mark:]
+            if (not inner and not parts.changed()
+                    and group.mesh.capture_state() == share[3]):
+                self.scene.restore_sharing(group, proto, share[2])
+                parts.settle()
+                self.flash_status(tr("Left the group"), 2000)
+            else:
+                from core.history import ReshareDefinitionCommand
+                del self.history.undo_stack[mark:]
+                self.history.execute(ReshareDefinitionCommand(share, inner))
+                copies = sum(1 for g, _m in self.scene.placements()
+                             if g.mesh is proto)
+                self.flash_status(tr(
+                    "Component '{name}' updated on its {n} copies",
+                    name=group.name, n=copies), 4000)
+        elif share is not None:
             group, proto, xform, state0 = share
             edited = group.mesh
             if edited.capture_state() == state0:
@@ -18986,8 +19018,6 @@ class Viewport(QOpenGLWidget):
                 self.flash_status(tr("Left the group"), 2000)
             else:
                 from core.history import ReshareInstanceCommand
-                mark = getattr(self, "_edit_undo_mark",
-                               len(self.history.undo_stack))
                 inner = self.history.undo_stack[mark:]
                 del self.history.undo_stack[mark:]
                 self.history.execute(ReshareInstanceCommand(

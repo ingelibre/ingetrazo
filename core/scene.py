@@ -490,7 +490,23 @@ class Scene:
         is_comp = getattr(group, "is_component", None)
         definition = (group.mesh if callable(is_comp) and is_comp()
                       else None)
-        if getattr(group, "children", None):
+        # Inside a definition already (an open component, or a group in
+        # one): what is opened here is the same part in every copy.
+        in_definition = anidando and any(
+            lvl.get("share") is not None for lvl in self._edit_stack)
+        if (getattr(group, "children", None)
+                and getattr(group, "xform", None) is not None
+                and (definition is not None or in_definition)):
+            # A component that holds groups: its matrix comes down into its
+            # parts for the session, as any container's — but only for the
+            # session. Leaving puts it back, shares its own mesh like a
+            # plain instance's and hands the parts to every other copy
+            # (#1339, #894, #508). Baking it for good made this copy leave
+            # its definition behind: its loose faces went into the shared
+            # mesh in its own frame, and its parts moved alone.
+            from core.component_parts import open_definition
+            self._edit_share = open_definition(group, frame)
+        elif getattr(group, "children", None):
             # A container: its children stay children. What CANNOT stay is a
             # transform on it, because the tools work in world coordinates —
             # so the matrix is pushed down into the children and into its own
@@ -510,8 +526,13 @@ class Scene:
             proto, xform = group.mesh, group.xform
             group.mesh = transformed_mesh(proto, xform)
             group.xform = None
-            self._edit_share = (group, proto, xform,
-                                group.mesh.capture_state())
+            from core.component_parts import EditShare, PartsAtEntry
+            self._edit_share = EditShare((group, proto, xform,
+                                          group.mesh.capture_state()))
+            # It holds no parts yet; one pasted in while it is open is a
+            # part of the definition all the same.
+            self._edit_share.parts = PartsAtEntry(group, None, xform,
+                                                  [], [], group.axes)
         if not self._edit_stack:
             self._loose_mesh = anterior
         self._edit_stack.append(
@@ -587,7 +608,10 @@ class Scene:
             # Headless callers (tests, the AI bridge): share back directly.
             # The viewport takes the share first and wraps it in a command.
             group, proto, xform, state0 = share
-            if group.mesh.capture_state() == state0:
+            if getattr(share, "parts", None) is not None:
+                from core.component_parts import close_definition
+                close_definition(self, share)
+            elif group.mesh.capture_state() == state0:
                 self.restore_sharing(group, proto, xform)
             else:
                 self.share_back(group, proto, xform, group.mesh)
