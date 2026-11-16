@@ -25,5 +25,7 @@
  "Slight": "Slight",
  "Moderate": "Moderate",
  "Strong": "Strong",
- "Shadow edges that soften away from what casts them, as in daylight. They cost the graphics card more while the sun casts shadows.": "Shadow edges that soften away from what casts them, as in daylight. They cost the graphics card more while the sun casts shadows."
+ "Shadow edges that soften away from what casts them, as in daylight. They cost the graphics card more while the sun casts shadows.": "Shadow edges that soften away from what casts them, as in daylight. They cost the graphics card more while the sun casts shadows.",
+ "Export materials CSV": "Export materials CSV",
+ "Export materials CSV…": "Export materials CSV…"
 }
