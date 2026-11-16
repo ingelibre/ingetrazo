@@ -86,6 +86,7 @@ from tools.arc import PieTool
 from tools.flip import FlipTool
 from tools.freehand import FreehandTool
 from tools.section import SectionPlaneTool
+from tools.section_box import SectionBoxTool
 from tools.pushpull import PushPullTool
 from tools.rectangle import RectangleTool
 from tools.select import SelectTool
@@ -614,6 +615,8 @@ class MainWindow(QMainWindow):
             "geopath": GeoPathTool(),
             # Tools ▸ Section Plane (core/section.py).
             "section": SectionPlaneTool(),
+            # Tools ▸ Section Box: six cuts at once (core.section.SectionBox).
+            "section_box": SectionBoxTool(),
             # Camera ▸ Position Camera / Walk / Look Around
             # (tools/walkthrough.py) — Rafael's «pasitos» for interiors.
             "position_camera": PositionCameraTool(),
@@ -1357,7 +1360,7 @@ class MainWindow(QMainWindow):
             # Push/Pull first (Marco, 2026-09-14), then move, rotate, scale, flip…
             ("modify", tr("Modify"), ["pushpull", "move", "rotate", "scale", "flip", "followme", "offset", "fillet"]),
             ("annotate", tr("Annotate"), ["tape", "protractor", "north", "dimension", "text", "geopath"]),
-            ("sections", tr("Sections"), ["section"]),
+            ("sections", tr("Sections"), ["section", "section_box"]),
             # The Solid Tools toolbar, in the usual order.
             ("solids", tr("Solid Tools"),
              ["outer_shell", "solid_union", "solid_subtract", "solid_trim",
@@ -1476,6 +1479,26 @@ class MainWindow(QMainWindow):
             "section_fill", tr("Section Fill"),
             tr("Fill the cut faces of a section with a solid colour."),
             lambda on: self._set_style_field("section_fill", on))
+        # The section box's cut on and off: a button beside the tool (which
+        # makes and edits boxes) and Camera ▸ Section Box — the same action.
+        # Away: Tools ▸ Remove Section Box.
+        self._act_section_box = QAction(tool_icon("section_box_cut"),
+                                        tr("Section Box"), self)
+        self._act_section_box.setCheckable(True)
+        self._act_section_box.setText(tr("Cut with a section box"))
+        self._act_section_box.setToolTip(tr("Cut with a section box"))
+        self._icon_actions.append((self._act_section_box, "section_box_cut"))
+        sec_tb.addAction(self._act_section_box)
+        self._act_section_box.setStatusTip(tr(
+            "Keep only what lies inside the section box; off, the box stays "
+            "and the model shows whole."))
+        self._act_section_box.toggled.connect(self._on_toggle_section_box)
+        self._act_remove_section_box = QAction(
+            tr("Remove Section Box"), self)
+        self._act_remove_section_box.setStatusTip(tr(
+            "Take the section box away; the model shows whole again."))
+        self._act_remove_section_box.triggered.connect(
+            self._on_remove_section_box)
 
         # 3D Text opens a dialog (it's a one-shot action, not a checkable tool),
         # so it gets its own button on the Annotate bar next to the 2D Text tool.
@@ -2168,6 +2191,8 @@ class MainWindow(QMainWindow):
         camera_menu.addAction(self._act_show_splanes)
         camera_menu.addAction(self._act_show_scuts)
         camera_menu.addAction(self._act_section_fill)
+        camera_menu.addAction(self._act_section_box)
+        camera_menu.aboutToShow.connect(self._sync_section_box_actions)
 
         # View ▸ Hidden Objects / Hidden Geometry: what Hide put
         # away comes back as a see-through grid and can be selected again
@@ -2228,9 +2253,13 @@ class MainWindow(QMainWindow):
                      ("pushpull", "followme", "offset", "fillet"),
                      ("tape", "protractor", "north"),
                      ("dimension", "text"),
-                     ("section",)):
+                     ("section", "section_box")):
             for key in keys:
                 tools_menu.addAction(self._tool_actions[key])
+            if "section_box" in keys:
+                tools_menu.addAction(self._act_remove_section_box)
+                tools_menu.aboutToShow.connect(
+                    self._sync_section_box_actions)
             if "followme" in keys:
                 # Bridge (issue #614), with the tools that build faces
                 # out of others: the Modify toolbar's own action.
@@ -5613,7 +5642,104 @@ class MainWindow(QMainWindow):
         if browser is not None:
             browser.outliner.on_scene_changed()
 
+    def _picked_box(self):
+        """The section box the menus act on: the one selected, else the one
+        that cuts, else the last made — or ``None``."""
+        from core.section import SectionBox
+        scene = self.viewport.scene
+        picked = [e for e in scene.selection if isinstance(e, SectionBox)]
+        if picked:
+            return picked[-1]
+        return scene.active_section_box() or (
+            scene.section_boxes[-1] if scene.section_boxes else None)
+
+    def _on_toggle_section_box(self, on: bool) -> None:
+        """Camera ▸ Section Box: a box cuts or none does, one undo step.
+        On, the box selected (or the last one) cuts; with no box yet, one
+        is put in (the tool's way)."""
+        scene = self.viewport.scene
+        if not on:
+            self._show_whole_model()
+            return
+        box = self._picked_box()
+        if box is None:
+            from tools.section_box import place_box
+            place_box(self.viewport, fit_selection=True)
+        elif not box.active:
+            self._set_section_box(box, active=True)
+        if not getattr(scene, "show_section_cuts", True):
+            self._set_section_visibility("show_section_cuts", True)
+            self._sync_section_menu()
+        self._sync_section_box_actions()
+        self.viewport.update()
+
+    def _show_whole_model(self) -> None:
+        """No section box cuts: the model whole, as if there were none. The
+        boxes stay, to turn on again. One undo step; the Section Box tool
+        puts itself away, with nothing left to drag."""
+        active = self.viewport.scene.active_section_box()
+        if self.viewport.active_tool is self._tools.get("section_box"):
+            self._activate_tool("select")
+        if active is not None:
+            self._set_section_box(active, active=False)
+        self._sync_section_box_actions()
+        self.viewport.update()
+
+    def _on_remove_section_box(self, box=None) -> None:
+        """Take a section box away: ``box``, else the one the menus act on
+        (selected, cutting, last)."""
+        from core.history import section_boxes_removed
+        box = box or self._picked_box()
+        if box is None:
+            return
+        tool = self.viewport.active_tool
+        if tool is self._tools.get("section_box") and box.active:
+            self._activate_tool("select")      # nothing left to drag
+        self.viewport.history.execute(
+            section_boxes_removed(self.viewport.scene, [box]))
+        self._sync_section_box_actions()
+        self.viewport.update()
+
+    def _section_box_menu(self, menu, box) -> None:
+        """The section box's right-click entries in the model: the same
+        list as its row in the Browser."""
+        browser = getattr(self, "project_browser", None)
+        panel = getattr(browser, "outliner", None)
+        if panel is not None:
+            panel.section_box_menu(menu, box)
+
+    def _set_section_box(self, box, **changes) -> None:
+        """Change ``box``'s ``active`` / ``hidden`` — one undo step (a box
+        set to cut takes the cut off the others)."""
+        from core.history import section_box_changed
+        changed = box.copy()
+        for key, value in changes.items():
+            setattr(changed, key, bool(value))
+        if changed.same_as(box):
+            return
+        if changed.hidden:
+            self.viewport.scene.selection.discard(box)
+        self.viewport.history.execute(
+            section_box_changed(self.viewport.scene, box, changed))
+        self._sync_section_box_actions()
+        self.viewport.update()
+
+    def _sync_section_box_actions(self) -> None:
+        """Camera ▸ Section Box ticked while a box cuts; Remove only with
+        a box to remove. Read when the menus open: undo, scenes and files
+        change the boxes behind them."""
+        scene = self.viewport.scene
+        act = getattr(self, "_act_section_box", None)
+        if act is not None:
+            act.blockSignals(True)
+            act.setChecked(scene.active_section_box() is not None)
+            act.blockSignals(False)
+        rem = getattr(self, "_act_remove_section_box", None)
+        if rem is not None:
+            rem.setEnabled(bool(scene.section_boxes))
+
     def _sync_section_menu(self) -> None:
+        self._sync_section_box_actions()
         scene = self.viewport.scene
         for act, value in (
                 (self._act_show_splanes,
@@ -5977,6 +6103,11 @@ class MainWindow(QMainWindow):
         if splanes:
             from core.history import DeleteSectionPlanesCommand
             cmds.append(DeleteSectionPlanesCommand(splanes))
+        from core.section import SectionBox
+        boxes = [e for e in sel if isinstance(e, SectionBox)]
+        if boxes:
+            from core.history import section_boxes_removed
+            cmds.append(section_boxes_removed(self.viewport.scene, boxes))
         if dims:
             cmds.append(DeleteDimensionsCommand(dims))
         if labels:
@@ -6245,6 +6376,12 @@ class MainWindow(QMainWindow):
                           else "Group"))
             menu.addAction(tr("Unlock “{name}”", name=name),
                            lambda g=locked_group: self._unlock_group(g))
+            menu.addSeparator()
+
+        from core.section import SectionBox
+        boxes = [e for e in sel if isinstance(e, SectionBox)]
+        if boxes:
+            self._section_box_menu(menu, boxes[0])
             menu.addSeparator()
 
         if sec_planes:
@@ -8020,6 +8157,10 @@ class MainWindow(QMainWindow):
                     live(lambda _v, p=panel: p.on_scene_changed()))
         vp.sceneVersionChanged.connect(
             live(lambda _v: self._on_surfaces_scene_changed()))
+        # The button of the section box says what undo, a scene or a file
+        # just did to it.
+        vp.sceneVersionChanged.connect(
+            live(lambda _v: self._sync_section_box_actions()))
         vp.tilesChanged.connect(live(lambda: self._build_terrain()))
         vp.valueBufferChanged.connect(live(self._on_value_buffer))
         vp.measurementChanged.connect(

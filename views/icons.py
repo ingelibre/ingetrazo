@@ -438,6 +438,45 @@ def _section(p, ink):
     _solid_arrow(p, _accent(), 28, 9, 38, 9)                # the side cut away
 
 
+def _section_box(p, ink):
+    # What the box keeps: a block, inside a dashed box in the accent.
+    p.save()
+    p.setPen(Qt.NoPen)
+    p.setBrush(QColor(ink.red(), ink.green(), ink.blue(), 150))
+    p.drawRect(QRectF(15, 24, 12, 10))
+    p.restore()
+    pen = QPen(_accent(), 2.4, Qt.DashLine)
+    pen.setCapStyle(Qt.RoundCap)
+    p.save()
+    p.setPen(pen)
+    p.setBrush(Qt.NoBrush)
+    front = QRectF(8, 18, 22, 22)
+    p.drawRect(front)
+    p.drawRect(front.translated(9, -9))
+    for x, y in ((8, 18), (30, 18), (30, 40), (8, 40)):
+        p.drawLine(QPointF(x, y), QPointF(x + 9, y - 9))
+    p.restore()
+
+
+def _section_box_cut(p, ink):
+    # The box's cut as a switch: a solid block sliced by the box's corner.
+    p.save()
+    p.setPen(Qt.NoPen)
+    p.setBrush(QColor(ink.red(), ink.green(), ink.blue(), 170))
+    p.drawRect(QRectF(9, 19, 20, 20))
+    p.setBrush(_accent())
+    p.drawPolygon(QPolygonF([QPointF(29, 19), QPointF(39, 9),
+                             QPointF(39, 29), QPointF(29, 39)]))
+    p.restore()
+    pen = QPen(ink, 2.4)
+    p.save()
+    p.setPen(pen)
+    p.setBrush(Qt.NoBrush)
+    p.drawLine(QPointF(9, 19), QPointF(19, 9))
+    p.drawLine(QPointF(19, 9), QPointF(39, 9))
+    p.restore()
+
+
 def _section_planes(p, ink):
     quad = QPolygonF(_SECTION_FRAME)
     dash = _Pen(QColor(ink.red(), ink.green(), ink.blue(), 110), 1.8,
@@ -2612,7 +2651,8 @@ _DRAW = {
     "text": _text, "text3d": _text3d,
     "eraser": _eraser, "tape": _tape, "protractor": _protractor,
     "north": _north,
-    "section": _section,
+    "section": _section, "section_box": _section_box,
+    "section_box_cut": _section_box_cut,
     "styles": _styles_icon, "shadows": _shadows_icon,
     "panel_properties": _panel_properties, "panel_bim": _panel_bim,
     "panel_terrain": _panel_terrain, "panel_browser": _panel_browser,
@@ -2836,6 +2876,7 @@ _CURSOR_HOTSPOTS = {
     "zoom": (21, 21),               # the magnifier's lens centre
     "zoom_window": (21, 22),
     "section": (24, 27),            # the plane's centre
+    "section_box": (24, 24),
     "position_camera": (23, 44),    # the marker's tip: where the camera goes
     "walk": (24, 24),
     "look_around": (24, 26),        # the pupil

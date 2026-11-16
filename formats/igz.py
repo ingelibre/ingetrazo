@@ -828,8 +828,12 @@ def save_scene(scene, path: Path, thumbnail: bytes | None = None) -> dict:
     if back:
         payload["back_face_color"] = list(back)
     splanes = getattr(scene, "section_planes", None)
-    if splanes:
-        payload["section_planes"] = [sp.to_dict() for sp in splanes]
+    sboxes = getattr(scene, "section_boxes", None)
+    if sboxes:
+        payload["section_boxes"] = [b.to_dict() for b in sboxes]
+    if splanes or sboxes:
+        if splanes:
+            payload["section_planes"] = [sp.to_dict() for sp in splanes]
         vis = {}
         if not getattr(scene, "show_section_planes", True):
             vis["planes_hidden"] = True
@@ -1505,6 +1509,7 @@ def _load_into_inner(scene, path: Path, progress=None) -> None:
     scene.scene_folders = []
     scene.scene_folder_parents = {}
     scene.section_planes = []
+    scene.section_boxes = []
     scene.show_section_planes = True
     scene.show_section_cuts = True
     scene.show_hidden_objects = False
@@ -1762,6 +1767,19 @@ def _load_into_inner(scene, path: Path, progress=None) -> None:
             if sp.active and seen_active:
                 sp.active = False
             seen_active = seen_active or sp.active
+    raw_boxes = payload.get("section_boxes")
+    if isinstance(raw_boxes, list):
+        from core.section import SectionBox
+        seen_active = False
+        for raw_box in raw_boxes:
+            try:
+                box = SectionBox.from_dict(raw_box)
+            except (KeyError, TypeError, ValueError, AttributeError):
+                continue                    # a damaged entry is left out
+            # One cuts at a time: keep the FIRST marked to.
+            box.active = box.active and not seen_active
+            seen_active = seen_active or box.active
+            scene.section_boxes.append(box)
     vis = payload.get("section_view")
     if isinstance(vis, dict):
         scene.show_section_planes = not vis.get("planes_hidden", False)

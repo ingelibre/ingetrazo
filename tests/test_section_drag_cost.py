@@ -21,19 +21,25 @@ from core.section import PlaneReach, cut_chords
 
 
 def _cut_plain(v0, e1, e2, normal, point, visible=None, rows=False):
-    """``cut_chords`` as it was: every triangle, every edge."""
+    """``cut_chords`` the plain way: every triangle, every edge, with its
+    side rule — a corner ON the plane (within a hair) is on the kept side."""
     nv = np.array([normal.x(), normal.y(), normal.z()], dtype=np.float64)
     c = float(np.dot(nv, [point.x(), point.y(), point.z()]))
     p0 = np.asarray(v0, dtype=np.float64)
     p1 = p0 + e1
     p2 = p0 + e2
-    d0 = p0 @ nv - c
-    d1 = p1 @ nv - c
-    d2 = p2 @ nv - c
+    hair = max(1e-5, abs(c) * 1e-6)
+
+    def dist(p):
+        d = p @ nv - c
+        d[np.abs(d) < hair] = 0.0
+        return d
+
+    d0, d1, d2 = dist(p0), dist(p1), dist(p2)
     pts = []
     for (a, b, da, db) in ((p0, p1, d0, d1), (p1, p2, d1, d2),
                            (p2, p0, d2, d0)):
-        cross = (da * db) < 0
+        cross = (da > 0.0) != (db > 0.0)
         t = np.zeros(len(da))
         np.divide(da, da - db, out=t, where=cross)
         pts.append((cross, a + (b - a) * t[:, None]))

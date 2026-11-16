@@ -182,14 +182,15 @@ def label_clear_of(text: QRectF, avoid: QRectF, bounds: QRectF,
 
 
 def _active_cut(scene):
-    """The section plane actually CUTTING (cuts shown + one active), or
+    """What actually CUTS the model now (cuts shown): the active section
+    plane and the faces of an active section box, as one
+    ``core.section.CutSet`` whose ``side``/``hidden`` ask them all — or
     None. A module function so stub viewports in tests degrade gracefully;
     picks and snaps filter by it — what the cut hides is not clickable nor
     snappable."""
-    if not getattr(scene, "show_section_cuts", True):
-        return None
-    active = getattr(scene, "active_section", None)
-    return active() if callable(active) else None
+    from core.section import CutSet, cut_planes
+    planes = cut_planes(scene)
+    return CutSet(planes) if planes else None
 
 
 class _SnapEdge:
@@ -281,6 +282,9 @@ GL_COLOR_BUFFER_BIT = 0x00004000
 GL_DEPTH_BUFFER_BIT = 0x00000100
 GL_DEPTH_TEST = 0x0B71
 GL_CLIP_DISTANCE0 = 0x3000
+#: Clip planes the shaders take: the active section plane and the six faces
+#: of the section box (``u_clip_planes`` in basic.vert / depth.vert).
+_MAX_CUT_PLANES = 7
 GL_STENCIL_TEST = 0x0B90
 GL_STENCIL_BUFFER_BIT = 0x00000400
 GL_ALWAYS = 0x0207
@@ -2653,8 +2657,10 @@ class Viewport(QOpenGLWidget):
         # Per-instance model matrix columns (P2 instanced components).
         self._loc_inst = [self._program.attributeLocation(f"a_inst{i}")
                           for i in range(4)]
-        self._loc_clip_plane = self._program.uniformLocation("u_clip_plane")
-        self._loc_clip_enable = self._program.uniformLocation("u_clip_enable")
+        self._loc_clip_planes = [
+            self._program.uniformLocation(f"u_clip_planes[{i}]")
+            for i in range(_MAX_CUT_PLANES)]
+        self._loc_clip_count = self._program.uniformLocation("u_clip_count")
         # Sun shadows (core/sun.py): sampling uniforms on the main program,
         # plus the tiny depth-only program the shadow map renders with.
         self._loc_shadow_enable = self._program.uniformLocation(
@@ -2674,10 +2680,11 @@ class Viewport(QOpenGLWidget):
         self._loc_dash_px = self._program.uniformLocation("u_dash_px")
         self._depth_program = self._compile_depth_program()
         self._loc_d_mvp = self._depth_program.uniformLocation("u_mvp")
-        self._loc_d_clip_plane = self._depth_program.uniformLocation(
-            "u_clip_plane")
-        self._loc_d_clip_enable = self._depth_program.uniformLocation(
-            "u_clip_enable")
+        self._loc_d_clip_planes = [
+            self._depth_program.uniformLocation(f"u_clip_planes[{i}]")
+            for i in range(_MAX_CUT_PLANES)]
+        self._loc_d_clip_count = self._depth_program.uniformLocation(
+            "u_clip_count")
         self._loc_d_use_tex = self._depth_program.uniformLocation(
             "u_use_texture")
         self._loc_d_tex = self._depth_program.uniformLocation("u_tex")
@@ -2869,6 +2876,7 @@ class Viewport(QOpenGLWidget):
                 # the section-plane frames.
                 self._draw_guides(painter)
                 self._draw_section_planes(painter)
+                self._draw_section_box(painter, handles=False)
                 self._draw_geo_surfaces(painter)
                 self._draw_geo_paths(painter)
                 self._draw_geo_points(painter)
@@ -3005,16 +3013,16 @@ class Viewport(QOpenGLWidget):
         mode = style.face_mode
         self._frame_style = style
 
-        # Active section cut: ONE world-space plane; the kept
-        # side is where dot(n, p - origin) <= 0. Applies to model geometry
-        # only — sky, axes, terrain, previews and overlays stay uncut.
-        self._clip_vec = None
-        sp = (self.scene.active_section()
-              if getattr(self.scene, "show_section_cuts", True) else None)
-        if sp is not None:
-            n, o = sp.normal, sp.point
-            self._clip_vec = QVector4D(
-                -n.x(), -n.y(), -n.z(), QVector3D.dotProduct(n, o))
+        # Section cut: the active plane and the section box's faces
+        # (core.section.cut_planes), world-space; the kept side of each is
+        # where dot(n, p - origin) <= 0. Applies to model geometry only —
+        # sky, axes, terrain, previews and overlays stay uncut.
+        from core.section import cut_planes
+        self._clip_planes = cut_planes(self.scene)[:_MAX_CUT_PLANES]
+        self._clip_vecs = [
+            QVector4D(-sp.normal.x(), -sp.normal.y(), -sp.normal.z(),
+                      QVector3D.dotProduct(sp.normal, sp.point))
+            for sp in self._clip_planes]
 
         self._gl.glClearDepthf(1.0)
         bg = style.background
@@ -3838,7 +3846,7 @@ class Viewport(QOpenGLWidget):
             self._gl.glDrawArrays(GL_LINES, 0, hover_count)
             self._hover_edges_vao.release()
         self._set_section_clip(False)
-        self._draw_section_cut_edges()   # ON the plane — drawn unclipped
+        self._draw_section_cut_edges()   # ON the planes — each by the others
 
     def _draw_scaffold(self, mvp, w, h) -> None:
         """The axes, the guides and the dashed box of the group being
@@ -3911,6 +3919,14 @@ class Viewport(QOpenGLWidget):
                     self._guides_vbo.allocate(data, len(data))
                     self._guides_vbo.release()
             if g_spans:
+                # A guide LINE runs through any box: the section box cuts
+                # it as it cuts the model (the plane leaves guides whole).
+                box_cuts = (self.scene.active_section_box() is not None
+                            and getattr(self.scene, "show_section_cuts",
+                                        True))
+                if box_cuts:
+                    self._set_section_clip(
+                        True, skip=0 if self.scene.active_section() else None)
                 self._guides_vao.bind()
                 self._gl.glDepthMask(GL_FALSE)
                 for start, count, selected in g_spans:
@@ -3921,6 +3937,8 @@ class Viewport(QOpenGLWidget):
                     self._gl.glDrawArrays(GL_LINES, start, count)
                 self._gl.glDepthMask(GL_TRUE)
                 self._guides_vao.release()
+                if box_cuts:
+                    self._set_section_clip(False)
 
         # The dashed box of the group being edited, depth-tested like the
         # guides (it shares their buffer): the part behind the geometry is
@@ -3976,7 +3994,7 @@ class Viewport(QOpenGLWidget):
         sc = self.scene
         if (mode == "xray" or getattr(style, "back_edges", False)
                 or self.plano_style is not None
-                or getattr(self, "_clip_vec", None) is not None
+                or getattr(self, "_clip_vecs", None)
                 or getattr(sc, "show_hidden_objects", False)
                 or getattr(sc, "show_hidden_geometry", False)
                 or getattr(self, "_preview_groups", None)
@@ -7120,14 +7138,12 @@ class Viewport(QOpenGLWidget):
         if lo is None:
             self._shadow_vp = None
             return None
-        clip = getattr(self, "_clip_vec", None)
+        clips = getattr(self, "_clip_vecs", None) or ()
         key = (self.scene.version, id(self.scene.mesh),
                getattr(self, "_preview_epoch", 0),
                tuple(round(v, 4) for v in d),
-               None if clip is None else (round(clip.x(), 4),
-                                          round(clip.y(), 4),
-                                          round(clip.z(), 4),
-                                          round(clip.w(), 4)),
+               tuple((round(c.x(), 4), round(c.y(), 4), round(c.z(), 4),
+                      round(c.w(), 4)) for c in clips),
                round(lo.x(), 2), round(lo.y(), 2), round(lo.z(), 2),
                round(hi.x(), 2), round(hi.y(), 2), round(hi.z(), 2))
         # The light matrix is a pure function of the sun and the bounds —
@@ -7286,13 +7302,11 @@ class Viewport(QOpenGLWidget):
         prog.bind()
         prog.setUniformValue(self._loc_d_mvp, light_vp)
         prog.setUniformValue(self._loc_d_use_tex, 0)
-        clip = getattr(self, "_clip_vec", None)
-        if clip is not None:
-            prog.setUniformValue(self._loc_d_clip_plane, clip)
-            prog.setUniformValue(self._loc_d_clip_enable, 1)
-            self._gl.glEnable(GL_CLIP_DISTANCE0)
-        else:
-            prog.setUniformValue(self._loc_d_clip_enable, 0)
+        clips = getattr(self, "_clip_vecs", None) or []
+        for i, c in enumerate(clips):
+            prog.setUniformValue(self._loc_d_clip_planes[i], c)
+            self._gl.glEnable(GL_CLIP_DISTANCE0 + i)
+        prog.setUniformValue(self._loc_d_clip_count, len(clips))
         # Identity on the instanced-matrix generic attributes for the
         # non-instanced draws (same reset the main pass does per frame).
         for i, row in enumerate(((1.0, 0.0, 0.0, 0.0), (0.0, 1.0, 0.0, 0.0),
@@ -7412,8 +7426,8 @@ class Viewport(QOpenGLWidget):
                     tex.release(0)
                 self._shadow_bb_vao.release()
                 prog.setUniformValue(self._loc_d_use_tex, 0)
-        if clip is not None:
-            self._gl.glDisable(GL_CLIP_DISTANCE0)
+        for i in range(len(clips)):
+            self._gl.glDisable(GL_CLIP_DISTANCE0 + i)
         prog.release()
         fbo.release()
         self._gl.glEnable(GL_BLEND)
@@ -10098,6 +10112,8 @@ class Viewport(QOpenGLWidget):
         # The Scale tool's grip box (yellow box with green grips).
         self._draw_scale_box(painter)
         self._draw_section_planes(painter)
+        self._draw_section_box(painter)
+        self._draw_section_box_chip(painter)
         # Tool-owned overlay (the Flip planes; the future Axes gizmo): a tool
         # exposing ``draw_overlay(viewport, painter)`` paints after the
         # document annotations, before the edit-group frame.
@@ -10428,18 +10444,28 @@ class Viewport(QOpenGLWidget):
         return _point_in_screen_hull(x, y, projected)
 
     # ---- Section planes ------------------------------------------------------
-    def _set_section_clip(self, on: bool) -> None:
-        """Enable/disable the active section cut around a model-geometry pass
-        (``gl_ClipDistance`` in basic.vert). No-op when no cut is active."""
-        if getattr(self, "_clip_vec", None) is None:
+    def _set_section_clip(self, on: bool, skip=None) -> None:
+        """Enable/disable the section cut around a model-geometry pass
+        (``gl_ClipDistance`` in basic.vert). ``skip`` leaves that plane (or
+        those, a tuple) out: what is drawn IN a cut plane (its fill, its
+        thick lines) is clipped by the others only — a box face's fill stops
+        at the box. No-op when nothing cuts."""
+        vecs = getattr(self, "_clip_vecs", None)
+        if not vecs:
             return
+        skips = skip if isinstance(skip, tuple) else (skip,)
         if on:
-            self._program.setUniformValue(self._loc_clip_plane, self._clip_vec)
-            self._program.setUniformValue(self._loc_clip_enable, 1)
-            self._gl.glEnable(GL_CLIP_DISTANCE0)
+            for i, v in enumerate(vecs):
+                self._program.setUniformValue(self._loc_clip_planes[i], v)
+                if i in skips:
+                    self._gl.glDisable(GL_CLIP_DISTANCE0 + i)
+                else:
+                    self._gl.glEnable(GL_CLIP_DISTANCE0 + i)
+            self._program.setUniformValue(self._loc_clip_count, len(vecs))
         else:
-            self._program.setUniformValue(self._loc_clip_enable, 0)
-            self._gl.glDisable(GL_CLIP_DISTANCE0)
+            self._program.setUniformValue(self._loc_clip_count, 0)
+            for i in range(len(vecs)):
+                self._gl.glDisable(GL_CLIP_DISTANCE0 + i)
 
     def _section_cut_active(self):
         return _active_cut(self.scene)
@@ -10477,7 +10503,8 @@ class Viewport(QOpenGLWidget):
         selection = self.scene.selection
         for sp in planes:
             if getattr(sp, "hidden", False) \
-                    or not self.scene.entity_visible(sp):
+                    or not self.scene.entity_visible(sp) \
+                    or self._box_covers_plane(sp):
                 continue                    # its frame is off; a cut stays
             corners = self.section_plane_frame(sp)
             px = []
@@ -10554,6 +10581,155 @@ class Viewport(QOpenGLWidget):
                         Qt.AlignCenter, symbol[:3])
                 painter.restore()
 
+    def _section_box_edges_px(self, box) -> list:
+        """The section box's twelve edges on screen, ``[(a, b), ...]`` —
+        the part of each in front of the camera."""
+        out = []
+        c = box.corners()
+        for i in range(8):
+            for bit in (1, 2, 4):
+                if i & bit:
+                    continue
+                seg = self._clip_segment_front(c[i], c[i | bit])
+                if seg is None:
+                    continue
+                a = self._world_to_pixel(seg[0])
+                b = self._world_to_pixel(seg[1])
+                if a is not None and b is not None:
+                    out.append((a, b))
+        return out
+
+    def _section_boxes_shown(self) -> list:
+        """The section boxes on screen: the one that CUTS (unless its frame
+        is switched off) and one selected, to see where it stands. A box
+        that does nothing draws nothing: with none cutting, the model looks
+        as if there were no boxes at all. View ▸ Section Planes hides them
+        as it hides the planes' frames."""
+        if not getattr(self.scene, "show_section_planes", True):
+            return []
+        cuts = getattr(self.scene, "show_section_cuts", True)
+        selection = self.scene.selection
+        return [b for b in getattr(self.scene, "section_boxes", ())
+                if not getattr(b, "hidden", False)
+                and ((b.active and cuts) or b in selection)]
+
+    def _box_covers_plane(self, plane) -> bool:
+        """While a section box cuts, the section planes' frames step aside:
+        the view is the box's. The plane's cut stays if it has one, and one
+        selected in the Browser shows, to see where it stands."""
+        scene = self.scene
+        if plane in scene.selection \
+                or not getattr(scene, "show_section_cuts", True):
+            return False
+        active = getattr(scene, "active_section_box", None)
+        return callable(active) and active() is not None
+
+    def _section_box_chip(self):
+        """``(rect, text)`` of the notice at the top of the view while a box
+        cuts — what is cutting, and the one click back to the whole model
+        — or ``None``."""
+        if not getattr(self.scene, "show_section_cuts", True):
+            return None
+        box = self.scene.active_section_box()
+        if box is None:
+            return None
+        text = "{}  —  {}  ✕".format(
+            tr("Section box: {name}", name=box.name or tr("Section Box")),
+            tr("Show the whole model"))
+        from PySide6.QtGui import QPaintDevice
+        font = QFont()
+        font.setPointSize(9)
+        font.setBold(True)
+        fm = (QFontMetrics(font, self) if isinstance(self, QPaintDevice)
+              else QFontMetrics(font))
+        w = fm.horizontalAdvance(text) + 24.0
+        return QRectF((self.width() - w) * 0.5, 10.0, w, fm.height() + 10.0), \
+            text
+
+    def _press_on_box_chip(self, ev) -> bool:
+        """A click on the section box's notice: back to the whole model."""
+        chip = self._section_box_chip()
+        if chip is None or not chip[0].contains(ev.position()):
+            return False
+        show_all = getattr(self.window(), "_show_whole_model", None)
+        if not callable(show_all):
+            return False
+        show_all()
+        return True
+
+    def _draw_section_box_chip(self, painter: QPainter) -> None:
+        chip = self._section_box_chip()
+        if chip is None:
+            return
+        rect, text = chip
+        font = QFont()
+        font.setPointSize(9)
+        font.setBold(True)
+        painter.save()
+        painter.setRenderHint(QPainter.Antialiasing, True)
+        painter.setFont(font)
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(QColor(243, 115, 41, 235))
+        painter.drawRoundedRect(rect, rect.height() * 0.5, rect.height() * 0.5)
+        painter.setPen(QColor(255, 255, 255))
+        painter.drawText(rect, Qt.AlignCenter, text)
+        painter.restore()
+
+    def _box_with_grips(self, box) -> bool:
+        """Whether ``box`` shows its grips: selected, or the one the
+        Section Box tool is working on."""
+        if box in self.scene.selection:
+            return True
+        from tools.section_box import SectionBoxTool
+        return isinstance(self.active_tool, SectionBoxTool) and box.active
+
+    def _draw_section_box(self, painter: QPainter,
+                          handles: bool = True) -> None:
+        """Every section box's twelve edges, dashed like a section plane's
+        frame: orange for the one that cuts, light grey for the others,
+        solid and heavier when selected — then the grips of the box
+        selected or worked on by the Section Box tool. Hidden by View ▸
+        Section Planes, as the planes' frames are."""
+        from tools.section_box import SectionBoxTool, draw_arrows
+        tool = self.active_tool
+        for box in self._section_boxes_shown():
+            selected = box in self.scene.selection
+            col = (QColor(243, 115, 41) if box.active
+                   else QColor(150, 155, 162))
+            width = (2.0 if box.active else 1.4) + (1.2 if selected else 0.0)
+            painter.save()
+            painter.setPen(QPen(col, width,
+                                Qt.SolidLine if selected else Qt.DashLine))
+            painter.setBrush(Qt.NoBrush)
+            for a, b in self._section_box_edges_px(box):
+                painter.drawLine(QPointF(*a), QPointF(*b))
+            painter.restore()
+            if not handles or not self._box_with_grips(box):
+                continue                    # an exported picture: no grips
+            hot = None
+            if isinstance(tool, SectionBoxTool) and box.active:
+                hot = (tool.drag_face if tool.drag_face is not None
+                       else tool.hover_face)
+            draw_arrows(self, painter, box, hot)
+
+    def pick_section_box(self, screen_x: float, screen_y: float):
+        """The section box whose grip is under the cursor (a box showing
+        its grips) or whose edge is nearest it within the pick threshold,
+        else ``None`` (Select / context menu / Eraser)."""
+        from tools.section_box import pick_arrow
+        boxes = self._section_boxes_shown()
+        for box in boxes:
+            if self._box_with_grips(box) and pick_arrow(
+                    self, box, screen_x, screen_y) is not None:
+                return box
+        best, best_d = None, self.pick_threshold_px
+        for box in boxes:
+            for a, b in self._section_box_edges_px(box):
+                d = _point_to_segment_distance_2d((screen_x, screen_y), a, b)
+                if d < best_d:
+                    best, best_d = box, d
+        return best
+
     def pick_section_plane(self, screen_x: float, screen_y: float):
         """The section plane whose frame is nearest the cursor within the
         pick threshold, or ``None`` (Select / context menu / Eraser)."""
@@ -10563,7 +10739,8 @@ class Viewport(QOpenGLWidget):
         best, best_d = None, self.pick_threshold_px
         for sp in planes:
             if getattr(sp, "hidden", False) \
-                    or not self.scene.entity_selectable(sp):
+                    or not self.scene.entity_selectable(sp) \
+                    or self._box_covers_plane(sp):
                 continue
             corners = self.section_plane_frame(sp)
             for i in range(4):
@@ -10581,18 +10758,34 @@ class Viewport(QOpenGLWidget):
                     best = sp
         return best
 
-    def _section_cut_segments(self):
-        """World-space cut segments: the active plane ∩ every visible model
-        triangle, vectorized over the pick index's (v0, e1, e2) arrays.
-        Cached per (scene version, plane pose)."""
-        sp = self.scene.active_section()
+    @staticmethod
+    def _cut_ident(sp):
+        """Which cut ``sp`` is, across frames and poses: a section plane by
+        its uid, a section box face by its index — so a face being dragged
+        keeps its one cache slot, as a dragged plane does."""
+        if hasattr(sp, "box"):
+            return ("box", sp.index)
+        return ("plane", getattr(sp, "uid", id(sp)))
+
+    def _section_cut_segments(self, sp=None):
+        """World-space cut segments: the plane ``sp`` (the active one when
+        not given) ∩ every visible model triangle, vectorized over the pick
+        index's (v0, e1, e2) arrays. The whole plane: where another cut
+        hides them, the clip planes take them out as they draw. Cached per
+        cut, per (scene version, plane pose)."""
+        if sp is None:
+            sp = self.scene.active_section()
         if sp is None:
             return None
         n, o = sp.normal, sp.point
         key = (self.scene.version, round(n.x(), 9), round(n.y(), 9),
                round(n.z(), 9), round(o.x(), 6), round(o.y(), 6),
                round(o.z(), 6))
-        cached = getattr(self, "_section_cut_cache", None)
+        memo = getattr(self, "_section_cut_cache", None)
+        if not isinstance(memo, dict):
+            memo = self._section_cut_cache = {}
+        ident = self._cut_ident(sp)
+        cached = memo.get(ident)
         if cached is not None and cached[0] == key:
             return cached[1]
         idx = self._pick_flat(self._pick_index(near="all"))
@@ -10603,19 +10796,34 @@ class Viewport(QOpenGLWidget):
             # model and the normal stay: a plane dragged by its arrow then
             # only compares three arrays with its new offset (a furnished
             # house froze ~2 s per drag measuring every triangle again).
-            reach = getattr(self, "_section_reach", None)
+            # One per cut: the six faces of a section box have three
+            # normals, and one shared reach was measured again every frame.
+            reaches = getattr(self, "_section_reach", None)
+            if not isinstance(reaches, dict):
+                reaches = self._section_reach = {}
+            reach = reaches.get(ident)
             if reach is None or not reach.fits(idx.tri_v0, n, idx.tri_e1,
                                                idx.tri_e2):
                 from core.section import PlaneReach
-                reach = self._section_reach = PlaneReach(
+                reach = reaches[ident] = PlaneReach(
                     idx.tri_v0, idx.tri_e1, idx.tri_e2, n)
             segs, rows = cut_chords(idx.tri_v0, idx.tri_e1, idx.tri_e2, n, o,
                                     idx.ent_vis[idx.tri_ent], rows=True,
                                     reach=reach)
             if segs is not None:
                 tags = self._cut_layer_tags(idx, idx.tri_ent[rows])
-        self._section_cut_cache = (key, segs, tags)
+        memo[ident] = (key, segs, tags)
         return segs
+
+    def _section_cut_tags(self, sp=None):
+        """The layer of each of ``sp``'s cut segments (the active plane
+        when not given), as :meth:`_section_cut_segments` made them — or
+        ``None``."""
+        if sp is None:
+            sp = self.scene.active_section()
+        if sp is None or self._section_cut_segments(sp) is None:
+            return None
+        return self._section_cut_cache[self._cut_ident(sp)][2]
 
     @staticmethod
     def _cut_layer_tags(idx, ents):
@@ -10643,35 +10851,55 @@ class Viewport(QOpenGLWidget):
             out.append(tag)
         return np.asarray(out, dtype=object)
 
-    def _section_fill_tris(self):
-        """The fill's triangles for the active cut, cached with the cut
-        segments they come from (same scene version, same plane pose)."""
+    def _section_fill_tris(self, sp=None):
+        """The fill's triangles for the cut of ``sp`` (the active plane when
+        not given), cached with the cut segments they come from (same
+        scene version, same plane pose)."""
         import numpy as np
-        segs = self._section_cut_segments()
-        cached = getattr(self, "_section_fill_cache", None)
+        if sp is None:
+            sp = self.scene.active_section()
+        if sp is None:
+            return None
+        segs = self._section_cut_segments(sp)
+        memo = getattr(self, "_section_fill_cache", None)
+        if not isinstance(memo, dict):
+            memo = self._section_fill_cache = {}
+        ident = self._cut_ident(sp)
+        cached = memo.get(ident)
         if cached is not None and (cached[0] is segs or (
                 segs is not None and cached[0] is not None
                 and cached[0].shape == segs.shape
                 and np.array_equal(cached[0], segs))):
             # A selection click moves the scene version, not the cut.
-            self._section_fill_cache = (segs, cached[1])
+            memo[ident] = (segs, cached[1], cached[2])
             return cached[1]
         # Chaining the rings costs a fraction of a second on a model with
         # thousands of cut solids — nothing once, too much per frame while
         # a plane is dragged. A cut that keeps changing shows its lines
-        # live and its fill once it rests for a moment.
+        # live and its fill once it rests for a moment. «Rests» counts from
+        # the last time the CUT changed, not the last frame: frames that
+        # keep coming with the cut still (the shadows or the ambient
+        # occlusion refining) used to hold the fill back for good, until
+        # the fill was switched off and on.
         import time as _t
         now = _t.monotonic()
-        last = getattr(self, "_section_fill_changed", 0.0)
-        self._section_fill_changed = now
-        if cached is not None and now - last < 0.15:
+        changed = getattr(self, "_section_fill_changed", None)
+        if not isinstance(changed, dict):
+            changed = self._section_fill_changed = {}
+        since, seen = changed.get(ident, (0.0, None))
+        if seen is not segs:
+            since = now
+            changed[ident] = (now, segs)
+        # A picture being exported (a sheet's frame, Export image) is drawn
+        # once: it waits for nothing and gets its fill now.
+        exporting = getattr(self, "_export_size", None) is not None
+        if cached is not None and now - since < 0.15 and not exporting:
             from PySide6.QtCore import QTimer
             QTimer.singleShot(200, self.update)
             return None
         from core.section import fill_triangles
-        tris = fill_triangles(segs, self.scene.active_section().normal)
-        self._section_fill_cache = (segs, tris)
-        self._section_hatch_cache = {}
+        tris = fill_triangles(segs, sp.normal)
+        memo[ident] = (segs, tris, {})
         return tris
 
     def _model_linetype_edges(self) -> list:
@@ -10802,26 +11030,33 @@ class Viewport(QOpenGLWidget):
                 self._draw_section_arrays(pts.reshape(-1, 2, 3),
                                           rgb or ink, GL_LINES)
 
-    def _section_layer_fills(self, color):
-        """The cut filled layer by layer with the layers' hatches
-        (core.section.layer_fills) — once the cut rests, as its plain fill,
-        and again only when the cut or a layer's hatch changes."""
-        if self._section_fill_tris() is None:
+    def _section_layer_fills(self, color, sp=None):
+        """The cut of ``sp`` (the active plane when not given) filled layer
+        by layer with the layers' hatches (core.section.layer_fills) — once
+        the cut rests, as its plain fill, and again only when the cut or a
+        layer's hatch changes."""
+        if sp is None:
+            sp = self.scene.active_section()
+        if sp is None or self._section_fill_tris(sp) is None:
             return None
-        cut = getattr(self, "_section_cut_cache", None)
-        if cut is None or cut[1] is None:
+        segs = self._section_cut_segments(sp)
+        if segs is None:
             return None
+        tags = self._section_cut_tags(sp)
         scene = self.scene
-        sign = (id(cut[1]), tuple(color[:3]),
+        sign = (id(segs), tuple(color[:3]),
                 repr([ly.to_dict() for ly in scene.layers]),
                 repr(getattr(scene, "bricks", None)))
         memo = getattr(self, "_section_layer_cache", None)
-        if memo is not None and memo[0] == sign:
-            return memo[1]
+        if not isinstance(memo, dict):
+            memo = self._section_layer_cache = {}
+        ident = self._cut_ident(sp)
+        kept = memo.get(ident)
+        if kept is not None and kept[0] == sign:
+            return kept[1]
         from core.section import layer_fills
-        fills = layer_fills(cut[1], cut[2], scene.active_section().normal,
-                            scene, color)
-        self._section_layer_cache = (sign, fills)
+        fills = layer_fills(segs, tags, sp.normal, scene, color)
+        memo[ident] = (sign, fills)
         return fills
 
     def _draw_section_arrays(self, arr, rgb, mode) -> None:
@@ -10838,13 +11073,18 @@ class Viewport(QOpenGLWidget):
         self._gl.glDrawArrays(mode, 0, len(arr) * per)
         self._section_vao.release()
 
-    def _draw_layer_fills(self, fc) -> None:
+    def _draw_layer_fills(self, fc, sp=None, i=None) -> None:
         """«Layers' hatches»: each layer's cut in its ground, its hatch
-        lines over it in its ink — the sheets' patterns, in the model."""
-        fills = self._section_layer_fills(fc)
+        lines over it in its ink — the sheets' patterns, in the model. The
+        fill lies in its cut, left out of the clip while it draws (cut
+        ``i``; the other cuts still clip it)."""
+        fills = self._section_layer_fills(fc, sp)
         if not fills:
             return
-        self._set_section_clip(False)
+        if i is None:
+            self._set_section_clip(False)
+        else:
+            self._set_section_clip(True, skip=i)
         self._gl.glEnable(GL_POLYGON_OFFSET_FILL)
         self._gl.glPolygonOffset(2.0, 2.0)
         for tris, rgb, _lines, _ink in fills:
@@ -10855,22 +11095,24 @@ class Viewport(QOpenGLWidget):
                 self._draw_section_arrays(lines, ink, GL_LINES)
         self._set_section_clip(True)
 
-    def _section_hatch(self, spacing: float, cross: bool):
-        """The hatch lines of the cut whose fill is cached, per (spacing,
-        cross) — computed once, while the cut stays the same."""
-        cached = getattr(self, "_section_fill_cache", None)
+    def _section_hatch(self, spacing: float, cross: bool, sp=None):
+        """The hatch lines of the cut of ``sp`` (the active plane when not
+        given) whose fill is cached, per (spacing, cross) — computed once,
+        while the cut stays the same."""
+        if sp is None:
+            sp = self.scene.active_section()
+        memo = getattr(self, "_section_fill_cache", None)
+        cached = (memo.get(self._cut_ident(sp))
+                  if isinstance(memo, dict) and sp is not None else None)
         if cached is None:
             return None
-        memo = getattr(self, "_section_hatch_cache", None)
-        if memo is None:
-            memo = self._section_hatch_cache = {}
+        hatches = cached[2]
         key = (round(spacing, 9), bool(cross))
-        if key not in memo:
+        if key not in hatches:
             from core.section import hatch_segments
-            memo[key] = hatch_segments(
-                cached[0], self.scene.active_section().normal, spacing,
-                cross)
-        return memo[key]
+            hatches[key] = hatch_segments(cached[0], sp.normal, spacing,
+                                          cross)
+        return hatches[key]
 
     def _draw_section_fill(self, mode, style) -> None:
         """Section Fill: paint what the active cut slices out of solids —
@@ -10884,14 +11126,21 @@ class Viewport(QOpenGLWidget):
         face was the visible surface — which also painted faces seen from
         behind that the plane does not cut at all (a lone face, a flipped
         one, a 2D cutout): the fill showed where there was no section.
-        Lives in the style (style.section_fill)."""
-        if getattr(self, "_clip_vec", None) is None:
+        Lives in the style (style.section_fill).
+
+        Every cut is filled — the active plane and each face of the section
+        box — each clipped by the others, so a box face's fill ends at the
+        box and the plane's at the box too."""
+        if not getattr(self, "_clip_vecs", None):
             return
         if mode in ("wireframe", "xray"):
             return
-        sp = self.scene.active_section()
-        if sp is None:
-            return
+        for i, sp in enumerate(self._clip_planes):
+            self._draw_one_section_fill(i, sp, style)
+        self._set_section_clip(True)
+
+    def _draw_one_section_fill(self, i, sp, style) -> None:
+        """The fill of cut ``i`` (``sp``) — see ``_draw_section_fill``."""
         # The plane's own fill over the style's (the style's switch is the
         # master): solid, hatched, cross-hatched or none, in its colour.
         from core.section import effective_fill
@@ -10899,15 +11148,15 @@ class Viewport(QOpenGLWidget):
         if pattern == "none":
             return
         if pattern == "layers":
-            self._draw_layer_fills(fc)
+            self._draw_layer_fills(fc, sp, i)
             return
-        tris = self._section_fill_tris()
+        tris = self._section_fill_tris(sp)
         if tris is None or not len(tris):
             return
-        # The fill lies IN the plane, which clips: unclipped while it
-        # draws, nudged a hair behind so the thick cut lines drawn later
-        # win the depth test.
-        self._set_section_clip(False)
+        # The fill lies IN its plane, which clips: that one is left out while
+        # it draws (the other cuts still clip it), nudged a hair behind so
+        # the thick cut lines drawn later win the depth test.
+        self._set_section_clip(True, skip=i)
         raw = tris.reshape(-1).astype("float32").tobytes()
         self._section_vbo.bind()
         self._section_vbo.allocate(raw, len(raw))
@@ -10926,7 +11175,7 @@ class Viewport(QOpenGLWidget):
         self._section_vao.release()
         self._gl.glDisable(GL_POLYGON_OFFSET_FILL)
         if pattern in ("hatch", "cross"):
-            lines = self._section_hatch(spacing, pattern == "cross")
+            lines = self._section_hatch(spacing, pattern == "cross", sp)
             if lines is not None and len(lines):
                 raw = lines.reshape(-1).astype("float32").tobytes()
                 self._section_vbo.bind()
@@ -10939,49 +11188,135 @@ class Viewport(QOpenGLWidget):
                 self._section_vao.bind()
                 self._gl.glDrawArrays(GL_LINES, 0, len(lines) * 2)
                 self._section_vao.release()
-        self._set_section_clip(True)
 
     def _draw_section_cut_edges(self) -> None:
-        """Thick section-cut lines: quads in the cut plane, sized
+        """Thick section-cut lines: quads in each cut plane, sized
         ~2.5 px, nudged toward the CLIPPED side so they never z-fight the
-        remaining geometry. Skipped when cuts are hidden."""
-        if getattr(self, "_clip_vec", None) is None:
-            return
-        segs = self._section_cut_segments()
-        if segs is None or not len(segs):
+        remaining geometry; each clipped by the OTHER cuts (a box face's
+        lines stop at the box). Then the same line where two cuts meet in
+        the material — a box's corner — which no edge of the model draws.
+        Skipped when cuts are hidden."""
+        if not getattr(self, "_clip_vecs", None):
             return
         import numpy as np
-        sp = self.scene.active_section()
-        n = np.array([sp.normal.x(), sp.normal.y(), sp.normal.z()],
-                     dtype=np.float64)
+        planes = self._clip_planes
+        normals = [np.array([sp.normal.x(), sp.normal.y(), sp.normal.z()],
+                            dtype=np.float64) for sp in planes]
+        for i, sp in enumerate(planes):
+            self._set_section_clip(True, skip=i)
+            self._draw_cut_quads(self._section_cut_segments(sp), normals[i],
+                                 sp)
+        for i, a in enumerate(planes):
+            for j in range(i + 1, len(planes)):
+                segs = self._cut_corner_segments(a, planes[j])
+                if segs is None:
+                    continue
+                # Both planes hold it: out of the two, along their bisector.
+                n = normals[i] + normals[j]
+                n /= max(float(np.linalg.norm(n)), 1e-9)
+                self._set_section_clip(True, skip=(i, j))
+                self._draw_cut_quads(segs, n)
+        self._set_section_clip(False)
+
+    def _cut_corner_segments(self, a, b):
+        """Where the cuts ``a`` and ``b`` meet inside the material
+        (``core.section.plane_pair_line``), cached with ``a``'s cut and
+        ``b``'s pose. ``None`` when they are parallel or meet in the air."""
+        chords = self._section_cut_segments(a)
+        p, n = b.point, b.normal
+        key = (id(chords), round(p.x(), 6), round(p.y(), 6), round(p.z(), 6),
+               round(n.x(), 9), round(n.y(), 9), round(n.z(), 9))
+        memo = getattr(self, "_section_corner_cache", None)
+        if memo is None:
+            memo = self._section_corner_cache = {}
+        slot = (self._cut_ident(a), self._cut_ident(b))
+        cached = memo.get(slot)
+        if cached is not None and cached[0] == key and cached[1] is chords:
+            return cached[2]
+        from core.section import plane_pair_line
+        segs = plane_pair_line(a, b, chords)
+        memo[slot] = (key, chords, segs)
+        return segs
+
+    def _cut_line_tris(self, segs, n, sp=None):
+        """The triangles of the thick line along ``segs`` ((K, 2, 3)) on the
+        plane of normal ``n``: (2K, 9) float32, or ``None``. One width on
+        SCREEN, ~2.5 px, all round the contour and along it:
+
+        - worked out at each end, or the width of a chord, taken once at
+          its middle, stepped where two chords of one straight line met;
+        - from the depth along the view (none in a parallel view, one scale
+          at every depth), not the distance to the eye;
+        - against the plane's tilt: the quad lies IN the plane, where a
+          width across the line shows foreshortened by an amount that
+          depends on the line's direction — on a plane seen at an angle, a
+          rectangle's two pairs of sides read as two thicknesses. It is
+          stretched by what the view takes off.
+
+        The ends go on by half a width, so that two lines meeting at a
+        corner close it instead of leaving a notch."""
+        import numpy as np
+        if segs is None or not len(segs):
+            return None
         a = segs[:, 0].astype(np.float64)
         b = segs[:, 1].astype(np.float64)
         t = b - a
         ln = np.linalg.norm(t, axis=1)
         keep = ln > 1e-9
         if not keep.any():
-            return
+            return None
         a, b, t, ln = a[keep], b[keep], t[keep], ln[keep]
         t /= ln[:, None]
         side = np.cross(np.broadcast_to(n, t.shape), t)
-        # ~2.5 px of world width at each END's distance from the eye: one
-        # width per segment, taken at its middle, made a wall's cut line
-        # jump from thin to thick where its face's triangles meet.
-        eye = self.camera.eye()
+        weight = (self._cut_edge_weights(sp, keep, segs)
+                  if sp is not None else None)
+        cam = self.camera
+        eye = cam.eye()
         eyev = np.array([eye.x(), eye.y(), eye.z()], dtype=np.float64)
+        tgt = cam.target
+        fwd = np.array([tgt.x(), tgt.y(), tgt.z()], dtype=np.float64) - eyev
+        fwd /= max(float(np.linalg.norm(fwd)), 1e-12)
+        perspective = bool(getattr(cam, "perspective", True))
         h = max(1.0, self.height())
-        fov = math.radians(getattr(self.camera, "fov_deg", 45.0))
-        scale = 1.25 * math.tan(fov * 0.5) * 2.0 / h
-        weight = self._cut_edge_weights(sp, keep)
-        wa = np.maximum(np.linalg.norm(a - eyev, axis=1) * scale, 1e-6)
-        wb = np.maximum(np.linalg.norm(b - eyev, axis=1) * scale, 1e-6)
-        wa = (wa * weight)[:, None]
-        wb = (wb * weight)[:, None]
+        tan = math.tan(math.radians(getattr(cam, "fov_deg", 45.0)) * 0.5)
+
+        def widths(p):
+            """Half a line at ``p``, in the world: its plain size, across
+            the line in the plane, and along the line."""
+            if perspective:
+                rel = p - eyev
+                depth = np.maximum(rel @ fwd, 1e-6)
+                view = rel / np.maximum(
+                    np.linalg.norm(rel, axis=1, keepdims=True), 1e-12)
+            else:
+                depth = np.full(len(p), float(cam.distance))
+                view = np.broadcast_to(fwd, p.shape)
+            w = np.maximum(depth * tan * 2.0 / h, 1e-6) * 1.25
+            along = t - (t * view).sum(axis=1, keepdims=True) * view
+            along_len = np.linalg.norm(along, axis=1, keepdims=True)
+            unit = along / np.maximum(along_len, 1e-9)
+            flat = side - (side * view).sum(axis=1, keepdims=True) * view
+            flat = flat - (flat * unit).sum(axis=1, keepdims=True) * unit
+            across_len = np.linalg.norm(flat, axis=1, keepdims=True)
+            # Edge-on, no stretch makes it show: held at five times.
+            return (w[:, None], w[:, None] / np.maximum(across_len, 0.2),
+                    w[:, None] / np.maximum(along_len, 0.2))
+
+        wa, sa, ca = widths(a)
+        wb, sb, cb = widths(b)
+        if weight is not None:
+            # A layer's own cut weight («Layers' hatches»): a whole layer's
+            # line thicker or thinner, the same all round it.
+            wgt = np.asarray(weight, dtype=np.float64)[:, None]
+            wa, sa, ca = wa * wgt, sa * wgt, ca * wgt
+            wb, sb, cb = wb * wgt, sb * wgt, cb * wgt
         lift = n * 0.6
-        q0 = a - side * wa + lift * wa
-        q1 = b - side * wb + lift * wb
-        q2 = b + side * wb + lift * wb
-        q3 = a + side * wa + lift * wa
+        a2 = a - t * ca + lift * wa
+        b2 = b + t * cb + lift * wb
+        q0 = a2 - side * sa
+        q1 = b2 - side * sb
+        q2 = b2 + side * sb
+        q3 = a2 + side * sa
         tris = np.empty((len(a) * 2, 9), dtype=np.float32)
         tris[0::2, 0:3] = q0
         tris[0::2, 3:6] = q1
@@ -10989,6 +11324,12 @@ class Viewport(QOpenGLWidget):
         tris[1::2, 0:3] = q0
         tris[1::2, 3:6] = q2
         tris[1::2, 6:9] = q3
+        return tris
+
+    def _draw_cut_quads(self, segs, n, sp=None) -> None:
+        tris = self._cut_line_tris(segs, n, sp)
+        if tris is None:
+            return
         raw = tris.tobytes()
         self._section_vbo.bind()
         self._section_vbo.allocate(raw, len(raw))
@@ -10996,31 +11337,36 @@ class Viewport(QOpenGLWidget):
         ec = self._frame_style.edge_color
         self._set_color(ec[0], ec[1], ec[2], 1.0)
         self._section_vao.bind()
-        self._gl.glDrawArrays(GL_TRIANGLES, 0, len(a) * 6)
+        self._gl.glDrawArrays(GL_TRIANGLES, 0, len(tris) * 3)
         self._section_vao.release()
 
     #: The sheet's cut pen (mm) a layer's own cut weight is measured
     #: against in the model: a layer at 0.50 draws the usual ~2.5 px line.
     CUT_PEN_MM = 0.5
 
-    def _cut_edge_weights(self, plane, keep):
-        """How much thicker or thinner each cut line is drawn than usual:
-        with «Layers' hatches» each layer's cut weight (Muros at 0.70 a
-        heavy line, an insulation at 0.18 a fine one), as on a sheet;
-        otherwise all alike."""
+    def _cut_edge_weights(self, plane, keep, segs=None):
+        """How much thicker or thinner each cut line of ``plane`` is drawn
+        than usual: with «Layers' hatches» each layer's cut weight (Muros at
+        0.70 a heavy line, an insulation at 0.18 a fine one), as on a sheet;
+        otherwise all alike. Only for the plane's own cut segments (a box's
+        corner line has no layer)."""
         import numpy as np
         from core.section import effective_fill
         count = int(keep.sum())
         pattern = effective_fill(plane, self._frame_style)[0]
-        cut = getattr(self, "_section_cut_cache", None)
-        if pattern != "layers" or cut is None or cut[2] is None                 or len(cut[2]) != len(keep):
+        if pattern != "layers":
+            return np.ones(count)
+        if segs is not None and segs is not self._section_cut_segments(plane):
+            return np.ones(count)
+        tags = self._section_cut_tags(plane)
+        if tags is None or len(tags) != len(keep):
             return np.ones(count)
         pens = {ly.name: float(ly.cut_weight) / self.CUT_PEN_MM
                 for ly in self.scene.layers
                 if getattr(ly, "cut_weight", None) is not None}
         if not pens:
             return np.ones(count)
-        out = np.array([pens.get(t, 1.0) for t in cut[2][keep].tolist()])
+        out = np.array([pens.get(t, 1.0) for t in tags[keep].tolist()])
         return np.clip(out, 0.4, 2.4)
 
     def _clip_segment_front(
@@ -11344,6 +11690,8 @@ class Viewport(QOpenGLWidget):
         font.setPointSize(8)
         painter.setFont(font)
         for gp in points:
+            if self.scene.outside_section_box(gp):
+                continue                # the section box leaves it out
             q = self._world_to_pixel(gp.position)
             if q is None:
                 continue
@@ -16090,10 +16438,9 @@ class Viewport(QOpenGLWidget):
             import numpy as np
             o = np.array([origin.x(), origin.y(), origin.z()])
             d = np.array([direction.x(), direction.y(), direction.z()])
-            n = np.array([sp.normal.x(), sp.normal.y(), sp.normal.z()])
-            c = float(n @ [sp.point.x(), sp.point.y(), sp.point.z()])
-            pts = o + d * hits.t[:, None]
-            hidden = (pts @ n - c) > 1e-6
+            with np.errstate(invalid="ignore"):
+                pts = o + d * hits.t[:, None]
+                hidden = sp.hidden(pts)
             hits.t = np.where(hidden, np.inf, hits.t)
 
     def edge_point_under_cursor(self, edge, screen_x: float, screen_y: float):
@@ -16146,11 +16493,7 @@ class Viewport(QOpenGLWidget):
             ok &= ~soft
         sp = _active_cut(self.scene)
         if sp is not None:
-            n = np.array([sp.normal.x(), sp.normal.y(), sp.normal.z()])
-            c = float(n @ [sp.point.x(), sp.point.y(), sp.point.z()])
-            da = idx.edge_a @ n - c
-            db = idx.edge_b @ n - c
-            ok &= ~((da > 1e-6) & (db > 1e-6))
+            ok &= ~(sp.hidden(idx.edge_a) & sp.hidden(idx.edge_b))
         if not ok.any():
             return None
         dx, dy = bx - ax, by - ay
@@ -17034,6 +17377,8 @@ class Viewport(QOpenGLWidget):
         # lands EXACTLY on the surveyed coordinate (the municipal flow's whole
         # point); direction-based inferences skip zero-length edges safely.
         for gp in getattr(self.scene, "geo_points", None) or []:
+            if self.scene.outside_section_box(gp):
+                continue                # the section box leaves it out
             near.append(_SnapEdge(QVector3D(gp.position),
                                   QVector3D(gp.position)))
         # The rest of the model's loose geometry — the root mesh drawn faded
@@ -18148,10 +18493,8 @@ class Viewport(QOpenGLWidget):
         # the per-face nearest hit IS the hit — testing it is exact.
         eye = np.array([origin.x(), origin.y(), origin.z()])
         dv = np.array([d.x(), d.y(), d.z()])
-        n = np.array([sp.normal.x(), sp.normal.y(), sp.normal.z()])
-        c = float(n @ [sp.point.x(), sp.point.y(), sp.point.z()])
         pts = eye + dv * face_t[hit][:, None]
-        return bool(((pts @ n - c) <= 1e-6).any())
+        return bool((~sp.hidden(pts)).any())
 
     #: Cap on rays × triangles in one NumPy block of ``_occluded_many``
     #: (×3 float64 per array: ~50 MB at most).
@@ -19451,7 +19794,22 @@ class Viewport(QOpenGLWidget):
         Something already selected under the cursor wins outright: loose
         geometry flush on a group (a block standing on it, a face drawn on
         its surface) is coplanar with the group there, and the group took
-        the click (#744)."""
+        the click (#744).
+
+        The section box selected (or its tool out), a right-click anywhere
+        over it is the box's: its menu, not the walls it cuts."""
+        for box in self._section_boxes_shown():
+            if not self._box_with_grips(box):
+                continue
+            from core.section import box_face_hit
+            o, d = self._pixel_to_ray(x, y)
+            over = (o is not None and d is not None
+                    and box_face_hit(box, o, d) is not None)
+            if over or self.pick_section_box(x, y) is box:
+                if box not in self.scene.selection:
+                    self.scene.select([box])
+                    self.update()
+                return box
         mine = self.pick_edge(x, y) or self.pick_face(x, y)
         if mine is not None and mine in self.scene.selection:
             return mine
@@ -19460,6 +19818,7 @@ class Viewport(QOpenGLWidget):
                   or self.pick_geopath(x, y) or self.pick_dimension(x, y)
                   or self.pick_text_label(x, y)
                   or self.pick_section_plane(x, y)
+                  or self.pick_section_box(x, y)
                   or self.pick_guide(x, y)
                   or self._face_or_image_in_front(x, y)
                   or self.pick_image_plane(x, y)
@@ -19530,6 +19889,8 @@ class Viewport(QOpenGLWidget):
         self._release_linear_mode()
         self._input_t = _time_mod.monotonic()   # P0: input→paint latency
         self._input_serial = getattr(self, "_input_serial", 0) + 1
+        if ev.button() == Qt.LeftButton and self._press_on_box_chip(ev):
+            return
         if (ev.button() in (Qt.LeftButton, Qt.RightButton)
                 and self.nav_mode is None and self._look_drag is None
                 and callable(getattr(self.active_tool, "on_look", None))):
@@ -19587,6 +19948,14 @@ class Viewport(QOpenGLWidget):
             # Box-select tools defer the decision to release: a tiny drag is a
             # click, a real drag is a rubber-band box.
             if self.active_tool.box_select:
+                # Unless the tool takes the press for something of its own
+                # (Select: an arrow of the section box, to drag).
+                grab = getattr(self.active_tool, "on_press_grab", None)
+                if callable(grab):
+                    ctx = self._build_ctx(ev)
+                    if ctx is not None and grab(ctx):
+                        self.update()
+                        return
                 self._box_active = True
                 self._box_start = ev.position()
                 self._box_cur = ev.position()
