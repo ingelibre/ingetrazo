@@ -4155,7 +4155,7 @@ class MainWindow(QMainWindow):
              tr("Save the view on screen as a PNG or JPG picture at the "
                 "width you choose."),
              self._on_export_image),
-            (tr("Scenes as Video (.mkv)…"),
+            (tr("Scenes as Video…"),
              tr("Save the scenes as a video: the camera glides from one to "
                 "the next, with the times of Camera ▸ Animation."),
              self.export_video),
@@ -7947,7 +7947,7 @@ class MainWindow(QMainWindow):
             self.addAction(act)
             menu.addAction(act)
         menu.addSeparator()
-        video = QAction(tr("Export Video (.mkv)…"), self)
+        video = QAction(tr("Export Video…"), self)
         video.setStatusTip(tr(
             "Save the scenes as a video: the camera glides from one to "
             "the next, with the times of Camera ▸ Animation."))
@@ -8037,7 +8037,7 @@ class MainWindow(QMainWindow):
         self.tray.scenes.show_view(views[(at + step) % len(views)])
 
     def export_video(self) -> None:
-        """The scenes as a .mkv video (views/video_export.py)."""
+        """The scenes as a .mkv video or a PNG sequence (views/video_export.py)."""
         from views.video_export import run_export
         run_export(self)
 
