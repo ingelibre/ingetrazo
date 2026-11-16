@@ -6811,9 +6811,31 @@ class MainWindow(QMainWindow):
             return
         if key == "iso":
             self.viewport.camera.snap_iso()
+            # The turn is about the camera's own target: after Walk or Look
+            # Around that sits half a metre before the eyes, and the model
+            # swung out of sight (#1181). Framed then — only then, so a
+            # zoom on a detail survives the Iso.
+            bounds = self._extents_bounds()
+            if bounds is not None and not self._box_in_view(*bounds):
+                self.viewport.camera.fit_box(bounds[0], bounds[1])
         else:
             self.viewport.camera.set_view(key)
         self.viewport.update()
+
+    def _box_in_view(self, lo, hi) -> bool:
+        """Whether the main view still shows the model's box ``lo``–``hi``
+        well enough to keep the zoom: the camera turns about a point in
+        it (a zoom on a detail), or the box's middle is on the picture.
+        A corner peeping in at the edge does not count — after Walk the
+        Iso showed one, half a metre from the eyes."""
+        vp = self.viewport
+        t = vp.camera.target
+        if (lo.x() <= t.x() <= hi.x() and lo.y() <= t.y() <= hi.y()
+                and lo.z() <= t.z() <= hi.z()):
+            return True
+        px = vp._world_to_pixel((lo + hi) * 0.5)
+        return (px is not None and 0 <= px[0] <= vp.width()
+                and 0 <= px[1] <= vp.height())
 
     def _on_terrain_profile(self) -> None:
         """Show the profile dock and profile the current selection (Track G)."""
