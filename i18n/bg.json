@@ -3780,5 +3780,12 @@
  "Open File Location": "Отваряне на местоположението на файла",
  "Open the folder that holds the project's file, with the file picked out in it.": "Отваря папката с файла на проекта, като файлът е избран в нея.",
  "Edit Component": "Редактиране на компонент",
- "Explode Component": "Разбиване на компонент"
+ "Explode Component": "Разбиване на компонент",
+ "Reset pick": "Нулиране на избраната точка",
+ "Restore the default pivot": "Възстановяване на центъра по подразбиране",
+ "Use X for all three scales": "Използване на X за трите мащаба",
+ "Pick bounding box point": "Избор на точка от ограждащата кутия",
+ "Pick inference point": "Избор на точка чрез прихващане",
+ "Click a bounding box grip, or press Esc": "Щракнете върху точка от ограждащата кутия или натиснете Esc",
+ "Click an inference point, or press Esc": "Щракнете върху точка за прихващане или натиснете Esc"
 }

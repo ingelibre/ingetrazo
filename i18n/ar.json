@@ -3814,5 +3814,12 @@
  "Open File Location": "فتح موقع الملف",
  "Open the folder that holds the project's file, with the file picked out in it.": "يفتح المجلد الذي يحتوي على ملف المشروع، مع تحديد الملف فيه.",
  "Edit Component": "تحرير المكوّن",
- "Explode Component": "تفجير المكوّن"
+ "Explode Component": "تفجير المكوّن",
+ "Reset pick": "إعادة ضبط نقطة الارتكاز",
+ "Restore the default pivot": "استعادة نقطة الارتكاز الافتراضية",
+ "Use X for all three scales": "استخدام X للمقاييس الثلاثة",
+ "Pick bounding box point": "اختيار نقطة من المربع المحيط",
+ "Pick inference point": "اختيار نقطة بالاستدلال",
+ "Click a bounding box grip, or press Esc": "انقر على مقبض في المربع المحيط أو اضغط Esc",
+ "Click an inference point, or press Esc": "انقر على نقطة استدلال أو اضغط Esc"
 }
