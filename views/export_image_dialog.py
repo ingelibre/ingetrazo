@@ -22,11 +22,15 @@ class ExportImageDialog(QDialog):
         self.width_box.setSingleStep(320)
         self.width_box.setValue(3840)
         self.transparent_box = QCheckBox(tr("Transparent background"))
+        self.defined_shadows_box = QCheckBox(tr("Defined shadows"))
         # Asked for each picture, off to begin with, like the width.
         if suffix.lower() not in ALPHA_SUFFIXES:
             self.transparent_box.setEnabled(False)
             self.transparent_box.setToolTip(
                 tr("Only PNG images keep transparency."))
+            self.defined_shadows_box.setEnabled(False)
+            self.defined_shadows_box.setToolTip(
+                tr("Defined shadows are available for PNG images."))
         buttons = QDialogButtonBox(QDialogButtonBox.Ok
                                    | QDialogButtonBox.Cancel)
         buttons.accepted.connect(self.accept)
@@ -35,8 +39,13 @@ class ExportImageDialog(QDialog):
         lay.addWidget(QLabel(tr("Width in pixels:")))
         lay.addWidget(self.width_box)
         lay.addWidget(self.transparent_box)
+        lay.addWidget(self.defined_shadows_box)
         lay.addWidget(buttons)
 
     def transparent(self) -> bool:
         return (self.transparent_box.isEnabled()
                 and self.transparent_box.isChecked())
+
+    def defined_shadows(self) -> bool:
+        return (self.defined_shadows_box.isEnabled()
+                and self.defined_shadows_box.isChecked())

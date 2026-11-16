@@ -11044,7 +11044,9 @@ class MainWindow(QMainWindow):
             path = path.with_suffix(".png")
         options = ExportImageDialog(self, path.suffix)
         accepted = options.exec()
-        width, transparent = options.width_box.value(), options.transparent()
+        width = options.width_box.value()
+        transparent = options.transparent()
+        defined_shadows = options.defined_shadows()
         options.deleteLater()
         if not accepted:
             return
@@ -11053,7 +11055,7 @@ class MainWindow(QMainWindow):
         # With several views, the one worked in, as Styles and Shift+P.
         image = self._active_view().render_image(
             width, sharp_shadows=True, transparent=transparent,
-            crop_to_frame=True)
+            crop_to_frame=True, defined_shadows=defined_shadows)
         if image is None or image.isNull() or not image.save(str(path)):
             QMessageBox.critical(self, tr("Export Image failed"),
                                  tr("Could not render or save the image."))
