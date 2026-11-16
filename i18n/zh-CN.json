@@ -3793,5 +3793,15 @@
  "Open File Location": "打开文件所在位置",
  "Open the folder that holds the project's file, with the file picked out in it.": "打开项目文件所在的文件夹，并选中该文件。",
  "Edit Component": "编辑组件",
- "Explode Component": "炸开组件"
+ "Explode Component": "炸开组件",
+ "Inferences": "推论",
+ "Turn all inferences on": "开启所有推论",
+ "Switch every point inference of this menu back on.": "重新开启此菜单中的所有点推论。",
+ "Snap to the ends of edges.": "捕捉到边的端点。",
+ "Snap to the middle of edges and arcs.": "捕捉到边和圆弧的中点。",
+ "Snap where edges, guides and faces cross.": "捕捉到边、辅助线和面的交叉处。",
+ "Snap to any point along an edge, a guide line or a guide circle.": "捕捉到边、辅助线或辅助圆上的任意点。",
+ "Snap to the centre of faces, and show a dot at the centre of the selected ones.": "捕捉到面的中心，并在所选面的中心显示一个点。",
+ "Snap to the centre, quadrants and tangent points of circles and arcs.": "捕捉到圆和圆弧的中心、象限点和切点。",
+ "Snap to the model origin and to the origin of groups and components.": "捕捉到模型原点以及组和组件的原点。"
 }

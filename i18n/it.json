@@ -3793,5 +3793,15 @@
  "Open File Location": "Apri percorso file",
  "Open the folder that holds the project's file, with the file picked out in it.": "Apre la cartella che contiene il file del progetto, con il file selezionato.",
  "Edit Component": "Modifica componente",
- "Explode Component": "Esplodi componente"
+ "Explode Component": "Esplodi componente",
+ "Inferences": "Inferenze",
+ "Turn all inferences on": "Attiva tutte le inferenze",
+ "Switch every point inference of this menu back on.": "Riattiva tutte le inferenze di punto di questo menu.",
+ "Snap to the ends of edges.": "Aggancia alle estremità degli spigoli.",
+ "Snap to the middle of edges and arcs.": "Aggancia al punto medio di spigoli e archi.",
+ "Snap where edges, guides and faces cross.": "Aggancia dove si incrociano spigoli, guide e facce.",
+ "Snap to any point along an edge, a guide line or a guide circle.": "Aggancia a qualsiasi punto lungo uno spigolo, una linea guida o un cerchio guida.",
+ "Snap to the centre of faces, and show a dot at the centre of the selected ones.": "Aggancia al centro delle facce e mostra un punto al centro di quelle selezionate.",
+ "Snap to the centre, quadrants and tangent points of circles and arcs.": "Aggancia al centro, ai quadranti e ai punti di tangenza di cerchi e archi.",
+ "Snap to the model origin and to the origin of groups and components.": "Aggancia all'origine del modello e all'origine di gruppi e componenti."
 }

@@ -90,6 +90,91 @@ POINT_SNAP_KINDS = frozenset({
 })
 
 
+@dataclass(frozen=True)
+class SnapToggle:
+    """One point inference the user can switch off (Tools ▸ Inferences,
+    #1410). ``label`` and ``tip`` are English, translated where shown;
+    ``kinds`` are the snap kinds it silences."""
+    key: str
+    label: str
+    kinds: frozenset
+    tip: str = ""
+
+
+#: The built-in switches, in menu order. The explicit locks (arrow keys,
+#: Shift, Down) and the linear inferences (Alt cycles them) are not here:
+#: they already have their own keys. Neither is «close», the end of the
+#: chain being drawn.
+SNAP_TOGGLES: list[SnapToggle] = [
+    SnapToggle("endpoint", "Endpoint", frozenset({"endpoint"}),
+               "Snap to the ends of edges."),
+    SnapToggle("midpoint", "Midpoint", frozenset({"midpoint", "arc_midpoint"}),
+               "Snap to the middle of edges and arcs."),
+    SnapToggle("intersection", "Intersection", frozenset({"intersection"}),
+               "Snap where edges, guides and faces cross."),
+    SnapToggle("on_edge", "On edge",
+               frozenset({"on_edge", "on_line", "on_circle"}),
+               "Snap to any point along an edge, a guide line or a guide "
+               "circle."),
+    SnapToggle("face_center", "Face center", frozenset({"face_center"}),
+               "Snap to the centre of faces, and show a dot at the centre "
+               "of the selected ones."),
+    SnapToggle("center", "Center",
+               frozenset({"center", "quadrant", "tangent"}),
+               "Snap to the centre, quadrants and tangent points of circles "
+               "and arcs."),
+    SnapToggle("origin", "Origin", frozenset({"origin", "component_origin"}),
+               "Snap to the model origin and to the origin of groups and "
+               "components."),
+]
+
+#: Keys of the switches that are off. Shared by every view of the app.
+_disabled_toggles: set[str] = set()
+
+
+def register_snap_toggle(key: str, label: str, kinds, tip: str = "") -> SnapToggle:
+    """Add a switch for snap kinds of one's own (an extension's snaps) to
+    Tools ▸ Inferences, or replace the switch with that ``key``."""
+    toggle = SnapToggle(key, label, frozenset(kinds), tip)
+    for i, old in enumerate(SNAP_TOGGLES):
+        if old.key == key:
+            SNAP_TOGGLES[i] = toggle
+            break
+    else:
+        SNAP_TOGGLES.append(toggle)
+    return toggle
+
+
+def snap_toggle_enabled(key: str) -> bool:
+    return key not in _disabled_toggles
+
+
+def set_snap_toggle_enabled(key: str, enabled: bool) -> None:
+    if enabled:
+        _disabled_toggles.discard(key)
+    else:
+        _disabled_toggles.add(key)
+
+
+def disabled_snap_toggles() -> frozenset:
+    return frozenset(_disabled_toggles)
+
+
+def set_disabled_snap_toggles(keys) -> None:
+    """Replace the whole set of switches that are off (``[]``: all on)."""
+    _disabled_toggles.clear()
+    _disabled_toggles.update(str(k) for k in keys or () if k)
+
+
+def disabled_snap_kinds() -> frozenset:
+    """Every snap kind silenced by a switch that is off."""
+    off = set()
+    for toggle in SNAP_TOGGLES:
+        if toggle.key in _disabled_toggles:
+            off |= toggle.kinds
+    return frozenset(off)
+
+
 @dataclass
 class SnapResult:
     point: QVector3D
@@ -1876,11 +1961,16 @@ def compute_snap(
     face_outline: Optional[Callable[[], Optional[tuple]]] = None,
     face_centers: Optional[list] = None,
     face_context: Optional[str] = None,
+    disabled_kinds=None,
 ) -> SnapResult:
     # Linear-inference toggle (Alt): "all" = every inference, "off" =
     # point snaps only, "parallel_perp" = keep only parallel/perpendicular. The
     # explicit locks (arrow keys, Down-arrow reference) always work regardless.
     allow_axis = linear_mode == "all"          # axis / from-point / extension
+    # The point inferences switched off in Tools ▸ Inferences (#1410): such
+    # a candidate is never offered, so the next one in line wins — the edge
+    # under an endpoint that is off still gives «On edge».
+    off = frozenset(disabled_kinds or ())
     allow_parperp = linear_mode != "off"       # parallel / perpendicular
     # A protractor ARM (Rotate, Protractor) is a direction from the centre,
     # not a line being drawn: 'through point', 'extension' and 'from point'
@@ -2181,6 +2271,8 @@ def compute_snap(
         occludable: bool = True,
         context: Optional[str] = None,
     ) -> None:
+        if kind in off:
+            return
         px = world_to_pixel(world)
         if px is None:
             return
@@ -2381,7 +2473,7 @@ def compute_snap(
                         continue
                     if best_hit is None or dh < best_hit[0]:
                         best_hit = (dh, hit)
-                if best_hit is not None:
+                if best_hit is not None and "intersection" not in off:
                     return SnapResult(best_hit[1], "intersection", COLOR_ENDPOINT,
                                       guide=(line_start, best_hit[1]))
                 # Before settling for a bare perpendicular lock, let a corner's
@@ -2457,7 +2549,7 @@ def compute_snap(
             is_occluded, project_onto_line=project_onto_line,
             plane_normal=on_plane,
         )
-        if ext is not None:
+        if ext is not None and ext.kind not in off:
             return ext
 
     # 5b. 'From point' ("Desde el punto"): drawing along an axis, line up with a
@@ -2480,6 +2572,8 @@ def compute_snap(
     #     so the exact crossing wins, but below every endpoint and lock.
     inter = _intersection_snap(cx, cy, scene, world_to_pixel, et, is_occluded,
                                are_occluded, candidate_world)
+    if inter is not None and inter.kind in off:
+        inter = None
     if inter is not None:
         if axis_engaged is None:
             return inter
@@ -2502,7 +2596,7 @@ def compute_snap(
         if outline is not None:
             pierce = _edge_face_snap(cx, cy, scene, world_to_pixel, et,
                                      is_occluded, outline)
-            if pierce is not None:
+            if pierce is not None and pierce.kind not in off:
                 return pierce
 
     # 6. Midpoint + origin.
@@ -2558,10 +2652,12 @@ def compute_snap(
         else:
             on_pt = edge.a + ab * t
         kind = "on_line" if getattr(edge, "guide", False) else "on_edge"
+        if kind in off:
+            continue
         on_targets.append((d, on_pt, kind, edge))
     # A guide circle's rim is the same big target, resolved exactly: the
     # nearest point on the analytic circle to the cursor.
-    for circ in getattr(scene, "circles", ()):
+    for circ in getattr(scene, "circles", ()) if "on_circle" not in off else ():
         d, rim_pt = _closest_on_circle(
             circ, candidate_world, cx, cy, world_to_pixel, et)
         if d is not None:
@@ -2582,7 +2678,8 @@ def compute_snap(
     #     and left loose stubs (0.5.7 landed exactly; the chair backrest of
     #     the tutorial hunt, 2026-10-12). A circle rim has no such straight
     #     crossing, so it stays silenced under a lock.
-    if best_target is not None and axis_engaged is not None:
+    if (best_target is not None and axis_engaged is not None
+            and "intersection" not in off):
         _d, _on_pt, kind, target = best_target
         if kind != "on_circle":
             hit = _line_segment_intersection(
@@ -2605,7 +2702,7 @@ def compute_snap(
             cross = _edge_from_point_crossing(
                 target, acquired_point, cx, cy, world_to_pixel, threshold_px,
                 is_occluded)
-            if cross is not None:
+            if cross is not None and cross.kind not in off:
                 return cross
         if kind == "on_circle":
             return SnapResult(on_pt, "on_circle", COLOR_ON_EDGE)
@@ -2622,7 +2719,8 @@ def compute_snap(
     #     between them — a box sunk into the floor, a beam through a wall
     #     (#819, SketchUp's «Intersection»). Asked only here, once nothing
     #     with a name is nearer: the caller's search casts a few rays.
-    if face_crossing is not None and face_under_cursor and axis_engaged is None:
+    if (face_crossing is not None and face_under_cursor and axis_engaged is None
+            and "intersection" not in off):
         crossing = face_crossing()
         if crossing is not None:
             return SnapResult(crossing[0], "intersection", COLOR_ENDPOINT,
@@ -2754,6 +2852,26 @@ def compute_snap(
     #    as the arrow lock does. Point inferences were left untouched, so a
     #    vertex, a 'through point' or the origin fetched with the mouse still
     #    wins.
+    #
+    #    9a. …but the engaged axis still lines up with a corner, a midpoint
+    #    or the origin, as the arrow lock does (_lock_line_snaps): the foot
+    #    of that point on the axis line. It lies ON the line, so it steals
+    #    nothing from it — the rule above is about pulling the point off
+    #    the line, as the crossing of 7a. Silenced with the rest, the
+    #    magnet lost the origin: drawing back along green from a far
+    #    corner, the end could not be put on the red axis (#1418,
+    #    @PedroE200), while the same line under the arrow lock could.
+    if (axis_engaged is not None and line_inferences
+            and line_start is not None and start_point is not None):
+        adir = QVector3D(_AXIS_VECTORS[axis_engaged])
+        if QVector3D.dotProduct(candidate_world - line_start, adir) < 0:
+            adir = -adir
+        fp = _from_point_snap(
+            scene, line_start, adir, cx, cy, world_to_pixel, threshold_px,
+            is_occluded, extra_point=acquired_point, line_dir=adir,
+        )
+        if fp is not None:
+            return fp
     if axis_engaged is not None:
         return SnapResult(
             project_onto_line(start_point, _AXIS_VECTORS[axis_engaged]),

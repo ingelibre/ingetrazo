@@ -3792,5 +3792,15 @@
  "Open File Location": "ファイルの場所を開く",
  "Open the folder that holds the project's file, with the file picked out in it.": "プロジェクトのファイルがあるフォルダーを開き、そのファイルを選択した状態にします。",
  "Edit Component": "コンポーネントを編集",
- "Explode Component": "コンポーネントを分解"
+ "Explode Component": "コンポーネントを分解",
+ "Inferences": "推定",
+ "Turn all inferences on": "すべての推定をオン",
+ "Switch every point inference of this menu back on.": "このメニューの点の推定をすべて再びオンにします。",
+ "Snap to the ends of edges.": "エッジの端点にスナップします。",
+ "Snap to the middle of edges and arcs.": "エッジと円弧の中点にスナップします。",
+ "Snap where edges, guides and faces cross.": "エッジ、ガイド、面が交差する位置にスナップします。",
+ "Snap to any point along an edge, a guide line or a guide circle.": "エッジ、ガイドライン、ガイド円上の任意の点にスナップします。",
+ "Snap to the centre of faces, and show a dot at the centre of the selected ones.": "面の中心にスナップし、選択した面の中心に点を表示します。",
+ "Snap to the centre, quadrants and tangent points of circles and arcs.": "円と円弧の中心、四分点、接点にスナップします。",
+ "Snap to the model origin and to the origin of groups and components.": "モデルの原点と、グループやコンポーネントの原点にスナップします。"
 }

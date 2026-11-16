@@ -16,7 +16,9 @@ Two invariants hold the rule together and this file pins both.
   of them can steal the point off the line: the perpendicular to the wall you
   started on (4b), the extension (5), 'from point' (5b), the edge/guide
   intersection (5c), the on-edge point (7) and the parallel/perpendicular
-  locks learned from an acquired edge or face (8b, 8c). Each is exercised
+  locks learned from an acquired edge or face (8b, 8c). What lies ON the
+  axis line comes back as itself: the crossing with an edge (7a) and the
+  foot of a corner, a midpoint or the origin (9a, #1418). Each is exercised
   against its own control - the same call with the magnet not asked for -
   which proves the inference was really there and that the axis is what
   silenced it.
@@ -138,10 +140,12 @@ def test_the_axis_silences_the_derived_inference(edges, start, cand, magnetic, e
 
     # Engaged: the axis takes command and the inference is gone. Where an
     # edge under the cursor crosses the axis line, that crossing is offered
-    # (7a) - it lies ON the line, so it steals nothing from it.
+    # (7a), and a corner lined up with the cursor gives its foot on the axis
+    # line (9a, #1418) - both lie ON the line, so they steal nothing from it.
     held = _snap(cand, edges=edges, start=start, engaged=True,
                  magnetic=magnetic, **extra)
-    assert held.kind in ("axis", "intersection"), (held.kind, held.point)
+    assert held.kind in ("axis", "intersection", "from_point"), (
+        held.kind, held.point)
     axis = held.axis or _engaged_name(start, held.point)
     assert axis is not None
     # ...and it lands on the axis line through the start, at the cursor's foot.

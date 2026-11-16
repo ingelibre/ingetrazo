@@ -3800,5 +3800,15 @@
  "Open File Location": "Otwórz lokalizację pliku",
  "Open the folder that holds the project's file, with the file picked out in it.": "Otwiera folder z plikiem projektu i zaznacza w nim ten plik.",
  "Edit Component": "Edytuj komponent",
- "Explode Component": "Rozbij komponent"
+ "Explode Component": "Rozbij komponent",
+ "Inferences": "Inferencje",
+ "Turn all inferences on": "Włącz wszystkie inferencje",
+ "Switch every point inference of this menu back on.": "Ponownie włącza wszystkie inferencje punktowe z tego menu.",
+ "Snap to the ends of edges.": "Przyciąga do końców krawędzi.",
+ "Snap to the middle of edges and arcs.": "Przyciąga do środka krawędzi i łuków.",
+ "Snap where edges, guides and faces cross.": "Przyciąga tam, gdzie krzyżują się krawędzie, prowadnice i ściany.",
+ "Snap to any point along an edge, a guide line or a guide circle.": "Przyciąga do dowolnego punktu krawędzi, linii pomocniczej lub okręgu pomocniczego.",
+ "Snap to the centre of faces, and show a dot at the centre of the selected ones.": "Przyciąga do środka ścian i pokazuje punkt w środku zaznaczonych.",
+ "Snap to the centre, quadrants and tangent points of circles and arcs.": "Przyciąga do środka, kwadrantów i punktów styczności okręgów i łuków.",
+ "Snap to the model origin and to the origin of groups and components.": "Przyciąga do początku układu modelu oraz do początku grup i komponentów."
 }

@@ -3795,5 +3795,15 @@
  "Open File Location": "ເປີດບ່ອນຢູ່ຂອງໄຟລ໌",
  "Open the folder that holds the project's file, with the file picked out in it.": "ເປີດໂຟນເດີທີ່ມີໄຟລ໌ຂອງໂຄງການ ພ້ອມເລືອກໄຟລ໌ນັ້ນໄວ້.",
  "Edit Component": "ແກ້ໄຂອົງປະກອບ",
- "Explode Component": "ແຍກອົງປະກອບ (Explode)"
+ "Explode Component": "ແຍກອົງປະກອບ (Explode)",
+ "Inferences": "ການອະນຸມານ",
+ "Turn all inferences on": "ເປີດການອະນຸມານທັງໝົດ",
+ "Switch every point inference of this menu back on.": "ເປີດການອະນຸມານຈຸດທັງໝົດໃນເມນູນີ້ຄືນ.",
+ "Snap to the ends of edges.": "ສະແນັບໃສ່ປາຍຂອງຂອບ.",
+ "Snap to the middle of edges and arcs.": "ສະແນັບໃສ່ຈຸດກາງຂອງຂອບ ແລະ ເສັ້ນໂຄ້ງ.",
+ "Snap where edges, guides and faces cross.": "ສະແນັບບ່ອນທີ່ຂອບ, ເສັ້ນນຳ ແລະ ໜ້າພຽງຕັດກັນ.",
+ "Snap to any point along an edge, a guide line or a guide circle.": "ສະແນັບໃສ່ຈຸດໃດກໍໄດ້ຕາມຂອບ, ເສັ້ນນຳ ຫຼື ວົງມົນນຳ.",
+ "Snap to the centre of faces, and show a dot at the centre of the selected ones.": "ສະແນັບໃສ່ຈຸດໃຈກາງຂອງໜ້າພຽງ ແລະ ສະແດງຈຸດຢູ່ໃຈກາງຂອງໜ້າທີ່ເລືອກ.",
+ "Snap to the centre, quadrants and tangent points of circles and arcs.": "ສະແນັບໃສ່ຈຸດໃຈກາງ, ຈຸດສີ່ສ່ວນ ແລະ ຈຸດສຳຜັດຂອງວົງມົນ ແລະ ເສັ້ນໂຄ້ງ.",
+ "Snap to the model origin and to the origin of groups and components.": "ສະແນັບໃສ່ຈຸດເລີ່ມຕົ້ນຂອງໂມເດວ ແລະ ຈຸດເລີ່ມຕົ້ນຂອງກຸ່ມ ແລະ ອົງປະກອບ."
 }

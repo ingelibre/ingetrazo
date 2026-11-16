@@ -3795,5 +3795,15 @@
  "Open File Location": "เปิดตำแหน่งไฟล์",
  "Open the folder that holds the project's file, with the file picked out in it.": "เปิดโฟลเดอร์ที่มีไฟล์ของโปรเจกต์ พร้อมเลือกไฟล์นั้นไว้",
  "Edit Component": "แก้ไขคอมโพเนนต์",
- "Explode Component": "ระเบิดคอมโพเนนต์"
+ "Explode Component": "ระเบิดคอมโพเนนต์",
+ "Inferences": "การอนุมาน",
+ "Turn all inferences on": "เปิดการอนุมานทั้งหมด",
+ "Switch every point inference of this menu back on.": "เปิดการอนุมานจุดทั้งหมดในเมนูนี้อีกครั้ง",
+ "Snap to the ends of edges.": "สแนปที่ปลายของขอบ",
+ "Snap to the middle of edges and arcs.": "สแนปที่จุดกึ่งกลางของขอบและส่วนโค้ง",
+ "Snap where edges, guides and faces cross.": "สแนปที่จุดตัดของขอบ เส้นไกด์ และพื้นผิว",
+ "Snap to any point along an edge, a guide line or a guide circle.": "สแนปที่จุดใดก็ได้บนขอบ เส้นไกด์ หรือวงกลมไกด์",
+ "Snap to the centre of faces, and show a dot at the centre of the selected ones.": "สแนปที่จุดศูนย์กลางของพื้นผิว และแสดงจุดที่กึ่งกลางของพื้นผิวที่เลือก",
+ "Snap to the centre, quadrants and tangent points of circles and arcs.": "สแนปที่จุดศูนย์กลาง จุดควอดแรนต์ และจุดสัมผัสของวงกลมและส่วนโค้ง",
+ "Snap to the model origin and to the origin of groups and components.": "สแนปที่จุดกำเนิดของโมเดล และจุดกำเนิดของกลุ่มและคอมโพเนนต์"
 }

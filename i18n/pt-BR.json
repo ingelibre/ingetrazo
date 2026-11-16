@@ -3799,5 +3799,15 @@
  "Open File Location": "Abrir local do arquivo",
  "Open the folder that holds the project's file, with the file picked out in it.": "Abre a pasta que contém o arquivo do projeto, com o arquivo selecionado.",
  "Edit Component": "Editar Componente",
- "Explode Component": "Explodir Componente"
+ "Explode Component": "Explodir Componente",
+ "Inferences": "Inferências",
+ "Turn all inferences on": "Ativar todas as inferências",
+ "Switch every point inference of this menu back on.": "Reativa todas as inferências de ponto deste menu.",
+ "Snap to the ends of edges.": "Encaixa nas extremidades das arestas.",
+ "Snap to the middle of edges and arcs.": "Encaixa no ponto médio de arestas e arcos.",
+ "Snap where edges, guides and faces cross.": "Encaixa onde arestas, guias e faces se cruzam.",
+ "Snap to any point along an edge, a guide line or a guide circle.": "Encaixa em qualquer ponto de uma aresta, linha guia ou círculo guia.",
+ "Snap to the centre of faces, and show a dot at the centre of the selected ones.": "Encaixa no centro das faces e mostra um ponto no centro das selecionadas.",
+ "Snap to the centre, quadrants and tangent points of circles and arcs.": "Encaixa no centro, nos quadrantes e nos pontos de tangência de círculos e arcos.",
+ "Snap to the model origin and to the origin of groups and components.": "Encaixa na origem do modelo e na origem de grupos e componentes."
 }

@@ -3793,5 +3793,15 @@
  "Pick bounding box point": "Избор на точка от ограждащата кутия",
  "Pick inference point": "Избор на точка чрез прихващане",
  "Click a bounding box grip, or press Esc": "Щракнете върху точка от ограждащата кутия или натиснете Esc",
- "Click an inference point, or press Esc": "Щракнете върху точка за прихващане или натиснете Esc"
+ "Click an inference point, or press Esc": "Щракнете върху точка за прихващане или натиснете Esc",
+ "Inferences": "Привличания",
+ "Turn all inferences on": "Включи всички привличания",
+ "Switch every point inference of this menu back on.": "Включва отново всички точкови привличания от това меню.",
+ "Snap to the ends of edges.": "Привличане към краищата на ръбовете.",
+ "Snap to the middle of edges and arcs.": "Привличане към средата на ръбове и дъги.",
+ "Snap where edges, guides and faces cross.": "Привличане там, където се пресичат ръбове, помощни линии и повърхнини.",
+ "Snap to any point along an edge, a guide line or a guide circle.": "Привличане към всяка точка по ръб, помощна линия или помощна окръжност.",
+ "Snap to the centre of faces, and show a dot at the centre of the selected ones.": "Привличане към центъра на повърхнините и точка в центъра на избраните.",
+ "Snap to the centre, quadrants and tangent points of circles and arcs.": "Привличане към центъра, квадрантите и допирните точки на окръжности и дъги.",
+ "Snap to the model origin and to the origin of groups and components.": "Привличане към началото на модела и към началото на групи и компоненти."
 }

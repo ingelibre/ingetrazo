@@ -3819,5 +3819,15 @@
  "Open File Location": "Mở vị trí tệp",
  "Open the folder that holds the project's file, with the file picked out in it.": "Mở thư mục chứa tệp của dự án, với tệp đó được chọn sẵn.",
  "Edit Component": "Chỉnh sửa cấu kiện",
- "Explode Component": "Rã cấu kiện"
+ "Explode Component": "Rã cấu kiện",
+ "Inferences": "Suy luận",
+ "Turn all inferences on": "Bật tất cả suy luận",
+ "Switch every point inference of this menu back on.": "Bật lại mọi suy luận điểm trong menu này.",
+ "Snap to the ends of edges.": "Bắt vào đầu mút của cạnh.",
+ "Snap to the middle of edges and arcs.": "Bắt vào trung điểm của cạnh và cung.",
+ "Snap where edges, guides and faces cross.": "Bắt vào chỗ giao nhau của cạnh, đường dẫn và mặt.",
+ "Snap to any point along an edge, a guide line or a guide circle.": "Bắt vào bất kỳ điểm nào trên cạnh, đường dẫn hoặc đường tròn dẫn.",
+ "Snap to the centre of faces, and show a dot at the centre of the selected ones.": "Bắt vào tâm của mặt và hiện một chấm ở tâm các mặt được chọn.",
+ "Snap to the centre, quadrants and tangent points of circles and arcs.": "Bắt vào tâm, góc phần tư và tiếp điểm của đường tròn và cung.",
+ "Snap to the model origin and to the origin of groups and components.": "Bắt vào gốc tọa độ của mô hình và gốc của nhóm và thành phần."
 }
