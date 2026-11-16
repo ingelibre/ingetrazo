@@ -73,3 +73,25 @@ jobs:
         env:
           QT_QPA_PLATFORM: offscreen
         run: python scripts/pytest_batches.py -m "not slow" tests
+
+  macos-accessibility:
+    name: Cocoa accessibility (${{ matrix.runner }})
+    if: github.event_name != 'push' || !github.event.repository.private
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [macos-14, macos-15-intel]
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Python dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Native ownership and startup regression tests
+        # Cocoa's event loop and autorelease pools are essential here;
+        # the offscreen Linux suite cannot reproduce these crashes.
+        run: |
+          python -m pytest -q tests/test_macos_accessibility_fix.py \
+            tests/test_macos_accessibility.py tests/test_macos_file_open.py
