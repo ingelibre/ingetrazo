@@ -950,3 +950,112 @@ def test_a_scene_with_no_picture_to_be_had_is_not_asked_for_ever(
     _wait()
     QTest.qWait(400)
     assert len(tries) == ScenesPanel.RETRIES + 1
+
+
+# ---- The picture is the screen ----------------------------------------------
+
+def _shot(win, monkeypatch):
+    """Render the pictures through a stand-in for the GL render that notes
+    what the camera, the layers and the style are when it is asked."""
+    from PySide6.QtGui import QColor, QImage
+    vp = win.viewport
+    seen = {}
+
+    def render_image(width_px, height_px=None, **kw):
+        cam = vp.camera
+        seen.update(perspective=cam.perspective, distance=cam.distance,
+                    fov=cam.fov_deg, aspect=cam.aspect,
+                    two_point=cam.two_point, yaw=cam.yaw, pitch=cam.pitch,
+                    shift_y=cam.shift_y, override=vp.style_override,
+                    edge_px=vp._export_edge_px, kw=kw,
+                    visible={ly.name: ly.visible for ly in vp.scene.layers})
+        img = QImage(width_px, height_px or width_px, QImage.Format_RGB32)
+        img.fill(QColor("grey"))
+        return img
+
+    monkeypatch.setattr(vp, "render_image", render_image)
+    monkeypatch.setattr(_ScenesPanel, "_render_thumbnail", _REAL_THUMBNAIL)
+    return seen
+
+
+def test_a_perspective_scene_is_pictured_in_perspective(win, monkeypatch):
+    """A scene saved in perspective, close up, was drawn as a sheet frame:
+    parallel, at the scale that fits the whole model, 3:2 and on white —
+    another, farther view. Its picture is now the screen's."""
+    seen = _shot(win, monkeypatch)
+    cam = win.viewport.camera
+    cam.perspective = True
+    cam.fov_deg = 50.0
+    cam.distance = 3.5
+    panel = _scenes(win, "Cerca")
+    view = _view(win, "Cerca")
+    assert view.perspective
+    icon = panel._render_thumbnail(view)
+    assert icon is not None and not icon.isNull()
+    assert seen["perspective"] is True
+    assert seen["distance"] == pytest.approx(3.5)
+    assert seen["fov"] == pytest.approx(50.0)
+    vp = win.viewport
+    assert seen["aspect"] == pytest.approx(vp.width() / vp.height(),
+                                           rel=0.01)
+    assert seen["override"] is None       # the scene's background, no paper
+    assert seen["edge_px"] == 1           # the screen's hairlines
+    assert seen["kw"].get("sharp_shadows") is False
+
+
+def test_a_parallel_scene_keeps_its_own_zoom(win, monkeypatch):
+    """A parallel scene is drawn at the height its distance gives the live
+    camera — not at a fit to the whole model."""
+    seen = _shot(win, monkeypatch)
+    cam = win.viewport.camera
+    cam.perspective = False
+    cam.fov_deg = 45.0
+    cam.distance = 2.0
+    panel = _scenes(win, "Detalle")
+    panel._render_thumbnail(_view(win, "Detalle"))
+    assert seen["perspective"] is False
+    assert seen["distance"] == pytest.approx(2.0, rel=1e-6)
+
+
+def test_the_picture_shows_the_layers_that_do_not_print(win, monkeypatch):
+    """Sheets leave the layers set not to print out; the screen shows
+    them, and so does the scene's picture."""
+    from core.layers import Layer
+    seen = _shot(win, monkeypatch)
+    scene = win.viewport.scene
+    scene.layers.append(Layer("Borrador", printable=False))
+    panel = _scenes(win, "Con borrador")
+    panel._render_thumbnail(_view(win, "Con borrador"))
+    assert seen["visible"]["Borrador"] is True
+
+
+def test_the_picture_gives_the_live_lens_back(win, monkeypatch):
+    """A scene in two-point perspective with a shifted lens: its picture
+    puts both on the camera, and the live view gets its own back."""
+    seen = _shot(win, monkeypatch)
+    cam = win.viewport.camera
+    cam.perspective = True
+    cam.two_point = True
+    cam.shift_y = 0.2
+    panel = _scenes(win, "Fachada")
+    cam.two_point = False
+    cam.shift_y = 0.0
+    cam.distance += 5.0
+    live = (cam.distance, cam.yaw, cam.pitch)
+    panel._render_thumbnail(_view(win, "Fachada"))
+    assert seen["two_point"] is True and seen["shift_y"] == pytest.approx(0.2)
+    assert cam.two_point is False
+    assert cam.shift_y == 0.0
+    assert (cam.distance, cam.yaw, cam.pitch) == live
+
+
+def test_a_glide_arrives_with_the_scene_lens(win):
+    """With the transitions on, the camera glides to the scene and the rest
+    comes in on arrival — the lens did not: a scene saved with a shifted
+    lens showed without it, and unlike its picture."""
+    cam = win.viewport.camera
+    cam.shift_y = 0.25
+    panel = _scenes(win, "Desplazada")
+    cam.shift_y = 0.0
+    panel.finish_view(_view(win, "Desplazada"), camera=False)
+    assert cam.shift_y == pytest.approx(0.25)

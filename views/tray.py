@@ -5132,6 +5132,12 @@ class ScenesPanel(QWidget):
             if camera:
                 view.apply(scene, vp.camera)
             else:                         # a glide took the camera there
+                # The glide moves the pose, not the lens (shift, roll,
+                # clipping, frame): it comes with the scene's arrival, or a
+                # scene saved with a shifted lens showed without it — and
+                # unlike its picture in the Scenes tab.
+                if hasattr(vp.camera, "apply_lens"):
+                    vp.camera.apply_lens(view.lens)
                 view.apply_state(scene)
         else:
             def own(style, vp=vp):
