@@ -380,7 +380,8 @@ def _union_outline(solid_regions_xy, keep_segs=None) -> list:
 def rebuild_plane(mesh, origin: QVector3D, normal: QVector3D,
                   fresh=(), keep_mode: bool = False,
                   removing: bool = True, op=None,
-                  cache: Optional[RebuildCache] = None) -> Optional[list]:
+                  cache: Optional[RebuildCache] = None,
+                  keep_edges=()) -> Optional[list]:
     """Recompute the solid *boundary* faces of ``mesh`` on the plane
     ``(origin, normal)``.
 
@@ -656,7 +657,12 @@ def rebuild_plane(mesh, origin: QVector3D, normal: QVector3D,
         attrs = [f.attrs or {} for f in e.faces]
         return any(a != attrs[0] for a in attrs[1:])
 
-    keep_segs: list = []
+    # Explicit boundaries of the moved cap remain separate selectable
+    # regions when it lands flush with a neighbouring face. These only
+    # constrain the union of surviving regions: they cannot retain a face
+    # classified as empty or recreate a collapsed internal wall.
+    keep_segs = [(to2d(a), to2d(b)) for a, b in keep_edges
+                 if _on_plane(a, origin, normal) and _on_plane(b, origin, normal)]
     for e in scope_edges:
         if not (_on_plane(e.a, origin, normal) and _on_plane(e.b, origin, normal)):
             continue
@@ -729,7 +735,8 @@ def _canon_faces(faces_as_loops) -> frozenset:
 def apply_rebuild(mesh, origin: QVector3D, normal: QVector3D,
                   fresh=(), keep_mode: bool = False,
                   removing: bool = True, prune: bool = True,
-                  op=None, cache: Optional[RebuildCache] = None) -> bool:
+                  op=None, cache: Optional[RebuildCache] = None,
+                  keep_edges=()) -> bool:
     """Rebuild one plane of ``mesh`` in place: replace its coplanar faces with the
     deterministic solid faces from :func:`rebuild_plane`, and prune the edges left
     interior to the plane (a dissolved seam) that now border nothing. Returns
@@ -751,7 +758,7 @@ def apply_rebuild(mesh, origin: QVector3D, normal: QVector3D,
     keeps no inverse of its own."""
     normal = normal.normalized()
     rebuilt = rebuild_plane(mesh, origin, normal, fresh, keep_mode, removing,
-                            op, cache)
+                            op, cache, keep_edges)
     if rebuilt is None:
         return False
     scope = cache.scope(mesh) if cache is not None else None
