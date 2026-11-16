@@ -3602,6 +3602,8 @@
  "Drag: move these views' lines together": "Перетащите, чтобы переместить линии этих видов вместе",
  "Transparent background": "Прозрачный фон",
  "Only PNG images keep transparency.": "Прозрачность сохраняют только изображения PNG.",
+ "Defined shadows": "Чёткие тени",
+ "Defined shadows are available for PNG images.": "Чёткие тени доступны для изображений PNG.",
  "Italian translation of the interface, and the 3D mouse's axes and navigation profiles.": "Итальянский перевод интерфейса, а также оси и профили навигации 3D-мыши.",
  "Sheet dimensions and level marks in the document's units, dimensions that follow their object, Push/Pull fixes and the «System language» choice.": "Размеры и отметки уровня на листах в единицах документа, размеры, следующие за своим объектом, исправления Вдавить/Вытянуть и выбор «Язык системы».",
  "Fixes for the location map, Move's rotation grips, typed values, the Line tool, snapping, long thin rectangles, .skp thumbnails and the extension manager's downloads on Windows, and DWG conversion with a Cancel button.": "Исправления карты местоположения, маркеров поворота в Переместить, вводимых значений, инструмента Линия, привязок, длинных узких прямоугольников, миниатюр .skp и загрузок менеджера расширений в Windows, а также преобразование DWG с кнопкой Отмена.",

@@ -3609,6 +3609,8 @@
  "Drag: move these views' lines together": "Arrastar: mover juntas as linhas destas vistas",
  "Transparent background": "Fundo transparente",
  "Only PNG images keep transparency.": "Somente imagens PNG mantêm a transparência.",
+ "Defined shadows": "Sombras definidas",
+ "Defined shadows are available for PNG images.": "As sombras definidas estão disponíveis para imagens PNG.",
  "Italian translation of the interface, and the 3D mouse's axes and navigation profiles.": "Tradução da interface para o italiano, e os eixos e perfis de navegação do mouse 3D.",
  "Sheet dimensions and level marks in the document's units, dimensions that follow their object, Push/Pull fixes and the «System language» choice.": "Cotas e marcas de nível das pranchas nas unidades do documento, cotas que acompanham seu objeto, correções do Empurrar/Puxar e a opção «Idioma do sistema».",
  "Fixes for the location map, Move's rotation grips, typed values, the Line tool, snapping, long thin rectangles, .skp thumbnails and the extension manager's downloads on Windows, and DWG conversion with a Cancel button.": "Correções no mapa de localização, nas alças de rotação do Mover, nos valores digitados, na ferramenta Linha, no snap, em retângulos longos e finos, nas miniaturas .skp e nos downloads do gerenciador de extensões no Windows, e conversão DWG com botão Cancelar.",

@@ -3602,6 +3602,8 @@
  "Drag: move these views' lines together": "드래그: 이 뷰들의 선을 함께 이동",
  "Transparent background": "투명 배경",
  "Only PNG images keep transparency.": "PNG 이미지만 투명도를 유지합니다.",
+ "Defined shadows": "선명한 그림자",
+ "Defined shadows are available for PNG images.": "선명한 그림자는 PNG 이미지에서 사용할 수 있습니다.",
  "Italian translation of the interface, and the 3D mouse's axes and navigation profiles.": "인터페이스 이탈리아어 번역, 그리고 3D 마우스의 축과 탐색 프로필.",
  "Sheet dimensions and level marks in the document's units, dimensions that follow their object, Push/Pull fixes and the «System language» choice.": "문서 단위로 표시되는 시트 치수와 레벨 표시, 객체를 따라가는 치수, 밀기/끌기 수정 및 «시스템 언어» 선택.",
  "Fixes for the location map, Move's rotation grips, typed values, the Line tool, snapping, long thin rectangles, .skp thumbnails and the extension manager's downloads on Windows, and DWG conversion with a Cancel button.": "위치 지도, 이동의 회전 그립, 입력 값, 선 도구, 스냅, 길고 가는 사각형, .skp 썸네일, Windows의 확장 기능 관리자 다운로드 수정, 그리고 취소 버튼이 있는 DWG 변환.",

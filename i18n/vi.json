@@ -3629,6 +3629,8 @@
  "Drag: move these views' lines together": "Kéo: di chuyển các đường của những khung nhìn này cùng nhau",
  "Transparent background": "Nền trong suốt",
  "Only PNG images keep transparency.": "Chỉ ảnh PNG mới giữ được độ trong suốt.",
+ "Defined shadows": "Bóng đổ sắc nét",
+ "Defined shadows are available for PNG images.": "Bóng đổ sắc nét có sẵn cho ảnh PNG.",
  "Italian translation of the interface, and the 3D mouse's axes and navigation profiles.": "Bản dịch giao diện tiếng Ý, cùng các trục và hồ sơ điều hướng của chuột 3D.",
  "Sheet dimensions and level marks in the document's units, dimensions that follow their object, Push/Pull fixes and the «System language» choice.": "Kích thước và dấu cao độ trên bản vẽ theo đơn vị của tài liệu, kích thước bám theo đối tượng, sửa lỗi Đẩy/Kéo và tùy chọn «Ngôn ngữ hệ thống».",
  "Fixes for the location map, Move's rotation grips, typed values, the Line tool, snapping, long thin rectangles, .skp thumbnails and the extension manager's downloads on Windows, and DWG conversion with a Cancel button.": "Sửa lỗi bản đồ vị trí, tay nắm xoay của Di chuyển, giá trị nhập, công cụ Đường thẳng, bắt điểm, hình chữ nhật dài và mảnh, ảnh thu nhỏ .skp và tải xuống của trình quản lý tiện ích mở rộng trên Windows, cùng chuyển đổi DWG có nút Hủy.",

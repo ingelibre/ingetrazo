@@ -3635,6 +3635,8 @@
  "Drag: move these views' lines together": "اسحب: حرّك خطوط هذه العروض معًا",
  "Transparent background": "خلفية شفافة",
  "Only PNG images keep transparency.": "صور PNG وحدها تحتفظ بالشفافية.",
+ "Defined shadows": "ظلال محددة",
+ "Defined shadows are available for PNG images.": "الظلال المحددة متاحة لصور PNG.",
  "Italian translation of the interface, and the 3D mouse's axes and navigation profiles.": "الترجمة الإيطالية للواجهة، ومحاور الفأرة ثلاثية الأبعاد وملفات تعريف التنقل الخاصة بها.",
  "Sheet dimensions and level marks in the document's units, dimensions that follow their object, Push/Pull fixes and the «System language» choice.": "أبعاد اللوحات وعلامات المناسيب بوحدات المستند، وأبعاد تتبع كائنها، وإصلاحات دفع / سحب، وخيار «لغة النظام».",
  "Fixes for the location map, Move's rotation grips, typed values, the Line tool, snapping, long thin rectangles, .skp thumbnails and the extension manager's downloads on Windows, and DWG conversion with a Cancel button.": "إصلاحات لخريطة الموقع، ومقابض الدوران في تحريك، والقيم المكتوبة، وأداة خط، والالتقاط، والمستطيلات الطويلة الرفيعة، والصور المصغرة لملفات .skp، وتنزيلات مدير الإضافات على Windows، وتحويل DWG مع زر إلغاء.",

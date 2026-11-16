@@ -3610,6 +3610,8 @@
  "Drag: move these views' lines together": "Przeciągnij: przesuń razem linie tych widoków",
  "Transparent background": "Przezroczyste tło",
  "Only PNG images keep transparency.": "Tylko obrazy PNG zachowują przezroczystość.",
+ "Defined shadows": "Wyraźne cienie",
+ "Defined shadows are available for PNG images.": "Wyraźne cienie są dostępne dla obrazów PNG.",
  "Italian translation of the interface, and the 3D mouse's axes and navigation profiles.": "Włoskie tłumaczenie interfejsu oraz osie i profile nawigacji myszy 3D.",
  "Sheet dimensions and level marks in the document's units, dimensions that follow their object, Push/Pull fixes and the «System language» choice.": "Wymiary i znaczniki poziomu na arkuszach w jednostkach dokumentu, wymiary podążające za obiektem, poprawki Wypchnij/wyciągnij i opcja „Język systemu”.",
  "Fixes for the location map, Move's rotation grips, typed values, the Line tool, snapping, long thin rectangles, .skp thumbnails and the extension manager's downloads on Windows, and DWG conversion with a Cancel button.": "Poprawki mapy lokalizacji, uchwytów obrotu w Przesuń, wpisywanych wartości, narzędzia Linia, przyciągania, długich wąskich prostokątów, miniatur .skp i pobierania w menedżerze rozszerzeń w systemie Windows oraz konwersja DWG z przyciskiem Anuluj.",

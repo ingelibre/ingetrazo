@@ -3602,6 +3602,8 @@
  "Drag: move these views' lines together": "Glisser : déplacer ensemble les lignes de ces vues",
  "Transparent background": "Arrière-plan transparent",
  "Only PNG images keep transparency.": "Seules les images PNG conservent la transparence.",
+ "Defined shadows": "Ombres nettes",
+ "Defined shadows are available for PNG images.": "Les ombres nettes sont disponibles pour les images PNG.",
  "Italian translation of the interface, and the 3D mouse's axes and navigation profiles.": "Traduction italienne de l'interface, ainsi que les axes et profils de navigation de la souris 3D.",
  "Sheet dimensions and level marks in the document's units, dimensions that follow their object, Push/Pull fixes and the «System language» choice.": "Cotes et repères de niveau des planches dans les unités du document, cotes qui suivent leur objet, corrections de Pousser/Tirer et le choix « Langue du système ».",
  "Fixes for the location map, Move's rotation grips, typed values, the Line tool, snapping, long thin rectangles, .skp thumbnails and the extension manager's downloads on Windows, and DWG conversion with a Cancel button.": "Corrections de la carte de localisation, des poignées de rotation de Déplacer, des valeurs saisies, de l'outil Ligne, de l'inférence, des rectangles longs et fins, des miniatures .skp et des téléchargements du gestionnaire d'extensions sous Windows, et conversion DWG avec un bouton Annuler.",

@@ -3602,6 +3602,8 @@
  "Drag: move these views' lines together": "ドラッグ: これらのビューの線をまとめて移動",
  "Transparent background": "背景を透明にする",
  "Only PNG images keep transparency.": "透明度を保持できるのは PNG 画像のみです。",
+ "Defined shadows": "輪郭のはっきりした影",
+ "Defined shadows are available for PNG images.": "輪郭のはっきりした影は PNG 画像で使えます。",
  "Italian translation of the interface, and the 3D mouse's axes and navigation profiles.": "インターフェースのイタリア語翻訳、および 3D マウスの軸とナビゲーションプロファイル。",
  "Sheet dimensions and level marks in the document's units, dimensions that follow their object, Push/Pull fixes and the «System language» choice.": "ドキュメントの単位によるシートの寸法とレベル記号、オブジェクトに追従する寸法、プッシュ/プルの修正、「システムの言語」の選択肢。",
  "Fixes for the location map, Move's rotation grips, typed values, the Line tool, snapping, long thin rectangles, .skp thumbnails and the extension manager's downloads on Windows, and DWG conversion with a Cancel button.": "位置マップ、移動の回転グリップ、入力値、線ツール、スナップ、細長い長方形、.skp のサムネイル、Windows での拡張機能マネージャーのダウンロードの修正、およびキャンセルボタン付きの DWG 変換。",
