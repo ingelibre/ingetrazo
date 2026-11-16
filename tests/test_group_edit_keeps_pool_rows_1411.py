@@ -280,8 +280,11 @@ def test_a_group_moved_to_another_container_is_not_kept(vp):
     bed0.children.remove(s)
     bed1.children.append(s)
     sc.version += 1
-    kept = vp._epoch_kept_placements(old)
-    assert kept is not None
+    both = vp._epoch_kept_placements(old)
+    assert both is not None
+    whole, kept = both
+    plaza = _named(sc, "plaza")
+    assert id(plaza) not in whole and id(_named(sc, "post0")) in whole
     assert id(s) not in kept
     assert id(_named(sc, "s03")) in kept and id(bed1) in kept
     assert _pool(vp) == _fresh(vp)

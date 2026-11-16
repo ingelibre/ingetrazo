@@ -4427,20 +4427,25 @@ class Viewport(QOpenGLWidget):
             return epoch
         movers: list = []
         head = len(parts)
-        # The slot of the container each part sits in (-1: a top-level
-        # object), one per part after the head: what tells
+        # The slot of the container each part sits in, counted from its
+        # top-level object's own slot (-1: the top-level object itself),
+        # one per part after the head: what tells
         # ``_epoch_kept_placements`` a placement's whole chain of
-        # containers, since a part holds no children.
+        # containers, since a part holds no children. Counted from the
+        # top-level object, a subtree that only shifted (an object deleted
+        # before it) reads the same.
         ups: list = []
 
-        def walk(g, up=-1):
+        def walk(g, up=-1, top=0):
             if id(g) in pv:
                 movers.append((len(parts), g))
             me = len(parts)
-            ups.append(up)
+            if up < 0:
+                top = me
+            ups.append(up - top if up >= 0 else -1)
             parts.append(part(g))
             for c in (g.children or ()):
-                walk(c, me)
+                walk(c, me, top)
         # Where each top-level object's subtree sits in ``parts``: what
         # ``_epoch_kept_tops`` compares, object by object.
         tops: list = []
@@ -4581,18 +4586,19 @@ class Viewport(QOpenGLWidget):
         return out
 
     def _epoch_kept_placements(self, old, new=None):
-        """The ids of the objects — top-level or nested at any depth —
-        whose own part AND the part of every container above them read the
-        same in placements epoch ``old`` as in ``new`` (the current one by
-        default), in the same containers, the rest of the scene (open
-        context, loose mesh, view switches, layers) being the same too; the
-        preview's two slots are the caller's, as in ``_epoch_kept_tops``.
-        ``None`` when that cannot be told.
+        """``(tops, ids)``: the top-level objects whose whole subtree reads
+        the same in placements epoch ``old`` as in ``new`` (the current one
+        by default), and, inside the other ones, the ids of the objects —
+        nested at any depth — whose own part AND the part of every
+        container above them read the same, in the same containers. The
+        rest of the scene (open context, loose mesh, view switches, layers)
+        must be the same too; the preview's two slots are the caller's, as
+        in ``_epoch_kept_tops``. ``None`` when that cannot be told.
 
         Such a placement draws exactly as it did: its world matrix, tag,
         hidden state and inherited paint are all read off that chain. The
         instanced pool keeps its row, so an edit inside ONE small group —
-        a paint, a stroke, a turn — no longer makes again the rows of every
+        a paint, a hide, a tag — no longer makes again the rows of every
         sibling under the same top-level object: the plaza's planting is
         one object holding 2 843 placements, and the first frame after each
         edit rebuilt them all (issue #1411).
@@ -4615,30 +4621,57 @@ class Viewport(QOpenGLWidget):
                         for i in range(a[0]))):
             head = a[0]
             pa, pb, ua, ub = a[1], b[1], a[3], b[3]
+            was = {t: (s, e) for t, s, e in a[2]}
+            whole = set()
+            gone = set(was)
+            changed = []
+            for t, s, e in b[2]:
+                ab = was.get(t)
+                if (ab is not None and ab[1] - ab[0] == e - s
+                        and pa[ab[0]:ab[1]] == pb[s:e]
+                        and ua[ab[0] - head:ab[1] - head]
+                        == ub[s - head:e - head]):
+                    whole.add(t)           # list compares: no Python loop
+                    gone.discard(t)
+                else:
+                    changed.append((s, e))
+            # Where each object of the other old subtrees sat: an object
+            # can only come from one of them (a kept subtree lost nothing).
+            # (its slot, its top-level object's slot)
             at: dict = {}
-            for j in range(head, len(pa)):
-                k = pa[j][0]
-                at[k] = -1 if k in at else j     # twice: not to be trusted
-            same = [False] * len(pb)
+            for t in gone:
+                s0, e0 = was[t]
+                for j in range(s0, e0):
+                    k = pa[j][0]
+                    # Twice: not to be trusted.
+                    at[k] = (-1, -1) if k in at else (j, s0)
             kept = set()
-            for i in range(head, len(pb)):
-                y = pb[i]
-                j = at.get(y[0], -1)
-                if j < 0:
-                    continue                     # new, or not to be trusted
-                x = pa[j]
-                if x is not y and x != y:
-                    continue
-                up_b, up_a = ub[i - head], ua[j - head]
-                if up_b < 0:
-                    if up_a >= 0:
-                        continue                 # taken out of a container
-                elif (up_a < 0 or not same[up_b]
-                      or pa[up_a][0] != pb[up_b][0]):
-                    continue                     # its container changed
-                same[i] = True
-                kept.add(y[0])
-            out = frozenset(kept)
+            for s, e in changed:
+                same = {}
+                for i in range(s, e):
+                    y = pb[i]
+                    j, s0 = at.get(y[0], (-1, -1))
+                    if j < 0:
+                        continue           # new, or not to be trusted
+                    x = pa[j]
+                    if x is not y and x != y:
+                        continue
+                    rb, ra = ub[i - head], ua[j - head]
+                    if rb < 0:
+                        if ra >= 0:
+                            continue       # taken out of a container
+                    else:
+                        if ra < 0:
+                            continue       # put into a container
+                        up_b = s + rb
+                        if not same.get(up_b):
+                            continue       # its container changed
+                        # The same container: the new one's old slot.
+                        if at[pb[up_b][0]][0] != s0 + ra:
+                            continue
+                    same[i] = True
+                    kept.add(y[0])
+            out = (frozenset(whole), frozenset(kept))
         self._kept_place_memo = ((old, new), out)
         return out
 
@@ -5018,8 +5051,10 @@ class Viewport(QOpenGLWidget):
         import numpy as np
         kept = place = None
         if old is not None:
-            place = self._epoch_kept_placements(old[0][0], key[0])
-            if place is None:
+            both = self._epoch_kept_placements(old[0][0], key[0])
+            if both is not None:
+                kept, place = both
+            else:
                 kept = self._epoch_kept_tops(old[0][0], key[0], ctx=True)
         row = {}
         src = None
@@ -5042,22 +5077,22 @@ class Viewport(QOpenGLWidget):
         code_of: dict = {}
         for g in placements:
             i = None
-            if place:
-                if src.get(id(g), id(g)) in place:
-                    i = row.get(id(g))
-            elif kept and top_of(g) in kept:
+            if kept and top_of(g) in kept:
                 i = row.get(id(g))
-            if i is not None:
+            elif place and src.get(id(g), id(g)) in place:
+                i = row.get(id(g))
                 # Its prototype still draws instanced? A material edited
                 # in the same step can make it translucent without a new
-                # mesh serial: asked once per prototype, not per placement.
-                live = o_live.get(int(o_codes[i]))
-                if live is None:
-                    m, p, _mir = o_protos[int(o_codes[i])]
-                    live = o_live[int(o_codes[i])] = self._proto_instanceable(
-                        m, p)
-                if not live:
-                    i = None
+                # mesh serial: asked once per prototype, not per placement
+                # — as the whole row was, before it was kept (#1411).
+                if i is not None:
+                    c = int(o_codes[i])
+                    live = o_live.get(c)
+                    if live is None:
+                        m, p, _mir = o_protos[c]
+                        live = o_live[c] = self._proto_instanceable(m, p)
+                    if not live:
+                        i = None
             if i is not None:
                 # Unchanged: the very row it had. One that had none (hidden,
                 # not instanced — or a proxy made anew) is asked again below.
