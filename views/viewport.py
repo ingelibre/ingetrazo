@@ -15309,10 +15309,20 @@ class Viewport(QOpenGLWidget):
                              False, infer=scene.entity_selectable(f),
                              loose=True)
             # Loose part → arrays; groups append their cached chunk arrays.
+            cells = None
             if tris:
                 t = np.asarray(tris, dtype=np.float64).reshape(-1, 3, 3)
-                lt = (t[:, 0], t[:, 1] - t[:, 0], t[:, 2] - t[:, 0],
-                      np.asarray(tri_ent, dtype=np.int64))
+                # The loose part on the span grid a group's chunk gets: an
+                # open group's own faces are loose, and as ONE span every
+                # ray that met the model ran Möller–Trumbore over all of
+                # them — 25 800 faces, ~2.5 ms a ray, a few rays a hover
+                # (#1392). The order is free: each triangle carries its
+                # entity.
+                *lt, cells = _split_chunk_spans(
+                    {"v0": t[:, 0], "e1": t[:, 1] - t[:, 0],
+                     "e2": t[:, 2] - t[:, 0],
+                     "tri_ent": np.asarray(tri_ent, dtype=np.int64)})
+                lt = tuple(lt)
             else:
                 lt = None
             loose = (list(entities), lt, len(tris),
@@ -15320,7 +15330,7 @@ class Viewport(QOpenGLWidget):
                      np.asarray(ent_vis, dtype=bool),
                      np.asarray(ent_sel, dtype=bool),
                      np.asarray(ent_infer, dtype=bool),
-                     np.asarray(ent_loose, dtype=bool))
+                     np.asarray(ent_loose, dtype=bool), cells)
             self._pick_loose_memo = (key[:4], loose)
         entities = list(loose[0])
         lt, n_loose_tris = loose[1], loose[2]
@@ -15333,7 +15343,9 @@ class Viewport(QOpenGLWidget):
 
         # Per-chunk triangle spans (P3): a hover/zoom ray prefilters chunks
         # by AABB and runs Möller-Trumbore only on the spans it crosses.
-        tri_spans: list = [(None, 0, n_loose_tris)] if n_loose_tris else []
+        tri_spans: list = ((list(loose[8]) if loose[8]
+                            else [(None, 0, n_loose_tris)])
+                           if n_loose_tris else [])
         own_spans: list = []      # lazy placements' own arrays (#158)
         # What the current context lets you TOUCH: the whole scene at the
         # root, the children of the group you are inside otherwise. This

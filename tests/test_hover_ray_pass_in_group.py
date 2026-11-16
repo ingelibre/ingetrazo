@@ -187,3 +187,74 @@ def test_the_shared_pass_follows_an_edit(monkeypatch):
         win._saved_version = vp.scene.version
         win.close()
 
+
+def _big_group_window():
+    """An open group of ~10 000 faces (a grid of small squares on a wavy
+    sheet, two triangles each): more triangles than the span grid's
+    threshold, all of them loose while the group is open."""
+    from views.main_window import MainWindow
+    win = MainWindow()
+    vp = win.viewport
+    vp.resize(900, 600)
+    sc = vp.scene
+    sc.clear()
+    m = Mesh()
+    n = 70
+    for i in range(n):
+        for j in range(n):
+            z0 = 0.3 * math.sin(i * 0.3) * math.cos(j * 0.2)
+            m.add_face([V(i, j, z0), V(i + 1, j, z0), V(i + 1, j + 1, z0),
+                        V(i, j + 1, z0)])
+    g = Group(m, name="Sheet")
+    g.xform = QMatrix4x4()
+    sc.groups.append(g)
+    sc.version += 1
+    cam = vp.camera
+    cam.perspective = True
+    cam.yaw, cam.pitch = math.radians(30.0), math.radians(40.0)
+    cam.target = V(35.0, 35.0, 0.0)
+    cam.distance = 90.0
+    win._activate_tool("line")
+    return win, vp, g
+
+
+def test_an_open_big_groups_faces_are_on_the_span_grid(monkeypatch):
+    """The open group's own faces are the loose part of the pick index: on
+    the span grid, as a closed group's chunk is, a ray tests the cells it
+    crosses — and answers as over one span, per entity and nearest."""
+    import views.viewport as vv
+    win, vp, g = _big_group_window()
+    try:
+        vp.begin_group_edit(g)
+        idx = vp._pick_index(near="skip")
+        n_loose = len(idx.entities)
+        spans = idx.tri_spans
+        assert spans is not None and len(spans) > 1
+        assert all(bb is not None for bb, _s, _n in spans)
+        assert sum(c for _bb, _s, c in spans) == len(idx.tri_v0)
+        W, H = vp.width(), vp.height()
+        rays = [vp._pixel_to_ray(W * (0.1 + 0.8 * i / 9),
+                                 H * (0.1 + 0.8 * j / 6))
+                for i in range(10) for j in range(7)]
+        grid = [(Viewport._ray_hits(vp, idx, o, d, idx.ent_vis),
+                 Viewport._ray_hits(vp, idx, o, d, idx.ent_vis,
+                                    reduce_global=True)) for o, d in rays]
+        # The same model without the grid: one span for the loose part.
+        monkeypatch.setattr(vv, "_NO_SPAN_GRID", True)
+        vp._pick_loose_memo = None
+        vp._pick_index_cache = None
+        flat = vp._pick_index(near="skip")
+        assert len(flat.entities) == n_loose
+        assert flat.tri_spans[0][0] is None
+        met = 0
+        for (o, d), (per, near) in zip(rays, grid):
+            per1 = Viewport._ray_hits(vp, flat, o, d, flat.ent_vis)
+            near1 = Viewport._ray_hits(vp, flat, o, d, flat.ent_vis,
+                                       reduce_global=True)
+            assert np.array_equal(per, per1)
+            assert near == near1
+            met += bool(np.isfinite(near))
+        assert met > 30
+    finally:
+        win._saved_version = vp.scene.version
+        win.close()
