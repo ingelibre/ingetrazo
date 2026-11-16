@@ -19,8 +19,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import QSettings, Qt
-from PySide6.QtGui import QFontDatabase, QIcon, QPixmap
+from PySide6.QtCore import QRect, QSettings, QSize, Qt
+from PySide6.QtGui import QFontDatabase, QGuiApplication, QIcon, QPixmap
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -34,6 +34,7 @@ from PySide6.QtWidgets import (
     QInputDialog,
     QMessageBox,
     QPushButton,
+    QScrollArea,
     QSlider,
     QSpinBox,
     QTabWidget,
@@ -70,6 +71,36 @@ def graphics_server_applies(platform: str | None = None) -> bool:
     """Whether choosing the display server means anything here: on Linux."""
     import sys
     return (platform or sys.platform).startswith("linux")
+
+
+class _ScrollingPage(QScrollArea):
+    """A Preferences page that scrolls when the dialog is shorter than it
+    (#1336). It still ASKS for its whole size, so on a screen with room
+    the dialog opens as before; only its minimum drops, so the dialog can
+    be made smaller than its tallest page."""
+
+    def __init__(self, page: QWidget) -> None:
+        super().__init__()
+        self.setWidget(page)
+        self.setWidgetResizable(True)
+        self.setFrameShape(QScrollArea.NoFrame)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+
+    def sizeHint(self) -> QSize:
+        hint = self.widget().sizeHint()
+        bar = self.verticalScrollBar().sizeHint().width()
+        return QSize(hint.width() + bar, hint.height())
+
+    def minimumSizeHint(self) -> QSize:
+        # A few rows, in both directions: the dialog opens at its natural
+        # size wherever it fits, so a page only scrolls on a screen too
+        # small for it, or when made smaller by hand.
+        return QSize(320, 120)
+
+
+#: Room left for the window's title bar and frame when the dialog is
+#: fitted to the screen (they are not part of its own geometry).
+_FRAME_ALLOWANCE = 48
 
 
 class PreferencesDialog(QDialog):
@@ -365,7 +396,7 @@ class PreferencesDialog(QDialog):
                 "different, and report it with the label rust-engine. "
                 "Takes effect at the next start."))
         form.addRow("", self._rust)
-        tabs.addTab(general, tr("General"))
+        tabs.addTab(_ScrollingPage(general), tr("General"))
 
         # ---- 3D mouse (issue #108) -------------------------------------------
         from views.ndof_input import load_settings, shared_input
@@ -533,7 +564,7 @@ class PreferencesDialog(QDialog):
         self._ndof_load.clicked.connect(self._load_ndof_profile)
         self._ndof_save.clicked.connect(self._save_ndof_profile)
         self._ndof_reset.clicked.connect(self._reset_ndof_profile)
-        tabs.addTab(mouse3d, tr("3D Mouse"))
+        tabs.addTab(_ScrollingPage(mouse3d), tr("3D Mouse"))
 
         # ---- Import ---------------------------------------------------------
         imp = QWidget()
@@ -558,7 +589,7 @@ class PreferencesDialog(QDialog):
         self._coord.setCurrentIndex(max(0, self._coord.findData(
             str(st.value("georef/coord_mode", "geo") or "geo"))))
         form.addRow(tr("Coordinate entry:"), self._coord)
-        tabs.addTab(imp, tr("Import"))
+        tabs.addTab(_ScrollingPage(imp), tr("Import"))
 
         # ---- AI Assistant ---------------------------------------------------
         ia = QWidget()
@@ -598,7 +629,7 @@ class PreferencesDialog(QDialog):
         self._shots = QCheckBox(tr("Send viewport screenshots to the model"))
         self._shots.setChecked(str(st.value("ia/capturas", "1")) != "0")
         form.addRow("", self._shots)
-        tabs.addTab(ia, tr("AI Assistant"))
+        tabs.addTab(_ScrollingPage(ia), tr("AI Assistant"))
 
         # ---- Units (of THIS document) ---------------------------------------
         # Issue #33 (@pacaeiro): «when doing architecture I work in meters
@@ -642,10 +673,11 @@ class PreferencesDialog(QDialog):
         page = QVBoxLayout(un)
         page.addWidget(self._units_panel)
         page.addStretch(1)
-        tabs.addTab(un, tr("Units"))
-        self._units_page = un
+        self._units_page = _ScrollingPage(un)
+        tabs.addTab(self._units_page, tr("Units"))
 
         # ---- Keyboard shortcuts (issue #138) -------------------------------
+        # (Not wrapped: its list already scrolls on its own.)
         from views.shortcuts import ShortcutsPanel
         self._shortcuts = ShortcutsPanel(self._window)
         tabs.addTab(self._shortcuts, tr("Keyboard shortcuts"))
@@ -665,6 +697,21 @@ class PreferencesDialog(QDialog):
         self._defaults_btn.setToolTip(tr(_DEFAULTS_NOTE))
         self._defaults_btn.clicked.connect(self._ask_restore_defaults)
         layout.addWidget(buttons)
+        self._buttons = buttons
+        screen = (window.screen() if window is not None else None)             or QGuiApplication.primaryScreen()
+        if screen is not None:
+            self.fit_to(screen.availableGeometry())
+
+    def fit_to(self, available: QRect) -> None:
+        """Open no bigger than ``available`` (the screen's free area), so
+        OK and Cancel stay reachable on a short laptop screen (#1336):
+        the pages scroll instead. With room to spare it opens at its
+        natural size, as before."""
+        self.layout().activate()
+        hint = self.sizeHint()
+        self.resize(min(hint.width(), max(available.width(), 1)),
+                    min(hint.height(),
+                        max(available.height() - _FRAME_ALLOWANCE, 1)))
 
     def _refresh_key_env(self, *_args) -> None:
         try:
