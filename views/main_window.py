@@ -2620,11 +2620,12 @@ class MainWindow(QMainWindow):
 
     #: The side tray's width on a first run and after Restore default
     #: panels. The tabs are icons now, so the tray no longer has to be as
-    #: wide as their names: 370 px still holds the Browser's Name, Type
-    #: and Layer uncut (tests/test_browser_columns_fit.py) and Properties
+    #: wide as their names: 400 px still holds the Browser's Name, Type
+    #: and Layer uncut (tests/test_browser_columns_fit.py; at 370 the Layer
+    #: column was cut with the fonts of a Linux desktop) and Properties
     #: whole. The factory layout blob was saved wider; a first run sets
     #: this one over it (``_give_tray_factory_width``).
-    FACTORY_TRAY_WIDTH = 370
+    FACTORY_TRAY_WIDTH = 400
 
     def _give_tray_factory_width(self) -> None:
         """The side tray at :attr:`FACTORY_TRAY_WIDTH` — now and once more

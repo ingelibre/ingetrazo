@@ -181,7 +181,7 @@ def _fits(panel, col) -> bool:
 
 
 def test_the_factory_tray_holds_name_type_and_layer_uncut():
-    """The tabs are icons now and the tray came narrower (439 → 370 px):
+    """The tabs are icons now and the tray came narrower (439 → 400 px):
     at the factory width the daily set still reads whole, with no
     horizontal scroll (Copies turned on fits too: see below — at 360 px
     it ran 6 px past the edge)."""
