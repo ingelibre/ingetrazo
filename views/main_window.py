@@ -122,6 +122,8 @@ _STYLE_TIPS = {
 }
 _SAVE_TIP = ("Save the document — the model and every sheet — to its .igz "
              "file.")
+_OPEN_LOCATION_TIP = ("Open the folder that holds the project's file, with "
+                      "the file picked out in it.")
 _RESET_TOOLBARS_TIP = ("Every toolbar back in its factory place and order, "
                        "the hidden ones shown again. The panels stay as "
                        "they are.")
@@ -1576,6 +1578,8 @@ class MainWindow(QMainWindow):
                 file_menu.addMenu(action)
             else:
                 file_menu.addAction(action)
+        # Greyed out for a project never saved: it has no folder yet.
+        file_menu.aboutToShow.connect(self._sync_open_location)
 
         # Edit menu
         edit_menu = menubar.addMenu(tr("Edit"))
@@ -4018,6 +4022,14 @@ class MainWindow(QMainWindow):
         save_as_action.setShortcut(QKeySequence.SaveAs)
         save_as_action.triggered.connect(self._on_save_as)
         actions.append(save_as_action)
+
+        # The folder of the project in front, with its file picked out;
+        # also on the project tab's right-click menu.
+        self._act_open_location = QAction(tr("Open File Location"), self)
+        self._act_open_location.setStatusTip(tr(_OPEN_LOCATION_TIP))
+        self._act_open_location.triggered.connect(
+            lambda _c=False: self.open_file_location())
+        actions.append(self._act_open_location)
 
         actions.append(self._separator())
 
@@ -8075,8 +8087,26 @@ class MainWindow(QMainWindow):
                 return
         self._build_project_tab_menu(doc).exec(global_pos)
 
+    def open_file_location(self, doc=None) -> bool:
+        """Open the folder that holds ``doc``'s file (the project in front
+        by default) with the file picked out. False for a project never
+        saved."""
+        doc = doc or self.__dict__.get("_doc")
+        path = getattr(doc, "path", None)
+        if path is None:
+            return False
+        from core.desktop_open import reveal_in_folder
+        return reveal_in_folder(path)
+
+    def _sync_open_location(self) -> None:
+        act = self.__dict__.get("_act_open_location")
+        if act is not None:
+            doc = self.__dict__.get("_doc")
+            act.setEnabled(getattr(doc, "path", None) is not None)
+
     def _build_project_tab_menu(self, doc):
-        """A project tab's right-click menu: New, Open…, Save, Save As…;
+        """A project tab's right-click menu: New, Open…, Save, Save As…, Open
+        File Location;
         closing it, the ones to its right or left, or all; and its scenes
         as tabs; the picture on hover over the tabs, as in Preferences."""
         from PySide6.QtGui import QKeySequence
@@ -8099,6 +8129,8 @@ class MainWindow(QMainWindow):
         add(tr("Open…"), self._on_open, QKeySequence.Open)
         add(tr("Save"), self._on_save, QKeySequence.Save)
         add(tr("Save As…"), self._on_save_as, QKeySequence.SaveAs)
+        add(tr("Open File Location"), lambda: self.open_file_location(doc),
+            enabled=doc.path is not None).setStatusTip(tr(_OPEN_LOCATION_TIP))
         menu.addSeparator()
         add(tr("Close Project"), lambda: self.close_document(doc), "Ctrl+W")
         add(tr("Close Projects to the Right"),
