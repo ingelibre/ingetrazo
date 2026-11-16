@@ -3767,5 +3767,7 @@
  "Architect. The units system, the Browser, Layers 2.0, the Solid Inspector, Fillet 3D bevels, Bridge, Join Segments, Camera ▸ Axes, soft ambient occlusion, round curved surfaces, view layouts, scenes as tabs, cleaner exports and many everyday editing tools. And for 0.6.2: the North tool, camera settings, scene transitions with video and the view as layered SVG.": "建築家。単位系、ブラウザ、レイヤー 2.0、ソリッド検査、Fillet 3D の面取り、ブリッジ、線分を結合、カメラ ▸ 軸、ソフトなアンビエントオクルージョン、滑らかな曲面、ビューレイアウト、タブとしてのシーン、よりクリーンなエクスポート、そして日常の多くの編集ツール。0.6.2 では、北ツール、カメラ設定、動画付きのシーン遷移、レイヤー付き SVG としてのビュー出力も。",
  "Korean translation of the interface, and the AI key from an environment variable. In 0.6.2, soft shadows and fixes for macOS.": "インターフェースの韓国語翻訳、および環境変数からの AI キー。0.6.2 ではソフトシャドウと macOS 向けの修正も。",
  "Exact Move+Ctrl copies, overlapping rotated copies, faster box selection on huge models and the reviewed Indonesian translation.": "移動+Ctrl の正確なコピー、重なる回転コピー、巨大モデルでの高速な矩形選択、そして見直されたインドネシア語訳。",
- "Snapping to the rest of the model from inside a group or component.": "グループやコンポーネントの内側からモデルの残りへのスナップ。"
+ "Snapping to the rest of the model from inside a group or component.": "グループやコンポーネントの内側からモデルの残りへのスナップ。",
+ "Open File Location": "ファイルの場所を開く",
+ "Open the folder that holds the project's file, with the file picked out in it.": "プロジェクトのファイルがあるフォルダーを開き、そのファイルを選択した状態にします。"
 }
