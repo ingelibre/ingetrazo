@@ -13030,6 +13030,12 @@ class ComposerWindow(QMainWindow):
         keep = (cam.target, cam.distance, cam.yaw, cam.pitch, cam.fov_deg,
                 cam.perspective, cam.aspect, cam.up,
                 [(ly, ly.visible) for ly in scene.layers])
+        # A scene puts its two-point switch and its lens (shift, roll,
+        # clipping, frame, sensor) on the camera too: they come back as
+        # well, or a scene's picture left the live view in its lens.
+        keep_two_point = getattr(cam, "two_point", None)
+        keep_lens = (cam.lens_dict() if hasattr(cam, "lens_dict") else None)
+        keep_sensor = getattr(cam, "sensor", None)
         keep_section = (
             scene.active_section() if hasattr(scene, "active_section")
             else None,
@@ -13054,12 +13060,20 @@ class ComposerWindow(QMainWindow):
             apply_frame_shadows(frame, scene)
             # A layer set not to print stays out of every sheet, whatever
             # the frame's scene shows (the visibility comes back below).
-            from core.layers import hide_unprinted
-            hide_unprinted(scene)
+            # A scene's picture in the Scenes tab is the screen, where
+            # those layers show.
+            if not getattr(frame, "screen", False):
+                from core.layers import hide_unprinted
+                hide_unprinted(scene)
             return fn()
         finally:
             (cam.target, cam.distance, cam.yaw, cam.pitch, cam.fov_deg,
              cam.perspective, cam.aspect, cam.up) = keep[:8]
+            if keep_two_point is not None:
+                cam.two_point = keep_two_point
+            if keep_lens is not None:
+                cam.apply_lens(keep_lens)
+                cam.sensor = keep_sensor
             for ly, visible in keep[8]:
                 ly.visible = visible
             scene._bounds_cache = None
@@ -13926,20 +13940,24 @@ class ComposerWindow(QMainWindow):
 
     def scene_thumbnail(self, name: str):
         """A small picture of scene ``name`` (cached by name; ``forget``
-        it with :meth:`forget_thumbnails`) — the same render a frame gets,
-        at a size for a list. ``None`` when it cannot render."""
+        it with :meth:`forget_thumbnails`) — the scene as the screen shows
+        it when it is recalled, at a size for a list. ``None`` when it
+        cannot render.
+
+        It used to be the render of a sheet frame: always parallel, at the
+        scale that fits the WHOLE model, 3:2 and on white paper — a scene
+        saved close up, or in perspective, came out as another, farther
+        view. Now the frame is the screen's: the scene's own projection,
+        field of view and distance, the viewport's shape and the scene's
+        background (:meth:`screen_frame`)."""
         cache = self.__dict__.setdefault("_thumbs", {})
         if name in cache:
             return cache[name]
-        from core import outliner
         scene = self._scene()
         view = next((v for v in scene.saved_views if v.name == name), None)
         if view is None:
             return None
-        tmp = MarcoVista(w_mm=36.0, h_mm=24.0, view_key=f"scene:{name}",
-                         style="sombreado", paper_bg=True)
-        tmp.scale_n = outliner.fit_scale(scene, view, tmp.w_mm, tmp.h_mm,
-                                         fill=0.95)
+        tmp = self.screen_frame(view)
         image = None
         try:
             image = self.render_frame(tmp)
@@ -13958,6 +13976,42 @@ class ComposerWindow(QMainWindow):
 
     def forget_thumbnails(self) -> None:
         self.__dict__["_thumbs"] = {}
+
+    #: The height of a scene's picture frame, in paper mm: at RENDER_DPI it
+    #: renders ~280 px tall, four times the list's picture.
+    _SCREEN_FRAME_H_MM = 24.0
+
+    def screen_frame(self, view) -> MarcoVista:
+        """A frame that renders ``view`` (a saved scene) as the screen
+        shows it when the scene is recalled: its projection, field of view
+        and distance — a parallel scene at the height its distance gives
+        the live camera, not a fit to the model — in the shape of the
+        viewport, on the scene's own background, with every layer the
+        scene shows (``screen``: :meth:`_with_frame_camera` does not hide
+        the layers set not to print, :meth:`render_frame` draws the
+        screen's hairlines and shadows)."""
+        aspect = 1.5
+        vp = getattr(self._window, "viewport", None)
+        try:
+            w, h = vp.width(), vp.height()
+            if w > 0 and h > 0:
+                aspect = w / h
+        except (AttributeError, RuntimeError):
+            pass
+        aspect = max(0.25, min(4.0, aspect))
+        h_mm = self._SCREEN_FRAME_H_MM
+        frame = MarcoVista(w_mm=h_mm * aspect, h_mm=h_mm,
+                           view_key=f"scene:{view.name}", style="sombreado",
+                           paper_bg=False, perspective=bool(view.perspective),
+                           cam_distance=float(view.distance),
+                           cam_fov=float(view.fov_deg))
+        # The live camera's parallel half-height is distance·tan(fov/2)
+        # (core/camera.py); 1:N on a frame h_mm tall shows h_mm·N/1000 m.
+        model_h = 2.0 * float(view.distance) * math.tan(
+            math.radians(float(view.fov_deg)) / 2.0)
+        frame.scale_n = max(model_h * 1000.0 / h_mm, 1e-6)
+        frame.screen = True
+        return frame
 
     def missing_scene(self, frame) -> Optional[str]:
         """The name of the scene *frame* shows when the model no longer
@@ -14010,14 +14064,16 @@ class ComposerWindow(QMainWindow):
                         vp._effective_style(), background=(1.0, 1.0, 1.0),
                         sky=False)
                 w_px, h_px = frame.render_px(RENDER_DPI)
+                screen = getattr(frame, "screen", False)
                 # The edge / profile pens, in pixels at the render dpi:
-                # the GL pass thickens its one-pixel lines to match.
-                vp._export_edge_px = pen_px(
+                # the GL pass thickens its one-pixel lines to match. A
+                # picture of the screen keeps the screen's hairlines.
+                vp._export_edge_px = 1 if screen else pen_px(
                     getattr(frame, "pen_edge_mm", 0.18), RENDER_DPI)
-                vp._export_profile_px = pen_px(
+                vp._export_profile_px = 1 if screen else pen_px(
                     getattr(frame, "pen_profile_mm", 0.35), RENDER_DPI)
                 return vp.render_image(w_px, h_px, overlays=False,
-                                       sharp_shadows=True)
+                                       sharp_shadows=not screen)
             finally:
                 vp.plano_style = None
                 vp.style_override = None
@@ -14952,6 +15008,8 @@ class SceneThumbnailer:
     render_frame = ComposerWindow.render_frame
     scene_thumbnail = ComposerWindow.scene_thumbnail
     forget_thumbnails = ComposerWindow.forget_thumbnails
+    screen_frame = ComposerWindow.screen_frame
+    _SCREEN_FRAME_H_MM = ComposerWindow._SCREEN_FRAME_H_MM
     missing_scene = ComposerWindow.missing_scene
     frame_is_perspective = ComposerWindow.frame_is_perspective
     _with_frame_camera = ComposerWindow._with_frame_camera
