@@ -502,15 +502,34 @@ class ChromeStyle(QProxyStyle):
         painter.fillRect(line, grip_colour())
 
 
+def _luminance(colour: QColor) -> float:
+    """Relative luminance (0 black … 1 white), as the web's contrast
+    guidelines reckon it."""
+    def lin(c: float) -> float:
+        return c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4
+    return (0.2126 * lin(colour.redF()) + 0.7152 * lin(colour.greenF())
+            + 0.0722 * lin(colour.blueF()))
+
+
+def text_on(background: QColor) -> QColor:
+    """The text colour that reads on ``background``: black on a light one
+    (the White and Light grey accents, a pale system accent), else white."""
+    if _luminance(background) >= 0.45:
+        return QColor(0, 0, 0)
+    return QColor(255, 255, 255)
+
+
 def tokens() -> dict[str, str]:
-    """Colours a stylesheet template may name, for the palette in force."""
+    """Colours a stylesheet template may name, for the palette in force:
+    ``accent_text`` is the text to write on an ``accent_rgb`` background."""
     app = QGuiApplication.instance()
     dark = (app is None
             or app.palette().color(QPalette.Window).lightness() < 128)
     accent = accent_color()
     return {"muted": "#8a94a0" if dark else "#5a6472",
             "accent_rgb": f"{accent.red()}, {accent.green()}, "
-                          f"{accent.blue()}"}
+                          f"{accent.blue()}",
+            "accent_text": text_on(accent).name()}
 
 
 # ---- stylesheet templates that follow the theme ----------------------------
