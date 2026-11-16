@@ -1222,6 +1222,44 @@ def test_active_pencil_follows_the_chosen_accent(win):
         theme.apply_accent(_app)
 
 
+def test_bar_buttons_follow_the_chosen_accent(win):
+    # A new accent left the Layers tab's «Add layer», «Add folder», «Colour
+    # by layer» and «Templates», and the Browser's «Order», in the old one
+    # until the app was opened again.
+    from views import theme
+
+    panel = win.layers_dock.panel
+    browser = win.project_browser.outliner
+
+    def count(icon, colour):
+        image = icon.pixmap(24, 24).toImage()
+        return sum(
+            1 for y in range(image.height()) for x in range(image.width())
+            if image.pixelColor(x, y).alpha() > 150
+            and abs(image.pixelColor(x, y).red() - colour.red()) < 20
+            and abs(image.pixelColor(x, y).green() - colour.green()) < 20
+            and abs(image.pixelColor(x, y).blue() - colour.blue()) < 20)
+
+    buttons = {"add layer": panel.add_layer_btn,
+               "add folder": panel.add_folder_btn,
+               "colour by layer": panel.color_by_layer,
+               "templates": panel.more_btn,
+               "browser order": browser._order_btn}
+    orange = theme.accent_color(theme.ORANGE)
+    blue = theme.accent_color("blue")
+    for name, btn in buttons.items():          # they do wear the accent
+        assert count(btn.icon(), orange) > 0, name
+    try:
+        theme.save_accent("blue")
+        theme.apply_accent(_app)
+        for name, btn in buttons.items():
+            assert count(btn.icon(), blue) > 0, name
+            assert count(btn.icon(), orange) == 0, name
+    finally:
+        theme.save_accent(theme.ORANGE)
+        theme.apply_accent(_app)
+
+
 def test_row_icons_follow_a_live_theme_switch(win):
     # #1086: after switching the theme with the app open, the eye, padlock,
     # isolate and print marks stayed in the previous theme's ink

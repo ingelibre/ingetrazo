@@ -118,6 +118,12 @@ _TREE_KEYS = {Qt.Key_Space, Qt.Key_Return, Qt.Key_Enter, Qt.Key_Escape,
 _ICONS: dict = {}
 
 
+def clear_icon_cache() -> None:
+    """Forget the drawn icons — the accent changed. :func:`node_icon` keeps
+    them per palette, and a new accent leaves the palette as it was."""
+    _ICONS.clear()
+
+
 def _ink() -> QColor:
     from PySide6.QtWidgets import QApplication
     return QApplication.palette().text().color()
