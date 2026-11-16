@@ -3804,5 +3804,13 @@
  "Snap to any point along an edge, a guide line or a guide circle.": "모서리, 가이드 선 또는 가이드 원 위의 임의의 점에 스냅합니다.",
  "Snap to the centre of faces, and show a dot at the centre of the selected ones.": "면의 중심에 스냅하고 선택한 면의 중심에 점을 표시합니다.",
  "Snap to the centre, quadrants and tangent points of circles and arcs.": "원과 호의 중심, 사분점, 접점에 스냅합니다.",
- "Snap to the model origin and to the origin of groups and components.": "모델 원점과 그룹 및 컴포넌트의 원점에 스냅합니다."
+ "Snap to the model origin and to the origin of groups and components.": "모델 원점과 그룹 및 컴포넌트의 원점에 스냅합니다.",
+ "Make Faces and Extrude…": "면 만들기 및 돌출…",
+ "Make Faces and Extrude": "면 만들기 및 돌출",
+ "Make the faces that the selected edges close and extrude each one into its own solid group.": "선택한 모서리가 닫는 면을 만들고 각각을 별도의 솔리드 그룹으로 돌출합니다.",
+ "A negative height extrudes the other way.": "음수 높이는 반대 방향으로 돌출합니다.",
+ "Make Faces and Extrude: {n} solids, {h} high": "면 만들기 및 돌출: 솔리드 {n}개, 높이 {h}",
+ "The height cannot be zero.": "높이는 0일 수 없습니다.",
+ "Extrude inner loops too": "안쪽 윤곽도 돌출",
+ "Off: a loop inside another is left as a hole (the room inside the walls, the bore of a tube).\nOn: it becomes a solid of its own too (a column inside a slab).": "끔: 다른 윤곽 안에 있는 윤곽은 구멍으로 남습니다 (벽 안의 방, 관의 내부).\n켬: 그것도 별도의 솔리드가 됩니다 (슬래브 안의 기둥)."
 }

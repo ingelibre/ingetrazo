@@ -3812,5 +3812,13 @@
  "Snap to any point along an edge, a guide line or a guide circle.": "Przyciąga do dowolnego punktu krawędzi, linii pomocniczej lub okręgu pomocniczego.",
  "Snap to the centre of faces, and show a dot at the centre of the selected ones.": "Przyciąga do środka ścian i pokazuje punkt w środku zaznaczonych.",
  "Snap to the centre, quadrants and tangent points of circles and arcs.": "Przyciąga do środka, kwadrantów i punktów styczności okręgów i łuków.",
- "Snap to the model origin and to the origin of groups and components.": "Przyciąga do początku układu modelu oraz do początku grup i komponentów."
+ "Snap to the model origin and to the origin of groups and components.": "Przyciąga do początku układu modelu oraz do początku grup i komponentów.",
+ "Make Faces and Extrude…": "Utwórz ściany i wyciągnij…",
+ "Make Faces and Extrude": "Utwórz ściany i wyciągnij",
+ "Make the faces that the selected edges close and extrude each one into its own solid group.": "Tworzy ściany zamknięte przez zaznaczone krawędzie i wyciąga każdą do osobnej grupy bryłowej.",
+ "A negative height extrudes the other way.": "Ujemna wysokość wyciąga w drugą stronę.",
+ "Make Faces and Extrude: {n} solids, {h} high": "Utwórz ściany i wyciągnij: brył: {n}, wysokość {h}",
+ "The height cannot be zero.": "Wysokość nie może wynosić zero.",
+ "Extrude inner loops too": "Wyciągnij też kontury wewnętrzne",
+ "Off: a loop inside another is left as a hole (the room inside the walls, the bore of a tube).\nOn: it becomes a solid of its own too (a column inside a slab).": "Wyłączone: kontur wewnątrz innego zostaje otworem (pokój między ścianami, wnętrze rury).\nWłączone: on też staje się osobną bryłą (słup w stropie)."
 }

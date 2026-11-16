@@ -3839,5 +3839,13 @@
  "Snap to any point along an edge, a guide line or a guide circle.": "الالتقاط عند أي نقطة على حافة أو خط دليل أو دائرة دليل.",
  "Snap to the centre of faces, and show a dot at the centre of the selected ones.": "الالتقاط عند مركز الأوجه، وإظهار نقطة في مركز الأوجه المحددة.",
  "Snap to the centre, quadrants and tangent points of circles and arcs.": "الالتقاط عند مركز الدوائر والأقواس وأرباعها ونقاط التماس.",
- "Snap to the model origin and to the origin of groups and components.": "الالتقاط عند أصل النموذج وأصل المجموعات والمكونات."
+ "Snap to the model origin and to the origin of groups and components.": "الالتقاط عند أصل النموذج وأصل المجموعات والمكونات.",
+ "Make Faces and Extrude…": "إنشاء الأوجه والبثق…",
+ "Make Faces and Extrude": "إنشاء الأوجه والبثق",
+ "Make the faces that the selected edges close and extrude each one into its own solid group.": "ينشئ الأوجه التي تغلقها الحواف المحددة ويبثق كل وجه إلى مجموعة مصمتة مستقلة.",
+ "A negative height extrudes the other way.": "الارتفاع السالب يبثق في الاتجاه المعاكس.",
+ "Make Faces and Extrude: {n} solids, {h} high": "إنشاء الأوجه والبثق: {n} من المجسمات بارتفاع {h}",
+ "The height cannot be zero.": "لا يمكن أن يكون الارتفاع صفرًا.",
+ "Extrude inner loops too": "بثق المحيطات الداخلية أيضًا",
+ "Off: a loop inside another is left as a hole (the room inside the walls, the bore of a tube).\nOn: it becomes a solid of its own too (a column inside a slab).": "إيقاف: يبقى المحيط الواقع داخل محيط آخر فتحةً (الغرفة داخل الجدران، تجويف الأنبوب).\nتشغيل: يصبح هو أيضًا مجسمًا مستقلًا (عمود داخل بلاطة)."
 }

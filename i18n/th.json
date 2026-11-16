@@ -3807,5 +3807,13 @@
  "Snap to any point along an edge, a guide line or a guide circle.": "สแนปที่จุดใดก็ได้บนขอบ เส้นไกด์ หรือวงกลมไกด์",
  "Snap to the centre of faces, and show a dot at the centre of the selected ones.": "สแนปที่จุดศูนย์กลางของพื้นผิว และแสดงจุดที่กึ่งกลางของพื้นผิวที่เลือก",
  "Snap to the centre, quadrants and tangent points of circles and arcs.": "สแนปที่จุดศูนย์กลาง จุดควอดแรนต์ และจุดสัมผัสของวงกลมและส่วนโค้ง",
- "Snap to the model origin and to the origin of groups and components.": "สแนปที่จุดกำเนิดของโมเดล และจุดกำเนิดของกลุ่มและคอมโพเนนต์"
+ "Snap to the model origin and to the origin of groups and components.": "สแนปที่จุดกำเนิดของโมเดล และจุดกำเนิดของกลุ่มและคอมโพเนนต์",
+ "Make Faces and Extrude…": "สร้างระนาบและอัดขึ้นรูป…",
+ "Make Faces and Extrude": "สร้างระนาบและอัดขึ้นรูป",
+ "Make the faces that the selected edges close and extrude each one into its own solid group.": "สร้างระนาบที่ขอบที่เลือกปิดล้อม แล้วอัดขึ้นรูปแต่ละระนาบเป็นกลุ่มของแข็งแยกกัน",
+ "A negative height extrudes the other way.": "ความสูงติดลบจะอัดขึ้นรูปไปอีกทาง",
+ "Make Faces and Extrude: {n} solids, {h} high": "สร้างระนาบและอัดขึ้นรูป: ของแข็ง {n} ชิ้น สูง {h}",
+ "The height cannot be zero.": "ความสูงต้องไม่เป็นศูนย์",
+ "Extrude inner loops too": "อัดขึ้นรูปเส้นรอบรูปด้านในด้วย",
+ "Off: a loop inside another is left as a hole (the room inside the walls, the bore of a tube).\nOn: it becomes a solid of its own too (a column inside a slab).": "ปิด: เส้นรอบรูปที่อยู่ภายในอีกเส้นจะคงเป็นช่องว่าง (ห้องภายในผนัง, ช่องในท่อ)\nเปิด: จะกลายเป็นของแข็งแยกอีกชิ้นด้วย (เสาภายในพื้น)"
 }

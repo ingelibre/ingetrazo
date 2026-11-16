@@ -3805,5 +3805,13 @@
  "Snap to any point along an edge, a guide line or a guide circle.": "Aggancia a qualsiasi punto lungo uno spigolo, una linea guida o un cerchio guida.",
  "Snap to the centre of faces, and show a dot at the centre of the selected ones.": "Aggancia al centro delle facce e mostra un punto al centro di quelle selezionate.",
  "Snap to the centre, quadrants and tangent points of circles and arcs.": "Aggancia al centro, ai quadranti e ai punti di tangenza di cerchi e archi.",
- "Snap to the model origin and to the origin of groups and components.": "Aggancia all'origine del modello e all'origine di gruppi e componenti."
+ "Snap to the model origin and to the origin of groups and components.": "Aggancia all'origine del modello e all'origine di gruppi e componenti.",
+ "Make Faces and Extrude…": "Crea facce ed estrudi…",
+ "Make Faces and Extrude": "Crea facce ed estrudi",
+ "Make the faces that the selected edges close and extrude each one into its own solid group.": "Crea le facce chiuse dagli spigoli selezionati ed estrude ciascuna in un proprio gruppo solido.",
+ "A negative height extrudes the other way.": "Un'altezza negativa estrude dall'altra parte.",
+ "Make Faces and Extrude: {n} solids, {h} high": "Crea facce ed estrudi: {n} solidi alti {h}",
+ "The height cannot be zero.": "L'altezza non può essere zero.",
+ "Extrude inner loops too": "Estrudi anche i contorni interni",
+ "Off: a loop inside another is left as a hole (the room inside the walls, the bore of a tube).\nOn: it becomes a solid of its own too (a column inside a slab).": "Disattivato: un contorno dentro un altro resta un foro (la stanza dentro i muri, l'interno di un tubo).\nAttivato: diventa anch'esso un solido a sé (un pilastro dentro un solaio)."
 }

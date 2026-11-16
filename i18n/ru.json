@@ -3804,5 +3804,13 @@
  "Snap to any point along an edge, a guide line or a guide circle.": "Привязка к любой точке ребра, направляющей линии или направляющей окружности.",
  "Snap to the centre of faces, and show a dot at the centre of the selected ones.": "Привязка к центру граней и точка в центре выбранных граней.",
  "Snap to the centre, quadrants and tangent points of circles and arcs.": "Привязка к центру, квадрантам и точкам касания окружностей и дуг.",
- "Snap to the model origin and to the origin of groups and components.": "Привязка к началу координат модели и к началу групп и компонентов."
+ "Snap to the model origin and to the origin of groups and components.": "Привязка к началу координат модели и к началу групп и компонентов.",
+ "Make Faces and Extrude…": "Создать грани и выдавить…",
+ "Make Faces and Extrude": "Создать грани и выдавить",
+ "Make the faces that the selected edges close and extrude each one into its own solid group.": "Создаёт грани, замкнутые выбранными рёбрами, и выдавливает каждую в отдельную твердотельную группу.",
+ "A negative height extrudes the other way.": "Отрицательная высота выдавливает в другую сторону.",
+ "Make Faces and Extrude: {n} solids, {h} high": "Создать грани и выдавить: тел — {n}, высота {h}",
+ "The height cannot be zero.": "Высота не может быть нулевой.",
+ "Extrude inner loops too": "Выдавливать и внутренние контуры",
+ "Off: a loop inside another is left as a hole (the room inside the walls, the bore of a tube).\nOn: it becomes a solid of its own too (a column inside a slab).": "Выкл.: контур внутри другого остаётся отверстием (комната внутри стен, полость трубы).\nВкл.: он тоже становится отдельным телом (колонна внутри плиты)."
 }

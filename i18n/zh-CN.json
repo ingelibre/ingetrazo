@@ -3805,5 +3805,13 @@
  "Snap to any point along an edge, a guide line or a guide circle.": "捕捉到边、辅助线或辅助圆上的任意点。",
  "Snap to the centre of faces, and show a dot at the centre of the selected ones.": "捕捉到面的中心，并在所选面的中心显示一个点。",
  "Snap to the centre, quadrants and tangent points of circles and arcs.": "捕捉到圆和圆弧的中心、象限点和切点。",
- "Snap to the model origin and to the origin of groups and components.": "捕捉到模型原点以及组和组件的原点。"
+ "Snap to the model origin and to the origin of groups and components.": "捕捉到模型原点以及组和组件的原点。",
+ "Make Faces and Extrude…": "创建面并拉伸…",
+ "Make Faces and Extrude": "创建面并拉伸",
+ "Make the faces that the selected edges close and extrude each one into its own solid group.": "创建所选边闭合的面，并将每个面拉伸为独立的实体组。",
+ "A negative height extrudes the other way.": "负高度向相反方向拉伸。",
+ "Make Faces and Extrude: {n} solids, {h} high": "创建面并拉伸：{n} 个实体，高 {h}",
+ "The height cannot be zero.": "高度不能为零。",
+ "Extrude inner loops too": "同时拉伸内部轮廓",
+ "Off: a loop inside another is left as a hole (the room inside the walls, the bore of a tube).\nOn: it becomes a solid of its own too (a column inside a slab).": "关闭：位于另一轮廓内的轮廓保留为孔洞（墙内的房间、管道内部）。\n开启：它也成为独立的实体（楼板内的柱子）。"
 }

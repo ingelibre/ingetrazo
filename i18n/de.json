@@ -3804,5 +3804,13 @@
  "Snap to any point along an edge, a guide line or a guide circle.": "Fängt an jedem Punkt entlang einer Kante, einer Hilfslinie oder eines Hilfskreises.",
  "Snap to the centre of faces, and show a dot at the centre of the selected ones.": "Fängt am Mittelpunkt von Flächen und zeigt einen Punkt in der Mitte der ausgewählten.",
  "Snap to the centre, quadrants and tangent points of circles and arcs.": "Fängt am Mittelpunkt, an den Quadranten und an den Tangentenpunkten von Kreisen und Bögen.",
- "Snap to the model origin and to the origin of groups and components.": "Fängt am Modellursprung und am Ursprung von Gruppen und Komponenten."
+ "Snap to the model origin and to the origin of groups and components.": "Fängt am Modellursprung und am Ursprung von Gruppen und Komponenten.",
+ "Make Faces and Extrude…": "Flächen erzeugen und extrudieren…",
+ "Make Faces and Extrude": "Flächen erzeugen und extrudieren",
+ "Make the faces that the selected edges close and extrude each one into its own solid group.": "Erzeugt die Flächen, die die ausgewählten Kanten schließen, und extrudiert jede zu einer eigenen Volumengruppe.",
+ "A negative height extrudes the other way.": "Eine negative Höhe extrudiert in die andere Richtung.",
+ "Make Faces and Extrude: {n} solids, {h} high": "Flächen erzeugen und extrudieren: {n} Volumenkörper, {h} hoch",
+ "The height cannot be zero.": "Die Höhe darf nicht null sein.",
+ "Extrude inner loops too": "Auch innere Konturen extrudieren",
+ "Off: a loop inside another is left as a hole (the room inside the walls, the bore of a tube).\nOn: it becomes a solid of its own too (a column inside a slab).": "Aus: Eine Kontur innerhalb einer anderen bleibt ein Loch (der Raum zwischen den Wänden, die Bohrung eines Rohrs).\nEin: Sie wird ebenfalls ein eigener Körper (eine Stütze in einer Decke)."
 }

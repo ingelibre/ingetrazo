@@ -3831,5 +3831,13 @@
  "Snap to any point along an edge, a guide line or a guide circle.": "Bắt vào bất kỳ điểm nào trên cạnh, đường dẫn hoặc đường tròn dẫn.",
  "Snap to the centre of faces, and show a dot at the centre of the selected ones.": "Bắt vào tâm của mặt và hiện một chấm ở tâm các mặt được chọn.",
  "Snap to the centre, quadrants and tangent points of circles and arcs.": "Bắt vào tâm, góc phần tư và tiếp điểm của đường tròn và cung.",
- "Snap to the model origin and to the origin of groups and components.": "Bắt vào gốc tọa độ của mô hình và gốc của nhóm và thành phần."
+ "Snap to the model origin and to the origin of groups and components.": "Bắt vào gốc tọa độ của mô hình và gốc của nhóm và thành phần.",
+ "Make Faces and Extrude…": "Tạo mặt và đùn…",
+ "Make Faces and Extrude": "Tạo mặt và đùn",
+ "Make the faces that the selected edges close and extrude each one into its own solid group.": "Tạo các mặt được khép kín bởi các cạnh đã chọn và đùn mỗi mặt thành một nhóm khối riêng.",
+ "A negative height extrudes the other way.": "Chiều cao âm sẽ đùn theo hướng ngược lại.",
+ "Make Faces and Extrude: {n} solids, {h} high": "Tạo mặt và đùn: {n} khối, cao {h}",
+ "The height cannot be zero.": "Chiều cao không thể bằng không.",
+ "Extrude inner loops too": "Đùn cả các đường viền bên trong",
+ "Off: a loop inside another is left as a hole (the room inside the walls, the bore of a tube).\nOn: it becomes a solid of its own too (a column inside a slab).": "Tắt: đường viền nằm trong đường viền khác được giữ là lỗ (căn phòng bên trong tường, lòng ống).\nBật: nó cũng thành một khối riêng (cột bên trong sàn)."
 }

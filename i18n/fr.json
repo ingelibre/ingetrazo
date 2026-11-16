@@ -3804,5 +3804,13 @@
  "Snap to any point along an edge, a guide line or a guide circle.": "Accroche à n'importe quel point d'une arête, d'une ligne guide ou d'un cercle guide.",
  "Snap to the centre of faces, and show a dot at the centre of the selected ones.": "Accroche au centre des faces et affiche un point au centre des faces sélectionnées.",
  "Snap to the centre, quadrants and tangent points of circles and arcs.": "Accroche au centre, aux quadrants et aux points de tangence des cercles et des arcs.",
- "Snap to the model origin and to the origin of groups and components.": "Accroche à l'origine du modèle et à l'origine des groupes et composants."
+ "Snap to the model origin and to the origin of groups and components.": "Accroche à l'origine du modèle et à l'origine des groupes et composants.",
+ "Make Faces and Extrude…": "Créer des faces et extruder…",
+ "Make Faces and Extrude": "Créer des faces et extruder",
+ "Make the faces that the selected edges close and extrude each one into its own solid group.": "Crée les faces que ferment les arêtes sélectionnées et extrude chacune dans son propre groupe solide.",
+ "A negative height extrudes the other way.": "Une hauteur négative extrude dans l'autre sens.",
+ "Make Faces and Extrude: {n} solids, {h} high": "Créer des faces et extruder : {n} solides de {h} de haut",
+ "The height cannot be zero.": "La hauteur ne peut pas être nulle.",
+ "Extrude inner loops too": "Extruder aussi les contours intérieurs",
+ "Off: a loop inside another is left as a hole (the room inside the walls, the bore of a tube).\nOn: it becomes a solid of its own too (a column inside a slab).": "Désactivé : un contour situé dans un autre reste un trou (la pièce entre les murs, l'intérieur d'un tube).\nActivé : il devient aussi un solide à part (un poteau dans une dalle)."
 }

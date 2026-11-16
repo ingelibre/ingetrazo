@@ -3805,5 +3805,13 @@
  "Snap to any point along an edge, a guide line or a guide circle.": "Привличане към всяка точка по ръб, помощна линия или помощна окръжност.",
  "Snap to the centre of faces, and show a dot at the centre of the selected ones.": "Привличане към центъра на повърхнините и точка в центъра на избраните.",
  "Snap to the centre, quadrants and tangent points of circles and arcs.": "Привличане към центъра, квадрантите и допирните точки на окръжности и дъги.",
- "Snap to the model origin and to the origin of groups and components.": "Привличане към началото на модела и към началото на групи и компоненти."
+ "Snap to the model origin and to the origin of groups and components.": "Привличане към началото на модела и към началото на групи и компоненти.",
+ "Make Faces and Extrude…": "Създаване на повърхнини и изтегляне…",
+ "Make Faces and Extrude": "Създаване на повърхнини и изтегляне",
+ "Make the faces that the selected edges close and extrude each one into its own solid group.": "Създава повърхнините, затворени от избраните ръбове, и изтегля всяка в отделна плътна група.",
+ "A negative height extrudes the other way.": "Отрицателна височина изтегля в другата посока.",
+ "Make Faces and Extrude: {n} solids, {h} high": "Създаване на повърхнини и изтегляне: {n} тела с височина {h}",
+ "The height cannot be zero.": "Височината не може да бъде нула.",
+ "Extrude inner loops too": "Изтегляне и на вътрешните контури",
+ "Off: a loop inside another is left as a hole (the room inside the walls, the bore of a tube).\nOn: it becomes a solid of its own too (a column inside a slab).": "Изключено: контур вътре в друг остава отвор (стаята между стените, вътрешността на тръба).\nВключено: и той става отделно тяло (колона в плоча)."
 }

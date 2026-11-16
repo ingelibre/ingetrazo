@@ -3804,5 +3804,13 @@
  "Snap to any point along an edge, a guide line or a guide circle.": "Engancha a cualquier punto de una arista, una línea guía o un círculo guía.",
  "Snap to the centre of faces, and show a dot at the centre of the selected ones.": "Engancha al centro de las caras y muestra un punto en el centro de las seleccionadas.",
  "Snap to the centre, quadrants and tangent points of circles and arcs.": "Engancha al centro, los cuadrantes y los puntos de tangencia de círculos y arcos.",
- "Snap to the model origin and to the origin of groups and components.": "Engancha al origen del modelo y al origen de grupos y componentes."
+ "Snap to the model origin and to the origin of groups and components.": "Engancha al origen del modelo y al origen de grupos y componentes.",
+ "Make Faces and Extrude…": "Crear caras y extruir…",
+ "Make Faces and Extrude": "Crear caras y extruir",
+ "Make the faces that the selected edges close and extrude each one into its own solid group.": "Crea las caras que cierran las aristas seleccionadas y extruye cada una en su propio grupo sólido.",
+ "A negative height extrudes the other way.": "Una altura negativa extruye hacia el otro lado.",
+ "Make Faces and Extrude: {n} solids, {h} high": "Crear caras y extruir: {n} sólidos de {h} de alto",
+ "The height cannot be zero.": "La altura no puede ser cero.",
+ "Extrude inner loops too": "Extruir también los contornos interiores",
+ "Off: a loop inside another is left as a hole (the room inside the walls, the bore of a tube).\nOn: it becomes a solid of its own too (a column inside a slab).": "Apagado: un contorno dentro de otro queda como hueco (la habitación dentro de los muros, el interior de un tubo).\nEncendido: también se vuelve un sólido propio (una columna dentro de una losa)."
 }

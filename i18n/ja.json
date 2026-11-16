@@ -3804,5 +3804,13 @@
  "Snap to any point along an edge, a guide line or a guide circle.": "エッジ、ガイドライン、ガイド円上の任意の点にスナップします。",
  "Snap to the centre of faces, and show a dot at the centre of the selected ones.": "面の中心にスナップし、選択した面の中心に点を表示します。",
  "Snap to the centre, quadrants and tangent points of circles and arcs.": "円と円弧の中心、四分点、接点にスナップします。",
- "Snap to the model origin and to the origin of groups and components.": "モデルの原点と、グループやコンポーネントの原点にスナップします。"
+ "Snap to the model origin and to the origin of groups and components.": "モデルの原点と、グループやコンポーネントの原点にスナップします。",
+ "Make Faces and Extrude…": "面を作成して押し出し…",
+ "Make Faces and Extrude": "面を作成して押し出し",
+ "Make the faces that the selected edges close and extrude each one into its own solid group.": "選択したエッジが閉じる面を作成し、それぞれを個別のソリッドグループに押し出します。",
+ "A negative height extrudes the other way.": "負の高さは反対方向に押し出します。",
+ "Make Faces and Extrude: {n} solids, {h} high": "面を作成して押し出し: ソリッド {n} 個、高さ {h}",
+ "The height cannot be zero.": "高さを 0 にすることはできません。",
+ "Extrude inner loops too": "内側の輪郭も押し出す",
+ "Off: a loop inside another is left as a hole (the room inside the walls, the bore of a tube).\nOn: it becomes a solid of its own too (a column inside a slab).": "オフ: 別の輪郭の内側にある輪郭は穴のまま残ります (壁に囲まれた部屋、管の内側)。\nオン: それも個別のソリッドになります (スラブ内の柱)。"
 }

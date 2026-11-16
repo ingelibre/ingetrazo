@@ -585,6 +585,42 @@ def _make_faces(p, ink):
     p.restore()
 
 
+def _make_faces_extrude(p, ink):
+    """Make Faces and Extrude: Make Faces' loop with its corners in the
+    accent, at the bottom, and the solid it rises into: the same outline
+    lifted, joined by its upright edges, and an arrow going up."""
+    lift = 16.0
+    base = [QPointF(4, 36), QPointF(18, 28), QPointF(32, 36), QPointF(18, 44)]
+    top = [QPointF(q.x(), q.y() - lift) for q in base]
+    acc = _accent()
+    p.save()
+    p.setPen(Qt.NoPen)
+    p.setBrush(QColor(acc.red(), acc.green(), acc.blue(), 130))
+    p.drawPolygon(QPolygonF(base))
+    p.restore()
+    p.setBrush(Qt.NoBrush)
+    p.drawPolygon(QPolygonF(base))
+    p.drawPolygon(QPolygonF(top))
+    for a, b in zip(base, top):
+        if a.y() > 30:                       # the hidden back edge stays off
+            p.drawLine(a, b)
+    p.save()
+    p.setPen(QPen(ink, 1.4))
+    p.setBrush(QBrush(acc))
+    for q in base:
+        p.drawEllipse(q, 3.0, 3.0)
+    p.restore()
+    p.save()
+    arrow = QPen(ink, 3.0)
+    arrow.setCapStyle(Qt.RoundCap)
+    arrow.setJoinStyle(Qt.RoundJoin)
+    p.setPen(arrow)
+    p.drawLine(QPointF(40, 22), QPointF(40, 5))
+    p.drawPolyline(QPolygonF([QPointF(35, 10), QPointF(40, 5),
+                              QPointF(45, 10)]))
+    p.restore()
+
+
 def _offset(p, ink):
     p.setBrush(Qt.NoBrush)
     p.drawRect(QRectF(10, 12, 28, 24))
@@ -2563,6 +2599,7 @@ _DRAW = {
     "arc": _arc, "arc3": _arc3, "center_arc": _center_arc, "pie": _pie,
     "rotate": _rotate, "scale": _scale, "flip": _flip, "followme": _followme, "pushpull": _pushpull, "offset": _offset, "fillet": _fillet,
     "bridge": _bridge, "make_faces": _make_faces,
+    "make_faces_extrude": _make_faces_extrude,
     "move": _move, "paint": _paint, "eyedropper": _eyedropper,
     "dimension": _dimension, "dimension_chain": _dimension_chain,
     "dimension_radius": _dimension_radius,

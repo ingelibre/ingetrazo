@@ -1392,6 +1392,22 @@ class MainWindow(QMainWindow):
         self._act_make_faces.triggered.connect(self._on_make_faces)
         self.toolbars["modify"].addAction(self._act_make_faces)
         self._icon_actions.append((self._act_make_faces, "make_faces"))
+        # Make Faces and Extrude: the same faces, each one straight into its
+        # own solid of the height asked for — the step that nearly always
+        # follows on an imported plan (walls, a slab, kerbs).
+        self._act_make_faces_extrude = QAction(
+            tool_icon("make_faces_extrude"), tr("Make Faces and Extrude…"),
+            self)
+        self._act_make_faces_extrude.setStatusTip(tr(
+            "Make the faces that the selected edges close and extrude each "
+            "one into its own solid group."))
+        set_tooltip(self._act_make_faces_extrude,
+                    tr("Make Faces and Extrude…"))
+        self._act_make_faces_extrude.triggered.connect(
+            lambda: self._on_make_faces_extrude())
+        self.toolbars["modify"].addAction(self._act_make_faces_extrude)
+        self._icon_actions.append((self._act_make_faces_extrude,
+                                   "make_faces_extrude"))
 
         # Save, first on the Main bar (the composer's Sheet bar has had it
         # since the start; Marco, 2026-09-14: «el icono de guardar también en
@@ -2215,6 +2231,7 @@ class MainWindow(QMainWindow):
                 # out of others: the Modify toolbar's own action.
                 tools_menu.addAction(self._act_bridge)
                 tools_menu.addAction(self._act_make_faces)
+                tools_menu.addAction(self._act_make_faces_extrude)
             tools_menu.addSeparator()
         # Tools ▸ Outer Shell, and Tools ▸ Solid Tools ▸ the rest.
         tools_menu.addAction(self._tool_actions["outer_shell"])
@@ -6294,6 +6311,8 @@ class MainWindow(QMainWindow):
             menu.addAction(tr("Bridge"), self._on_bridge)
         if self._makes_faces(sel):
             menu.addAction(tr("Make Faces"), self._on_make_faces)
+            menu.addAction(tr("Make Faces and Extrude…"),
+                           lambda: self._on_make_faces_extrude())
         if has_mesh or has_group:
             # Flip Along ▸ Red / Green / Blue: a mirror in place about the
             # selection's centre in one click, the way modelling tutorials
@@ -6923,6 +6942,93 @@ class MainWindow(QMainWindow):
             msg = tr("Make Faces: {n} faces made", n=result["new"])
         elif faces:
             msg = tr("Make Faces: those loops already had their faces")
+        else:
+            msg = tr("Make Faces: an existing face already covers those "
+                     "loops")
+        self.viewport.flash_status(msg, 3000)
+
+    #: Where the last height of Make Faces and Extrude is remembered, and
+    #: whether it extrudes the inner loops too.
+    _MFE_HEIGHT_KEY = "tools/make_faces_extrude_height"
+    _MFE_FILL_KEY = "tools/make_faces_extrude_fill_holes"
+
+    def _make_faces_extrude_dialog(self):
+        """``(height, fill_holes)`` for Make Faces and Extrude — the height
+        in the document's units (negative = the other way) and whether a
+        loop inside another becomes a solid too — or ``None`` if cancelled.
+        Opens with what was used last."""
+        from PySide6.QtWidgets import (QCheckBox, QDialog, QDialogButtonBox,
+                                       QFormLayout)
+        from views.length_field import LengthSpinBox
+        dlg = QDialog(self)
+        dlg.setWindowTitle(tr("Make Faces and Extrude"))
+        form = QFormLayout(dlg)
+        spin = LengthSpinBox(minimum=-1000.0, maximum=1000.0)
+        try:
+            last = float(QSettings().value(self._MFE_HEIGHT_KEY, 3.0))
+        except (TypeError, ValueError):
+            last = 3.0
+        spin.setValue(last)
+        spin.setToolTip(tr("A negative height extrudes the other way."))
+        form.addRow(tr("Height:"), spin)
+        fill = QCheckBox(tr("Extrude inner loops too"))
+        fill.setToolTip(tr(
+            "Off: a loop inside another is left as a hole (the room inside "
+            "the walls, the bore of a tube).\nOn: it becomes a solid of its "
+            "own too (a column inside a slab)."))
+        fill.setChecked(QSettings().value(self._MFE_FILL_KEY, False,
+                                          type=bool))
+        form.addRow(fill)
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok
+                                   | QDialogButtonBox.Cancel)
+        buttons.accepted.connect(dlg.accept)
+        buttons.rejected.connect(dlg.reject)
+        form.addRow(buttons)
+        spin.setFocus()
+        spin.selectAll()
+        if dlg.exec() != QDialog.Accepted:
+            return None
+        QSettings().setValue(self._MFE_HEIGHT_KEY, float(spin.value()))
+        QSettings().setValue(self._MFE_FILL_KEY, fill.isChecked())
+        return float(spin.value()), fill.isChecked()
+
+    def _on_make_faces_extrude(self, height: float | None = None,
+                               fill_holes: bool = False) -> None:
+        """Make Faces and Extrude (core/make_faces_extrude.py): the faces
+        the selected edges close, each one turned into its own solid group
+        of the height asked for, in one undo step. The solids end up
+        selected; the lines stay. ``height`` skips the dialog (tests)."""
+        from core.make_faces import MakeFacesError, plan, selected_edges
+        from core.make_faces_extrude import MakeFacesExtrudeCommand, check
+        scene = self.viewport.scene
+        edges = selected_edges(scene.mesh, scene.selection)
+        try:
+            plan(edges)
+        except MakeFacesError as err:
+            self.viewport.flash_status(tr(str(err)), 4000)
+            return
+        if height is None:
+            asked = self._make_faces_extrude_dialog()
+            if asked is None:
+                return
+            height, fill_holes = asked
+        try:
+            check(edges, height)
+        except MakeFacesError as err:
+            self.viewport.flash_status(tr(str(err)), 4000)
+            return
+        cam = getattr(self.viewport, "camera", None)
+        eye = cam.eye() if cam is not None and hasattr(cam, "eye") else None
+        cmd = MakeFacesExtrudeCommand(edges, height, eye,
+                                      fill_holes=fill_holes)
+        self.viewport.history.execute(cmd)
+        self.viewport.notify_scene_changed()
+        self.viewport.update()
+        n = len(cmd.groups)
+        if n:
+            from core.units import fmt_len
+            msg = tr("Make Faces and Extrude: {n} solids, {h} high",
+                     n=n, h=fmt_len(abs(height)))
         else:
             msg = tr("Make Faces: an existing face already covers those "
                      "loops")
