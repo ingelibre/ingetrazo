@@ -236,7 +236,10 @@ class History:
             if self.groups_cv.get(k) == before:
                 self.groups_cv[k] = cv
 
-    def execute(self, cmd: Command) -> None:
+    def execute(self, cmd: Command) -> bool:
+        """Run *cmd* and push it on the undo stack. Returns ``True`` when it
+        ran, ``False`` when it was refused (``last_rejected``) or failed and
+        was rolled back (``last_error``) — nothing then reached the stack."""
         _t0 = _time_mod.perf_counter() if _PERF else 0.0
         snapshot = self.scene.mesh.capture_state()
         if _PERF:
@@ -254,14 +257,14 @@ class History:
             self.scene.version += 1
             self.last_error = None
             self.last_rejected = str(exc)
-            return
+            return False
         except Exception as exc:
             self.scene.mesh.restore_state(snapshot)
             self.scene.selection.clear()
             self.scene.version += 1
             self.last_error = f"{type(cmd).__name__}: {exc}"
             self._log_failure(cmd, exc)
-            return
+            return False
         self.last_error = None
         if _PERF:
             _plog("command", (_time_mod.perf_counter() - _t0) * 1000.0,
@@ -277,6 +280,7 @@ class History:
             del self.undo_stack[:len(self.undo_stack) - cap]
         self.redo_stack.clear()
         self._rebind_dimensions()
+        return True
 
     def _rebind_dimensions(self) -> None:
         """After every command, undo and redo: a dimension whose vertex
