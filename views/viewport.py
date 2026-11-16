@@ -2846,7 +2846,7 @@ class Viewport(QOpenGLWidget):
                 full = self.render_image(
                     max(int(round(out_w * lw / fw)), 64), None, overlays,
                     annotations_only, sharp_shadows, transparent, False,
-                    defined_shadows)
+                    defined_shadows=defined_shadows)
                 if full is None:
                     return None
                 sx = full.width() / lw
