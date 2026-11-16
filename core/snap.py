@@ -1230,7 +1230,16 @@ def _from_point_snap(
                 continue
             d, t = _closest_on_segment_2d((cx, cy), pa, pb)
             if d <= threshold_px and (best_edge is None or d < best_edge[0]):
-                best_edge = (d, _on_edge_point(edge, t, project_onto_line))
+                point = _on_edge_point(edge, t, project_onto_line)
+                if is_occluded is not None and is_occluded(point):
+                    # An edge the model itself hides cannot be the one the
+                    # cursor is on: its screen trace crossing the cursor is
+                    # a coincidence of projection. Dragging up from a box's
+                    # top corner, the FAR vertical edge projects onto the
+                    # cursor's screen line and lent the lock its lower
+                    # height, so the point landed below the start (#1085).
+                    continue
+                best_edge = (d, point)
         if best_edge is not None:
             refs.append((best_edge[1], "from_point", COLOR_ENDPOINT, True))
 
