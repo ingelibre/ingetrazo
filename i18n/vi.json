@@ -3792,5 +3792,13 @@
  "Architect. The units system, the Browser, Layers 2.0, the Solid Inspector, Fillet 3D bevels, Bridge, Join Segments, Camera ▸ Axes, soft ambient occlusion, round curved surfaces, view layouts, scenes as tabs, cleaner exports and many everyday editing tools. And for 0.6.2: the North tool, camera settings, scene transitions with video and the view as layered SVG.": "Kiến trúc sư. Hệ thống đơn vị, Trình duyệt, Các lớp 2.0, Kiểm tra khối đặc, vát cạnh Fillet 3D, Bắc cầu, Nối các đoạn thẳng, Camera ▸ Trục, che khuất môi trường mềm, bề mặt cong bo tròn, bố cục khung nhìn, cảnh dạng thẻ, xuất tệp gọn gàng hơn và nhiều công cụ chỉnh sửa thường ngày. Và ở 0.6.2: công cụ Hướng Bắc, cài đặt camera, chuyển cảnh kèm video và xuất khung nhìn thành SVG theo lớp.",
  "Korean translation of the interface, and the AI key from an environment variable. In 0.6.2, soft shadows and fixes for macOS.": "Bản dịch giao diện tiếng Hàn, và khóa AI lấy từ biến môi trường. Ở 0.6.2, bóng đổ mềm và các bản sửa cho macOS.",
  "Exact Move+Ctrl copies, overlapping rotated copies, faster box selection on huge models and the reviewed Indonesian translation.": "Bản sao chính xác bằng Di chuyển+Ctrl, bản sao xoay chồng lên nhau, chọn bằng khung nhanh hơn trên mô hình rất lớn và bản dịch tiếng Indonesia đã được rà soát.",
- "Snapping to the rest of the model from inside a group or component.": "Bắt điểm vào phần còn lại của mô hình từ bên trong nhóm hoặc thành phần."
+ "Snapping to the rest of the model from inside a group or component.": "Bắt điểm vào phần còn lại của mô hình từ bên trong nhóm hoặc thành phần.",
+ "Make Faces and Extrude…": "Tạo mặt và đùn…",
+ "Make Faces and Extrude": "Tạo mặt và đùn",
+ "Make the faces that the selected edges close and extrude each one into its own solid group.": "Tạo các mặt được khép kín bởi các cạnh đã chọn và đùn mỗi mặt thành một nhóm khối riêng.",
+ "A negative height extrudes the other way.": "Chiều cao âm sẽ đùn theo hướng ngược lại.",
+ "Make Faces and Extrude: {n} solids, {h} high": "Tạo mặt và đùn: {n} khối, cao {h}",
+ "The height cannot be zero.": "Chiều cao không thể bằng không.",
+ "Extrude inner loops too": "Đùn cả các đường viền bên trong",
+ "Off: a loop inside another is left as a hole (the room inside the walls, the bore of a tube).\nOn: it becomes a solid of its own too (a column inside a slab).": "Tắt: đường viền nằm trong đường viền khác được giữ là lỗ (căn phòng bên trong tường, lòng ống).\nBật: nó cũng thành một khối riêng (cột bên trong sàn)."
 }

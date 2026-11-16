@@ -3768,5 +3768,13 @@
  "Architect. The units system, the Browser, Layers 2.0, the Solid Inspector, Fillet 3D bevels, Bridge, Join Segments, Camera ▸ Axes, soft ambient occlusion, round curved surfaces, view layouts, scenes as tabs, cleaner exports and many everyday editing tools. And for 0.6.2: the North tool, camera settings, scene transitions with video and the view as layered SVG.": "สถาปนิก ระบบหน่วย, เบราว์เซอร์, เลเยอร์ 2.0, เครื่องมือตรวจสอบโซลิด, การลบมุมของ Fillet 3D, เชื่อมสะพาน, รวมเส้นย่อย, กล้อง ▸ แกน, แอมเบียนต์ออคคลูชันแบบนุ่ม, พื้นผิวโค้งที่กลมมน, เลย์เอาต์มุมมอง, ฉากแบบแท็บ, การส่งออกที่สะอาดขึ้น และเครื่องมือแก้ไขที่ใช้ประจำวันอีกมากมาย และสำหรับ 0.6.2: เครื่องมือทิศเหนือ การตั้งค่ากล้อง การเปลี่ยนฉากพร้อมวิดีโอ และมุมมองเป็น SVG แบบแยกชั้น",
  "Korean translation of the interface, and the AI key from an environment variable. In 0.6.2, soft shadows and fixes for macOS.": "คำแปลภาษาเกาหลีของส่วนติดต่อผู้ใช้ และคีย์ AI จากตัวแปรสภาพแวดล้อม ใน 0.6.2 มีเงานุ่มและการแก้ไขสำหรับ macOS",
  "Exact Move+Ctrl copies, overlapping rotated copies, faster box selection on huge models and the reviewed Indonesian translation.": "การคัดลอกด้วย ย้าย+Ctrl ที่แม่นยำ สำเนาที่หมุนแล้วซ้อนทับกัน การเลือกแบบกรอบที่เร็วขึ้นในโมเดลขนาดใหญ่มาก และคำแปลภาษาอินโดนีเซียที่ปรับปรุงแล้ว",
- "Snapping to the rest of the model from inside a group or component.": "การสแนปกับส่วนอื่นของโมเดลจากภายในกลุ่มหรือคอมโพเนนต์"
+ "Snapping to the rest of the model from inside a group or component.": "การสแนปกับส่วนอื่นของโมเดลจากภายในกลุ่มหรือคอมโพเนนต์",
+ "Make Faces and Extrude…": "สร้างระนาบและอัดขึ้นรูป…",
+ "Make Faces and Extrude": "สร้างระนาบและอัดขึ้นรูป",
+ "Make the faces that the selected edges close and extrude each one into its own solid group.": "สร้างระนาบที่ขอบที่เลือกปิดล้อม แล้วอัดขึ้นรูปแต่ละระนาบเป็นกลุ่มของแข็งแยกกัน",
+ "A negative height extrudes the other way.": "ความสูงติดลบจะอัดขึ้นรูปไปอีกทาง",
+ "Make Faces and Extrude: {n} solids, {h} high": "สร้างระนาบและอัดขึ้นรูป: ของแข็ง {n} ชิ้น สูง {h}",
+ "The height cannot be zero.": "ความสูงต้องไม่เป็นศูนย์",
+ "Extrude inner loops too": "อัดขึ้นรูปเส้นรอบรูปด้านในด้วย",
+ "Off: a loop inside another is left as a hole (the room inside the walls, the bore of a tube).\nOn: it becomes a solid of its own too (a column inside a slab).": "ปิด: เส้นรอบรูปที่อยู่ภายในอีกเส้นจะคงเป็นช่องว่าง (ห้องภายในผนัง, ช่องในท่อ)\nเปิด: จะกลายเป็นของแข็งแยกอีกชิ้นด้วย (เสาภายในพื้น)"
 }

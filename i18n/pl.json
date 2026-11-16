@@ -3773,5 +3773,13 @@
  "Architect. The units system, the Browser, Layers 2.0, the Solid Inspector, Fillet 3D bevels, Bridge, Join Segments, Camera ▸ Axes, soft ambient occlusion, round curved surfaces, view layouts, scenes as tabs, cleaner exports and many everyday editing tools. And for 0.6.2: the North tool, camera settings, scene transitions with video and the view as layered SVG.": "Architekt. System jednostek, Przeglądarka, Warstwy 2.0, Inspektor brył, fazy Fillet 3D, Most, Połącz segmenty, Kamera ▸ Osie, miękka okluzja otoczenia, zaokrąglone powierzchnie krzywe, układy widoków, sceny jako karty, czystsze eksporty i wiele codziennych narzędzi edycji. A w 0.6.2: narzędzie Północ, ustawienia kamery, przejścia między scenami z wideo i widok jako SVG z warstwami.",
  "Korean translation of the interface, and the AI key from an environment variable. In 0.6.2, soft shadows and fixes for macOS.": "Koreańskie tłumaczenie interfejsu oraz klucz AI ze zmiennej środowiskowej. W 0.6.2 miękkie cienie i poprawki dla macOS.",
  "Exact Move+Ctrl copies, overlapping rotated copies, faster box selection on huge models and the reviewed Indonesian translation.": "Dokładne kopie przez Przesuń+Ctrl, nakładające się obrócone kopie, szybsze zaznaczanie ramką w ogromnych modelach i poprawione tłumaczenie indonezyjskie.",
- "Snapping to the rest of the model from inside a group or component.": "Przyciąganie do reszty modelu z wnętrza grupy lub komponentu."
+ "Snapping to the rest of the model from inside a group or component.": "Przyciąganie do reszty modelu z wnętrza grupy lub komponentu.",
+ "Make Faces and Extrude…": "Utwórz ściany i wyciągnij…",
+ "Make Faces and Extrude": "Utwórz ściany i wyciągnij",
+ "Make the faces that the selected edges close and extrude each one into its own solid group.": "Tworzy ściany zamknięte przez zaznaczone krawędzie i wyciąga każdą do osobnej grupy bryłowej.",
+ "A negative height extrudes the other way.": "Ujemna wysokość wyciąga w drugą stronę.",
+ "Make Faces and Extrude: {n} solids, {h} high": "Utwórz ściany i wyciągnij: brył: {n}, wysokość {h}",
+ "The height cannot be zero.": "Wysokość nie może wynosić zero.",
+ "Extrude inner loops too": "Wyciągnij też kontury wewnętrzne",
+ "Off: a loop inside another is left as a hole (the room inside the walls, the bore of a tube).\nOn: it becomes a solid of its own too (a column inside a slab).": "Wyłączone: kontur wewnątrz innego zostaje otworem (pokój między ścianami, wnętrze rury).\nWłączone: on też staje się osobną bryłą (słup w stropie)."
 }
