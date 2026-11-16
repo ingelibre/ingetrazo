@@ -27,7 +27,7 @@ def part_points(part, cache=None):
     definition read its vertices once: a container of 300 copies of a
     3 000-face tree read them 300 times."""
     import numpy as np
-    from core.group import iter_placements
+    from core.group import iter_placements, np_affine
     chunks = []
     for g, m in iter_placements(part):
         key = ("points", id(g.mesh))
@@ -42,8 +42,10 @@ def part_points(part, cache=None):
         if not len(pos):
             continue
         if m is not None:
-            rot = np.array([[m(r, c) for c in range(3)] for r in range(3)])
-            pos = pos @ rot.T + np.array([m(0, 3), m(1, 3), m(2, 3)])
+            # Through ``data()``, not ``m(row, col)``: some PySide6 builds
+            # no longer let a QMatrix4x4 be called (#1405).
+            rot, trans = np_affine(m)
+            pos = pos @ rot.T + trans
         chunks.append(pos)
     if not chunks:
         return np.empty((0, 3))

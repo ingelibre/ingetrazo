@@ -368,7 +368,6 @@ def _remap_uvws(mesh, m, faces=None) -> None:
     minv, ok = m.inverted()
     if not ok:
         return
-    tx, ty, tz = m(0, 3), m(1, 3), m(2, 3)
     for f in (mesh.faces if faces is None else faces):
         t = f.attrs.get("texture") if f.attrs else None
         uvw = t.get("uvw") if t else None
@@ -376,15 +375,26 @@ def _remap_uvws(mesh, m, faces=None) -> None:
             uvw = _implicit_uvw(f, t, minv) if t else None
             if uvw is None:
                 continue
-        new = list(uvw)
-        for base in (0, 4):
-            gx, gy, gz, c = uvw[base:base + 4]
-            gpx = minv(0, 0) * gx + minv(1, 0) * gy + minv(2, 0) * gz
-            gpy = minv(0, 1) * gx + minv(1, 1) * gy + minv(2, 1) * gz
-            gpz = minv(0, 2) * gx + minv(1, 2) * gy + minv(2, 2) * gz
-            new[base:base + 4] = [gpx, gpy, gpz,
-                                  c - (gpx * tx + gpy * ty + gpz * tz)]
-        f.attrs["texture"] = {**t, "uvw": new}
+        f.attrs["texture"] = {**t, "uvw": _remapped_uvw(uvw, m, minv)}
+
+
+def _remapped_uvw(uvw, m, minv) -> list:
+    """The 8-number ``uvw`` map re-fitted for geometry mapped through ``m``
+    (``minv`` its inverse): g' = L⁻ᵀ·g, c' = c − g'·t for the U and the V
+    rows. The matrices are read through ``data()`` (:func:`np_affine`),
+    never as ``m(row, col)``: that call is gone from some PySide6 builds
+    (Qt 6.10 raises "object is not callable", #1405)."""
+    lin, _ = np_affine(minv)
+    _, (tx, ty, tz) = np_affine(m)
+    new = list(uvw)
+    for base in (0, 4):
+        gx, gy, gz, c = uvw[base:base + 4]
+        gpx = float(lin[0, 0] * gx + lin[1, 0] * gy + lin[2, 0] * gz)
+        gpy = float(lin[0, 1] * gx + lin[1, 1] * gy + lin[2, 1] * gz)
+        gpz = float(lin[0, 2] * gx + lin[1, 2] * gy + lin[2, 2] * gz)
+        new[base:base + 4] = [gpx, gpy, gpz,
+                              float(c - (gpx * tx + gpy * ty + gpz * tz))]
+    return new
 
 
 def world_mesh(group, placements=None) -> Mesh:
@@ -711,16 +721,7 @@ def transformed_attrs(attrs, m) -> dict:
     minv, ok = m.inverted()
     if not ok:
         return out
-    tx, ty, tz = m(0, 3), m(1, 3), m(2, 3)
-    new = list(uvw)
-    for base in (0, 4):
-        gx, gy, gz, c = uvw[base:base + 4]
-        gpx = minv(0, 0) * gx + minv(1, 0) * gy + minv(2, 0) * gz
-        gpy = minv(0, 1) * gx + minv(1, 1) * gy + minv(2, 1) * gz
-        gpz = minv(0, 2) * gx + minv(1, 2) * gy + minv(2, 2) * gz
-        new[base:base + 4] = [gpx, gpy, gpz,
-                              c - (gpx * tx + gpy * ty + gpz * tz)]
-    out["texture"] = {**t, "uvw": new}
+    out["texture"] = {**t, "uvw": _remapped_uvw(uvw, m, minv)}
     return out
 
 
