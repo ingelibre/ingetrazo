@@ -155,12 +155,25 @@ def size_plus_button(plus, tabs) -> None:
 _probe_heights: dict = {}
 
 
+def tab_style(bar):
+    """The style the project and scene tab bars measure their tabs with:
+    the application's (#1225). With a style sheet on, ``bar.style()`` is
+    a style sheet style PySide only knows as a QCommonStyle, and every
+    call left one more Python wrapper of it behind (one per window); on
+    Windows their clean-up at exit could crash. The themes have no rule
+    for tabs, so it measures the same; a theme that ever styles
+    ``QTabBar::tab`` would have to come back here."""
+    from PySide6.QtWidgets import QApplication
+    return QApplication.style()
+
+
 def panel_tab_height(bar) -> int:
     """A side panel's tab height for ``bar``'s font and style: the style's
     tab with no button in it (Qt makes a tab with a cross taller), and
     with the icon a side panel's tab has (that sets its height). The
     project tabs and the scene tabs are this tall too."""
-    key = (bar.font().key(), bar.style().name())
+    style = tab_style(bar)
+    key = (bar.font().key(), style.name())
     h = _probe_heights.get(key)
     if h is None:
         from PySide6.QtCore import QSize
@@ -168,7 +181,7 @@ def panel_tab_height(bar) -> int:
         from views.main_window import DOCK_TAB_ICON_PX
         probe = QTabBar()
         probe.setFont(bar.font())
-        probe.setStyle(bar.style())
+        probe.setStyle(style)
         probe.setIconSize(QSize(DOCK_TAB_ICON_PX, DOCK_TAB_ICON_PX))
         pix = QPixmap(DOCK_TAB_ICON_PX, DOCK_TAB_ICON_PX)
         pix.fill(Qt.transparent)
@@ -199,7 +212,8 @@ class _ProjectTabs(QTabBar):
         height = self._panel_tab_height()
         # Qt asks for every tab many times over a single layout.
         name = self.tabText(index)
-        key = (name, hint.width(), self.font().key(), self.style().name())
+        key = (name, hint.width(), self.font().key(),
+               tab_style(self).name())
         width = self._hint_widths.get(key)
         if width is None:
             width = self._hint_widths[key] = self._tab_width(index, hint,
@@ -225,7 +239,7 @@ class _ProjectTabs(QTabBar):
         need = fm.horizontalAdvance(name) + 2
         while width < hint.width():
             opt.rect = QRect(0, 0, width, height)
-            if self.style().subElementRect(
+            if tab_style(self).subElementRect(
                     QStyle.SE_TabBarTabText, opt, self).width() >= need:
                 break
             width += 2
@@ -315,7 +329,8 @@ class _ProjectTabs(QTabBar):
             return None
         opt = QStyleOptionTab()
         self.initStyleOption(opt, i)
-        text = self.style().subElementRect(QStyle.SE_TabBarTabText, opt, self)
+        text = tab_style(self).subElementRect(QStyle.SE_TabBarTabText, opt,
+                                              self)
         width = min(self.fontMetrics().horizontalAdvance(opt.text),
                     text.width())
         tab = self.tabRect(i)
