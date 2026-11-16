@@ -5048,6 +5048,15 @@ class MainWindow(QMainWindow):
             act.blockSignals(True)
             act.setChecked(value)
             act.blockSignals(False)
+        self._sync_styles_hidden_geometry()
+
+    def _sync_styles_hidden_geometry(self) -> None:
+        """The Styles panel's Hidden geometry box follows the scene flag
+        (#831); guarded, the menu builds before the docks."""
+        panel = getattr(self, "styles_panel", None)
+        sync = getattr(panel, "sync_hidden_geometry", None)
+        if sync is not None:
+            sync()
 
     def _sync_component_edit_menu(self) -> None:
         """The Component Edit checkmarks and the rest-mode radios follow
@@ -5107,6 +5116,8 @@ class MainWindow(QMainWindow):
                 if scene.entity_hidden(ent) or getattr(ent, "hidden", False):
                     scene.selection.discard(ent)
         scene.version += 1
+        if attr == "show_hidden_geometry":
+            self._sync_styles_hidden_geometry()
         self.viewport.update()
 
     def _set_show_axes(self, on: bool) -> None:
@@ -5759,11 +5770,22 @@ class MainWindow(QMainWindow):
                 # Join Segments, its inverse: a line drawn in pieces
                 # back to one line.
                 menu.addAction(tr("Join Segments"), self._on_join_segments)
+        # Lines (#831): an invisible one — a curved surface's soft seam or
+        # a hidden line, picked while Camera ▸ Hidden Geometry shows it
+        # dotted — is made visible again; a visible one hides (it joins
+        # the hidden geometry) or softens (the faces either side read as
+        # one curved surface, shaded round).
+        from core.history import edge_is_invisible
+        line_edges = self._soften_targets(sel)
+        if any(edge_is_invisible(e) for e in line_edges):
+            menu.addAction(tr("Make Visible"), self._on_make_visible)
         if self._hideable(sel):
             menu.addAction(tr("Hide"), self._on_hide)
+        if any(not e.soft for e in line_edges):
+            menu.addAction(tr("Soften"), lambda: self._on_soften(True))
         if any(self.viewport.scene.entity_hidden(e)
-               or (isinstance(e, Edge) and getattr(e, "hidden", False))
-               for e in sel):
+               for e in sel if not isinstance(e, Edge)):
+            # Hidden lines come back with Make Visible above.
             menu.addAction(tr("Unhide"), self._on_unhide_selected)
         self._add_layer_submenu(menu, sel)
         self._add_select_submenu(menu, sel)
@@ -6063,6 +6085,71 @@ class MainWindow(QMainWindow):
         name = (name or "").strip()
         if ok and name:
             self._assign_layer(name)
+
+    def _soften_targets(self, entities) -> list:
+        """The edges Soften / Harden act on (#831): the selected edges, and
+        the inner edges of the selected faces — an edge whose faces are all
+        selected — so a cylinder's side, selected whole, hardens into its
+        facets. A border edge of the selection is left alone."""
+        out: list = []
+        seen: set = set()
+        faces = {id(f) for f in entities if isinstance(f, Face)}
+        for e in entities:
+            if isinstance(e, Edge) and id(e) not in seen:
+                seen.add(id(e))
+                out.append(e)
+        if faces:
+            mesh = self.viewport.scene.mesh
+            for f in entities:
+                if not isinstance(f, Face):
+                    continue
+                for lp in (f.loop, *f.hole_loops):
+                    n = len(lp)
+                    for i in range(n):
+                        e = mesh.find_edge(lp[i], lp[(i + 1) % n])
+                        if e is None or id(e) in seen:
+                            continue
+                        efs = list(getattr(e, "faces", ()))
+                        if len(efs) >= 2 and all(id(g) in faces
+                                                 for g in efs):
+                            seen.add(id(e))
+                            out.append(e)
+        return out
+
+    def _on_soften(self, soft: bool) -> None:
+        """Right-click ▸ Soften / Harden (#831): the selection's edges turn
+        soft (one curved surface, shaded round, undrawn — Camera ▸ Hidden
+        Geometry shows them) or hard again, as one undo step."""
+        from core.history import SoftenEdgesCommand
+        edges = [e for e in self._soften_targets(self.viewport.scene.selection)
+                 if bool(e.soft) != soft]
+        if not edges:
+            self.statusBar().showMessage(
+                tr("Select edges or faces first."), 3000)
+            return
+        self.viewport.history.execute(SoftenEdgesCommand(edges, soft=soft))
+        self.viewport.update()
+        self.statusBar().showMessage(
+            tr("Softened {n} edge(s)", n=len(edges)), 3000)
+
+    def _on_make_visible(self) -> None:
+        """Right-click ▸ Make Visible (#831): the selection's invisible
+        lines — soft seams of a curved surface, hidden lines — draw again,
+        hardened and unhidden, as one undo step. A curved surface selected
+        whole shows its facets."""
+        from core.history import edge_is_invisible, make_edges_visible_command
+        edges = [e for e in self._soften_targets(self.viewport.scene.selection)
+                 if edge_is_invisible(e)]
+        cmd = make_edges_visible_command(edges)
+        if cmd is None:
+            self.statusBar().showMessage(
+                tr("No invisible lines in the selection — turn on Camera ▸ "
+                   "Hidden Geometry to see and select them."), 4000)
+            return
+        self.viewport.history.execute(cmd)
+        self.viewport.update()
+        self.statusBar().showMessage(
+            tr("Made {n} line(s) visible", n=len(edges)), 3000)
 
     def _hideable(self, entities) -> list:
         """The objects, faces and edges in ``entities`` that Hide acts on

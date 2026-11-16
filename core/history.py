@@ -1182,6 +1182,141 @@ class HideEdgesCommand(HideCommand):
         super().__init__(edges, hidden=hidden)
 
 
+class SoftenEdgesCommand(Command):
+    """Soften (or harden) edges — the context menu's Soften / Harden and the
+    Eraser with Ctrl / Ctrl+Shift (#831).
+
+    A soft edge joins the faces on its two sides into one curved surface:
+    it is not drawn (View ▸ Hidden Geometry shows it dotted), a click on
+    one of those faces selects the whole surface, and the viewport and the
+    exports shade across it with averaged normals (#131). Hardening puts
+    the crease back. Only the flag changes, no topology, so the previous
+    per-edge flags captured at ``do`` time undo a mixed set exactly."""
+
+    def __init__(self, edges, soft: bool = True) -> None:
+        self._edges = [e for e in edges if hasattr(e, "soft")]
+        self._soft = bool(soft)
+        self._prev: list[bool] = []
+
+    @property
+    def edges(self) -> list:
+        return list(self._edges)
+
+    @property
+    def softens(self) -> bool:
+        return self._soft
+
+    def _touch(self, scene) -> None:
+        # The flag bypasses the mesh primitives: flag the meshes so the
+        # cached chunks (lines, smooth normals, pick index) rebuild.
+        mesh = getattr(scene, "mesh", None)
+        if mesh is not None:
+            mesh._chunk_dirty = True
+            mesh._mut_serial = getattr(mesh, "_mut_serial", 0) + 1
+        _dirty_group_chunks(scene)
+        scene.version += 1
+
+    def do(self, scene) -> None:
+        self._prev = [bool(e.soft) for e in self._edges]
+        for e in self._edges:
+            e.soft = self._soft
+        self._touch(scene)
+
+    def undo(self, scene) -> None:
+        for e, prev in zip(self._edges, self._prev):
+            e.soft = prev
+        self._touch(scene)
+
+
+def edge_is_invisible(edge) -> bool:
+    """Whether ``edge`` is a line the model does not draw: soft (a curved
+    surface's seam) or hidden (Hide). Camera ▸ Hidden Geometry shows both
+    dotted."""
+    return bool(getattr(edge, "soft", False) or getattr(edge, "hidden", False))
+
+
+def make_edges_visible_command(edges) -> Optional[Command]:
+    """Make Visible (#831): every soft or hidden edge in ``edges`` becomes
+    a drawn line again — hardened and unhidden — as one undo step. ``None``
+    when nothing there is invisible."""
+    edges = list(edges)
+    soft = [e for e in edges if getattr(e, "soft", False)]
+    hidden = [e for e in edges if getattr(e, "hidden", False)]
+    cmds: list = []
+    if soft:
+        cmds.append(SoftenEdgesCommand(soft, soft=False))
+    if hidden:
+        cmds.append(HideCommand(hidden, hidden=False))
+    if not cmds:
+        return None
+    return cmds[0] if len(cmds) == 1 else CompoundCommand(cmds)
+
+
+def soft_edges_along(mesh, a: QVector3D, b: QVector3D,
+                     tol: float = 1e-6) -> list:
+    """The soft edges of ``mesh`` lying on the segment ``a``–``b``: the chain
+    walked from the vertex at ``a`` through vertices on the segment, so a
+    line drawn over one or several facet seams finds them all. Empty when
+    ``a`` is not a vertex or nothing soft lies along."""
+    v = mesh.vertex_at(a)
+    ab = b - a
+    length = ab.length()
+    if v is None or length < tol:
+        return []
+    u = ab / length
+    out: list = []
+    seen = {id(v)}
+    t_here = 0.0
+    while t_here < length - tol:
+        step = None
+        for e in v.edges:
+            w = e.v1 if e.v0 is v else e.v0
+            if id(w) in seen:
+                continue
+            d = w.position - a
+            t = QVector3D.dotProduct(d, u)
+            if t <= t_here + tol or t > length + tol:
+                continue
+            if (d - u * t).length() > tol * max(1.0, length):
+                continue
+            if step is None or t < step[0]:
+                step = (t, e, w)
+        if step is None:
+            break
+        t_here, e, v = step
+        seen.add(id(v))
+        if e.soft:
+            out.append(e)
+    return out
+
+
+class HardenEdgesAlongCommand(Command):
+    """Harden the soft edges a drawn line lands on (#831): with Hidden
+    Geometry on, a line drawn over a cylinder's facet seam welds into that
+    seam, which stayed soft — undrawn — so the line seemed not to stick.
+    Runs after the line's own command, so it finds the edges the line
+    split or reused; undo softens them back."""
+
+    def __init__(self, a: QVector3D, b: QVector3D) -> None:
+        self.a = QVector3D(a)
+        self.b = QVector3D(b)
+        self._inner: Optional[SoftenEdgesCommand] = None
+
+    @property
+    def edges(self) -> list:
+        return self._inner.edges if self._inner is not None else []
+
+    def do(self, scene) -> None:
+        edges = soft_edges_along(scene.mesh, self.a, self.b)
+        self._inner = SoftenEdgesCommand(edges, soft=False) if edges else None
+        if self._inner is not None:
+            self._inner.do(scene)
+
+    def undo(self, scene) -> None:
+        if self._inner is not None:
+            self._inner.undo(scene)
+
+
 class SetFaceColorCommand(Command):
     """Paint a set of faces with an RGB colour (or clear it with ``None``),
     stored in each face's ``attrs["color"]`` — the first user-facing use of the

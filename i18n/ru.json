@@ -3765,5 +3765,14 @@
  "Architect. The units system, the Browser, Layers 2.0, the Solid Inspector, Fillet 3D bevels, Bridge, Join Segments, Camera ▸ Axes, soft ambient occlusion, round curved surfaces, view layouts, scenes as tabs, cleaner exports and many everyday editing tools. And for 0.6.2: the North tool, camera settings, scene transitions with video and the view as layered SVG.": "Архитектор. Система единиц, Навигатор, Слои 2.0, Инспектор твердых тел, фаски Fillet 3D, Мост, Объединить сегменты, Камера ▸ Оси, мягкое фоновое затенение, скруглённые криволинейные поверхности, компоновки видов, сцены во вкладках, более чистый экспорт и множество повседневных инструментов редактирования. А в 0.6.2: инструмент «Север», настройки камеры, переходы между сценами с видео и вид в SVG по слоям.",
  "Korean translation of the interface, and the AI key from an environment variable. In 0.6.2, soft shadows and fixes for macOS.": "Корейский перевод интерфейса и ключ ИИ из переменной окружения. В 0.6.2 — мягкие тени и исправления для macOS.",
  "Exact Move+Ctrl copies, overlapping rotated copies, faster box selection on huge models and the reviewed Indonesian translation.": "Точные копии через Перемещение+Ctrl, перекрывающиеся повёрнутые копии, более быстрый выбор рамкой в огромных моделях и выверенный индонезийский перевод.",
- "Snapping to the rest of the model from inside a group or component.": "Привязка к остальной модели изнутри группы или компонента."
+ "Snapping to the rest of the model from inside a group or component.": "Привязка к остальной модели изнутри группы или компонента.",
+ "Soften": "Сгладить",
+ "Select edges or faces first.": "Сначала выберите рёбра или грани.",
+ "Softened {n} edge(s)": "Сглажено рёбер: {n}",
+ "Hidden geometry": "Скрытая геометрия",
+ "Show hidden edges and faces, and the soft edges of curved surfaces (a cylinder's facets), dotted — the same as Camera ▸ Hidden Geometry.": "Показывает пунктиром скрытые рёбра и грани, а также сглаженные рёбра криволинейных поверхностей (грани цилиндра) — то же, что Камера ▸ Скрытая геометрия.",
+ "Make Visible": "Сделать видимым",
+ "Made {n} line(s) visible": "Видимых линий: {n}",
+ "No invisible lines in the selection — turn on Camera ▸ Hidden Geometry to see and select them.": "В выделении нет невидимых линий — включите Камера ▸ Скрытая геометрия, чтобы увидеть и выбрать их.",
+ "Drag over edges to erase them. Shift = hide, Ctrl = soften, Ctrl+Shift = make visible.": "Проведите по рёбрам для стирания. Shift = скрыть, Ctrl = сгладить, Ctrl+Shift = сделать видимыми."
 }

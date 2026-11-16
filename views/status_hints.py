@@ -31,7 +31,8 @@ HINTS: dict = {
                         "Click another solid (2): only what they share stays."),
     "solid_split": ("Click a solid group or component (1).",
                     "Click another solid (2): three pieces come out."),
-    "eraser": "Drag over edges to erase them. Shift = hide instead.",
+    "eraser": ("Drag over edges to erase them. Shift = hide, "
+               "Ctrl = soften, Ctrl+Shift = make visible."),
     "paint": "Click a face to paint it. Alt = sample the material under the cursor.",
     "line": ("Click the start point. Arrows lock an axis, Shift locks the inference.",
              "Click the end point, or type the length and Enter."),

@@ -3768,5 +3768,14 @@
  "Architect. The units system, the Browser, Layers 2.0, the Solid Inspector, Fillet 3D bevels, Bridge, Join Segments, Camera ▸ Axes, soft ambient occlusion, round curved surfaces, view layouts, scenes as tabs, cleaner exports and many everyday editing tools. And for 0.6.2: the North tool, camera settings, scene transitions with video and the view as layered SVG.": "ສະຖາປະນິກ. ລະບົບຫົວໜ່ວຍ, ໂປຣແກຣມທ່ອງເບິ່ງ, ຊັ້ນວຽກ 2.0, ຕົວກວດຮູບຊົງຕັນ (Solid Inspector), ການລົບມຸມຂອງ Fillet 3D, ຂົວເຊື່ອມ, ເຊື່ອມຕໍ່ທ່ອນເສັ້ນ, ກ້ອງ ▸ ແກນ, ການບັງແສງລອບຂ້າງແບບອ່ອນ, ພື້ນຜິວໂຄ້ງທີ່ມົນ, ການຈັດວາງມຸມມອງ, ສາກເປັນແຖບ, ການສົ່ງອອກທີ່ສະອາດຂຶ້ນ ແລະ ເຄື່ອງມືແກ້ໄຂປະຈຳວັນອີກຫຼາຍຢ່າງ. ແລະສຳລັບ 0.6.2: ເຄື່ອງມືທິດເໜືອ, ການຕັ້ງຄ່າກ້ອງ, ການປ່ຽນສາກພ້ອມວິດີໂອ ແລະ ມຸມມອງເປັນ SVG ແບບຊັ້ນ.",
  "Korean translation of the interface, and the AI key from an environment variable. In 0.6.2, soft shadows and fixes for macOS.": "ການແປສ່ວນຕິດຕໍ່ເປັນພາສາເກົາຫຼີ, ແລະ ກະແຈ AI ຈາກຕົວແປສະພາບແວດລ້ອມ. ໃນ 0.6.2, ເງົາອ່ອນ ແລະ ການແກ້ໄຂສຳລັບ macOS.",
  "Exact Move+Ctrl copies, overlapping rotated copies, faster box selection on huge models and the reviewed Indonesian translation.": "ການສຳເນົາດ້ວຍ ຍ້າຍ+Ctrl ທີ່ຖືກຕ້ອງ, ສຳເນົາທີ່ໝູນແລ້ວຊ້ອນກັນ, ການເລືອກແບບກອບທີ່ໄວຂຶ້ນໃນແບບຈຳລອງຂະໜາດໃຫຍ່ ແລະ ການແປພາສາອິນໂດເນເຊຍທີ່ທົບທວນແລ້ວ.",
- "Snapping to the rest of the model from inside a group or component.": "ການຍຶດຕິດກັບສ່ວນອື່ນຂອງແບບຈຳລອງຈາກພາຍໃນກຸ່ມ ຫຼື ອົງປະກອບ."
+ "Snapping to the rest of the model from inside a group or component.": "ການຍຶດຕິດກັບສ່ວນອື່ນຂອງແບບຈຳລອງຈາກພາຍໃນກຸ່ມ ຫຼື ອົງປະກອບ.",
+ "Soften": "ເຮັດໃຫ້ນຸ່ມ",
+ "Select edges or faces first.": "ເລືອກຂອບ ຫຼື ໜ້າກ່ອນ.",
+ "Softened {n} edge(s)": "ເຮັດໃຫ້ນຸ່ມແລ້ວ {n} ຂອບ",
+ "Hidden geometry": "ຮູບຊົງເລຂາຄະນິດທີ່ເຊື່ອງຢູ່",
+ "Show hidden edges and faces, and the soft edges of curved surfaces (a cylinder's facets), dotted — the same as Camera ▸ Hidden Geometry.": "ສະແດງຂອບ ແລະ ໜ້າທີ່ເຊື່ອງຢູ່ ແລະ ຂອບນຸ່ມຂອງພື້ນຜິວໂຄ້ງ (ໜ້າຍ່ອຍຂອງທໍ່ກະບອກ) ເປັນເສັ້ນຈຸດ — ຄືກັບ ກ້ອງສ່ອງ ▸ ຮູບຊົງເລຂາຄະນິດທີ່ເຊື່ອງຢູ່.",
+ "Make Visible": "ເຮັດໃຫ້ເຫັນ",
+ "Made {n} line(s) visible": "ເຫັນແລ້ວ {n} ເສັ້ນ",
+ "No invisible lines in the selection — turn on Camera ▸ Hidden Geometry to see and select them.": "ບໍ່ມີເສັ້ນທີ່ເບິ່ງບໍ່ເຫັນໃນການເລືອກ — ເປີດ ກ້ອງສ່ອງ ▸ ຮູບຊົງເລຂາຄະນິດທີ່ເຊື່ອງຢູ່ ເພື່ອເບິ່ງ ແລະ ເລືອກ.",
+ "Drag over edges to erase them. Shift = hide, Ctrl = soften, Ctrl+Shift = make visible.": "ລາກຜ່ານຂອບເພື່ອລຶບ. Shift = ເຊື່ອງ, Ctrl = ເຮັດໃຫ້ນຸ່ມ, Ctrl+Shift = ເຮັດໃຫ້ເຫັນ."
 }
