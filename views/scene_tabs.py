@@ -190,7 +190,9 @@ class SceneTabBar(QTabBar):
             return None
         opt = QStyleOptionTab()
         self.initStyleOption(opt, i)
-        text = self.style().subElementRect(QStyle.SE_TabBarTabText, opt, self)
+        from views.documents import tab_style
+        text = tab_style(self).subElementRect(QStyle.SE_TabBarTabText, opt,
+                                              self)
         width = min(self.fontMetrics().horizontalAdvance(opt.text),
                     text.width())
         tab = self.tabRect(i)
