@@ -44,6 +44,14 @@ lists — its distinct points once as float32, edges and face rings as int32
 indices, edge flags and a shared table of face attributes, in one raw
 member under ``geom/`` (layout in the JSON, no pickles). Builds that read
 only up to format 2 refuse it with a message instead of opening it empty.
+
+**A picture of the model** rides in the container as ``thumbnail.png`` when
+the window hands one to :func:`save_scene` — for the file manager's
+previews (a shell thumbnail handler reads that one member, never the
+model) and for whatever lists documents. It is stored, not deflated, so a
+reader needs no inflater; every reader of the document passes it over.
+A plain document that gets a picture becomes a container at format 2, which
+every build since 0.2.4 opens: no format is raised for it.
 """
 from __future__ import annotations
 
@@ -70,6 +78,11 @@ CURRENT_FORMAT = GEOMETRY_FORMAT   # the newest this build reads
 _ZIP_MAGIC = b"PK\x03\x04"
 _DOC_ENTRY = "document.json"
 _TEX_PREFIX = "textures/"
+#: The picture of the model (see the module docstring).
+THUMBNAIL_ENTRY = "thumbnail.png"
+_PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
+#: A picture bigger than this is not read back: the window writes ~512 px.
+_THUMBNAIL_MAX_BYTES = 8 << 20
 # Fixed timestamp for every archive member: two saves of the same scene must
 # produce byte-identical files (diffable documents, and no pointless churn in
 # whatever the user syncs them with).
@@ -612,10 +625,14 @@ def _pack_plan(mesh, plan, sink: dict) -> dict:
     return _write_geometry(arrays, table, layer_table, sink)
 
 
-def save_scene(scene, path: Path) -> dict:
+def save_scene(scene, path: Path, thumbnail: bytes | None = None) -> dict:
     """Write ``scene`` to ``path``. Returns ``{"embedded", "missing"}``: how
     many texture images were packed into the document, and how many could not
-    be read (those keep pointing at their original path)."""
+    be read (those keep pointing at their original path).
+
+    ``thumbnail``: the PNG bytes of a picture of the model, stored as
+    ``thumbnail.png`` (see the module docstring). Anything that is not a
+    PNG is left out — the document is written all the same."""
     # Accept a Scene or a bare Mesh (the M1 read-compat path feeds a Mesh).
     mesh = scene.mesh if hasattr(scene, "mesh") else scene
     # Decided BEFORE anything is serialized: a large document writes its
@@ -904,6 +921,9 @@ def save_scene(scene, path: Path) -> dict:
         meta, survey_blobs = pack_mesh(survey)
         payload["photo_mesh"] = meta
         blobs.update(survey_blobs)
+    embedded = len(blobs)
+    if thumbnail and bytes(thumbnail[:8]) == _PNG_MAGIC:
+        blobs[THUMBNAIL_ENTRY] = bytes(thumbnail)
     data = {
         "igz_format": (GEOMETRY_FORMAT if geom else
                        CONTAINER_FORMAT if blobs else PLAIN_FORMAT),
@@ -924,7 +944,7 @@ def save_scene(scene, path: Path) -> dict:
         _write_container(path, doc, blobs, fast=large, deflated=geom)
     else:
         _write_atomic(path, doc.encode("utf-8"))
-    return {"embedded": len(blobs), "missing": missing}
+    return {"embedded": embedded, "missing": missing}
 
 
 def _live_element_count(scene) -> int:
@@ -1014,6 +1034,25 @@ def _write_container(path: Path, doc: str, blobs: dict,
             info.compress_type = zipfile.ZIP_STORED
             zf.writestr(info, blobs[member])
     _write_atomic(path, buf.getvalue())
+
+
+def read_thumbnail(path) -> bytes | None:
+    """The PNG bytes of the picture stored in the document at ``path``, or
+    ``None`` (a plain document, one saved without a picture, or not a
+    document at all). Reads that one member — never the model."""
+    import zipfile
+    try:
+        with open(path, "rb") as f:
+            if f.read(4) != _ZIP_MAGIC:
+                return None
+        with zipfile.ZipFile(path) as archive:
+            info = archive.getinfo(THUMBNAIL_ENTRY)
+            if info.file_size > _THUMBNAIL_MAX_BYTES:
+                return None
+            data = archive.read(info)
+    except (OSError, KeyError, ValueError, zipfile.BadZipFile):
+        return None
+    return data if data[:8] == _PNG_MAGIC else None
 
 
 def _in_worker(work, pump=None):
