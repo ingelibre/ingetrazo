@@ -3687,6 +3687,8 @@
  "Duplicate Scene": "장면 복제",
  "Make a copy of the selected scene": "선택한 장면의 사본 만들기",
  "Tabs on top": "탭을 위에 표시",
+ "Floating panels": "떠 있는 패널",
+ "The panels of this side in a window of their own, which can go anywhere, also to another screen.": "이쪽 패널을 별도 창으로 띄워 다른 화면을 포함해 어디로든 옮길 수 있습니다.",
  "Tabs on the right, vertical": "탭을 오른쪽에 세로로 표시",
  "Panel options": "패널 옵션",
  "Set where north lies: click a centre, then click toward north. The sun's shadows turn with it.": "북쪽 방향 설정: 중심을 클릭한 다음 북쪽을 향해 클릭합니다. 태양 그림자도 함께 회전합니다.",

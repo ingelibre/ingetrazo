@@ -3688,6 +3688,8 @@
  "Duplicate Scene": "複製場景",
  "Make a copy of the selected scene": "建立選取場景的副本",
  "Tabs on top": "頁籤在上方",
+ "Floating panels": "浮動面板",
+ "The panels of this side in a window of their own, which can go anywhere, also to another screen.": "將這一側的面板放入獨立視窗，可移到任何位置，包括另一個螢幕。",
  "Tabs on the right, vertical": "頁籤在右側，直式",
  "Panel options": "面板選項",
  "Set where north lies: click a centre, then click toward north. The sun's shadows turn with it.": "設定北方：按一下中心點，再朝北按一下。太陽陰影隨之旋轉。",

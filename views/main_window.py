@@ -15,7 +15,8 @@ from typing import Optional
 
 from PySide6.QtCore import (Qt, QSettings, QEvent, QCoreApplication, QPoint,
                             QRect, QSize, QTimer, Signal)
-from PySide6.QtGui import QAction, QActionGroup, QIcon, QKeySequence, QVector3D
+from PySide6.QtGui import (QAction, QActionGroup, QCursor, QIcon,
+                           QKeySequence, QVector3D)
 from PySide6.QtWidgets import (
     QApplication,
     QFileDialog,
@@ -481,6 +482,84 @@ class _SceneSwitch:
             w._update_title()
 
 
+#: Where a tray stands while the panels float (gear ▸ Floating panels):
+#: never a real side for them — the trays only go left or right — so it
+#: can travel as an «area» through the code that moves them about.
+FLOAT_AREA = Qt.DockWidgetArea.TopDockWidgetArea
+
+
+class _FloatingPanels(QMainWindow):
+    """The side trays' own window while they float: the same panels, tabs,
+    «+» and gear, in a tool window over IngeTrazo that can go to another
+    screen. Its docks sit in its right area; MainWindow treats that as the
+    side :data:`FLOAT_AREA`. Closing it docks the panels back."""
+
+    def __init__(self, window) -> None:
+        super().__init__(window, Qt.Tool)
+        self.setObjectName("floating_panels")
+        self.setWindowTitle(tr("Panels"))
+        self.setDockNestingEnabled(False)
+        self._window = window
+        self.installEventFilter(window)          # new tab bars, as Qt makes them
+
+    def closeEvent(self, event) -> None:  # noqa: N802 — Qt override
+        event.ignore()
+        QTimer.singleShot(0, self._window,
+                          lambda: self._window.set_panels_floating(False))
+
+    def contextMenuEvent(self, event) -> None:  # noqa: N802 — Qt override
+        # Its tab bars answer as the window's do (the gear's menu).
+        self._window.panels_context_menu(self, event)
+
+    # Dragged by its title bar near a side of IngeTrazo, it docks there
+    # (the side lights up as a dragged tab's does). The title bar is the
+    # system's: Windows says when its drag starts and ends; elsewhere the
+    # drag ends when the moves stop with no button down.
+    _WM_ENTERSIZEMOVE = 0x0231
+    _WM_EXITSIZEMOVE = 0x0232
+    _native_drag = False
+    _placing = False
+
+    def nativeEvent(self, event_type, message):  # noqa: N802 — Qt override
+        if bytes(event_type) == b"windows_generic_MSG":
+            try:
+                import ctypes.wintypes
+                msg = ctypes.wintypes.MSG.from_address(int(message))
+                if msg.message == self._WM_ENTERSIZEMOVE:
+                    self._native_drag = True
+                    self._window._float_drag_start()
+                elif msg.message == self._WM_EXITSIZEMOVE:
+                    self._native_drag = False
+                    self._window._float_drag_end(QCursor.pos())
+            except (ValueError, TypeError, OSError):
+                pass
+        return super().nativeEvent(event_type, message)
+
+    def moveEvent(self, event) -> None:  # noqa: N802 — Qt override
+        super().moveEvent(event)
+        if self._placing or not self.isVisible():
+            return
+        import sys
+        if sys.platform == "win32":
+            if self._native_drag:
+                self._window._float_drag_move(QCursor.pos())
+            return
+        self._window._float_drag_move(QCursor.pos())
+        timer = self.__dict__.get("_still")
+        if timer is None:
+            timer = self._still = QTimer(self)
+            timer.setSingleShot(True)
+            timer.setInterval(350)
+            timer.timeout.connect(self._moves_stopped)
+        timer.start()
+
+    def _moves_stopped(self) -> None:
+        if QApplication.mouseButtons() != Qt.NoButton:
+            self._still.start()                    # still held: wait on
+            return
+        self._window._float_drag_end(QCursor.pos())
+
+
 class MainWindow(QMainWindow):
     """Top-level IngeTrazo window."""
 
@@ -676,6 +755,9 @@ class MainWindow(QMainWindow):
         # exists — saveState matches them by objectName.
         st = QSettings()
         state = st.value("ui/window_state")
+        # A first run: the side tray takes the factory width once the
+        # window is up (see showEvent), not the one the blob was saved at.
+        self._tray_width_pending = state is None
         if state is None:
             from core.paths import app_root
             factory = app_root() / "resources" / "ui" / "default_layout.state"
@@ -708,8 +790,15 @@ class MainWindow(QMainWindow):
             from PySide6.QtCore import QTimer
             self._toolbars_packed = True
             QTimer.singleShot(0, self, self._pack_toolbars)
+        if getattr(self, "_tray_width_pending", False):
+            self._tray_width_pending = False
+            self._give_tray_factory_width()
         if not getattr(self, "_ndof_connected", False):
             self._connect_ndof()
+        if not self.__dict__.get("_float_restored"):
+            # Floating panels come back once the window is up, over it.
+            self._float_restored = True
+            QTimer.singleShot(0, self, self._restore_floating_panels)
 
     # ---- 3D mouse (issue #108) ----------------------------------------------
     def _route_window_toggle(self, name: str, own):
@@ -2529,10 +2618,23 @@ class MainWindow(QMainWindow):
         for first, nxt in zip(order, order[1:]):
             self.tabifyDockWidget(first, nxt)
 
-    #: The side tray's width on a first run — the one the factory layout
-    #: (resources/ui/default_layout.state) gives it; Restore default
-    #: panels puts it back (tests/test_sidebar_trays.py checks they agree).
-    FACTORY_TRAY_WIDTH = 439
+    #: The side tray's width on a first run and after Restore default
+    #: panels. The tabs are icons now, so the tray no longer has to be as
+    #: wide as their names: 370 px still holds the Browser's Name, Type
+    #: and Layer uncut (tests/test_browser_columns_fit.py) and Properties
+    #: whole. The factory layout blob was saved wider; a first run sets
+    #: this one over it (``_give_tray_factory_width``).
+    FACTORY_TRAY_WIDTH = 370
+
+    def _give_tray_factory_width(self) -> None:
+        """The side tray at :attr:`FACTORY_TRAY_WIDTH` — now and once more
+        after the pending layout settles (a dock resized before it has
+        laid out keeps the old width)."""
+        from PySide6.QtCore import QTimer
+        width = self.FACTORY_TRAY_WIDTH
+        self.resizeDocks([self.tray], [width], Qt.Horizontal)
+        QTimer.singleShot(0, self, lambda: self.resizeDocks(
+            [self.tray], [width], Qt.Horizontal))
 
     def restore_default_trays(self) -> None:
         """Window ▸ Panels ▸ Restore default panels: the factory layout of
@@ -2542,7 +2644,11 @@ class MainWindow(QMainWindow):
         the choice
         forgotten, so it stands as a first run's would."""
         from PySide6.QtCore import QTimer
+        # Floating, they come back to their side first: the factory
+        # layout has them there.
+        self.set_panels_floating(False)
         st = QSettings()
+        st.remove("ui/panels_float_geometry")
         st.remove("ui/hidden_trays")
         st.remove("ui/known_trays")
         st.remove("ui/dock_tabs_vertical")
@@ -2569,10 +2675,7 @@ class MainWindow(QMainWindow):
         # And the side tray's width: the factory one. Not the width the
         # window opened with — the layout is saved on closing, so a tray
         # left wide opened wide, and «restoring» to that changed nothing.
-        width = self.FACTORY_TRAY_WIDTH
-        self.resizeDocks([self.tray], [width], Qt.Horizontal)
-        QTimer.singleShot(0, self, lambda: self.resizeDocks(
-            [self.tray], [width], Qt.Horizontal))
+        self._give_tray_factory_width()
         QTimer.singleShot(0, self, self._style_dock_tabs)
         QTimer.singleShot(0, self, self._place_sidebar_handle)
 
@@ -2611,6 +2714,8 @@ class MainWindow(QMainWindow):
             act = getattr(self, "_act_sidebar", None)
             if act is not None and not act.isChecked():
                 act.setChecked(True)
+            if self._floats(dock):
+                self._float_window().show()
             dock.show()
             dock.raise_()
         else:
@@ -2756,8 +2861,12 @@ class MainWindow(QMainWindow):
         """Fold the trays away (remembering which were open) or bring
         them back; the chevron turns to point the way. The RIGHT side's
         trays — the left side folds on its own (Ctrl+F6)."""
+        win = self.__dict__.get("_panels_float")
+        if self.panels_floating() and win is not None:
+            win.setVisible(on)
         docks = [d for d in self._sidebar_docks()
-                 if self.dockWidgetArea(d) != Qt.LeftDockWidgetArea]
+                 if self.dockWidgetArea(d) not in (Qt.LeftDockWidgetArea,
+                                                   FLOAT_AREA)]
         if on:
             shown = getattr(self, "_sidebar_was", None) or docks[:1]
             from shiboken6 import isValid
@@ -2802,7 +2911,11 @@ class MainWindow(QMainWindow):
             for tb in self.findChildren(QToolBar):
                 tb.hide()
             for dock in self.findChildren(QDockWidget):
-                dock.hide()
+                if not self._floats(dock):
+                    dock.hide()
+            win = self.__dict__.get("_panels_float")
+            if win is not None:
+                win.hide()
             self.menuBar().hide()
             self.statusBar().show()
             self._clean_screen_exit_button()
@@ -2821,6 +2934,9 @@ class MainWindow(QMainWindow):
             state = getattr(self, "_clean_screen_state", None)
             if state is not None:
                 self.restoreState(state)
+            win = self.__dict__.get("_panels_float")
+            if win is not None and self.panels_floating():
+                win.show()
             self.menuBar().show()
             self.statusBar().show()
             from PySide6.QtCore import QTimer
@@ -2879,7 +2995,7 @@ class MainWindow(QMainWindow):
             self._place_clean_screen_exit()
             self._place_sidebar_handle()
         if event.type() == QEvent.ToolTip and isinstance(obj, QTabBar) \
-                and obj.parent() is self:
+                and obj.parent() in (self, self.__dict__.get("_panels_float")):
             self._show_tab_tip(obj, event)
             return True
         if self._side_dock_event(obj, event):
@@ -2942,9 +3058,12 @@ class MainWindow(QMainWindow):
 
     def _apply_dock_tabs_position(self) -> None:
         from PySide6.QtWidgets import QTabWidget
-        self.setTabPosition(
-            Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea,
-            QTabWidget.East if self.dock_tabs_vertical() else QTabWidget.North)
+        for host in (self, self.__dict__.get("_panels_float")):
+            if host is not None:
+                host.setTabPosition(
+                    Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea,
+                    QTabWidget.East if self.dock_tabs_vertical()
+                    else QTabWidget.North)
 
     def restoreState(self, state, version=0) -> bool:  # noqa: N802 — Qt override
         # A saved layout brings the shape its tab bars had when it was saved.
@@ -2999,8 +3118,9 @@ class MainWindow(QMainWindow):
         from PySide6.QtWidgets import QDockWidget
         from views.icons import letter_icon
         self._tab_icons_due = False
+        hosts = (self, self.__dict__.get("_panels_float"))
         for d in self.findChildren(QDockWidget):
-            if d.parent() is self and not d.testAttribute(Qt.WA_SetWindowIcon):
+            if d.parent() in hosts and not d.testAttribute(Qt.WA_SetWindowIcon):
                 d.setWindowIcon(letter_icon(d.windowTitle()))
                 # Noted, so a change of theme draws it again in the new ink.
                 d.setProperty("icon_letter", d.windowTitle())
@@ -3013,8 +3133,9 @@ class MainWindow(QMainWindow):
         in here."""
         from PySide6.QtWidgets import QDockWidget
         from shiboken6 import isValid
+        hosts = (self, self.__dict__.get("_panels_float"))
         docks = [d for d in self.findChildren(QDockWidget)
-                 if d.parent() is self]
+                 if d.parent() in hosts]
         for tb in self._dock_tab_bars():
             if not isValid(tb):
                 continue
@@ -3038,8 +3159,9 @@ class MainWindow(QMainWindow):
 
     def _dock_tab_bars(self) -> list:
         from PySide6.QtWidgets import QTabBar
+        hosts = (self, self.__dict__.get("_panels_float"))
         return [tb for tb in self.findChildren(QTabBar)
-                if tb.parent() is self]
+                if tb.parent() in hosts]
 
     def _style_dock_tabs(self) -> None:
         """Icons only (the name is the tooltip and heads the panel), scroll
@@ -3312,6 +3434,15 @@ class MainWindow(QMainWindow):
         move.triggered.connect(lambda: self.move_dock(
             dock, Qt.RightDockWidgetArea if left else Qt.LeftDockWidgetArea))
         menu.insertAction(first, move)
+        floating = QAction(tr("Floating panels"), menu)
+        floating.setCheckable(True)
+        floating.setChecked(self._floats(dock))
+        floating.setStatusTip(tr(
+            "The panels of this side in a window of their own, which can "
+            "go anywhere, also to another screen."))
+        floating.triggered.connect(
+            lambda on: self.set_panels_floating(on, dock))
+        menu.insertAction(first, floating)
         menu.insertSeparator(first)
 
     def _popup_menu(self, menu, pos) -> None:
@@ -3402,7 +3533,7 @@ class MainWindow(QMainWindow):
         when the event was taken."""
         from PySide6.QtCore import QEvent, QTimer
         t = event.type()
-        if obj is self:
+        if obj is self or obj is self.__dict__.get("_panels_float"):
             if t == QEvent.ChildAdded:
                 QTimer.singleShot(0, self, self._style_dock_tabs)
             return False
@@ -3489,6 +3620,330 @@ class MainWindow(QMainWindow):
         for d in docks:
             self.move_dock(d, to_area)
         front.raise_()
+
+    # ---- Floating panels: the side's trays in a window of their own --------
+    def _float_window(self, make: bool = False):
+        """The floating panels' window, made the first time it is needed."""
+        win = self.__dict__.get("_panels_float")
+        if win is None and make:
+            win = self._panels_float = _FloatingPanels(self)
+            win.setTabPosition(
+                Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea,
+                self.tabPosition(Qt.RightDockWidgetArea))
+        return win
+
+    def _floats(self, dock) -> bool:
+        win = self.__dict__.get("_panels_float")
+        return win is not None and dock is not None and dock.parent() is win
+
+    def panels_floating(self) -> bool:
+        """Whether the side trays are in their own window now."""
+        return bool(self.__dict__.get("_floating_on"))
+
+    # The window's dock calls, taught the floating window: a tray in it is
+    # on the side FLOAT_AREA, and putting one there moves it in. The code
+    # that moves trays between the sides works for it as it is.
+    def dockWidgetArea(self, dock):  # noqa: N802 — Qt override
+        if self._floats(dock):
+            return FLOAT_AREA
+        return super().dockWidgetArea(dock)
+
+    def addDockWidget(self, area, dock, *args):  # noqa: N802 — Qt override
+        win = self.__dict__.get("_panels_float")
+        if area == FLOAT_AREA:
+            if not self._floats(dock):
+                super().removeDockWidget(dock)
+            self._float_window(make=True).addDockWidget(
+                Qt.RightDockWidgetArea, dock)
+            return
+        if win is not None and dock.parent() is win:
+            win.removeDockWidget(dock)
+            QTimer.singleShot(0, self, self._end_float_if_empty)
+        super().addDockWidget(area, dock, *args)
+
+    def tabifyDockWidget(self, first, second):  # noqa: N802 — Qt override
+        if self._floats(first):
+            if not self._floats(second):
+                self.addDockWidget(FLOAT_AREA, second)
+            self.__dict__["_panels_float"].tabifyDockWidget(first, second)
+            return
+        if self._floats(second):
+            self.addDockWidget(super().dockWidgetArea(first), second)
+        super().tabifyDockWidget(first, second)
+
+    def tabifiedDockWidgets(self, dock):  # noqa: N802 — Qt override
+        if self._floats(dock):
+            return self.__dict__["_panels_float"].tabifiedDockWidgets(dock)
+        return super().tabifiedDockWidgets(dock)
+
+    def _tab_row(self, dock) -> list:
+        """The trays tabbed with ``dock``, in their tab order, itself among
+        them; ``[dock]`` when it stands alone."""
+        for tb in self._dock_tab_bars():
+            row = [self._dock_of_tab(tb, i) for i in range(tb.count())]
+            if dock in row:
+                return [d for d in row if d is not None]
+        return [dock]
+
+    def set_panels_floating(self, on: bool, dock=None) -> None:
+        """Gear ▸ Floating panels: the trays of ``dock``'s side (the right
+        one without it) out to a window of their own, in their order, the
+        one in front still in front — or, off, back to the side they came
+        from. Remembered for the next start."""
+        st = QSettings()
+        if on == self.panels_floating():
+            if on:
+                self._float_window().raise_()
+            return
+        if on:
+            area = (super().dockWidgetArea(dock) if dock is not None
+                    else Qt.RightDockWidgetArea)
+            if area not in (Qt.LeftDockWidgetArea, Qt.RightDockWidgetArea):
+                area = Qt.RightDockWidgetArea
+            side = self._side_docks(area)
+            if not side:
+                return
+            row = self._tab_row(dock if dock in side else side[0])
+            docks = [d for d in row if d in side] + \
+                [d for d in side if d not in row]
+            front = next((d for d in docks
+                          if not d.visibleRegion().isEmpty()), docks[0])
+            self._float_docks(docks, front)
+            st.setValue("ui/panels_floating", "1")
+            st.setValue("ui/panels_float_from", int(area.value))
+        else:
+            win = self._float_window()
+            area = Qt.DockWidgetArea(int(st.value(
+                "ui/panels_float_from", int(Qt.RightDockWidgetArea.value))))
+            self._remember_float_geometry()
+            self._dock_floating_back(area)
+            st.setValue("ui/panels_floating", "0")
+            if win is not None:
+                win.hide()
+        QTimer.singleShot(0, self, self._style_dock_tabs)
+        QTimer.singleShot(0, self, self._place_sidebar_handle)
+
+    def _float_docks(self, docks, front) -> None:
+        """``docks`` into the floating window, tabbed in this order."""
+        win = self._float_window(make=True)
+        self._floating_on = True
+        width = max(d.width() for d in docks) or 360
+        for d in docks:
+            self.addDockWidget(FLOAT_AREA, d)
+        for a, b in zip(docks, docks[1:]):
+            win.tabifyDockWidget(a, b)
+        for d in docks:
+            d.show()
+        win._placing = True
+        try:
+            geo = QSettings().value("ui/panels_float_geometry")
+            if not (geo and win.restoreGeometry(geo)):
+                # Where the side was: as wide as it, most of the window's
+                # height, clear of the window's right edge (that close, a
+                # drag would dock it straight back).
+                top = self.mapToGlobal(QPoint(0, 0))
+                win.resize(width, max(400, int(self.height() * 0.8)))
+                win.move(top.x() + max(0, self.width() - width
+                                       - 3 * self.FLOAT_DOCK_PX),
+                         top.y() + 60)
+            win.show()
+            QApplication.processEvents()
+        finally:
+            win._placing = False
+        front.raise_()
+        act = getattr(self, "_act_sidebar", None)
+        if act is not None and not act.isChecked():
+            act.blockSignals(True)
+            act.setChecked(True)
+            act.blockSignals(False)
+
+    def _floating_docks(self) -> list:
+        """The trays in the floating window, in tab order (closed ones,
+        which have no tab, at the end)."""
+        win = self.__dict__.get("_panels_float")
+        if win is None:
+            return []
+        mine = [d for d in self._sidebar_docks() if d.parent() is win]
+        shown = [d for d in mine if not d.isHidden()]
+        row = self._tab_row(shown[0]) if shown else []
+        return [d for d in row if d in mine] + [d for d in mine
+                                                if d not in row]
+
+    def _dock_floating_back(self, area) -> None:
+        """Every tray of the floating window back to ``area``, tabbed after
+        what is there, in their order; the closed ones stay closed."""
+        docks = self._floating_docks()
+        self._floating_on = False
+        if not docks:
+            return
+        front = next((d for d in docks if not d.isHidden()
+                      and not d.visibleRegion().isEmpty()), None)
+        hidden = {d for d in docks if d.isHidden()}
+        here = self._side_docks(area)
+        last = here[-1] if here else None
+        for d in docks:
+            self.addDockWidget(area, d)
+            if last is not None:
+                self.tabifyDockWidget(last, d)
+            last = d
+        for d in docks:
+            d.setVisible(d not in hidden)
+        if front is not None:
+            front.raise_()
+        act = (getattr(self, "_act_left_sidebar", None)
+               if area == Qt.LeftDockWidgetArea
+               else getattr(self, "_act_sidebar", None))
+        if act is not None and not act.isChecked():
+            act.blockSignals(True)
+            act.setChecked(True)
+            act.blockSignals(False)
+
+    def _end_float_if_empty(self) -> None:
+        """Every tray dragged out of the floating window: it goes too."""
+        if self.panels_floating() and not self._floating_docks():
+            self.set_panels_floating(False)
+
+    def _remember_float_geometry(self) -> None:
+        win = self.__dict__.get("_panels_float")
+        if win is None or not self.panels_floating():
+            return
+        st = QSettings()
+        st.setValue("ui/panels_float_geometry", win.saveGeometry())
+        docks = self._floating_docks()
+        st.setValue("ui/panels_float_order",
+                    ",".join(d.objectName() for d in docks))
+        front = next((d for d in docks if not d.isHidden()
+                      and not d.visibleRegion().isEmpty()), None)
+        st.setValue("ui/panels_float_front",
+                    front.objectName() if front is not None else "")
+
+    def _restore_floating_panels(self) -> None:
+        """At start-up: the panels float again if they floated when the
+        window closed, the same ones in the same order. (The window saves
+        its layout with them docked back, so a start without this — an
+        older version — finds them on their side.)"""
+        st = QSettings()
+        if str(st.value("ui/panels_floating", "0")) != "1":
+            return
+        names = [n for n in str(st.value("ui/panels_float_order", "")
+                                ).split(",") if n]
+        trays = {d.objectName(): d for d in self._sidebar_docks()}
+        docks = [trays[n] for n in names
+                 if n in trays and not trays[n].isHidden()]
+        if not docks:
+            area = Qt.DockWidgetArea(int(st.value(
+                "ui/panels_float_from", int(Qt.RightDockWidgetArea.value))))
+            docks = self._side_docks(area)
+        if not docks:
+            st.setValue("ui/panels_floating", "0")
+            return
+        front = trays.get(str(st.value("ui/panels_float_front", "")))
+        self._float_docks(docks, front if front in docks else docks[0])
+        QTimer.singleShot(0, self, self._style_dock_tabs)
+        QTimer.singleShot(0, self, self._place_sidebar_handle)
+
+    def _dock_panels_for_saving(self) -> None:
+        """On closing: the floating panels remembered, then docked back,
+        so the window's saved layout has every tray in it."""
+        if not self.panels_floating():
+            return
+        st = QSettings()
+        self._remember_float_geometry()
+        area = Qt.DockWidgetArea(int(st.value(
+            "ui/panels_float_from", int(Qt.RightDockWidgetArea.value))))
+        self._dock_floating_back(area)
+        win = self.__dict__.get("_panels_float")
+        if win is not None:
+            win.hide()
+
+    #: How near a side of the window (px) the floating panels dragged by
+    #: their title bar light it up and, let go there, dock on it.
+    FLOAT_DOCK_PX = 40
+
+    def _float_drop_side(self, pointer):
+        """The side the floating panels would dock on if let go now: the
+        pointer over that side's drop zone, or the floating window's edge
+        within FLOAT_DOCK_PX of the window's side. None: not near one."""
+        win = self.__dict__.get("_panels_float")
+        if win is None or not self.panels_floating():
+            return None
+        vp = self.viewport
+        top_left = vp.mapToGlobal(vp.rect().topLeft())
+        inner = QRect(top_left, vp.size())
+        w = max(120, min(220, vp.width() // 4))
+        frame = win.frameGeometry()
+        if not (frame.bottom() > inner.top() and frame.top() < inner.bottom()):
+            return None
+        near = self.FLOAT_DOCK_PX
+        left = QRect(inner.left(), inner.top(), w, inner.height())
+        right = QRect(inner.right() - w + 1, inner.top(), w, inner.height())
+        if left.contains(pointer) or abs(frame.left() - inner.left()) <= near:
+            return Qt.LeftDockWidgetArea
+        if right.contains(pointer) \
+                or abs(frame.right() - inner.right()) <= near:
+            return Qt.RightDockWidgetArea
+        return None
+
+    def _float_drag_start(self) -> None:
+        """A drag of the floating panels begins (Windows says so; elsewhere
+        the first move does): where they were is kept — if they dock,
+        that is where they float again next time, not at the edge they
+        were dropped on."""
+        win = self.__dict__.get("_panels_float")
+        if win is None or not self.panels_floating()                 or self.__dict__.get("_float_dragging"):
+            return
+        self._float_dragging = True
+        self._float_drag_geo = win.saveGeometry()
+        self.show_drop_zones(True)
+
+    def _float_drag_move(self, pointer) -> None:
+        """The floating panels moved by a drag: the side they would dock
+        on lights up."""
+        if not self.panels_floating():
+            return
+        self._float_drag_start()
+        side = self._float_drop_side(pointer)
+        for zone in self._drop_zones():
+            zone.set_hot(zone.area == side)
+
+    def _float_drag_end(self, pointer) -> None:
+        """The drag let go: near a side, the panels dock on it."""
+        if not self.__dict__.get("_float_dragging"):
+            return
+        self._float_dragging = False
+        self.show_drop_zones(False)
+        side = self._float_drop_side(pointer)
+        if side is None:
+            return
+        before = self.__dict__.get("_float_drag_geo")
+        st = QSettings()
+        st.setValue("ui/panels_float_from", int(side.value))
+        self.set_panels_floating(False)
+        if before is not None:
+            st.setValue("ui/panels_float_geometry", before)
+
+    def panels_context_menu(self, host, event) -> None:
+        """Right-click on a tray tab bar of the floating panels: the gear's
+        menu for the tab under it, or the panels list off the tabs."""
+        bar = None
+        child = host.childAt(event.pos())
+        while child is not None and child is not host:
+            if isinstance(child, QTabBar):
+                bar = child
+                break
+            child = child.parentWidget()
+        if bar is None:
+            event.ignore()
+            return
+        menu = _StayOpenMenu(self)
+        dock = self._dock_of_tab(bar, self._tab_on_bar_at(
+            bar, bar.mapFrom(host, event.pos())))
+        if dock is not None:
+            self._fill_panel_options_menu(menu, dock)
+        else:
+            self._fill_panels_menu(menu, self._area_of_bar(bar))
+        self._popup_menu(menu, event.globalPos())
+        event.accept()
 
     # ---- Drop zones: where a dragged tab can go -------------------------------
     def _drop_zones(self) -> list:
@@ -7767,8 +8222,16 @@ class MainWindow(QMainWindow):
                     and not d.visibleRegion().isEmpty()])
         for d in docks:
             d.hide()
+        win = self.__dict__.get("_panels_float")
+        self._float_hidden = bool(win is not None and win.isVisible())
+        if self._float_hidden:
+            win.hide()
 
     def _show_panels_again(self) -> None:
+        win = self.__dict__.get("_panels_float")
+        if self.__dict__.get("_float_hidden") and win is not None:
+            self._float_hidden = False
+            win.show()
         saved = self.__dict__.get("_panels_hidden")
         if not saved:
             return
@@ -11276,6 +11739,7 @@ class MainWindow(QMainWindow):
         # Quitting from the empty area: the panels it hid are the user's
         # arrangement, kept for the next session.
         self._show_panels_again()
+        self._dock_panels_for_saving()
         # The window arrangement (toolbars, docks, size) IS a preference.
         # Closing mid-presentation must remember the WORKSPACE, not the
         # clean screen's everything-hidden state.

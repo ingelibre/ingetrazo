@@ -3688,6 +3688,8 @@
  "Duplicate Scene": "复制场景",
  "Make a copy of the selected scene": "复制所选场景",
  "Tabs on top": "标签页在顶部",
+ "Floating panels": "浮动面板",
+ "The panels of this side in a window of their own, which can go anywhere, also to another screen.": "将这一侧的面板放入独立窗口，可移到任何位置，包括另一块屏幕。",
  "Tabs on the right, vertical": "标签页在右侧（竖排）",
  "Panel options": "面板选项",
  "Set where north lies: click a centre, then click toward north. The sun's shadows turn with it.": "设置北方：单击一个中心点，再朝北单击。太阳阴影随之旋转。",
