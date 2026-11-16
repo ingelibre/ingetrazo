@@ -3766,5 +3766,13 @@
  "Architect. The units system, the Browser, Layers 2.0, the Solid Inspector, Fillet 3D bevels, Bridge, Join Segments, Camera ▸ Axes, soft ambient occlusion, round curved surfaces, view layouts, scenes as tabs, cleaner exports and many everyday editing tools. And for 0.6.2: the North tool, camera settings, scene transitions with video and the view as layered SVG.": "Architetto. Il sistema di unità, il Browser, Livelli 2.0, l'Ispettore solidi, gli smussi di Fillet 3D, Ponte, Unisci segmenti, Fotocamera ▸ Assi, l'occlusione ambientale morbida, le superfici curve arrotondate, i layout di vista, le scene come schede, esportazioni più pulite e molti strumenti di modifica di tutti i giorni. E per la 0.6.2: lo strumento Nord, le impostazioni della fotocamera, le transizioni tra scene con video e la vista come SVG a livelli.",
  "Korean translation of the interface, and the AI key from an environment variable. In 0.6.2, soft shadows and fixes for macOS.": "Traduzione coreana dell'interfaccia, e la chiave IA da una variabile d'ambiente. Nella 0.6.2, le ombre morbide e correzioni per macOS.",
  "Exact Move+Ctrl copies, overlapping rotated copies, faster box selection on huge models and the reviewed Indonesian translation.": "Copie esatte con Sposta+Ctrl, copie ruotate sovrapposte, selezione a riquadro più veloce nei modelli enormi e la traduzione indonesiana rivista.",
- "Snapping to the rest of the model from inside a group or component.": "Lo snap al resto del modello dall’interno di un gruppo o componente."
+ "Snapping to the rest of the model from inside a group or component.": "Lo snap al resto del modello dall’interno di un gruppo o componente.",
+ "Make Faces and Extrude…": "Crea facce ed estrudi…",
+ "Make Faces and Extrude": "Crea facce ed estrudi",
+ "Make the faces that the selected edges close and extrude each one into its own solid group.": "Crea le facce chiuse dagli spigoli selezionati ed estrude ciascuna in un proprio gruppo solido.",
+ "A negative height extrudes the other way.": "Un'altezza negativa estrude dall'altra parte.",
+ "Make Faces and Extrude: {n} solids, {h} high": "Crea facce ed estrudi: {n} solidi alti {h}",
+ "The height cannot be zero.": "L'altezza non può essere zero.",
+ "Extrude inner loops too": "Estrudi anche i contorni interni",
+ "Off: a loop inside another is left as a hole (the room inside the walls, the bore of a tube).\nOn: it becomes a solid of its own too (a column inside a slab).": "Disattivato: un contorno dentro un altro resta un foro (la stanza dentro i muri, l'interno di un tubo).\nAttivato: diventa anch'esso un solido a sé (un pilastro dentro un solaio)."
 }

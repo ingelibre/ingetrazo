@@ -3765,5 +3765,13 @@
  "Architect. The units system, the Browser, Layers 2.0, the Solid Inspector, Fillet 3D bevels, Bridge, Join Segments, Camera ▸ Axes, soft ambient occlusion, round curved surfaces, view layouts, scenes as tabs, cleaner exports and many everyday editing tools. And for 0.6.2: the North tool, camera settings, scene transitions with video and the view as layered SVG.": "건축가. 단위 시스템, 브라우저, 레이어 2.0, 솔리드 검사기, Fillet 3D 모따기, 브리지, 세그먼트 연결, 카메라 ▸ 축, 부드러운 앰비언트 오클루전, 둥근 곡면, 뷰 레이아웃, 탭으로 된 장면, 더 깔끔한 내보내기 및 다양한 일상 편집 도구. 0.6.2에서는 북쪽 도구, 카메라 설정, 동영상을 포함한 장면 전환, 레이어별 SVG 보기 내보내기도.",
  "Korean translation of the interface, and the AI key from an environment variable. In 0.6.2, soft shadows and fixes for macOS.": "인터페이스 한국어 번역, 그리고 환경 변수에서 읽는 AI 키. 0.6.2에서는 부드러운 그림자와 macOS 수정도.",
  "Exact Move+Ctrl copies, overlapping rotated copies, faster box selection on huge models and the reviewed Indonesian translation.": "정확한 이동+Ctrl 복사, 겹치는 회전 복사, 거대한 모델에서 더 빠른 상자 선택, 그리고 검토된 인도네시아어 번역.",
- "Snapping to the rest of the model from inside a group or component.": "그룹이나 컴포넌트 안에서 모델의 나머지 부분으로 스냅."
+ "Snapping to the rest of the model from inside a group or component.": "그룹이나 컴포넌트 안에서 모델의 나머지 부분으로 스냅.",
+ "Make Faces and Extrude…": "면 만들기 및 돌출…",
+ "Make Faces and Extrude": "면 만들기 및 돌출",
+ "Make the faces that the selected edges close and extrude each one into its own solid group.": "선택한 모서리가 닫는 면을 만들고 각각을 별도의 솔리드 그룹으로 돌출합니다.",
+ "A negative height extrudes the other way.": "음수 높이는 반대 방향으로 돌출합니다.",
+ "Make Faces and Extrude: {n} solids, {h} high": "면 만들기 및 돌출: 솔리드 {n}개, 높이 {h}",
+ "The height cannot be zero.": "높이는 0일 수 없습니다.",
+ "Extrude inner loops too": "안쪽 윤곽도 돌출",
+ "Off: a loop inside another is left as a hole (the room inside the walls, the bore of a tube).\nOn: it becomes a solid of its own too (a column inside a slab).": "끔: 다른 윤곽 안에 있는 윤곽은 구멍으로 남습니다 (벽 안의 방, 관의 내부).\n켬: 그것도 별도의 솔리드가 됩니다 (슬래브 안의 기둥)."
 }

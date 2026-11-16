@@ -3766,5 +3766,13 @@
  "Architect. The units system, the Browser, Layers 2.0, the Solid Inspector, Fillet 3D bevels, Bridge, Join Segments, Camera ▸ Axes, soft ambient occlusion, round curved surfaces, view layouts, scenes as tabs, cleaner exports and many everyday editing tools. And for 0.6.2: the North tool, camera settings, scene transitions with video and the view as layered SVG.": "建築師。單位系統、瀏覽器、圖層 2.0、實體檢查器、Fillet 3D 倒角、橋接、接合線段、相機 ▸ 座標軸、柔和環境光遮蔽、圓潤曲面、視圖配置、以分頁呈現的場景、更乾淨的匯出，以及許多日常編輯工具。0.6.2 中還有：指北工具、相機設定、附影片的場景轉場，以及分圖層的 SVG 視圖匯出。",
  "Korean translation of the interface, and the AI key from an environment variable. In 0.6.2, soft shadows and fixes for macOS.": "介面的韓文翻譯，以及從環境變數讀取 AI 金鑰。0.6.2 中還有柔和陰影與 macOS 修正。",
  "Exact Move+Ctrl copies, overlapping rotated copies, faster box selection on huge models and the reviewed Indonesian translation.": "精確的移動+Ctrl 複製、相互重疊的旋轉複製、在超大模型上更快的框選，以及校訂後的印尼文翻譯。",
- "Snapping to the rest of the model from inside a group or component.": "在群組或元件內部鎖點到模型其餘部分。"
+ "Snapping to the rest of the model from inside a group or component.": "在群組或元件內部鎖點到模型其餘部分。",
+ "Make Faces and Extrude…": "建立表面並擠出…",
+ "Make Faces and Extrude": "建立表面並擠出",
+ "Make the faces that the selected edges close and extrude each one into its own solid group.": "建立所選邊線封閉的表面，並將每個表面擠出為獨立的實體群組。",
+ "A negative height extrudes the other way.": "負高度會往反方向擠出。",
+ "Make Faces and Extrude: {n} solids, {h} high": "建立表面並擠出：{n} 個實體，高 {h}",
+ "The height cannot be zero.": "高度不能為零。",
+ "Extrude inner loops too": "一併擠出內部輪廓",
+ "Off: a loop inside another is left as a hole (the room inside the walls, the bore of a tube).\nOn: it becomes a solid of its own too (a column inside a slab).": "關閉：位於另一輪廓內的輪廓保留為孔洞（牆內的房間、管子內部）。\n開啟：它也會成為獨立的實體（樓板內的柱子）。"
 }
