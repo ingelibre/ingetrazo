@@ -3776,7 +3776,6 @@
  "Soften": "Згладити",
  "Select edges or faces first.": "Спершу виберіть ребра або грані.",
  "Softened {n} edge(s)": "Згладжено ребер: {n}",
- "Hidden geometry": "Прихована геометрія",
  "Show hidden edges and faces, and the soft edges of curved surfaces (a cylinder's facets), dotted — the same as Camera ▸ Hidden Geometry.": "Показує пунктиром приховані ребра й грані, а також згладжені ребра криволінійних поверхонь (грані циліндра) — те саме, що Камера ▸ Прихована геометрія.",
  "Make Visible": "Зробити видимим",
  "Made {n} line(s) visible": "Видимих ліній: {n}",

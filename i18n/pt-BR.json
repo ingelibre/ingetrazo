@@ -3776,7 +3776,6 @@
  "Soften": "Suavizar",
  "Select edges or faces first.": "Selecione arestas ou faces primeiro.",
  "Softened {n} edge(s)": "{n} aresta(s) suavizada(s)",
- "Hidden geometry": "Geometria oculta",
  "Show hidden edges and faces, and the soft edges of curved surfaces (a cylinder's facets), dotted — the same as Camera ▸ Hidden Geometry.": "Mostra pontilhadas as arestas e faces ocultas e as arestas suavizadas das superfícies curvas (as facetas de um cilindro) — o mesmo que Câmera ▸ Geometria Oculta.",
  "Make Visible": "Tornar visível",
  "Made {n} line(s) visible": "{n} linha(s) visível(is)",

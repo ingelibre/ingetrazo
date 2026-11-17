@@ -3315,7 +3315,7 @@ class StylesPanel(QWidget):
         # Geometry — the hidden edges and faces, and the soft edges of a
         # curved surface (a cylinder's facets), drawn dotted. A scene flag,
         # not a style field: the panel is where one looks while modelling.
-        self._hidden_geo = QCheckBox(tr("Hidden geometry"))
+        self._hidden_geo = QCheckBox(tr("Hidden Geometry"))
         self._hidden_geo.setToolTip(tr(
             "Show hidden edges and faces, and the soft edges of curved "
             "surfaces (a cylinder's facets), dotted — the same as Camera ▸ "

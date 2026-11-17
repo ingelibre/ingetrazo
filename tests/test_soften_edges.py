@@ -279,7 +279,7 @@ def test_soften_targets_take_edges_and_inner_edges_of_faces():
     assert MainWindow._soften_targets(fake, [rim]) == [rim]
 
 
-# ---- 6. Styles ▸ Hidden geometry: the same switch as the Camera menu -----
+# ---- 6. Styles ▸ Hidden Geometry: the same switch as the Camera menu -----
 
 def test_styles_box_and_camera_menu_are_one_switch():
     from views.main_window import MainWindow

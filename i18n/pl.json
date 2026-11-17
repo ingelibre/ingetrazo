@@ -3777,7 +3777,6 @@
  "Soften": "Wygładź",
  "Select edges or faces first.": "Najpierw zaznacz krawędzie lub ściany.",
  "Softened {n} edge(s)": "Wygładzono krawędzie: {n}",
- "Hidden geometry": "Ukryta geometria",
  "Show hidden edges and faces, and the soft edges of curved surfaces (a cylinder's facets), dotted — the same as Camera ▸ Hidden Geometry.": "Pokazuje kropkowane ukryte krawędzie i ściany oraz wygładzone krawędzie powierzchni krzywych (fasety walca) — to samo co Kamera ▸ Ukryta geometria.",
  "Make Visible": "Pokaż linie",
  "Made {n} line(s) visible": "Widoczne linie: {n}",

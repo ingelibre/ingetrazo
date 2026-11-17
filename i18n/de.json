@@ -3769,7 +3769,6 @@
  "Soften": "Glätten",
  "Select edges or faces first.": "Wählen Sie zuerst Kanten oder Flächen aus.",
  "Softened {n} edge(s)": "{n} Kante(n) geglättet",
- "Hidden geometry": "Ausgeblendete Geometrie",
  "Show hidden edges and faces, and the soft edges of curved surfaces (a cylinder's facets), dotted — the same as Camera ▸ Hidden Geometry.": "Zeigt ausgeblendete Kanten und Flächen sowie die geglätteten Kanten gekrümmter Flächen (die Facetten eines Zylinders) gepunktet — wie Kamera ▸ Ausgeblendete Geometrie.",
  "Make Visible": "Sichtbar machen",
  "Made {n} line(s) visible": "{n} Linie(n) sichtbar gemacht",

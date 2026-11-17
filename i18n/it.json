@@ -3770,7 +3770,6 @@
  "Soften": "Ammorbidisci",
  "Select edges or faces first.": "Seleziona prima spigoli o facce.",
  "Softened {n} edge(s)": "{n} spigolo/i ammorbidito/i",
- "Hidden geometry": "Geometria nascosta",
  "Show hidden edges and faces, and the soft edges of curved surfaces (a cylinder's facets), dotted — the same as Camera ▸ Hidden Geometry.": "Mostra tratteggiati gli spigoli e le facce nascosti e gli spigoli ammorbiditi delle superfici curve (le facce di un cilindro) — come Camera ▸ Geometria nascosta.",
  "Make Visible": "Rendi visibile",
  "Made {n} line(s) visible": "{n} linea/e resa/e visibile/i",

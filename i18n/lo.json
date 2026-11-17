@@ -3772,7 +3772,6 @@
  "Soften": "ເຮັດໃຫ້ນຸ່ມ",
  "Select edges or faces first.": "ເລືອກຂອບ ຫຼື ໜ້າກ່ອນ.",
  "Softened {n} edge(s)": "ເຮັດໃຫ້ນຸ່ມແລ້ວ {n} ຂອບ",
- "Hidden geometry": "ຮູບຊົງເລຂາຄະນິດທີ່ເຊື່ອງຢູ່",
  "Show hidden edges and faces, and the soft edges of curved surfaces (a cylinder's facets), dotted — the same as Camera ▸ Hidden Geometry.": "ສະແດງຂອບ ແລະ ໜ້າທີ່ເຊື່ອງຢູ່ ແລະ ຂອບນຸ່ມຂອງພື້ນຜິວໂຄ້ງ (ໜ້າຍ່ອຍຂອງທໍ່ກະບອກ) ເປັນເສັ້ນຈຸດ — ຄືກັບ ກ້ອງສ່ອງ ▸ ຮູບຊົງເລຂາຄະນິດທີ່ເຊື່ອງຢູ່.",
  "Make Visible": "ເຮັດໃຫ້ເຫັນ",
  "Made {n} line(s) visible": "ເຫັນແລ້ວ {n} ເສັ້ນ",

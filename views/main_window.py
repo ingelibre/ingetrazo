@@ -5051,7 +5051,7 @@ class MainWindow(QMainWindow):
         self._sync_styles_hidden_geometry()
 
     def _sync_styles_hidden_geometry(self) -> None:
-        """The Styles panel's Hidden geometry box follows the scene flag
+        """The Styles panel's Hidden Geometry box follows the scene flag
         (#831); guarded, the menu builds before the docks."""
         panel = getattr(self, "styles_panel", None)
         sync = getattr(panel, "sync_hidden_geometry", None)

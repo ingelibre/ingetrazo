@@ -3804,7 +3804,6 @@
  "Soften": "تنعيم",
  "Select edges or faces first.": "حدّد حوافًا أو أوجهًا أولًا.",
  "Softened {n} edge(s)": "تم تنعيم {n} حافة",
- "Hidden geometry": "الهندسة الخفية",
  "Show hidden edges and faces, and the soft edges of curved surfaces (a cylinder's facets), dotted — the same as Camera ▸ Hidden Geometry.": "يعرض بخط منقّط الحواف والأوجه المخفية والحواف المنعّمة للأسطح المنحنية (أوجه الأسطوانة) — مثل الكاميرا ▸ الهندسة الخفية.",
  "Make Visible": "إظهار الخطوط",
  "Made {n} line(s) visible": "أصبح {n} خط مرئيًا",

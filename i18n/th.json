@@ -3772,7 +3772,6 @@
  "Soften": "ทำให้นุ่มนวล",
  "Select edges or faces first.": "เลือกขอบหรือหน้าก่อน",
  "Softened {n} edge(s)": "ทำให้นุ่มนวลแล้ว {n} ขอบ",
- "Hidden geometry": "รูปทรงที่ซ่อนอยู่",
  "Show hidden edges and faces, and the soft edges of curved surfaces (a cylinder's facets), dotted — the same as Camera ▸ Hidden Geometry.": "แสดงขอบและหน้าที่ซ่อนอยู่ รวมถึงขอบนุ่มนวลของพื้นผิวโค้ง (ด้านย่อยของทรงกระบอก) เป็นเส้นประ — เหมือนกับ กล้อง ▸ รูปทรงที่ซ่อนอยู่",
  "Make Visible": "ทำให้มองเห็น",
  "Made {n} line(s) visible": "มองเห็นแล้ว {n} เส้น",

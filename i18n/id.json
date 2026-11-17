@@ -3772,7 +3772,6 @@
  "Soften": "Haluskan",
  "Select edges or faces first.": "Pilih rusuk atau muka terlebih dahulu.",
  "Softened {n} edge(s)": "{n} rusuk dihaluskan",
- "Hidden geometry": "Geometri tersembunyi",
  "Show hidden edges and faces, and the soft edges of curved surfaces (a cylinder's facets), dotted — the same as Camera ▸ Hidden Geometry.": "Menampilkan rusuk dan muka tersembunyi, serta rusuk halus permukaan lengkung (faset silinder), bertitik — sama seperti Kamera ▸ Geometri Tersembunyi.",
  "Make Visible": "Jadikan terlihat",
  "Made {n} line(s) visible": "{n} garis kini terlihat",

@@ -3796,7 +3796,6 @@
  "Soften": "Làm mềm",
  "Select edges or faces first.": "Hãy chọn cạnh hoặc mặt trước.",
  "Softened {n} edge(s)": "Đã làm mềm {n} cạnh",
- "Hidden geometry": "Hình học ẩn",
  "Show hidden edges and faces, and the soft edges of curved surfaces (a cylinder's facets), dotted — the same as Camera ▸ Hidden Geometry.": "Hiện dạng chấm các cạnh và mặt bị ẩn, cùng các cạnh làm mềm của bề mặt cong (các mặt của hình trụ) — giống Camera ▸ Hình học ẩn.",
  "Make Visible": "Hiện đường",
  "Made {n} line(s) visible": "Đã hiện {n} đường",

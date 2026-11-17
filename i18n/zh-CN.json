@@ -3770,7 +3770,6 @@
  "Soften": "柔化",
  "Select edges or faces first.": "请先选择边线或面。",
  "Softened {n} edge(s)": "已柔化 {n} 条边线",
- "Hidden geometry": "隐藏几何体",
  "Show hidden edges and faces, and the soft edges of curved surfaces (a cylinder's facets), dotted — the same as Camera ▸ Hidden Geometry.": "以虚线显示隐藏的边线和面，以及曲面的柔化边线（圆柱的小面）——与 相机 ▸ 隐藏几何体 相同。",
  "Make Visible": "设为可见",
  "Made {n} line(s) visible": "已显示 {n} 条线",

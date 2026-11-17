@@ -3770,7 +3770,6 @@
  "Soften": "Заглади",
  "Select edges or faces first.": "Първо изберете ръбове или стени.",
  "Softened {n} edge(s)": "Загладени ръбове: {n}",
- "Hidden geometry": "Скрита геометрия",
  "Show hidden edges and faces, and the soft edges of curved surfaces (a cylinder's facets), dotted — the same as Camera ▸ Hidden Geometry.": "Показва с точки скритите ръбове и стени и загладените ръбове на извитите повърхнини (стените на цилиндър) — същото като Камера ▸ Скрита геометрия.",
  "Make Visible": "Направи видимо",
  "Made {n} line(s) visible": "Видими линии: {n}",

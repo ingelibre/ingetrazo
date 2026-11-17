@@ -3769,7 +3769,6 @@
  "Soften": "부드럽게",
  "Select edges or faces first.": "먼저 모서리나 면을 선택하세요.",
  "Softened {n} edge(s)": "모서리 {n}개를 부드럽게 했습니다",
- "Hidden geometry": "숨겨진 지오메트리",
  "Show hidden edges and faces, and the soft edges of curved surfaces (a cylinder's facets), dotted — the same as Camera ▸ Hidden Geometry.": "숨겨진 모서리와 면, 곡면의 부드러운 모서리(원기둥의 면)를 점선으로 표시합니다. 카메라 ▸ 숨겨진 지오메트리와 같습니다.",
  "Make Visible": "보이게 하기",
  "Made {n} line(s) visible": "선 {n}개를 보이게 했습니다",
