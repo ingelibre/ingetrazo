@@ -3766,5 +3766,13 @@
  "Architect. The units system, the Browser, Layers 2.0, the Solid Inspector, Fillet 3D bevels, Bridge, Join Segments, Camera ▸ Axes, soft ambient occlusion, round curved surfaces, view layouts, scenes as tabs, cleaner exports and many everyday editing tools. And for 0.6.2: the North tool, camera settings, scene transitions with video and the view as layered SVG.": "Architetto. Il sistema di unità, il Browser, Livelli 2.0, l'Ispettore solidi, gli smussi di Fillet 3D, Ponte, Unisci segmenti, Fotocamera ▸ Assi, l'occlusione ambientale morbida, le superfici curve arrotondate, i layout di vista, le scene come schede, esportazioni più pulite e molti strumenti di modifica di tutti i giorni. E per la 0.6.2: lo strumento Nord, le impostazioni della fotocamera, le transizioni tra scene con video e la vista come SVG a livelli.",
  "Korean translation of the interface, and the AI key from an environment variable. In 0.6.2, soft shadows and fixes for macOS.": "Traduzione coreana dell'interfaccia, e la chiave IA da una variabile d'ambiente. Nella 0.6.2, le ombre morbide e correzioni per macOS.",
  "Exact Move+Ctrl copies, overlapping rotated copies, faster box selection on huge models and the reviewed Indonesian translation.": "Copie esatte con Sposta+Ctrl, copie ruotate sovrapposte, selezione a riquadro più veloce nei modelli enormi e la traduzione indonesiana rivista.",
- "Snapping to the rest of the model from inside a group or component.": "Lo snap al resto del modello dall’interno di un gruppo o componente."
+ "Snapping to the rest of the model from inside a group or component.": "Lo snap al resto del modello dall’interno di un gruppo o componente.",
+ "Soften": "Ammorbidisci",
+ "Select edges or faces first.": "Seleziona prima spigoli o facce.",
+ "Softened {n} edge(s)": "{n} spigolo/i ammorbidito/i",
+ "Show hidden edges and faces, and the soft edges of curved surfaces (a cylinder's facets), dotted — the same as Camera ▸ Hidden Geometry.": "Mostra tratteggiati gli spigoli e le facce nascosti e gli spigoli ammorbiditi delle superfici curve (le facce di un cilindro) — come Camera ▸ Geometria nascosta.",
+ "Make Visible": "Rendi visibile",
+ "Made {n} line(s) visible": "{n} linea/e resa/e visibile/i",
+ "No invisible lines in the selection — turn on Camera ▸ Hidden Geometry to see and select them.": "Nessuna linea invisibile nella selezione: attiva Camera ▸ Geometria nascosta per vederle e selezionarle.",
+ "Drag over edges to erase them. Shift = hide, Ctrl = soften, Ctrl+Shift = make visible.": "Trascina sugli spigoli per cancellarli. Maiusc = nascondi, Ctrl = ammorbidisci, Ctrl+Maiusc = rendi visibile."
 }

@@ -3768,5 +3768,13 @@
  "Architect. The units system, the Browser, Layers 2.0, the Solid Inspector, Fillet 3D bevels, Bridge, Join Segments, Camera ▸ Axes, soft ambient occlusion, round curved surfaces, view layouts, scenes as tabs, cleaner exports and many everyday editing tools. And for 0.6.2: the North tool, camera settings, scene transitions with video and the view as layered SVG.": "Arsitek. Sistem satuan, Penjelajah, Layer 2.0, Pemeriksa Solid, bevel Fillet 3D, Jembatan, Gabungkan segmen, Kamera ▸ Sumbu, ambient occlusion halus, permukaan lengkung yang membulat, tata letak tampilan, scene sebagai tab, ekspor yang lebih bersih, dan banyak alat penyuntingan sehari-hari. Dan untuk 0.6.2: alat Utara, pengaturan kamera, transisi adegan dengan video, dan tampilan sebagai SVG berlapis.",
  "Korean translation of the interface, and the AI key from an environment variable. In 0.6.2, soft shadows and fixes for macOS.": "Terjemahan antarmuka ke bahasa Korea, dan kunci AI dari variabel lingkungan. Di 0.6.2, bayangan lembut dan perbaikan untuk macOS.",
  "Exact Move+Ctrl copies, overlapping rotated copies, faster box selection on huge models and the reviewed Indonesian translation.": "Salinan Pindah+Ctrl yang persis, salinan putar yang saling tumpang tindih, seleksi kotak yang lebih cepat pada model sangat besar, dan terjemahan bahasa Indonesia yang direvisi.",
- "Snapping to the rest of the model from inside a group or component.": "Snap ke bagian lain model dari dalam grup atau komponen."
+ "Snapping to the rest of the model from inside a group or component.": "Snap ke bagian lain model dari dalam grup atau komponen.",
+ "Soften": "Haluskan",
+ "Select edges or faces first.": "Pilih rusuk atau muka terlebih dahulu.",
+ "Softened {n} edge(s)": "{n} rusuk dihaluskan",
+ "Show hidden edges and faces, and the soft edges of curved surfaces (a cylinder's facets), dotted — the same as Camera ▸ Hidden Geometry.": "Menampilkan rusuk dan muka tersembunyi, serta rusuk halus permukaan lengkung (faset silinder), bertitik — sama seperti Kamera ▸ Geometri Tersembunyi.",
+ "Make Visible": "Jadikan terlihat",
+ "Made {n} line(s) visible": "{n} garis kini terlihat",
+ "No invisible lines in the selection — turn on Camera ▸ Hidden Geometry to see and select them.": "Tidak ada garis tak terlihat dalam pilihan — nyalakan Kamera ▸ Geometri Tersembunyi untuk melihat dan memilihnya.",
+ "Drag over edges to erase them. Shift = hide, Ctrl = soften, Ctrl+Shift = make visible.": "Seret di atas rusuk untuk menghapusnya. Shift = sembunyikan, Ctrl = haluskan, Ctrl+Shift = jadikan terlihat."
 }

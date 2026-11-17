@@ -3773,5 +3773,13 @@
  "Architect. The units system, the Browser, Layers 2.0, the Solid Inspector, Fillet 3D bevels, Bridge, Join Segments, Camera ▸ Axes, soft ambient occlusion, round curved surfaces, view layouts, scenes as tabs, cleaner exports and many everyday editing tools. And for 0.6.2: the North tool, camera settings, scene transitions with video and the view as layered SVG.": "Architekt. System jednostek, Przeglądarka, Warstwy 2.0, Inspektor brył, fazy Fillet 3D, Most, Połącz segmenty, Kamera ▸ Osie, miękka okluzja otoczenia, zaokrąglone powierzchnie krzywe, układy widoków, sceny jako karty, czystsze eksporty i wiele codziennych narzędzi edycji. A w 0.6.2: narzędzie Północ, ustawienia kamery, przejścia między scenami z wideo i widok jako SVG z warstwami.",
  "Korean translation of the interface, and the AI key from an environment variable. In 0.6.2, soft shadows and fixes for macOS.": "Koreańskie tłumaczenie interfejsu oraz klucz AI ze zmiennej środowiskowej. W 0.6.2 miękkie cienie i poprawki dla macOS.",
  "Exact Move+Ctrl copies, overlapping rotated copies, faster box selection on huge models and the reviewed Indonesian translation.": "Dokładne kopie przez Przesuń+Ctrl, nakładające się obrócone kopie, szybsze zaznaczanie ramką w ogromnych modelach i poprawione tłumaczenie indonezyjskie.",
- "Snapping to the rest of the model from inside a group or component.": "Przyciąganie do reszty modelu z wnętrza grupy lub komponentu."
+ "Snapping to the rest of the model from inside a group or component.": "Przyciąganie do reszty modelu z wnętrza grupy lub komponentu.",
+ "Soften": "Wygładź",
+ "Select edges or faces first.": "Najpierw zaznacz krawędzie lub ściany.",
+ "Softened {n} edge(s)": "Wygładzono krawędzie: {n}",
+ "Show hidden edges and faces, and the soft edges of curved surfaces (a cylinder's facets), dotted — the same as Camera ▸ Hidden Geometry.": "Pokazuje kropkowane ukryte krawędzie i ściany oraz wygładzone krawędzie powierzchni krzywych (fasety walca) — to samo co Kamera ▸ Ukryta geometria.",
+ "Make Visible": "Pokaż linie",
+ "Made {n} line(s) visible": "Widoczne linie: {n}",
+ "No invisible lines in the selection — turn on Camera ▸ Hidden Geometry to see and select them.": "Brak niewidocznych linii w zaznaczeniu — włącz Kamera ▸ Ukryta geometria, aby je zobaczyć i zaznaczyć.",
+ "Drag over edges to erase them. Shift = hide, Ctrl = soften, Ctrl+Shift = make visible.": "Przeciągnij po krawędziach, aby je usunąć. Shift = ukryj, Ctrl = wygładź, Ctrl+Shift = pokaż."
 }

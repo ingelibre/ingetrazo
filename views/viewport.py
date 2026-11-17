@@ -15760,18 +15760,25 @@ class Viewport(QOpenGLWidget):
         """Return the edge closest to ``(screen_x, screen_y)`` within threshold."""
         return self._pick_edge(screen_x, screen_y, visible_only=False)
 
-    def pick_visible_edge(self, screen_x: float, screen_y: float):
+    def pick_visible_edge(self, screen_x: float, screen_y: float,
+                          with_soft: bool = False):
         """The edge a CLICK means: like :meth:`pick_edge`, but an edge the
         user cannot see never wins — a soft edge (the seams of a smooth
         surface, which are not drawn) unless hidden geometry is shown, and
         an edge behind the model. The usual rule, and what made a
         cylinder's side unclickable (@pacaeiro, issue #71: the invisible
         seams, front and back, took up to 90 % of the side at normal zoom).
-        Tools that want the tube's seam as a reference keep pick_edge."""
-        return self._pick_edge(screen_x, screen_y, visible_only=True)
+        Tools that want the tube's seam as a reference keep pick_edge.
+
+        ``with_soft``: soft edges count even with hidden geometry off (the
+        Eraser's soften / harden strokes, #831); edges behind the model
+        still never win."""
+        return self._pick_edge(screen_x, screen_y, visible_only=True,
+                               with_soft=with_soft)
 
     def _pick_edge(self, screen_x: float, screen_y: float,
-                   visible_only: bool, which: str = "sel"):
+                   visible_only: bool, which: str = "sel",
+                   with_soft: bool = False):
         """``which``: "sel" for the edges a click means, "snap" for the ones a
         reference may hold — the rest of the model's loose edges, drawn
         around an open group / component, are snappable and not selectable."""
@@ -15785,7 +15792,7 @@ class Viewport(QOpenGLWidget):
                    else getattr(idx, "edge_snap", idx.edge_sel))
         ok = oka & okb & allowed
         soft = getattr(idx, "edge_soft", None)
-        if (visible_only and soft is not None
+        if (visible_only and not with_soft and soft is not None
                 and not getattr(self.scene, "show_hidden_geometry", False)):
             ok &= ~soft
         sp = _active_cut(self.scene)

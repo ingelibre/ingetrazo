@@ -3772,5 +3772,13 @@
  "Architect. The units system, the Browser, Layers 2.0, the Solid Inspector, Fillet 3D bevels, Bridge, Join Segments, Camera ▸ Axes, soft ambient occlusion, round curved surfaces, view layouts, scenes as tabs, cleaner exports and many everyday editing tools. And for 0.6.2: the North tool, camera settings, scene transitions with video and the view as layered SVG.": "Arquiteto. O sistema de unidades, o Navegador, Camadas 2.0, o Inspetor de Sólidos, os chanfros do Fillet 3D, Ponte, Unir segmentos, Câmera ▸ Eixos, a oclusão ambiente suave, as superfícies curvas arredondadas, os layouts de vista, as cenas como abas, exportações mais limpas e muitas ferramentas de edição do dia a dia. E na 0.6.2: a ferramenta Norte, os ajustes de câmera, as transições de cena com vídeo e a vista como SVG em camadas.",
  "Korean translation of the interface, and the AI key from an environment variable. In 0.6.2, soft shadows and fixes for macOS.": "Tradução da interface para o coreano, e a chave de IA a partir de uma variável de ambiente. Na 0.6.2, as sombras suaves e correções para macOS.",
  "Exact Move+Ctrl copies, overlapping rotated copies, faster box selection on huge models and the reviewed Indonesian translation.": "Cópias exatas com Mover+Ctrl, cópias giradas sobrepostas, seleção por caixa mais rápida em modelos enormes e a tradução para o indonésio revisada.",
- "Snapping to the rest of the model from inside a group or component.": "O snap ao resto do modelo de dentro de um grupo ou componente."
+ "Snapping to the rest of the model from inside a group or component.": "O snap ao resto do modelo de dentro de um grupo ou componente.",
+ "Soften": "Suavizar",
+ "Select edges or faces first.": "Selecione arestas ou faces primeiro.",
+ "Softened {n} edge(s)": "{n} aresta(s) suavizada(s)",
+ "Show hidden edges and faces, and the soft edges of curved surfaces (a cylinder's facets), dotted — the same as Camera ▸ Hidden Geometry.": "Mostra pontilhadas as arestas e faces ocultas e as arestas suavizadas das superfícies curvas (as facetas de um cilindro) — o mesmo que Câmera ▸ Geometria Oculta.",
+ "Make Visible": "Tornar visível",
+ "Made {n} line(s) visible": "{n} linha(s) visível(is)",
+ "No invisible lines in the selection — turn on Camera ▸ Hidden Geometry to see and select them.": "Nenhuma linha invisível na seleção — ative Câmera ▸ Geometria Oculta para vê-las e selecioná-las.",
+ "Drag over edges to erase them. Shift = hide, Ctrl = soften, Ctrl+Shift = make visible.": "Arraste sobre as arestas para apagá-las. Shift = ocultar, Ctrl = suavizar, Ctrl+Shift = tornar visível."
 }

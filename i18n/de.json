@@ -3765,5 +3765,13 @@
  "Architect. The units system, the Browser, Layers 2.0, the Solid Inspector, Fillet 3D bevels, Bridge, Join Segments, Camera ▸ Axes, soft ambient occlusion, round curved surfaces, view layouts, scenes as tabs, cleaner exports and many everyday editing tools. And for 0.6.2: the North tool, camera settings, scene transitions with video and the view as layered SVG.": "Architekt. Das Einheitensystem, der Browser, Ebenen 2.0, der Körper-Prüfer, die Fasen von Fillet 3D, Brücke, Segmente verbinden, Kamera ▸ Achsen, weiche Umgebungsverdeckung, gerundete gekrümmte Flächen, Ansichtslayouts, Szenen als Registerkarten, sauberere Exporte und viele alltägliche Bearbeitungswerkzeuge. Und für 0.6.2: das Nord-Werkzeug, die Kameraeinstellungen, Szenenübergänge mit Video und die Ansicht als SVG in Ebenen.",
  "Korean translation of the interface, and the AI key from an environment variable. In 0.6.2, soft shadows and fixes for macOS.": "Koreanische Übersetzung der Oberfläche und der KI-Schlüssel aus einer Umgebungsvariablen. In 0.6.2 die weichen Schatten und Korrekturen für macOS.",
  "Exact Move+Ctrl copies, overlapping rotated copies, faster box selection on huge models and the reviewed Indonesian translation.": "Exakte Kopien mit Verschieben+Strg, sich überlappende gedrehte Kopien, schnellere Rahmenauswahl in riesigen Modellen und die überarbeitete indonesische Übersetzung.",
- "Snapping to the rest of the model from inside a group or component.": "Fangen am übrigen Modell aus einer Gruppe oder Komponente heraus."
+ "Snapping to the rest of the model from inside a group or component.": "Fangen am übrigen Modell aus einer Gruppe oder Komponente heraus.",
+ "Soften": "Glätten",
+ "Select edges or faces first.": "Wählen Sie zuerst Kanten oder Flächen aus.",
+ "Softened {n} edge(s)": "{n} Kante(n) geglättet",
+ "Show hidden edges and faces, and the soft edges of curved surfaces (a cylinder's facets), dotted — the same as Camera ▸ Hidden Geometry.": "Zeigt ausgeblendete Kanten und Flächen sowie die geglätteten Kanten gekrümmter Flächen (die Facetten eines Zylinders) gepunktet — wie Kamera ▸ Ausgeblendete Geometrie.",
+ "Make Visible": "Sichtbar machen",
+ "Made {n} line(s) visible": "{n} Linie(n) sichtbar gemacht",
+ "No invisible lines in the selection — turn on Camera ▸ Hidden Geometry to see and select them.": "Keine unsichtbaren Linien in der Auswahl — Kamera ▸ Ausgeblendete Geometrie einschalten, um sie zu sehen und auszuwählen.",
+ "Drag over edges to erase them. Shift = hide, Ctrl = soften, Ctrl+Shift = make visible.": "Über Kanten ziehen, um sie zu löschen. Umschalt = ausblenden, Strg = glätten, Strg+Umschalt = sichtbar machen."
 }
