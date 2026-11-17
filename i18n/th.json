@@ -2584,6 +2584,7 @@
  "Opening cut: it moves with the component": "เจาะช่องเปิดแล้ว: ช่องจะย้ายตามคอมโพเนนต์",
  "No face under it to cut: place it on a wall, with its blue axis coming out of the face": "ไม่มีผิวด้านล่างให้เจาะ: วางบนผนังโดยให้แกนสีน้ำเงินชี้ออกจากผิว",
  "The opening of {name} was edited by hand: it was left as it is": "ช่องเปิดของ {name} ถูกแก้ไขด้วยมือ: จึงปล่อยไว้ตามเดิม",
+ "{name} is a component with other copies: Make Unique to cut an opening in it": "{name} เป็นคอมโพเนนต์ที่มีสำเนาอื่น: ทำให้ไม่ซ้ำก่อนจึงจะเจาะช่องได้",
  "Keep this definition in the file even with no copy placed, to place it or swap copies for it later": "เก็บคำจำกัดความนี้ไว้ในไฟล์แม้จะยังไม่ได้วางสำเนา เพื่อใช้วางหรือสลับสำเนาในภายหลัง",
  "{name} is kept in the file, even with no copy placed": "{name} ถูกเก็บไว้ในไฟล์แล้ว แม้จะยังไม่ได้วางสำเนา",
  "{name} is no longer kept in the file": "{name} ไม่ได้ถูกเก็บไว้ในไฟล์อีกต่อไป",

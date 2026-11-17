@@ -2585,6 +2585,7 @@
  "Opening cut: it moves with the component": "Đã cắt lỗ mở: nó di chuyển cùng thành phần",
  "No face under it to cut: place it on a wall, with its blue axis coming out of the face": "Không có mặt nào bên dưới để cắt: đặt nó lên tường, với trục xanh lam hướng ra khỏi mặt",
  "The opening of {name} was edited by hand: it was left as it is": "Lỗ mở của {name} đã được sửa thủ công: giữ nguyên",
+ "{name} is a component with other copies: Make Unique to cut an opening in it": "{name} là thành phần có các bản sao khác: hãy Làm duy nhất để cắt lỗ mở trên nó",
  "Keep this definition in the file even with no copy placed, to place it or swap copies for it later": "Giữ định nghĩa này trong tệp ngay cả khi không có bản sao nào được đặt, để đặt nó hoặc hoán đổi các bản sao cho nó sau này",
  "{name} is kept in the file, even with no copy placed": "{name} được lưu giữ trong tệp ngay cả khi không đặt bản sao nào",
  "{name} is no longer kept in the file": "{name} không còn được lưu trong tệp nữa",

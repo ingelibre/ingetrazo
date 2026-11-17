@@ -2589,6 +2589,7 @@
  "Opening cut: it moves with the component": "Отворът е изрязан: мести се заедно с компонента",
  "No face under it to cut: place it on a wall, with its blue axis coming out of the face": "Няма лице отдолу за изрязване: поставете го върху стена, със синята ос навън от лицето",
  "The opening of {name} was edited by hand: it was left as it is": "Отворът на {name} е редактиран ръчно: оставен е както е",
+ "{name} is a component with other copies: Make Unique to cut an opening in it": "{name} е компонент с други копия: направете го уникален, за да изрежете отвор в него",
  "Keep this definition in the file even with no copy placed, to place it or swap copies for it later": "Запазване на дефиницията на компонента във файла дори когато няма поставени негови копия, за да може по-късно да бъде поставен или използван за замяна на други екземпляри",
  "{name} is kept in the file, even with no copy placed": "{name} се запазва във файла дори когато няма поставени копия",
  "{name} is no longer kept in the file": "{name} вече не се запазва във файла",

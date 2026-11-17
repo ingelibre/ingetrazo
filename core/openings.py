@@ -327,13 +327,10 @@ def footprint(group) -> Optional[list]:
 
 
 # ---- Where it cuts -----------------------------------------------------------
-def plan(mesh, group) -> Optional[dict]:
-    """The prism ``group`` would cut in ``mesh`` where it stands now:
-    ``{"a": front loop, "b": back loop or None}``, or None when its footprint
-    lies on no face."""
-    a = footprint(group)
-    if a is None:
-        return None
+def plan_in(mesh, a) -> Optional[dict]:
+    """The prism the footprint ``a`` (in ``mesh``'s own coordinates) would
+    cut in ``mesh``: ``{"a": front loop, "b": back loop or None}``, or None
+    when it lies on no face of it."""
     host = _host_face(mesh, a)
     if host is None or not _covers(host, a):
         return None
@@ -353,6 +350,13 @@ def plan(mesh, group) -> Optional[dict]:
             best = (d, f)
     b = [p - n * best[0] for p in a] if best is not None else None
     return {"a": a, "b": b}
+
+
+def plan(mesh, group) -> Optional[dict]:
+    """The prism ``group`` would cut in ``mesh`` (in world coordinates)
+    where it stands now, or None."""
+    a = footprint(group)
+    return plan_in(mesh, a) if a is not None else None
 
 
 def _polygons(prism) -> list:
@@ -634,6 +638,245 @@ def _drop_loose(mesh, prism) -> None:
         mesh.prune_orphan_vertices()
 
 
+# ---- Hosts: where a hole is cut ---------------------------------------------
+# The wall may be loose geometry, or a group of its own — the usual way to
+# keep a wall — and the window or door a component beside it. A HOST is
+# where a hole goes: the context's loose mesh (``group`` None), or one of
+# the context's containers. Its hole is remembered in the host's own frame,
+# so moving the wall and the window together moves the hole with them.
+class _Host:
+    def __init__(self, scene, group) -> None:
+        from PySide6.QtGui import QMatrix4x4
+        self.group = group
+        self.uid = getattr(group, "uid", None)
+        if group is None:
+            self.mesh = scene.mesh
+            self.frame = QMatrix4x4()
+            self.to_world = QMatrix4x4()
+        else:
+            self.mesh = group.mesh
+            self.frame = _frame(group)
+            self.to_world = (QMatrix4x4(group.xform)
+                             if getattr(group, "xform", None) is not None
+                             else QMatrix4x4())
+        inv, ok = self.to_world.inverted()
+        self.to_mesh = inv if ok else QMatrix4x4()
+        finv, ok = self.frame.inverted()
+        self.from_world = finv if ok else QMatrix4x4()
+
+    def mesh_points(self, world_points) -> list:
+        """World points in the host mesh's own coordinates."""
+        return [self.to_mesh.map(p) for p in world_points]
+
+    def local_to_mesh(self, local_points) -> list:
+        """Points in the host's frame, in its mesh's coordinates."""
+        m = self.to_mesh * self.frame
+        return [m.map(p) for p in local_points]
+
+    def mesh_to_local(self, mesh_points) -> list:
+        """Points of the host mesh, in the host's frame."""
+        m = self.from_world * self.to_world
+        return [m.map(p) for p in mesh_points]
+
+    def frame_list(self) -> list:
+        return [round(x, 7) for x in self.frame.data()]
+
+
+def _can_host(group) -> bool:
+    """A container whose own faces may take a hole: not a window or a door
+    itself, not a face-me cutout, not hidden or locked, not 3D text."""
+    return not (wants_opening(group) or getattr(group, "billboard", False)
+                or getattr(group, "hidden", False)
+                or getattr(group, "locked", False)
+                or getattr(group, "text3d", None) is not None
+                or not group.mesh.faces)
+
+
+def _bbox(mesh):
+    """``(lo, hi)`` of ``mesh``'s vertices, cached on its edit serial."""
+    key = getattr(mesh, "_mut_serial", None)
+    cached = getattr(mesh, "_opening_bbox", None)
+    if cached is not None and key is not None and cached[0] == key:
+        return cached[1]
+    xs, ys, zs = [], [], []
+    for v in mesh.vertices:
+        x, y, z = v.position.toTuple()
+        xs.append(x)
+        ys.append(y)
+        zs.append(z)
+    box = (((min(xs), min(ys), min(zs)), (max(xs), max(ys), max(zs)))
+           if xs else None)
+    try:
+        mesh._opening_bbox = (key, box)
+    except AttributeError:
+        pass
+    return box
+
+
+def _near(box, points, pad) -> bool:
+    """Whether every point lies within ``box`` (grown by ``pad``)."""
+    if box is None:
+        return False
+    lo, hi = box
+    for p in points:
+        for i, c in enumerate(p.toTuple()):
+            if c < lo[i] - pad or c > hi[i] + pad:
+                return False
+    return True
+
+
+def find_host(scene, group):
+    """``(host, prism in the host mesh's coordinates)`` for what ``group``
+    would cut where it stands: the loose geometry first, then the other
+    containers of the context. ``(None, None)`` when it sits on no face."""
+    a = footprint(group)
+    if a is None:
+        return None, None
+    loose = _Host(scene, None)
+    prism = plan_in(loose.mesh, a)
+    if prism is not None:
+        return loose, prism
+    for g in context_groups(scene):
+        if g is group or not _can_host(g):
+            continue
+        host = _Host(scene, g)
+        pts = host.mesh_points(a)
+        if not _near(_bbox(host.mesh), pts, pad=10 * _PLANE_EPS):
+            continue
+        prism = plan_in(host.mesh, pts)
+        if prism is not None:
+            return host, prism
+    return None, None
+
+
+def _host_of(scene, rec) -> Optional[_Host]:
+    """The host a record cut in, as it is now — None when it is gone."""
+    uid = rec.get("host")
+    if uid is None:
+        return _Host(scene, None)
+    for g in context_groups(scene):
+        if getattr(g, "uid", None) == uid:
+            return _Host(scene, g)
+    return None
+
+
+class _Edits:
+    """What a follow-up changed, to undo and redo it exactly: each mesh it
+    touched (its state before, captured on first touch, and after), and
+    each container made unique on the way (a copied wall group shares its
+    mesh with the original until it is edited)."""
+
+    def __init__(self) -> None:
+        self.meshes: list = []          # [mesh, before, after]
+        self._seen: set = set()
+        self.groups: list = []          # [group, before, after]
+
+    def touch(self, mesh) -> None:
+        if id(mesh) not in self._seen:
+            self._seen.add(id(mesh))
+            self.meshes.append([mesh, mesh.capture_state(), None])
+
+    def seal(self) -> None:
+        for row in self.meshes:
+            row[2] = row[0].capture_state()
+        for row in self.groups:
+            row[2] = _group_state(row[0])
+
+    def any(self) -> bool:
+        return bool(self.meshes or self.groups)
+
+
+def _group_state(g):
+    from PySide6.QtGui import QMatrix4x4
+    return (g.mesh, QMatrix4x4(g.xform) if g.xform is not None else None,
+            QMatrix4x4(g.axes) if g.axes is not None else None,
+            list(g.children or ()), g.component)
+
+
+def _put_group_state(g, st) -> None:
+    from PySide6.QtGui import QMatrix4x4
+    g.mesh = st[0]
+    g.xform = QMatrix4x4(st[1]) if st[1] is not None else None
+    g.axes = QMatrix4x4(st[2]) if st[2] is not None else None
+    g.children = list(st[3])
+    g.component = st[4]
+
+
+def _shared(scene, host) -> int:
+    """How many other containers of the model use ``host``'s mesh."""
+    if host.group is None:
+        return 0
+    from core.purge import iter_groups
+    return sum(1 for g in iter_groups(getattr(scene, "groups", None))
+               if g is not host.group and g.mesh is host.mesh)
+
+
+def _ready(scene, host, edits: _Edits, refused: list) -> Optional[_Host]:
+    """The host, ready to be cut: a copied group sharing its mesh is made
+    unique first (as opening it would); a component with other copies is
+    refused — cutting it would cut every copy."""
+    if host.group is not None and _shared(scene, host):
+        if host.group.is_component():
+            refused.append(host.group.name)
+            return None
+        edits.groups.append([host.group, _group_state(host.group), None])
+        host.group.make_unique()
+        host = _Host(scene, host.group)
+    edits.touch(host.mesh)
+    return host
+
+
+def _in_mesh(scene, mesh, fn):
+    """Run ``fn`` with the scene's working mesh pointing at ``mesh`` — the
+    drawing plan (``build_add_edges``) edits ``scene.mesh``."""
+    current = scene.mesh
+    scene.mesh = mesh
+    try:
+        return fn()
+    finally:
+        scene.mesh = current
+
+
+def _prism_from(host, rec) -> dict:
+    return {"a": host.local_to_mesh([QVector3D(*p) for p in rec["a"]]),
+            "b": (host.local_to_mesh([QVector3D(*p) for p in rec["b"]])
+                  if rec.get("b") else None),
+            "keep": list(rec.get("keep") or ())}
+
+
+def _cut_at(scene, host, prism, edits, refused):
+    """Cut ``prism`` (in the host mesh's coordinates) — the host made
+    unique first when it must be. The host it was cut in, or None."""
+    host2 = _ready(scene, host, edits, refused)
+    if host2 is None:
+        return None
+    if host2.mesh is not host.mesh:                    # made unique
+        prism = {"a": host2.mesh_points([host.to_world.map(p)
+                                         for p in prism["a"]]),
+                 "b": (host2.mesh_points([host.to_world.map(p)
+                                          for p in prism["b"]])
+                       if prism.get("b") else None)}
+    _in_mesh(scene, host2.mesh, lambda: cut(scene, prism))
+    return host2, prism
+
+
+def _heal_at(scene, rec, edits, refused) -> bool:
+    """Close what ``rec`` cut. True when there is nothing left to close (or
+    its wall is gone); False when the hole was edited by hand."""
+    if not rec.get("a"):
+        return True
+    host = _host_of(scene, rec)
+    if host is None:
+        return True                       # the wall itself was erased
+    if not intact(host.mesh, _prism_from(host, rec)):
+        return False
+    host = _ready(scene, host, edits, refused)
+    if host is None:
+        return False
+    prism = _prism_from(host, rec)
+    return bool(_in_mesh(scene, host.mesh, lambda: heal(scene, prism)))
+
+
 # ---- Following the components ------------------------------------------------
 def context_groups(scene) -> list:
     """The containers that live where the tools draw now: the open group's
@@ -669,32 +912,94 @@ def records(scene) -> dict:
     return out
 
 
-def _prism_of(rec) -> Optional[dict]:
-    """The prism a record cut, or None for «looked, nothing to cut»."""
-    if not rec.get("a"):
-        return None
-    return {"a": [QVector3D(*p) for p in rec["a"]],
-            "b": [QVector3D(*p) for p in rec["b"]] if rec.get("b") else None,
-            "keep": list(rec.get("keep") or ())}
-
-
-def _record(group, prism) -> dict:
-    """What ``group`` cut where it stands — or, with ``prism`` None, that it
-    stood on no face, so the next command does not look again until it
-    moves."""
-    rec = {"uid": group.uid, "xf": _frame_list(group), "a": None, "b": None}
+def _record(group, host, prism) -> dict:
+    """What ``group`` cut where it stands, in ``host``'s own frame — or,
+    with ``prism`` None, that it stood on no face, so the next command does
+    not look again until it moves."""
+    rec = {"uid": group.uid, "xf": _frame_list(group), "a": None, "b": None,
+           "host": None, "hxf": None}
     if prism is not None:
-        rec["a"] = [list(p.toTuple()) for p in prism["a"]]
-        rec["b"] = ([list(p.toTuple()) for p in prism["b"]]
+        rec["host"] = host.uid
+        rec["hxf"] = host.frame_list()
+        rec["a"] = [list(p.toTuple()) for p in host.mesh_to_local(prism["a"])]
+        rec["b"] = ([list(p.toTuple())
+                     for p in host.mesh_to_local(prism["b"])]
                     if prism.get("b") else None)
         if prism.get("keep"):
             rec["keep"] = list(prism["keep"])
     return rec
 
 
-def _heal_record(scene, rec) -> bool:
-    prism = _prism_of(rec)
-    return True if prism is None else heal(scene, prism)
+def _stale(scene, g, rec, by_uid) -> bool:
+    """Whether ``g``'s record no longer matches: the component moved, or
+    the wall it cut moved or went."""
+    if rec.get("xf") != _frame_list(g):
+        return True
+    uid = rec.get("host")
+    if rec.get("a") and uid is not None:
+        host = by_uid.get(uid)
+        if host is None or rec.get("hxf") != _Host(scene, host).frame_list():
+            return True
+    return False
+
+
+def pending(scene, before: dict) -> bool:
+    """Whether anything is out of date after a command, given the records
+    taken before it: a cutting container added, moved, unmarked or gone,
+    or the wall it cut moved or erased."""
+    now = {g.uid: g for g in _marked(scene)}
+    if any(uid not in now for uid in before):
+        return True
+    by_uid = None
+    for g in now.values():
+        rec, want = made(g), wants_opening(g)
+        if want and rec is None:
+            return True
+        if rec is None:
+            continue
+        if not want:
+            return True
+        if rec.get("host") is not None and by_uid is None:
+            by_uid = {getattr(x, "uid", None): x
+                      for x in context_groups(scene)}
+        if _stale(scene, g, rec, by_uid or {}):
+            return True
+    return False
+
+
+def bring_up_to_date(scene, before: dict, edits: _Edits) -> tuple:
+    """Heal what moved or went, cut what is new or moved. Returns the names
+    of the containers whose old hole had been edited by hand and was left
+    as it is, and of the shared components that could not be cut."""
+    edited, refused = [], []
+    now = {g.uid: g for g in _marked(scene)}
+    by_uid = {getattr(x, "uid", None): x for x in context_groups(scene)}
+    for uid, (g, rec) in before.items():
+        if uid not in now and not _heal_at(scene, rec, edits, refused):
+            edited.append(g.name)
+    for g in now.values():
+        rec, want = made(g), wants_opening(g)
+        if rec is None and not want:
+            continue
+        if rec is not None and want and not _stale(scene, g, rec, by_uid):
+            continue
+        entry = dict(_entry(g))
+        entry.pop("made", None)
+        if rec is not None and not _heal_at(scene, rec, edits, refused):
+            edited.append(g.name)
+        if want:
+            host, prism = find_host(scene, g)
+            if host is not None:
+                done = _cut_at(scene, host, prism, edits, refused)
+                host, prism = done if done is not None else (None, None)
+            entry["made"] = _record(g, host, prism)
+        set_ext_entry(g, entry)
+    return edited, refused
+
+
+def _copy_ext(group):
+    ext = getattr(group, "ext", None)
+    return copy.deepcopy(ext) if ext else None
 
 
 def _concerned(scene, before: dict) -> dict:
@@ -706,79 +1011,45 @@ def _concerned(scene, before: dict) -> dict:
     return out
 
 
-def pending(scene, before: dict) -> bool:
-    """Whether anything is out of date after a command, given the records
-    taken before it: a cutting container added, moved, unmarked or gone."""
-    now = {g.uid: g for g in _marked(scene)}
-    if any(uid not in now for uid in before):
-        return True
-    for g in now.values():
-        rec, want = made(g), wants_opening(g)
-        if want and rec is None:
-            return True
-        if rec is not None and (not want or rec.get("xf") != _frame_list(g)):
-            return True
-    return False
-
-
-def bring_up_to_date(scene, before: dict) -> list:
-    """Heal what moved or went, cut what is new or moved. Returns the
-    names of the containers whose old hole had been edited by hand and
-    was left as it is."""
-    edited = []
-    now = {g.uid: g for g in _marked(scene)}
-    for uid, (g, rec) in before.items():
-        if uid not in now and not _heal_record(scene, rec):
-            edited.append(g.name)
-    for g in now.values():
-        rec, want = made(g), wants_opening(g)
-        if rec is None and not want:
-            continue
-        if rec is not None and want and rec.get("xf") == _frame_list(g):
-            continue
-        entry = dict(_entry(g))
-        entry.pop("made", None)
-        if rec is not None and not _heal_record(scene, rec):
-            edited.append(g.name)
-        if want:
-            prism = plan(scene.mesh, g)
-            if prism is not None:
-                cut(scene, prism)
-            entry["made"] = _record(g, prism)
-        set_ext_entry(g, entry)
-    return edited
-
-
-def _copy_ext(group):
-    ext = getattr(group, "ext", None)
-    return copy.deepcopy(ext) if ext else None
-
-
 class FollowOpeningsCommand(Command):
     """The holes brought up to date after a command — already applied when
-    built, undone by restoring the mesh and the containers' ``ext``."""
+    built, undone by restoring every mesh it touched, the containers it
+    made unique and the containers' ``ext``."""
 
     keeps_paint = True
     keeps_groups = True
 
-    def __init__(self, mesh, mesh_before, mesh_after, ext_before, ext_after,
-                 edited) -> None:
-        self._mesh = mesh
-        self._before, self._after = mesh_before, mesh_after
+    def __init__(self, edits: _Edits, ext_before, ext_after, edited,
+                 refused=()) -> None:
+        self._edits = edits
         self._ext_before, self._ext_after = ext_before, ext_after
         self.edited = edited
+        self.refused = list(refused)
+
+    def _settle(self, scene) -> None:
+        scene.version += 1
+        if self._edits.groups or any(
+                m is not scene.mesh for m, _b, _a in self._edits.meshes):
+            from core.history import _dirty_group_chunks
+            _dirty_group_chunks(scene)
 
     def do(self, scene) -> None:
-        self._mesh.restore_state(self._after)
+        for g, _b, after in self._edits.groups:
+            _put_group_state(g, after)
+        for mesh, _b, after in self._edits.meshes:
+            mesh.restore_state(after)
         for g, ext in self._ext_after.values():
             g.ext = copy.deepcopy(ext) if ext else None
-        scene.version += 1
+        self._settle(scene)
 
     def undo(self, scene) -> None:
-        self._mesh.restore_state(self._before)
+        for mesh, before, _a in reversed(self._edits.meshes):
+            mesh.restore_state(before)
+        for g, before, _a in reversed(self._edits.groups):
+            _put_group_state(g, before)
         for g, ext in self._ext_before.values():
             g.ext = copy.deepcopy(ext) if ext else None
-        scene.version += 1
+        self._settle(scene)
 
 
 def follow(scene, before: dict) -> Optional[FollowOpeningsCommand]:
@@ -787,21 +1058,27 @@ def follow(scene, before: dict) -> Optional[FollowOpeningsCommand]:
     or None when nothing changed."""
     if not pending(scene, before):
         return None
-    mesh = scene.mesh
-    mesh_before = mesh.capture_state()
+    edits = _Edits()
     ext_before = {uid: (g, _copy_ext(g))
                   for uid, g in _concerned(scene, before).items()}
     try:
-        edited = bring_up_to_date(scene, before)
+        edited, refused = bring_up_to_date(scene, before, edits)
     except Exception:
-        mesh.restore_state(mesh_before)
+        for mesh, snap, _a in reversed(edits.meshes):
+            mesh.restore_state(snap)
+        for g, st, _a in reversed(edits.groups):
+            _put_group_state(g, st)
         for g, ext in ext_before.values():
             g.ext = copy.deepcopy(ext) if ext else None
         scene.version += 1
         raise
-    ext_after = {uid: (g, _copy_ext(g)) for uid, (g, _e) in ext_before.items()}
-    return FollowOpeningsCommand(mesh, mesh_before, mesh.capture_state(),
-                                 ext_before, ext_after, edited)
+    edits.seal()
+    ext_after = {uid: (g, _copy_ext(g))
+                 for uid, (g, _e) in ext_before.items()}
+    cmd = FollowOpeningsCommand(edits, ext_before, ext_after, edited, refused)
+    if edits.any():
+        cmd._settle(scene)
+    return cmd
 
 
 class SetCutOpeningCommand(Command):

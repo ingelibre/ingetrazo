@@ -2591,6 +2591,7 @@
  "Opening cut: it moves with the component": "Hueco cortado: se mueve con el componente",
  "No face under it to cut: place it on a wall, with its blue axis coming out of the face": "No hay ninguna cara debajo que cortar: colócalo sobre un muro, con su eje azul saliendo de la cara",
  "The opening of {name} was edited by hand: it was left as it is": "El hueco de {name} se editó a mano: se dejó como está",
+ "{name} is a component with other copies: Make Unique to cut an opening in it": "{name} es un componente con otras copias: usa Hacer único para cortarle un hueco",
  "Keep this definition in the file even with no copy placed, to place it or swap copies for it later": "Conserva esta definición en el archivo aunque no quede ninguna copia colocada, para colocarla o reemplazar copias por ella más adelante",
  "{name} is kept in the file, even with no copy placed": "{name} se conserva en el archivo, aunque no haya copias colocadas",
  "{name} is no longer kept in the file": "{name} ya no se conserva en el archivo",

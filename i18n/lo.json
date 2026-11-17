@@ -2585,6 +2585,7 @@
  "Opening cut: it moves with the component": "ເຈາະຊ່ອງເປີດແລ້ວ: ຊ່ອງຈະຍ້າຍຕາມອົງປະກອບ",
  "No face under it to cut: place it on a wall, with its blue axis coming out of the face": "ບໍ່ມີໜ້າຢູ່ລຸ່ມໃຫ້ເຈາະ: ວາງເທິງຝາໂດຍໃຫ້ແກນສີຟ້າຊີ້ອອກຈາກໜ້າ",
  "The opening of {name} was edited by hand: it was left as it is": "ຊ່ອງເປີດຂອງ {name} ຖືກແກ້ໄຂດ້ວຍມື: ຈຶ່ງປະໄວ້ຕາມເດີມ",
+ "{name} is a component with other copies: Make Unique to cut an opening in it": "{name} ເປັນອົງປະກອບທີ່ມີສຳເນົາອື່ນ: ເຮັດໃຫ້ບໍ່ຊ້ຳກ່ອນຈຶ່ງເຈາະຊ່ອງໄດ້",
  "Keep this definition in the file even with no copy placed, to place it or swap copies for it later": "ຮັກສາຄຳອະທິບາຍນີ້ໄວ້ໃນຟາຍ ເຖິງວ່າຈະບໍ່ມີສຳເນົາຖືກວາງຢູ່ກໍຕາມ ເພື່ອນຳມາວາງ ຫຼື ສັບປ່ຽນສຳເນົາໃນພາຍຫຼັງ",
  "{name} is kept in the file, even with no copy placed": "{name} ຖືກຮັກສາໄວ້ໃນຟາຍແລ້ວ ເຖິງວ່າຈະບໍ່ມີສຳເນົາຖືກວາງຢູ່ກໍຕາມ",
  "{name} is no longer kept in the file": "{name} ບໍ່ໄດ້ຖືກຮັກສາໄວ້ໃນຟາຍອີກຕໍ່ໄປ",

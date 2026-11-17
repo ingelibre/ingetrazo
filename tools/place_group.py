@@ -230,6 +230,14 @@ class PlaceGroupTool(Tool):
             hit = None
         face = hit[0] if isinstance(hit, tuple) else hit
         self._face_normal = face.normal() if face is not None else None
+        owner = hit[1] if isinstance(hit, tuple) and len(hit) > 1 else None
+        xform = getattr(owner, "xform", None)
+        if self._glue and self._face_normal is not None and xform is not None:
+            # A wall that is a placed group keeps its faces in its own
+            # coordinates: its normal, in the world's.
+            n = xform.mapVector(self._face_normal)
+            if n.length() > 1e-9:
+                self._face_normal = n.normalized()
         if self._glue and self._face_normal is not None:
             # The side the user sees is the one the component goes on,
             # whichever way the face was drawn.

@@ -301,11 +301,17 @@ class History:
         if follow is None:
             return
         cmd._followers = [follow]
-        if follow.edited and callable(self.on_notice):
-            from core.i18n import tr
+        if not callable(self.on_notice):
+            return
+        from core.i18n import tr
+        if follow.edited:
             self.on_notice(tr(
                 "The opening of {name} was edited by hand: it was left as "
                 "it is", name=follow.edited[0]))
+        elif follow.refused:
+            self.on_notice(tr(
+                "{name} is a component with other copies: Make Unique to "
+                "cut an opening in it", name=follow.refused[0]))
 
     def _rebind_dimensions(self) -> None:
         """After every command, undo and redo: a dimension whose vertex

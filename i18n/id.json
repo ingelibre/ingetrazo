@@ -2378,6 +2378,7 @@
  "Opening cut: it moves with the component": "Bukaan dipotong: ikut bergerak dengan komponen",
  "No face under it to cut: place it on a wall, with its blue axis coming out of the face": "Tidak ada muka di bawahnya untuk dipotong: letakkan di dinding, dengan sumbu biru keluar dari muka",
  "The opening of {name} was edited by hand: it was left as it is": "Bukaan {name} diedit manual: dibiarkan apa adanya",
+ "{name} is a component with other copies: Make Unique to cut an opening in it": "{name} adalah komponen dengan salinan lain: Jadikan Unik untuk memotong bukaan di dalamnya",
  "Keep this definition in the file even with no copy placed, to place it or swap copies for it later": "Simpan definisi ini di berkas meski tidak ada salinan yang ditempatkan, untuk ditempatkan atau mengganti salinan nanti",
  "{name} is kept in the file, even with no copy placed": "{name} disimpan di berkas, meski tanpa salinan yang ditempatkan",
  "{name} is no longer kept in the file": "{name} tidak lagi disimpan di berkas",

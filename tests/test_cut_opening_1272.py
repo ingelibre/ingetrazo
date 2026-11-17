@@ -359,3 +359,141 @@ def test_the_floor_under_a_door_stays(model):
     assert openings.made(g)["keep"] == [2]             # the sill side
     history.execute(DeleteGroupCommand(g))
     assert _state(scene.mesh) == before
+
+
+# ---- A wall that is a group of its own --------------------------------------
+def _wall_group(name="Wall", at=None):
+    g = Group(name=name)
+    _wall(g.mesh)
+    if at is not None:                    # an instance placed by a matrix
+        g.mesh = _shifted(g.mesh, at)
+        t = QMatrix4x4()
+        t.translate(at)
+        g.xform = t
+        g.component = False
+    return g
+
+
+def _shifted(mesh, at):
+    """The same wall drawn around the origin, for a placement at ``at``."""
+    from core.group import transformed_mesh
+    t = QMatrix4x4()
+    t.translate(-at)
+    return transformed_mesh(mesh, t)
+
+
+def _holes(mesh) -> int:
+    return sum(len(f.hole_loops) for f in mesh.faces)
+
+
+def test_a_component_cuts_a_wall_group():
+    scene = Scene()
+    history = History(scene)
+    wall = _wall_group()
+    history.execute(InsertGroupCommand(wall))
+    door = _window(w=0.9, h=2.1, x=0.5, z=0.0)        # a door component
+    assert door.is_component()
+    history.execute(InsertGroupCommand(door))
+    assert history.last_error is None
+    assert len(wall.mesh.faces) == 10 and _closed(wall.mesh)
+    assert not scene.mesh.faces                        # nothing loose made
+    assert openings.made(door)["host"] == wall.uid
+
+
+def test_a_wall_placed_by_a_matrix_is_cut_in_its_own_coordinates():
+    scene = Scene()
+    history = History(scene)
+    wall = _wall_group(at=V(0, 0, 0))
+    history.execute(InsertGroupCommand(wall))
+    history.execute(MoveGroupCommand(wall, V(5, 0, 0)))  # composes the xform
+    g = _window(x=6.0)
+    history.execute(InsertGroupCommand(g))
+    assert _holes(wall.mesh) == 2 and _closed(wall.mesh)
+    xs = {round(v.position.x(), 4) for v in wall.mesh.vertices}
+    assert {1.0, 2.0} <= xs                           # local: 6 - 5
+
+
+def test_the_hole_in_a_wall_group_follows_and_heals():
+    scene = Scene()
+    history = History(scene)
+    wall = _wall_group()
+    history.execute(InsertGroupCommand(wall))
+    before = _state(wall.mesh)
+    g = _window()
+    states = [_state(wall.mesh)]
+    for cmd in (InsertGroupCommand(g), MoveGroupCommand(g, V(0.6, 0, 0)),
+                MoveGroupCommand(g, V(0, -2, 0)), MoveGroupCommand(g, V(0, 2, 0)),
+                DeleteGroupCommand(g)):
+        history.execute(cmd)
+        assert history.last_error is None
+        states.append(_state(wall.mesh))
+    assert states[3] == before and states[-1] == before
+    assert len(wall.mesh.edges) == 12
+    for k in range(len(states) - 1, 0, -1):
+        history.undo()
+        assert _state(wall.mesh) == states[k - 1]
+    for k in range(1, len(states)):
+        history.redo()
+        assert _state(wall.mesh) == states[k]
+
+
+def test_moving_the_wall_alone_closes_the_hole_and_together_remakes_it():
+    scene = Scene()
+    history = History(scene)
+    wall = _wall_group()
+    history.execute(InsertGroupCommand(wall))
+    before = _state(wall.mesh)
+    g = _window()
+    history.execute(InsertGroupCommand(g))
+    history.execute(MoveGroupCommand(wall, V(0, 3, 0)))   # the wall goes away
+    assert _holes(wall.mesh) == 0 and len(wall.mesh.faces) == 6
+    assert _closed(wall.mesh)
+    history.execute(MoveGroupCommand(g, V(0, 3, 0)))      # the window follows
+    assert _holes(wall.mesh) == 2 and _closed(wall.mesh)
+    history.undo()
+    history.undo()
+    assert _holes(wall.mesh) == 2
+    history.execute(DeleteGroupCommand(wall))             # the wall erased
+    assert history.last_error is None
+    history.undo()
+    assert _holes(wall.mesh) == 2
+    assert _state(scene.mesh) == []
+
+
+def test_a_copied_wall_group_is_made_unique_before_it_is_cut():
+    scene = Scene()
+    history = History(scene)
+    wall = _wall_group()
+    history.execute(InsertGroupCommand(wall))
+    twin = copy_group(wall, V(0, 3, 0))                   # shares the mesh
+    history.execute(InsertGroupCommand(twin))
+    shared = twin.mesh is wall.mesh or twin.mesh.faces is wall.mesh.faces
+    g = _window(x=1.0)
+    t = QMatrix4x4()
+    t.translate(1.0, 3.0, 0.9)
+    g.xform = t * _ON_FRONT
+    history.execute(InsertGroupCommand(g))
+    assert history.last_error is None
+    assert _holes(twin.mesh) == 2 and _closed(twin.mesh)
+    assert _holes(wall.mesh) == 0 and len(wall.mesh.faces) == 6
+    if shared:
+        assert twin.mesh is not wall.mesh
+    history.undo()
+    assert _holes(twin.mesh) == 0 and _holes(wall.mesh) == 0
+
+
+def test_a_wall_component_with_copies_is_not_cut():
+    scene = Scene()
+    history = History(scene)
+    notices = []
+    history.on_notice = notices.append
+    wall = _wall_group(at=V(0, 0, 0))
+    wall.component = True
+    history.execute(InsertGroupCommand(wall))
+    twin = copy_group(wall, V(0, 5, 0))
+    twin.component = True
+    history.execute(InsertGroupCommand(twin))
+    assert twin.mesh is wall.mesh
+    history.execute(InsertGroupCommand(_window()))
+    assert _holes(wall.mesh) == 0 and len(wall.mesh.faces) == 6
+    assert notices and "Wall" in notices[0]

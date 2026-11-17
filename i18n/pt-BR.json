@@ -2587,6 +2587,7 @@
  "Opening cut: it moves with the component": "Abertura cortada: ela se move com o componente",
  "No face under it to cut: place it on a wall, with its blue axis coming out of the face": "Não há face embaixo para cortar: coloque-o sobre uma parede, com o eixo azul saindo da face",
  "The opening of {name} was edited by hand: it was left as it is": "A abertura de {name} foi editada à mão: foi deixada como está",
+ "{name} is a component with other copies: Make Unique to cut an opening in it": "{name} é um componente com outras cópias: use Tornar único para cortar uma abertura nele",
  "Keep this definition in the file even with no copy placed, to place it or swap copies for it later": "Manter esta definição no arquivo mesmo sem nenhuma cópia colocada, para colocá-la ou substituir cópias por ela depois",
  "{name} is kept in the file, even with no copy placed": "{name} é mantido no arquivo, mesmo sem cópias colocadas",
  "{name} is no longer kept in the file": "{name} não é mais mantido no arquivo",

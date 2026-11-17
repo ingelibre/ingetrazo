@@ -2590,6 +2590,7 @@
  "Opening cut: it moves with the component": "已開洞：洞口隨元件移動",
  "No face under it to cut: place it on a wall, with its blue axis coming out of the face": "下方沒有可開洞的面：請將其放在牆上，藍軸朝外",
  "The opening of {name} was edited by hand: it was left as it is": "{name} 的洞口已被手動編輯：保持原樣",
+ "{name} is a component with other copies: Make Unique to cut an opening in it": "{name} 是帶有其他副本的元件：請先設為唯一再開洞",
  "Keep this definition in the file even with no copy placed, to place it or swap copies for it later": "即使沒有放置任何複本，也將此定義保留在檔案中，以便日後放置或用它替換複本",
  "{name} is kept in the file, even with no copy placed": "{name} 已保留在檔案中，即使沒有放置任何複本",
  "{name} is no longer kept in the file": "{name} 不再保留在檔案中",
