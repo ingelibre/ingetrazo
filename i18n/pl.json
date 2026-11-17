@@ -2723,6 +2723,7 @@
  "No face under it to cut: place it on a wall, with its blue axis coming out of the face": "Brak ściany pod spodem do wycięcia: umieść go na ścianie, z niebieską osią wychodzącą z powierzchni",
  "The opening of {name} was edited by hand: it was left as it is": "Otwór {name} był edytowany ręcznie: pozostawiono go bez zmian",
  "{name} is a component with other copies: Make Unique to cut an opening in it": "{name} to komponent z innymi kopiami: użyj Utwórz unikalny, aby wyciąć w nim otwór",
+ "Sliding on the wall: hold Alt to move it freely": "Przesuwa się po ścianie: przytrzymaj Alt, aby przesuwać swobodnie",
  "Keep this definition in the file even with no copy placed, to place it or swap copies for it later": "Zachowaj tę definicję w pliku, nawet jeśli nie umieszczono żadnej kopii, aby móc ją później umieścić lub zastąpić nią kopie",
  "{name} is kept in the file, even with no copy placed": "{name} jest zachowany w pliku, nawet bez umieszczonych kopii",
  "{name} is no longer kept in the file": "{name} nie jest już zachowywany w pliku",

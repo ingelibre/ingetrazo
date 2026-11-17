@@ -497,3 +497,204 @@ def test_a_wall_component_with_copies_is_not_cut():
     history.execute(InsertGroupCommand(_window()))
     assert _holes(wall.mesh) == 0 and len(wall.mesh.faces) == 6
     assert notices and "Wall" in notices[0]
+
+
+# ---- Moving it slides it on the wall ----------------------------------------
+class _Camera:
+    perspective = True
+
+    def __init__(self, eye):
+        self._eye = eye
+        self.target = V(1.5, 0, 1.2)
+
+    def eye(self):
+        return self._eye
+
+
+class _MoveViewport(_Viewport):
+    def __init__(self, scene, history):
+        self.scene = scene
+        self.history = history
+        self.camera = _Camera(V(1.5, -8.0, 3.0))   # in front of the wall
+        self.flashed = []
+
+    def flash_status(self, msg, *a, **k):
+        self.flashed.append(msg)
+
+    def pick_edge(self, x, y):
+        return None
+
+    def pick_face(self, x, y):
+        return None
+
+    def pick_group(self, x, y):
+        return None
+
+
+def _mctx(vp, p, mods=None):
+    from PySide6.QtCore import QPointF, Qt
+    from tools.base import ToolContext
+    return ToolContext(viewport=vp, world=p, screen=QPointF(0, 0),
+                       modifiers=mods if mods is not None else Qt.NoModifier,
+                       snap=None)
+
+
+def _frame_origin(g):
+    return g.xform.map(V(0, 0, 0))
+
+
+def test_moving_a_window_slides_it_on_the_wall(model):
+    from tools.move import MoveTool
+    scene, history = model
+    g = _window()
+    history.execute(InsertGroupCommand(g))
+    scene.selection = [g]
+    vp = _MoveViewport(scene, history)
+    tool = MoveTool()
+    tool.on_click(_mctx(vp, V(1.0, 0.0, 0.9)))        # grab its corner
+    assert tool._glide is not None
+    assert any("Alt" in m for m in vp.flashed)
+    # The cursor snaps to something standing a metre in front of the wall:
+    # the window does not fly to it — the line of sight through it meets
+    # the wall, a little to the right and up.
+    in_front = V(1.6, -1.0, 1.5)
+    tool.on_click(_mctx(vp, in_front))
+    o = _frame_origin(g)
+    assert abs(o.y()) < 1e-6                          # still on the wall
+    assert o.x() > 1.0                                # slid along it
+    assert len(scene.mesh.faces) == 10 and _closed(scene.mesh)
+
+
+def test_alt_moves_it_freely_off_the_wall(model):
+    from PySide6.QtCore import Qt
+    from tools.move import MoveTool
+    scene, history = model
+    before = _state(scene.mesh)
+    g = _window()
+    history.execute(InsertGroupCommand(g))
+    scene.selection = [g]
+    vp = _MoveViewport(scene, history)
+    tool = MoveTool()
+    tool.on_click(_mctx(vp, V(1.0, 0.0, 0.9)))
+    tool.on_click(_mctx(vp, V(1.0, -2.0, 0.9), Qt.AltModifier))
+    assert abs(_frame_origin(g).y() + 2.0) < 1e-6     # left the wall
+    assert _state(scene.mesh) == before               # and the wall closed
+
+
+def test_a_typed_length_slides_along_the_wall(model):
+    from tools.move import MoveTool
+    scene, history = model
+    g = _window()
+    history.execute(InsertGroupCommand(g))
+    scene.selection = [g]
+    vp = _MoveViewport(scene, history)
+    tool = MoveTool()
+    tool.on_click(_mctx(vp, V(1.0, 0.0, 0.9)))
+    tool.on_hover(_mctx(vp, V(1.5, -3.0, 0.9)))       # toward the right, in front
+    assert tool.on_value(vp, 0.5)
+    o = _frame_origin(g)
+    assert abs(o.y()) < 1e-6
+    assert (o - V(1.0, 0.0, 0.9)).length() == pytest.approx(0.5, abs=1e-5)
+
+
+def test_moving_other_things_too_moves_freely(model):
+    from tools.move import MoveTool
+    scene, history = model
+    g = _window()
+    history.execute(InsertGroupCommand(g))
+    other = Group(name="Box")
+    other.mesh.add_face([V(5, 0, 0), V(6, 0, 0), V(6, 1, 0)])
+    history.execute(InsertGroupCommand(other))
+    scene.selection = [g, other]
+    vp = _MoveViewport(scene, history)
+    tool = MoveTool()
+    tool.on_click(_mctx(vp, V(1.0, 0.0, 0.9)))
+    assert tool._glide is None
+
+
+# ---- Walls nested in groups -------------------------------------------------
+def _floor_group(*walls, name="Ground floor"):
+    parent = Group(name=name)
+    parent.adopt(list(walls))
+    return parent
+
+
+def test_a_wall_nested_in_a_group_is_cut():
+    scene = Scene()
+    history = History(scene)
+    wall = _wall_group()
+    floor = _floor_group(wall)
+    history.execute(InsertGroupCommand(floor))
+    g = _window()
+    history.execute(InsertGroupCommand(g))
+    assert history.last_error is None
+    assert _holes(wall.mesh) == 2 and _closed(wall.mesh)
+    rec = openings.made(g)
+    assert rec["host"] == wall.uid and rec.get("nested")
+
+
+def test_two_levels_down_and_a_moved_parent():
+    scene = Scene()
+    history = History(scene)
+    wall = _wall_group()
+    walls = _floor_group(wall, name="Walls")
+    floor = _floor_group(walls)
+    history.execute(InsertGroupCommand(floor))
+    history.execute(MoveGroupCommand(floor, V(0, 4, 0)))   # the whole floor
+    g = _window()
+    t = QMatrix4x4()
+    t.translate(1.0, 4.0, 0.9)
+    g.xform = t * _ON_FRONT
+    history.execute(InsertGroupCommand(g))
+    assert _holes(wall.mesh) == 2 and _closed(wall.mesh)
+    # The floor alone moves away: the hole closes; back with the window
+    # following, it opens again.
+    history.execute(MoveGroupCommand(floor, V(0, 3, 0)))
+    assert _holes(wall.mesh) == 0 and len(wall.mesh.faces) == 6
+    history.execute(MoveGroupCommand(g, V(0, 3, 0)))
+    assert _holes(wall.mesh) == 2 and _closed(wall.mesh)
+    history.undo()                                     # the window's move
+    assert _holes(wall.mesh) == 0
+    history.undo()                                     # the floor's move
+    assert _holes(wall.mesh) == 2 and _closed(wall.mesh)
+    history.redo()
+    assert _holes(wall.mesh) == 0
+
+
+def test_a_wall_in_a_floor_placed_twice_is_not_cut():
+    scene = Scene()
+    history = History(scene)
+    notices = []
+    history.on_notice = notices.append
+    wall = _wall_group()
+    floor = _floor_group(wall)
+    floor.component = True
+    history.execute(InsertGroupCommand(floor))
+    twin = Group(name="Ground floor")                  # a second copy of it
+    twin.mesh = floor.mesh
+    twin.adopt([wall])                                 # the same nested wall
+    twin.component = True
+    t = QMatrix4x4()
+    t.translate(0, 6, 0)
+    twin.xform = t
+    history.execute(InsertGroupCommand(twin))
+    history.execute(InsertGroupCommand(_window()))
+    assert _holes(wall.mesh) == 0 and len(wall.mesh.faces) == 6
+    assert notices and "Wall" in notices[0]
+
+
+def test_window_and_wall_inside_the_same_open_group():
+    scene = Scene()
+    history = History(scene)
+    wall = _wall_group()
+    g = _window()
+    floor = _floor_group(wall, g)
+    history.execute(InsertGroupCommand(floor))
+    scene.begin_group_edit(floor)
+    history.execute(MoveGroupCommand(g, V(0.0, 0.0, 0.0)))  # wakes the follow-up
+    assert _holes(wall.mesh) == 2
+    history.execute(MoveGroupCommand(g, V(0.7, 0, 0)))
+    assert _holes(wall.mesh) == 2 and _closed(wall.mesh)
+    xs = {round(v.position.x(), 4) for v in wall.mesh.vertices}
+    assert 1.7 in xs and 1.0 not in xs
+    scene.end_group_edit()

@@ -2585,6 +2585,7 @@
  "No face under it to cut: place it on a wall, with its blue axis coming out of the face": "아래에 뚫을 면이 없습니다: 파란 축이 면 바깥을 향하게 벽 위에 놓으세요",
  "The opening of {name} was edited by hand: it was left as it is": "{name}의 개구부는 직접 편집되어 그대로 두었습니다",
  "{name} is a component with other copies: Make Unique to cut an opening in it": "{name}은(는) 다른 복사본이 있는 컴포넌트입니다: 개구부를 뚫으려면 고유하게 만드세요",
+ "Sliding on the wall: hold Alt to move it freely": "벽을 따라 미끄러집니다: Alt를 누르고 있으면 자유롭게 이동합니다",
  "Keep this definition in the file even with no copy placed, to place it or swap copies for it later": "배치된 사본이 없어도 이 정의를 파일에 보관해, 나중에 배치하거나 사본을 이것으로 교체할 수 있게 합니다",
  "{name} is kept in the file, even with no copy placed": "{name}은(는) 배치된 사본이 없어도 파일에 보관됩니다",
  "{name} is no longer kept in the file": "{name}은(는) 더 이상 파일에 보관되지 않습니다",

@@ -2592,6 +2592,7 @@
  "No face under it to cut: place it on a wall, with its blue axis coming out of the face": "Под ним нет грани для выреза: поставьте его на стену синей осью наружу",
  "The opening of {name} was edited by hand: it was left as it is": "Проём {name} изменён вручную: он оставлен как есть",
  "{name} is a component with other copies: Make Unique to cut an opening in it": "{name} — компонент с другими копиями: сделайте его уникальным, чтобы вырезать в нём проём",
+ "Sliding on the wall: hold Alt to move it freely": "Скользит по стене: удерживайте Alt, чтобы двигать свободно",
  "Keep this definition in the file even with no copy placed, to place it or swap copies for it later": "Сохранять это определение в файле даже без размещенных копий, чтобы разместить его или заменить на него копии позже",
  "{name} is kept in the file, even with no copy placed": "{name} сохраняется в файле даже без размещенных копий",
  "{name} is no longer kept in the file": "{name} больше не сохраняется в файле",

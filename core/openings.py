@@ -645,20 +645,28 @@ def _drop_loose(mesh, prism) -> None:
 # the context's containers. Its hole is remembered in the host's own frame,
 # so moving the wall and the window together moves the hole with them.
 class _Host:
-    def __init__(self, scene, group) -> None:
+    """``world``: the placement's matrix composed from the context down —
+    a wall inside «Ground floor ▸ Walls» sits where its parents put it.
+    ``depth`` 0 is a container of the context itself."""
+
+    def __init__(self, scene, group, world=None, depth: int = 0) -> None:
         from PySide6.QtGui import QMatrix4x4
         self.group = group
         self.uid = getattr(group, "uid", None)
+        self.depth = depth
         if group is None:
             self.mesh = scene.mesh
             self.frame = QMatrix4x4()
             self.to_world = QMatrix4x4()
         else:
             self.mesh = group.mesh
-            self.frame = _frame(group)
-            self.to_world = (QMatrix4x4(group.xform)
-                             if getattr(group, "xform", None) is not None
+            if depth == 0:
+                world = getattr(group, "xform", None)
+            self.to_world = (QMatrix4x4(world) if world is not None
                              else QMatrix4x4())
+            axes = getattr(group, "axes", None)
+            self.frame = (self.to_world * axes if axes is not None
+                          else QMatrix4x4(self.to_world))
         inv, ok = self.to_world.inverted()
         self.to_mesh = inv if ok else QMatrix4x4()
         finv, ok = self.frame.inverted()
@@ -736,10 +744,10 @@ def find_host(scene, group):
     prism = plan_in(loose.mesh, a)
     if prism is not None:
         return loose, prism
-    for g in context_groups(scene):
-        if g is group or not _can_host(g):
+    for g, m, depth in _placements(scene, skip=group):
+        if not _can_host(g):
             continue
-        host = _Host(scene, g)
+        host = _Host(scene, g, m, depth)
         pts = host.mesh_points(a)
         if not _near(_bbox(host.mesh), pts, pad=10 * _PLANE_EPS):
             continue
@@ -749,15 +757,48 @@ def find_host(scene, group):
     return None, None
 
 
+def _placements(scene, skip=None):
+    """``(group, world matrix or None, depth)`` of every container of the
+    context and every one nested in them, at any depth — leaving out
+    ``skip`` and whatever it holds (a window's own parts are not a wall)."""
+    for top in context_groups(scene):
+        if top is skip:
+            continue
+        stack = [(top, getattr(top, "xform", None), 0)]
+        while stack:
+            g, m, depth = stack.pop()
+            yield g, m, depth
+            for child in getattr(g, "children", None) or ():
+                if child is skip:
+                    continue
+                cm = getattr(child, "xform", None)
+                if m is not None:
+                    cm = m if cm is None else m * cm
+                stack.append((child, cm, depth + 1))
+
+
+def _find_placement(scene, uid):
+    """``(group, world matrix, depth)`` of the container ``uid`` in the
+    context, nested or not — None when it is gone. The top level is looked
+    at first, without walking any tree."""
+    for g in context_groups(scene):
+        if getattr(g, "uid", None) == uid:
+            return g, getattr(g, "xform", None), 0
+    for g, m, depth in _placements(scene):
+        if depth and getattr(g, "uid", None) == uid:
+            return g, m, depth
+    return None
+
+
 def _host_of(scene, rec) -> Optional[_Host]:
     """The host a record cut in, as it is now — None when it is gone."""
     uid = rec.get("host")
     if uid is None:
         return _Host(scene, None)
-    for g in context_groups(scene):
-        if getattr(g, "uid", None) == uid:
-            return _Host(scene, g)
-    return None
+    found = _find_placement(scene, uid)
+    if found is None:
+        return None
+    return _Host(scene, *found)
 
 
 class _Edits:
@@ -803,12 +844,18 @@ def _put_group_state(g, st) -> None:
 
 
 def _shared(scene, host) -> int:
-    """How many other containers of the model use ``host``'s mesh."""
+    """How many other placements of the model use ``host``'s mesh — other
+    containers sharing it, or the same nested container placed again by
+    the copies of a component it belongs to."""
     if host.group is None:
         return 0
-    from core.purge import iter_groups
-    return sum(1 for g in iter_groups(getattr(scene, "groups", None))
-               if g is not host.group and g.mesh is host.mesh)
+    from core.group import iter_placements
+    n = 0
+    for top in getattr(scene, "groups", None) or ():
+        for g, _m in iter_placements(top):
+            if g.mesh is host.mesh:
+                n += 1
+    return max(0, n - 1)
 
 
 def _ready(scene, host, edits: _Edits, refused: list) -> Optional[_Host]:
@@ -816,12 +863,16 @@ def _ready(scene, host, edits: _Edits, refused: list) -> Optional[_Host]:
     unique first (as opening it would); a component with other copies is
     refused — cutting it would cut every copy."""
     if host.group is not None and _shared(scene, host):
-        if host.group.is_component():
+        # A component's copies, or a wall nested in something placed more
+        # than once (a floor copied as a component): cutting it would cut
+        # every copy, and making it unique would rebuild a tree the user
+        # did not ask to touch.
+        if host.group.is_component() or host.depth:
             refused.append(host.group.name)
             return None
         edits.groups.append([host.group, _group_state(host.group), None])
         host.group.make_unique()
-        host = _Host(scene, host.group)
+        host = _Host(scene, host.group, None, 0)
     edits.touch(host.mesh)
     return host
 
@@ -921,6 +972,8 @@ def _record(group, host, prism) -> dict:
     if prism is not None:
         rec["host"] = host.uid
         rec["hxf"] = host.frame_list()
+        if host.depth:
+            rec["nested"] = True
         rec["a"] = [list(p.toTuple()) for p in host.mesh_to_local(prism["a"])]
         rec["b"] = ([list(p.toTuple())
                      for p in host.mesh_to_local(prism["b"])]
@@ -937,6 +990,11 @@ def _stale(scene, g, rec, by_uid) -> bool:
         return True
     uid = rec.get("host")
     if rec.get("a") and uid is not None:
+        if rec.get("nested"):
+            found = _find_placement(scene, uid)
+            if found is None:
+                return True
+            return rec.get("hxf") != _Host(scene, *found).frame_list()
         host = by_uid.get(uid)
         if host is None or rec.get("hxf") != _Host(scene, host).frame_list():
             return True

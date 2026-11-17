@@ -2588,6 +2588,7 @@
  "No face under it to cut: place it on a wall, with its blue axis coming out of the face": "لا يوجد وجه تحته لقطعه: ضعه على جدار ومحوره الأزرق خارج من الوجه",
  "The opening of {name} was edited by hand: it was left as it is": "عُدّلت فتحة {name} يدويًا: تُركت كما هي",
  "{name} is a component with other copies: Make Unique to cut an opening in it": "{name} مكوّن له نسخ أخرى: اجعله فريدًا لقطع فتحة فيه",
+ "Sliding on the wall: hold Alt to move it freely": "تنزلق على الجدار: اضغط Alt باستمرار لتحريكها بحرية",
  "Keep this definition in the file even with no copy placed, to place it or swap copies for it later": "احتفظ بهذا التعريف في الملف حتى مع عدم وضع نسخة، لوضعه أو تبديل النسخ به لاحقًا",
  "{name} is kept in the file, even with no copy placed": "يتم الاحتفاظ بـ {name} في الملف، حتى بدون وضع نسخة",
  "{name} is no longer kept in the file": "لم يعد {name} محفوظًا في الملف",
