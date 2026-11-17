@@ -447,6 +447,8 @@ class MoveTool(Tool):
         self._groups: list[Group] = []         # whole groups being moved
         self._splanes: list = []               # section planes being moved
         self._images: list = []                # reference images being moved
+        # The wall grabbed windows and doors slide on (#1272), or None.
+        self._glide = None
         self._labels: list[TextLabel] = []     # leader texts whose label moves
         self._moved_guides: list[Guide] = []         # construction guides being moved
         self._dims: dict = {}                  # dimension → "line" | "rigid"
@@ -606,6 +608,11 @@ class MoveTool(Tool):
             # (or onto) a coincident vertex never drags the innocent one along.
             self._verts = verts
             self._vp_preview = False
+            self._glide = self._glide_plane(viewport)
+            if self._glide is not None:
+                from core.i18n import tr
+                viewport.flash_status(tr(
+                    "Sliding on the wall: hold Alt to move it freely"), 4000)
             if (self._groups and not self._verts and not self._positions):
                 # Groups-only drag: viewport-side preview — the caches
                 # freeze and the movers render from one-time scratch VBOs
@@ -617,7 +624,60 @@ class MoveTool(Tool):
                     self._vp_preview = True
             self._gather_copy_entities(ctx)
             return
-        self._commit(viewport, ctx.world - self.grab)
+        self._commit(viewport, self._glided(ctx) - self.grab)
+
+    # ---- Sliding on the wall (#1272) ------------------------------------------
+    def _glide_plane(self, viewport):
+        """``(point, normal)`` of the wall the grabbed windows and doors cut
+        — they slide on it instead of flying off with the cursor — or None.
+        Only when everything grabbed is a «Cut opening» container that sits
+        on a wall now, all of them on parallel walls."""
+        if (not self._groups or self._positions or self._labels
+                or self._moved_guides or self._dims or self._splanes
+                or self._images):
+            return None
+        from core import openings
+        normal = None
+        for g in self._groups:
+            rec = openings.made(g)
+            if not openings.wants_opening(g) or not rec or not rec.get("a"):
+                return None
+            fp = openings.footprint(g)
+            if fp is None:
+                return None
+            n = openings._normal(fp)
+            if normal is None:
+                normal = n
+            elif abs(QVector3D.dotProduct(n, normal)) < 0.999:
+                return None
+        return QVector3D(self.grab), normal
+
+    def _glided(self, ctx: ToolContext) -> QVector3D:
+        """The cursor's point, read on the wall the windows slide on: the
+        line of sight through the snapped point meets the wall's plane. Alt
+        held, or nothing sliding: the point as it is."""
+        glide = getattr(self, "_glide", None)
+        if glide is None or (ctx.modifiers & Qt.AltModifier):
+            return ctx.world
+        origin, n = glide
+        p = QVector3D(ctx.world)
+        cam = getattr(ctx.viewport, "camera", None)
+        direction = None
+        if cam is not None:
+            try:
+                if getattr(cam, "perspective", True):
+                    direction = p - cam.eye()
+                else:
+                    direction = cam.target - cam.eye()
+            except Exception:
+                direction = None
+        off = QVector3D.dotProduct(origin - p, n)
+        if direction is not None and direction.length() > 1e-9:
+            d = direction.normalized()
+            along = QVector3D.dotProduct(d, n)
+            if abs(along) > 0.05:
+                return p + d * (off / along)
+        return p + n * off          # looking along the wall: straight onto it
 
     def on_hover(self, ctx: ToolContext) -> None:
         if self._grip_rot is not None:
@@ -625,9 +685,10 @@ class MoveTool(Tool):
             return
         if self.start_point is None:
             self._track_grips(ctx)
-        self.hover_point = ctx.world
+        world = self._glided(ctx) if self.grab is not None else ctx.world
+        self.hover_point = world
         if self.grab is not None and not self._copy:
-            self._apply_preview(ctx.viewport, ctx.world - self.grab)
+            self._apply_preview(ctx.viewport, world - self.grab)
         ctx.viewport.update()
 
     def value_is_unitless(self) -> bool:
@@ -1262,6 +1323,7 @@ class MoveTool(Tool):
         self._dims = {}
         self._splanes = []
         self._images = []
+        self._glide = None
         self._preview_delta = QVector3D(0.0, 0.0, 0.0)
         self._sel_faces = []
         self._sel_edges = []

@@ -2326,6 +2326,7 @@ class Viewport(QOpenGLWidget):
         from core import units as _units
         _units.bind_scene(self.scene)   # readouts format in the model's units
         self.history = History(self.scene)
+        self.history.on_notice = self._history_notice
         # Snapping inference state (hover / acquired edges and points,
         # the encouraged points, the axis and reference locks, the last
         # snap) gathered in its own collaborator. The delegating
@@ -9578,6 +9579,11 @@ class Viewport(QOpenGLWidget):
         self._hover_entity = entity
         self._hover_placement = placement
         self.update()
+
+    def _history_notice(self, text: str) -> None:
+        """A notice from the history that is not an error (a hand-edited
+        opening left as it is, #1272): the status bar says it."""
+        self.flash_status(text, 6000)
 
     def flash_status(self, text: str, msec: int = 2500) -> None:
         """Briefly show ``text`` in the main window's status bar (e.g. Push/Pull
@@ -18748,6 +18754,7 @@ class Viewport(QOpenGLWidget):
             getattr(self.scene, "hide_similar_components", False))
         self.scene = scene
         self.history = history
+        history.on_notice = self._history_notice
         _bind_bake_store(self)        # the incoming document's shared bakes
         from core import units as _units
         _units.bind_scene(scene)
