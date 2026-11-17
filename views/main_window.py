@@ -4617,6 +4617,33 @@ class MainWindow(QMainWindow):
             self.viewport.history.execute(MakeUniqueCommand(g, rename=True))
         self.viewport.update()
 
+    def set_cut_opening(self, on: bool) -> None:
+        """Mark (or unmark) the selected groups and components, and every
+        copy of each component, «Cut Opening» (#1272) — the holes open or
+        close in the same undo step."""
+        from core.openings import SetCutOpeningCommand, cutting_targets, made
+        scene = self.viewport.scene
+        targets = cutting_targets(scene, scene.selection)
+        if not targets:
+            return
+        history = self.viewport.history
+        history.execute(SetCutOpeningCommand(targets, on))
+        if history.last_error:
+            self.viewport.flash_status(
+                tr("Operation failed and was undone: {err}",
+                   err=history.last_error), 8000)
+        elif on:
+            cut = sum(1 for g in targets
+                      if (made(g) or {}).get("a"))
+            if cut:
+                self.viewport.flash_status(
+                    tr("Opening cut: it moves with the component"), 4000)
+            else:
+                self.viewport.flash_status(tr(
+                    "No face under it to cut: place it on a wall, with its "
+                    "blue axis coming out of the face"), 6000)
+        self.viewport.update()
+
     def _on_scale_dialog(self, group) -> None:
         tool = self._tools["scale_manager"]
         tool.target = group
@@ -5823,6 +5850,19 @@ class MainWindow(QMainWindow):
                 act.setChecked(kept)
                 act.triggered.connect(
                     lambda on: self.keep_selected_components(bool(on)))
+            # Cut Opening (#1272): a window or a door opens its own hole in
+            # the wall it sits on, and the hole follows it.
+            from core.openings import cutting_targets, wants_opening
+            targets = cutting_targets(self.viewport.scene, sel)
+            if targets:
+                act = menu.addAction(tr("Cut Opening"))
+                act.setCheckable(True)
+                act.setChecked(all(wants_opening(g) for g in targets))
+                act.setToolTip(tr(
+                    "Opens the hole in the face it sits on, through the "
+                    "wall when there is one behind, and moves it with it"))
+                act.triggered.connect(
+                    lambda on: self.set_cut_opening(bool(on)))
             scale_one = groups[0] if len(groups) == 1 and len(sel) == 1 else None
             scale_act = menu.addAction(
                 tr("Scale…"), lambda: self._on_scale_dialog(scale_one))
