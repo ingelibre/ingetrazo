@@ -37,6 +37,18 @@ también para probar las distribuciones de vistas. Es el que sigue el manual
 `pestanas-prueba.py` (`python examples/pestanas-prueba.py` desde la carpeta
 de IngeTrazo).
 
+## IngeTrazo sin ventana, por MCP
+
+`headless-mcp-demo.py` — hace lo que haría un agente de IA en un runner de
+CI, sin nadie delante de la pantalla: arranca el servidor MCP con un
+IngeTrazo sin ventana, construye una casita con `run_python`, pide una
+captura, exporta dos escenas a PNG, guarda el modelo como JSON plano
+(`Casita.igz` + `Casita.assets/`) y lo cierra con `shutdown` (código de
+salida 0). `python examples/headless-mcp-demo.py [carpeta]` desde la carpeta
+de IngeTrazo; necesita pantalla, porque las vistas se dibujan con OpenGL en
+una ventana que no llega a mostrarse. Ver
+[`docs/ai-bridge.md`](../docs/ai-bridge.md) ▸ «Sin ventana».
+
 ## Extensiones
 
 `extensions/niveles.py` — **Niveles**: niveles del edificio (PB, PA…) guardados en el documento, guías a trazos en alzados y cortes en proyección paralela, y el cursor que se engancha a esas alturas. Idea y primera versión de José Castro Basso (FADU–UDELAR). Viene con IngeTrazo pero sin activar: se instala desde **Extensiones ▸ Gestionar extensiones…** (o copiándola en la carpeta de complementos) y se reinicia IngeTrazo: aparece la pestaña «Niveles» en la bandeja lateral.

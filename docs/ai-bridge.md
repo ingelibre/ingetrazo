@@ -182,9 +182,12 @@ sea su tamaño, así que `git diff` muestra qué cambió. Las imágenes
 (texturas, el levantamiento fotogramétrico) no caben en texto: van a una
 carpeta junto al documento, `Casa.assets/`, que hay que versionar con él.
 Una imagen que ya no se usa se borra de esa carpeta al guardar; lo demás que
-haya en ella no se toca. Un documento sin imágenes es exactamente un `.igz`
-de formato 1 como los de siempre. Los formatos de siempre (1, 2 y 3) no
-cambian: **Automático** sigue siendo el valor por defecto. Un modelo muy
+haya en ella no se toca. Es un `.igz` de formato 1 con la marca
+`"layout": "plain-json"`: un documento abierto con esa marca **se sigue
+guardando en JSON plano** aunque el formato elegido sea Automático, para que
+no se convierta en ZIP en el repositorio; pedir otro formato por su nombre
+(`save_document(format="auto")`) sí lo cambia. Los formatos de siempre (1, 2
+y 3) no cambian: **Automático** sigue siendo el valor por defecto. Un modelo muy
 grande en JSON plano ocupa más y abre más despacio que en el formato
 automático.
 
