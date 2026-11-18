@@ -2206,6 +2206,7 @@ class MaterialsPanel(QWidget):
         root.addLayout(self._in_model_grid)
 
         root.addWidget(self._heading(tr("Library")))
+        self._build_my_materials(root)
         self._fill_library_categories(root)
 
         btns = FlowLayout(spacing=4)         # wraps in a narrow tray
@@ -2216,8 +2217,13 @@ class MaterialsPanel(QWidget):
         purge = QPushButton(tr("Purge"))
         purge.setToolTip(tr("Delete every material no face wears"))
         purge.clicked.connect(self._on_purge)
+        import_btn = QPushButton(tr("Import…"))
+        import_btn.setToolTip(tr("Paint with a material saved in an "
+                                 ".igmat file"))
+        import_btn.clicked.connect(self._on_import_material)
         btns.addWidget(add_color)
         btns.addWidget(add_tex)
+        btns.addWidget(import_btn)
         btns.addWidget(purge)
         root.addLayout(btns)
         root.addStretch(1)
@@ -2360,6 +2366,237 @@ class MaterialsPanel(QWidget):
         loose = sorted(_TEX_DIR.glob("*.png"))
         if loose:
             section(tr("Other"), lambda g, ps=loose: fill_loose(g, ps))
+
+    # ---- Material files (.igmat, #1427) -----------------------------------
+    def _build_my_materials(self, root) -> None:
+        """«My materials»: the user's own .igmat files (formats.igmat's
+        user folder), the same in every project. Like the other library
+        sections it starts closed and reads its files when first opened;
+        unlike them it is filled again whenever a material is added."""
+        from PySide6.QtWidgets import QToolButton
+        btn = self._my_toggle = QToolButton()
+        btn.setCheckable(True)
+        set_arrow(btn, Qt.RightArrow)
+        btn.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+        btn.setStyleSheet(
+            "QToolButton { border: none; padding: 4px 2px;"
+            " text-align: left; }"
+            "QToolButton:hover { background: palette(midlight); }")
+        body = self._my_body = QWidget()
+        self._my_grid = FlowLayout(body, spacing=2)
+        self._my_grid.setContentsMargins(4, 2, 0, 4)
+        body.setVisible(False)
+        #: Each file's materials, keyed by (path, mtime): re-opening the
+        #: section does not unpack the same files again.
+        self._my_cache: dict = {}
+        self._my_stale = True
+
+        def toggle(on):
+            if on and self._my_stale:
+                self._refresh_my_materials()
+            body.setVisible(on)
+            set_arrow(btn, Qt.DownArrow if on else Qt.RightArrow)
+
+        btn.toggled.connect(toggle)
+        root.addWidget(btn)
+        root.addWidget(body)
+        self._my_title()
+
+    def _my_title(self, count: int | None = None) -> None:
+        from formats.igmat import user_material_files
+        if count is None:
+            count = len(user_material_files())
+        self._my_toggle.setText("  %s  (%d)" % (tr("My materials"), count))
+
+    def _my_materials(self) -> list:
+        """``(file, Material)`` for every material in «My materials»; a
+        file that cannot be read is skipped."""
+        from formats.igmat import (MaterialFileError, load_materials,
+                                   user_material_files)
+        out, cache = [], {}
+        for path in user_material_files():
+            try:
+                key = (str(path), path.stat().st_mtime_ns)
+            except OSError:
+                continue
+            mats = self._my_cache.get(key)
+            if mats is None:
+                try:
+                    mats = load_materials(path)
+                except (OSError, MaterialFileError):
+                    mats = []
+            cache[key] = mats
+            out.extend((path, m) for m in mats)
+        self._my_cache = cache
+        return out
+
+    def _refresh_my_materials(self) -> None:
+        """Lay the «My materials» swatches out again — now when the section
+        is open, else the next time it is opened."""
+        if not self._my_body.isVisible() and not self._my_toggle.isChecked():
+            self._my_stale = True
+            self._my_title()
+            return
+        self._my_stale = False
+        grid = self._my_grid
+        while grid.count():
+            w = grid.takeAt(0).widget()
+            if w is not None:
+                w.hide()
+                w.setParent(None)
+                w.deleteLater()
+        files = set()
+        for path, mat in self._my_materials():
+            files.add(path)
+            tex = mat.texture
+            pm = (_texture_pixmap(tex["path"]) if tex
+                  else _color_pixmap(tuple(mat.color)))
+            if pm is None:
+                continue
+            b = _swatch_button(pm, mat.name)
+            b.clicked.connect(lambda _=False, m=mat: self._use_material(m))
+            b.setContextMenuPolicy(Qt.CustomContextMenu)
+            b.customContextMenuRequested.connect(
+                lambda _pos, p=path, w=b: self._my_swatch_menu(w, p))
+            grid.addWidget(b)
+        self._my_title(len(files))
+
+    def _my_swatch_menu(self, button, path) -> None:
+        from PySide6.QtCore import QTimer
+        from PySide6.QtGui import QCursor
+        menu = QMenu(button)
+        menu.addAction(tr("Remove from My materials"),
+                       lambda: QTimer.singleShot(
+                           0, lambda: self._remove_my_material(path)))
+        menu.exec(QCursor.pos())
+
+    def _remove_my_material(self, path) -> None:
+        from PySide6.QtWidgets import QMessageBox
+        if QMessageBox.question(
+                self, tr("My materials"),
+                tr("Remove '{name}' from My materials?",
+                   name=Path(path).stem)) != QMessageBox.Yes:
+            return
+        try:
+            Path(path).unlink()
+        except OSError as exc:
+            QMessageBox.warning(self, tr("My materials"), str(exc))
+            return
+        self._refresh_my_materials()
+
+    def _add_to_my_materials(self, name: str) -> None:
+        """Right-click ▸ Add to My materials on a swatch of «In model»."""
+        from formats.igmat import add_user_material
+        mat = self._window.viewport.scene.materials.get(name)
+        if mat is None:
+            return
+        try:
+            add_user_material(mat)
+        except OSError as exc:
+            from PySide6.QtWidgets import QMessageBox
+            QMessageBox.warning(self, tr("My materials"), str(exc))
+            return
+        self._refresh_my_materials()
+        self._window.statusBar().showMessage(
+            tr("'{name}' added to My materials", name=name), 3000)
+
+    def _export_material(self, name: str) -> None:
+        """Right-click ▸ Export material… on a swatch of «In model»."""
+        from PySide6.QtWidgets import QMessageBox
+        from formats.igmat import EXTENSION, file_stem, save_materials
+        mat = self._window.viewport.scene.materials.get(name)
+        if mat is None:
+            return
+        start = str(Path.home() / f"{file_stem(name)}{EXTENSION}")
+        path, _ = file_dialogs.getSaveFileName(
+            self, tr("Export material"), start,
+            tr("IngeTrazo material (*.igmat)"))
+        if not path:
+            return
+        if not path.lower().endswith(EXTENSION):
+            path += EXTENSION
+        try:
+            save_materials(path, [mat])
+        except OSError as exc:
+            QMessageBox.warning(self, tr("Export material"), str(exc))
+            return
+        self._window.statusBar().showMessage(
+            tr("Material '{name}' exported", name=name), 3000)
+
+    def _on_import_material(self) -> None:
+        """Import…: the file's first material becomes the active paint; all
+        of them go into «Recent»."""
+        from PySide6.QtWidgets import QMessageBox
+        from formats.igmat import MaterialFileError, load_materials
+        path, _ = file_dialogs.getOpenFileName(
+            self, tr("Import material"), str(Path.home()),
+            tr("IngeTrazo material (*.igmat)"))
+        if not path:
+            return
+        try:
+            mats = load_materials(path)
+        except (OSError, MaterialFileError) as exc:
+            QMessageBox.warning(
+                self, tr("Import material"),
+                tr("Could not read {file}: {error}",
+                   file=Path(path).name, error=str(exc)))
+            return
+        if not mats:
+            QMessageBox.information(
+                self, tr("Import material"),
+                tr("{file} has no material to paint with.",
+                   file=Path(path).name))
+            return
+        for mat in reversed(mats[1:]):
+            self._use_material(mat, activate=False)
+        self._use_material(mats[0])
+        self._window.statusBar().showMessage(
+            tr("Material '{name}' ready — click faces to paint it",
+               name=PaintTool.current_material.name)
+            if len(mats) == 1 else
+            tr("{count} materials imported into Recent", count=len(mats)),
+            4000)
+
+    def _use_material(self, mat, activate: bool = True) -> None:
+        """Make a material from a file the active paint (``activate``) and
+        put it in «Recent». It enters the model's registry on first paint,
+        as a library swatch does. When the model already has a DIFFERENT
+        material of that name, this one paints as «name (2)», so it never
+        repaints the faces of the other."""
+        from dataclasses import replace
+        from core.materials import free_name
+        from tools.paint import push_recent
+        scene = self._window.viewport.scene
+        existing = scene.materials.get(mat.name)
+        if existing is not None:
+            if (existing.color == mat.color and existing.texture == mat.texture
+                    and existing.opacity == mat.opacity):
+                mat = existing
+            else:
+                mat = replace(mat, name=free_name(mat.name, scene.materials))
+        entry = {k: (list(v) if isinstance(v, tuple) else v)
+                 for k, v in mat.face_attrs().items()}
+        if mat.texture is not None:
+            entry.pop("color", None)
+        if mat.finish:
+            entry["finish"] = mat.finish     # kept until it is painted
+        PaintTool.recent = push_recent(PaintTool.recent, entry)
+        save_recent_materials(PaintTool.recent)
+        self._refresh_recent()
+        if not activate:
+            return
+        PaintTool.current_is_default = False
+        PaintTool.current_texture_plane = None
+        if mat.texture is not None:
+            PaintTool.current_texture = dict(mat.texture)
+        else:
+            PaintTool.current_texture = None
+            PaintTool.current_color = tuple(mat.color)
+        PaintTool.current_opacity = mat.opacity
+        PaintTool.current_material = mat
+        self._window._activate_tool("paint")
+        self._load_texture_fields()
+        self._refresh_preview()
 
     def _on_purge(self) -> None:
         """Sweep the registry materials no face wears.
@@ -2581,6 +2818,13 @@ class MaterialsPanel(QWidget):
                            lambda: QTimer.singleShot(
                                0, lambda: self._edit_named_color(name, color)))
         if mat is not None:
+            # Material files (#1427): take it to another project.
+            from PySide6.QtCore import QTimer
+            menu.addAction(tr("Export material…"),
+                           lambda: QTimer.singleShot(
+                               0, lambda: self._export_material(name)))
+            menu.addAction(tr("Add to My materials"),
+                           lambda: self._add_to_my_materials(name))
             sub = menu.addMenu(tr("Finish for the render"))
             pic = (mat.texture or {}).get("path")
             guessed = fin.guess(name, pic and Path(pic).name, mat.opacity)
@@ -3049,6 +3293,11 @@ class MaterialsPanel(QWidget):
             color=None if tex else PaintTool.current_color,
             texture=dict(tex) if tex else None,
             opacity=entry.get("opacity"))
+        mat = PaintTool.current_material
+        if (mat is not None and entry.get("finish") and not mat.finish
+                and mat.name not in self._window.viewport.scene.materials):
+            # A material from an .igmat file not painted yet (#1427).
+            mat.finish = entry["finish"]
         self._window._activate_tool("paint")
         self._load_texture_fields()
         self._refresh_preview()
