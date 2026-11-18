@@ -29,6 +29,10 @@ DEFAULT_FPS = 30
 BITS_PER_PIXEL = 0.2
 #: How long to wait for the encoder before giving up (seconds).
 TIMEOUT = 30.0
+#: After ``stop()``: how long the file must stay the same size before the
+#: event loop runs again (seconds), and the most this may take.
+SETTLE = 0.3
+SETTLE_MAX = 10.0
 
 
 class VideoError(RuntimeError):
@@ -131,7 +135,37 @@ class MkvWriter:
         rec = self._recorder
         if rec.recorderState() != QMediaRecorder.StoppedState:
             rec.stop()
+            self._let_the_finalizer_run()
         self._wait(lambda: rec.recorderState() == QMediaRecorder.StoppedState)
+
+    def _let_the_finalizer_run(self) -> None:
+        """Wait for Qt's finalizer thread with the event loop STILL.
+
+        ``stop()`` hands the file to a finalizer thread of Qt's FFmpeg
+        backend, which flushes the encoders, writes the trailer and then
+        deletes the recording engine from that thread. Calls the encoders
+        queued for the engine on the main thread are still waiting then;
+        delivered while the engine is being deleted, they land on freed
+        memory, and an application event filter written in Python (the
+        app has several) segfaults wrapping it (#1488: Cancel right after
+        the first frame). Not processing events meanwhile leaves them in
+        the queue, where deleting the engine removes them. The trailer
+        is the finalizer's last write: once the file stops growing, its
+        work is about done."""
+        def size():
+            try:
+                return self.path.stat().st_size
+            except OSError:
+                return -1
+        t0 = last_change = time.monotonic()
+        last = size()
+        while time.monotonic() - last_change < SETTLE:
+            if time.monotonic() - t0 > SETTLE_MAX:
+                break
+            time.sleep(0.02)
+            now = size()
+            if now != last:
+                last, last_change = now, time.monotonic()
 
     def discard(self) -> None:
         """Stop and remove the half-written file (cancelled or failed)."""

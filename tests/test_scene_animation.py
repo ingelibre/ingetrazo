@@ -690,6 +690,52 @@ def test_a_discarded_video_leaves_no_file(tmp_path):
     assert not path.exists()
 
 
+class _EventLog:
+    """Stands in for the writer's QApplication: notes when the event loop
+    runs, and runs it."""
+
+    def __init__(self, app, log):
+        self._app, self._log = app, log
+
+    def processEvents(self, *args):  # noqa: N802 — Qt's name
+        import time
+        self._log.append(("events", time.monotonic()))
+        self._app.processEvents(*args)
+
+
+def test_the_event_loop_stays_still_while_qt_finishes_the_file(tmp_path):
+    """#1488: after ``stop()`` Qt's FFmpeg finalizer deletes its recording
+    engine from another thread while calls queued for it wait on the main
+    thread; delivering them meanwhile (Cancel right after the first frame)
+    landed on freed memory and segfaulted on macOS. The event loop now
+    runs again only once the file has stopped growing."""
+    _need_video()
+    import time
+
+    from PySide6.QtGui import QImage
+
+    from views import video_export
+    writer = video_export.MkvWriter(tmp_path / "cancel.mkv", 64, 48, 10)
+    writer.write(QImage(64, 48, QImage.Format_ARGB32))
+    log: list = []
+    rec = writer._recorder
+    real_stop = rec.stop
+
+    def stop():
+        log.append(("stop", time.monotonic()))
+        real_stop()
+    rec.stop = stop
+    writer._app = _EventLog(writer._app, log)
+    writer.discard()
+
+    stopped = [t for k, t in log if k == "stop"]
+    assert stopped
+    after = [t for k, t in log if k == "events" and t > stopped[0]]
+    assert after                      # it still waits for Stopped after
+    assert after[0] - stopped[0] >= 0.9 * video_export.SETTLE
+    assert not (tmp_path / "cancel.mkv").exists()
+
+
 def _fake_render(win, log):
     """The tests' window is never shown, so it has no GL: each frame is
     a plain picture, and the log keeps what the camera and layers were."""
