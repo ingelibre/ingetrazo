@@ -1,4 +1,12 @@
 {
+ "Soften": "ทำให้นุ่มนวล",
+ "Select edges or faces first.": "เลือกขอบหรือหน้าก่อน",
+ "Softened {n} edge(s)": "ทำให้นุ่มนวลแล้ว {n} ขอบ",
+ "Show hidden edges and faces, and the soft edges of curved surfaces (a cylinder's facets), dotted — the same as Camera ▸ Hidden Geometry.": "แสดงขอบและหน้าที่ซ่อนอยู่ รวมถึงขอบนุ่มนวลของพื้นผิวโค้ง (ด้านย่อยของทรงกระบอก) เป็นเส้นประ — เหมือนกับ กล้อง ▸ รูปทรงที่ซ่อนอยู่",
+ "Make Visible": "ทำให้มองเห็น",
+ "Made {n} line(s) visible": "มองเห็นแล้ว {n} เส้น",
+ "No invisible lines in the selection — turn on Camera ▸ Hidden Geometry to see and select them.": "ไม่มีเส้นที่มองไม่เห็นในส่วนที่เลือก — เปิด กล้อง ▸ รูปทรงที่ซ่อนอยู่ เพื่อดูและเลือก",
+ "Drag over edges to erase them. Shift = hide, Ctrl = soften, Ctrl+Shift = make visible.": "ลากผ่านขอบเพื่อลบ Shift = ซ่อน, Ctrl = ทำให้นุ่มนวล, Ctrl+Shift = ทำให้มองเห็น",
  "Paint with a material saved in a file: .igmat, or SketchUp's .skm": "ระบายด้วยวัสดุที่บันทึกไว้ในไฟล์: .igmat หรือ .skm ของ SketchUp",
  "Material files (*.igmat *.skm)": "ไฟล์วัสดุ (*.igmat *.skm)",
  "SketchUp material (*.skm)": "วัสดุ SketchUp (*.skm)",

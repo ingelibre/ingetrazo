@@ -1,4 +1,12 @@
 {
+ "Soften": "柔化",
+ "Select edges or faces first.": "請先選取邊線或面。",
+ "Softened {n} edge(s)": "已柔化 {n} 條邊線",
+ "Show hidden edges and faces, and the soft edges of curved surfaces (a cylinder's facets), dotted — the same as Camera ▸ Hidden Geometry.": "以虛線顯示隱藏的邊線和面，以及曲面的柔化邊線（圓柱的小面）——與 鏡頭 ▸ 隱藏的幾何圖形 相同。",
+ "Make Visible": "設為可見",
+ "Made {n} line(s) visible": "已顯示 {n} 條線",
+ "No invisible lines in the selection — turn on Camera ▸ Hidden Geometry to see and select them.": "所選內容中沒有不可見的線——開啟 鏡頭 ▸ 隱藏的幾何圖形 即可看見並選取它們。",
+ "Drag over edges to erase them. Shift = hide, Ctrl = soften, Ctrl+Shift = make visible.": "在邊線上拖曳以清除。Shift = 隱藏，Ctrl = 柔化，Ctrl+Shift = 設為可見。",
  "Paint with a material saved in a file: .igmat, or SketchUp's .skm": "用儲存在檔案中的材料上色：.igmat，或 SketchUp 的 .skm",
  "Material files (*.igmat *.skm)": "材料檔案 (*.igmat *.skm)",
  "SketchUp material (*.skm)": "SketchUp 材料 (*.skm)",

@@ -1,4 +1,12 @@
 {
+ "Soften": "Ammorbidisci",
+ "Select edges or faces first.": "Seleziona prima spigoli o facce.",
+ "Softened {n} edge(s)": "{n} spigolo/i ammorbidito/i",
+ "Show hidden edges and faces, and the soft edges of curved surfaces (a cylinder's facets), dotted — the same as Camera ▸ Hidden Geometry.": "Mostra tratteggiati gli spigoli e le facce nascosti e gli spigoli ammorbiditi delle superfici curve (le facce di un cilindro) — come Camera ▸ Geometria nascosta.",
+ "Make Visible": "Rendi visibile",
+ "Made {n} line(s) visible": "{n} linea/e resa/e visibile/i",
+ "No invisible lines in the selection — turn on Camera ▸ Hidden Geometry to see and select them.": "Nessuna linea invisibile nella selezione: attiva Camera ▸ Geometria nascosta per vederle e selezionarle.",
+ "Drag over edges to erase them. Shift = hide, Ctrl = soften, Ctrl+Shift = make visible.": "Trascina sugli spigoli per cancellarli. Maiusc = nascondi, Ctrl = ammorbidisci, Ctrl+Maiusc = rendi visibile.",
  "Paint with a material saved in a file: .igmat, or SketchUp's .skm": "Dipingi con un materiale salvato in un file: .igmat, o il .skm di SketchUp",
  "Material files (*.igmat *.skm)": "File di materiale (*.igmat *.skm)",
  "SketchUp material (*.skm)": "Materiale SketchUp (*.skm)",

@@ -1,4 +1,12 @@
 {
+ "Soften": "Adoucir",
+ "Select edges or faces first.": "Sélectionnez d'abord des arêtes ou des faces.",
+ "Softened {n} edge(s)": "{n} arête(s) adoucie(s)",
+ "Show hidden edges and faces, and the soft edges of curved surfaces (a cylinder's facets), dotted — the same as Camera ▸ Hidden Geometry.": "Affiche en pointillé les arêtes et faces masquées, et les arêtes adoucies des surfaces courbes (les facettes d'un cylindre) — comme Caméra ▸ Géométrie masquée.",
+ "Make Visible": "Rendre visible",
+ "Made {n} line(s) visible": "{n} ligne(s) rendue(s) visible(s)",
+ "No invisible lines in the selection — turn on Camera ▸ Hidden Geometry to see and select them.": "Aucune ligne invisible dans la sélection — activez Caméra ▸ Géométrie masquée pour les voir et les sélectionner.",
+ "Drag over edges to erase them. Shift = hide, Ctrl = soften, Ctrl+Shift = make visible.": "Faites glisser sur des arêtes pour les effacer. Maj = masquer, Ctrl = adoucir, Ctrl+Maj = rendre visible.",
  "Paint with a material saved in a file: .igmat, or SketchUp's .skm": "Peindre avec un matériau enregistré dans un fichier : .igmat, ou le .skm de SketchUp",
  "Material files (*.igmat *.skm)": "Fichiers de matériau (*.igmat *.skm)",
  "SketchUp material (*.skm)": "Matériau SketchUp (*.skm)",

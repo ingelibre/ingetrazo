@@ -3567,41 +3567,53 @@ class StylesPanel(QWidget):
         self._back_edges.toggled.connect(self._apply_edits)
         grid.addWidget(self._back_edges, 3, 1)
 
-        grid.addWidget(QLabel(tr("Front color:")), 4, 0)
+        # Hidden Geometry (#831): the same switch as Camera ▸ Hidden
+        # Geometry — the hidden edges and faces, and the soft edges of a
+        # curved surface (a cylinder's facets), drawn dotted. A scene flag,
+        # not a style field: the panel is where one looks while modelling.
+        self._hidden_geo = QCheckBox(tr("Hidden Geometry"))
+        self._hidden_geo.setToolTip(tr(
+            "Show hidden edges and faces, and the soft edges of curved "
+            "surfaces (a cylinder's facets), dotted — the same as Camera ▸ "
+            "Hidden Geometry."))
+        self._hidden_geo.toggled.connect(self._on_hidden_geometry)
+        grid.addWidget(self._hidden_geo, 4, 0, 1, 2)
+
+        grid.addWidget(QLabel(tr("Front color:")), 5, 0)
         self._front_c = self._swatch(
             tr("Front color — paints the faces with no material (every "
                "face in Hidden line and Monochrome)"),
             "front_color")
-        grid.addWidget(self._front_c, 4, 1)
+        grid.addWidget(self._front_c, 5, 1)
 
         # Back color: the tint of faces seen from behind (the
         # inside of a solid, or a reversed face).
-        grid.addWidget(QLabel(tr("Back color:")), 5, 0)
+        grid.addWidget(QLabel(tr("Back color:")), 6, 0)
         self._back_c = self._swatch(
             tr("Back color — paints faces seen from behind"), "back_color")
-        grid.addWidget(self._back_c, 5, 1)
+        grid.addWidget(self._back_c, 6, 1)
 
         self._sky = QCheckBox(tr("Sky"))
         self._sky.toggled.connect(self._apply_edits)
-        grid.addWidget(self._sky, 6, 0)
+        grid.addWidget(self._sky, 7, 0)
         self._sky_c = self._swatch(tr("Sky color"), "sky_color")
-        grid.addWidget(self._sky_c, 6, 1)
+        grid.addWidget(self._sky_c, 7, 1)
 
-        grid.addWidget(QLabel(tr("Ground:")), 7, 0)
+        grid.addWidget(QLabel(tr("Ground:")), 8, 0)
         self._ground_c = self._swatch(tr("Ground color"), "ground_color")
-        grid.addWidget(self._ground_c, 7, 1)
+        grid.addWidget(self._ground_c, 8, 1)
 
-        grid.addWidget(QLabel(tr("Background:")), 8, 0)
+        grid.addWidget(QLabel(tr("Background:")), 9, 0)
         self._bg_c = self._swatch(
             tr("Background — visible with the sky off"), "background")
-        grid.addWidget(self._bg_c, 8, 1)
+        grid.addWidget(self._bg_c, 9, 1)
 
         self._fill = QCheckBox(tr("Section Fill"))
         self._fill.toggled.connect(self._apply_edits)
-        grid.addWidget(self._fill, 9, 0)
+        grid.addWidget(self._fill, 10, 0)
         self._fill_c = self._swatch(tr("Section fill color"),
                                     "section_fill_color")
-        grid.addWidget(self._fill_c, 9, 1)
+        grid.addWidget(self._fill_c, 10, 1)
 
         # Ambient occlusion (#954): off in every preset. The
         # two values only take edits while the switch is on.
@@ -3610,9 +3622,9 @@ class StylesPanel(QWidget):
             "Softly darkens where surfaces meet — corners, the foot of a "
             "wall, under a bench."))
         self._ao.toggled.connect(self._apply_edits)
-        grid.addWidget(self._ao, 10, 0, 1, 2)
+        grid.addWidget(self._ao, 11, 0, 1, 2)
         self._ao_dist_lbl = QLabel()             # its unit: _sync_ao_controls
-        grid.addWidget(self._ao_dist_lbl, 11, 0)
+        grid.addWidget(self._ao_dist_lbl, 12, 0)
         # A slider and its value, like the intensity below, on a log scale:
         # a centimetre matters at the foot of a skirting board, ten metres
         # between two buildings.
@@ -3626,9 +3638,9 @@ class StylesPanel(QWidget):
         self._ao_dist_val = QLabel()
         self._ao_dist_val.setMinimumWidth(28)
         dist_row.addWidget(self._ao_dist_val)
-        grid.addLayout(dist_row, 11, 1)
+        grid.addLayout(dist_row, 12, 1)
         self._ao_int_lbl = QLabel(tr("Intensity:"))
-        grid.addWidget(self._ao_int_lbl, 12, 0)
+        grid.addWidget(self._ao_int_lbl, 13, 0)
         int_row = QHBoxLayout()
         self._ao_int = QSlider(Qt.Horizontal)
         self._ao_int.setRange(0, 20)             # tenths: 0.0 – 2.0
@@ -3637,7 +3649,7 @@ class StylesPanel(QWidget):
         self._ao_int_val = QLabel()
         self._ao_int_val.setMinimumWidth(28)
         int_row.addWidget(self._ao_int_val)
-        grid.addLayout(int_row, 12, 1)
+        grid.addLayout(int_row, 13, 1)
 
         row = QHBoxLayout()
         save_btn = QPushButton(tr("Save style…"))
@@ -3646,7 +3658,7 @@ class StylesPanel(QWidget):
         self._del_btn = QPushButton(tr("Delete"))
         self._del_btn.clicked.connect(self._on_delete)
         row.addWidget(self._del_btn)
-        grid.addLayout(row, 13, 0, 1, 2)
+        grid.addLayout(row, 14, 0, 1, 2)
 
         self.refresh()
 
@@ -3718,6 +3730,7 @@ class StylesPanel(QWidget):
             self._edges.setChecked(style.edges)
             self._profiles.setChecked(style.profiles)
             self._back_edges.setChecked(getattr(style, "back_edges", False))
+            self.sync_hidden_geometry()
             self._sky.setChecked(style.sky)
             self._fill.setChecked(style.section_fill)
             self._edge_c.setStyleSheet(self._css(style.edge_color))
@@ -3740,6 +3753,22 @@ class StylesPanel(QWidget):
             self._updating = False
 
     # ---- Actions ------------------------------------------------------------
+    def sync_hidden_geometry(self) -> None:
+        """Mirror the scene's Hidden Geometry switch (the Camera menu, a
+        load or a scene recall changed it)."""
+        on = bool(getattr(self._window.viewport.scene,
+                          "show_hidden_geometry", False))
+        self._hidden_geo.blockSignals(True)
+        self._hidden_geo.setChecked(on)
+        self._hidden_geo.blockSignals(False)
+
+    def _on_hidden_geometry(self, on: bool) -> None:
+        act = getattr(self._window, "_act_hidden_geometry", None)
+        if act is not None:
+            act.setChecked(bool(on))      # the menu's toggled does the rest
+        else:
+            self._window._set_hidden_view("show_hidden_geometry", bool(on))
+
     def _on_pick(self, index: int) -> None:
         from core.style import style_by_name
         picked = style_by_name(self._combo.itemData(index))

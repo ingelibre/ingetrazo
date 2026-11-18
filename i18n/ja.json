@@ -1,4 +1,12 @@
 {
+ "Soften": "ソフトにする",
+ "Select edges or faces first.": "先にエッジまたは面を選択してください。",
+ "Softened {n} edge(s)": "{n} 本のエッジをソフトにしました",
+ "Show hidden edges and faces, and the soft edges of curved surfaces (a cylinder's facets), dotted — the same as Camera ▸ Hidden Geometry.": "非表示のエッジと面、および曲面のソフトエッジ（円柱のファセット）を点線で表示します。カメラ ▸ 非表示の形状 と同じです。",
+ "Make Visible": "表示する",
+ "Made {n} line(s) visible": "{n} 本の線を表示しました",
+ "No invisible lines in the selection — turn on Camera ▸ Hidden Geometry to see and select them.": "選択に見えない線はありません。カメラ ▸ 非表示の形状 をオンにすると、見て選択できます。",
+ "Drag over edges to erase them. Shift = hide, Ctrl = soften, Ctrl+Shift = make visible.": "エッジをなぞって消去。Shift で非表示、Ctrl でソフト、Ctrl+Shift で表示します。",
  "Paint with a material saved in a file: .igmat, or SketchUp's .skm": "ファイルに保存したマテリアルで塗ります: .igmat、または SketchUp の .skm",
  "Material files (*.igmat *.skm)": "マテリアルファイル (*.igmat *.skm)",
  "SketchUp material (*.skm)": "SketchUp マテリアル (*.skm)",

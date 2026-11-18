@@ -1,4 +1,12 @@
 {
+ "Soften": "تنعيم",
+ "Select edges or faces first.": "حدّد حوافًا أو أوجهًا أولًا.",
+ "Softened {n} edge(s)": "تم تنعيم {n} حافة",
+ "Show hidden edges and faces, and the soft edges of curved surfaces (a cylinder's facets), dotted — the same as Camera ▸ Hidden Geometry.": "يعرض بخط منقّط الحواف والأوجه المخفية والحواف المنعّمة للأسطح المنحنية (أوجه الأسطوانة) — مثل الكاميرا ▸ الهندسة الخفية.",
+ "Make Visible": "إظهار الخطوط",
+ "Made {n} line(s) visible": "أصبح {n} خط مرئيًا",
+ "No invisible lines in the selection — turn on Camera ▸ Hidden Geometry to see and select them.": "لا توجد خطوط غير مرئية في التحديد — فعّل الكاميرا ▸ الهندسة الخفية لرؤيتها وتحديدها.",
+ "Drag over edges to erase them. Shift = hide, Ctrl = soften, Ctrl+Shift = make visible.": "اسحب فوق الحواف لمسحها. Shift = إخفاء، Ctrl = تنعيم، Ctrl+Shift = إظهار.",
  "Paint with a material saved in a file: .igmat, or SketchUp's .skm": "الطلاء بمادة محفوظة في ملف: ‎.igmat أو ‎.skm الخاص بـ SketchUp",
  "Material files (*.igmat *.skm)": "ملفات المواد (*.igmat *.skm)",
  "SketchUp material (*.skm)": "مادة SketchUp (*.skm)",

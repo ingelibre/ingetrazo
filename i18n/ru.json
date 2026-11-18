@@ -1,4 +1,12 @@
 {
+ "Soften": "Сгладить",
+ "Select edges or faces first.": "Сначала выберите рёбра или грани.",
+ "Softened {n} edge(s)": "Сглажено рёбер: {n}",
+ "Show hidden edges and faces, and the soft edges of curved surfaces (a cylinder's facets), dotted — the same as Camera ▸ Hidden Geometry.": "Показывает пунктиром скрытые рёбра и грани, а также сглаженные рёбра криволинейных поверхностей (грани цилиндра) — то же, что Камера ▸ Скрытая геометрия.",
+ "Make Visible": "Сделать видимым",
+ "Made {n} line(s) visible": "Видимых линий: {n}",
+ "No invisible lines in the selection — turn on Camera ▸ Hidden Geometry to see and select them.": "В выделении нет невидимых линий — включите Камера ▸ Скрытая геометрия, чтобы увидеть и выбрать их.",
+ "Drag over edges to erase them. Shift = hide, Ctrl = soften, Ctrl+Shift = make visible.": "Проведите по рёбрам для стирания. Shift = скрыть, Ctrl = сгладить, Ctrl+Shift = сделать видимыми.",
  "Paint with a material saved in a file: .igmat, or SketchUp's .skm": "Красить материалом, сохранённым в файле: .igmat или .skm из SketchUp",
  "Material files (*.igmat *.skm)": "Файлы материалов (*.igmat *.skm)",
  "SketchUp material (*.skm)": "Материал SketchUp (*.skm)",

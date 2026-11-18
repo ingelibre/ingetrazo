@@ -508,8 +508,14 @@ class SelectTool(Tool):
     def _expand(viewport, entity):
         """Grow a pick to its natural whole: a curved surface (faces joined by
         soft edges) for a face, or the whole drawn curve (circle/arc) for one of
-        its segments — the classic behaviour. Plain entities select alone."""
+        its segments — the classic behaviour. Plain entities select alone.
+
+        With Camera ▸ Hidden Geometry on, the soft edges show and a face of
+        a curved surface selects alone, so one facet of a cylinder's side
+        can be picked, pushed or painted on its own (#831)."""
         if isinstance(entity, Face):
+            if getattr(viewport.scene, "show_hidden_geometry", False):
+                return [entity]
             return viewport.scene.mesh.surface_of(entity)
         if isinstance(entity, Edge) and getattr(entity, "curve", None) is not None:
             return viewport.scene.mesh.curve_edges(entity)

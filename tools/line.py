@@ -19,7 +19,7 @@ from __future__ import annotations
 from PySide6.QtGui import QVector3D
 
 from core.edits import build_add_edge
-from core.history import Command
+from core.history import Command, CompoundCommand, HardenEdgesAlongCommand
 from tools.base import Tool, ToolContext, retype_open
 
 
@@ -310,8 +310,15 @@ class LineTool(Tool):
         face" behaviour, now correct even when the loop relies on a crossing."""
         cam = getattr(viewport, "camera", None)
         eye = cam.eye() if cam is not None and hasattr(cam, "eye") else None
-        return build_add_edge(viewport.scene, start, end, detect_faces=True,
-                              eye=eye)
+        cmd = build_add_edge(viewport.scene, start, end, detect_faces=True,
+                             eye=eye)
+        # A line drawn over a soft seam (a cylinder's facet edge, seen with
+        # Hidden Geometry) welds into it: harden what it lands on, or the
+        # line stays undrawn and seems not to stick (#831).
+        mesh = viewport.scene.mesh
+        if any(getattr(e, "soft", False) for e in mesh.edges):
+            cmd = CompoundCommand([cmd, HardenEdgesAlongCommand(start, end)])
+        return cmd
 
     # A segment that makes a face — closing a loop, or cutting an existing
     # face in two — finishes the chain: the next click starts a new line

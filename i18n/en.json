@@ -1,4 +1,12 @@
 {
+ "Soften": "Soften",
+ "Select edges or faces first.": "Select edges or faces first.",
+ "Softened {n} edge(s)": "Softened {n} edge(s)",
+ "Show hidden edges and faces, and the soft edges of curved surfaces (a cylinder's facets), dotted — the same as Camera ▸ Hidden Geometry.": "Show hidden edges and faces, and the soft edges of curved surfaces (a cylinder's facets), dotted — the same as Camera ▸ Hidden Geometry.",
+ "Make Visible": "Make Visible",
+ "Made {n} line(s) visible": "Made {n} line(s) visible",
+ "No invisible lines in the selection — turn on Camera ▸ Hidden Geometry to see and select them.": "No invisible lines in the selection — turn on Camera ▸ Hidden Geometry to see and select them.",
+ "Drag over edges to erase them. Shift = hide, Ctrl = soften, Ctrl+Shift = make visible.": "Drag over edges to erase them. Shift = hide, Ctrl = soften, Ctrl+Shift = make visible.",
  "_comment": "English is the source language: keys ARE the English strings, so this identity map stays empty. Translations live in es.json and future <lang>.json files.",
  "The sun is below the horizon: no shadows.": "The sun is below the horizon: no shadows.",
  "Sunrise: {time}": "Sunrise: {time}",

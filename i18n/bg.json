@@ -1,4 +1,12 @@
 {
+ "Soften": "Заглади",
+ "Select edges or faces first.": "Първо изберете ръбове или стени.",
+ "Softened {n} edge(s)": "Загладени ръбове: {n}",
+ "Show hidden edges and faces, and the soft edges of curved surfaces (a cylinder's facets), dotted — the same as Camera ▸ Hidden Geometry.": "Показва с точки скритите ръбове и стени и загладените ръбове на извитите повърхнини (стените на цилиндър) — същото като Камера ▸ Скрита геометрия.",
+ "Make Visible": "Направи видимо",
+ "Made {n} line(s) visible": "Видими линии: {n}",
+ "No invisible lines in the selection — turn on Camera ▸ Hidden Geometry to see and select them.": "В избраното няма невидими линии — включете Камера ▸ Скрита геометрия, за да ги видите и изберете.",
+ "Drag over edges to erase them. Shift = hide, Ctrl = soften, Ctrl+Shift = make visible.": "Плъзнете по ръбовете, за да ги изтриете. Shift = скрий, Ctrl = заглади, Ctrl+Shift = направи видими.",
  "Paint with a material saved in a file: .igmat, or SketchUp's .skm": "Оцветяване с материал, записан във файл: .igmat или .skm на SketchUp",
  "Material files (*.igmat *.skm)": "Файлове с материали (*.igmat *.skm)",
  "SketchUp material (*.skm)": "Материал на SketchUp (*.skm)",

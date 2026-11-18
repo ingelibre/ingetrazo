@@ -1,4 +1,12 @@
 {
+ "Soften": "부드럽게",
+ "Select edges or faces first.": "먼저 모서리나 면을 선택하세요.",
+ "Softened {n} edge(s)": "모서리 {n}개를 부드럽게 했습니다",
+ "Show hidden edges and faces, and the soft edges of curved surfaces (a cylinder's facets), dotted — the same as Camera ▸ Hidden Geometry.": "숨겨진 모서리와 면, 곡면의 부드러운 모서리(원기둥의 면)를 점선으로 표시합니다. 카메라 ▸ 숨겨진 지오메트리와 같습니다.",
+ "Make Visible": "보이게 하기",
+ "Made {n} line(s) visible": "선 {n}개를 보이게 했습니다",
+ "No invisible lines in the selection — turn on Camera ▸ Hidden Geometry to see and select them.": "선택에 보이지 않는 선이 없습니다. 카메라 ▸ 숨겨진 지오메트리를 켜면 보고 선택할 수 있습니다.",
+ "Drag over edges to erase them. Shift = hide, Ctrl = soften, Ctrl+Shift = make visible.": "모서리 위로 드래그하여 지웁니다. Shift = 숨기기, Ctrl = 부드럽게, Ctrl+Shift = 보이게 하기.",
  "Paint with a material saved in a file: .igmat, or SketchUp's .skm": "파일에 저장한 재질로 칠합니다: .igmat, 또는 SketchUp의 .skm",
  "Material files (*.igmat *.skm)": "재질 파일 (*.igmat *.skm)",
  "SketchUp material (*.skm)": "SketchUp 재질 (*.skm)",

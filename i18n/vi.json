@@ -1,4 +1,12 @@
 {
+ "Soften": "Làm mềm",
+ "Select edges or faces first.": "Hãy chọn cạnh hoặc mặt trước.",
+ "Softened {n} edge(s)": "Đã làm mềm {n} cạnh",
+ "Show hidden edges and faces, and the soft edges of curved surfaces (a cylinder's facets), dotted — the same as Camera ▸ Hidden Geometry.": "Hiện dạng chấm các cạnh và mặt bị ẩn, cùng các cạnh làm mềm của bề mặt cong (các mặt của hình trụ) — giống Camera ▸ Hình học ẩn.",
+ "Make Visible": "Hiện đường",
+ "Made {n} line(s) visible": "Đã hiện {n} đường",
+ "No invisible lines in the selection — turn on Camera ▸ Hidden Geometry to see and select them.": "Không có đường ẩn nào trong vùng chọn — bật Camera ▸ Hình học ẩn để xem và chọn chúng.",
+ "Drag over edges to erase them. Shift = hide, Ctrl = soften, Ctrl+Shift = make visible.": "Kéo qua các cạnh để xóa. Shift = ẩn, Ctrl = làm mềm, Ctrl+Shift = hiện.",
  "Paint with a material saved in a file: .igmat, or SketchUp's .skm": "Tô bằng vật liệu đã lưu trong tệp: .igmat, hoặc .skm của SketchUp",
  "Material files (*.igmat *.skm)": "Tệp vật liệu (*.igmat *.skm)",
  "SketchUp material (*.skm)": "Vật liệu SketchUp (*.skm)",
