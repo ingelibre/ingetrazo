@@ -1228,6 +1228,12 @@ class ComponentsPanel(QWidget):
         custom.clicked.connect(window._on_insert_faceme_image)
         lay.addWidget(custom)
 
+        # «My Library»: your own folders of .igz components, as a tree
+        # (#1088, #354) — the library you keep, beside the one online.
+        from views.user_library import UserLibraryWidget
+        self.user_library = UserLibraryWidget(window)
+        lay.addWidget(self.user_library)
+
         # "In model": what THIS drawing contains, the way a components
         # tray usually lists it. The grid above is a library to insert
         # from; it says nothing about what you already have, which is what
@@ -1512,6 +1518,11 @@ class ComponentsPanel(QWidget):
         out.append((tr("Rename…"),
                     lambda: self._window.rename_component(definition),
                     None, tr("Renames every copy of this component")))
+        out.append((tr("Save to My Library…"),
+                    lambda: self._window.save_component_to_library(
+                        definition), None,
+                    tr("Save this component as a file of its own in your "
+                       "library, to use it in other drawings")))
         return out
 
     def _in_model_menu(self, pos) -> None:

@@ -27,6 +27,10 @@ if sys.platform == "win32":
     # a command back wrote its traceback into the developer's real
     # %LOCALAPPDATA%\IngeTrazo\ingetrazo-errors.log (ronda Windows 0.5.9).
     os.environ["LOCALAPPDATA"] = _data_dir
+# «My Library» (core.user_library) reads the developer's own folders of
+# components — Documents\IngeTrazo\Components by default. Every window the
+# suite builds reads an empty one of its own instead.
+os.environ["INGETRAZO_USER_LIBRARY"] = os.path.join(_data_dir, "my-library")
 
 # Windows: the offscreen platform has NO font database there (fontconfig
 # finds the fonts on Linux; on Windows nothing looks), so every glyph drew

@@ -6656,6 +6656,12 @@ class MainWindow(QMainWindow):
                 act.setChecked(kept)
                 act.triggered.connect(
                     lambda on: self.keep_selected_components(bool(on)))
+                definition = self.selected_component_definition()
+                if definition is not None:
+                    menu.addAction(
+                        tr("Save to My Library…"),
+                        lambda d=definition:
+                            self.save_component_to_library(d))
             # Cut Opening (#1272): a window or a door opens its own hole in
             # the wall it sits on, and the hole follows it.
             from core.openings import cutting_targets, wants_opening
@@ -11142,6 +11148,79 @@ class MainWindow(QMainWindow):
             point = at if isinstance(at, QVector3D) else QVector3D(*at)
             PlaceGroupTool(comp, anchor=origin).place_at(self.viewport, point)
         return comp
+
+    # ---- My Library (#1088, #354): your own folders of components -------
+    def insert_library_file(self, path) -> None:
+        """A double click in «My Library»: the file's component follows the
+        cursor and a click drops it, as File ▸ Import ▸ IngeTrazo does."""
+        path = Path(path)
+        title = tr("My Library")
+        if (self._current_path is not None
+                and path.resolve() == self._current_path.resolve()):
+            QMessageBox.warning(self, title,
+                                tr("That is the document you are editing."))
+            return
+        try:
+            comp = self.import_igz_path(path)
+        except Exception as exc:  # noqa: BLE001 - any unreadable file
+            QMessageBox.warning(self, title,
+                                tr("Could not read {p}: {e}", p=path, e=exc))
+            return
+        if comp is None:
+            QMessageBox.warning(self, title, tr(
+                "“{name}” has no geometry.", name=path.name))
+
+    def selected_component_definition(self):
+        """The one component the selection is made of (several copies of
+        the same one count as one), or ``None``."""
+        comps = [e for e in self.viewport.scene.selection
+                 if isinstance(e, Group) and e.is_component()]
+        if not comps or len({id(g.mesh) for g in comps}) != 1:
+            return None
+        return comps[0]
+
+    def save_component_to_library(self, definition, folder=None):
+        """Write ``definition``'s component to a file of its own in «My
+        Library». With ``folder`` (a right click on a folder of the tree)
+        it goes there under its own name; without, a save dialog opens in
+        the folder used last. Returns the path written, or ``None``."""
+        from core import user_library as lib
+        name = definition.name or tr("Component")
+        if folder is None:
+            start = lib.last_folder()
+            if start is None or not start.is_dir():
+                start = lib.folders()[0]
+            try:
+                start.mkdir(parents=True, exist_ok=True)
+            except OSError:
+                pass
+            suggested = lib.unique_path(start, name)
+            path_str, _ = file_dialogs.getSaveFileName(
+                self, tr("Save to My Library"), str(suggested),
+                IGZ_FILE_FILTER)
+            if not path_str:
+                return None
+            path = Path(path_str)
+        else:
+            path = lib.unique_path(Path(folder), name)
+        try:
+            path = lib.save_component(definition, self.viewport.scene, path)
+        except Exception as exc:  # noqa: BLE001 - disk full, no permission…
+            QMessageBox.warning(self, tr("Save to My Library"),
+                                tr("Could not save {p}: {e}", p=path, e=exc))
+            return None
+        lib.remember_folder(path.parent)
+        if lib.is_inside(path):
+            text = tr("“{name}” saved to My Library", name=path.stem)
+        else:
+            text = tr("“{name}” saved — that folder is not in My Library; "
+                      "add it with + to see it there", name=path.stem)
+        self.statusBar().showMessage(text, 6000)
+        widget = getattr(getattr(getattr(self, "tray", None), "components",
+                                 None), "user_library", None)
+        if widget is not None:
+            widget.refresh()
+        return path
 
     @staticmethod
     def _survey_note(offset) -> str:
