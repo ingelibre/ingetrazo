@@ -113,7 +113,7 @@ def test_a_textured_material_keeps_its_image_and_tile_size(tmp_path):
 
 @pytest.mark.parametrize("use, trans, opacity", [
     ("1", "0.5", 0.5), ("1", "0.75", 0.25), ("0", "0.5", None),
-    ("1", "0", None)])
+    ("0", "1", None), ("1", "0", None)])
 def test_translucency_counts_only_with_use_trans(tmp_path, use, trans,
                                                  opacity):
     path = _skm(tmp_path / "glass.skm",
@@ -145,6 +145,54 @@ def test_a_colourized_texture_is_tinted_from_its_original(tmp_path, ctype):
     assert Path(tex["base"]).read_bytes() == data
     assert Path(tex["path"]).read_bytes() != data
     assert tex["sw"] == pytest.approx(1.0, abs=1e-4)
+
+
+def test_the_sample_files_shared_on_the_issue(tmp_path):
+    """The three samples @pacaeiro shared on #1427, attribute for attribute:
+    the whole document on one line with the xsi schema location; a yellow
+    with ``trans="1"`` left opaque by ``useTrans="0"``; a texture whose
+    ``textureFilename`` is a network path while ``mat:image`` names the
+    JPG under ``ref/``, its tile 4.19 × 4.44 in like the image (196 × 208)."""
+    ns = (_NS + ' xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" '
+          'xsi:schemaLocation="http://sketchup.google.com/schemas/sketchup/'
+          '1.0/material http://sketchup.google.com/schemas/sketchup/1.0/'
+          'material.xsd"')
+    half = _skm(tmp_path / "50_percent.skm",
+                '<mat:material name="50_percent" type="0" colorRed="204" '
+                'colorGreen="204" colorBlue="255" colorizeType="0" '
+                'trans="0.5" useTrans="1" hasTexture="0" />', ns=ns)
+    yellow = _skm(tmp_path / "Amarelo.skm",
+                  '<mat:material name="Amarelo" type="0" colorRed="255" '
+                  'colorGreen="255" colorBlue="101" colorizeType="0" '
+                  'trans="1" useTrans="0" hasTexture="0" />', ns=ns)
+    img = QImage(196, 208, QImage.Format_RGB32)
+    img.fill(QColor(215, 215, 215))
+    assert img.save(str(tmp_path / "chapa.jpg"))
+    data = (tmp_path / "chapa.jpg").read_bytes()
+    sheet = _skm(tmp_path / "chapa-gota.skm",
+                 '<mat:material name="chapa-gota" type="1" colorRed="215" '
+                 'colorGreen="215" colorBlue="215" colorizeType="0" '
+                 'trans="0.5" useTrans="0" hasTexture="1"><mat:texture '
+                 'textureFilename="\\\\AD\\Desenho\\Materiais\\'
+                 'chapa-gota.jpg" xScale="4.187395769786" '
+                 'yScale="4.443766939365" avgColor="4292335575"><mat:images>'
+                 '<mat:image id="1" path="chapa-gota_1.jpg" /></mat:images>'
+                 '</mat:texture></mat:material>',
+                 {"ref/chapa-gota_1.jpg": data}, ns=ns)
+
+    (mat,) = load_skm(half)
+    assert mat.color == pytest.approx((0.8, 0.8, 1.0))
+    assert mat.opacity == pytest.approx(0.5)
+    (mat,) = load_skm(yellow)
+    assert mat.color == pytest.approx((1.0, 1.0, 101 / 255))
+    assert mat.opacity is None
+    (mat,) = load_skm(sheet)
+    assert mat.opacity is None and mat.color is None
+    tex = mat.texture
+    assert Path(tex["path"]).read_bytes() == data
+    assert tex["sw"] == pytest.approx(0.10636, abs=1e-5)
+    assert tex["sh"] == pytest.approx(0.11287, abs=1e-5)
+    assert tex["sw"] / tex["sh"] == pytest.approx(196 / 208, abs=1e-3)
 
 
 def test_the_image_is_found_by_its_file_name_or_alone_in_ref(tmp_path):
