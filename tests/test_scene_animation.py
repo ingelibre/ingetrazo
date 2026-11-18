@@ -690,6 +690,83 @@ def test_a_discarded_video_leaves_no_file(tmp_path):
     assert not path.exists()
 
 
+class _EventLog:
+    """Stands in for the writer's QApplication: notes when the event loop
+    runs, and runs it."""
+
+    def __init__(self, app, log):
+        self._app, self._log = app, log
+
+    def processEvents(self, *args):  # noqa: N802 — Qt's name
+        import time
+        self._log.append(("events", time.monotonic()))
+        self._app.processEvents(*args)
+
+
+def _cancel_right_after_the_first_frame(tmp_path, monkeypatch, old_qt):
+    """Write one frame, discard; return (stop time, event-loop times after
+    it), with the Qt version check answering ``old_qt``."""
+    import time
+
+    from PySide6.QtGui import QImage
+
+    from views import video_export
+    monkeypatch.setattr(video_export, "finalizer_deletes_off_thread",
+                        lambda: old_qt)
+    writer = video_export.MkvWriter(tmp_path / "cancel.mkv", 64, 48, 10)
+    writer.write(QImage(64, 48, QImage.Format_ARGB32))
+    log: list = []
+    rec = writer._recorder
+    real_stop = rec.stop
+
+    def stop():
+        log.append(("stop", time.monotonic()))
+        real_stop()
+    rec.stop = stop
+    writer._app = _EventLog(writer._app, log)
+    writer.discard()
+    assert not (tmp_path / "cancel.mkv").exists()
+    stopped = [t for k, t in log if k == "stop"]
+    assert stopped
+    after = [t for k, t in log if k == "events" and t > stopped[0]]
+    assert after                      # it still waits for Stopped after
+    return stopped[0], after
+
+
+def test_the_event_loop_stays_still_while_qt_finishes_the_file(
+        tmp_path, monkeypatch):
+    """#1488: after ``stop()`` Qt's FFmpeg finalizer (before 6.12) deletes
+    its recording engine from another thread while calls queued for it
+    wait on the main thread; delivering them meanwhile (Cancel right after
+    the first frame) landed on freed memory and segfaulted on macOS. On
+    such a Qt the event loop runs again only once the file has stopped
+    growing."""
+    _need_video()
+    from views import video_export
+    stopped, after = _cancel_right_after_the_first_frame(
+        tmp_path, monkeypatch, old_qt=True)
+    assert after[0] - stopped >= 0.9 * video_export.SETTLE
+
+
+def test_on_qt_6_12_the_event_loop_is_not_held(tmp_path, monkeypatch):
+    """Qt 6.12 deletes the engine on its own thread: nothing to wait for.
+    Only on a real 6.12: on an older Qt, not waiting is the very crash."""
+    _need_video()
+    from views import video_export
+    if video_export.finalizer_deletes_off_thread():
+        pytest.skip("Qt before 6.12: skipping the wait would segfault")
+    stopped, after = _cancel_right_after_the_first_frame(
+        tmp_path, monkeypatch, old_qt=False)
+    assert after[0] - stopped < video_export.SETTLE
+
+
+def test_the_qt_version_decides():
+    from PySide6.QtCore import QLibraryInfo, QVersionNumber
+
+    from views.video_export import finalizer_deletes_off_thread
+    assert finalizer_deletes_off_thread() is (
+        QLibraryInfo.version() < QVersionNumber(6, 12))
+
 def _fake_render(win, log):
     """The tests' window is never shown, so it has no GL: each frame is
     a plain picture, and the log keeps what the camera and layers were."""
