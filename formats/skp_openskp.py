@@ -41,6 +41,11 @@ from core.texture import fit_uv_affine, projection_basis
 
 _INCH = 0.0254          # .skp internal unit → metres
 _MAX_DEPTH = 32         # guard against pathological instance nesting
+# How many objects, in the whole model, the copies of definitions shared
+# INSIDE a component may add when they are kept as its children instead of
+# being flattened into it. Outer levels are kept first; a part repeated
+# beyond what is left flattens into what holds it, as before.
+_NESTED_KEEP_BUDGET = 1500
 
 
 def _ring_raw(defn, loop):
@@ -1312,8 +1317,8 @@ def _adapt(model, name: str, skp_path=None):
     # circle and a rectangle — arrives as nested groups instead of flattened
     # into the outermost one. A ``cnt == 1`` definition is placed exactly
     # once, so promoting it can only keep it inside its parent, never pull it
-    # out next to it. Shared definitions below the sharing thresholds still
-    # flatten into what holds them, as before.
+    # out next to it. Shared definitions below the sharing thresholds are
+    # kept further down, when every placement sits in a prototype (#1328).
     #
     # Tagged placements inside are no reason to flatten any more: a
     # prototype's children carry their own tag, so hiding it hides them
@@ -1379,6 +1384,60 @@ def _adapt(model, name: str, skp_path=None):
                     or not _shareable(child):
                 continue
             proto_ids.add(cid)
+
+    # A definition shared INSIDE a component keeps its place there too.
+    # ``_promote_nested`` above only goes down through definitions placed
+    # once, so a component holding two copies of a sub-assembly — each with
+    # its brackets, bolts and washers, none big enough for the sharing
+    # thresholds — arrived as ONE mesh named after the outermost component:
+    # the whole tree melted into it. Every definition whose placements ALL
+    # sit inside prototypes becomes a prototype too, outer levels first, so
+    # it stays a child of what holds it (never pulled out next to it). The
+    # budget keeps a tiny part repeated thousands of times flattened.
+    parents: dict = {}
+    for r in roots:
+        for ins in getattr(r, "instances", []):
+            c = by_id.get(getattr(ins, "ref_idx", None))
+            if c is not None:
+                parents.setdefault(getattr(c, "id", None), set()).add(None)
+    for did in uses:
+        d = by_id.get(did)
+        for ins in getattr(d, "instances", []) if d is not None else ():
+            c = by_id.get(getattr(ins, "ref_idx", None))
+            if c is not None:
+                parents.setdefault(getattr(c, "id", None), set()).add(did)
+    budget = _NESTED_KEEP_BUDGET
+    grew = True
+    while grew and budget > 0:
+        # Rounds until nothing more joins: a part placed in two prototypes
+        # qualifies only once both of them have.
+        grew = False
+        level = list(proto_ids)
+        seen = set(level)
+        while level and budget > 0:
+            nxt: list = []
+            for pid in level:
+                p = by_id.get(pid)
+                for ins in getattr(p, "instances", []) if p is not None \
+                        else ():
+                    c = by_id.get(getattr(ins, "ref_idx", None))
+                    cid = getattr(c, "id", None)
+                    if c is None or cid in seen:
+                        continue
+                    seen.add(cid)
+                    nxt.append(cid)
+                    if cid in proto_ids or getattr(c, "is_image", False) \
+                            or getattr(c, "always_faces_camera", False):
+                        continue
+                    if not parents.get(cid, {None}) <= proto_ids:
+                        continue        # placed somewhere that flattens
+                    n = uses.get(cid, 0)
+                    if n < 1 or n > budget:
+                        continue
+                    proto_ids.add(cid)
+                    budget -= n
+                    grew = True
+            level = nxt
 
     groups: list = []
     proto_uses: dict = {}
