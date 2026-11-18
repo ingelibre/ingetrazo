@@ -69,6 +69,10 @@ from tools.line import LineTool
 from tools.protractor import ProtractorTool
 from tools.north import NorthTool
 from tools.guide_point import GuidePointTool
+from tools.terrain import (TerrainDeformTool, TerrainDrapeTool,
+                           TerrainFromContoursTool,
+                           TerrainFromPointsTool, TerrainGridTool,
+                           TerrainHeightTool, TerrainStampTool)
 from tools.tape import TapeMeasureTool
 from tools.text import TextTool
 from tools.move import MoveTool
@@ -565,6 +569,14 @@ class _FloatingPanels(QMainWindow):
             self._still.start()                    # still held: wait on
             return
         self._window._float_drag_end(QCursor.pos())
+#: Draw ▸ Terrain, in menu order (tools/terrain.py) — also the Terrain
+#: toolbar's buttons.
+TERRAIN_TOOLS = ("terrain_grid", "terrain_contours", "terrain_points",
+                 "terrain_height", "terrain_deform", "terrain_stamp",
+                 "terrain_drape")
+#: The window's own toolbars that start hidden — a new window, and Restore
+#: default toolbars, leave them off; turned on, the saved layout keeps them.
+TOOLBARS_HIDDEN_BY_DEFAULT = ("terrain",)
 
 
 class MainWindow(QMainWindow):
@@ -613,6 +625,15 @@ class MainWindow(QMainWindow):
             "guide_point": GuidePointTool(),
             # Tools ▸ North: aim true north on screen, the sun turns with it.
             "north": NorthTool(),
+            # Draw ▸ Terrain: ground out of triangles, and pushing it
+            # up and down (tools/terrain.py, core/terrain_mesh.py).
+            "terrain_grid": TerrainGridTool(),
+            "terrain_contours": TerrainFromContoursTool(),
+            "terrain_points": TerrainFromPointsTool(),
+            "terrain_height": TerrainHeightTool(),
+            "terrain_deform": TerrainDeformTool(),
+            "terrain_stamp": TerrainStampTool(),
+            "terrain_drape": TerrainDrapeTool(),
             "text": TextTool(),
             # Georef trace (Track G) — draws a GeoPath, never mesh geometry.
             "geopath": GeoPathTool(),
@@ -1026,10 +1047,11 @@ class MainWindow(QMainWindow):
         panels_tb = self.findChild(QToolBar, "panels_toolbar")
         if panels_tb is not None:
             own.append(panels_tb)
+        hidden = {self.toolbars.get(k) for k in TOOLBARS_HIDDEN_BY_DEFAULT}
         for tb in own:
             self.removeToolBar(tb)
             self.addToolBar(Qt.TopToolBarArea, tb)
-            tb.show()
+            tb.setVisible(tb not in hidden)
         docks = {d: d.objectName() for d in self.findChildren(QDockWidget)}
         rows = self._dock_tab_rows(docks)
         size = self.size()
@@ -1378,12 +1400,18 @@ class MainWindow(QMainWindow):
             # The Walkthrough toolbar, in the usual order.
             ("walkthrough", tr("Walkthrough"),
              ["position_camera", "walk", "look_around", "first_person"]),
+            # Draw ▸ Terrain's tools (TOOLBARS_HIDDEN_BY_DEFAULT).
+            ("terrain", tr("Terrain"), list(TERRAIN_TOOLS)),
         ]
         for oname, title, keys in layout:
             tb = self._new_toolbar(title, oname)
             self.toolbars[oname] = tb
             for key in keys:
                 self._add_tool_button(tb, key)
+        # Off until the user turns it on (right-click over a toolbar, or
+        # F3 ▸ Toolbars): most models never touch a terrain.
+        for oname in TOOLBARS_HIDDEN_BY_DEFAULT:
+            self.toolbars[oname].hide()
 
         # Bridge (issue #614): a one-shot command, not a tool, so a plain
         # button after Fillet; Tools ▸ Bridge is this same action. No key
@@ -2299,6 +2327,9 @@ class MainWindow(QMainWindow):
         shapes_menu = draw_menu.addMenu(tr("Shapes"))
         for key in ("rectangle", "rotated_rect", "circle", "polygon"):
             shapes_menu.addAction(self._tool_actions[key])
+        terrain_menu = draw_menu.addMenu(tr("Terrain"))
+        for key in TERRAIN_TOOLS:
+            terrain_menu.addAction(self._tool_actions[key])
         draw_menu.addSeparator()
         draw_menu.addAction(self._tool_actions["geopath"])
 
@@ -11783,6 +11814,9 @@ class MainWindow(QMainWindow):
         if make_faces:
             msg += "  ·  " + tr("{n} faces made from closed outlines",
                                 n=stats.get("outline_faces", 0))
+        if stats.get("points"):
+            msg += "  ·  " + tr("{n} points as guide points",
+                                n=stats["points"])
         msg += self._survey_note(stats.get("offset"))
         self.statusBar().showMessage(msg, 8000)
         return True

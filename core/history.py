@@ -3960,6 +3960,8 @@ class SnapshotImport(Command):
         ("dimensions", "added_dims", "removed_dims"),
         ("text_labels", "added_texts", "removed_texts"),
         ("compositions", "added_sheets", "removed_sheets"),
+        # Guide points a DXF's survey points arrive as (formats/dxf_in.py).
+        ("guides", "added_guides", "removed_guides"),
     )
 
     def __init__(self, mutate) -> None:

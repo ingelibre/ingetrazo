@@ -47,7 +47,8 @@ def _only_text(doc):
     msp = doc.modelspace()
     msp.add_text("a note")
     msp.add_text("another note")
-    msp.add_point((1, 1))
+    # A POINT is no longer "nothing": it comes in as a guide point (a
+    # survey's spot height, tests/test_terrain_build.py).
 
 
 def _annotation_block(doc):

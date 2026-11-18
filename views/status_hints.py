@@ -83,6 +83,20 @@ HINTS: dict = {
     "protractor": ("Click the vertex of the angle.",
                    "Click the start of the angle, then the end; or type the degrees."),
     "guide_point": "Click to leave a guide point, or type x;y;z and Enter.",
+    "terrain_grid": ("Click the first corner. Type cell or cell;relief first.",
+                     "Click the opposite corner, or type width;height and Enter."),
+    "terrain_deform": ("Click the ground to push. Type the radius first.",
+                       "Move up or down and click, or type the height and Enter."),
+    "terrain_stamp": {
+        "idle": "Click the face with the platform's shape. Type the slope width first.",
+        "ground": "Click the ground to stamp the platform into.",
+        "height": "Move up or down and click, or type the rise above the shape and Enter.",
+    },
+    "terrain_contours": "Select contours at their heights, then the tool. Type a cell to rebuild.",
+    "terrain_points": "Select points (or none: all guide points), then the tool. Type a longest side.",
+    "terrain_height": ("Click a contour line or a guide point.",
+                       "Type its height and Enter."),
+    "terrain_drape": "Select edges, then click the ground to drape them onto it.",
     "north": ("Click the centre of the compass.",
               "Click toward north, or type the degrees from the green axis."),
     "dimension": ("Click the first point of the dimension.",
@@ -123,6 +137,10 @@ def phase_of(key: str, tool) -> str:
         if getattr(tool, "end_point", None) is not None:
             return "bulge"
         return "end" if getattr(tool, "start_point", None) is not None else "idle"
+    if key == "terrain_stamp":
+        if getattr(tool, "start_point", None) is not None:
+            return "height"
+        return "ground" if getattr(tool, "footprint", None) else "idle"
     if key == "fillet":
         return "sizing" if getattr(tool, "sizing", False) else "idle"
     if getattr(tool, "start_point", None) is not None:

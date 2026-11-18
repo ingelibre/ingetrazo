@@ -1449,6 +1449,122 @@ def _comp_norte(p, ink):
     p.drawPolygon(poly)
 
 
+def _terrain_grid(p, ink):
+    """Draw ▸ Terrain ▸ Terrain from Scratch: a patch of ground seen at an
+    angle, two cells a side split into triangles, and its two clicks — the
+    corners — as accent dots, like the Rectangle."""
+    a, b, c, d = (8.0, 33.0), (28.0, 39.0), (40.0, 17.0), (20.0, 11.0)
+
+    def at(u, v):
+        return (a[0] + (b[0] - a[0]) * u + (d[0] - a[0]) * v,
+                a[1] + (b[1] - a[1]) * u + (d[1] - a[1]) * v)
+
+    p.setBrush(Qt.NoBrush)
+    p.drawPolygon(QPolygonF([QPointF(*a), QPointF(*b), QPointF(*c),
+                             QPointF(*d)]))
+    p.drawLine(QPointF(*at(0.5, 0)), QPointF(*at(0.5, 1)))
+    p.drawLine(QPointF(*at(0, 0.5)), QPointF(*at(1, 0.5)))
+    for u, v in ((0, 0), (0.5, 0), (0, 0.5), (0.5, 0.5)):
+        _guide(p, ink, at(u, v), at(u + 0.5, v + 0.5), dashed=False)
+    _dot(p, *a, 2.9)
+    _dot(p, *c, 2.9)
+
+
+def _terrain_deform(p, ink):
+    """Draw ▸ Terrain ▸ Deform Terrain, in section: the level ground
+    (dashed) pushed up into a smooth mound, its top — the click — as an
+    accent dot."""
+    _guide(p, ink, (13, 34), (35, 34))
+    path = QPainterPath(QPointF(5, 34))
+    path.lineTo(QPointF(11, 34))
+    for i in range(1, 25):
+        t = i / 24.0
+        x = 11 + 26 * t
+        path.lineTo(QPointF(x, 34 - 20 * (0.5 - 0.5 * math.cos(2 * math.pi * t))))
+    path.lineTo(QPointF(43, 34))
+    p.setBrush(Qt.NoBrush)
+    p.drawPath(path)
+    _dot(p, 24, 14, 2.9)
+
+
+def _terrain_stamp(p, ink):
+    """Draw ▸ Terrain ▸ Stamp Platform, in section: a hillside with a level
+    platform cut into it — the slope filled below it, cut back above — and
+    the house it is for standing on it in the accent colour."""
+    path = QPainterPath(QPointF(4, 39))
+    path.cubicTo(QPointF(8, 37), QPointF(11, 34), QPointF(14, 31))
+    path.lineTo(QPointF(31, 31))
+    path.lineTo(QPointF(35, 22))
+    path.cubicTo(QPointF(38, 19), QPointF(41, 17), QPointF(44, 16))
+    p.setBrush(Qt.NoBrush)
+    p.drawPath(path)
+    p.save()
+    pen = QPen(p.pen())
+    pen.setColor(_accent())
+    p.setPen(pen)
+    p.drawPolyline(QPolygonF([QPointF(18.5, 31), QPointF(18.5, 21),
+                              QPointF(23, 16), QPointF(27.5, 21),
+                              QPointF(27.5, 31)]))
+    p.restore()
+
+
+def _terrain_drape(p, ink):
+    """Draw ▸ Terrain ▸ Drape, in section: an edge drawn above, dashed
+    guides dropping from its ends, and where they land on the rolling
+    ground — the edge now on it — as accent dots."""
+    p.drawLine(QPointF(10, 10), QPointF(38, 10))
+    _guide(p, ink, (10, 10), (10, 33))
+    _guide(p, ink, (38, 10), (38, 29))
+    path = QPainterPath(QPointF(4, 36))
+    path.cubicTo(QPointF(12, 30), QPointF(18, 40), QPointF(26, 36))
+    path.cubicTo(QPointF(32, 33), QPointF(36, 27), QPointF(44, 30))
+    p.setBrush(Qt.NoBrush)
+    p.drawPath(path)
+    _dot(p, 10, 33, 2.9)
+    _dot(p, 38, 29, 2.9)
+
+
+def _terrain_contours(p, ink):
+    """Draw ▸ Terrain ▸ Terrain from Contours, in section: three contour
+    levels as dashed guides, the ground running smoothly through them, and
+    the points it takes from each level as accent dots."""
+    for y in (34.0, 24.0, 14.0):
+        _guide(p, ink, (6, y), (42, y))
+    path = QPainterPath(QPointF(6, 39))
+    path.cubicTo(QPointF(14, 38), QPointF(16, 30), QPointF(22, 24))
+    path.cubicTo(QPointF(27, 19), QPointF(31, 14), QPointF(42, 12))
+    p.setBrush(Qt.NoBrush)
+    p.drawPath(path)
+    _dot(p, 14.5, 34, 2.9)
+    _dot(p, 22, 24, 2.9)
+    _dot(p, 32.5, 14, 2.9)
+
+
+def _terrain_points(p, ink):
+    """Draw ▸ Terrain ▸ Terrain from Points, in section: survey points at
+    their heights (accent), each on its dashed stake down to the datum, and
+    the ground joining them straight from one to the next."""
+    pts = ((8.0, 28.0), (19.0, 16.0), (30.0, 24.0), (40.0, 12.0))
+    p.drawLine(QPointF(5, 40), QPointF(43, 40))
+    for x, y in pts:
+        _guide(p, ink, (x, y), (x, 40))
+    p.drawPolyline(QPolygonF([QPointF(x, y) for x, y in pts]))
+    for x, y in pts:
+        _dot(p, x, y, 2.9)
+
+
+def _terrain_height(p, ink):
+    """Draw ▸ Terrain ▸ Set Height: a flat contour where it was drawn
+    (dashed), the same line at its height, the arrow between them, and
+    the click on the line as an accent dot."""
+    _guide(p, ink, (6, 38), (42, 38))
+    p.drawLine(QPointF(6, 14), QPointF(42, 14))
+    p.drawLine(QPointF(24, 34), QPointF(24, 21))
+    p.drawPolyline(QPolygonF([QPointF(19.5, 25.5), QPointF(24, 21),
+                              QPointF(28.5, 25.5)]))
+    _dot(p, 24, 14, 2.9)
+
+
 def _north(p, ink):
     """Tools ▸ North: a compass circle, its arrow in the accent colour
     pointing up, and the N above it."""
@@ -2733,6 +2849,10 @@ _DRAW = {
     "guide_point": _guide_point,
     "section": _section, "section_box": _section_box,
     "section_box_cut": _section_box_cut,
+    "terrain_grid": _terrain_grid, "terrain_deform": _terrain_deform,
+    "terrain_stamp": _terrain_stamp, "terrain_drape": _terrain_drape,
+    "terrain_contours": _terrain_contours, "terrain_points": _terrain_points,
+    "terrain_height": _terrain_height,
     "styles": _styles_icon, "shadows": _shadows_icon,
     "panel_properties": _panel_properties, "panel_bim": _panel_bim,
     "panel_terrain": _panel_terrain, "panel_browser": _panel_browser,
@@ -2954,6 +3074,13 @@ _CURSOR_HOTSPOTS = {
     "protractor": (24, 24),         # the protractor's vertex
     "north": (24, 28),              # the compass centre
     "guide_point": (24, 24),        # the cross: where the point goes
+    "terrain_grid": (8, 33),        # the first corner
+    "terrain_deform": (24, 14),      # the top of the mound
+    "terrain_stamp": (23, 31),       # the platform, under the house
+    "terrain_drape": (10, 33),       # where the edge lands on the ground
+    "terrain_contours": (22, 24),    # a point on a contour level
+    "terrain_points": (19, 16),      # a survey point
+    "terrain_height": (24, 14),      # the clicked line
     "orbit": (24, 24),              # camera navigation (wheel-drag / modes)
     "pan": (24, 24),
     "zoom": (21, 21),               # the magnifier's lens centre
