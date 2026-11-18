@@ -22,7 +22,7 @@ from core.edits import build_add_edges
 from core.i18n import tr
 from core.history import AddFaceCommand
 from tools.base import (PLANE_LOCK_KEYS, PLANE_LOCK_NAMES, face_the_plane,
-                        PlaneLock, Tool, ToolContext)
+                        PlaneLock, Tool, ToolContext, retype_open)
 from core.units import fmt_pair
 
 
@@ -53,6 +53,19 @@ def _plane_axes(normal: QVector3D) -> tuple[QVector3D, QVector3D]:
 # No AxisMagnet here, deliberately (issue #52): the second click is the
 # OPPOSITE CORNER, and a corner pulled onto the axis through the first is a
 # rectangle of zero height. See ``tools.base.AxisMagnet``.
+def _laid_out(last: dict) -> list[QVector3D]:
+    """The four corners a retype description stands for: from its first
+    corner — or around its centre — along its own plane axes."""
+    start, u, v = last["start"], last["u"], last["v"]
+    du, dv = last["su"] * last["w"], last["sv"] * last["h"]
+    if last["from_center"]:
+        # Typed sizes are the WHOLE width and height, centred here.
+        a = start - u * (du * 0.5) - v * (dv * 0.5)
+    else:
+        a = start
+    return [a, a + u * du, a + u * du + v * dv, a + v * dv]
+
+
 class RectangleTool(PlaneLock, Tool):
     name = "Rectangle"
     shortcut = "R"
@@ -89,19 +102,25 @@ class RectangleTool(PlaneLock, Tool):
         #: The side the cursor is stretching ("u" width / "v" height): a lone
         #: typed number goes there and the other side stays as shown.
         self._live_side: str | None = None
+        #: The rectangle just drawn, for the hot retype (#414): typing new
+        #: dimensions right after redraws it in place, one undo step.
+        self._last: dict | None = None
 
     # ---- Lifecycle ----------------------------------------------------------
     def on_activate(self, viewport) -> None:
         self._reset()
+        self._last = None
         self._set_from_center(viewport, False)   # a pick-up starts corner-wise
 
     def on_deactivate(self, viewport) -> None:
         self._reset()
+        self._last = None
         self.hover_point = None
 
     # ---- Spatial input ------------------------------------------------------
     def on_click(self, ctx: ToolContext) -> None:
         self.note_plane(ctx.viewport)
+        self._last = None            # a click ends the retype window
         if self.start_point is None:
             self.start_point = ctx.world
             if self.work_plane is None:
@@ -121,7 +140,12 @@ class RectangleTool(PlaneLock, Tool):
             if flash is not None:
                 flash(self._degenerate_reason(ctx.world))
             return
-        self._commit_rect(ctx.viewport, self._corners(anchor, far))
+        u, v = self._axes()
+        self._commit_rect(ctx.viewport, self._corners(anchor, far), last={
+            "start": QVector3D(self.start_point), "u": u, "v": v,
+            "su": -1.0 if du < 0 else 1.0, "sv": -1.0 if dv < 0 else 1.0,
+            "w": abs(du), "h": abs(dv), "from_center": self._from_center,
+            "live_side": self._live_side, "square": self._square_locked()})
 
     def _degenerate_reason(self, world) -> str:
         """Why the rectangle came out flat, in the words that actually help.
@@ -182,8 +206,14 @@ class RectangleTool(PlaneLock, Tool):
         toward. The first number runs along the work plane's horizontal axis,
         the second along its vertical axis. A lone number sets the side the
         cursor is stretching and keeps the other as it reads (both, with the
-        square locked)."""
-        if self.start_point is None or self.hover_point is None:
+        square locked).
+
+        Right after a rectangle is finished, the same input redraws THAT
+        rectangle from the same first corner (or centre) instead: the hot
+        retype of #414, as Push/Pull, Move and Rotate already do."""
+        if self.start_point is None:
+            return self._retype(viewport, value)
+        if self.hover_point is None:
             return False
         if isinstance(value, (int, float)) and not isinstance(value, bool):
             if self._square_locked():
@@ -209,17 +239,55 @@ class RectangleTool(PlaneLock, Tool):
         du, dv = self._dimensions(self.start_point, self.hover_point)
         su = -1.0 if du < 0 else 1.0  # keep the side the cursor is heading to
         sv = -1.0 if dv < 0 else 1.0
-        if self._from_center:
-            # Typed sizes are the WHOLE width and height, centred here.
-            half = u * (su * w * 0.5) + v * (sv * h * 0.5)
-            anchor, far = self.start_point - half, self.start_point + half
+        last = {"start": QVector3D(self.start_point), "u": u, "v": v,
+                "su": su, "sv": sv, "w": w, "h": h,
+                "from_center": self._from_center,
+                "live_side": self._live_side,
+                "square": self._square_locked()}
+        self._commit_rect(viewport, _laid_out(last), last=last)
+        return True
+
+    def _retype(self, viewport, value) -> bool:
+        """The hot retype (#414): new dimensions typed right after a
+        rectangle is finished undo it and draw it again from the same first
+        corner (or centre), on the same plane and toward the same quadrant.
+        ``"4;2"`` sets both sides; a lone number the side that was being
+        stretched (both, if the square was locked), as while drawing."""
+        last = self._last
+        if last is None:
+            return False
+        if not retype_open(viewport, last.get("cmd")):
+            self._last = None
+            return False
+        w, h = last["w"], last["h"]
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            if last["square"]:
+                w = h = value
+            elif last["live_side"] == "u":
+                w = value
+            elif last["live_side"] == "v":
+                h = value
+            else:
+                return False
+        elif isinstance(value, tuple) and len(value) == 2:
+            w, h = value
         else:
-            anchor, far = self.start_point, self.start_point + u * (su * w) + v * (sv * h)
-        self._commit_rect(viewport, self._corners(anchor, far))
+            return False
+        if w <= 0.0 or h <= 0.0:
+            return False
+        new = dict(last, w=w, h=h, cmd=None)
+        viewport.history.undo()
+        self._commit_rect(viewport, _laid_out(new), last=new)
+        if not retype_open(viewport, new["cmd"]):
+            # Refused by the history: the rectangle already made comes back
+            # instead of vanishing with the undo above.
+            viewport.history.redo()
+            self._last = last
         return True
 
     def on_cancel(self, viewport) -> None:
         self._reset()
+        self._last = None
         viewport.update()
 
     # ---- Visual preview -----------------------------------------------------
@@ -369,8 +437,15 @@ class RectangleTool(PlaneLock, Tool):
         dv = QVector3D.dotProduct(delta, v)
         return [a, a + u * du, a + u * du + v * dv, a + v * dv]
 
-    def _commit_rect(self, viewport, corners: list[QVector3D]) -> None:
-        u, v = self._axes()
+    def _commit_rect(self, viewport, corners: list[QVector3D],
+                     last: dict | None = None) -> None:
+        """Draw the rectangle. ``last`` describes it for the hot retype
+        (start, plane axes, quadrant, sides); it carries its own axes,
+        because by the time a retype comes the drawing plane is gone."""
+        if last is not None:
+            u, v = last["u"], last["v"]
+        else:
+            u, v = self._axes()
         corners = face_the_plane(corners, QVector3D.crossProduct(u, v))
         segments = [(corners[i], corners[(i + 1) % 4]) for i in range(4)]
         # The rectangle owns its face explicitly (the loop spans corner to
@@ -384,6 +459,10 @@ class RectangleTool(PlaneLock, Tool):
             plane_rebuild=True,     # on a populated plane (#538)
         )
         viewport.history.execute(cmd)
+        if last is not None and viewport.history.undo_stack \
+                and viewport.history.undo_stack[-1] is cmd:
+            last["cmd"] = cmd
+        self._last = last
         self._reset()
         viewport.update()
 

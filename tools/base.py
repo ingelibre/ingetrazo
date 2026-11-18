@@ -516,6 +516,21 @@ def face_the_plane(corners, plane_normal):
     return list(corners)
 
 
+def retype_open(viewport, cmd) -> bool:
+    """Whether a hot retype may still redo ``cmd``: the command a tool
+    just committed is still the top of the undo stack.
+
+    The retype (type a new measurement right after finishing, #414) undoes
+    that command and commits it again with the new value, so the model
+    keeps ONE undo step however many times the number is retyped. Anything
+    done in between — an undo, another operation — closes the window,
+    because undoing then would take away the wrong thing."""
+    if cmd is None:
+        return False
+    stack = getattr(getattr(viewport, "history", None), "undo_stack", None)
+    return bool(stack) and stack[-1] is cmd
+
+
 @dataclass
 class ToolContext:
     """Bundle of data a tool needs to react to a viewport event."""
