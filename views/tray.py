@@ -4073,13 +4073,22 @@ class EntityInfoPanel(QWidget):
         row.addWidget(self._layer_caption)
         row.addWidget(self._layer_box, 1)
         lay.addLayout(row)
+        # Cut Opening (#1272), the right-click entry's twin: a window or a
+        # door opens its own hole in the wall it sits on.
+        self._opening_box = QCheckBox(tr("Cut opening"))
+        self._opening_box.setToolTip(tr(
+            "Opens the hole in the face it sits on, through the wall when "
+            "there is one behind, and moves it with it"))
+        self._opening_box.toggled.connect(self._on_opening_toggled)
+        lay.addWidget(self._opening_box)
         # A steady height. Selecting something used to resize this panel —
         # one line for nothing, two for an edge, four and a layer row for a
         # face — and everything below it (layers, scenes, the materials
         # library) slid up and down with every click (Marco, 23-09, four
         # screenshots). The layer row keeps its place when hidden, and the
         # text keeps room for the four lines a face or a solid shows.
-        for w in (self._layer_caption, self._layer_box, self._first_row):
+        for w in (self._layer_caption, self._layer_box, self._first_row,
+                  self._opening_box):
             pol = w.sizePolicy()
             pol.setRetainSizeWhenHidden(True)
             w.setSizePolicy(pol)
@@ -4098,6 +4107,7 @@ class EntityInfoPanel(QWidget):
         self._layer_caption.hide()
         self._layer_box.hide()
         self._first_row.hide()
+        self._opening_box.hide()
 
     def refresh(self) -> None:
         sel = list(self._window.viewport.scene.selection)
@@ -4107,6 +4117,28 @@ class EntityInfoPanel(QWidget):
         self._first_row.setVisible(self._named is not None
                                    or self._curve is not None)
         self._refresh_layer(sel)
+        self._refresh_opening(sel)
+
+    # ---- Cut opening --------------------------------------------------------
+    def _refresh_opening(self, sel: list) -> None:
+        from core.openings import cutting_targets, wants_opening
+        targets = cutting_targets(self._window.viewport.scene, sel)
+        self._opening_box.setVisible(bool(targets))
+        if not targets:
+            return
+        self._updating = True
+        try:
+            self._opening_box.setChecked(
+                all(wants_opening(g) for g in targets))
+        finally:
+            self._updating = False
+
+    def _on_opening_toggled(self, on: bool) -> None:
+        if self._updating:
+            return
+        setter = getattr(self._window, "set_cut_opening", None)
+        if callable(setter):
+            setter(bool(on))
 
     # ---- Name field ---------------------------------------------------------
     def _refresh_name(self, sel: list) -> None:

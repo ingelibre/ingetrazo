@@ -200,6 +200,9 @@ class History:
         #: takeoff that found nothing tagged still finds nothing — a Move
         #: on the plant of #158 need not walk its 21 406 groups for tags.
         self.tags_cv = None
+        #: Where a notice goes that is not an error (a hand-edited opening
+        #: left alone): the viewport points it at its status bar.
+        self.on_notice = None
 
     def _keep_paint_cv(self, cmd, before) -> None:
         if before is None:
@@ -246,6 +249,8 @@ class History:
         self.last_rejected = None
         before = getattr(self.scene, "content_version", None)
         objs_before = self._objects_before()
+        from core import openings
+        openings_before = openings.records(self.scene)
         try:
             cmd.do(self.scene)
             self._tag_new_objects(objs_before)
@@ -270,6 +275,13 @@ class History:
         # edited): undo/redo re-enter that context so a snapshot restore never
         # lands on the wrong mesh after the user exits the group.
         cmd._history_mesh = self.scene.mesh
+        # Components that cut an opening (core/openings.py): whatever this
+        # command did to them — moved, copied, erased, unmarked — their
+        # holes follow, in this same undo step. The follow-up rides on the
+        # command (``_followers``) instead of wrapping it, so a tool that
+        # looks for its own command on top of the stack (a hot retype)
+        # still finds it.
+        self._follow_openings(cmd, openings_before)
         self._keep_paint_cv(cmd, before)
         self.undo_stack.append(cmd)
         cap = int(getattr(self, "max_steps", 0) or 0)
@@ -277,6 +289,29 @@ class History:
             del self.undo_stack[:len(self.undo_stack) - cap]
         self.redo_stack.clear()
         self._rebind_dimensions()
+
+    def _follow_openings(self, cmd, openings_before) -> None:
+        from core import openings
+        cmd._followers = []
+        try:
+            follow = openings.follow(self.scene, openings_before)
+        except Exception as exc:  # noqa: BLE001 — the command itself stands
+            self._log_failure(cmd, exc)
+            return
+        if follow is None:
+            return
+        cmd._followers = [follow]
+        if not callable(self.on_notice):
+            return
+        from core.i18n import tr
+        if follow.edited:
+            self.on_notice(tr(
+                "The opening of {name} was edited by hand: it was left as "
+                "it is", name=follow.edited[0]))
+        elif follow.refused:
+            self.on_notice(tr(
+                "{name} is a component with other copies: Make Unique to "
+                "cut an opening in it", name=follow.refused[0]))
 
     def _rebind_dimensions(self) -> None:
         """After every command, undo and redo: a dimension whose vertex
@@ -317,7 +352,12 @@ class History:
             return False
         cmd = self.undo_stack.pop()
         before = getattr(self.scene, "content_version", None)
-        self._in_command_mesh(cmd, lambda: cmd.undo(self.scene))
+
+        def back():
+            for f in reversed(getattr(cmd, "_followers", None) or ()):
+                f.undo(self.scene)
+            cmd.undo(self.scene)
+        self._in_command_mesh(cmd, back)
         self._keep_paint_cv(cmd, before)
         self.redo_stack.append(cmd)
         self._rebind_dimensions()
@@ -329,7 +369,12 @@ class History:
         cmd = self.redo_stack.pop()
         before = getattr(self.scene, "content_version", None)
         objs_before = self._objects_before()
-        self._in_command_mesh(cmd, lambda: cmd.do(self.scene))
+
+        def again():
+            cmd.do(self.scene)
+            for f in getattr(cmd, "_followers", None) or ():
+                f.do(self.scene)
+        self._in_command_mesh(cmd, again)
         self._keep_paint_cv(cmd, before)
         self._tag_new_objects(objs_before)
         self.undo_stack.append(cmd)
