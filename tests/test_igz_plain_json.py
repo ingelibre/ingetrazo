@@ -109,7 +109,8 @@ def test_a_texture_taken_off_leaves_the_folder(textured, tmp_path):
     assert keep.read_text() == "mine"
 
 
-def test_untextured_it_is_exactly_a_format_1_document(tmp_path, monkeypatch):
+def test_untextured_it_is_a_format_1_document_with_its_mark(tmp_path,
+                                                           monkeypatch):
     import itertools
 
     import core.group
@@ -118,9 +119,22 @@ def test_untextured_it_is_exactly_a_format_1_document(tmp_path, monkeypatch):
         monkeypatch.setattr(core.group, "new_uid",
                             lambda: f"{next(count):016x}")
         igz.save_scene(_scene(), tmp_path / f"{name}.igz", fmt=name)
-    assert (tmp_path / "auto.igz").read_bytes() == \
-        (tmp_path / "json.igz").read_bytes()
+    auto = json.loads((tmp_path / "auto.igz").read_bytes())
+    plain = json.loads((tmp_path / "json.igz").read_bytes())
+    assert plain.pop("layout") == igz.PLAIN_JSON_LAYOUT
+    assert plain == auto
     assert not (tmp_path / "json.assets").exists()
+
+
+def test_the_layout_is_remembered_on_open(textured, tmp_path):
+    out = tmp_path / "Casa.igz"
+    igz.save_scene(textured, out, fmt="json")
+    back = Scene()
+    igz.load_into(back, out)
+    assert back.saved_layout == "json"
+    igz.save_scene(textured, tmp_path / "zip.igz")
+    igz.load_into(back, tmp_path / "zip.igz")
+    assert back.saved_layout is None
 
 
 def test_a_large_document_stays_text(tmp_path, monkeypatch):

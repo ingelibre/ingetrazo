@@ -88,6 +88,35 @@ def test_open_document_opens_and_reports(bridged, tmp_path):
     assert r["result"]["modified"] is False
 
 
+def test_a_plain_json_document_stays_plain_json(bridged, tmp_path,
+                                                monkeypatch):
+    """Opened from the plain-JSON layout and saved under Automatic, a
+    textured document must not turn into a ZIP: Git would only say
+    «binary files differ» from then on."""
+    from core import general_settings
+    from formats import igz
+    from tests.test_igz_formats_unchanged import _PNG, _scene
+    monkeypatch.setattr(general_settings, "value",
+                        lambda name, default=None, settings=None:
+                        "auto" if name == "save_format" else default)
+    png = tmp_path / "wood.png"
+    png.write_bytes(_PNG)
+    src = tmp_path / "doc" / "Casa.igz"
+    src.parent.mkdir()
+    igz.save_scene(_scene(png), src, fmt="json")
+    win, bridge = bridged
+    bridge.allow_save = True
+    assert _ask(bridge, "open_document", {"path": str(src)})["ok"]
+    assert win.save_format() == "json"
+    r = _ask(bridge, "save_document")
+    assert r["ok"] and r["result"]["format"] == "json", r
+    assert src.read_bytes().startswith(b"{")
+    # Asked for by name, the other format still wins — and sticks.
+    r = _ask(bridge, "save_document", {"format": "auto"})
+    assert r["ok"] and src.read_bytes().startswith(b"PK"), r
+    assert win.save_format() == "auto"
+
+
 def test_export_view_puts_everything_back(bridged, tmp_path):
     """The picture itself needs a GL context, which a window never shown
     has not: tests/test_headless.py checks the PNG. Here: whatever the

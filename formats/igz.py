@@ -53,8 +53,11 @@ Images cannot live in a text file, so they go to a sibling folder
 ``<name>.assets/`` under the same member names a container uses
 (``textures/<hash>-<name>``, ``survey/…``); the entries keep their
 ``"embed"`` and the document names the folder in a top-level ``"assets"``
-key. Without images it is byte for byte a format-1 document. Builds older
-than the key open the geometry and show the faces untextured.
+key. The header says ``"layout": "plain-json"``, and a document opened with
+it is saved the same way again under Automatic (``Scene.saved_layout``) —
+it stays diffable unless the user asks for another format. Otherwise it is
+a format-1 document: builds older than these keys open the geometry and
+show the faces untextured.
 """
 from __future__ import annotations
 
@@ -82,6 +85,9 @@ CURRENT_FORMAT = GEOMETRY_FORMAT   # the newest this build reads
 #: or 3 as described above; ``json`` is the plain-JSON layout for version
 #: control (always format 1 text, images in a sibling assets folder).
 SAVE_FORMATS = ("auto", "json")
+#: The header mark of the plain-JSON layout: a document opened with it keeps
+#: it on an Automatic save (``Scene.saved_layout``).
+PLAIN_JSON_LAYOUT = "plain-json"
 #: The plain-JSON layout's sibling folder: ``Casa.igz`` → ``Casa.assets/``.
 _ASSETS_SUFFIX = ".assets"
 #: The sub-folders of an assets folder the writer owns (and may prune): the
@@ -1075,7 +1081,8 @@ def _write_plain_json(path: Path, payload: dict, blobs: dict,
             pass
         target.parent.mkdir(parents=True, exist_ok=True)
         _write_atomic(target, data)
-    data = {"igz_format": PLAIN_FORMAT, "app_version": __version__}
+    data = {"igz_format": PLAIN_FORMAT, "app_version": __version__,
+            "layout": PLAIN_JSON_LAYOUT}
     if blobs:
         data["assets"] = assets.name
     data["scene"] = payload
@@ -1576,6 +1583,8 @@ def _load_into_inner(scene, path: Path, progress=None) -> None:
     scene.text_labels.clear()
     scene.dimensions.clear()
     scene.georef = None
+    scene.saved_layout = ("json" if data.get("layout") == PLAIN_JSON_LAYOUT
+                          else None)
     scene.photo_mesh = survey
     scene.tile_layer = None
     # The writer leaves a block out when it holds the default (no planes,

@@ -8852,10 +8852,17 @@ class MainWindow(QMainWindow):
     backup_override: bool | None = None
 
     def save_format(self) -> str:
-        """How Save writes the document: one of ``igz.SAVE_FORMATS``."""
+        """How Save writes the document: one of ``igz.SAVE_FORMATS``. Under
+        Automatic, a document opened from the plain-JSON layout keeps it —
+        a file kept in Git must not turn into a ZIP on the next save."""
         fmt = self.save_format_override or str(
             _gs.value("save_format", "auto"))
-        return fmt if fmt in igz_format.SAVE_FORMATS else "auto"
+        if fmt not in igz_format.SAVE_FORMATS:
+            fmt = "auto"
+        if fmt == "auto" and getattr(self._doc.viewport.scene,
+                                     "saved_layout", None) == "json":
+            fmt = "json"
+        return fmt
 
     def _do_save(self, path: Path, fmt: str | None = None) -> None:
         """Write the active project to ``path``: its OWN scene and camera,
@@ -8916,6 +8923,8 @@ class MainWindow(QMainWindow):
             stats = igz_format.save_scene(vp.scene, path) or {}
         else:
             stats = igz_format.save_scene(vp.scene, path, fmt=fmt) or {}
+        # What it is on disk now, for the next Automatic save.
+        vp.scene.saved_layout = "json" if fmt == "json" else None
         # A clean save ends the recovery window for this document — and for
         # the slot of what it was called until now (untitled, or the old
         # name of a Save As).

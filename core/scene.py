@@ -184,6 +184,10 @@ class Scene:
     #: .igz; the core never reads it. Changed through
     #: ``core.history.SetPluginDataCommand`` so each edit is undoable.
     plugin_data: dict = field(default_factory=dict)
+    #: The layout the document was opened from, when it was the plain-JSON
+    #: one (``"json"``, formats.igz): an Automatic save keeps it, so a
+    #: document kept in Git stays diffable. None for everything else.
+    saved_layout: str | None = None
     dimension_style: dict = field(default_factory=lambda: {
         "decimals": 2, "units": "m", "font_size": 9, "color": [45, 55, 75],
         "norma": "iso", "base_step_mm": 8.0, "ends": "arrow",

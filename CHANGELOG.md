@@ -23,8 +23,10 @@ follow [SemVer](https://semver.org).
 - **Guardar como JSON plano para control de versiones**: Preferencias ▸
   General ▸ Formato de guardado ▸ JSON plano (o `--save-format json`) escribe
   el `.igz` siempre como texto legible, para que Git muestre qué cambió; las
-  imágenes van a una carpeta `Nombre.assets` junto al documento. El formato
-  automático de siempre no cambia y sigue siendo el predeterminado.
+  imágenes van a una carpeta `Nombre.assets` junto al documento. Un documento
+  guardado así se sigue guardando así. El formato automático de siempre no
+  cambia y sigue siendo el predeterminado. Ejemplo:
+  `python examples/headless-mcp-demo.py`.
 
 ### Corregido
 
