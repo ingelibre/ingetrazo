@@ -35,6 +35,17 @@ SETTLE = 0.3
 SETTLE_MAX = 10.0
 
 
+def finalizer_deletes_off_thread() -> bool:
+    """Whether this Qt's FFmpeg backend deletes its recording engine on the
+    finalizer thread (#1488). Qt 6.12.0 defers that delete to the engine's
+    own thread (qtmultimedia e43de18b7d87, "FFmpeg: RecordingEngine - defer
+    destruction to correct thread"); 6.8 to 6.11.3 do not, and the fix
+    has no backport. The multimedia plugin always comes with the Qt it
+    belongs to, so the Qt version decides."""
+    from PySide6.QtCore import QLibraryInfo, QVersionNumber
+    return QLibraryInfo.version() < QVersionNumber(6, 12)
+
+
 class VideoError(RuntimeError):
     """The video could not be written (the message says why)."""
 
@@ -135,11 +146,13 @@ class MkvWriter:
         rec = self._recorder
         if rec.recorderState() != QMediaRecorder.StoppedState:
             rec.stop()
-            self._let_the_finalizer_run()
+            if finalizer_deletes_off_thread():
+                self._let_the_finalizer_run()
         self._wait(lambda: rec.recorderState() == QMediaRecorder.StoppedState)
 
     def _let_the_finalizer_run(self) -> None:
-        """Wait for Qt's finalizer thread with the event loop STILL.
+        """Wait for Qt's finalizer thread with the event loop STILL
+        (Qt before 6.12, see :func:`finalizer_deletes_off_thread`).
 
         ``stop()`` hands the file to a finalizer thread of Qt's FFmpeg
         backend, which flushes the encoders, writes the trailer and then
