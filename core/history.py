@@ -394,10 +394,9 @@ class History:
 
     def _tag_new_objects(self, before) -> None:
         """The objects a command made go onto the active layer
-        (core.layers) — groups, components, dimensions and texts; loose
-        lines and faces stay on the default layer, so hiding a layer never
-        leaves half a solid. Done here, after the command, so every tool
-        gets it without knowing about layers."""
+        (core.layers) — groups, components, dimensions, texts and the
+        loose lines and faces it drew (#1366). Done here, after the
+        command, so every tool gets it without knowing about layers."""
         if before is None:
             return
         from core.layers import tag_new_objects
