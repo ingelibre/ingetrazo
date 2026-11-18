@@ -69,6 +69,9 @@ def action_key(action: QAction) -> str:
     name = action.objectName()
     if name:
         return name
+    source = action.property("source_text")
+    if source:
+        return "text:" + _plain(source)
     return _text_key(action.text(), current_language())
 
 

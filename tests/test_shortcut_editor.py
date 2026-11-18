@@ -345,3 +345,34 @@ def test_a_long_menu_path_leaves_room_for_the_names():
         panel.close()
     finally:
         _close(win)
+
+
+def test_tool_shortcut_keys_are_the_same_in_every_language():
+    """A tool's shortcut key is its English name in every language, even when
+    the translation of that name is shared with another string («Guide
+    Point» and the «Guide point» snap label, the same words in most of
+    them)."""
+    import json
+    from core.i18n import current_language, set_language
+    from core.paths import app_root
+    from views.shortcuts import action_key
+    languages = sorted(p.stem for p in (app_root() / "i18n").glob("*.json"))
+    original_language = current_language()
+    try:
+        set_language("en")
+        win = _window()
+        try:
+            actions = dict(win._tool_actions)
+            english = {k: action_key(a) for k, a in actions.items()}
+            for language in languages:
+                set_language(language)
+                catalog = json.loads((app_root() / "i18n" / f"{language}.json")
+                                     .read_text("utf-8"))
+                for key, act in actions.items():
+                    source = act.property("source_text")
+                    act.setText(catalog.get(source, source))
+                    assert action_key(act) == english[key], (language, key)
+        finally:
+            _close(win)
+    finally:
+        set_language(original_language)

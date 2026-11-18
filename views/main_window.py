@@ -1356,6 +1356,10 @@ class MainWindow(QMainWindow):
         tool = self._tools[key]
         name = tr(tool.name)
         action = QAction(tool_icon(key), name, self)
+        # The English name keys its shortcut (views/shortcuts.action_key):
+        # read back from the translation, «Guide Point» came back as the
+        # «Guide point» snap label that most languages translate the same.
+        action.setProperty("source_text", tool.name)
         self._icon_actions.append((action, key))
         action.setCheckable(True)
         if tool.shortcut:
