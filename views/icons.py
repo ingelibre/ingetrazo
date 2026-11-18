@@ -1462,6 +1462,22 @@ def _north(p, ink):
                               QPointF(28, 11), QPointF(28, 3)]))
 
 
+def _guide_point(p, ink):
+    """Tools ▸ Guide Point: the dashed cross a guide point is drawn with,
+    its centre dot in the accent colour."""
+    pen = QPen(p.pen())
+    pen.setStyle(Qt.DashLine)
+    pen.setDashPattern([2.0, 1.5])
+    p.save()
+    p.setPen(pen)
+    p.drawLine(QPointF(8, 24), QPointF(40, 24))
+    p.drawLine(QPointF(24, 8), QPointF(24, 40))
+    p.restore()
+    p.setBrush(_accent())
+    p.drawEllipse(QPointF(24, 24), 4.5, 4.5)
+    p.setBrush(Qt.NoBrush)
+
+
 def _comp_leyenda(p, ink):
     for i, y in enumerate((12, 24, 36)):
         p.drawRect(8, y - 3, 6, 6)
@@ -2714,6 +2730,7 @@ _DRAW = {
     "text": _text, "text3d": _text3d,
     "eraser": _eraser, "tape": _tape, "protractor": _protractor,
     "north": _north,
+    "guide_point": _guide_point,
     "section": _section, "section_box": _section_box,
     "section_box_cut": _section_box_cut,
     "styles": _styles_icon, "shadows": _shadows_icon,
@@ -2936,6 +2953,7 @@ _CURSOR_HOTSPOTS = {
     "tape": (10, 28),               # the tape's end hook (now at the left)
     "protractor": (24, 24),         # the protractor's vertex
     "north": (24, 28),              # the compass centre
+    "guide_point": (24, 24),        # the cross: where the point goes
     "orbit": (24, 24),              # camera navigation (wheel-drag / modes)
     "pan": (24, 24),
     "zoom": (21, 21),               # the magnifier's lens centre

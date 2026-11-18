@@ -1,4 +1,8 @@
 {
+ "Guide Point": "Điểm gióng phụ",
+ "Leave a guide point with one click, on any point you snap to; or type x;y;z for exact coordinates.": "Đặt một điểm gióng phụ chỉ với một cú nhấp, tại bất kỳ điểm bắt dính nào; hoặc gõ x;y;z để nhập tọa độ chính xác.",
+ "Click to leave a guide point, or type x;y;z and Enter.": "Nhấp để đặt điểm gióng phụ, hoặc gõ x;y;z rồi nhấn Enter.",
+ "Guide point at ({x}; {y}; {z})": "Điểm gióng phụ tại ({x}; {y}; {z})",
  "My Library": "Thư viện của tôi",
  "Add a folder of your own (on this computer or the network) to the library": "Thêm một thư mục của bạn (trên máy này hoặc trên mạng) vào thư viện",
  "Read the library folders again": "Đọc lại các thư mục của thư viện",

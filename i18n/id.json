@@ -1,4 +1,8 @@
 {
+ "Guide Point": "Titik Bantu",
+ "Leave a guide point with one click, on any point you snap to; or type x;y;z for exact coordinates.": "Taruh titik bantu dengan satu klik, di titik mana pun yang ditangkap snap; atau ketik x;y;z untuk koordinat yang tepat.",
+ "Click to leave a guide point, or type x;y;z and Enter.": "Klik untuk menaruh titik bantu, atau ketik x;y;z lalu Enter.",
+ "Guide point at ({x}; {y}; {z})": "Titik bantu di ({x}; {y}; {z})",
  "My Library": "Pustaka Saya",
  "Add a folder of your own (on this computer or the network) to the library": "Tambahkan folder Anda sendiri (di komputer ini atau jaringan) ke pustaka",
  "Read the library folders again": "Baca ulang folder pustaka",

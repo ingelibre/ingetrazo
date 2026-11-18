@@ -82,6 +82,7 @@ HINTS: dict = {
              "Click the second point, or type the distance and Enter."),
     "protractor": ("Click the vertex of the angle.",
                    "Click the start of the angle, then the end; or type the degrees."),
+    "guide_point": "Click to leave a guide point, or type x;y;z and Enter.",
     "north": ("Click the centre of the compass.",
               "Click toward north, or type the degrees from the green axis."),
     "dimension": ("Click the first point of the dimension.",

@@ -1,4 +1,8 @@
 {
+ "Guide Point": "補助点",
+ "Leave a guide point with one click, on any point you snap to; or type x;y;z for exact coordinates.": "スナップした任意の点に、1回のクリックで補助点を配置します。正確な座標は x;y;z と入力します。",
+ "Click to leave a guide point, or type x;y;z and Enter.": "クリックして補助点を配置するか、x;y;z と入力して Enter を押します。",
+ "Guide point at ({x}; {y}; {z})": "({x}; {y}; {z}) に補助点を配置",
  "My Library": "マイライブラリ",
  "Add a folder of your own (on this computer or the network) to the library": "自分のフォルダー（このコンピューターまたはネットワーク上）をライブラリに追加",
  "Read the library folders again": "ライブラリのフォルダーを読み直す",

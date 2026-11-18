@@ -1,4 +1,8 @@
 {
+ "Guide Point": "参考点",
+ "Leave a guide point with one click, on any point you snap to; or type x;y;z for exact coordinates.": "单击即可在任意捕捉到的点上放置参考点；或输入 x;y;z 指定精确坐标。",
+ "Click to leave a guide point, or type x;y;z and Enter.": "单击放置参考点，或输入 x;y;z 并按 Enter。",
+ "Guide point at ({x}; {y}; {z})": "参考点位于 ({x}; {y}; {z})",
  "My Library": "我的库",
  "Add a folder of your own (on this computer or the network) to the library": "将你自己的文件夹（本机或网络上）添加到库中",
  "Read the library folders again": "重新读取库文件夹",

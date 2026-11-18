@@ -1,4 +1,8 @@
 {
+ "Guide Point": "Направляющая точка",
+ "Leave a guide point with one click, on any point you snap to; or type x;y;z for exact coordinates.": "Ставит направляющую точку одним щелчком в любой точке привязки; или введите x;y;z для точных координат.",
+ "Click to leave a guide point, or type x;y;z and Enter.": "Щёлкните, чтобы поставить направляющую точку, или введите x;y;z и нажмите Enter.",
+ "Guide point at ({x}; {y}; {z})": "Направляющая точка в ({x}; {y}; {z})",
  "My Library": "Моя библиотека",
  "Add a folder of your own (on this computer or the network) to the library": "Добавить свою папку (на этом компьютере или в сети) в библиотеку",
  "Read the library folders again": "Перечитать папки библиотеки",

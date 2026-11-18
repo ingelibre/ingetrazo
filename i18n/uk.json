@@ -1,4 +1,8 @@
 {
+ "Guide Point": "Напрямна точка",
+ "Leave a guide point with one click, on any point you snap to; or type x;y;z for exact coordinates.": "Ставить напрямну точку одним клацанням у будь-якій точці прив'язки; або введіть x;y;z для точних координат.",
+ "Click to leave a guide point, or type x;y;z and Enter.": "Клацніть, щоб поставити напрямну точку, або введіть x;y;z і натисніть Enter.",
+ "Guide point at ({x}; {y}; {z})": "Напрямна точка в ({x}; {y}; {z})",
  "My Library": "Моя бібліотека",
  "Add a folder of your own (on this computer or the network) to the library": "Додати власну теку (на цьому комп’ютері або в мережі) до бібліотеки",
  "Read the library folders again": "Перечитати теки бібліотеки",

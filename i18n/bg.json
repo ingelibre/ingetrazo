@@ -1,4 +1,8 @@
 {
+ "Guide Point": "Помощна точка",
+ "Leave a guide point with one click, on any point you snap to; or type x;y;z for exact coordinates.": "Поставя помощна точка с едно щракване във всяка прихваната точка; или въведете x;y;z за точни координати.",
+ "Click to leave a guide point, or type x;y;z and Enter.": "Щракнете, за да поставите помощна точка, или въведете x;y;z и натиснете Enter.",
+ "Guide point at ({x}; {y}; {z})": "Помощна точка в ({x}; {y}; {z})",
  "My Library": "Моята библиотека",
  "Add a folder of your own (on this computer or the network) to the library": "Добавяне на ваша папка (на този компютър или в мрежата) към библиотеката",
  "Read the library folders again": "Повторно прочитане на папките на библиотеката",

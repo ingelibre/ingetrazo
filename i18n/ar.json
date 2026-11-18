@@ -1,4 +1,8 @@
 {
+ "Guide Point": "نقطة إرشادية",
+ "Leave a guide point with one click, on any point you snap to; or type x;y;z for exact coordinates.": "ضع نقطة إرشادية بنقرة واحدة على أي نقطة تلتقطها؛ أو اكتب x;y;z لإحداثيات دقيقة.",
+ "Click to leave a guide point, or type x;y;z and Enter.": "انقر لوضع نقطة إرشادية، أو اكتب x;y;z ثم اضغط Enter.",
+ "Guide point at ({x}; {y}; {z})": "نقطة إرشادية عند ({x}; {y}; {z})",
  "My Library": "مكتبتي",
  "Add a folder of your own (on this computer or the network) to the library": "أضف مجلدًا خاصًا بك (على هذا الحاسوب أو على الشبكة) إلى المكتبة",
  "Read the library folders again": "أعد قراءة مجلدات المكتبة",

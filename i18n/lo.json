@@ -1,4 +1,8 @@
 {
+ "Guide Point": "ຈຸດນຳທາງ",
+ "Leave a guide point with one click, on any point you snap to; or type x;y;z for exact coordinates.": "ວາງຈຸດນຳທາງດ້ວຍການຄລິກດຽວ ຢູ່ຈຸດໃດກໍໄດ້ທີ່ສະແນັບເຖິງ; ຫຼື ພິມ x;y;z ເພື່ອລະບຸພິກັດທີ່ແນ່ນອນ.",
+ "Click to leave a guide point, or type x;y;z and Enter.": "ຄລິກເພື່ອວາງຈຸດນຳທາງ, ຫຼື ພິມ x;y;z ແລ້ວກົດ Enter.",
+ "Guide point at ({x}; {y}; {z})": "ຈຸດນຳທາງທີ່ ({x}; {y}; {z})",
  "My Library": "ຄັງຂອງຂ້ອຍ",
  "Add a folder of your own (on this computer or the network) to the library": "ເພີ່ມໂຟນເດີຂອງທ່ານເອງ (ໃນຄອມພິວເຕີນີ້ ຫຼື ໃນເຄືອຂ່າຍ) ເຂົ້າໃນຄັງ",
  "Read the library folders again": "ອ່ານໂຟນເດີຂອງຄັງຄືນໃໝ່",

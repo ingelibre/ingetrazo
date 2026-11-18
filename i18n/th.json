@@ -1,4 +1,8 @@
 {
+ "Guide Point": "จุดไกด์",
+ "Leave a guide point with one click, on any point you snap to; or type x;y;z for exact coordinates.": "วางจุดไกด์ด้วยการคลิกครั้งเดียว ที่จุดใดก็ได้ที่สแนปถึง หรือพิมพ์ x;y;z เพื่อระบุพิกัดที่แน่นอน",
+ "Click to leave a guide point, or type x;y;z and Enter.": "คลิกเพื่อวางจุดไกด์ หรือพิมพ์ x;y;z แล้วกด Enter",
+ "Guide point at ({x}; {y}; {z})": "จุดไกด์ที่ ({x}; {y}; {z})",
  "My Library": "คลังของฉัน",
  "Add a folder of your own (on this computer or the network) to the library": "เพิ่มโฟลเดอร์ของคุณเอง (ในเครื่องนี้หรือบนเครือข่าย) ลงในคลัง",
  "Read the library folders again": "อ่านโฟลเดอร์ของคลังใหม่อีกครั้ง",

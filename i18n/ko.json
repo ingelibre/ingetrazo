@@ -1,4 +1,8 @@
 {
+ "Guide Point": "가이드 점",
+ "Leave a guide point with one click, on any point you snap to; or type x;y;z for exact coordinates.": "스냅한 아무 점에나 한 번 클릭으로 가이드 점을 남깁니다. 정확한 좌표는 x;y;z를 입력하세요.",
+ "Click to leave a guide point, or type x;y;z and Enter.": "클릭하여 가이드 점을 남기거나 x;y;z를 입력하고 Enter를 누르세요.",
+ "Guide point at ({x}; {y}; {z})": "({x}; {y}; {z})에 가이드 점",
  "My Library": "내 라이브러리",
  "Add a folder of your own (on this computer or the network) to the library": "내 폴더(이 컴퓨터 또는 네트워크)를 라이브러리에 추가",
  "Read the library folders again": "라이브러리 폴더를 다시 읽기",

@@ -1,4 +1,8 @@
 {
+ "Guide Point": "輔助點",
+ "Leave a guide point with one click, on any point you snap to; or type x;y;z for exact coordinates.": "按一下即可在任何鎖點處放置輔助點；或輸入 x;y;z 指定精確座標。",
+ "Click to leave a guide point, or type x;y;z and Enter.": "按一下放置輔助點，或輸入 x;y;z 並按 Enter。",
+ "Guide point at ({x}; {y}; {z})": "輔助點位於 ({x}; {y}; {z})",
  "My Library": "我的元件庫",
  "Add a folder of your own (on this computer or the network) to the library": "將你自己的資料夾（本機或網路上）加入元件庫",
  "Read the library folders again": "重新讀取元件庫資料夾",

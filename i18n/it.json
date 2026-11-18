@@ -1,4 +1,8 @@
 {
+ "Guide Point": "Punto guida",
+ "Leave a guide point with one click, on any point you snap to; or type x;y;z for exact coordinates.": "Lascia un punto guida con un clic, su qualsiasi punto agganciato; oppure digita x;y;z per coordinate esatte.",
+ "Click to leave a guide point, or type x;y;z and Enter.": "Fai clic per lasciare un punto guida, oppure digita x;y;z e premi Invio.",
+ "Guide point at ({x}; {y}; {z})": "Punto guida in ({x}; {y}; {z})",
  "My Library": "La mia libreria",
  "Add a folder of your own (on this computer or the network) to the library": "Aggiungi una tua cartella (su questo computer o in rete) alla libreria",
  "Read the library folders again": "Rileggi le cartelle della libreria",
