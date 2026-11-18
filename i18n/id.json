@@ -1,5 +1,7 @@
 {
- "Paint with a material saved in an .igmat file": "Cat dengan material yang disimpan dalam berkas .igmat",
+ "Paint with a material saved in a file: .igmat, or SketchUp's .skm": "Cat dengan material yang disimpan dalam berkas: .igmat, atau .skm dari SketchUp",
+ "Material files (*.igmat *.skm)": "Berkas material (*.igmat *.skm)",
+ "SketchUp material (*.skm)": "Material SketchUp (*.skm)",
  "Export material…": "Ekspor material…",
  "Add to My materials": "Tambahkan ke Material saya",
  "My materials": "Material saya",

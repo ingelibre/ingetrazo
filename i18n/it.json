@@ -1,5 +1,7 @@
 {
- "Paint with a material saved in an .igmat file": "Dipingi con un materiale salvato in un file .igmat",
+ "Paint with a material saved in a file: .igmat, or SketchUp's .skm": "Dipingi con un materiale salvato in un file: .igmat, o il .skm di SketchUp",
+ "Material files (*.igmat *.skm)": "File di materiale (*.igmat *.skm)",
+ "SketchUp material (*.skm)": "Materiale SketchUp (*.skm)",
  "Export material…": "Esporta materiale…",
  "Add to My materials": "Aggiungi a I miei materiali",
  "My materials": "I miei materiali",

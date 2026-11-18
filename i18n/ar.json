@@ -1,5 +1,7 @@
 {
- "Paint with a material saved in an .igmat file": "الطلاء بمادة محفوظة في ملف .igmat",
+ "Paint with a material saved in a file: .igmat, or SketchUp's .skm": "الطلاء بمادة محفوظة في ملف: ‎.igmat أو ‎.skm الخاص بـ SketchUp",
+ "Material files (*.igmat *.skm)": "ملفات المواد (*.igmat *.skm)",
+ "SketchUp material (*.skm)": "مادة SketchUp (*.skm)",
  "Export material…": "تصدير المادة…",
  "Add to My materials": "إضافة إلى موادي",
  "My materials": "موادي",

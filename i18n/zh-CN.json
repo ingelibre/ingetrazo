@@ -1,5 +1,7 @@
 {
- "Paint with a material saved in an .igmat file": "用保存在 .igmat 文件中的材质涂色",
+ "Paint with a material saved in a file: .igmat, or SketchUp's .skm": "用保存在文件中的材质涂色：.igmat，或 SketchUp 的 .skm",
+ "Material files (*.igmat *.skm)": "材质文件 (*.igmat *.skm)",
+ "SketchUp material (*.skm)": "SketchUp 材质 (*.skm)",
  "Export material…": "导出材质…",
  "Add to My materials": "添加到我的材质",
  "My materials": "我的材质",

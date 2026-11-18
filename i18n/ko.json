@@ -1,5 +1,7 @@
 {
- "Paint with a material saved in an .igmat file": ".igmat 파일에 저장한 재질로 칠합니다",
+ "Paint with a material saved in a file: .igmat, or SketchUp's .skm": "파일에 저장한 재질로 칠합니다: .igmat, 또는 SketchUp의 .skm",
+ "Material files (*.igmat *.skm)": "재질 파일 (*.igmat *.skm)",
+ "SketchUp material (*.skm)": "SketchUp 재질 (*.skm)",
  "Export material…": "재질 내보내기…",
  "Add to My materials": "내 재질에 추가",
  "My materials": "내 재질",
