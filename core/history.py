@@ -4314,6 +4314,99 @@ class ReshareInstanceCommand(Command):
         scene.version += 1
 
 
+class ReshareDefinitionCommand(Command):
+    """Leaving a component copy that holds groups (or took one in while it
+    was open): its own mesh goes into the shared definition, its parts back
+    into the definition's frame, and — when they changed — every other copy
+    takes the same parts (#1339, #894, #508; see core/component_parts.py).
+
+    The session's commands are absorbed, as :class:`ReshareInstanceCommand`
+    does, so the whole edit is one undo step. They ran in the world frame
+    on the copy's parts; undo goes back to that frame as the session left
+    it, undoes them, and settles what they leave; redo replays them."""
+
+    keeps_groups = True
+
+    def __init__(self, share, inner=()) -> None:
+        self.share = share
+        self.group, self.proto, self.xform, _state0 = share
+        self.parts = share.parts
+        self.edited = self.group.mesh          # the session's world copy
+        self.inner = list(inner)
+        self._before = None
+        self._end = None
+        self._shared = []
+
+    def _replay(self, scene, step, commands) -> None:
+        """Run ``step`` on each command where it was executed: its mesh and
+        the open group whose mesh that is, as History and the tools had them
+        during the session."""
+        from core.group import iter_placements
+        owners = {id(g.mesh): g for g, _m in iter_placements(self.group)}
+        mesh0, ctx0 = scene.mesh, scene.edit_group
+        try:
+            for cmd in commands:
+                target = getattr(cmd, "_history_mesh", None) or self.edited
+                scene.mesh = target
+                scene.edit_group = owners.get(id(target), self.group)
+                if hasattr(target, "_mut_serial"):
+                    target._mut_serial += 1
+                step(cmd)
+        finally:
+            scene.mesh, scene.edit_group = mesh0, ctx0
+
+    def _close(self, scene) -> None:
+        from core.component_parts import share_parts
+        moved = self.parts.changed()
+        scene.share_back(self.group, self.proto, self.xform, self.edited)
+        self.parts.settle()
+        self._shared = (share_parts(scene.groups, self.group, self.proto)
+                        if moved else [])
+
+    def do(self, scene) -> None:
+        from PySide6.QtGui import QMatrix4x4
+        g = self.group
+        if self._before is None:
+            self._before = self.proto.capture_state()
+        else:
+            # Redo: the session's frame as it opened, then its commands.
+            self.parts.to_world(self.parts.kids, self.parts.world)
+            g.mesh = self.edited
+            self._replay(scene, lambda c: c.do(scene), self.inner)
+        self._end = (list(g.children or ()),
+                     [QMatrix4x4(k.xform) if k.xform is not None else None
+                      for k in g.children or ()])
+        self._close(scene)
+        _dirty_group_chunks(scene)
+        scene.version += 1
+
+    def undo(self, scene) -> None:
+        from PySide6.QtGui import QMatrix4x4
+        for sib, old in reversed(self._shared):
+            sib.children = old
+        self._shared = []
+        g = self.group
+        self.parts.to_world(*self._end)
+        g.mesh = self.edited
+        self._replay(scene, lambda c: c.undo(scene), reversed(self.inner))
+        # Back where the copy was opened: the definition as it was, the
+        # parts in its frame.
+        self.proto.restore_state(self._before)
+        self.proto.note_rewound()
+        g.mesh = self.proto
+        g.xform = QMatrix4x4(self.xform)
+        g.children = list(self.parts.kids)
+        for k, m in zip(self.parts.kids, self.parts.local):
+            k.xform = QMatrix4x4(m) if m is not None else None
+        from core.explode import rotate_offsets
+        inv, ok = self.xform.inverted()
+        rotate_offsets(g, inv if ok else QMatrix4x4())
+        g.axes = self.parts.axes
+        g.component = self.parts.component
+        _dirty_group_chunks(scene)
+        scene.version += 1
+
+
 class MakeUniqueCommand(Command):
     """Make Unique: bake a component instance into its OWN mesh
     so edits stop touching the siblings' shared definition.
@@ -4695,7 +4788,10 @@ class GroupInContextCommand(Command):
         ctx = self.context
         self._state = (ctx.xform, ctx.component)
         self._run(scene, self.inner.do)
-        if ctx.children and ctx.xform is None:
+        open_copy = any(lvl.get("group") is ctx
+                        and getattr(lvl.get("share"), "parts", None) is not None
+                        for lvl in getattr(scene, "_edit_stack", None) or ())
+        if ctx.children and ctx.xform is None and not open_copy:
             ctx.xform = QMatrix4x4()
             ctx.component = False
         scene.version += 1
