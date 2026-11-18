@@ -3774,7 +3774,7 @@
  "Korean translation of the interface, and the AI key from an environment variable. In 0.6.2, soft shadows and fixes for macOS.": "Koreańskie tłumaczenie interfejsu oraz klucz AI ze zmiennej środowiskowej. W 0.6.2 miękkie cienie i poprawki dla macOS.",
  "Exact Move+Ctrl copies, overlapping rotated copies, faster box selection on huge models and the reviewed Indonesian translation.": "Dokładne kopie przez Przesuń+Ctrl, nakładające się obrócone kopie, szybsze zaznaczanie ramką w ogromnych modelach i poprawione tłumaczenie indonezyjskie.",
  "Snapping to the rest of the model from inside a group or component.": "Przyciąganie do reszty modelu z wnętrza grupy lub komponentu.",
- "Paint with a material saved in an .igmat file": "Maluj materiałem zapisanym w pliku .igmat",
+ "Paint with a material saved in a file: .igmat or .skm": "Maluj materiałem zapisanym w pliku: .igmat lub .skm",
  "Export material…": "Eksportuj materiał…",
  "Add to My materials": "Dodaj do Moich materiałów",
  "My materials": "Moje materiały",
@@ -3788,5 +3788,7 @@
  "Could not read {file}: {error}": "Nie można odczytać {file}: {error}",
  "{file} has no material to paint with.": "{file} nie zawiera materiału do malowania.",
  "Material '{name}' ready — click faces to paint it": "Materiał „{name}” gotowy — kliknij ściany, aby je pomalować",
- "{count} materials imported into Recent": "Zaimportowano materiały do Ostatnich: {count}"
+ "{count} materials imported into Recent": "Zaimportowano materiały do Ostatnich: {count}",
+ "Material files (*.igmat *.skm)": "Pliki materiałów (*.igmat *.skm)",
+ "SKM material (*.skm)": "Materiał SKM (*.skm)"
 }

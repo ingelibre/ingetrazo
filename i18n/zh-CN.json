@@ -3767,7 +3767,7 @@
  "Korean translation of the interface, and the AI key from an environment variable. In 0.6.2, soft shadows and fixes for macOS.": "界面的韩语翻译，以及从环境变量读取 AI 密钥。0.6.2 中还有柔和阴影和 macOS 修复。",
  "Exact Move+Ctrl copies, overlapping rotated copies, faster box selection on huge models and the reviewed Indonesian translation.": "精确的移动+Ctrl 复制、相互重叠的旋转复制、在超大模型上更快的框选，以及校订后的印尼语翻译。",
  "Snapping to the rest of the model from inside a group or component.": "在组或组件内部捕捉到模型其余部分。",
- "Paint with a material saved in an .igmat file": "用保存在 .igmat 文件中的材质涂色",
+ "Paint with a material saved in a file: .igmat or .skm": "用保存在文件中的材质涂色：.igmat 或 .skm",
  "Export material…": "导出材质…",
  "Add to My materials": "添加到我的材质",
  "My materials": "我的材质",
@@ -3781,5 +3781,7 @@
  "Could not read {file}: {error}": "无法读取 {file}：{error}",
  "{file} has no material to paint with.": "{file} 中没有可用于涂色的材质。",
  "Material '{name}' ready — click faces to paint it": "材质“{name}”已就绪 — 点击面来涂色",
- "{count} materials imported into Recent": "已将 {count} 个材质导入最近使用"
+ "{count} materials imported into Recent": "已将 {count} 个材质导入最近使用",
+ "Material files (*.igmat *.skm)": "材质文件 (*.igmat *.skm)",
+ "SKM material (*.skm)": "SKM 材质 (*.skm)"
 }

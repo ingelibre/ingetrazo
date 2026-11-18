@@ -3769,7 +3769,7 @@
  "Korean translation of the interface, and the AI key from an environment variable. In 0.6.2, soft shadows and fixes for macOS.": "Terjemahan antarmuka ke bahasa Korea, dan kunci AI dari variabel lingkungan. Di 0.6.2, bayangan lembut dan perbaikan untuk macOS.",
  "Exact Move+Ctrl copies, overlapping rotated copies, faster box selection on huge models and the reviewed Indonesian translation.": "Salinan Pindah+Ctrl yang persis, salinan putar yang saling tumpang tindih, seleksi kotak yang lebih cepat pada model sangat besar, dan terjemahan bahasa Indonesia yang direvisi.",
  "Snapping to the rest of the model from inside a group or component.": "Snap ke bagian lain model dari dalam grup atau komponen.",
- "Paint with a material saved in an .igmat file": "Cat dengan material yang disimpan dalam berkas .igmat",
+ "Paint with a material saved in a file: .igmat or .skm": "Cat dengan material yang disimpan dalam berkas: .igmat atau .skm",
  "Export material…": "Ekspor material…",
  "Add to My materials": "Tambahkan ke Material saya",
  "My materials": "Material saya",
@@ -3783,5 +3783,7 @@
  "Could not read {file}: {error}": "Tidak dapat membaca {file}: {error}",
  "{file} has no material to paint with.": "{file} tidak berisi material untuk mengecat.",
  "Material '{name}' ready — click faces to paint it": "Material '{name}' siap — klik bidang untuk mengecatnya",
- "{count} materials imported into Recent": "{count} material diimpor ke Terbaru"
+ "{count} materials imported into Recent": "{count} material diimpor ke Terbaru",
+ "Material files (*.igmat *.skm)": "Berkas material (*.igmat *.skm)",
+ "SKM material (*.skm)": "Material SKM (*.skm)"
 }

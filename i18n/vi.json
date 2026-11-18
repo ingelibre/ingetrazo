@@ -3793,7 +3793,7 @@
  "Korean translation of the interface, and the AI key from an environment variable. In 0.6.2, soft shadows and fixes for macOS.": "Bản dịch giao diện tiếng Hàn, và khóa AI lấy từ biến môi trường. Ở 0.6.2, bóng đổ mềm và các bản sửa cho macOS.",
  "Exact Move+Ctrl copies, overlapping rotated copies, faster box selection on huge models and the reviewed Indonesian translation.": "Bản sao chính xác bằng Di chuyển+Ctrl, bản sao xoay chồng lên nhau, chọn bằng khung nhanh hơn trên mô hình rất lớn và bản dịch tiếng Indonesia đã được rà soát.",
  "Snapping to the rest of the model from inside a group or component.": "Bắt điểm vào phần còn lại của mô hình từ bên trong nhóm hoặc thành phần.",
- "Paint with a material saved in an .igmat file": "Tô bằng vật liệu đã lưu trong tệp .igmat",
+ "Paint with a material saved in a file: .igmat or .skm": "Tô bằng vật liệu đã lưu trong tệp: .igmat hoặc .skm",
  "Export material…": "Xuất vật liệu…",
  "Add to My materials": "Thêm vào Vật liệu của tôi",
  "My materials": "Vật liệu của tôi",
@@ -3807,5 +3807,7 @@
  "Could not read {file}: {error}": "Không thể đọc {file}: {error}",
  "{file} has no material to paint with.": "{file} không có vật liệu nào để tô.",
  "Material '{name}' ready — click faces to paint it": "Vật liệu '{name}' đã sẵn sàng — nhấp vào các mặt để tô",
- "{count} materials imported into Recent": "Đã nhập {count} vật liệu vào Gần đây"
+ "{count} materials imported into Recent": "Đã nhập {count} vật liệu vào Gần đây",
+ "Material files (*.igmat *.skm)": "Tệp vật liệu (*.igmat *.skm)",
+ "SKM material (*.skm)": "Vật liệu SKM (*.skm)"
 }

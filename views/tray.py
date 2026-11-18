@@ -2218,8 +2218,8 @@ class MaterialsPanel(QWidget):
         purge.setToolTip(tr("Delete every material no face wears"))
         purge.clicked.connect(self._on_purge)
         import_btn = QPushButton(tr("Import…"))
-        import_btn.setToolTip(tr("Paint with a material saved in an "
-                                 ".igmat file"))
+        import_btn.setToolTip(tr("Paint with a material saved in a file: "
+                                 ".igmat or .skm"))
         import_btn.clicked.connect(self._on_import_material)
         btns.addWidget(add_color)
         btns.addWidget(add_tex)
@@ -2525,16 +2525,23 @@ class MaterialsPanel(QWidget):
 
     def _on_import_material(self) -> None:
         """Import…: the file's first material becomes the active paint; all
-        of them go into «Recent»."""
+        of them go into «Recent». An IngeTrazo ``.igmat`` or an
+        ``.skm`` (#1482)."""
         from PySide6.QtWidgets import QMessageBox
         from formats.igmat import MaterialFileError, load_materials
+        from formats.skm import EXTENSION as SKM, load_skm
         path, _ = file_dialogs.getOpenFileName(
             self, tr("Import material"), str(Path.home()),
-            tr("IngeTrazo material (*.igmat)"))
+            ";;".join((tr("Material files (*.igmat *.skm)"),
+                       tr("IngeTrazo material (*.igmat)"),
+                       tr("SKM material (*.skm)"))))
         if not path:
             return
         try:
-            mats = load_materials(path)
+            if Path(path).suffix.lower() == SKM:
+                mats = load_skm(path)
+            else:
+                mats = load_materials(path)
         except (OSError, MaterialFileError) as exc:
             QMessageBox.warning(
                 self, tr("Import material"),

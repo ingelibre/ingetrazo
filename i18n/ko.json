@@ -3766,7 +3766,7 @@
  "Korean translation of the interface, and the AI key from an environment variable. In 0.6.2, soft shadows and fixes for macOS.": "인터페이스 한국어 번역, 그리고 환경 변수에서 읽는 AI 키. 0.6.2에서는 부드러운 그림자와 macOS 수정도.",
  "Exact Move+Ctrl copies, overlapping rotated copies, faster box selection on huge models and the reviewed Indonesian translation.": "정확한 이동+Ctrl 복사, 겹치는 회전 복사, 거대한 모델에서 더 빠른 상자 선택, 그리고 검토된 인도네시아어 번역.",
  "Snapping to the rest of the model from inside a group or component.": "그룹이나 컴포넌트 안에서 모델의 나머지 부분으로 스냅.",
- "Paint with a material saved in an .igmat file": ".igmat 파일에 저장한 재질로 칠합니다",
+ "Paint with a material saved in a file: .igmat or .skm": "파일에 저장한 재질로 칠합니다: .igmat 또는 .skm",
  "Export material…": "재질 내보내기…",
  "Add to My materials": "내 재질에 추가",
  "My materials": "내 재질",
@@ -3780,5 +3780,7 @@
  "Could not read {file}: {error}": "{file}을(를) 읽을 수 없습니다: {error}",
  "{file} has no material to paint with.": "{file}에 칠할 수 있는 재질이 없습니다.",
  "Material '{name}' ready — click faces to paint it": "재질 '{name}' 준비됨 — 면을 클릭해 칠하세요",
- "{count} materials imported into Recent": "재질 {count}개를 최근에 가져왔습니다"
+ "{count} materials imported into Recent": "재질 {count}개를 최근에 가져왔습니다",
+ "Material files (*.igmat *.skm)": "재질 파일 (*.igmat *.skm)",
+ "SKM material (*.skm)": "SKM 재질 (*.skm)"
 }

@@ -3769,7 +3769,7 @@
  "Korean translation of the interface, and the AI key from an environment variable. In 0.6.2, soft shadows and fixes for macOS.": "ການແປສ່ວນຕິດຕໍ່ເປັນພາສາເກົາຫຼີ, ແລະ ກະແຈ AI ຈາກຕົວແປສະພາບແວດລ້ອມ. ໃນ 0.6.2, ເງົາອ່ອນ ແລະ ການແກ້ໄຂສຳລັບ macOS.",
  "Exact Move+Ctrl copies, overlapping rotated copies, faster box selection on huge models and the reviewed Indonesian translation.": "ການສຳເນົາດ້ວຍ ຍ້າຍ+Ctrl ທີ່ຖືກຕ້ອງ, ສຳເນົາທີ່ໝູນແລ້ວຊ້ອນກັນ, ການເລືອກແບບກອບທີ່ໄວຂຶ້ນໃນແບບຈຳລອງຂະໜາດໃຫຍ່ ແລະ ການແປພາສາອິນໂດເນເຊຍທີ່ທົບທວນແລ້ວ.",
  "Snapping to the rest of the model from inside a group or component.": "ການຍຶດຕິດກັບສ່ວນອື່ນຂອງແບບຈຳລອງຈາກພາຍໃນກຸ່ມ ຫຼື ອົງປະກອບ.",
- "Paint with a material saved in an .igmat file": "ທາສີດ້ວຍວັດສະດຸທີ່ບັນທຶກໄວ້ໃນໄຟລ໌ .igmat",
+ "Paint with a material saved in a file: .igmat or .skm": "ທາສີດ້ວຍວັດສະດຸທີ່ບັນທຶກໄວ້ໃນໄຟລ໌: .igmat ຫຼື .skm",
  "Export material…": "ສົ່ງອອກວັດສະດຸ…",
  "Add to My materials": "ເພີ່ມໃສ່ວັດສະດຸຂອງຂ້ອຍ",
  "My materials": "ວັດສະດຸຂອງຂ້ອຍ",
@@ -3783,5 +3783,7 @@
  "Could not read {file}: {error}": "ບໍ່ສາມາດອ່ານ {file}: {error}",
  "{file} has no material to paint with.": "{file} ບໍ່ມີວັດສະດຸທີ່ຈະທາສີ.",
  "Material '{name}' ready — click faces to paint it": "ວັດສະດຸ '{name}' ພ້ອມແລ້ວ — ຄລິກໃສ່ໜ້າພຽງເພື່ອທາສີ",
- "{count} materials imported into Recent": "ນຳເຂົ້າ {count} ວັດສະດຸໃສ່ຫຼ້າສຸດແລ້ວ"
+ "{count} materials imported into Recent": "ນຳເຂົ້າ {count} ວັດສະດຸໃສ່ຫຼ້າສຸດແລ້ວ",
+ "Material files (*.igmat *.skm)": "ໄຟລ໌ວັດສະດຸ (*.igmat *.skm)",
+ "SKM material (*.skm)": "ວັດສະດຸ SKM (*.skm)"
 }
