@@ -102,6 +102,10 @@ class _Client:
 
 
 def _finish(proc, timeout=60.0) -> tuple[int, str]:
+    if proc.stdin is not None and proc.stdin.closed:
+        # Closed by the test itself: communicate() would flush it first,
+        # and on POSIX that raises on a closed file (Windows skips it).
+        proc.stdin = None
     try:
         _out, err = proc.communicate(timeout=timeout)
     except subprocess.TimeoutExpired:
