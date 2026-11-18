@@ -2885,26 +2885,10 @@ def compute_snap(
             is_occluded, extra_point=acquired_point, line_dir=adir,
         )
         if fp is not None:
+            fp.lock_color = AXIS_COLORS[axis_engaged]   # the line keeps its axis colour
             return fp
     if axis_engaged is not None:
         locked = project_onto_line(start_point, _AXIS_VECTORS[axis_engaged])
-        # 'From point' ALONG the engaged axis is the one derived inference
-        # the magnet keeps: its foot is ON the axis line, so it cannot pull
-        # the point off it (what #42 and #140 silenced the others for).
-        # Without it a line drawn along green toward the red axis slid past
-        # the origin's line-up, and could not end exactly on the red axis
-        # unless the arrow lock was on (#1418).
-        if line_inferences:
-            run = locked - start_point
-            if run.length() > 1e-6:
-                fp = _from_point_snap(
-                    scene, start_point, run, cx, cy, world_to_pixel,
-                    threshold_px, is_occluded, extra_point=acquired_point,
-                    line_dir=run.normalized(),
-                )
-                if fp is not None:
-                    fp.lock_color = AXIS_COLORS[axis_engaged]
-                    return fp
         return SnapResult(
             locked, "axis", AXIS_COLORS[axis_engaged], axis=axis_engaged,
         )
