@@ -27,7 +27,7 @@ name is then just a label with nothing behind it.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Optional
 
 
@@ -135,7 +135,7 @@ def register(materials: dict, mat: Material) -> str:
         name = f"{base} ({n})"
         n += 1
     if name != mat.name:
-        mat = Material(name, mat.color, mat.texture, mat.opacity)
+        mat = replace(mat, name=name)    # every other field kept (#1481)
     materials[name] = mat
     return name
 
