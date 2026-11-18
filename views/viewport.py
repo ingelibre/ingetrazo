@@ -1285,7 +1285,7 @@ _NEAR_SEEN_NATIVE = os.environ.get("INGETRAZO_NEAR_SEEN", "1") != "0"
 #: _unit_rays reproduces ("": none; None: not checked yet).
 _QV_HYPOT3 = None
 #: The C++ libraries whose ``std::hypot(x, y, z)`` _hypot3_f32 knows.
-_QV_HYPOTS = ("libstdc++", "msvc")
+_QV_HYPOTS = ("libstdc++", "msvc", "libc++")
 
 
 def _hypot3_f32(a, kind="libstdc++"):
@@ -1296,6 +1296,18 @@ def _hypot3_f32(a, kind="libstdc++"):
     it when the other two are below its epsilon and adds the other two
     ratios' squares to 1 in the order the swaps left them."""
     import numpy as np
+    if kind == "libc++":
+        # Apple libc++ as Clang contracts it: fma(z, z, fma(x, x, y*y)),
+        # unscaled (Qt on macOS). The product of two floats is exact in a
+        # double; the sum rounds to a double before the float, which could
+        # differ from one fused rounding only on an exact tie — none in
+        # 200 000 random vectors, and the probe above still decides.
+        a = np.asarray(a, dtype=np.float32)
+        x, y, z = (a[:, i].astype(np.float64) for i in range(3))
+        yy = (y * y).astype(np.float32).astype(np.float64)
+        t = (x * x + yy).astype(np.float32).astype(np.float64)
+        with np.errstate(over="ignore", invalid="ignore"):
+            return np.sqrt((z * z + t).astype(np.float32))
     a = np.abs(a)
     if kind == "msvc":
         x, y, z = a[:, 0], a[:, 1], a[:, 2]
@@ -1367,7 +1379,7 @@ def _occlusion_block(o, d, v0, e1, e2):
     uq = np.einsum("ij,ij->i", e2, q)
     p = np.cross(d[:, None, :], e2[None, :, :])
     det = np.einsum("nj,rnj->rn", e1, p)
-    ok = np.abs(det) > 1e-6
+    ok = _occlusion_det_ok(det, d, e1, e2)
     inv = np.where(ok, 1.0 / np.where(ok, det, 1.0), 0.0)
     u = np.einsum("nj,rnj->rn", s, p) * inv
     v = (d @ q.T) * inv
@@ -1375,6 +1387,25 @@ def _occlusion_block(o, d, v0, e1, e2):
     hit = (ok & (u >= 0.0) & (u <= 1.0) & (v >= 0.0) & (u + v <= 1.0)
            & (t > 1e-6))
     return np.where(hit, t, np.inf).min(axis=1)
+
+
+def _occlusion_det_ok(det, d, e1, e2):
+    """Which (ray, triangle) pairs of the occlusion block are not grazing:
+    ``|det| > 1e-6``, and a smaller det read against the triangle's own
+    size, as :func:`_moller_trumbore` reads it (#1294) — det is
+    (e1 × e2)·d, so a 1 mm square met head-on (det ≈ 6e-7) hid nothing.
+    ``det`` (r, n) of rays ``d`` (r, 3) on triangles ``e1``, ``e2`` (n, 3);
+    core/occlusion.rs reads it the same way."""
+    import numpy as np
+    ok = np.abs(det) > 1e-6
+    small = ~ok & (det != 0.0)
+    if small.any():
+        rr, nn = np.nonzero(small)
+        scale = (np.linalg.norm(np.cross(e1[nn], e2[nn]), axis=1)
+                 * np.linalg.norm(d[rr], axis=1))
+        # A triangle of no area (its cross product nought) hides nothing.
+        ok[rr, nn] = (np.abs(det[rr, nn]) > 1e-6 * scale) & (scale > 0.0)
+    return ok
 
 
 def _placed_maps(xf):
@@ -19040,7 +19071,7 @@ class Viewport(QOpenGLWidget):
                 d = D[r]                                              # (r, 3)
                 p = np.cross(d[:, None, :], e2[None, :, :])           # (r, n, 3)
                 det = np.einsum("nj,rnj->rn", e1, p)
-                ok = np.abs(det) > 1e-6
+                ok = _occlusion_det_ok(det, d, e1, e2)
                 inv = np.where(ok, 1.0 / np.where(ok, det, 1.0), 0.0)
                 u = np.einsum("nj,rnj->rn", s, p) * inv
                 v = (d @ q.T) * inv
