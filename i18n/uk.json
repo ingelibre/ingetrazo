@@ -3772,5 +3772,20 @@
  "Architect. The units system, the Browser, Layers 2.0, the Solid Inspector, Fillet 3D bevels, Bridge, Join Segments, Camera ▸ Axes, soft ambient occlusion, round curved surfaces, view layouts, scenes as tabs, cleaner exports and many everyday editing tools. And for 0.6.2: the North tool, camera settings, scene transitions with video and the view as layered SVG.": "Архітектор. Система одиниць виміру, Навігатор, «Шари 2.0», Інспектор тіл, фаски у «Заокругленні 3D», «Місток», «Об'єднати сегменти», Камера ▸ Осі, м'яка навколишня оклюзія, округлі криволінійні поверхні, розкладки видів, сцени у вигляді вкладок, охайніший експорт і багато повсякденних інструментів редагування. А в 0.6.2: інструмент «Північ», налаштування камери, переходи між сценами з відео та вигляд у SVG за шарами.",
  "Korean translation of the interface, and the AI key from an environment variable. In 0.6.2, soft shadows and fixes for macOS.": "Переклад інтерфейсу корейською, а також ключ ШІ зі змінної середовища. У 0.6.2 — м’які тіні та виправлення для macOS.",
  "Exact Move+Ctrl copies, overlapping rotated copies, faster box selection on huge models and the reviewed Indonesian translation.": "Точні копії через Переміщення+Ctrl, повернуті копії, що перекриваються, швидший вибір рамкою у величезних моделях і вивірений індонезійський переклад.",
- "Snapping to the rest of the model from inside a group or component.": "Прив’язка до решти моделі зсередини групи чи компонента."
+ "Snapping to the rest of the model from inside a group or component.": "Прив’язка до решти моделі зсередини групи чи компонента.",
+ "Paint with a material saved in an .igmat file": "Фарбувати матеріалом, збереженим у файлі .igmat",
+ "Export material…": "Експорт матеріалу…",
+ "Add to My materials": "Додати до Моїх матеріалів",
+ "My materials": "Мої матеріали",
+ "Remove from My materials": "Вилучити з Моїх матеріалів",
+ "Remove '{name}' from My materials?": "Вилучити «{name}» з Моїх матеріалів?",
+ "'{name}' added to My materials": "«{name}» додано до Моїх матеріалів",
+ "Export material": "Експорт матеріалу",
+ "IngeTrazo material (*.igmat)": "Матеріал IngeTrazo (*.igmat)",
+ "Material '{name}' exported": "Матеріал «{name}» експортовано",
+ "Import material": "Імпорт матеріалу",
+ "Could not read {file}: {error}": "Не вдалося прочитати {file}: {error}",
+ "{file} has no material to paint with.": "У {file} немає матеріалу для фарбування.",
+ "Material '{name}' ready — click faces to paint it": "Матеріал «{name}» готовий — клацніть грані, щоб пофарбувати їх",
+ "{count} materials imported into Recent": "Імпортовано матеріалів до Нещодавніх: {count}"
 }

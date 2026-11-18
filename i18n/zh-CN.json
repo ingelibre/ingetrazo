@@ -3766,5 +3766,20 @@
  "Architect. The units system, the Browser, Layers 2.0, the Solid Inspector, Fillet 3D bevels, Bridge, Join Segments, Camera ▸ Axes, soft ambient occlusion, round curved surfaces, view layouts, scenes as tabs, cleaner exports and many everyday editing tools. And for 0.6.2: the North tool, camera settings, scene transitions with video and the view as layered SVG.": "建筑师。单位系统、浏览器、图层 2.0、实体检查器、Fillet 3D 倒角、桥接、合并线段、相机 ▸ 坐标轴、柔和环境光遮蔽、圆润曲面、视图布局、标签页形式的场景、更整洁的导出，以及许多日常编辑工具。0.6.2 中还有：指北工具、相机设置、带视频的场景过渡，以及分图层的 SVG 视图导出。",
  "Korean translation of the interface, and the AI key from an environment variable. In 0.6.2, soft shadows and fixes for macOS.": "界面的韩语翻译，以及从环境变量读取 AI 密钥。0.6.2 中还有柔和阴影和 macOS 修复。",
  "Exact Move+Ctrl copies, overlapping rotated copies, faster box selection on huge models and the reviewed Indonesian translation.": "精确的移动+Ctrl 复制、相互重叠的旋转复制、在超大模型上更快的框选，以及校订后的印尼语翻译。",
- "Snapping to the rest of the model from inside a group or component.": "在组或组件内部捕捉到模型其余部分。"
+ "Snapping to the rest of the model from inside a group or component.": "在组或组件内部捕捉到模型其余部分。",
+ "Paint with a material saved in an .igmat file": "用保存在 .igmat 文件中的材质涂色",
+ "Export material…": "导出材质…",
+ "Add to My materials": "添加到我的材质",
+ "My materials": "我的材质",
+ "Remove from My materials": "从我的材质中移除",
+ "Remove '{name}' from My materials?": "要从我的材质中移除“{name}”吗？",
+ "'{name}' added to My materials": "已将“{name}”添加到我的材质",
+ "Export material": "导出材质",
+ "IngeTrazo material (*.igmat)": "IngeTrazo 材质 (*.igmat)",
+ "Material '{name}' exported": "已导出材质“{name}”",
+ "Import material": "导入材质",
+ "Could not read {file}: {error}": "无法读取 {file}：{error}",
+ "{file} has no material to paint with.": "{file} 中没有可用于涂色的材质。",
+ "Material '{name}' ready — click faces to paint it": "材质“{name}”已就绪 — 点击面来涂色",
+ "{count} materials imported into Recent": "已将 {count} 个材质导入最近使用"
 }

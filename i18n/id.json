@@ -3768,5 +3768,20 @@
  "Architect. The units system, the Browser, Layers 2.0, the Solid Inspector, Fillet 3D bevels, Bridge, Join Segments, Camera ▸ Axes, soft ambient occlusion, round curved surfaces, view layouts, scenes as tabs, cleaner exports and many everyday editing tools. And for 0.6.2: the North tool, camera settings, scene transitions with video and the view as layered SVG.": "Arsitek. Sistem satuan, Penjelajah, Layer 2.0, Pemeriksa Solid, bevel Fillet 3D, Jembatan, Gabungkan segmen, Kamera ▸ Sumbu, ambient occlusion halus, permukaan lengkung yang membulat, tata letak tampilan, scene sebagai tab, ekspor yang lebih bersih, dan banyak alat penyuntingan sehari-hari. Dan untuk 0.6.2: alat Utara, pengaturan kamera, transisi adegan dengan video, dan tampilan sebagai SVG berlapis.",
  "Korean translation of the interface, and the AI key from an environment variable. In 0.6.2, soft shadows and fixes for macOS.": "Terjemahan antarmuka ke bahasa Korea, dan kunci AI dari variabel lingkungan. Di 0.6.2, bayangan lembut dan perbaikan untuk macOS.",
  "Exact Move+Ctrl copies, overlapping rotated copies, faster box selection on huge models and the reviewed Indonesian translation.": "Salinan Pindah+Ctrl yang persis, salinan putar yang saling tumpang tindih, seleksi kotak yang lebih cepat pada model sangat besar, dan terjemahan bahasa Indonesia yang direvisi.",
- "Snapping to the rest of the model from inside a group or component.": "Snap ke bagian lain model dari dalam grup atau komponen."
+ "Snapping to the rest of the model from inside a group or component.": "Snap ke bagian lain model dari dalam grup atau komponen.",
+ "Paint with a material saved in an .igmat file": "Cat dengan material yang disimpan dalam berkas .igmat",
+ "Export material…": "Ekspor material…",
+ "Add to My materials": "Tambahkan ke Material saya",
+ "My materials": "Material saya",
+ "Remove from My materials": "Hapus dari Material saya",
+ "Remove '{name}' from My materials?": "Hapus '{name}' dari Material saya?",
+ "'{name}' added to My materials": "'{name}' ditambahkan ke Material saya",
+ "Export material": "Ekspor material",
+ "IngeTrazo material (*.igmat)": "Material IngeTrazo (*.igmat)",
+ "Material '{name}' exported": "Material '{name}' diekspor",
+ "Import material": "Impor material",
+ "Could not read {file}: {error}": "Tidak dapat membaca {file}: {error}",
+ "{file} has no material to paint with.": "{file} tidak berisi material untuk mengecat.",
+ "Material '{name}' ready — click faces to paint it": "Material '{name}' siap — klik bidang untuk mengecatnya",
+ "{count} materials imported into Recent": "{count} material diimpor ke Terbaru"
 }

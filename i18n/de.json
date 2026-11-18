@@ -3765,5 +3765,20 @@
  "Architect. The units system, the Browser, Layers 2.0, the Solid Inspector, Fillet 3D bevels, Bridge, Join Segments, Camera ▸ Axes, soft ambient occlusion, round curved surfaces, view layouts, scenes as tabs, cleaner exports and many everyday editing tools. And for 0.6.2: the North tool, camera settings, scene transitions with video and the view as layered SVG.": "Architekt. Das Einheitensystem, der Browser, Ebenen 2.0, der Körper-Prüfer, die Fasen von Fillet 3D, Brücke, Segmente verbinden, Kamera ▸ Achsen, weiche Umgebungsverdeckung, gerundete gekrümmte Flächen, Ansichtslayouts, Szenen als Registerkarten, sauberere Exporte und viele alltägliche Bearbeitungswerkzeuge. Und für 0.6.2: das Nord-Werkzeug, die Kameraeinstellungen, Szenenübergänge mit Video und die Ansicht als SVG in Ebenen.",
  "Korean translation of the interface, and the AI key from an environment variable. In 0.6.2, soft shadows and fixes for macOS.": "Koreanische Übersetzung der Oberfläche und der KI-Schlüssel aus einer Umgebungsvariablen. In 0.6.2 die weichen Schatten und Korrekturen für macOS.",
  "Exact Move+Ctrl copies, overlapping rotated copies, faster box selection on huge models and the reviewed Indonesian translation.": "Exakte Kopien mit Verschieben+Strg, sich überlappende gedrehte Kopien, schnellere Rahmenauswahl in riesigen Modellen und die überarbeitete indonesische Übersetzung.",
- "Snapping to the rest of the model from inside a group or component.": "Fangen am übrigen Modell aus einer Gruppe oder Komponente heraus."
+ "Snapping to the rest of the model from inside a group or component.": "Fangen am übrigen Modell aus einer Gruppe oder Komponente heraus.",
+ "Paint with a material saved in an .igmat file": "Mit einem in einer .igmat-Datei gespeicherten Material malen",
+ "Export material…": "Material exportieren…",
+ "Add to My materials": "Zu Meinen Materialien hinzufügen",
+ "My materials": "Meine Materialien",
+ "Remove from My materials": "Aus Meinen Materialien entfernen",
+ "Remove '{name}' from My materials?": "„{name}“ aus Meinen Materialien entfernen?",
+ "'{name}' added to My materials": "„{name}“ zu Meinen Materialien hinzugefügt",
+ "Export material": "Material exportieren",
+ "IngeTrazo material (*.igmat)": "IngeTrazo-Material (*.igmat)",
+ "Material '{name}' exported": "Material „{name}“ exportiert",
+ "Import material": "Material importieren",
+ "Could not read {file}: {error}": "{file} konnte nicht gelesen werden: {error}",
+ "{file} has no material to paint with.": "{file} enthält kein Material zum Malen.",
+ "Material '{name}' ready — click faces to paint it": "Material „{name}“ bereit — klicke Flächen an, um sie zu färben",
+ "{count} materials imported into Recent": "{count} Materialien in „Zuletzt verwendet“ importiert"
 }

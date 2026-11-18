@@ -3765,5 +3765,20 @@
  "Architect. The units system, the Browser, Layers 2.0, the Solid Inspector, Fillet 3D bevels, Bridge, Join Segments, Camera ▸ Axes, soft ambient occlusion, round curved surfaces, view layouts, scenes as tabs, cleaner exports and many everyday editing tools. And for 0.6.2: the North tool, camera settings, scene transitions with video and the view as layered SVG.": "建築家。単位系、ブラウザ、レイヤー 2.0、ソリッド検査、Fillet 3D の面取り、ブリッジ、線分を結合、カメラ ▸ 軸、ソフトなアンビエントオクルージョン、滑らかな曲面、ビューレイアウト、タブとしてのシーン、よりクリーンなエクスポート、そして日常の多くの編集ツール。0.6.2 では、北ツール、カメラ設定、動画付きのシーン遷移、レイヤー付き SVG としてのビュー出力も。",
  "Korean translation of the interface, and the AI key from an environment variable. In 0.6.2, soft shadows and fixes for macOS.": "インターフェースの韓国語翻訳、および環境変数からの AI キー。0.6.2 ではソフトシャドウと macOS 向けの修正も。",
  "Exact Move+Ctrl copies, overlapping rotated copies, faster box selection on huge models and the reviewed Indonesian translation.": "移動+Ctrl の正確なコピー、重なる回転コピー、巨大モデルでの高速な矩形選択、そして見直されたインドネシア語訳。",
- "Snapping to the rest of the model from inside a group or component.": "グループやコンポーネントの内側からモデルの残りへのスナップ。"
+ "Snapping to the rest of the model from inside a group or component.": "グループやコンポーネントの内側からモデルの残りへのスナップ。",
+ "Paint with a material saved in an .igmat file": ".igmat ファイルに保存したマテリアルで塗ります",
+ "Export material…": "マテリアルを書き出し…",
+ "Add to My materials": "マイマテリアルに追加",
+ "My materials": "マイマテリアル",
+ "Remove from My materials": "マイマテリアルから削除",
+ "Remove '{name}' from My materials?": "「{name}」をマイマテリアルから削除しますか？",
+ "'{name}' added to My materials": "「{name}」をマイマテリアルに追加しました",
+ "Export material": "マテリアルを書き出し",
+ "IngeTrazo material (*.igmat)": "IngeTrazo マテリアル (*.igmat)",
+ "Material '{name}' exported": "マテリアル「{name}」を書き出しました",
+ "Import material": "マテリアルを読み込み",
+ "Could not read {file}: {error}": "{file} を読み込めませんでした: {error}",
+ "{file} has no material to paint with.": "{file} には塗れるマテリアルがありません。",
+ "Material '{name}' ready — click faces to paint it": "マテリアル「{name}」の準備ができました — 面をクリックして塗ります",
+ "{count} materials imported into Recent": "{count} 個のマテリアルを最近使ったマテリアルに読み込みました"
 }
