@@ -3768,5 +3768,20 @@
  "Architect. The units system, the Browser, Layers 2.0, the Solid Inspector, Fillet 3D bevels, Bridge, Join Segments, Camera ▸ Axes, soft ambient occlusion, round curved surfaces, view layouts, scenes as tabs, cleaner exports and many everyday editing tools. And for 0.6.2: the North tool, camera settings, scene transitions with video and the view as layered SVG.": "สถาปนิก ระบบหน่วย, เบราว์เซอร์, เลเยอร์ 2.0, เครื่องมือตรวจสอบโซลิด, การลบมุมของ Fillet 3D, เชื่อมสะพาน, รวมเส้นย่อย, กล้อง ▸ แกน, แอมเบียนต์ออคคลูชันแบบนุ่ม, พื้นผิวโค้งที่กลมมน, เลย์เอาต์มุมมอง, ฉากแบบแท็บ, การส่งออกที่สะอาดขึ้น และเครื่องมือแก้ไขที่ใช้ประจำวันอีกมากมาย และสำหรับ 0.6.2: เครื่องมือทิศเหนือ การตั้งค่ากล้อง การเปลี่ยนฉากพร้อมวิดีโอ และมุมมองเป็น SVG แบบแยกชั้น",
  "Korean translation of the interface, and the AI key from an environment variable. In 0.6.2, soft shadows and fixes for macOS.": "คำแปลภาษาเกาหลีของส่วนติดต่อผู้ใช้ และคีย์ AI จากตัวแปรสภาพแวดล้อม ใน 0.6.2 มีเงานุ่มและการแก้ไขสำหรับ macOS",
  "Exact Move+Ctrl copies, overlapping rotated copies, faster box selection on huge models and the reviewed Indonesian translation.": "การคัดลอกด้วย ย้าย+Ctrl ที่แม่นยำ สำเนาที่หมุนแล้วซ้อนทับกัน การเลือกแบบกรอบที่เร็วขึ้นในโมเดลขนาดใหญ่มาก และคำแปลภาษาอินโดนีเซียที่ปรับปรุงแล้ว",
- "Snapping to the rest of the model from inside a group or component.": "การสแนปกับส่วนอื่นของโมเดลจากภายในกลุ่มหรือคอมโพเนนต์"
+ "Snapping to the rest of the model from inside a group or component.": "การสแนปกับส่วนอื่นของโมเดลจากภายในกลุ่มหรือคอมโพเนนต์",
+ "Add a sheet index: the table of contents of the document's sheets, kept up to date": "เพิ่มสารบัญแผ่นงาน: สารบัญของแผ่นงานในเอกสาร อัปเดตอยู่เสมอ",
+ "Sheet index": "สารบัญแผ่นงาน",
+ "SHEET INDEX": "สารบัญแผ่นงาน",
+ "Show the title": "แสดงชื่อเรื่อง",
+ "Leader": "เส้นนำ",
+ "Show sheet numbers": "แสดงหมายเลขแผ่นงาน",
+ "Flat list": "รายการแบบเรียบ",
+ "By folder": "ตามโฟลเดอร์",
+ "By folder lists the sheets under their folders, indented. Sheets outside any folder are listed flat.": "ตามโฟลเดอร์จะแสดงแผ่นงานใต้โฟลเดอร์ของมันแบบเยื้อง แผ่นงานที่อยู่นอกโฟลเดอร์จะแสดงแบบเรียบ",
+ "Border": "เส้นขอบ",
+ "Index page": "หน้าของสารบัญ",
+ "List this sheet too": "รวมแผ่นงานนี้ด้วย",
+ "Split a long index over several sheets: put one index on each and pick the page each one shows.": "แบ่งสารบัญยาวไปหลายแผ่นงาน: วางสารบัญหนึ่งอันในแต่ละแผ่นงาน แล้วเลือกหน้าที่แต่ละอันแสดง",
+ "Entries per page": "รายการต่อหน้า",
+ "{n} entries on {pages} page(s)": "{n} รายการ ใน {pages} หน้า"
 }

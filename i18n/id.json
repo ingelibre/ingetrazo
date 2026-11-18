@@ -3768,5 +3768,20 @@
  "Architect. The units system, the Browser, Layers 2.0, the Solid Inspector, Fillet 3D bevels, Bridge, Join Segments, Camera ▸ Axes, soft ambient occlusion, round curved surfaces, view layouts, scenes as tabs, cleaner exports and many everyday editing tools. And for 0.6.2: the North tool, camera settings, scene transitions with video and the view as layered SVG.": "Arsitek. Sistem satuan, Penjelajah, Layer 2.0, Pemeriksa Solid, bevel Fillet 3D, Jembatan, Gabungkan segmen, Kamera ▸ Sumbu, ambient occlusion halus, permukaan lengkung yang membulat, tata letak tampilan, scene sebagai tab, ekspor yang lebih bersih, dan banyak alat penyuntingan sehari-hari. Dan untuk 0.6.2: alat Utara, pengaturan kamera, transisi adegan dengan video, dan tampilan sebagai SVG berlapis.",
  "Korean translation of the interface, and the AI key from an environment variable. In 0.6.2, soft shadows and fixes for macOS.": "Terjemahan antarmuka ke bahasa Korea, dan kunci AI dari variabel lingkungan. Di 0.6.2, bayangan lembut dan perbaikan untuk macOS.",
  "Exact Move+Ctrl copies, overlapping rotated copies, faster box selection on huge models and the reviewed Indonesian translation.": "Salinan Pindah+Ctrl yang persis, salinan putar yang saling tumpang tindih, seleksi kotak yang lebih cepat pada model sangat besar, dan terjemahan bahasa Indonesia yang direvisi.",
- "Snapping to the rest of the model from inside a group or component.": "Snap ke bagian lain model dari dalam grup atau komponen."
+ "Snapping to the rest of the model from inside a group or component.": "Snap ke bagian lain model dari dalam grup atau komponen.",
+ "Add a sheet index: the table of contents of the document's sheets, kept up to date": "Tambahkan indeks lembar: daftar isi lembar dokumen, selalu diperbarui",
+ "Sheet index": "Indeks lembar",
+ "SHEET INDEX": "INDEKS LEMBAR",
+ "Show the title": "Tampilkan judul",
+ "Leader": "Garis penuntun",
+ "Show sheet numbers": "Tampilkan nomor lembar",
+ "Flat list": "Daftar datar",
+ "By folder": "Per folder",
+ "By folder lists the sheets under their folders, indented. Sheets outside any folder are listed flat.": "Per folder mencantumkan lembar di bawah foldernya, menjorok. Lembar di luar folder dicantumkan datar.",
+ "Border": "Bingkai",
+ "Index page": "Halaman indeks",
+ "List this sheet too": "Sertakan juga lembar ini",
+ "Split a long index over several sheets: put one index on each and pick the page each one shows.": "Bagi indeks panjang ke beberapa lembar: letakkan satu indeks di tiap lembar dan pilih halaman yang ditampilkan masing-masing.",
+ "Entries per page": "Entri per halaman",
+ "{n} entries on {pages} page(s)": "{n} entri dalam {pages} halaman"
 }

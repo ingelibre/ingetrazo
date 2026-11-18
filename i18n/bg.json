@@ -3766,5 +3766,20 @@
  "Architect. The units system, the Browser, Layers 2.0, the Solid Inspector, Fillet 3D bevels, Bridge, Join Segments, Camera ▸ Axes, soft ambient occlusion, round curved surfaces, view layouts, scenes as tabs, cleaner exports and many everyday editing tools. And for 0.6.2: the North tool, camera settings, scene transitions with video and the view as layered SVG.": "Архитект. Системата от мерни единици, Браузърът, Слоеве 2.0, Проверката на плътни тела, фаските на Fillet 3D, Свързваща повърхнина, Обединяване на сегменти, Камера ▸ Оси, мекото фоново засенчване, заоблените криволинейни повърхнини, оформленията на изгледи, сцените като раздели, по-чистите експорти и много ежедневни инструменти за редактиране. А за 0.6.2: инструментът Север, настройките на камерата, преходите между сцени с видео и изгледът като SVG на слоеве.",
  "Korean translation of the interface, and the AI key from an environment variable. In 0.6.2, soft shadows and fixes for macOS.": "Корейски превод на интерфейса и ключът за ИИ от променлива на средата. В 0.6.2 – меките сенки и поправки за macOS.",
  "Exact Move+Ctrl copies, overlapping rotated copies, faster box selection on huge models and the reviewed Indonesian translation.": "Точни копия с Move+Ctrl, припокриващи се завъртени копия, по-бърз избор с рамка в огромни модели и прегледаният превод на индонезийски.",
- "Snapping to the rest of the model from inside a group or component.": "Прихващане към останалата част от модела отвътре на група или компонент."
+ "Snapping to the rest of the model from inside a group or component.": "Прихващане към останалата част от модела отвътре на група или компонент.",
+ "Add a sheet index: the table of contents of the document's sheets, kept up to date": "Добави списък на листовете: съдържанието на листовете на документа, винаги актуално",
+ "Sheet index": "Списък на листовете",
+ "SHEET INDEX": "СПИСЪК НА ЛИСТОВЕТЕ",
+ "Show the title": "Показване на заглавието",
+ "Leader": "Запълваща линия",
+ "Show sheet numbers": "Показване на номерата на листовете",
+ "Flat list": "Обикновен списък",
+ "By folder": "По папки",
+ "By folder lists the sheets under their folders, indented. Sheets outside any folder are listed flat.": "По папки изброява листовете под техните папки, с отстъп. Листовете извън папка се изброяват без отстъп.",
+ "Border": "Рамка",
+ "Index page": "Страница на списъка",
+ "List this sheet too": "Включи и този лист",
+ "Split a long index over several sheets: put one index on each and pick the page each one shows.": "Раздели дълъг списък на няколко листа: сложи списък на всеки и избери страницата, която показва.",
+ "Entries per page": "Записи на страница",
+ "{n} entries on {pages} page(s)": "{n} записа на {pages} стр."
 }

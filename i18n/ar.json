@@ -3800,5 +3800,20 @@
  "Architect. The units system, the Browser, Layers 2.0, the Solid Inspector, Fillet 3D bevels, Bridge, Join Segments, Camera ▸ Axes, soft ambient occlusion, round curved surfaces, view layouts, scenes as tabs, cleaner exports and many everyday editing tools. And for 0.6.2: the North tool, camera settings, scene transitions with video and the view as layered SVG.": "مهندس معماري. نظام الوحدات، والمتصفح، والطبقات 2.0، وفاحص المجسمات المصمتة، وشطفات Fillet 3D، والجسر، والانضمام إلى الشرائح، والكاميرا ▸ المحاور، والإطباق المحيطي الناعم، والأسطح المنحنية المستديرة، وتخطيطات العرض، والمشاهد كعلامات تبويب، وتصدير أنظف، والعديد من أدوات التحرير اليومية. وفي 0.6.2: أداة الشمال، وإعدادات الكاميرا، وانتقالات المشاهد مع الفيديو، والعرض بصيغة SVG بطبقات.",
  "Korean translation of the interface, and the AI key from an environment variable. In 0.6.2, soft shadows and fixes for macOS.": "الترجمة الكورية للواجهة، ومفتاح الذكاء الاصطناعي من متغير بيئة. وفي 0.6.2: الظلال الناعمة وإصلاحات لنظام macOS.",
  "Exact Move+Ctrl copies, overlapping rotated copies, faster box selection on huge models and the reviewed Indonesian translation.": "نسخ دقيقة بـ Move+Ctrl، ونسخ مدوَّرة متداخلة، وتحديد بالمربع أسرع في النماذج الضخمة، ومراجعة الترجمة الإندونيسية.",
- "Snapping to the rest of the model from inside a group or component.": "الالتقاط إلى بقية النموذج من داخل مجموعة أو مكوّن."
+ "Snapping to the rest of the model from inside a group or component.": "الالتقاط إلى بقية النموذج من داخل مجموعة أو مكوّن.",
+ "Add a sheet index: the table of contents of the document's sheets, kept up to date": "إضافة فهرس اللوحات: جدول محتويات لوحات المستند، محدَّث دائمًا",
+ "Sheet index": "فهرس اللوحات",
+ "SHEET INDEX": "فهرس اللوحات",
+ "Show the title": "إظهار العنوان",
+ "Leader": "خط إرشادي",
+ "Show sheet numbers": "إظهار أرقام اللوحات",
+ "Flat list": "قائمة مسطحة",
+ "By folder": "حسب المجلد",
+ "By folder lists the sheets under their folders, indented. Sheets outside any folder are listed flat.": "حسب المجلد يسرد اللوحات تحت مجلداتها بإزاحة. اللوحات خارج أي مجلد تُسرد مسطحة.",
+ "Border": "إطار",
+ "Index page": "صفحة الفهرس",
+ "List this sheet too": "تضمين هذه اللوحة أيضًا",
+ "Split a long index over several sheets: put one index on each and pick the page each one shows.": "تقسيم فهرس طويل على عدة لوحات: ضع فهرسًا على كل لوحة واختر الصفحة التي يعرضها كل منها.",
+ "Entries per page": "مدخلات لكل صفحة",
+ "{n} entries on {pages} page(s)": "{n} مدخلات في {pages} صفحة"
 }

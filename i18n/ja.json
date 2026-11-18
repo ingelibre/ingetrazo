@@ -3765,5 +3765,20 @@
  "Architect. The units system, the Browser, Layers 2.0, the Solid Inspector, Fillet 3D bevels, Bridge, Join Segments, Camera ▸ Axes, soft ambient occlusion, round curved surfaces, view layouts, scenes as tabs, cleaner exports and many everyday editing tools. And for 0.6.2: the North tool, camera settings, scene transitions with video and the view as layered SVG.": "建築家。単位系、ブラウザ、レイヤー 2.0、ソリッド検査、Fillet 3D の面取り、ブリッジ、線分を結合、カメラ ▸ 軸、ソフトなアンビエントオクルージョン、滑らかな曲面、ビューレイアウト、タブとしてのシーン、よりクリーンなエクスポート、そして日常の多くの編集ツール。0.6.2 では、北ツール、カメラ設定、動画付きのシーン遷移、レイヤー付き SVG としてのビュー出力も。",
  "Korean translation of the interface, and the AI key from an environment variable. In 0.6.2, soft shadows and fixes for macOS.": "インターフェースの韓国語翻訳、および環境変数からの AI キー。0.6.2 ではソフトシャドウと macOS 向けの修正も。",
  "Exact Move+Ctrl copies, overlapping rotated copies, faster box selection on huge models and the reviewed Indonesian translation.": "移動+Ctrl の正確なコピー、重なる回転コピー、巨大モデルでの高速な矩形選択、そして見直されたインドネシア語訳。",
- "Snapping to the rest of the model from inside a group or component.": "グループやコンポーネントの内側からモデルの残りへのスナップ。"
+ "Snapping to the rest of the model from inside a group or component.": "グループやコンポーネントの内側からモデルの残りへのスナップ。",
+ "Add a sheet index: the table of contents of the document's sheets, kept up to date": "図面リストを追加: 文書のシートの目次。常に最新",
+ "Sheet index": "図面リスト",
+ "SHEET INDEX": "図面リスト",
+ "Show the title": "タイトルを表示",
+ "Leader": "リーダー",
+ "Show sheet numbers": "シート番号を表示",
+ "Flat list": "フラットリスト",
+ "By folder": "フォルダー別",
+ "By folder lists the sheets under their folders, indented. Sheets outside any folder are listed flat.": "フォルダー別では、シートをフォルダーの下にインデントして並べます。フォルダー外のシートはフラットに並びます。",
+ "Border": "枠線",
+ "Index page": "リストのページ",
+ "List this sheet too": "このシートも含める",
+ "Split a long index over several sheets: put one index on each and pick the page each one shows.": "長いリストを複数のシートに分割: 各シートにリストを置き、それぞれが表示するページを選びます。",
+ "Entries per page": "1ページあたりの項目数",
+ "{n} entries on {pages} page(s)": "{n} 項目、{pages} ページ"
 }

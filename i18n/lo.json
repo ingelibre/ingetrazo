@@ -3768,5 +3768,20 @@
  "Architect. The units system, the Browser, Layers 2.0, the Solid Inspector, Fillet 3D bevels, Bridge, Join Segments, Camera ▸ Axes, soft ambient occlusion, round curved surfaces, view layouts, scenes as tabs, cleaner exports and many everyday editing tools. And for 0.6.2: the North tool, camera settings, scene transitions with video and the view as layered SVG.": "ສະຖາປະນິກ. ລະບົບຫົວໜ່ວຍ, ໂປຣແກຣມທ່ອງເບິ່ງ, ຊັ້ນວຽກ 2.0, ຕົວກວດຮູບຊົງຕັນ (Solid Inspector), ການລົບມຸມຂອງ Fillet 3D, ຂົວເຊື່ອມ, ເຊື່ອມຕໍ່ທ່ອນເສັ້ນ, ກ້ອງ ▸ ແກນ, ການບັງແສງລອບຂ້າງແບບອ່ອນ, ພື້ນຜິວໂຄ້ງທີ່ມົນ, ການຈັດວາງມຸມມອງ, ສາກເປັນແຖບ, ການສົ່ງອອກທີ່ສະອາດຂຶ້ນ ແລະ ເຄື່ອງມືແກ້ໄຂປະຈຳວັນອີກຫຼາຍຢ່າງ. ແລະສຳລັບ 0.6.2: ເຄື່ອງມືທິດເໜືອ, ການຕັ້ງຄ່າກ້ອງ, ການປ່ຽນສາກພ້ອມວິດີໂອ ແລະ ມຸມມອງເປັນ SVG ແບບຊັ້ນ.",
  "Korean translation of the interface, and the AI key from an environment variable. In 0.6.2, soft shadows and fixes for macOS.": "ການແປສ່ວນຕິດຕໍ່ເປັນພາສາເກົາຫຼີ, ແລະ ກະແຈ AI ຈາກຕົວແປສະພາບແວດລ້ອມ. ໃນ 0.6.2, ເງົາອ່ອນ ແລະ ການແກ້ໄຂສຳລັບ macOS.",
  "Exact Move+Ctrl copies, overlapping rotated copies, faster box selection on huge models and the reviewed Indonesian translation.": "ການສຳເນົາດ້ວຍ ຍ້າຍ+Ctrl ທີ່ຖືກຕ້ອງ, ສຳເນົາທີ່ໝູນແລ້ວຊ້ອນກັນ, ການເລືອກແບບກອບທີ່ໄວຂຶ້ນໃນແບບຈຳລອງຂະໜາດໃຫຍ່ ແລະ ການແປພາສາອິນໂດເນເຊຍທີ່ທົບທວນແລ້ວ.",
- "Snapping to the rest of the model from inside a group or component.": "ການຍຶດຕິດກັບສ່ວນອື່ນຂອງແບບຈຳລອງຈາກພາຍໃນກຸ່ມ ຫຼື ອົງປະກອບ."
+ "Snapping to the rest of the model from inside a group or component.": "ການຍຶດຕິດກັບສ່ວນອື່ນຂອງແບບຈຳລອງຈາກພາຍໃນກຸ່ມ ຫຼື ອົງປະກອບ.",
+ "Add a sheet index: the table of contents of the document's sheets, kept up to date": "ເພີ່ມສາລະບານແຜ່ນ: ສາລະບານຂອງແຜ່ນໃນເອກະສານ, ອັບເດດສະເໝີ",
+ "Sheet index": "ສາລະບານແຜ່ນ",
+ "SHEET INDEX": "ສາລະບານແຜ່ນ",
+ "Show the title": "ສະແດງຫົວຂໍ້",
+ "Leader": "ເສັ້ນນຳ",
+ "Show sheet numbers": "ສະແດງເລກແຜ່ນ",
+ "Flat list": "ລາຍການແບບແປ",
+ "By folder": "ຕາມໂຟນເດີ",
+ "By folder lists the sheets under their folders, indented. Sheets outside any folder are listed flat.": "ຕາມໂຟນເດີຈະສະແດງແຜ່ນພາຍໃຕ້ໂຟນເດີຂອງມັນແບບຫຍໍ້ໜ້າ. ແຜ່ນທີ່ຢູ່ນອກໂຟນເດີຈະສະແດງແບບແປ.",
+ "Border": "ຂອບ",
+ "Index page": "ໜ້າຂອງສາລະບານ",
+ "List this sheet too": "ລວມແຜ່ນນີ້ນຳ",
+ "Split a long index over several sheets: put one index on each and pick the page each one shows.": "ແບ່ງສາລະບານຍາວໄປຫຼາຍແຜ່ນ: ວາງສາລະບານໜຶ່ງອັນໃນແຕ່ລະແຜ່ນ ແລ້ວເລືອກໜ້າທີ່ແຕ່ລະອັນສະແດງ.",
+ "Entries per page": "ລາຍການຕໍ່ໜ້າ",
+ "{n} entries on {pages} page(s)": "{n} ລາຍການ ໃນ {pages} ໜ້າ"
 }
