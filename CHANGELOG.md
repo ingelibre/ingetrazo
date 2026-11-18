@@ -4,6 +4,33 @@ All notable changes to IngeTrazo are documented here.
 Format inspired by [Keep a Changelog](https://keepachangelog.com); versions
 follow [SemVer](https://semver.org).
 
+## [Unreleased]
+
+### Añadido
+
+- **IngeTrazo sin ventana para automatizar con IA**: `ingetrazo --headless
+  --ai-bridge --open Casa.igz` abre el documento sin nada en pantalla y
+  enciende el puente IA (MCP), para que un agente (p. ej. Claude en un runner
+  de CI) trabaje el documento de principio a fin. Si el documento no abre,
+  termina al instante con el código 3; con `--allow-shutdown` el agente lo
+  cierra con `shutdown` y el código de salida es 0 (cualquier otro final, no).
+  `ingetrazo --mcp --headless --open …` lo hace todo con un solo comando para
+  el cliente MCP. *Cómo probarlo:* docs/ai-bridge.md ▸ «Sin ventana».
+- **Herramientas nuevas del puente IA**: `document_info`, `open_document`,
+  `save_document` (solo con `--allow-save` o la casilla «Permitir que el
+  agente guarde el documento» de la sección Puente IA), `export_view` (una
+  escena a PNG), `export_pdf` (las láminas a PDF) y `shutdown`.
+- **Guardar como JSON plano para control de versiones**: Preferencias ▸
+  General ▸ Formato de guardado ▸ JSON plano (o `--save-format json`) escribe
+  el `.igz` siempre como texto legible, para que Git muestre qué cambió; las
+  imágenes van a una carpeta `Nombre.assets` junto al documento. El formato
+  automático de siempre no cambia y sigue siendo el predeterminado.
+
+### Corregido
+
+- `ingetrazo -i Casa.igz -p` (exportar las láminas a PDF sin ventana) se
+  cerraba con un error al abrir el documento desde 0.6.2.
+
 ## [0.6.2.1] — 2026-11-14
 
 **Mejoramos las láminas y el acotar: las cotas de lámina enganchan a lo
