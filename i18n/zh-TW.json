@@ -3766,5 +3766,11 @@
  "Architect. The units system, the Browser, Layers 2.0, the Solid Inspector, Fillet 3D bevels, Bridge, Join Segments, Camera ▸ Axes, soft ambient occlusion, round curved surfaces, view layouts, scenes as tabs, cleaner exports and many everyday editing tools. And for 0.6.2: the North tool, camera settings, scene transitions with video and the view as layered SVG.": "建築師。單位系統、瀏覽器、圖層 2.0、實體檢查器、Fillet 3D 倒角、橋接、接合線段、相機 ▸ 座標軸、柔和環境光遮蔽、圓潤曲面、視圖配置、以分頁呈現的場景、更乾淨的匯出，以及許多日常編輯工具。0.6.2 中還有：指北工具、相機設定、附影片的場景轉場，以及分圖層的 SVG 視圖匯出。",
  "Korean translation of the interface, and the AI key from an environment variable. In 0.6.2, soft shadows and fixes for macOS.": "介面的韓文翻譯，以及從環境變數讀取 AI 金鑰。0.6.2 中還有柔和陰影與 macOS 修正。",
  "Exact Move+Ctrl copies, overlapping rotated copies, faster box selection on huge models and the reviewed Indonesian translation.": "精確的移動+Ctrl 複製、相互重疊的旋轉複製、在超大模型上更快的框選，以及校訂後的印尼文翻譯。",
- "Snapping to the rest of the model from inside a group or component.": "在群組或元件內部鎖點到模型其餘部分。"
+ "Snapping to the rest of the model from inside a group or component.": "在群組或元件內部鎖點到模型其餘部分。",
+ "Automatic (compact)": "自動（精簡）",
+ "Plain JSON (for version control)": "純 JSON（用於版本控制）",
+ "Automatic packs textures and big models into a compact archive. Plain JSON always writes readable text, so Git and other version control can show what changed; its images go to a folder beside the document (Name.assets) that travels with it.": "自動會把材質與大型模型打包成精簡的壓縮檔。純 JSON 一律寫成可讀的文字，方便 Git 等版本控制顯示變更；其圖片放在文件旁的資料夾（名稱.assets）中，需與文件一起攜帶。",
+ "Save format": "儲存格式",
+ "Allow the agent to save the document": "允許代理程式儲存文件",
+ "Lets the agent write the open document to disk with its save_document tool (File ▸ Save, in the format chosen in Preferences). Off: it can change the model, never the file.": "允許代理程式以 save_document 工具將開啟的文件寫入磁碟（檔案 ▸ 儲存，使用偏好設定中選擇的格式）。關閉：它可以修改模型，但永遠不能修改檔案。"
 }

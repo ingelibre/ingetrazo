@@ -44,6 +44,17 @@ lists — its distinct points once as float32, edges and face rings as int32
 indices, edge flags and a shared table of face attributes, in one raw
 member under ``geom/`` (layout in the JSON, no pickles). Builds that read
 only up to format 2 refuse it with a message instead of opening it empty.
+
+**Plain JSON for version control** (``save_scene(..., fmt="json")``, chosen
+by the user — Preferences, or ``--save-format json`` without a window) is an
+extra layout beside the three above, which it leaves untouched: always
+indented format-1 JSON, whatever the size, so a Git diff shows what changed.
+Images cannot live in a text file, so they go to a sibling folder
+``<name>.assets/`` under the same member names a container uses
+(``textures/<hash>-<name>``, ``survey/…``); the entries keep their
+``"embed"`` and the document names the folder in a top-level ``"assets"``
+key. Without images it is byte for byte a format-1 document. Builds older
+than the key open the geometry and show the faces untextured.
 """
 from __future__ import annotations
 
@@ -67,6 +78,15 @@ PLAIN_FORMAT = 1        # bare JSON document (no images to carry)
 CONTAINER_FORMAT = 2    # ZIP container: document.json + textures/
 GEOMETRY_FORMAT = 3     # + big meshes as binary blocks under geom/
 CURRENT_FORMAT = GEOMETRY_FORMAT   # the newest this build reads
+#: What :func:`save_scene` can be asked to write: ``auto`` picks format 1, 2
+#: or 3 as described above; ``json`` is the plain-JSON layout for version
+#: control (always format 1 text, images in a sibling assets folder).
+SAVE_FORMATS = ("auto", "json")
+#: The plain-JSON layout's sibling folder: ``Casa.igz`` → ``Casa.assets/``.
+_ASSETS_SUFFIX = ".assets"
+#: The sub-folders of an assets folder the writer owns (and may prune): the
+#: container's member prefixes for textures and the photogrammetric survey.
+_ASSET_DIRS = ("textures", "survey")
 _ZIP_MAGIC = b"PK\x03\x04"
 _DOC_ENTRY = "document.json"
 _TEX_PREFIX = "textures/"
@@ -612,15 +632,24 @@ def _pack_plan(mesh, plan, sink: dict) -> dict:
     return _write_geometry(arrays, table, layer_table, sink)
 
 
-def save_scene(scene, path: Path) -> dict:
+def save_scene(scene, path: Path, *, fmt: str = "auto") -> dict:
     """Write ``scene`` to ``path``. Returns ``{"embedded", "missing"}``: how
     many texture images were packed into the document, and how many could not
-    be read (those keep pointing at their original path)."""
+    be read (those keep pointing at their original path).
+
+    ``fmt`` is one of :data:`SAVE_FORMATS`. ``"auto"`` (the default) is the
+    format 1 / 2 / 3 choice described in the module docstring. ``"json"``
+    always writes indented plain JSON — see :func:`_write_plain_json`."""
+    if fmt not in SAVE_FORMATS:
+        raise ValueError(f"unknown save format {fmt!r}; "
+                         f"one of {', '.join(SAVE_FORMATS)}")
+    plain = fmt == "json"
     # Accept a Scene or a bare Mesh (the M1 read-compat path feeds a Mesh).
     mesh = scene.mesh if hasattr(scene, "mesh") else scene
     # Decided BEFORE anything is serialized: a large document writes its
     # big meshes as binary blocks (format 3) and never builds their JSON.
-    large = _live_element_count(scene) > _LARGE_DOCUMENT
+    # Plain JSON never does: every mesh stays JSON lists.
+    large = not plain and _live_element_count(scene) > _LARGE_DOCUMENT
     geom: dict | None = {} if large else None
     payload = _mesh_json(mesh, geom)
     groups = getattr(scene, "groups", None)
@@ -904,6 +933,8 @@ def save_scene(scene, path: Path) -> dict:
         meta, survey_blobs = pack_mesh(survey)
         payload["photo_mesh"] = meta
         blobs.update(survey_blobs)
+    if plain:
+        return _write_plain_json(path, payload, blobs, missing)
     data = {
         "igz_format": (GEOMETRY_FORMAT if geom else
                        CONTAINER_FORMAT if blobs else PLAIN_FORMAT),
@@ -1014,6 +1045,91 @@ def _write_container(path: Path, doc: str, blobs: dict,
             info.compress_type = zipfile.ZIP_STORED
             zf.writestr(info, blobs[member])
     _write_atomic(path, buf.getvalue())
+
+
+def _assets_dir_for(path: Path) -> Path:
+    return path.with_name(path.stem + _ASSETS_SUFFIX)
+
+
+def _write_plain_json(path: Path, payload: dict, blobs: dict,
+                      missing: int) -> dict:
+    """The plain-JSON layout (see the module docstring): the document as
+    indented JSON, its images as files in ``<name>.assets/``.
+
+    The images go first and the document last, so a document on disk never
+    names an image that is not there yet; images whose bytes did not change
+    are not rewritten. Files left in the writer's own sub-folders that the
+    document no longer names are deleted afterwards — a texture taken off
+    must leave the repository too. Nothing else in the folder is touched."""
+    assets = _assets_dir_for(path)
+    for member in sorted(blobs):
+        target = assets.joinpath(*member.split("/"))
+        data = blobs[member]
+        try:
+            if target.is_file() and target.read_bytes() == data:
+                continue
+        except OSError:
+            pass
+        target.parent.mkdir(parents=True, exist_ok=True)
+        _write_atomic(target, data)
+    data = {"igz_format": PLAIN_FORMAT, "app_version": __version__}
+    if blobs:
+        data["assets"] = assets.name
+    data["scene"] = payload
+    try:
+        doc = json.dumps(data, indent=2, allow_nan=False)
+    except ValueError:
+        raise NonFiniteDocumentError(_non_finite_where(payload)) from None
+    _write_atomic(path, doc.encode("utf-8"))
+    _prune_assets(assets, set(blobs))
+    return {"embedded": 0, "assets": len(blobs), "missing": missing}
+
+
+def _prune_assets(assets: Path, keep: set) -> None:
+    """Delete the files under the writer's sub-folders of ``assets`` that
+    are not in ``keep`` (member names), then the folders left empty."""
+    for sub in _ASSET_DIRS:
+        folder = assets / sub
+        if not folder.is_dir():
+            continue
+        for f in sorted(folder.rglob("*"), reverse=True):
+            rel = f.relative_to(assets).as_posix()
+            try:
+                if f.is_file() and rel not in keep:
+                    f.unlink()
+                elif f.is_dir() and not any(f.iterdir()):
+                    f.rmdir()
+            except OSError:
+                pass
+        try:
+            if not any(folder.iterdir()):
+                folder.rmdir()
+        except OSError:
+            pass
+    try:
+        if assets.is_dir() and not any(assets.iterdir()):
+            assets.rmdir()
+    except OSError:
+        pass
+
+
+class _AssetFolder:
+    """Reads a plain-JSON document's images from its ``<name>.assets/``
+    folder with the one method the container's unpacking calls on a ZIP —
+    ``read(member)``, ``KeyError`` when it is not there — so both layouts
+    share it. A member name that would leave the folder is refused."""
+
+    def __init__(self, root: Path) -> None:
+        self.root = root.resolve()
+
+    def read(self, member: str) -> bytes:
+        if not isinstance(member, str) or member.split("/", 1)[0] \
+                not in _ASSET_DIRS:
+            raise KeyError(member)
+        target = self.root.joinpath(*member.split("/")).resolve()
+        if not target.is_relative_to(self.root) or not target.is_file():
+            raise KeyError(member)
+        return target.read_bytes()
 
 
 def _in_worker(work, pump=None):
@@ -1429,6 +1545,14 @@ def _load_into_inner(scene, path: Path, progress=None) -> None:
             # Rebuilt here, while the archive is still open — it closes below
             # and the survey's blobs live inside it.
             survey = _unpack_photo_mesh(data.get("scene", {}), archive)
+        elif isinstance(data.get("assets"), str):
+            # The plain-JSON layout: the same members, from the folder
+            # beside the document instead of from inside it. Only the
+            # folder's own name counts — never a path somewhere else.
+            folder = _AssetFolder(path.parent / Path(data["assets"]).name)
+            tick(0.2, "Unpacking textures…")
+            _unpack_textures(data.get("scene", {}), folder)
+            survey = _unpack_photo_mesh(data.get("scene", {}), folder)
     finally:
         if archive is not None:
             archive.close()
