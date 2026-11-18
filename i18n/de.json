@@ -3768,6 +3768,8 @@
  "Drag: move these views' lines together": "Ziehen: die Linien dieser Ansichten zusammen verschieben",
  "Transparent background": "Transparenter Hintergrund",
  "Only PNG images keep transparency.": "Nur PNG-Bilder behalten die Transparenz.",
+ "Defined shadows": "Klar definierte Schatten",
+ "Defined shadows are available for PNG images.": "Klar definierte Schatten gibt es für PNG-Bilder.",
  "Italian translation of the interface, and the 3D mouse's axes and navigation profiles.": "Italienische Übersetzung der Oberfläche sowie die Achsen und Navigationsprofile der 3D-Maus.",
  "Sheet dimensions and level marks in the document's units, dimensions that follow their object, Push/Pull fixes and the «System language» choice.": "Bemaßungen und Höhenkoten auf Plänen in den Einheiten des Dokuments, Bemaßungen, die ihrem Objekt folgen, Korrekturen an Drücken/Ziehen und die Auswahl „Systemsprache“.",
  "Fixes for the location map, Move's rotation grips, typed values, the Line tool, snapping, long thin rectangles, .skp thumbnails and the extension manager's downloads on Windows, and DWG conversion with a Cancel button.": "Korrekturen an der Standortkarte, den Drehgriffen von Verschieben, eingegebenen Werten, dem Linienwerkzeug, dem Fangen, langen schmalen Rechtecken, .skp-Vorschaubildern und den Downloads des Erweiterungsmanagers unter Windows sowie DWG-Konvertierung mit Abbrechen-Schaltfläche.",

@@ -1711,6 +1711,49 @@ def _load_soft_shadows() -> int:
     return n if n in SOFT_SHADOW_SPREAD else 0
 
 
+def _build_hard_shadow_image(scene, camera, width: int, height: int):
+    """Rasterize the exact projected shadow polygons into a transparent image."""
+    from PySide6.QtCore import Qt
+    from PySide6.QtGui import QColor, QPainter, QPainterPath, QImage
+    from core.vista_caras import view_faces, view_rect
+
+    image = QImage(width, height, QImage.Format_ARGB32_Premultiplied)
+    image.fill(Qt.transparent)
+    rect = view_rect(camera)
+    x0, y0, x1, y1 = rect
+    if abs(x1 - x0) < 1e-12 or abs(y1 - y0) < 1e-12:
+        return image
+    faces = view_faces(scene, camera, as_view=True, textures=False,
+                       materials=True, shadows=True)
+    painter = QPainter(image)
+    painter.setRenderHint(QPainter.Antialiasing, True)
+    for face in faces:
+        rings = face.shadow
+        alpha = float(face.shadow_alpha)
+        if getattr(face, "extra", {}).get("ground_shadow"):
+            rings = face.rings
+            alpha = float(face.opacity)
+        if not rings or alpha <= 0.0:
+            continue
+        path = QPainterPath()
+        path.setFillRule(Qt.OddEvenFill)
+        for ring in rings:
+            if len(ring) < 3:
+                continue
+            px = (float(ring[0][0]) - x0) * width / (x1 - x0)
+            py = (y1 - float(ring[0][1])) * height / (y1 - y0)
+            path.moveTo(px, py)
+            for point in ring[1:]:
+                px = (float(point[0]) - x0) * width / (x1 - x0)
+                py = (y1 - float(point[1])) * height / (y1 - y0)
+                path.lineTo(px, py)
+            path.closeSubpath()
+        painter.fillPath(path, QColor(0, 0, 0,
+                                      max(0, min(255, round(alpha * 255)))))
+    painter.end()
+    return image
+
+
 _AXIS_DIRS = {"x": (1.0, 0.0, 0.0), "y": (0.0, 1.0, 0.0), "z": (0.0, 0.0, 1.0)}
 
 
@@ -2523,6 +2566,7 @@ class Viewport(QOpenGLWidget):
         self._invert_orbit_y = _load_invert_orbit_y()
         self._msaa = _load_msaa()
         self._soft_shadows = _load_soft_shadows()
+        self._hard_shadow_image_cache = None
 
         # Hover highlight (Select tool). Not version-tracked — it changes with
         # the cursor, not with scene mutations — so it's uploaded per paint.
@@ -2832,7 +2876,8 @@ class Viewport(QOpenGLWidget):
                      annotations_only: bool = False,
                      sharp_shadows: bool = False,
                      transparent: bool = False,
-                     crop_to_frame: bool = False) -> Optional["QImage"]:
+                     crop_to_frame: bool = False,
+                     defined_shadows: bool = False) -> Optional["QImage"]:
         """Render the current view at ``width_px`` wide (height follows the
         viewport's aspect) and return it as a ``QImage`` — the hi-res 2D
         export. Reuses the exact ``paintGL`` pipeline against a temporary
@@ -2875,7 +2920,8 @@ class Viewport(QOpenGLWidget):
                 out_h = max(int(round(out_w / aspect)), 1)
                 full = self.render_image(
                     max(int(round(out_w * lw / fw)), 64), None, overlays,
-                    annotations_only, sharp_shadows, transparent, False)
+                    annotations_only, sharp_shadows, transparent, False,
+                    defined_shadows=defined_shadows)
                 if full is None:
                     return None
                 sx = full.width() / lw
@@ -2907,6 +2953,7 @@ class Viewport(QOpenGLWidget):
         try:
             self._export_size = (width_px, height_px)
             self._export_transparent = transparent
+            self._export_defined_shadows = bool(defined_shadows)
             if sharp_shadows and self._sun_dir_now() is not None:
                 view_shadow = (self._shadow_fbo, self._shadow_key)
                 self._shadow_fbo = self._shadow_key = None
@@ -2923,6 +2970,7 @@ class Viewport(QOpenGLWidget):
                     self._shadow_size = self._SHADOW_MAP_SIZE
                 self._export_size = None
                 self._export_transparent = False
+                self._export_defined_shadows = False
                 # Drop the big export FBO (destroyed here, context current)
                 # and put the on-screen one back.
                 self._scene_fbo = prev_fbo
@@ -2930,6 +2978,12 @@ class Viewport(QOpenGLWidget):
         finally:
             self.doneCurrent()
 
+        if defined_shadows and not annotations_only:
+            hard = self._hard_shadow_overlay(width_px, height_px)
+            if hard is not None:
+                painter = QPainter(image)
+                painter.drawImage(0, 0, hard)
+                painter.end()
         if overlays:
             painter = QPainter(image)
             painter.setRenderHint(QPainter.Antialiasing, True)
@@ -7298,7 +7352,8 @@ class Viewport(QOpenGLWidget):
         light matrix — its sides across, its depth range along the sun —
         so a detail map (#958) or an export's bigger one softens the same.
         Level 0 leaves the crisp map as it was."""
-        spread = SOFT_SHADOW_SPREAD.get(getattr(self, "_soft_shadows", 0), 0.0)
+        spread = SOFT_SHADOW_SPREAD.get(
+            getattr(self, "_soft_shadows", 0), 0.0)
         self._program.setUniformValue1f(self._loc_shadow_soft, spread)
         if spread:
             across, along = self._shadow_footprint(self._shadow_vp)
@@ -7369,6 +7424,12 @@ class Viewport(QOpenGLWidget):
         d = self._sun_dir_now()
         self._frame_sun = d
         if d is None:
+            self._shadow_vp = None
+            return None
+        if (getattr(self, "_export_defined_shadows", False)
+                and self._export_size is not None):
+            # Export-defined shadows come from the model's projected
+            # polygons; the live viewport keeps its normal shadow preview.
             self._shadow_vp = None
             return None
         lo, hi = self.scene.bounds()
@@ -10419,6 +10480,46 @@ class Viewport(QOpenGLWidget):
         self._draw_zoom_box(painter)
 
         painter.end()
+
+    def _hard_shadow_overlay(self, width: int, height: int):
+        """Draw the exact, polygonal sun-shadow contours over the view.
+
+        The regular viewport shadows are a sampled depth map and can produce
+        stair-stepped or wavering edges.  ``view_faces`` computes the same
+        shadows as clipped polygons, which also makes exported pixels follow
+        the model geometry instead of the shadow-map resolution.
+        """
+        style = self._effective_style()
+        if style.face_mode in ("wireframe", "xray"):
+            return None
+        signature = self._hard_shadow_signature(width, height)
+        if signature is None:
+            return None
+        cached = getattr(self, "_hard_shadow_image_cache", None)
+        if cached is not None and cached[0] == signature:
+            return cached[1]
+        image = _build_hard_shadow_image(self.scene, self.camera, width,
+                                         height)
+        self._hard_shadow_image_cache = (signature, image)
+        return image
+
+    def _hard_shadow_signature(self, width: int, height: int):
+        sun = self._sun_dir_now()
+        if sun is None:
+            return None
+        sh = getattr(self.scene, "shadows", None)
+        return (
+            int(width), int(height), getattr(self.scene, "version", 0),
+            id(getattr(self.scene, "mesh", None)),
+            tuple(float(v) for v in sun),
+            tuple(float(v) for v in self.camera.view_matrix().data()),
+            tuple(float(v) for v in self.camera.projection_matrix().data()),
+            bool(self.camera.perspective), self._effective_style().face_mode,
+            float(getattr(sh, "darkness", 0.55)),
+            bool(getattr(self.scene, "show_section_cuts", True)),
+            getattr(self, "_clip_vec", None).toTuple()
+            if getattr(self, "_clip_vec", None) is not None else None,
+        )
 
     def _draw_linear_mode_label(self, painter: QPainter) -> None:
         # The mirror image of the bug above: these had the Spanish written

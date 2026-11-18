@@ -75,6 +75,9 @@ def test_export_image_renders_the_active_view(win, monkeypatch, tmp_path):
         def transparent(self):
             return False
 
+        def defined_shadows(self):
+            return False
+
         def deleteLater(self):
             pass
 

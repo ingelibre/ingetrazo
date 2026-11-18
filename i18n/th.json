@@ -3771,6 +3771,8 @@
  "Drag: move these views' lines together": "ลาก: ย้ายเส้นของมุมมองเหล่านี้พร้อมกัน",
  "Transparent background": "พื้นหลังโปร่งใส",
  "Only PNG images keep transparency.": "เฉพาะภาพ PNG เท่านั้นที่คงความโปร่งใสไว้",
+ "Defined shadows": "เงาที่คมชัด",
+ "Defined shadows are available for PNG images.": "เงาที่คมชัดใช้ได้กับภาพ PNG",
  "Italian translation of the interface, and the 3D mouse's axes and navigation profiles.": "คำแปลภาษาอิตาลีของส่วนติดต่อผู้ใช้ รวมทั้งแกนและโปรไฟล์การนำทางของเมาส์ 3D",
  "Sheet dimensions and level marks in the document's units, dimensions that follow their object, Push/Pull fixes and the «System language» choice.": "เส้นบอกขนาดและสัญลักษณ์บอกระดับในแผ่นงานตามหน่วยของเอกสาร, เส้นบอกขนาดที่ติดตามวัตถุ, การแก้ไขดัน/ดึง และตัวเลือก «ภาษาของระบบ»",
  "Fixes for the location map, Move's rotation grips, typed values, the Line tool, snapping, long thin rectangles, .skp thumbnails and the extension manager's downloads on Windows, and DWG conversion with a Cancel button.": "การแก้ไขแผนที่ตำแหน่ง, จุดจับหมุนของย้าย, ค่าที่พิมพ์, เครื่องมือเส้น, การสแนป, สี่เหลี่ยมผืนผ้ายาวและบาง, ภาพย่อ .skp และการดาวน์โหลดของตัวจัดการส่วนขยายบน Windows รวมถึงการแปลง DWG ที่มีปุ่มยกเลิก",

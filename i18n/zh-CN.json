@@ -3769,6 +3769,8 @@
  "Drag: move these views' lines together": "拖动：一起移动这些视图的分隔线",
  "Transparent background": "透明背景",
  "Only PNG images keep transparency.": "只有 PNG 图像才能保留透明度。",
+ "Defined shadows": "清晰阴影",
+ "Defined shadows are available for PNG images.": "清晰阴影适用于 PNG 图像。",
  "Italian translation of the interface, and the 3D mouse's axes and navigation profiles.": "界面的意大利语翻译，以及 3D 鼠标的坐标轴和导航配置。",
  "Sheet dimensions and level marks in the document's units, dimensions that follow their object, Push/Pull fixes and the «System language» choice.": "图纸中按文档单位显示的尺寸和高程标记、跟随对象的尺寸、推/拉的修复，以及“系统语言”选项。",
  "Fixes for the location map, Move's rotation grips, typed values, the Line tool, snapping, long thin rectangles, .skp thumbnails and the extension manager's downloads on Windows, and DWG conversion with a Cancel button.": "修复了位置地图、移动工具的旋转夹点、输入值、线工具、捕捉、细长矩形、.skp 缩略图以及 Windows 上扩展管理器的下载，并为 DWG 转换加入了取消按钮。",

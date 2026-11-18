@@ -642,7 +642,10 @@ class CameraSettingsDialog(QDialog):
                "frame_aspect": self.frame.currentData(),
                # Not one of these fields: the guide over the view stays.
                "composition_guide": cam.composition_guide,
-               "composition_turn": cam.composition_turn}
+               "composition_turn": cam.composition_turn,
+               # The two-point slide has no box here: it stays as it is.
+               "pan_shift_x": getattr(cam, "pan_shift_x", 0.0),
+               "pan_shift_y": getattr(cam, "pan_shift_y", 0.0)}
         if self.near_on.isChecked():
             raw["clip_near"] = self.near.value()
         if self.far_on.isChecked():

@@ -3771,6 +3771,8 @@
  "Drag: move these views' lines together": "ລາກ: ຍ້າຍເສັ້ນຂອງມຸມມອງເຫຼົ່ານີ້ພ້ອມກັນ",
  "Transparent background": "ພື້ນຫຼັງໂປ່ງໃສ",
  "Only PNG images keep transparency.": "ມີພຽງຮູບ PNG ເທົ່ານັ້ນທີ່ຮັກສາຄວາມໂປ່ງໃສໄວ້.",
+ "Defined shadows": "ເງົາທີ່ຊັດເຈນ",
+ "Defined shadows are available for PNG images.": "ເງົາທີ່ຊັດເຈນໃຊ້ໄດ້ກັບຮູບ PNG.",
  "Italian translation of the interface, and the 3D mouse's axes and navigation profiles.": "ການແປສ່ວນຕິດຕໍ່ເປັນພາສາອິຕາລີ, ພ້ອມທັງແກນ ແລະ ໂປຣໄຟລ໌ການນຳທາງຂອງເມົ້າ 3D.",
  "Sheet dimensions and level marks in the document's units, dimensions that follow their object, Push/Pull fixes and the «System language» choice.": "ເສັ້ນບອກຂະໜາດ ແລະ ສັນຍະລັກບອກລະດັບໃນແຜ່ນງານຕາມຫົວໜ່ວຍຂອງເອກະສານ, ເສັ້ນບອກຂະໜາດທີ່ຕິດຕາມວັດຖຸ, ການແກ້ໄຂ ຍູ້/ດຶງ ແລະ ຕົວເລືອກ «ພາສາຂອງລະບົບ».",
  "Fixes for the location map, Move's rotation grips, typed values, the Line tool, snapping, long thin rectangles, .skp thumbnails and the extension manager's downloads on Windows, and DWG conversion with a Cancel button.": "ການແກ້ໄຂແຜນທີ່ສະຖານທີ່, ຈຸດຈັບໝູນຂອງ ຍ້າຍ, ຄ່າທີ່ພິມ, ເຄື່ອງມືເສັ້ນ, ການດູດຈຸດ, ຮູບສີ່ແຈສາກຍາວ ແລະ ບາງ, ຮູບຫຍໍ້ .skp ແລະ ການດາວໂຫຼດຂອງຕົວຈັດການສ່ວນຂະຫຍາຍໃນ Windows, ພ້ອມການແປງ DWG ທີ່ມີປຸ່ມຍົກເລີກ.",

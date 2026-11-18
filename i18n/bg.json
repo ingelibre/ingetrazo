@@ -3563,6 +3563,8 @@
  "Drag: move these views' lines together": "Плъзгане: преместване заедно на линиите на тези изгледи",
  "Transparent background": "Прозрачен фон",
  "Only PNG images keep transparency.": "Само PNG изображенията запазват прозрачността.",
+ "Defined shadows": "Ясно очертани сенки",
+ "Defined shadows are available for PNG images.": "Ясно очертаните сенки са налични за PNG изображения.",
  "Italian translation of the interface, and the 3D mouse's axes and navigation profiles.": "Италиански превод на интерфейса, както и осите и профилите за навигация на 3D мишката.",
  "Sheet dimensions and level marks in the document's units, dimensions that follow their object, Push/Pull fixes and the «System language» choice.": "Размери и котни знаци в листовете в мерните единици на документа, размери, които следват обекта си, поправки в Изтегляне/вдлъбване и изборът „Език на системата“.",
  "Fixes for the location map, Move's rotation grips, typed values, the Line tool, snapping, long thin rectangles, .skp thumbnails and the extension manager's downloads on Windows, and DWG conversion with a Cancel button.": "Поправки в картата на местоположението, дръжките за завъртане на Преместване, въвежданите стойности, инструмента Линия, прихващането, дългите тесни правоъгълници, миниатюрите на .skp и изтеглянията на мениджъра на разширения в Windows, както и преобразуване на DWG с бутон Отказ.",
