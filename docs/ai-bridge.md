@@ -83,10 +83,113 @@ cuerpo nunca llega a leerse. Aun así, **detén el puente cuando no lo uses**.
 | `query_model` | Conteos, nombres de grupos/componentes, materiales, capas, bounds. |
 | `screenshot` | Renderiza el viewport real — el agente mira e itera. |
 | `undo` / `redo` | La historia de siempre. |
+| `document_info` | Ruta del documento, si tiene cambios sin guardar, formato de guardado, láminas, escenas y qué está permitido. |
+| `open_document` | Abre un archivo; error si no se pudo. |
+| `save_document` | Guarda (en su ruta o en otra `.igz`, `format`: `auto` o `json`). **Solo si el usuario lo permite** (ver abajo). |
+| `export_view` | Una escena (vista guardada) a PNG; la cámara vuelve a donde estaba. |
+| `export_pdf` | Las láminas (todas o las nombradas) a un PDF. |
+| `shutdown` | Cierra un IngeTrazo sin ventana arrancado con `--allow-shutdown`. |
 
 Sin el puente encendido, las tools responden con el aviso de cómo
 encenderlo. El servidor acepta un cliente a la vez y nunca escucha fuera
 de localhost.
+
+**Guardar desde el agente** está apagado por defecto: en la ventana, la
+casilla **Permitir que el agente guarde el documento** de la sección Puente
+IA (MCP); sin ventana, `--allow-save`. Sin permiso, el agente puede cambiar
+el modelo pero nunca el archivo. (Recuerda que `run_python` ejecuta código
+dentro de la aplicación: el permiso evita accidentes, no es una barrera de
+seguridad.)
+
+## Sin ventana: automatización y control de versiones
+
+IngeTrazo puede correr **sin ventana** para que un agente trabaje un
+documento de principio a fin — por ejemplo en un runner de CI que abre un
+`.igz` de un repositorio Git, deja que Claude haga cambios, guarda y abre
+un pull request para revisarlo.
+
+    ingetrazo --headless --ai-bridge --open Casa.igz \
+              --allow-save --save-format json --allow-shutdown \
+              --port 0 --ready-file puerto.txt
+
+| Opción | Qué hace |
+|---|---|
+| `--headless` | Ninguna ventana en pantalla (la vista se sigue dibujando en una ventana oculta). Ningún diálogo espera respuesta: todos se cancelan. |
+| `--ai-bridge` | Enciende el puente (solo 127.0.0.1). |
+| `--open ARCHIVO` | Abre el documento. **Si no se puede abrir, IngeTrazo termina al instante** con el código 3, antes de encender el puente. |
+| `--port N` | Puerto del puente (por defecto `INGETRAZO_AI_PORT` o 4763; `0` = uno libre). |
+| `--ready-file RUTA` | Escribe ahí el puerto cuando el documento ya está abierto y el puente escucha (también se imprime `INGETRAZO_BRIDGE_PORT=<n>`). |
+| `--allow-save` | El agente puede usar `save_document`. |
+| `--save-format auto\|json` | Cómo se guarda: `auto` (como siempre) o `json` (ver abajo). |
+| `--allow-shutdown` | El agente puede usar `shutdown`. Solo por línea de comandos. |
+| `--exit-on-stdin-eof` | Termina (código 5) cuando se cierra su entrada estándar: para un proceso padre que podría morir. |
+
+Sin ventana no se hacen copias `.igz.bak` al guardar: el historial es Git.
+
+**Códigos de salida**
+
+| Código | Significa |
+|---|---|
+| 0 | El agente llamó a `shutdown` — el único final limpio. |
+| 2 | Línea de comandos incorrecta. |
+| 3 | El documento de `--open` no se pudo abrir. |
+| 4 | El puente no pudo escuchar (puerto ocupado…). |
+| 5 | Terminó de otra forma: señal, entrada estándar cerrada… |
+
+En Windows, un proceso terminado desde fuera (`TerminateProcess`) sale con
+el código que pone quien lo mata (1 con `Popen.terminate`) — nunca 0.
+
+### Un solo comando para el cliente MCP
+
+El servidor MCP puede arrancar su propio IngeTrazo sin ventana: no hace
+falta tener IngeTrazo abierto antes.
+
+    claude mcp add ingetrazo-headless -- ingetrazo --mcp --headless \
+        --open /ruta/Casa.igz --allow-save --save-format json --allow-shutdown
+
+(En Windows: `ingetrazo-mcp.exe --headless --open …`; desde el repositorio:
+`python3 scripts/ingetrazo_mcp.py --headless --open …`.) El servidor busca
+un puerto libre, espera a que el documento esté abierto y cierra su
+IngeTrazo cuando el cliente se va. Si el documento no abre, el servidor
+termina con el mismo código (3) sin llegar a servir. Tras un `shutdown`,
+termina con 0.
+
+### Ejemplo de runner
+
+Cuando el script necesita el código de salida, conviene arrancar IngeTrazo
+aparte y apuntar el servidor MCP normal a su puerto:
+
+    ingetrazo --headless --ai-bridge --open Casa.igz --allow-save \
+        --save-format json --allow-shutdown --port 0 \
+        --ready-file /tmp/puerto &
+    PID=$!
+    while [ ! -s /tmp/puerto ]; do
+        kill -0 $PID 2>/dev/null || { wait $PID; exit $?; }   # no abrió
+        sleep 0.2
+    done
+    INGETRAZO_AI_PORT=$(cat /tmp/puerto) claude -p \
+        "Añade una ventana de 1×1 m en el muro sur, guarda y llama a shutdown" \
+        --mcp-config ingetrazo-mcp.json --allowedTools "mcp__ingetrazo__*"
+    wait $PID || exit 1                     # 0 solo si el agente terminó bien
+    git checkout -b ia/ventana-sur && git add Casa.igz Casa.assets
+    git commit -m "Ventana sur (Claude)" && gh pr create --fill
+
+### Formato JSON plano
+
+Con **Preferencias ▸ General ▸ Formato de guardado ▸ JSON plano** (o
+`--save-format json`) el `.igz` es siempre texto JSON con sangría, sea cual
+sea su tamaño, así que `git diff` muestra qué cambió. Las imágenes
+(texturas, el levantamiento fotogramétrico) no caben en texto: van a una
+carpeta junto al documento, `Casa.assets/`, que hay que versionar con él.
+Una imagen que ya no se usa se borra de esa carpeta al guardar; lo demás que
+haya en ella no se toca. Es un `.igz` de formato 1 con la marca
+`"layout": "plain-json"`: un documento abierto con esa marca **se sigue
+guardando en JSON plano** aunque el formato elegido sea Automático, para que
+no se convierta en ZIP en el repositorio; pedir otro formato por su nombre
+(`save_document(format="auto")`) sí lo cambia. Los formatos de siempre (1, 2
+y 3) no cambian: **Automático** sigue siendo el valor por defecto. Un modelo muy
+grande en JSON plano ocupa más y abre más despacio que en el formato
+automático.
 
 ## Asistente IA (dentro de la app)
 

@@ -3765,5 +3765,11 @@
  "Architect. The units system, the Browser, Layers 2.0, the Solid Inspector, Fillet 3D bevels, Bridge, Join Segments, Camera ▸ Axes, soft ambient occlusion, round curved surfaces, view layouts, scenes as tabs, cleaner exports and many everyday editing tools. And for 0.6.2: the North tool, camera settings, scene transitions with video and the view as layered SVG.": "건축가. 단위 시스템, 브라우저, 레이어 2.0, 솔리드 검사기, Fillet 3D 모따기, 브리지, 세그먼트 연결, 카메라 ▸ 축, 부드러운 앰비언트 오클루전, 둥근 곡면, 뷰 레이아웃, 탭으로 된 장면, 더 깔끔한 내보내기 및 다양한 일상 편집 도구. 0.6.2에서는 북쪽 도구, 카메라 설정, 동영상을 포함한 장면 전환, 레이어별 SVG 보기 내보내기도.",
  "Korean translation of the interface, and the AI key from an environment variable. In 0.6.2, soft shadows and fixes for macOS.": "인터페이스 한국어 번역, 그리고 환경 변수에서 읽는 AI 키. 0.6.2에서는 부드러운 그림자와 macOS 수정도.",
  "Exact Move+Ctrl copies, overlapping rotated copies, faster box selection on huge models and the reviewed Indonesian translation.": "정확한 이동+Ctrl 복사, 겹치는 회전 복사, 거대한 모델에서 더 빠른 상자 선택, 그리고 검토된 인도네시아어 번역.",
- "Snapping to the rest of the model from inside a group or component.": "그룹이나 컴포넌트 안에서 모델의 나머지 부분으로 스냅."
+ "Snapping to the rest of the model from inside a group or component.": "그룹이나 컴포넌트 안에서 모델의 나머지 부분으로 스냅.",
+ "Automatic (compact)": "자동 (압축)",
+ "Plain JSON (for version control)": "일반 JSON (버전 관리용)",
+ "Automatic packs textures and big models into a compact archive. Plain JSON always writes readable text, so Git and other version control can show what changed; its images go to a folder beside the document (Name.assets) that travels with it.": "자동은 텍스처와 큰 모델을 작은 압축 파일로 묶습니다. 일반 JSON은 항상 읽을 수 있는 텍스트로 저장하므로 Git 등 버전 관리 도구에서 변경 내용을 볼 수 있습니다. 이미지는 문서 옆 폴더(이름.assets)에 저장되며 문서와 함께 옮겨야 합니다.",
+ "Save format": "저장 형식",
+ "Allow the agent to save the document": "에이전트가 문서를 저장하도록 허용",
+ "Lets the agent write the open document to disk with its save_document tool (File ▸ Save, in the format chosen in Preferences). Off: it can change the model, never the file.": "에이전트가 save_document 도구로 열린 문서를 디스크에 쓸 수 있게 합니다(파일 ▸ 저장, 환경설정에서 고른 형식). 끄면: 모델은 바꿀 수 있지만 파일은 바꿀 수 없습니다."
 }

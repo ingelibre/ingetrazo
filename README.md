@@ -168,7 +168,10 @@ the document), **import STL (with principal-plane or advanced all-surface
   Inspector**, and two AI plugins — an in-app **AI Assistant** (chat that
   models for you; Groq/Claude/GPT/Gemini/OpenRouter/DeepSeek/local Ollama)
   and an **AI Bridge** (drive the live document from Claude Code/Desktop
-  via MCP). Every AI action is one transactional undo step. A broken
+  via MCP). Every AI action is one transactional undo step. The bridge
+  also runs **without a window** (`ingetrazo --headless --ai-bridge --open
+  Casa.igz`) for automation, and documents can be saved as **plain JSON**
+  for clean Git diffs — see [docs/ai-bridge.md](docs/ai-bridge.md). A broken
   plugin can never prevent IngeTrazo from starting. Plugins are the
   lowest-friction way to contribute — see [docs/plugins.md](docs/plugins.md).
 - **Undo/redo** — every edit is a single atomic step (console scripts

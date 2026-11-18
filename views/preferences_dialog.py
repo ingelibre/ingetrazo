@@ -188,6 +188,21 @@ class PreferencesDialog(QDialog):
         self._backup.setChecked(str(_gs.value("backup", "1", st)) != "0")
         form.addRow("", self._backup)
 
+        # How Save writes the .igz (formats.igz.SAVE_FORMATS).
+        self._save_format = QComboBox()
+        self._save_format.addItem(tr("Automatic (compact)"), "auto")
+        self._save_format.addItem(tr("Plain JSON (for version control)"),
+                                  "json")
+        i = self._save_format.findData(str(_gs.value("save_format", "auto",
+                                                     st)))
+        self._save_format.setCurrentIndex(max(i, 0))
+        self._save_format.setToolTip(tr(
+            "Automatic packs textures and big models into a compact archive. "
+            "Plain JSON always writes readable text, so Git and other version "
+            "control can show what changed; its images go to a folder beside "
+            "the document (Name.assets) that travels with it."))
+        form.addRow(tr("Save format"), self._save_format)
+
         self._undo_steps = QSpinBox()
         self._undo_steps.setRange(0, 5000)
         self._undo_steps.setSpecialValueText(tr("unlimited"))
@@ -1080,6 +1095,7 @@ class PreferencesDialog(QDialog):
                       st)
         _gs.set_value("autosave_min", self._autosave_min.value(), st)
         _gs.set_value("backup", "1" if self._backup.isChecked() else "0", st)
+        _gs.set_value("save_format", self._save_format.currentData(), st)
         st.setValue("section/ask_name",
                     "1" if self._ask_section.isChecked() else "0")
         st.setValue("tabs/hover_picture",

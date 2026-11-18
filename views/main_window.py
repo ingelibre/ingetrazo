@@ -8844,40 +8844,34 @@ class MainWindow(QMainWindow):
         self.viewport.end_group_edit()
         self._doc.viewport.end_group_edit()
 
-    def _do_save(self, path: Path) -> None:
+    #: Overrides Preferences ▸ General ▸ Save format for this window's
+    #: saves when set (``--save-format`` without a window); None follows it.
+    save_format_override: str | None = None
+    #: Overrides Preferences ▸ General ▸ backup when set: a window-less run
+    #: saving into a Git checkout must not leave ``.igz.bak`` files there.
+    backup_override: bool | None = None
+
+    def save_format(self) -> str:
+        """How Save writes the document: one of ``igz.SAVE_FORMATS``. Under
+        Automatic, a document opened from the plain-JSON layout keeps it —
+        a file kept in Git must not turn into a ZIP on the next save."""
+        fmt = self.save_format_override or str(
+            _gs.value("save_format", "auto"))
+        if fmt not in igz_format.SAVE_FORMATS:
+            fmt = "auto"
+        if fmt == "auto" and getattr(self._doc.viewport.scene,
+                                     "saved_layout", None) == "json":
+            fmt = "json"
+        return fmt
+
+    def _do_save(self, path: Path, fmt: str | None = None) -> None:
         """Write the active project to ``path``: its OWN scene and camera,
         whatever view an extension has put in front (#1106)."""
-        doc = self._doc
-        vp = doc.viewport
-        if self.viewport.scene is not vp.scene:
-            import logging
-            logging.getLogger("ingetrazo.plugins").warning(
-                "Saving the project's own scene: the view in front (%s) holds "
-                "another one.", type(self.viewport).__name__)
-        # Backup BEFORE writing (Preferences ▸ General): the previous good
-        # version survives even a save that dies mid-write — which a syncing
-        # drive has actually produced (pCloud truncation).
-        if str(_gs.value("backup", "1")) != "0" \
-                and path.is_file():
-            import shutil
-            try:
-                shutil.copy2(path, path.with_name(path.name + ".bak"))
-            except OSError:
-                self.statusBar().showMessage(
-                    tr("Could not write the backup copy."), 4000)
         try:
-            vp.scene.camera_home = self._camera_dict(vp)
-            vp.scene.views_home = self._views_dict(doc)
-            stats = igz_format.save_scene(vp.scene, path) or {}
+            stats = self.write_document(path, fmt)
         except Exception as exc:  # noqa: BLE001
             QMessageBox.critical(self, tr("Save failed"), str(exc))
             return
-        # A clean save ends the recovery window for this document — and for
-        # the slot of what it was called until now (untitled, or the old
-        # name of a Save As).
-        from core import autosave
-        autosave.clear(path)
-        autosave.clear(doc.path, untitled=doc.untitled_no)
         # Textures travel inside the document — say so, and say it loudly when
         # an image could not be read (that face's texture will NOT travel).
         embedded = int(stats.get("embedded", 0))
@@ -8892,10 +8886,56 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage(
                 tr("Saved — {n} texture(s) packed into the document.",
                    n=embedded), 4000)
+
+    def write_document(self, path: Path, fmt: str | None = None) -> dict:
+        """Save the active project to ``path`` with no dialog: the work of
+        File ▸ Save, for the window and for the AI bridge alike. ``fmt`` is
+        one of ``igz.SAVE_FORMATS`` (None: :meth:`save_format`). Raises when
+        the document could not be written — the file on disk is then left as
+        it was. Returns the writer's statistics plus ``path`` and
+        ``format``."""
+        fmt = fmt or self.save_format()
+        if fmt not in igz_format.SAVE_FORMATS:
+            raise ValueError(f"unknown save format {fmt!r}")
+        path = Path(path)
+        doc = self._doc
+        vp = doc.viewport
+        if self.viewport.scene is not vp.scene:
+            import logging
+            logging.getLogger("ingetrazo.plugins").warning(
+                "Saving the project's own scene: the view in front (%s) holds "
+                "another one.", type(self.viewport).__name__)
+        # Backup BEFORE writing (Preferences ▸ General): the previous good
+        # version survives even a save that dies mid-write — which a syncing
+        # drive has actually produced (pCloud truncation).
+        backup = (self.backup_override if self.backup_override is not None
+                  else str(_gs.value("backup", "1")) != "0")
+        if backup and path.is_file():
+            import shutil
+            try:
+                shutil.copy2(path, path.with_name(path.name + ".bak"))
+            except OSError:
+                self.statusBar().showMessage(
+                    tr("Could not write the backup copy."), 4000)
+        vp.scene.camera_home = self._camera_dict(vp)
+        vp.scene.views_home = self._views_dict(doc)
+        if fmt == "auto":
+            stats = igz_format.save_scene(vp.scene, path) or {}
+        else:
+            stats = igz_format.save_scene(vp.scene, path, fmt=fmt) or {}
+        # What it is on disk now, for the next Automatic save.
+        vp.scene.saved_layout = "json" if fmt == "json" else None
+        # A clean save ends the recovery window for this document — and for
+        # the slot of what it was called until now (untitled, or the old
+        # name of a Save As).
+        from core import autosave
+        autosave.clear(path)
+        autosave.clear(doc.path, untitled=doc.untitled_no)
         doc.path = path
         self._remember_recent(path)
         self._saved_version = vp.scene.version
         self._update_title()
+        return dict(stats, path=str(path), format=fmt)
 
     def _insert_scale_figure(self) -> None:
         """Place the scale figure in a fresh document, the classic way: OFF
