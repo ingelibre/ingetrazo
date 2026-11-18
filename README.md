@@ -215,7 +215,8 @@ python main.py
 ```
 
 Developed on **Python 3.14** (3.11+ should work). Run the tests with
-`python -m pytest -q`.
+`python scripts/pytest_batches.py -m "not slow" tests` (see
+[CONTRIBUTING.md](CONTRIBUTING.md#tests-and-ci)).
 
 ## Contributing
 
