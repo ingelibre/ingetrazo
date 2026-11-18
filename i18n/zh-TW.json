@@ -3767,7 +3767,7 @@
  "Korean translation of the interface, and the AI key from an environment variable. In 0.6.2, soft shadows and fixes for macOS.": "介面的韓文翻譯，以及從環境變數讀取 AI 金鑰。0.6.2 中還有柔和陰影與 macOS 修正。",
  "Exact Move+Ctrl copies, overlapping rotated copies, faster box selection on huge models and the reviewed Indonesian translation.": "精確的移動+Ctrl 複製、相互重疊的旋轉複製、在超大模型上更快的框選，以及校訂後的印尼文翻譯。",
  "Snapping to the rest of the model from inside a group or component.": "在群組或元件內部鎖點到模型其餘部分。",
- "Paint with a material saved in an .igmat file": "用儲存在 .igmat 檔案中的材料上色",
+ "Paint with a material saved in a file: .igmat, or SketchUp's .skm": "用儲存在檔案中的材料上色：.igmat，或 SketchUp 的 .skm",
  "Export material…": "匯出材料…",
  "Add to My materials": "加入我的材料",
  "My materials": "我的材料",
@@ -3781,5 +3781,7 @@
  "Could not read {file}: {error}": "無法讀取 {file}：{error}",
  "{file} has no material to paint with.": "{file} 中沒有可用來上色的材料。",
  "Material '{name}' ready — click faces to paint it": "材料「{name}」已就緒 — 點擊面來上色",
- "{count} materials imported into Recent": "已將 {count} 個材料匯入最近"
+ "{count} materials imported into Recent": "已將 {count} 個材料匯入最近",
+ "Material files (*.igmat *.skm)": "材料檔案 (*.igmat *.skm)",
+ "SketchUp material (*.skm)": "SketchUp 材料 (*.skm)"
 }

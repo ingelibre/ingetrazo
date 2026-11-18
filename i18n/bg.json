@@ -3767,7 +3767,7 @@
  "Korean translation of the interface, and the AI key from an environment variable. In 0.6.2, soft shadows and fixes for macOS.": "Корейски превод на интерфейса и ключът за ИИ от променлива на средата. В 0.6.2 – меките сенки и поправки за macOS.",
  "Exact Move+Ctrl copies, overlapping rotated copies, faster box selection on huge models and the reviewed Indonesian translation.": "Точни копия с Move+Ctrl, припокриващи се завъртени копия, по-бърз избор с рамка в огромни модели и прегледаният превод на индонезийски.",
  "Snapping to the rest of the model from inside a group or component.": "Прихващане към останалата част от модела отвътре на група или компонент.",
- "Paint with a material saved in an .igmat file": "Оцветяване с материал, записан във файл .igmat",
+ "Paint with a material saved in a file: .igmat, or SketchUp's .skm": "Оцветяване с материал, записан във файл: .igmat или .skm на SketchUp",
  "Export material…": "Експортиране на материал…",
  "Add to My materials": "Добавяне към Моите материали",
  "My materials": "Моите материали",
@@ -3781,5 +3781,7 @@
  "Could not read {file}: {error}": "{file} не може да се прочете: {error}",
  "{file} has no material to paint with.": "{file} не съдържа материал за оцветяване.",
  "Material '{name}' ready — click faces to paint it": "Материалът „{name}“ е готов — щракнете върху лица, за да ги оцветите",
- "{count} materials imported into Recent": "{count} материала са импортирани в Последни"
+ "{count} materials imported into Recent": "{count} материала са импортирани в Последни",
+ "Material files (*.igmat *.skm)": "Файлове с материали (*.igmat *.skm)",
+ "SketchUp material (*.skm)": "Материал на SketchUp (*.skm)"
 }

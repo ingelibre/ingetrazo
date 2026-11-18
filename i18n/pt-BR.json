@@ -3773,7 +3773,7 @@
  "Korean translation of the interface, and the AI key from an environment variable. In 0.6.2, soft shadows and fixes for macOS.": "Tradução da interface para o coreano, e a chave de IA a partir de uma variável de ambiente. Na 0.6.2, as sombras suaves e correções para macOS.",
  "Exact Move+Ctrl copies, overlapping rotated copies, faster box selection on huge models and the reviewed Indonesian translation.": "Cópias exatas com Mover+Ctrl, cópias giradas sobrepostas, seleção por caixa mais rápida em modelos enormes e a tradução para o indonésio revisada.",
  "Snapping to the rest of the model from inside a group or component.": "O snap ao resto do modelo de dentro de um grupo ou componente.",
- "Paint with a material saved in an .igmat file": "Pintar com um material salvo em um arquivo .igmat",
+ "Paint with a material saved in a file: .igmat, or SketchUp's .skm": "Pintar com um material salvo em um arquivo: .igmat, ou o .skm do SketchUp",
  "Export material…": "Exportar material…",
  "Add to My materials": "Adicionar a Meus materiais",
  "My materials": "Meus materiais",
@@ -3787,5 +3787,7 @@
  "Could not read {file}: {error}": "Não foi possível ler {file}: {error}",
  "{file} has no material to paint with.": "{file} não tem nenhum material para pintar.",
  "Material '{name}' ready — click faces to paint it": "Material “{name}” pronto — clique nas faces para pintá-las",
- "{count} materials imported into Recent": "{count} materiais importados em Recentes"
+ "{count} materials imported into Recent": "{count} materiais importados em Recentes",
+ "Material files (*.igmat *.skm)": "Arquivos de material (*.igmat *.skm)",
+ "SketchUp material (*.skm)": "Material do SketchUp (*.skm)"
 }
