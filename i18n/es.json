@@ -3798,5 +3798,20 @@
  "Architect. The units system, the Browser, Layers 2.0, the Solid Inspector, Fillet 3D bevels, Bridge, Join Segments, Camera ▸ Axes, soft ambient occlusion, round curved surfaces, view layouts, scenes as tabs, cleaner exports and many everyday editing tools. And for 0.6.2: the North tool, camera settings, scene transitions with video and the view as layered SVG.": "Arquitecto. El sistema de unidades, el Navegador, Capas 2.0, el Inspector de sólidos, los biseles de Fillet 3D, Puente, Unir segmentos, Cámara ▸ Ejes, la oclusión ambiental suave, las superficies curvas redondeadas, las disposiciones de vistas, las escenas como pestañas, exportaciones más limpias y muchas herramientas de edición del día a día. Y para la 0.6.2: la herramienta Norte, los ajustes de cámara, las transiciones de escena con vídeo y la vista como SVG en capas.",
  "Korean translation of the interface, and the AI key from an environment variable. In 0.6.2, soft shadows and fixes for macOS.": "Traducción al coreano de la interfaz, y la clave de IA desde una variable de entorno. En la 0.6.2, las sombras suaves y arreglos para macOS.",
  "Exact Move+Ctrl copies, overlapping rotated copies, faster box selection on huge models and the reviewed Indonesian translation.": "Copias exactas con Mover+Ctrl, copias giradas que se solapan, selección por caja más rápida en modelos enormes y la traducción al indonesio revisada.",
- "Snapping to the rest of the model from inside a group or component.": "Los enganches con el resto del modelo desde dentro de un grupo o componente."
+ "Snapping to the rest of the model from inside a group or component.": "Los enganches con el resto del modelo desde dentro de un grupo o componente.",
+ "Add a sheet index: the table of contents of the document's sheets, kept up to date": "Añadir un índice de láminas: la tabla de contenido de las láminas del documento, siempre al día",
+ "Sheet index": "Índice de láminas",
+ "SHEET INDEX": "ÍNDICE DE LÁMINAS",
+ "Show the title": "Mostrar el título",
+ "Leader": "Línea guía",
+ "Show sheet numbers": "Mostrar los números de lámina",
+ "Flat list": "Lista plana",
+ "By folder": "Por carpeta",
+ "By folder lists the sheets under their folders, indented. Sheets outside any folder are listed flat.": "Por carpeta lista las láminas bajo sus carpetas, sangradas. Las láminas fuera de una carpeta se listan planas.",
+ "Border": "Borde",
+ "Index page": "Página del índice",
+ "List this sheet too": "Incluir también esta lámina",
+ "Split a long index over several sheets: put one index on each and pick the page each one shows.": "Repartir un índice largo en varias láminas: pon un índice en cada una y elige la página que muestra cada uno.",
+ "Entries per page": "Entradas por página",
+ "{n} entries on {pages} page(s)": "{n} entradas en {pages} página(s)"
 }
