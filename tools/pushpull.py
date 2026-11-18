@@ -393,6 +393,9 @@ class PushPullTool(Tool):
         # = the ordinary single-face push.
         self._extra_faces: list = []
         self._extra_normals: list = []
+        # Which of them are embedded, for the drag preview (see
+        # _extras_attached): ``(ids, flags)``, None until asked.
+        self._extra_attached = None
         # Whether the base face is embedded in a solid (its boundary edges are
         # shared), so an inner face pushed in is a recess (window/door pocket).
         self._attached: bool = False
@@ -1009,22 +1012,58 @@ class PushPullTool(Tool):
         # positive, the base stayed, and the pocket formed invisibly behind
         # it while the commit worked («no se ve cuando hago push para
         # adentro cuando tengo la cara invertida», Marco, 2026-09-18).
-        recessing = (self._light_faces and self.base_face is not None
-                     and self._attached and not self._keep_base
-                     and self._sweeps_away_from_eye(viewport))
-        viewport.set_suppressed_faces({self.base_face} if recessing else set())
+        hidden = set()
+        if self._light_faces and not self._keep_base:
+            if (self.base_face is not None and self._attached
+                    and self._sweeps_away_from_eye(viewport)):
+                hidden.add(self.base_face)
+            # Every other face of a multi-face push recesses the same way:
+            # each one left standing covered its own pocket with a false
+            # face for the whole drag (#1478) — the single face's
+            # suppression, face by face.
+            for face, n, att in zip(self._extra_faces, self._extra_normals,
+                                    self._extras_attached(viewport)):
+                if att and self._sweeps_away_from_eye(
+                        viewport, face.centroid(), n):
+                    hidden.add(face)
+        viewport.set_suppressed_faces(hidden)
         viewport.update()
 
-    def _sweeps_away_from_eye(self, viewport) -> bool:
+    def _extras_attached(self, viewport) -> list:
+        """Whether each of ``_extra_faces`` is embedded (every edge shared,
+        as ``_classify_base`` asks of the base face): only such a face opens
+        a recess its own face would cover. Worked out once per drag."""
+        extras = self._extra_faces
+        memo = getattr(self, "_extra_attached", None)
+        if memo is not None and memo[0] == [id(f) for f in extras]:
+            return memo[1]
+        faces = self._target_scene(viewport.scene).faces
+        out = []
+        for face in extras:
+            kinds = {}
+            out.append(all(
+                classify_push_edge(face, loop[i], loop[(i + 1) % len(loop)],
+                                   faces, kinds)[0] != "free"
+                for loop in [face.vertices] + face.holes
+                for i in range(len(loop))))
+        self._extra_attached = ([id(f) for f in extras], out)
+        return out
+
+    def _sweeps_away_from_eye(self, viewport, anchor=None,
+                              normal=None) -> bool:
         """Does the sweep move the cap away from the camera — behind the
         base face, where the base would hide it? Without a camera to ask
-        (tests, the bridge) the normal's sign answers as it always did."""
+        (tests, the bridge) the normal's sign answers as it always did.
+        ``anchor`` and ``normal``: another face's of a multi-face push
+        (the base face's by default)."""
+        anchor = self._anchor if anchor is None else anchor
+        normal = self._normal if normal is None else normal
         cam = getattr(viewport, "camera", None)
         eye_fn = getattr(cam, "eye", None)
-        if eye_fn is None or self._anchor is None or self._normal is None:
+        if eye_fn is None or anchor is None or normal is None:
             return self.extrusion < 0.0
-        off = self._normal * self.extrusion
-        return QVector3D.dotProduct(off, self._anchor - eye_fn()) > 0.0
+        off = normal * self.extrusion
+        return QVector3D.dotProduct(off, anchor - eye_fn()) > 0.0
 
     def _refuse_closed_group(self, viewport) -> None:
         """A face inside a group that has not been opened is not pushable.
@@ -2209,6 +2248,7 @@ class PushPullTool(Tool):
         The selection is read HERE, at every drag's start, not kept from the
         activation: the pushed caps stay selected, and pushing the same
         faces again moved only the one under the cursor."""
+        self._extra_attached = None
         faces = self._selected_faces(scene)
         if len(faces) < 2 or not any(f is face for f in faces):
             self._extra_faces, self._extra_normals = [], []
@@ -3136,6 +3176,7 @@ class PushPullTool(Tool):
         self._selected_arm = False
         self._extra_faces = []
         self._extra_normals = []
+        self._extra_attached = None
         self._anchor = None
         self._grab = None
         self._normal = None
