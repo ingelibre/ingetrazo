@@ -20,6 +20,7 @@ from PySide6.QtGui import QVector3D
 
 from core import layers as _layers
 from core.mesh import Edge, Face, Mesh
+from core.ifc_identity import new_identity
 
 
 def _make_style():
@@ -63,6 +64,9 @@ _ANNOTATION_KINDS = frozenset({"Dimension", "TextLabel", "Guide", "GeoPoint"})
 @dataclass
 class Scene:
     mesh: Mesh = field(default_factory=Mesh)
+    # Document namespace for stable IFC GlobalIds; saved with the model.
+    ifc_namespace: str = field(default_factory=new_identity, kw_only=True)
+    ifc_project: dict = field(default_factory=dict, kw_only=True)
     selection: set = field(default_factory=set)
     version: int = 0
     #: How many of ``version``'s bumps changed only what is SHOWN -- the
@@ -872,6 +876,7 @@ class Scene:
                 or self.kept_components or self.section_planes
                 or self.section_boxes
                 or self.materials or self.animation.to_dict()
+                or self.ifc_project
                 or not self.show_section_planes
                 or not self.show_section_cuts
                 or self.show_hidden_objects or self.show_hidden_geometry
@@ -926,6 +931,8 @@ class Scene:
         # Outside the guard: an empty document has a camera to forget too.
         self.camera_home = None
         self.views_home = None
+        self.ifc_namespace = new_identity()
+        self.ifc_project = {}
         self.units = {"length": "m", "precision": 2}
         self.plugin_data = {}
 
