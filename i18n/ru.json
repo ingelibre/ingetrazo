@@ -4055,5 +4055,6 @@
  "New entry": "Новая запись",
  "Every sheet as a page. Click: open it. Drag: change the order. Double-click or F2: rename. Delete: remove it. Right-click: more.": "Каждый лист как страница. Щелчок: открыть. Перетаскивание: изменить порядок. Двойной щелчок или F2: переименовать. Delete: удалить. Правый щелчок: ещё.",
  "Middle-button drag pans (Shift + drag orbits)": "Перетаскивание средней кнопкой сдвигает вид (Shift + перетаскивание вращает)",
- "Orbit Z": "Орбита Z"
+ "Orbit Z": "Орбита Z",
+ "Option = copy": "Option = копия"
 }
