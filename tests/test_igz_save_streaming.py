@@ -135,3 +135,24 @@ def test_nonfinite_fragment_preserves_existing_document(tmp_path, monkeypatch):
         igz.save_scene(scene, path)
     assert path.read_bytes() == b"original"
     assert not path.with_name(path.name + ".part").exists()
+
+
+@pytest.mark.parametrize("large", [False, True])
+def test_the_thumbnail_rides_in_small_and_streamed_saves(tmp_path, monkeypatch, large):
+    # The merge of #1145 met the document thumbnail (thumbnail.png) that
+    # landed meanwhile: the streamed path must carry it too, and the count
+    # of embedded textures must not include it.
+    from PySide6.QtCore import QBuffer, QIODevice
+    from PySide6.QtGui import QImage
+    monkeypatch.setattr(igz, "_LARGE_DOCUMENT", 0 if large else 10**12)
+    img = QImage(8, 8, QImage.Format_RGB32)
+    img.fill(0x336699)
+    buf = QBuffer()
+    buf.open(QIODevice.WriteOnly)
+    img.save(buf, "PNG")
+    png = bytes(buf.data())
+    path = tmp_path / "thumb.igz"
+    plain = igz.save_scene(_scene(tmp_path), tmp_path / "plain.igz")
+    result = igz.save_scene(_scene(tmp_path), path, thumbnail=png)
+    assert result == plain
+    assert igz.read_thumbnail(path) == png
