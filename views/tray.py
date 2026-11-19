@@ -168,7 +168,8 @@ class _SectionStack(QWidget):
         self._layout = QVBoxLayout(self)
         self._layout.setAlignment(Qt.AlignTop)
         self._layout.setContentsMargins(0, 0, 0, 0)
-        self._layout.setSpacing(0)
+        # The same 2 px between sections as the stack this replaces.
+        self._layout.setSpacing(2)
         self._drag_start = None
         self._sections = list(sections)
         self._order_key = "tray/section_order/" + "|".join(sorted(
