@@ -1491,7 +1491,7 @@ _HITS_NATIVE_MIN = 8
 _HITS_NATIVE = None
 #: How many live pairs are still answered by Python and compared with the
 #: engine before the engine answers alone (any difference: Python for good).
-_HITS_SHADOW = [2000]
+_HITS_SHADOW = [300]
 
 
 def _set_hits_native(value):

@@ -246,7 +246,7 @@ def test_pair_meetings_same_engine_or_not_on_trial_or_not(seed, monkeypatch):
             or _native.qt_hypot() is None:
         return
     monkeypatch.setattr(_native, "native", mod)
-    for trial in (2000, 0):
+    for trial in (300, 0):
         monkeypatch.setattr(snapmod, "_HITS_NATIVE", None)
         monkeypatch.setattr(snapmod, "_HITS_SHADOW", [trial])
         assert _meetings(edges) == want
