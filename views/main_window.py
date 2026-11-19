@@ -12796,6 +12796,9 @@ class MainWindow(QMainWindow):
                 and not self._confirm_quit()):
             event.ignore()
             return
+        bridge = getattr(self, "_ai_bridge", None)
+        if bridge is not None:
+            bridge.stop()
         # A clean goodbye: whatever the user decided (save or discard), this
         # session's recovery slots no longer speak for anyone.
         from core import autosave

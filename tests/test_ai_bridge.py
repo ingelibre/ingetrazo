@@ -21,9 +21,11 @@ if QApplication.instance() is None:
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 
 
-def _rpc(sock, tool, args=None):
+def _rpc(sock, tool, args=None, ids=None):
+    # #892: every request but list_documents names its window and document.
     sock.sendall((json.dumps(
-        {"id": 1, "tool": tool, "args": args or {}}) + "\n").encode())
+        {"id": 1, "tool": tool, "args": args or {}, **(ids or {})})
+        + "\n").encode())
     buf = b""
     while b"\n" not in buf:
         chunk = sock.recv(65536)
@@ -37,13 +39,15 @@ def _ask(bridge, tool, args=None):
     events — the bridge executes on the Qt main thread via a queued signal."""
     app = QApplication.instance()
     out: dict = {}
+    ids = {"instance_id": bridge.instance_id,
+           "document_id": bridge._document_id()}
 
     def worker():
         s = socket.socket()
         s.settimeout(10.0)
         s.connect(("127.0.0.1", bridge.port))
         try:
-            out["reply"] = _rpc(s, tool, args)
+            out["reply"] = _rpc(s, tool, args, ids)
         finally:
             s.close()
 

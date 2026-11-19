@@ -15,6 +15,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from typing import Iterable
+from uuid import uuid4
 
 from PySide6.QtGui import QVector3D
 
@@ -63,6 +64,10 @@ _ANNOTATION_KINDS = frozenset({"Dimension", "TextLabel", "Guide", "GeoPoint"})
 
 @dataclass
 class Scene:
+    #: Runtime document lifetime, never persisted or restored by undo.
+    #: New/Open invalidate outstanding AI targets even for an empty model.
+    document_id: str = field(default_factory=lambda: uuid4().hex, init=False,
+                             repr=False, compare=False)
     mesh: Mesh = field(default_factory=Mesh)
     # Document namespace for stable IFC GlobalIds; saved with the model.
     ifc_namespace: str = field(default_factory=new_identity, kw_only=True)
@@ -865,6 +870,7 @@ class Scene:
         self.version += 1
 
     def clear(self) -> None:
+        self.document_id = uuid4().hex
         self.end_group_edit()
         if (self.mesh.edges or self.mesh.faces or self.selection
                 or self.groups or self.dimensions or self.georef
