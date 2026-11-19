@@ -4059,5 +4059,6 @@
  "Own row (no layer)": "Власний рядок (без шару)",
  "Every layer is in the legend": "Усі шари вже в легенді",
  "Free entry": "Вільний запис",
- "New entry": "Новий запис"
+ "New entry": "Новий запис",
+ "Every sheet as a page. Click: open it. Drag: change the order. Double-click or F2: rename. Delete: remove it. Right-click: more.": "Кожен аркуш як сторінка. Клацання: відкрити. Перетягування: змінити порядок. Подвійне клацання або F2: перейменувати. Delete: видалити. Правий клік: більше."
 }

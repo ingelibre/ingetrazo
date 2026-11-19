@@ -2807,6 +2807,21 @@ def _sheet_views(p, ink):
     _dot(p, 15, 19, 3.0)
 
 
+def _sheet_pages(p, ink):
+    # A PDF reader's pages panel: a column of small pages, the open one in
+    # the accent, beside the page itself (the composer's Sheets tab).
+    p.setBrush(Qt.NoBrush)
+    p.drawRect(QRectF(6, 6, 11, 9))
+    p.drawRect(QRectF(6, 33, 11, 9))
+    p.drawRect(QRectF(22, 6, 20, 36))
+    p.drawLine(QPointF(26, 34.5), QPointF(38, 34.5))
+    p.save()
+    p.setPen(Qt.NoPen)
+    p.setBrush(_accent())
+    p.drawRect(QRectF(6, 19.5, 11, 9))
+    p.restore()
+
+
 _DRAW = {
     **_SOLID_ICONS,
     "select": _select, "line": _line, "freehand": _freehand,
@@ -2867,7 +2882,7 @@ _DRAW = {
     "scene_add": _scene_add, "scenes_list": _scenes_list,
     "scenes_thumbs": _scenes_thumbs,
     "sheet_layout": _sheet_layout, "sheet_items": _sheet_items,
-    "sheet_views": _sheet_views,
+    "sheet_views": _sheet_views, "sheet_pages": _sheet_pages,
     "layers_filter": _layers_filter, "layers_filter_on": _layers_filter_on,
     "layers_colour": _layers_colour,
     "layers_expand": _layers_expand, "layers_collapse": _layers_collapse,

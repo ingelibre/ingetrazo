@@ -4052,5 +4052,6 @@
  "Own row (no layer)": "Своя строка (без слоя)",
  "Every layer is in the legend": "Все слои уже в легенде",
  "Free entry": "Свободная запись",
- "New entry": "Новая запись"
+ "New entry": "Новая запись",
+ "Every sheet as a page. Click: open it. Drag: change the order. Double-click or F2: rename. Delete: remove it. Right-click: more.": "Каждый лист как страница. Щелчок: открыть. Перетаскивание: изменить порядок. Двойной щелчок или F2: переименовать. Delete: удалить. Правый щелчок: ещё."
 }
