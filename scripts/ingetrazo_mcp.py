@@ -38,7 +38,11 @@ PORT = int(os.environ.get("INGETRAZO_AI_PORT", 4763))
 #: a container or on another machine reaches it through a tunnel the user
 #: sets up, and names the tunnel's end here (issue #130).
 HOST = os.environ.get("INGETRAZO_AI_HOST", "").strip() or "127.0.0.1"
-PROTOCOL = "2024-11-05"
+#: The MCP revisions this server speaks (PR #463): the stdio framing and the
+#: tools/* methods used here are the same in all three. A client's own is
+#: answered in kind, any other gets the newest.
+PROTOCOLS = ("2025-06-18", "2025-03-26", "2024-11-05")
+PROTOCOL = PROTOCOLS[0]
 
 # The recipe book the model needs, from the app's own copy — the SAME text
 # the in-app assistant teaches (core/ai_recipes.py explains what its absence
@@ -109,6 +113,14 @@ TOOLS = [
                           "description": "a saved scene's name"},
                 "path": {"type": "string",
                          "description": "absolute .png path to keep it"},
+                "view": {"type": "string",
+                         "enum": ["iso", "top", "bottom", "front", "back",
+                                  "left", "right"],
+                         "description": "aim the camera for this picture "
+                                        "only; not with `scene`"},
+                "fit": {"type": "boolean",
+                        "description": "zoom to the whole model for this "
+                                       "picture only"},
             },
         },
     },
@@ -310,6 +322,22 @@ _sock: socket.socket | None = None
 _req_id = 0
 
 
+#: MCP tool annotations (PR #463): looking is safe for a client to
+#: auto-approve; running code or opening another document is not. Every
+#: other tool changes the document through one undoable step.
+_READ_ONLY = ("query_model", "screenshot", "get_scene_info",
+              "get_object_info", "list_layers", "list_scenes",
+              "list_materials", "render_sheet")
+_DESTRUCTIVE = ("run_python", "open_file")
+for _tool in TOOLS:
+    _name = _tool["name"]
+    _tool["annotations"] = (
+        {"readOnlyHint": True, "openWorldHint": False}
+        if _name in _READ_ONLY else
+        {"readOnlyHint": False, "destructiveHint": _name in _DESTRUCTIVE,
+         "openWorldHint": False})
+
+
 def _bridge(tool: str, args: dict) -> dict:
     """One request to the in-app bridge (reconnecting once if it dropped)."""
     global _sock, _req_id
@@ -388,8 +416,10 @@ def handle(msg: dict) -> dict | None:
     method = msg.get("method")
     msg_id = msg.get("id")
     if method == "initialize":
+        asked = (msg.get("params") or {}).get("protocolVersion")
         return {"jsonrpc": "2.0", "id": msg_id, "result": {
-            "protocolVersion": PROTOCOL,
+            "protocolVersion": (asked if asked in PROTOCOLS
+                                else PROTOCOL),
             "capabilities": {"tools": {}},
             "serverInfo": {"name": "ingetrazo", "version": "1.0.0"},
             "instructions": INSTRUCTIONS,
