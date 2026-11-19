@@ -4038,5 +4038,20 @@
  "Opacity:": "Opacità:",
  "Spacing:": "Spaziatura:",
  "Keys: Enter = done, Esc = cancel, F = photo's focal length. Right-click over the photo for this menu. Orbiting leaves the photo; its scene tab brings it back.": "Tasti: Invio = fatto, Esc = annulla, F = focale della foto. Clic destro sulla foto per questo menu. Orbitare esce dalla foto; la scheda della sua scena la riporta.",
- "Camera: {model}": "Fotocamera: {model}"
+ "Camera: {model}": "Fotocamera: {model}",
+ "Rows": "Righe",
+ "Add a row": "Aggiungi una riga",
+ "Remove row": "Rimuovi riga",
+ "Move row up": "Sposta riga su",
+ "Move row down": "Sposta riga giù",
+ "Only the legend changes: the model's layer stays as it is.": "Cambia solo la legenda: il livello del modello resta com'è.",
+ "As the layer": "Come il livello",
+ "Line and fill": "Linea e riempimento",
+ "Background margin": "Margine dello sfondo",
+ "Re-read the visible layers of the model. Rows you edited and your own rows stay as they are; new layers are added at the end.": "Rilegge i livelli visibili del modello. Le righe che hai modificato e quelle tue restano come sono; i nuovi livelli vengono aggiunti in fondo.",
+ "Layer: {name}": "Livello: {name}",
+ "Own row (no layer)": "Riga propria (senza livello)",
+ "Every layer is in the legend": "Tutti i livelli sono nella legenda",
+ "Free entry": "Voce libera",
+ "New entry": "Nuova voce"
 }

@@ -4064,5 +4064,20 @@
  "Opacity:": "Độ mờ:",
  "Spacing:": "Khoảng cách lưới:",
  "Keys: Enter = done, Esc = cancel, F = photo's focal length. Right-click over the photo for this menu. Orbiting leaves the photo; its scene tab brings it back.": "Phím: Enter = xong, Esc = hủy, F = tiêu cự của ảnh. Nhấp phải trên ảnh để mở menu này. Xoay quanh sẽ rời ảnh; thẻ cảnh của nó đưa ảnh trở lại.",
- "Camera: {model}": "Máy ảnh: {model}"
+ "Camera: {model}": "Máy ảnh: {model}",
+ "Rows": "Hàng",
+ "Add a row": "Thêm một hàng",
+ "Remove row": "Xóa hàng",
+ "Move row up": "Đưa hàng lên",
+ "Move row down": "Đưa hàng xuống",
+ "Only the legend changes: the model's layer stays as it is.": "Chỉ chú giải thay đổi: lớp của mô hình vẫn giữ nguyên.",
+ "As the layer": "Theo lớp",
+ "Line and fill": "Đường và tô",
+ "Background margin": "Lề nền",
+ "Re-read the visible layers of the model. Rows you edited and your own rows stay as they are; new layers are added at the end.": "Đọc lại các lớp đang hiện của mô hình. Các hàng bạn đã sửa và hàng của riêng bạn giữ nguyên; lớp mới được thêm vào cuối.",
+ "Layer: {name}": "Lớp: {name}",
+ "Own row (no layer)": "Hàng riêng (không có lớp)",
+ "Every layer is in the legend": "Mọi lớp đều đã có trong chú giải",
+ "Free entry": "Mục tự do",
+ "New entry": "Mục mới"
 }

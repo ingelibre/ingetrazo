@@ -4037,5 +4037,20 @@
  "Opacity:": "不透明度:",
  "Spacing:": "間隔:",
  "Keys: Enter = done, Esc = cancel, F = photo's focal length. Right-click over the photo for this menu. Orbiting leaves the photo; its scene tab brings it back.": "キー: Enter = 完了、Esc = キャンセル、F = 写真の焦点距離。写真の上で右クリックするとこのメニュー。オービットすると写真から出ます。シーンタブで戻ります。",
- "Camera: {model}": "カメラ: {model}"
+ "Camera: {model}": "カメラ: {model}",
+ "Rows": "行",
+ "Add a row": "行を追加",
+ "Remove row": "行を削除",
+ "Move row up": "行を上へ",
+ "Move row down": "行を下へ",
+ "Only the legend changes: the model's layer stays as it is.": "変わるのは凡例だけです。モデルのレイヤーはそのままです。",
+ "As the layer": "レイヤーどおり",
+ "Line and fill": "線と塗りつぶし",
+ "Background margin": "背景の余白",
+ "Re-read the visible layers of the model. Rows you edited and your own rows stay as they are; new layers are added at the end.": "モデルの表示中のレイヤーを読み直します。編集した行と独自の行はそのまま残り、新しいレイヤーは末尾に追加されます。",
+ "Layer: {name}": "レイヤー: {name}",
+ "Own row (no layer)": "独自の行(レイヤーなし)",
+ "Every layer is in the legend": "すべてのレイヤーが凡例にあります",
+ "Free entry": "自由項目",
+ "New entry": "新しい項目"
 }

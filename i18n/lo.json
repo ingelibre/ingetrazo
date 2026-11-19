@@ -4040,5 +4040,20 @@
  "Opacity:": "ຄວາມທຶບແສງ:",
  "Spacing:": "ໄລຍະຫ່າງຕາໜ່າງ:",
  "Keys: Enter = done, Esc = cancel, F = photo's focal length. Right-click over the photo for this menu. Orbiting leaves the photo; its scene tab brings it back.": "ປຸ່ມ: Enter = ສຳເລັດ, Esc = ຍົກເລີກ, F = ໂຟກັສຂອງຮູບ. ຄລິກຂວາເທິງຮູບເພື່ອເປີດເມນູນີ້. ການໝູນອ້ອມຈະອອກຈາກຮູບ; ແຖບສາກຂອງມັນຈະນຳກັບມາ.",
- "Camera: {model}": "ກ້ອງ: {model}"
+ "Camera: {model}": "ກ້ອງ: {model}",
+ "Rows": "ແຖວ",
+ "Add a row": "ເພີ່ມແຖວ",
+ "Remove row": "ລຶບແຖວ",
+ "Move row up": "ເລື່ອນແຖວຂຶ້ນ",
+ "Move row down": "ເລື່ອນແຖວລົງ",
+ "Only the legend changes: the model's layer stays as it is.": "ປ່ຽນແຕ່ຄຳອະທິບາຍສັນຍາລັກ: ຊັ້ນຂອງແບບຈຳລອງຍັງຄືເກົ່າ.",
+ "As the layer": "ຕາມຊັ້ນ",
+ "Line and fill": "ເສັ້ນ ແລະ ພື້ນ",
+ "Background margin": "ຂອບພື້ນຫຼັງ",
+ "Re-read the visible layers of the model. Rows you edited and your own rows stay as they are; new layers are added at the end.": "ອ່ານຊັ້ນທີ່ເຫັນໄດ້ຂອງແບບຈຳລອງຄືນໃໝ່. ແຖວທີ່ທ່ານແກ້ໄຂ ແລະ ແຖວຂອງທ່ານເອງຍັງຄືເກົ່າ; ຊັ້ນໃໝ່ຈະຖືກເພີ່ມໄວ້ທ້າຍສຸດ.",
+ "Layer: {name}": "ຊັ້ນ: {name}",
+ "Own row (no layer)": "ແຖວຂອງຕົນເອງ (ບໍ່ມີຊັ້ນ)",
+ "Every layer is in the legend": "ທຸກຊັ້ນຢູ່ໃນຄຳອະທິບາຍສັນຍາລັກແລ້ວ",
+ "Free entry": "ລາຍການອິດສະຫຼະ",
+ "New entry": "ລາຍການໃໝ່"
 }

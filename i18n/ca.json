@@ -4043,5 +4043,20 @@
  "Architect. The units system, the Browser, Layers 2.0, the Solid Inspector, Fillet 3D bevels, Bridge, Join Segments, Camera ▸ Axes, soft ambient occlusion, round curved surfaces, view layouts, scenes as tabs, cleaner exports and many everyday editing tools. And for 0.6.2: the North tool, camera settings, scene transitions with video and the view as layered SVG.": "Arquitecte. El sistema d'unitats, el Navegador, Capes 2.0, l'Inspector de sòlids, els bisells de Fillet 3D, Pont, Uneix segments, Càmera ▸ Eixos, l'oclusió ambiental suau, les superfícies corbes arrodonides, les distribucions de vistes, les escenes com a pestanyes, exportacions més netes i moltes eines d'edició del dia a dia. I per a la 0.6.2: l'eina Nord, els ajustos de càmera, les transicions d'escena amb vídeo i la vista com a SVG en capes.",
  "Korean translation of the interface, and the AI key from an environment variable. In 0.6.2, soft shadows and fixes for macOS.": "Traducció al coreà de la interfície, i la clau d'IA des d'una variable d'entorn. A la 0.6.2, les ombres suaus i correccions per a macOS.",
  "Exact Move+Ctrl copies, overlapping rotated copies, faster box selection on huge models and the reviewed Indonesian translation.": "Còpies exactes amb Mou+Ctrl, còpies girades que se superposen, selecció per caixa més ràpida en models enormes i la traducció a l'indonesi revisada.",
- "Snapping to the rest of the model from inside a group or component.": "Els enganxaments amb la resta del model des de dins d'un grup o component."
+ "Snapping to the rest of the model from inside a group or component.": "Els enganxaments amb la resta del model des de dins d'un grup o component.",
+ "Rows": "Files",
+ "Add a row": "Afegeix una fila",
+ "Remove row": "Treu la fila",
+ "Move row up": "Puja la fila",
+ "Move row down": "Baixa la fila",
+ "Only the legend changes: the model's layer stays as it is.": "Només canvia la llegenda: la capa del model queda com està.",
+ "As the layer": "Com la capa",
+ "Line and fill": "Línia i emplenament",
+ "Background margin": "Marge del fons",
+ "Re-read the visible layers of the model. Rows you edited and your own rows stay as they are; new layers are added at the end.": "Torna a llegir les capes visibles del model. Les files que has editat i les teves pròpies queden com estan; les capes noves s'afegeixen al final.",
+ "Layer: {name}": "Capa: {name}",
+ "Own row (no layer)": "Fila pròpia (sense capa)",
+ "Every layer is in the legend": "Totes les capes són a la llegenda",
+ "Free entry": "Entrada lliure",
+ "New entry": "Entrada nova"
 }

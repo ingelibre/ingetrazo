@@ -4040,5 +4040,20 @@
  "Opacity:": "ความทึบแสง:",
  "Spacing:": "ระยะห่าง:",
  "Keys: Enter = done, Esc = cancel, F = photo's focal length. Right-click over the photo for this menu. Orbiting leaves the photo; its scene tab brings it back.": "ปุ่ม: Enter = เสร็จ, Esc = ยกเลิก, F = โฟกัสของภาพ คลิกขวาบนภาพเพื่อเปิดเมนูนี้ การหมุนรอบจะออกจากภาพ แท็บฉากของภาพจะพากลับมา",
- "Camera: {model}": "กล้อง: {model}"
+ "Camera: {model}": "กล้อง: {model}",
+ "Rows": "แถว",
+ "Add a row": "เพิ่มแถว",
+ "Remove row": "ลบแถว",
+ "Move row up": "เลื่อนแถวขึ้น",
+ "Move row down": "เลื่อนแถวลง",
+ "Only the legend changes: the model's layer stays as it is.": "เปลี่ยนเฉพาะคำอธิบายสัญลักษณ์: เลเยอร์ของโมเดลยังคงเดิม",
+ "As the layer": "ตามเลเยอร์",
+ "Line and fill": "เส้นและพื้น",
+ "Background margin": "ระยะขอบพื้นหลัง",
+ "Re-read the visible layers of the model. Rows you edited and your own rows stay as they are; new layers are added at the end.": "อ่านเลเยอร์ที่มองเห็นของโมเดลอีกครั้ง แถวที่คุณแก้ไขและแถวของคุณเองยังคงเดิม เลเยอร์ใหม่จะถูกเพิ่มไว้ท้ายสุด",
+ "Layer: {name}": "เลเยอร์: {name}",
+ "Own row (no layer)": "แถวของตัวเอง (ไม่มีเลเยอร์)",
+ "Every layer is in the legend": "ทุกเลเยอร์อยู่ในคำอธิบายสัญลักษณ์แล้ว",
+ "Free entry": "รายการอิสระ",
+ "New entry": "รายการใหม่"
 }

@@ -4040,5 +4040,20 @@
  "Opacity:": "Opasitas:",
  "Spacing:": "Jarak kisi:",
  "Keys: Enter = done, Esc = cancel, F = photo's focal length. Right-click over the photo for this menu. Orbiting leaves the photo; its scene tab brings it back.": "Tombol: Enter = selesai, Esc = batal, F = fokus foto. Klik kanan di atas foto untuk menu ini. Orbit keluar dari foto; tab scene-nya mengembalikannya.",
- "Camera: {model}": "Kamera: {model}"
+ "Camera: {model}": "Kamera: {model}",
+ "Rows": "Baris",
+ "Add a row": "Tambah baris",
+ "Remove row": "Hapus baris",
+ "Move row up": "Naikkan baris",
+ "Move row down": "Turunkan baris",
+ "Only the legend changes: the model's layer stays as it is.": "Hanya legenda yang berubah: layer model tetap seperti semula.",
+ "As the layer": "Seperti layer",
+ "Line and fill": "Garis dan isi",
+ "Background margin": "Margin latar belakang",
+ "Re-read the visible layers of the model. Rows you edited and your own rows stay as they are; new layers are added at the end.": "Membaca ulang layer model yang terlihat. Baris yang Anda sunting dan baris milik Anda tetap seperti semula; layer baru ditambahkan di akhir.",
+ "Layer: {name}": "Layer: {name}",
+ "Own row (no layer)": "Baris sendiri (tanpa layer)",
+ "Every layer is in the legend": "Semua layer sudah ada di legenda",
+ "Free entry": "Entri bebas",
+ "New entry": "Entri baru"
 }

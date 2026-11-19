@@ -571,6 +571,15 @@ class BarraEscala:
     #: Hidden from the sheet — not drawn, not printed, not picked;
     #: shown again from the Items list's eye (QGIS; Marco, 26-09).
     hidden: bool = False
+    #: A fill behind it, so it still reads over an orthophoto or a busy
+    #: plan (Marco, 19-11: «barra de escala gráfica como brújula cuando la
+    #: pongo sobre un mapa como que se pierde, por lo que debería poder
+    #: configurarse su fondo de algún color como blanco u otro»). "" = none,
+    #: the look it always had; else a colour, its opacity (0..1) and how far
+    #: past the drawing it reaches (mm).
+    bg_color: str = ""
+    bg_opacity: float = 1.0
+    bg_margin_mm: float = 1.0
 
     def segment_m(self) -> float:
         """A round model length per segment so the whole bar prints close
@@ -624,6 +633,15 @@ class FlechaNorte:
     #: Hidden from the sheet — not drawn, not printed, not picked;
     #: shown again from the Items list's eye (QGIS; Marco, 26-09).
     hidden: bool = False
+    #: A fill behind it, so it still reads over an orthophoto or a busy
+    #: plan (Marco, 19-11: «barra de escala gráfica como brújula cuando la
+    #: pongo sobre un mapa como que se pierde, por lo que debería poder
+    #: configurarse su fondo de algún color como blanco u otro»). "" = none,
+    #: the look it always had; else a colour, its opacity (0..1) and how far
+    #: past the drawing it reaches (mm).
+    bg_color: str = ""
+    bg_opacity: float = 1.0
+    bg_margin_mm: float = 1.0
 
     @property
     def w_mm(self) -> float:
@@ -682,6 +700,19 @@ class Leyenda:
     #: [r, g, b], "linetype": str}}`` (core.layers). A row without one
     #: keeps the plain grey box older legends drew.
     swatches: dict = field(default_factory=dict)
+    #: The rows as the user edited them on the sheet, QGIS-style (Marco,
+    #: 19-11: «debería poder editar cada capa en lámina cambiando el
+    #: nombre, color del layer y cosas así, como agregar otras capas o
+    #: líneas en leyenda»): a list of ``{"label", "layer", "color",
+    #: "symbol", "linetype", "edited", …swatch keys}`` (see
+    #: :func:`legend_entries`). ``None`` = never edited: the rows are
+    #: ``rows`` + ``swatches``, exactly as older legends drew them. Only the
+    #: legend changes — the model's layers stay as they are.
+    entries: Optional[list] = None
+    #: The box's fill. Legends were always white; "" leaves the box clear.
+    bg_color: str = "#ffffff"
+    bg_opacity: float = 1.0
+    bg_margin_mm: float = 0.0
     z: float = 0.0            # stacking order on the page (higher = on top)
     locked: bool = False         # locked: shown but not movable/resizable
     group_id: str = ""            # sheet group (Ctrl+G); "" = ungrouped
@@ -694,7 +725,73 @@ class Leyenda:
 
     @property
     def h_mm(self) -> float:
-        return 7.5 + 5.5 * max(len(self.rows), 1)
+        n = len(self.rows) if self.entries is None else len(self.entries)
+        return 7.5 + 5.5 * max(n, 1)
+
+
+#: How a legend row's sample is drawn. "" = as the layer's own: a box in
+#: its colour, its hatch, its line type across — what every legend drew
+#: before rows could be edited.
+LEGEND_SYMBOLS = ("", "line", "fill", "line_fill")
+
+
+def legend_entries(le: "Leyenda") -> list:
+    """The rows a legend shows, as entry records. A legend never edited
+    builds them from its ``rows`` + ``swatches`` snapshot — fresh copies, so
+    an edit made on them never reaches the stored legend by accident."""
+    import copy
+    if le.entries is not None:
+        return copy.deepcopy(list(le.entries))
+    out = []
+    for name in le.rows:
+        e = copy.deepcopy(dict((le.swatches or {}).get(name) or {}))
+        e["label"] = name
+        e["layer"] = name
+        out.append(e)
+    return out
+
+
+def layer_legend_entry(name: str, swatches: dict) -> dict:
+    """The entry of model layer ``name`` from a ``legend_rows`` snapshot."""
+    import copy
+    e = copy.deepcopy(dict((swatches or {}).get(name) or {}))
+    e["label"] = name
+    e["layer"] = name
+    return e
+
+
+def free_legend_entry(label: str) -> dict:
+    """A row of the legend's own, tied to no layer (a property limit, a
+    planned road…): a dark continuous line until the user styles it."""
+    return {"label": label, "layer": "", "color": [0.118, 0.141, 0.173],
+            "symbol": "line", "linetype": "continuous", "edited": True}
+
+
+def refreshed_legend_entries(entries: list, rows: list,
+                             swatches: dict) -> list:
+    """«Refresh layers» over an edited legend: what the user did stays.
+
+    - a row the user edited or added by hand (``edited``) and a free row
+      are kept exactly as they are, in their place;
+    - an untouched layer row takes the layer's current colour and line
+      type, and goes away when the layer is no longer shown or printed;
+    - the model's visible layers the legend does not list yet are added at
+      the end, in the model's order."""
+    import copy
+    out, listed = [], set()
+    shown = set(rows)
+    for e in entries:
+        layer = e.get("layer", "") or ""
+        if layer:
+            listed.add(layer)
+        if not layer or e.get("edited"):
+            out.append(copy.deepcopy(e))
+        elif layer in shown:
+            out.append(layer_legend_entry(layer, swatches))
+    for name in rows:
+        if name not in listed:
+            out.append(layer_legend_entry(name, swatches))
+    return out
 
 
 @dataclass

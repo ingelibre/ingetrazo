@@ -4045,5 +4045,20 @@
  "Opacity:": "Nieprzezroczystość:",
  "Spacing:": "Odstęp:",
  "Keys: Enter = done, Esc = cancel, F = photo's focal length. Right-click over the photo for this menu. Orbiting leaves the photo; its scene tab brings it back.": "Klawisze: Enter = gotowe, Esc = anuluj, F = ogniskowa zdjęcia. Prawy klik na zdjęciu otwiera to menu. Orbitowanie opuszcza zdjęcie; karta jego sceny je przywraca.",
- "Camera: {model}": "Aparat: {model}"
+ "Camera: {model}": "Aparat: {model}",
+ "Rows": "Wiersze",
+ "Add a row": "Dodaj wiersz",
+ "Remove row": "Usuń wiersz",
+ "Move row up": "Przesuń wiersz w górę",
+ "Move row down": "Przesuń wiersz w dół",
+ "Only the legend changes: the model's layer stays as it is.": "Zmienia się tylko legenda: warstwa modelu pozostaje bez zmian.",
+ "As the layer": "Jak warstwa",
+ "Line and fill": "Linia i wypełnienie",
+ "Background margin": "Margines tła",
+ "Re-read the visible layers of the model. Rows you edited and your own rows stay as they are; new layers are added at the end.": "Ponownie odczytuje widoczne warstwy modelu. Wiersze, które edytowałeś, i twoje własne pozostają bez zmian; nowe warstwy są dodawane na końcu.",
+ "Layer: {name}": "Warstwa: {name}",
+ "Own row (no layer)": "Własny wiersz (bez warstwy)",
+ "Every layer is in the legend": "Wszystkie warstwy są w legendzie",
+ "Free entry": "Wpis dowolny",
+ "New entry": "Nowy wpis"
 }

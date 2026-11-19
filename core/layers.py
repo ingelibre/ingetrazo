@@ -866,23 +866,29 @@ def legend_rows(scene) -> tuple[list, dict]:
         if not ly.visible or not getattr(ly, "printable", True):
             continue
         rows.append(ly.name)
-        swatches[ly.name] = {"color": [round(c, 4) for c in layer_color(ly)],
-                             "linetype": ly.linetype}
-        if ly.linetype.startswith(CUSTOM_LINETYPE):
-            swatches[ly.name]["pattern"] = list(linetype_pattern(
-                ly.linetype, scene))
-        if getattr(ly, "hatch", None):
-            swatches[ly.name]["hatch"] = ly.hatch
-            if getattr(ly, "hatch_angle", 0.0):
-                swatches[ly.name]["hatch_angle"] = ly.hatch_angle
-            families = layer_hatch_families(scene, ly)
-            if families:
-                swatches[ly.name]["hatch_families"] = families
-            for key, rgb in (("hatch_ground", hatch_ground_rgb(ly)),
-                             ("hatch_color", hatch_ink_rgb(ly))):
-                if rgb is not None:
-                    swatches[ly.name][key] = [round(c, 4) for c in rgb]
+        swatches[ly.name] = layer_swatch(scene, ly)
     return rows, swatches
+
+
+def layer_swatch(scene, ly) -> dict:
+    """A layer's legend swatch: colour, line type and cut hatch, as a sheet
+    snapshots them."""
+    sw = {"color": [round(c, 4) for c in layer_color(ly)],
+          "linetype": ly.linetype}
+    if ly.linetype.startswith(CUSTOM_LINETYPE):
+        sw["pattern"] = list(linetype_pattern(ly.linetype, scene))
+    if getattr(ly, "hatch", None):
+        sw["hatch"] = ly.hatch
+        if getattr(ly, "hatch_angle", 0.0):
+            sw["hatch_angle"] = ly.hatch_angle
+        families = layer_hatch_families(scene, ly)
+        if families:
+            sw["hatch_families"] = families
+        for key, rgb in (("hatch_ground", hatch_ground_rgb(ly)),
+                         ("hatch_color", hatch_ink_rgb(ly))):
+            if rgb is not None:
+                sw[key] = [round(c, 4) for c in rgb]
+    return sw
 
 
 def cut_hatches(scene) -> dict:
