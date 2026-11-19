@@ -1741,6 +1741,9 @@ class MainWindow(QMainWindow):
             QEvent.ThemeChange,
         ):
             self._refresh_toolbar_icons()
+        if (event.type() in (QEvent.ActivationChange, QEvent.WindowStateChange)
+                and self.__dict__.get("_sheet_strip_pending")):
+            self._refresh_sheet_tabs()     # waits again while still covered
         super().changeEvent(event)
 
     def _build_menubar(self) -> None:
@@ -7798,6 +7801,15 @@ class MainWindow(QMainWindow):
         tabs = getattr(self, "_sheet_tabs", None)
         if tabs is None:
             return
+        if self._covered_by_composer():
+            # Repainting this window while the composer covers it waits on
+            # the compositor (~1 s a time under XWayland, twice per sheet
+            # change: 2 s against 0.1 s for every tab click in the final
+            # plaza, 19-11). Nobody sees the strip now: it catches up when
+            # the window comes back (``changeEvent``).
+            self._sheet_strip_pending = True
+            return
+        self._sheet_strip_pending = False
         comps = getattr(self.viewport.scene, "compositions", None) or []
         if not comps:
             self._strip_sheets = []
@@ -7813,6 +7825,21 @@ class MainWindow(QMainWindow):
         self._strip_sheets = [last]
         tabs.set_show_new(False)
         tabs.refresh([comps[last].name], None)
+
+    def _covered_by_composer(self) -> bool:
+        """The composer is the window in use and lies over (nearly) all of
+        this one; side by side, on two monitors, it is not."""
+        composer = getattr(self, "_composer", None)
+        if (composer is None or not composer.isVisible()
+                or composer.isMinimized() or not composer.isActiveWindow()
+                or self.isActiveWindow()):
+            return False
+        if self.isMinimized() or not self.isVisible():
+            return True
+        mine = self.frameGeometry()
+        over = mine.intersected(composer.frameGeometry())
+        area = mine.width() * mine.height()
+        return area > 0 and over.width() * over.height() >= 0.9 * area
 
     def _to_sheets(self) -> None:
         comps = getattr(self.viewport.scene, "compositions", None) or []
