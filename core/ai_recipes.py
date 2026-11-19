@@ -77,7 +77,12 @@ viewport.update()
 - LÁMINA (hoja del compositor para imprimir; «lámina»/«sheet»/«layout», \
 NO es una capa): c = sheet("Planta", paper="A3", landscape=True) — la crea \
 con un marco de vista y aparece sola en las pestañas de láminas. Borrar: \
-scene.compositions.remove(c) (queda al menos una si había).
+scene.compositions.remove(c) (queda al menos una si había). Para EDITAR \
+láminas usa la API estable sheets: sheets.list(), sheets.get("Planta"), \
+sheets.add_frame("Planta", view="Corte A", scale=50, fit="content"), \
+sheets.update_frame(...), sheets.set_title_block("all", fields=[["PROYECTO", \
+"{proyecto}"]]), sheets.list_views(), sheets.update_view(v, name=...) (los \
+marcos siguen el nombre nuevo) — nunca métodos _privados del compositor.
 - CAPA / ETIQUETA: ly = Layer("Muros"); layers.append(ly); g.layer = \
 "Muros". En layers solo van objetos Layer, nunca textos.
 - print(...) para reportar datos (breve: el resultado viaja cada turno)."""
