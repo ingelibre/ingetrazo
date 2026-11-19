@@ -4197,5 +4197,15 @@
  "Choose a workspace": "Choose a workspace",
  "Turkish localization and workspace guide.": "Turkish localization and workspace guide.",
  "Skip": "Skip",
- "IfcRoof": "IfcRoof"
+ "IfcRoof": "IfcRoof",
+ "Horizon:": "地平線：",
+ "Horizon color": "地平線顏色",
+ "Sky, horizon and ground colors show with the sky on.": "啟用天空時顯示天空、地平線和地面的顏色。",
+ "Fog": "霧",
+ "Fade distant geometry into a chosen color.": "將遠處的幾何物件淡化為選定的顏色。",
+ "Show fog": "顯示霧",
+ "Thickness:": "厚度：",
+ "Fog color:": "霧的顏色：",
+ "Fog color": "霧的顏色",
+ "Use background color": "使用背景顏色"
 }

@@ -4196,5 +4196,15 @@
  "Pan / move camera": "Pan / move camera",
  "BIM / classification / quantities": "BIM / classification / quantities",
  "1. Draw a rectangle with Rectangle.\n2. Give it height with Push / Pull.\n3. Select the solid, open the BIM panel and tag it as IfcWall or IfcSlab.\n4. Check its area and closed-solid volume in the takeoff table.\n5. Use the IFC export command in File to export the tagged model.\n\nPress F3 to find commands in Turkish or English. Shortcuts stay unchanged.": "1. Draw a rectangle with Rectangle.\n2. Give it height with Push / Pull.\n3. Select the solid, open the BIM panel and tag it as IfcWall or IfcSlab.\n4. Check its area and closed-solid volume in the takeoff table.\n5. Use the IFC export command in File to export the tagged model.\n\nPress F3 to find commands in Turkish or English. Shortcuts stay unchanged.",
- "Turkish localization and workspace guide.": "Turkish localization and workspace guide."
+ "Turkish localization and workspace guide.": "Turkish localization and workspace guide.",
+ "Fog": "안개",
+ "Fade distant geometry into a chosen color.": "멀리 있는 형상을 선택한 색상으로 흐리게 합니다.",
+ "Show fog": "안개 표시",
+ "Thickness:": "두께:",
+ "Fog color:": "안개 색상:",
+ "Fog color": "안개 색상",
+ "Use background color": "배경색 사용",
+ "Horizon:": "지평선:",
+ "Horizon color": "지평선 색상",
+ "Sky, horizon and ground colors show with the sky on.": "하늘을 켜면 하늘, 지평선, 지면 색상이 표시됩니다."
 }
