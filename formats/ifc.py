@@ -22,6 +22,7 @@ import uuid
 from pathlib import Path
 
 from core.bim import class_quantities, collect_objects, face_set_volume
+from core.sun import north_vector_xy, scene_north_deg
 
 _GUID_CHARS = ("0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
                "abcdefghijklmnopqrstuvwxyz_$")
@@ -119,6 +120,17 @@ def _brep(w: _Writer, faces, context_id: int) -> int:
                  rep_type, f"(#{item})")
 
 
+def _compound_angle(deg):
+    """IfcCompoundPlaneAngleMeasure: (degrees, minutes, seconds, millionths),
+    all with the sign of the angle."""
+    sign = -1 if deg < 0 else 1
+    micro = round(abs(float(deg)) * 3600 * 1_000_000)
+    d, rest = divmod(micro, 3600 * 1_000_000)
+    m, rest = divmod(rest, 60 * 1_000_000)
+    sec, mil = divmod(rest, 1_000_000)
+    return "(" + ",".join(str(sign * v) for v in (d, m, sec, mil)) + ")"
+
+
 def save_ifc(scene, path, project_name: str = "IngeTrazo project") -> int:
     """Write every tagged BIM object to ``path`` as IFC4. Returns how many
     elements were exported; raises ``ValueError`` when nothing is tagged."""
@@ -129,8 +141,11 @@ def save_ifc(scene, path, project_name: str = "IngeTrazo project") -> int:
     w = _Writer()
     origin = w.add("IFCCARTESIANPOINT", "(0.,0.,0.)")
     axis = w.add("IFCAXIS2PLACEMENT3D", f"#{origin}", "$", "$")
+    # Tools > North: always written, so 0 degrees is +Y as in the scene.
+    nx, ny = north_vector_xy(scene_north_deg(scene))
+    true_north = w.add("IFCDIRECTION", f"({nx:.12f},{ny:.12f})")
     context = w.add("IFCGEOMETRICREPRESENTATIONCONTEXT",
-                    "$", "'Model'", "3", "1.E-5", f"#{axis}", "$")
+                    "$", "'Model'", "3", "1.E-5", f"#{axis}", f"#{true_north}")
     units = [
         w.add("IFCSIUNIT", "*", ".LENGTHUNIT.", "$", ".METRE."),
         w.add("IFCSIUNIT", "*", ".AREAUNIT.", "$", ".SQUARE_METRE."),
@@ -141,9 +156,14 @@ def save_ifc(scene, path, project_name: str = "IngeTrazo project") -> int:
     project = w.add("IFCPROJECT", _s(ifc_guid()), "$", _s(project_name),
                     "$", "$", "$", "$", f"(#{context})", f"#{unit_assign}")
     placement = w.add("IFCLOCALPLACEMENT", "$", f"#{axis}")
+    lat = lon = elev = "$"
+    datum = getattr(scene, "georef", None)       # the location, if any
+    if datum is not None:
+        lat, lon = _compound_angle(datum.lat), _compound_angle(datum.lon)
+        elev = f"{float(datum.alt):.3f}"
     site = w.add("IFCSITE", _s(ifc_guid()), "$", "'Site'", "$", "$",
                  f"#{placement}", "$", "$", ".ELEMENT.",
-                 "$", "$", "$", "$", "$")
+                 lat, lon, elev, "$", "$")
     building = w.add("IFCBUILDING", _s(ifc_guid()), "$", "'Building'", "$",
                      "$", f"#{placement}", "$", "$", ".ELEMENT.",
                      "$", "$", "$")
