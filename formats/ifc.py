@@ -21,7 +21,13 @@ import math
 import uuid
 from pathlib import Path
 
-from core.bim import class_quantities, collect_objects, face_set_volume
+from core.bim import (IFC_CLASSES, class_quantities, collect_objects,
+                      face_set_volume, object_faces)
+from core.version import __version__
+
+#: The model view the file declares in its header (ISO 16739 conformance is
+#: per view; see docs/iso16739-plan.md).
+VIEW_DEFINITION = "ReferenceView_V1.2"
 
 _GUID_CHARS = ("0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
                "abcdefghijklmnopqrstuvwxyz_$")
@@ -78,6 +84,21 @@ class _Writer:
         return eid
 
 
+def _header(path, stamp: str) -> str:
+    """The ISO 10303-21 HEADER: the declared view and who wrote the file."""
+    name = _s(Path(path).name)
+    app = _s(f"IngeTrazo {__version__}")
+    return (
+        "ISO-10303-21;\n"
+        "HEADER;\n"
+        f"FILE_DESCRIPTION(('ViewDefinition [{VIEW_DEFINITION}]'),'2;1');\n"
+        f"FILE_NAME({name},'{stamp}',(''),(''),{app},{app},'');\n"
+        "FILE_SCHEMA(('IFC4'));\n"
+        "ENDSEC;\n"
+        "DATA;\n"
+    )
+
+
 def _brep(w: _Writer, faces, context_id: int) -> int:
     """Faceted geometry for a face set → IfcShapeRepresentation id. Closed
     sets become an IfcFacetedBrep; open ones an IfcShellBasedSurfaceModel."""
@@ -131,10 +152,17 @@ def save_ifc(scene, path, project_name: str = "IngeTrazo project") -> int:
     axis = w.add("IFCAXIS2PLACEMENT3D", f"#{origin}", "$", "$")
     context = w.add("IFCGEOMETRICREPRESENTATIONCONTEXT",
                     "$", "'Model'", "3", "1.E-5", f"#{axis}", "$")
+    # Shapes hang off the Body sub-context, as the Reference View wants;
+    # the starred attributes are derived from the parent context.
+    body = w.add("IFCGEOMETRICREPRESENTATIONSUBCONTEXT", "'Body'", "'Model'",
+                 "*", "*", "*", "*", f"#{context}", "$", ".MODEL_VIEW.", "$")
     units = [
         w.add("IFCSIUNIT", "*", ".LENGTHUNIT.", "$", ".METRE."),
         w.add("IFCSIUNIT", "*", ".AREAUNIT.", "$", ".SQUARE_METRE."),
         w.add("IFCSIUNIT", "*", ".VOLUMEUNIT.", "$", ".CUBIC_METRE."),
+        # The rebar Weight quantity is in kilograms (#495).
+        w.add("IFCSIUNIT", "*", ".MASSUNIT.", ".KILO.", ".GRAM."),
+        w.add("IFCSIUNIT", "*", ".PLANEANGLEUNIT.", "$", ".RADIAN."),
     ]
     unit_assign = w.add("IFCUNITASSIGNMENT",
                         "(" + ",".join(f"#{u}" for u in units) + ")")
@@ -158,18 +186,21 @@ def save_ifc(scene, path, project_name: str = "IngeTrazo project") -> int:
 
     element_ids = []
     for obj in objects:
-        faces = obj.get("faces") or list(obj["group"].mesh.faces)
+        # World space: a moved group or a component instance lands where it
+        # is drawn, not at its definition's origin.
+        faces = object_faces(obj)
         if not faces:
             continue
-        rep = _brep(w, faces, context)
+        rep = _brep(w, faces, body)
         pds = w.add("IFCPRODUCTDEFINITIONSHAPE", "$", "$", f"(#{rep})")
-        from core.bim import IFC_CLASSES
         cls = obj["class"] if obj["class"] in IFC_CLASSES \
             else "IfcBuildingElementProxy"
         qset_name, qentries, _metrado = class_quantities(obj["class"], faces)
         total = _ATTR_COUNT.get(cls, _DEFAULT_ATTRS)
+        # Slot 8 is the element's own mark (Tag; LongName on IfcSpace):
+        # left empty until the user can give one.
         attrs = [_s(ifc_guid()), "$", _s(obj["name"] or cls), "$", "$",
-                 f"#{placement}", f"#{pds}", "'IngeTrazo'"]
+                 f"#{placement}", f"#{pds}", "$"]
         if cls in ("IfcDoor", "IfcWindow"):
             # Attributes 9/10 are OverallHeight/OverallWidth — viewers and
             # schedules read the leaf dimensions from here.
@@ -214,18 +245,7 @@ def save_ifc(scene, path, project_name: str = "IngeTrazo project") -> int:
           "(" + ",".join(f"#{e}" for e in element_ids) + ")", f"#{storey}")
 
     stamp = datetime.datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
-    name = Path(path).name.replace("'", "''")
-    header = (
-        "ISO-10303-21;\n"
-        "HEADER;\n"
-        "FILE_DESCRIPTION((''),'2;1');\n"
-        f"FILE_NAME('{name}','{stamp}',('IngeTrazo'),('IngeTrazo'),"
-        "'IngeTrazo','IngeTrazo','');\n"
-        "FILE_SCHEMA(('IFC4'));\n"
-        "ENDSEC;\n"
-        "DATA;\n"
-    )
     footer = "ENDSEC;\nEND-ISO-10303-21;\n"
-    Path(path).write_text(header + "\n".join(w.lines) + "\n" + footer,
-                          encoding="ascii")
+    Path(path).write_text(_header(path, stamp) + "\n".join(w.lines) + "\n"
+                          + footer, encoding="ascii")
     return len(element_ids)

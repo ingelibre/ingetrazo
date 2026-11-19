@@ -6181,8 +6181,7 @@ class BimPanel(QWidget):
     # ---- Model → view ----------------------------------------------------------
     def refresh(self) -> None:
         from PySide6.QtWidgets import QTreeWidgetItem
-        from core.bim import collect_objects
-        from core.bim import class_quantities
+        from core.bim import class_quantities, collect_objects, object_faces
         # File ▸ New (scene.clear) drops the active class — mirror it in the UI.
         if self.active_check.isChecked() and not self._scene().active_ifc:
             self.active_check.blockSignals(True)
@@ -6254,9 +6253,7 @@ class BimPanel(QWidget):
 
         for idx, obj in enumerate(self._objects):
             if "metrado" not in obj:
-                faces = obj.get("faces")
-                if faces is None:
-                    faces = list(obj["group"].mesh.faces)
+                faces = object_faces(obj)
                 # The takeoff column shows the class's budget measure (wall
                 # face m², column m³, pile m, door und) — the number the
                 # IFC/CSV export carries to IngePresupuestos, not the shell
