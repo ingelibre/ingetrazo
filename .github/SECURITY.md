@@ -21,8 +21,8 @@ understand and address the issue before any public disclosure.
 
 | Version | Supported |
 |---------|-----------|
-| 0.5.x   | ✅ Yes    |
-| < 0.5   | ❌ No     |
+| 0.6.x   | ✅ Yes    |
+| < 0.6   | ❌ No     |
 
 ## Scope
 

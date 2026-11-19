@@ -32,7 +32,7 @@ If applicable, add screenshots to help explain the problem.
 ## Environment
 
 - **OS:** [e.g. Ubuntu 24.04, Windows 11, macOS 15]
-- **IngeTrazo version:** [e.g. 0.5.8]
+- **IngeTrazo version:** [e.g. 0.6.3]
 - **Install method:** [e.g. Flatpak, AppImage, Windows installer, from source]
 - **GPU:** [e.g. NVIDIA RTX 3060, Intel UHD 770]
 
