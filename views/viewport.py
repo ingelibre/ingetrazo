@@ -1827,6 +1827,12 @@ def _mt_modes(mod):
     es, mm, mm1, dd, sq = [], [], [], [], []
     for i, n in enumerate(sizes):
         a, b = _mt_dot_sample(1294 + i, n)
+        if i % 2:
+            # Rows a pass reads in place start anywhere in the index: 8
+            # bytes off a vector boundary too (the same sums here, 19-11).
+            room = np.empty((n + 1, 3))
+            room[1:] = a
+            a = room[1:]
         es.append((a, b, np.einsum("ij,ij->i", a, b)))
         d = np.ascontiguousarray(b[-1])
         dm = np.ascontiguousarray(np.broadcast_to(d, a.shape))
