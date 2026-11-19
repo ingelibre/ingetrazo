@@ -419,6 +419,26 @@ class OrbitCamera:
             up = QQuaternion.fromAxisAndAngle(f, self.roll_deg).rotatedVector(up)
         return up
 
+    def roll(self, angle_rad: float) -> None:
+        """Roll the view around its forward axis by *angle_rad* radians.
+
+        The camera position and target stay fixed; only the screen-up vector
+        changes. This gives the 3D mouse's Orbit Z action a real camera
+        operation to call.
+        """
+        angle = float(angle_rad)
+        if not math.isfinite(angle) or abs(angle) < 1e-12:
+            return
+        forward = self.forward()
+        up = self.up_vector()
+        right = QVector3D.crossProduct(forward, up)
+        if right.lengthSquared() < 1e-18:
+            return
+        right.normalize()
+        screen_up = QVector3D.crossProduct(right, forward).normalized()
+        c, s = math.cos(angle), math.sin(angle)
+        self.up = screen_up * c - right * s
+
     # ---- First person (Position Camera / Look Around / Walk) ---------------
     # The orbit model stays: a walkthrough only ever asks "the eye is HERE,
     # looking THERE", and that is a target at ``distance`` along the look
