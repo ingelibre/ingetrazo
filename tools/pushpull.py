@@ -41,6 +41,7 @@ from __future__ import annotations
 
 import math
 import time
+import weakref
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QVector3D
@@ -688,6 +689,7 @@ class PushPullTool(Tool):
             self._compute_inward_limit(target)
             self._compute_plane_levels(target)
             self._preview_snapshot = None
+            self._overlay_if_big(viewport, target.mesh)
             # The live preview takes over from the hover shade now.
             viewport.set_hover(None)
             viewport.update()
@@ -704,6 +706,38 @@ class PushPullTool(Tool):
                 self._tiny_hint_shown = True
             return
         self._commit(viewport)
+
+    def _overlay_if_big(self, viewport, mesh) -> None:
+        """A drag on a big mesh (see _BIG_STAGE_FACES), or on one whose last
+        stage was slow, shows the overlay from the first frame. The open
+        group's bake without the pushed face — what the overlay draws in
+        place of it when the push goes away from the eye — is made right
+        after the click, before the hand moves."""
+        if not (self._attached and not self._prism_cap):
+            return
+        try:
+            slow = mesh in PushPullTool._slow_meshes
+        except TypeError:
+            slow = False
+        if not slow and len(mesh.faces) < self._BIG_STAGE_FACES:
+            return
+        self._stage_slow = True
+        face = self.base_face
+        warm = getattr(viewport, "_chunk_without", None)
+        group = getattr(viewport.scene, "edit_group", None)
+        if warm is None or group is None or face is None or self._extra_faces:
+            return
+
+        def bake(face=face, group=group):
+            # Still this drag, on this face, with the group open.
+            if (self.dragging and self.base_face is face
+                    and getattr(viewport.scene, "edit_group", None) is group):
+                try:
+                    warm(group, {face})
+                except Exception:  # noqa: BLE001 — the first frame bakes it then
+                    pass
+        from PySide6.QtCore import QTimer
+        QTimer.singleShot(0, bake)
 
     def _grab_point(self, viewport, ctx: ToolContext) -> QVector3D | None:
         """The clicked spot on the face's plane, or ``None`` (the centroid
@@ -755,6 +789,7 @@ class PushPullTool(Tool):
             self._compute_inward_limit(target)
             self._compute_plane_levels(target)
             self._preview_snapshot = None
+            self._overlay_if_big(viewport, target.mesh)
             self._selected_arm = False  # never armed once a drag exists
         elif abs(self.extrusion) > _MIN_EXTRUDE:
             # Mid-drag with a real distance: treat as the commit click.
@@ -1153,6 +1188,22 @@ class PushPullTool(Tool):
     #: the overlay, and a release outside them runs the pipeline as before.
     #: One pause per drag on a big model instead of one per reversal.
     _SLOW_STAGE_S = 0.25
+    #: A mesh at least this many faces big drags with the overlay from the
+    #: first frame: its stage is slower than _SLOW_STAGE_S anyway (~1.2 s on
+    #: a 9 674-face group of the Plaza, 19-11) and froze the first move of
+    #: every push, after which the drag showed the overlay regardless. The
+    #: release runs the pipeline as always. Smaller meshes stage as before,
+    #: and one whose last stage proved slow skips it the next time too.
+    _BIG_STAGE_FACES = 5000
+    #: Meshes whose last stage was slow: their next drags start on the
+    #: overlay. Weak, so a mesh that goes does not stay.
+    _slow_meshes = weakref.WeakKeyDictionary()
+    #: Each built mesh's vertices and their positions as the distance
+    #: inference read them, with the mesh's mutation serial and vertex count
+    #: then (see _infer_reference_distance). Meshes over _INFER_MEMO_MAX
+    #: vertices are read each drag, as before, not held.
+    _infer_memo = weakref.WeakKeyDictionary()
+    _INFER_MEMO_MAX = 200_000
 
     def _show_staged_preview(self, viewport) -> None:
         """Preview an attached push by showing the REAL result: the commit's
@@ -1270,6 +1321,10 @@ class PushPullTool(Tool):
         # The whole pause the user sat through, snapshot work included.
         if time.perf_counter() - t0 > self._SLOW_STAGE_S:
             self._stage_slow = True
+            try:
+                PushPullTool._slow_meshes[mesh] = len(mesh.faces)
+            except TypeError:  # a mesh that takes no weak reference
+                pass
         self._refused = False          # the commit decides that for itself
         if not ok:
             if self._preview_snapshot is not None:
@@ -1822,6 +1877,19 @@ class PushPullTool(Tool):
                         cache.append((PlannedVertices(plan.pos),
                                       plan.pos.copy()))
                     continue
+                # Kept between drags while the mesh is unchanged: a push
+                # read the ~900 meshes of the Plaza again on its first move
+                # (~0.1 s), though only the one pushed in had changed.
+                key = (getattr(mesh, "_mut_serial", None),
+                       len(mesh.vertices))
+                try:
+                    held = PushPullTool._infer_memo.get(mesh)
+                except TypeError:
+                    held = None
+                if held is not None and key[0] is not None \
+                        and held[0] == key:
+                    cache.append(held[1])
+                    continue
                 # A COPY: a staged preview edits the live list in place, and
                 # the rows of ``arr`` must keep naming the same vertices.
                 verts = list(mesh.vertices)
@@ -1833,6 +1901,11 @@ class PushPullTool(Tool):
                     (c for v in verts for c in v.position.toTuple()),
                     dtype=np.float64, count=3 * len(verts)).reshape(-1, 3)
                 cache.append((verts, arr))
+                if key[0] is not None and len(verts) <= self._INFER_MEMO_MAX:
+                    try:
+                        PushPullTool._infer_memo[mesh] = (key, (verts, arr))
+                    except TypeError:
+                        pass
             self._infer_cache = cache
             self._infer_boxes = None
         proj = getattr(vp, "_project_px", None)

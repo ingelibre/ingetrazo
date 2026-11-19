@@ -170,3 +170,48 @@ def test_beside_a_curved_surface_the_faces_are_bucketed(win):
     vp.end_group_edit()
     vp.scene.groups.clear()
     vp.scene.version += 1
+
+
+def test_a_push_on_a_big_open_group_bakes_the_part_after_the_click(win):
+    """The overlay hides the pushed face when the push goes away from the
+    eye; on a big mesh the part without it is baked right after the click
+    (night of 19-11), so the first move finds it made."""
+    from PySide6.QtTest import QTest
+    from core.group import Group
+    from tools.pushpull import PushPullTool
+    vp = win.viewport
+    m = M.Mesh()
+    for i in range(10):
+        for j in range(10):
+            m.add_face([V(i, j, 0), V(i + 1, j, 0), V(i + 1, j + 1, 0),
+                        V(i, j + 1, 0)])
+    g = Group(m, "big")
+    vp.scene.groups.append(g)
+    vp.scene.version += 1
+    vp.begin_group_edit(g)
+    E = vp.scene.edit_group
+    face = list(E.mesh.faces)[44]
+    tool = PushPullTool()
+    tool._BIG_STAGE_FACES = 1
+    tool.dragging = True
+    tool.base_face = face
+    tool._attached, tool._prism_cap = True, False
+    vp._chunk_without_memo = None
+    try:
+        tool._overlay_if_big(vp, E.mesh)
+        assert tool._stage_slow
+        assert vp._chunk_without_memo is None    # not in the click itself
+        QTest.qWait(20)
+        memo = vp._chunk_without_memo
+        assert memo is not None and face not in memo[1]["faces"]
+        assert vp._chunk_without(E, {face}) is memo[1]    # what a frame asks
+        # A drag that ended first bakes nothing.
+        vp._chunk_without_memo = None
+        tool._overlay_if_big(vp, E.mesh)
+        tool.dragging = False
+        QTest.qWait(20)
+        assert vp._chunk_without_memo is None
+    finally:
+        vp.end_group_edit()
+        vp.scene.groups.clear()
+        vp.scene.version += 1
