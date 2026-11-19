@@ -1329,7 +1329,6 @@
  "SKP (*.skp);;All files (*)": "SKP (*.skp);;Semua (*)",
  "SKP (.skp)…": "SKP (.skp)…",
  "Sky": "Langit",
- "Sky and ground colors show with the sky on.": "Warna langit dan tanah terlihat saat langit diaktifkan.",
  "Sky color": "Warna langit",
  "Sky dawn": "Langit fajar",
  "Small stones roughcast": "Plester kasar batu kecil",
@@ -4059,5 +4058,8 @@
  "Every sheet as a page. Click: open it. Drag: change the order. Double-click or F2: rename. Delete: remove it. Right-click: more.": "Setiap lembar sebagai halaman. Klik: buka. Seret: ubah urutan. Klik ganda atau F2: ganti nama. Delete: hapus. Klik kanan: lainnya.",
  "Middle-button drag pans (Shift + drag orbits)": "Seret tombol tengah menggeser tampilan (Shift + seret mengorbit)",
  "Orbit Z": "Orbit Z",
- "Option = copy": "Option = salin"
+ "Option = copy": "Option = salin",
+ "Horizon:": "Horizon:",
+ "Horizon color": "Warna horizon",
+ "Sky, horizon and ground colors show with the sky on.": "Warna langit, horizon, dan tanah terlihat saat langit diaktifkan."
 }
