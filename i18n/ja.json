@@ -3765,5 +3765,9 @@
  "Architect. The units system, the Browser, Layers 2.0, the Solid Inspector, Fillet 3D bevels, Bridge, Join Segments, Camera ▸ Axes, soft ambient occlusion, round curved surfaces, view layouts, scenes as tabs, cleaner exports and many everyday editing tools. And for 0.6.2: the North tool, camera settings, scene transitions with video and the view as layered SVG.": "建築家。単位系、ブラウザ、レイヤー 2.0、ソリッド検査、Fillet 3D の面取り、ブリッジ、線分を結合、カメラ ▸ 軸、ソフトなアンビエントオクルージョン、滑らかな曲面、ビューレイアウト、タブとしてのシーン、よりクリーンなエクスポート、そして日常の多くの編集ツール。0.6.2 では、北ツール、カメラ設定、動画付きのシーン遷移、レイヤー付き SVG としてのビュー出力も。",
  "Korean translation of the interface, and the AI key from an environment variable. In 0.6.2, soft shadows and fixes for macOS.": "インターフェースの韓国語翻訳、および環境変数からの AI キー。0.6.2 ではソフトシャドウと macOS 向けの修正も。",
  "Exact Move+Ctrl copies, overlapping rotated copies, faster box selection on huge models and the reviewed Indonesian translation.": "移動+Ctrl の正確なコピー、重なる回転コピー、巨大モデルでの高速な矩形選択、そして見直されたインドネシア語訳。",
- "Snapping to the rest of the model from inside a group or component.": "グループやコンポーネントの内側からモデルの残りへのスナップ。"
+ "Snapping to the rest of the model from inside a group or component.": "グループやコンポーネントの内側からモデルの残りへのスナップ。",
+ "Location": "位置情報",
+ "This model has no location yet.": "このモデルにはまだ位置情報がありません。",
+ "Clear location": "位置情報をクリア",
+ "This model has survey points, traced paths or a drone survey placed by its location: change it in the Terrain panel.": "このモデルには、位置情報に基づいて配置された測量点、地理経路、またはドローン測量があります。地形パネルで変更してください。"
 }
