@@ -149,3 +149,26 @@ def test_after_moving_the_view_a_double_tap_frames_again(vp):
     assert win._camera_pose() == pytest.approx(framed)
     assert win._camera_pose() != pytest.approx(start)
     assert win._camera_pose() != pytest.approx(moved)
+
+
+def test_the_double_tap_works_in_every_project_tab():
+    """The window connected only its first viewport, so in a second
+    project tab a double tap did nothing; every viewport is wired now."""
+    from unittest import mock
+    from views.main_window import MainWindow
+    win = MainWindow()
+    try:
+        win.show()
+        first = win.viewport
+        win._project_tabs.plus.click()
+        assert win.viewport is not first
+        with mock.patch.object(MainWindow, "_on_smart_zoom") as zoom:
+            win.viewport.smartZoomRequested.emit()
+            assert zoom.call_count == 1
+            first.smartZoomRequested.emit()     # not the project in front
+            assert zoom.call_count == 1
+    finally:
+        for doc in list(win._documents):
+            doc.saved_content = doc.viewport.scene.content_version
+        win._saved_version = win.viewport.scene.version
+        win.close()
