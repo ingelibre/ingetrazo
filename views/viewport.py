@@ -1314,6 +1314,27 @@ def _px_near(x, y, ok, px, py, thr, pts=None, seen=None):
     return k, d
 
 
+def _nearest_order(d, thr):
+    """``np.argsort(d)`` as far as the entries under ``thr`` go: the same
+    indices in the same order, then one entry past them (or none). Only
+    the few under the threshold are sorted when their distances are all
+    different — a sort's order is then the only one; with a tie the whole
+    array is sorted, as before, so a tie breaks the same way (a full sort
+    of the open group's edges on every hover with Line, ~0.5 ms in the
+    Plaza, 19-11)."""
+    import numpy as np
+    cand = np.flatnonzero(d < thr)
+    dc = d[cand]
+    if len(cand) > 1 and len(np.unique(dc)) != len(dc):
+        return np.argsort(d)
+    order = cand[np.argsort(dc)]
+    if len(cand) < len(d):
+        # Any entry not under the threshold: what stops the caller.
+        rest = np.flatnonzero(~(d < thr))
+        order = np.append(order, rest[0])
+    return order
+
+
 def _nearest_within(d, radius, cap):
     """The indices of ``d`` under ``radius``: all of them in order, or past
     ``cap`` the nearest ``cap`` by distance and then index. The native
@@ -1597,6 +1618,27 @@ def _offset_kept(vp, te, offset):
     except AttributeError:
         pass
     return out
+
+
+#: From this many points up, _project_px goes to the native engine.
+_PROJECT_NATIVE_MIN = 2048
+
+
+def _project_px_numpy(pts, M, width, height):
+    """``Viewport._project_px`` in NumPy, with the MVP ``M`` (4, 4) and the
+    widget's size: the reference the native ``project_px`` matches."""
+    import numpy as np
+    # Term by term, as _instance_chunk bakes (and core/instances.rs
+    # projects the corners it does not bake): a BLAS product sums in an
+    # order of its own.
+    clip = (pts[:, 0:1] * M[:, 0] + pts[:, 1:2] * M[:, 1]
+            + pts[:, 2:3] * M[:, 2] + M[:, 3])
+    w = clip[:, 3]
+    ok = w > 0
+    safe = np.where(ok, w, 1.0)
+    px = (clip[:, 0] / safe * 0.5 + 0.5) * width
+    py = (1.0 - (clip[:, 1] / safe * 0.5 + 0.5)) * height
+    return px, py, ok
 
 
 def _slab_far(t):
@@ -15550,19 +15592,21 @@ class Viewport(QOpenGLWidget):
     def _project_px(self, pts):
         """Batch world points (N, 3) → ``(px, py, in_front)`` arrays — the
         exact math of :meth:`_world_to_pixel`, vectorised."""
-        import numpy as np
         M = self._np_mvp()
-        # Term by term, as _instance_chunk bakes (and core/instances.rs
-        # projects the corners it does not bake): a BLAS product sums in an
-        # order of its own.
-        clip = (pts[:, 0:1] * M[:, 0] + pts[:, 1:2] * M[:, 1]
-                + pts[:, 2:3] * M[:, 2] + M[:, 3])
-        w = clip[:, 3]
-        ok = w > 0
-        safe = np.where(ok, w, 1.0)
-        px = (clip[:, 0] / safe * 0.5 + 0.5) * self.width()
-        py = (1.0 - (clip[:, 1] / safe * 0.5 + 0.5)) * self.height()
-        return px, py, ok
+        if len(pts) >= _PROJECT_NATIVE_MIN:
+            from core import _native
+            mod = _native.native
+            if mod is not None and hasattr(mod, "project_px"):
+                # The same operations in the same order, in parallel: the
+                # open group's loose edges are projected again on every
+                # move of a Move drag (~1 ms of NumPy a projection over the
+                # 9 674 faces of a Plaza group, 19-11).
+                import numpy as np
+                return mod.project_px(np.ascontiguousarray(pts, np.float64),
+                                      M.ravel().tolist(),
+                                      float(self.width()),
+                                      float(self.height()))
+        return _project_px_numpy(pts, M, self.width(), self.height())
 
     @staticmethod
     def _frustum_planes(mvp):
@@ -17661,14 +17705,24 @@ class Viewport(QOpenGLWidget):
         reference may hold — the rest of the model's loose edges, drawn
         around an open group / component, are snappable and not selectable."""
         import numpy as np
+        from core.edge_grid import segment_distances
         idx = self._pick_index(near="skip")
         if idx.edge_a is None:
             return None
-        ax, ay, oka = self._project_px(idx.edge_a)
-        bx, by, okb = self._project_px(idx.edge_b)
+        # The projection pick_vertex and the snap read too, kept while the
+        # camera and the loose edges stay (two fresh projections of the open
+        # group's edges were ~3 ms of every hover with Line in the Plaza,
+        # 19-11).
+        ledge = getattr(self, "_ledge_screen", None)      # stub VPs in tests
+        lp = ledge() if ledge is not None and len(idx.edge_a) else None
+        if lp is None:
+            ax, ay, oka = self._project_px(idx.edge_a)
+            bx, by, okb = self._project_px(idx.edge_b)
+            lp = (ax, ay, bx, by, oka & okb)
+        ax, ay, bx, by, ok = lp
         allowed = (idx.edge_sel if which == "sel"
                    else getattr(idx, "edge_snap", idx.edge_sel))
-        ok = oka & okb & allowed
+        ok = ok & allowed
         soft = getattr(idx, "edge_soft", None)
         if (visible_only and not with_soft and soft is not None
                 and not getattr(self.scene, "show_hidden_geometry", False)):
@@ -17678,19 +17732,15 @@ class Viewport(QOpenGLWidget):
             ok &= ~(sp.hidden(idx.edge_a) & sp.hidden(idx.edge_b))
         if not ok.any():
             return None
-        dx, dy = bx - ax, by - ay
-        l2 = dx * dx + dy * dy
-        safe = np.where(l2 > 1e-12, l2, 1.0)
-        t = np.clip(((screen_x - ax) * dx + (screen_y - ay) * dy) / safe,
-                    0.0, 1.0)
-        d = np.hypot(ax + t * dx - screen_x, ay + t * dy - screen_y)
-        d = np.where(ok, d, np.inf)
+        # core.edge_grid's pass is this one's arithmetic (native past
+        # NATIVE_MIN segments, bit for bit).
+        d = segment_distances(ax, ay, bx, by, ok, screen_x, screen_y)
         if not visible_only:
             i = int(np.argmin(d))
             return idx.edges[i] if d[i] < self.pick_threshold_px else None
         # Nearest first, skipping the ones hidden behind the model; a few
         # tries are plenty (the threshold holds only a handful).
-        for i in np.argsort(d)[:8]:
+        for i in _nearest_order(d, self.pick_threshold_px)[:8]:
             i = int(i)
             if not d[i] < self.pick_threshold_px:
                 return None
@@ -18010,12 +18060,15 @@ class Viewport(QOpenGLWidget):
                self.width(), self.height(),
                bool(getattr(self, "_rest_is_hidden", lambda: False)()))
         cached = getattr(self, "_ledge_px_cache", None)
-        if cached is not None and cached[0] == key:
+        # The index's own arrays too: _pick_edge reads this projection as
+        # the one of the index it holds, whatever rebuilt it.
+        if (cached is not None and cached[0] == key
+                and cached[2] is idx.edge_a and cached[3] is idx.edge_b):
             return cached[1]
         ax, ay, oka = self._project_px(idx.edge_a)
         bx, by, okb = self._project_px(idx.edge_b)
         data = (ax, ay, bx, by, oka & okb)
-        self._ledge_px_cache = (key, data)
+        self._ledge_px_cache = (key, data, idx.edge_a, idx.edge_b)
         return data
 
     def _nearby_loose_edges(self, px: float, py: float,
@@ -19120,8 +19173,12 @@ class Viewport(QOpenGLWidget):
             cat = (ckey, np.concatenate(xs), np.concatenate(ys), np.concatenate(oks))
             self._vertex_px_cache = cat
         _c, px, py, ok = cat
-        d = np.where(ok, np.hypot(px - screen_x, py - screen_y), np.inf)
-        cand = np.where(d < self.pick_threshold_px)[0]
+        # The corners within the threshold, in index order, at the
+        # distances one np.hypot pass over all of them gives: with the
+        # engine only the candidates are measured (~3 ms of NumPy a hover
+        # over the ~1 000 placements of the Plaza, 19-11).
+        cand, dc = _px_near(px, py, ok, screen_x, screen_y,
+                            self.pick_threshold_px)
 
         def vertex_of(i):
             if i < 2 * n:
@@ -19131,7 +19188,7 @@ class Viewport(QOpenGLWidget):
             arr = idx.gedge_a if j < m else idx.gedge_b
             p = arr[j % m]
             return QVector3D(p[0], p[1], p[2])
-        order = cand[np.argsort(d[cand])]
+        order = cand[np.argsort(dc)]
         if not len(order):
             return None
         # A corner only an edge that draws nothing holds is not on screen:

@@ -21,6 +21,7 @@ mod instances;
 mod jsondoc;
 mod occlusion;
 mod parity;
+mod pick;
 mod visible;
 mod weld;
 
@@ -41,6 +42,7 @@ fn ingetrazo_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(points_near_px, m)?)?;
     m.add_function(wrap_pyfunction!(segment_distances, m)?)?;
     m.add_function(wrap_pyfunction!(nearest_within, m)?)?;
+    m.add_function(wrap_pyfunction!(project_px, m)?)?;
     m.add_function(wrap_pyfunction!(visible_parts, m)?)?;
     m.add_function(wrap_pyfunction!(earcut_indices, m)?)?;
     m.add_function(wrap_pyfunction!(faces_view, m)?)?;
@@ -438,6 +440,41 @@ fn segment_distances<'py>(py: Python<'py>, ax: PyReadonlyArray1<'py, f64>,
     let out: Vec<f64> = py.detach(|| (0..m).into_par_iter().with_min_len(4096)
         .map(|k| one(w.as_ref().map_or(k, |w| w[k]))).collect());
     Ok(PyArray1::from_vec(py, out))
+}
+
+/// ``Viewport._project_px``: world points ``pts`` (N,3) through the MVP
+/// ``mvp`` (16 values, row-major) to widget pixels — ``(px, py, in
+/// front)``, NumPy's operations in NumPy's order (pick::project_one). The
+/// hover projects the open group's loose edges on every move of a Move
+/// drag (~1 ms of NumPy a projection over 9 674 faces of the Plaza, 19-11).
+#[pyfunction]
+fn project_px<'py>(py: Python<'py>, pts: PyReadonlyArray2<'py, f64>, mvp: Vec<f64>,
+                   width: f64, height: f64)
+    -> PyResult<(Bound<'py, PyArray1<f64>>, Bound<'py, PyArray1<f64>>,
+                 Bound<'py, PyArray1<bool>>)> {
+    use rayon::prelude::*;
+    let pts = pts.as_array();
+    if pts.shape()[1] != 3 || mvp.len() != 16 {
+        return Err(pyo3::exceptions::PyValueError::new_err("shape"));
+    }
+    let mut m = [0.0f64; 16];
+    m.copy_from_slice(&mvp);
+    let n = pts.shape()[0];
+    let rows: Vec<[f64; 3]> = match pts.as_slice() {
+        Some(s) => s.chunks_exact(3).map(|c| [c[0], c[1], c[2]]).collect(),
+        None => (0..n).map(|i| [pts[[i, 0]], pts[[i, 1]], pts[[i, 2]]]).collect(),
+    };
+    let out: Vec<(f64, f64, bool)> = py.detach(|| rows.par_iter().with_min_len(8192)
+        .map(|&p| pick::project_one(p, &m, width, height)).collect());
+    let mut xs = Vec::with_capacity(n);
+    let mut ys = Vec::with_capacity(n);
+    let mut ok = Vec::with_capacity(n);
+    for (x, y, k) in out {
+        xs.push(x);
+        ys.push(y);
+        ok.push(k);
+    }
+    Ok((PyArray1::from_vec(py, xs), PyArray1::from_vec(py, ys), PyArray1::from_vec(py, ok)))
 }
 
 /// ``flat`` (3 values a row) as an (N,3) array, without a Vec per row: making
