@@ -6873,7 +6873,8 @@ class Viewport(QOpenGLWidget):
         """Multiply ``base`` RGB by a subtle diffuse term from the face normal vs
         the fixed world light — the matte-model shading. Returns a clamped RGB
         tuple used as the render key (identical normals/colours group together)."""
-        return self._shade_rgb(base, self._shade_factor(normal))
+        # Through the class: test stand-ins borrow _shaded_color alone.
+        return Viewport._shade_rgb(base, self._shade_factor(normal))
 
     @staticmethod
     def _shade_rgb(base, shade):
@@ -10934,7 +10935,7 @@ class Viewport(QOpenGLWidget):
         _rows, colors, paths, _memo, _groups = table
         data = array("f")
         data.frombytes(col)
-        shade_rgb = self._shade_rgb
+        shade_rgb = Viewport._shade_rgb
         runs = [(shade_rgb(colors[m], shade), start, count)
                 for m, start, count, shade in nruns]
         by_texture: dict = {}
