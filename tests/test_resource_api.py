@@ -40,9 +40,13 @@ class FakeWindow:
         self.resource_registry = ResourceRegistry()
 
 
-def test_api_version_is_4_or_newer():
-    assert API_VERSION >= 4
-    assert ExtensionApp.api_version >= 4
+def test_the_resource_api_only_adds_to_version_2():
+    # Published extensions accept API 1 or 2 only: the resource library is
+    # found by its methods, as the tabs' additions are.
+    assert API_VERSION == 2 and ExtensionApp.api_version == 2
+    for name in ("register_resource_type", "resource_types",
+                 "export_resource_bundle", "import_resource_bundle"):
+        assert hasattr(ExtensionApp, name), name
 
 
 def test_namespaces_and_duplicate_rejection():
@@ -163,3 +167,13 @@ def test_extension_app_registers_with_its_namespace():
         "wall_preset", FakeProvider(), label="Wall presets")
     assert t.key == "parametric_architecture:wall_preset"
     assert app.resource_types() == (t,)
+
+
+def test_the_demo_provider_is_an_example_not_a_bundled_plugin():
+    # Every file in the app's plugins folder loads for every user at start;
+    # the demo printed to the console and registered two fake types there.
+    from core.extensions import plugin_dirs
+    from core.paths import app_root
+    bundled = plugin_dirs()[0]
+    assert not (bundled / "resource_api_demo.py").exists()
+    assert (app_root() / "docs" / "examples" / "resource_api_demo.py").is_file()

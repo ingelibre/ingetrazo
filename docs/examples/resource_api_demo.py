@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Resource API demo — temporary development plugin."""
+"""Resource API demo: a minimal provider (#412). An example, not shipped as
+a plugin: copy it into your plugins folder to try it."""
 from __future__ import annotations
 
 import json
