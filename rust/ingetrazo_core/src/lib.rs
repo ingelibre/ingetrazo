@@ -23,6 +23,7 @@ mod occlusion;
 mod parity;
 mod pick;
 mod preview;
+mod rays;
 mod snap;
 mod visible;
 mod weld;
@@ -45,6 +46,9 @@ fn ingetrazo_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(segment_distances, m)?)?;
     m.add_function(wrap_pyfunction!(snap::px_near_sorted, m)?)?;
     m.add_function(wrap_pyfunction!(snap::segment_hits, m)?)?;
+    m.add_function(wrap_pyfunction!(rays::ray_dot3_probe, m)?)?;
+    m.add_function(wrap_pyfunction!(rays::ray_tris, m)?)?;
+    m.add_function(wrap_pyfunction!(rays::ray_face_min, m)?)?;
     m.add_function(wrap_pyfunction!(nearest_within, m)?)?;
     m.add_function(wrap_pyfunction!(project_px, m)?)?;
     m.add_function(wrap_pyfunction!(edge_grid_bins, m)?)?;

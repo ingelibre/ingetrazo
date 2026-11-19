@@ -38,6 +38,7 @@ from __future__ import annotations
 import copy
 import importlib
 import itertools
+import logging
 import math
 import os
 import inspect
@@ -1663,7 +1664,274 @@ def _moller_trumbore(o, d, v0, e1, e2):
     """Möller–Trumbore of the ray ``o`` + t·``d`` against triangles (v0, e1,
     e2) (N, 3): ``(t, hit)``, with the thresholds of :func:`_ray_triangle`.
     The pick index's pass and the lazy placements' (#158) run this one, so
-    the same triangle gives the same t whichever holds it."""
+    the same triangle gives the same t whichever holds it. Through the
+    native engine when it reproduces this NumPy (:func:`_mt_native`)."""
+    nat = _mt_native()
+    if nat is not None and _mt_arrays_ok(v0, e1, e2):
+        mod, modes = nat
+        o3 = (float(o[0]), float(o[1]), float(o[2]))
+        d3 = (float(d[0]), float(d[1]), float(d[2]))
+        try:
+            t, hit = mod.ray_tris(o3, d3, v0, e1, e2, modes)
+        except (ValueError, TypeError):
+            return _moller_trumbore_py(o, d, v0, e1, e2)
+        if _MT_SHADOW[0] > 0:
+            # Still on trial: NumPy answers, the engine is compared.
+            tp, hp = _moller_trumbore_py(o, d, v0, e1, e2)
+            _mt_judge(_mt_same(t, tp) and bool((hit == hp).all()))
+            return tp, hp
+        return t, hit
+    return _moller_trumbore_py(o, d, v0, e1, e2)
+
+
+#: The ray pass in the native engine (core/rays.rs) once it was found to
+#: give this NumPy's very bits: (module, dot-product modes), False when it
+#: does not (Python for the session), None until first asked. The pass was
+#: ~4 ms of a slow Line frame in the Plaza's 9 674-face group and ~4.4 ms
+#: of Push/Pull's distance inference (19-11), most of it NumPy calls on a
+#: few thousand rows and the row gathers before them.
+_MT_NATIVE = None
+#: How many live passes are still answered by NumPy and compared with the
+#: engine before the engine answers alone (any difference: NumPy for good).
+_MT_SHADOW = [200]
+#: What a native ray pass that could not run stands in for.
+_MT_FAILED = object()
+#: The switch, for measuring and for the tests that compare both.
+_MT_NATIVE_ON = os.environ.get("INGETRAZO_RAYS_NATIVE", "1") != "0"
+
+
+def _mt_set(value):
+    global _MT_NATIVE
+    _MT_NATIVE = value
+
+
+def _mt_judge(same: bool):
+    """One live pass compared: one fewer to go, or NumPy for good."""
+    if same:
+        _MT_SHADOW[0] -= 1
+    else:
+        _MT_SHADOW[0] = 0
+        _mt_set(False)
+        logging.getLogger(__name__).warning(
+            "Native ray pass differs from NumPy on a live ray; using Python")
+
+
+def _mt_same(a, b) -> bool:
+    """Whether two float arrays hold the same bits (any NaN for any NaN:
+    a NaN row is never a hit, and its payload is the CPU's)."""
+    import numpy as np
+    a = np.asarray(a, dtype=np.float64)
+    b = np.asarray(b, dtype=np.float64)
+    if a.shape != b.shape:
+        return False
+    same = a.view(np.int64) == b.view(np.int64)
+    return bool((same | (np.isnan(a) & np.isnan(b))).all())
+
+
+def _mt_arrays_ok(*arrs) -> bool:
+    """Whether the engine can read ``arrs`` as they are: (N, 3) float64
+    rows, C-contiguous (else the call stays in NumPy)."""
+    import numpy as np
+    for a in arrs:
+        if not (isinstance(a, np.ndarray) and a.dtype == np.float64
+                and a.ndim == 2 and a.shape[1] == 3
+                and a.flags.c_contiguous):
+            return False
+    return True
+
+
+def _mt_native():
+    """``(core._native module, modes)`` when the engine's ray pass gives
+    :func:`_moller_trumbore_py`'s bits here, else None. NumPy sums the
+    pass's dot products through ``einsum``, a BLAS ``gemv`` (``q @ d``) and
+    ``norm``: each in an order of its own, fused or not, which hangs on the
+    CPU and the BLAS build (on this machine, 19-11: ``einsum`` sums
+    (x0·y0 + x2·y2) + x1·y1 unfused, ``q @ d`` fma(x2, y2, fma(x0, y0,
+    x1·y1)) and, over a single row, fma(x2, y2, fma(x1, y1, x0·y0))). So
+    the first use tries the engine's 24 ways of summing three products
+    against each and keeps the one that matches on a fixed sample, then
+    holds the whole pass against NumPy on a second sample (grazing, tiny
+    and degenerate triangles, NaN and infinity, one row and many); the
+    first live passes are still answered by NumPy and compared
+    (``_MT_SHADOW``). No mode or any difference: Python for the session,
+    as :func:`core.snap._native_hits` does."""
+    if _MT_NATIVE is not None:
+        return _MT_NATIVE or None
+    if not _MT_NATIVE_ON:
+        return None
+    from core import _native
+    mod = _native.native
+    if mod is None or not (hasattr(mod, "ray_tris")
+                           and hasattr(mod, "ray_face_min")
+                           and hasattr(mod, "ray_dot3_probe")):
+        return None                   # not cached: the switch may change
+    _mt_set(False)
+    try:
+        modes = _mt_modes(mod)
+        if modes is not None and _mt_sample_match(mod, modes):
+            _mt_set((mod, modes))
+        else:
+            logging.getLogger(__name__).info(
+                "Native ray pass does not match this NumPy; using Python")
+    except Exception as exc:  # noqa: BLE001 — then Python
+        logging.getLogger(__name__).warning(
+            "Native ray pass probe failed, using Python: %s", exc)
+    return _MT_NATIVE or None
+
+
+def _mt_dot_sample(seed: int, n: int):
+    """(a, b) (n, 3) rows whose dot products round differently in each
+    summation order: mixed magnitudes, one term cancelling the other two,
+    zeros, signed zeros (all three products -0 too) and subnormals."""
+    import numpy as np
+    rng = np.random.default_rng(seed)
+    a = rng.normal(size=(n, 3)) * 10.0 ** rng.uniform(-4, 4, (n, 1))
+    b = rng.normal(size=(n, 3)) * 10.0 ** rng.uniform(-4, 4, (n, 1))
+    k = rng.integers(0, 3, n)
+    rows = np.arange(n)
+    o1, o2 = (k + 1) % 3, (k + 2) % 3
+    part = a[rows, o1] * b[rows, o1] + a[rows, o2] * b[rows, o2]
+    bk = np.where(b[rows, k] == 0.0, 1.0, b[rows, k])
+    cancel = rows % 3 != 0
+    a[rows[cancel], k[cancel]] = (-(part / bk)
+                                  * (1.0 + rng.normal(size=n) * 1e-9))[cancel]
+    a[rows % 17 == 5, 1] = 0.0
+    a[rows % 19 == 7, 2] = -0.0
+    a[rows % 23 == 11] *= 1e-160
+    zero = rows % 13 == 4
+    a[zero] = np.where(rng.random((int(zero.sum()), 3)) < 0.5, -0.0, 0.0)
+    if n > 1:
+        a[0] = -0.0                       # every product -0 (b[0] != 0)
+    return a, b
+
+
+def _mt_pick_mode(mod, cases, root: bool = False):
+    """The first of the engine's dot-product modes that gives ``want`` for
+    every ``(a, b, want)`` of ``cases`` (with ``root``, the square root of
+    ``a``·``a`` does), or None."""
+    import numpy as np
+    for mode in range(48):
+        if all(_mt_same(np.sqrt(mod.ray_dot3_probe(a, a, mode)) if root
+                        else mod.ray_dot3_probe(a, b, mode), want)
+               for a, b, want in cases):
+            return mode
+    return None
+
+
+def _mt_modes(mod):
+    """``(einsum, gemv, gemv of one row, ray norm, row norms)`` modes that
+    reproduce this NumPy on a fixed sample (see :func:`_mt_native`), or
+    None."""
+    import numpy as np
+    sizes = (1, 2, 3, 4, 5, 7, 8, 9, 16, 17, 33, 64, 257, 1000, 5003)
+    es, mm, mm1, dd, sq = [], [], [], [], []
+    for i, n in enumerate(sizes):
+        a, b = _mt_dot_sample(1294 + i, n)
+        es.append((a, b, np.einsum("ij,ij->i", a, b)))
+        d = np.ascontiguousarray(b[-1])
+        dm = np.ascontiguousarray(np.broadcast_to(d, a.shape))
+        if n > 1:
+            mm.append((a, dm, a @ d))
+        # One row: NumPy asks BLAS for a dot, not a gemv.
+        k = min(n, 40)
+        mm1.append((a[:k], dm[:k], np.array(
+            [(a[r:r + 1] @ d)[0] for r in range(k)])))
+        # ``np.linalg.norm`` of the ray (a BLAS dot) and of rows (a
+        # reduction), compared as the roots the pass takes.
+        dd.append((a[:k], None, np.array(
+            [float(np.linalg.norm(a[r])) for r in range(k)])))
+        sq.append((a, None, np.linalg.norm(a, axis=1)))
+    out = (_mt_pick_mode(mod, es), _mt_pick_mode(mod, mm),
+           _mt_pick_mode(mod, mm1), _mt_pick_mode(mod, dd, root=True),
+           _mt_pick_mode(mod, sq, root=True))
+    return None if None in out else out
+
+
+def _mt_tri_sample(seed: int = 1462, n: int = 3000):
+    """A ray and triangles (v0, e1, e2) for :func:`_mt_sample_match`: hits
+    and misses near every edge, grazing and tiny triangles (the small-det
+    reading of #1294), degenerate ones, triangles behind the ray, and NaN
+    and infinity."""
+    import numpy as np
+    rng = np.random.default_rng(seed)
+    o = rng.normal(size=3) * 10.0
+    d = rng.normal(size=3)
+    d /= np.linalg.norm(d)
+    size = 10.0 ** rng.uniform(-4, 2, (n, 1))
+    e1 = rng.normal(size=(n, 3)) * size
+    e2 = rng.normal(size=(n, 3)) * size
+    # Aim most of them at the ray: v0 so that o + t·d lands at (u, v),
+    # some right on an edge or a corner.
+    t = rng.uniform(-2.0, 50.0, (n, 1))
+    u = rng.uniform(-0.1, 1.1, (n, 1))
+    v = rng.uniform(-0.1, 1.1, (n, 1)) * (1.0 - u)
+    u[::7] = 0.0
+    v[3::7] = 0.0
+    v[5::7] = 1.0 - u[5::7]
+    v0 = o + t * d - u * e1 - v * e2
+    k = n // 10
+    e2[:k] = e1[:k] * rng.uniform(-2, 2, (k, 1)) + np.cross(
+        e1[:k], d) * 1e-9                                  # grazing
+    e1[k:k + 20] = 0.0                                     # degenerate
+    e2[k + 20:k + 40] = e1[k + 20:k + 40] * 3.0            # collinear
+    sq = 1e-3 * np.array([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]])
+    e1[k + 40:k + 80], e2[k + 40:k + 80] = sq[0], sq[1]    # 1 mm, head-on
+    v0[k + 80:k + 85, 0] = (np.nan, np.inf, -np.inf, 1e300, -1e300)
+    e2[k + 85:k + 90, 1] = (np.nan, np.inf, -np.inf, 1e300, 0.0)
+    return o, d, np.ascontiguousarray(v0), e1, e2
+
+
+def _mt_sample_match(mod, modes) -> bool:
+    """Whether the engine's pass is :func:`_moller_trumbore_py` on a fixed
+    sample, bit for bit: the per-row answer over several row counts (a
+    head-on ray too, for the small-det reading), and the per-entity and
+    global minima of :meth:`Viewport._ray_hits`."""
+    import numpy as np
+    o, d, v0, e1, e2 = _mt_tri_sample()
+    rays = [(o, d), (o, np.array([0.0, 0.0, -1.0])),
+            (np.array([3e-4, 2e-4, 1.0]), np.array([0.0, 0.0, -1.0]))]
+    v0h = v0.copy()
+    v0h[-200:] = np.array([0.0, 0.0, 0.0])             # under the third ray
+    e1h = e1.copy()
+    e2h = e2.copy()
+    e1h[-200:] = np.array([1e-3, 0.0, 0.0])
+    e2h[-200:] = np.array([0.0, 1e-3, 0.0])
+    with np.errstate(all="ignore"):
+        for ro, rd in rays:
+            o3, d3 = tuple(ro.tolist()), tuple(rd.tolist())
+            for lo, hi in ((0, 1), (5, 6), (0, 2), (0, 3), (0, 17),
+                           (100, 1100), (0, len(v0))):
+                for a, b, c in ((v0, e1, e2), (v0h, e1h, e2h)):
+                    a, b, c = (np.ascontiguousarray(x[lo:hi])
+                               for x in (a, b, c))
+                    tp, hp = _moller_trumbore_py(ro, rd, a, b, c)
+                    t, hit = mod.ray_tris(o3, d3, a, b, c, modes)
+                    if not (_mt_same(t, tp) and (hit == hp).all()):
+                        return False
+            te = (np.arange(len(v0)) // 3).astype(np.int64)
+            mask = np.ones(te[-1] + 1, dtype=bool)
+            mask[::4] = False
+            for a, b, c in ((v0, e1, e2), (v0h, e1h, e2h)):
+                tp, hp = _moller_trumbore_py(ro, rd, a, b, c)
+                hp = hp & mask[te]
+                want = np.full(len(mask), np.inf)
+                rows = np.flatnonzero(hp)
+                np.minimum.at(want, te[rows], tp[rows])
+                got = np.full(len(mask), np.inf)
+                mod.ray_face_min(o3, d3, a, b, c, te, 0, mask, modes,
+                                 face_t=got)
+                if not _mt_same(got, want):
+                    return False
+                g = mod.ray_face_min(o3, d3, a, b, c, te, 0, mask, modes)
+                wg = float(tp[hp].min()) if hp.any() else float("inf")
+                if g != wg:
+                    return False
+    return True
+
+
+def _moller_trumbore_py(o, d, v0, e1, e2):
+    """:func:`_moller_trumbore` in NumPy: the reference the native pass is
+    held to, and the pass wherever the engine is off or does not match."""
     import numpy as np
     p = np.cross(d, e2)
     det = np.einsum("ij,ij->i", e1, p)
@@ -11066,6 +11334,8 @@ class Viewport(QOpenGLWidget):
         except RuntimeError:
             pass
         import core._native as _native
+        # The ray pass's probe too (~15 ms, 19-11), off the first hover.
+        _mt_native()
         nat = _native.native
         if (nat is None or _native.qt_hypot() is None
                 or not hasattr(nat, "preview_faces_bake")
@@ -17511,6 +17781,41 @@ class Viewport(QOpenGLWidget):
     def _ray_hits(self, idx, origin, direction, ent_mask,
                   reduce_global: bool = False, reach: float | None = None,
                   own: bool = True):
+        """:meth:`_ray_hits_np`, through the native engine when its ray
+        pass gives this NumPy's bits (:func:`_mt_native`): the same rows,
+        the same per-entity minima, without the row gathers and the NumPy
+        calls per pass (~1.3 ms a call in the Plaza's 9 674-face group,
+        19-11). While it is on trial NumPy answers and the two are
+        compared."""
+        import numpy as np
+        nat = _mt_native()
+        if nat is None or not _mt_arrays_ok(*(
+                (idx.tri_v0, idx.tri_e1, idx.tri_e2)
+                if getattr(idx, "tri_v0", None) is not None else ())):
+            return Viewport._ray_hits_np(self, idx, origin, direction,
+                                         ent_mask, reduce_global, reach, own)
+        try:
+            got = Viewport._ray_hits_np(self, idx, origin, direction,
+                                        ent_mask, reduce_global, reach, own,
+                                        nat=nat)
+        except (ValueError, TypeError):
+            got = _MT_FAILED
+        if got is not _MT_FAILED and _MT_SHADOW[0] <= 0:
+            return got
+        want = Viewport._ray_hits_np(self, idx, origin, direction, ent_mask,
+                                     reduce_global, reach, own)
+        if got is not _MT_FAILED:
+            if want is None or got is None or reduce_global:
+                same = (want is got if want is None or got is None
+                        else _mt_same(np.float64(got), np.float64(want)))
+            else:
+                same = _mt_same(got, want)
+            _mt_judge(same)
+        return want
+
+    def _ray_hits_np(self, idx, origin, direction, ent_mask,
+                     reduce_global: bool = False, reach: float | None = None,
+                     own: bool = True, nat=None):
         """Per-entity nearest ray parameter over the index triangles whose
         entity passes ``ent_mask``. Returns an (E,) array of t (``inf`` = no
         hit), the single nearest t as a float when ``reduce_global``, or
@@ -17540,7 +17845,7 @@ class Viewport(QOpenGLWidget):
             # The engine's BVH in place of the span boxes below.
             spans = ([(None, idx.tri_v0[fast], idx.tri_e1[fast],
                        idx.tri_e2[fast], idx.tri_ent[fast], 0)]
-                     if len(fast) else [])
+                     if len(fast) and nat is None else [])
         elif idx.tri_v0 is None:
             spans = []
         else:
@@ -17591,6 +17896,10 @@ class Viewport(QOpenGLWidget):
                     ranges.append((s0, n))
             else:
                 rest.append(span)
+        if nat is not None:
+            return Viewport._ray_pass_native(
+                idx, nat, o3, d3, lim, fast, ranges, rest, ent_mask,
+                face_t, reduce_global)
         if ranges:
             if len(ranges) == 1:
                 s0, n = ranges[0]
@@ -17621,7 +17930,7 @@ class Viewport(QOpenGLWidget):
                                                     lim):
                     continue
                 te = te_local + eoff
-            t, hit = _moller_trumbore(o, d, v0, e1, e2)
+            t, hit = _moller_trumbore_py(o, d, v0, e1, e2)
             hit &= ent_mask[te]
             if reduce_global:
                 # Zoom focus wants ONE nearest t, not per-entity buckets.
@@ -17637,6 +17946,46 @@ class Viewport(QOpenGLWidget):
                     # hits (a handful) — over the full array it alone cost
                     # ~100 ms per snap hover.
                     np.minimum.at(face_t, te[hit_rows], t[hit_rows])
+        return best if reduce_global else face_t
+
+    @staticmethod
+    def _ray_pass_native(idx, nat, o3, d3, lim, fast, ranges, rest,
+                         ent_mask, face_t, reduce_global):
+        """The end of :meth:`_ray_hits_np` in the native engine
+        (core/rays.rs): the index rows the BVH named (``fast``) or the
+        span ``ranges`` the ray's boxes kept, read in place as ONE pass
+        (its row count picks the gemv's mode, as NumPy's one pass would),
+        then the lazy placements' own spans (``rest``) one by one; each
+        pass's hits are masked and folded into ``face_t`` or the global
+        minimum there. Raises TypeError where the engine cannot read the
+        arrays as they are (then NumPy answers the call)."""
+        import numpy as np
+        mod, modes = nat
+        best = float("inf")
+        ft = None if reduce_global else face_t
+
+        def run(v0, e1, e2, te, eoff, rows=None, rng=None):
+            if not _mt_arrays_ok(v0, e1, e2):
+                raise TypeError("ray pass arrays")
+            te = np.asarray(te)
+            if te.dtype != np.int64:
+                te = te.astype(np.int64)
+            return mod.ray_face_min(o3, d3, v0, e1, e2, te, int(eoff),
+                                    ent_mask, modes, rows=rows, ranges=rng,
+                                    face_t=ft, best=best)
+        if fast is not None and len(fast):
+            best = run(idx.tri_v0, idx.tri_e1, idx.tri_e2, idx.tri_ent, 0,
+                       rows=np.ascontiguousarray(fast, dtype=np.int64))
+        if ranges:
+            best = run(idx.tri_v0, idx.tri_e1, idx.tri_e2, idx.tri_ent, 0,
+                       rng=np.array(ranges, dtype=np.int64).reshape(-1, 2))
+        for span in rest:
+            bb, v0, e1, e2, te_local, eoff = span
+            if not len(v0):
+                continue
+            if bb is not None and not _ray_aabb(o3, d3, bb[0], bb[1], lim):
+                continue
+            best = run(v0, e1, e2, te_local, eoff)
         return best if reduce_global else face_t
 
     @staticmethod
