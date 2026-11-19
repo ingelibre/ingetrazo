@@ -172,3 +172,28 @@ def test_a_parallel_eye_keeps_the_fitted_depth_range():
     left, _right, _ = pair(cam)
     depth = lambda c, z: c.projection_matrix().map(QVector4D(0.0, 0.0, z, 1.0)).z()
     assert depth(left, -3.0) == pytest.approx(depth(cam, -3.0), rel=1e-5)
+
+
+def test_a_locked_camera_still_gives_its_two_eyes():
+    """Merge of PR #1311 with the view lock: the eye is a copy, and a copy
+    of a locked camera refused the shifted target, so both eyes were the
+    same picture."""
+    from core.camera import OrbitCamera
+    cam = OrbitCamera()
+    cam.set_aspect(800, 600)
+    cam.locked = True
+    left, right = cam.eye_camera(-0.03), cam.eye_camera(0.03)
+    assert (left.target - right.target).length() > 0.05
+    assert cam.locked                     # the camera itself is untouched
+
+
+def test_an_eye_keeps_the_lens_shift():
+    from core.camera import OrbitCamera
+    cam = OrbitCamera()
+    cam.set_aspect(800, 600)
+    cam.shift_y = 0.2
+    plain = cam.eye_camera(0.0).projection_matrix()
+    assert plain == cam.projection_matrix()
+    eye = cam.eye_camera(0.03).projection_matrix()
+    # Same vertical shift as the camera (row 1, column 2 of the frustum).
+    assert eye.row(1).z() == cam.projection_matrix().row(1).z()
