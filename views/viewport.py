@@ -1692,9 +1692,11 @@ def _moller_trumbore(o, d, v0, e1, e2):
 #: few thousand rows and the row gathers before them.
 _MT_NATIVE = None
 #: How many live passes are still answered by NumPy and compared with the
-#: engine before the engine answers alone (any difference: NumPy for good);
+#: engine before the engine answers alone (any difference: NumPy for good):
+#: 64, about a second of hovering — 200 outlasted a whole bench of three
+#: gestures in the Plaza, every pass the same bits (19-11);
 #: INGETRAZO_RAYS_SHADOW sets it (0: the engine alone at once, to measure).
-_MT_SHADOW = [int(os.environ.get("INGETRAZO_RAYS_SHADOW", "200"))]
+_MT_SHADOW = [int(os.environ.get("INGETRAZO_RAYS_SHADOW", "64"))]
 #: What a native ray pass that could not run stands in for.
 _MT_FAILED = object()
 #: The switch, for measuring and for the tests that compare both.
