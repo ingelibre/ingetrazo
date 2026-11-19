@@ -810,8 +810,12 @@ def test_the_place_a_scene_menu_puts_it_on_that_sheet():
     explorer = page.sheets
     _pick(explorer, a101)
     menu = explorer.build_menu(("sheet", a101))
-    sub = next(a.menu() for a in menu.actions()
+    # The action held while its menu is read: under PySide6 6.11 a
+    # submenu reached only through a temporary QAction wrapper is gone by
+    # the next line ("Internal C++ object already deleted").
+    act = next(a for a in menu.actions()
                if a.text() == "Place a scene here")
+    sub = act.menu()
     assert [a.text() for a in sub.actions()][0] == "North elevation"  # free
     sub.actions()[0].trigger()
     assert any(f.view_key == "scene:North elevation" for f in a101.frames)
