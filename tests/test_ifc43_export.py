@@ -89,7 +89,9 @@ def test_quantities_units_and_open_surface_survive(schema, tmp_path):
     assert q["NetSideArea"] == pytest.approx(10.4)
     assert q["Width"] == pytest.approx(0.25)
     assert model.by_type("IfcProject")[0].Name == "Örnek proje"
-    assert {(u.UnitType, u.Name) for u in model.by_type("IfcSIUnit")} == {
+    # Main also declares mass (rebar weights) and plane-angle units now:
+    # the three the quantities need must be there, the others may be.
+    assert {(u.UnitType, u.Name) for u in model.by_type("IfcSIUnit")} >= {
         ("LENGTHUNIT", "METRE"), ("AREAUNIT", "SQUARE_METRE"),
         ("VOLUMEUNIT", "CUBIC_METRE")}
     slab = model.by_type("IfcSlab")[0]
