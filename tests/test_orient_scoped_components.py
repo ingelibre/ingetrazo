@@ -65,4 +65,10 @@ def test_a_scoped_pass_is_the_whole_meshs(seed, monkeypatch):
 def test_the_cases_turn_and_mark_faces(monkeypatch):
     runs = [_run(s, monkeypatch, False) for s in range(120)]
     assert sum(bool(r[0]) for r in runs) > 60
-    assert sum(any(r[2]) for r in runs) > 10
+    # Fewer cases mark a face interior since #1155: a wall of one box laid
+    # against a box of another size (the two faces overlap but are not cut
+    # to each other) is no longer read as a partition, because its edges
+    # are seams of its own box (two faces each) and a seam's two faces are
+    # on the same side. Thirteen of the 120 cases marked such walls before;
+    # five still mark one, enough to compare both passes on.
+    assert sum(any(r[2]) for r in runs) >= 5
