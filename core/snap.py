@@ -1308,19 +1308,30 @@ def _from_point_snap(
         # first — a sub-pixel miss on a corner must not hand the snap to
         # the edge's body a few millimetres away — so the edge point only
         # competes when no point reference is within reach.
-        best_edge = None
+        # The nearest visible edge within reach; the first in scene order
+        # among equals. The edges in reach are ranked first and only then
+        # asked «hidden?», nearest first, stopping at the first one seen:
+        # asked in scene order, every closer-so-far edge cast its ray, 87
+        # rays and ~110 ms on a Move frame in a group of the Plaza (19-11)
+        # for the same answer.
+        near = []
         for edge in scene.edges:
             pa, pb = world_to_pixel(edge.a), world_to_pixel(edge.b)
             if pa is None or pb is None:
                 continue
             d, t = _closest_on_segment_2d((cx, cy), pa, pb)
-            if d <= threshold_px and (best_edge is None or d < best_edge[0]):
-                point = _on_edge_point(edge, t, project_onto_line)
-                # Only an edge you can see: one hidden behind the model
-                # lined up on screen with the cursor (#1085).
-                if is_occluded is not None and is_occluded(point):
-                    continue
-                best_edge = (d, point)
+            if d <= threshold_px:
+                near.append((d, edge, t))
+        near.sort(key=lambda c: c[0])        # stable: scene order on ties
+        best_edge = None
+        for d, edge, t in near:
+            point = _on_edge_point(edge, t, project_onto_line)
+            # Only an edge you can see: one hidden behind the model
+            # lined up on screen with the cursor (#1085).
+            if is_occluded is not None and is_occluded(point):
+                continue
+            best_edge = (d, point)
+            break
         if best_edge is not None:
             refs.append((best_edge[1], "from_point", COLOR_ENDPOINT, True))
 
