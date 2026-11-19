@@ -155,3 +155,35 @@ def test_a_small_mesh_keeps_the_walk(vp, monkeypatch):
     m = M.Mesh()
     m.add_face([V(0, 0, 0), V(1, 0, 0), V(1, 1, 0)])
     assert not array_bake.can_bake_built(m)
+
+
+def test_copies_of_one_paint_on_many_sides(vp, monkeypatch, tmp_path):
+    """Every face its own copy of the same attrs — what a built mesh holds
+    after an import or a paint over many faces — on sides facing every
+    way, textured front and back: the bake shares each content's row and
+    map (night of 19-11) and still comes out as the object bake."""
+    png = tmp_path / "t.png"
+    img = QImage(4, 4, QImage.Format_RGB32)
+    img.fill(0x2B5A8B)
+    img.save(str(png))
+    m = M.Mesh()
+    _cylinder(m, n=10)
+    p = [V(4, 0, 0), V(5, 0, 0), V(5, 1, 0), V(4, 1, 0)]
+    q = [v + V(0, 0, 1) for v in p]
+    m.add_face(p[::-1])
+    m.add_face(q)
+    for i in range(4):
+        j = (i + 1) % 4
+        m.add_face([p[i], p[j], q[j], q[i]])
+    tex = {"path": str(png), "sw": 0.5, "sh": 0.5}
+    for i, f in enumerate(m.faces):
+        if i % 3 == 0:
+            f.attrs.update({"texture": dict(tex), "color": [0.5, 0.4, 0.3]})
+        elif i % 3 == 1:
+            f.attrs.update({"color": [0.1, 0.8, 0.2],
+                            "back": {"texture": dict(tex), "opacity": 0.5}})
+        else:
+            f.attrs.update({"texture": dict(tex), "opacity": 0.6})
+    for paint in PAINTS:
+        got = _both(vp, monkeypatch, m, paint)
+        assert got["by_texture"] or got["ttex"]

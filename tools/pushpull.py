@@ -1827,9 +1827,11 @@ class PushPullTool(Tool):
                 verts = list(mesh.vertices)
                 if not verts:
                     continue
-                arr = np.array(
-                    [[v.position.x(), v.position.y(), v.position.z()]
-                     for v in verts])
+                # (One flat pass: the list of rows was ~3× slower, and this
+                # runs over every prototype on the first move of a push.)
+                arr = np.fromiter(
+                    (c for v in verts for c in v.position.toTuple()),
+                    dtype=np.float64, count=3 * len(verts)).reshape(-1, 3)
                 cache.append((verts, arr))
             self._infer_cache = cache
             self._infer_boxes = None
@@ -2870,10 +2872,19 @@ class PushPullTool(Tool):
         entry point into the solid(s) it edited, for scoping the orientation
         pass to those components. ``None`` (meaning "the whole mesh") when the
         op left none, so a collapse can never silently skip orientation."""
-        from core.topology import KeyMemo
-        key = KeyMemo()
-        hit = [f for f in mesh.faces
-               if any(key(v) in seedkeys for v in f.vertices)]
+        from core.topology import _key
+        # A corner's key once per vertex, the loop read in place: the list
+        # of positions and a generator per face were most of this scan.
+        keys: dict = {}
+        hit = []
+        for f in mesh.faces:
+            for v in f.loop:
+                k = keys.get(id(v))
+                if k is None:
+                    k = keys[id(v)] = (_key(v.position), v)
+                if k[0] in seedkeys:
+                    hit.append(f)
+                    break
         return hit or None
 
     @staticmethod
@@ -3083,16 +3094,18 @@ class PushPullTool(Tool):
         mg = 0.01 + 1e-6 * max(map(abs, sx + sy + sz))
         w0 = (min(sx) - mg, min(sy) - mg, min(sz) - mg)
         w1 = (max(sx) + mg, max(sy) + mg, max(sz) + mg)
-        for g in faces:
+        # Every face's corner box in one flat pass (the corners walked face
+        # by face were ~0.06 s a push in a 9 674-face group, 19-11). A face
+        # with no corner has no box and is left out.
+        import numpy as np
+        from core.topology import corner_boxes
+        flist, glo, ghi, bare = corner_boxes(faces)
+        lo_w, hi_w = np.asarray(w0), np.asarray(w1)
+        reach_box = (~bare & (ghi >= lo_w).all(axis=1)
+                     & (glo <= hi_w).all(axis=1))
+        for g in (flist[i] for i in np.flatnonzero(reach_box).tolist()):
             if g is face:
                 continue
-            gv = g.vertices
-            if (max(p.x() for p in gv) < w0[0] or min(p.x() for p in gv) > w1[0]
-                    or max(p.y() for p in gv) < w0[1]
-                    or min(p.y() for p in gv) > w1[1]
-                    or max(p.z() for p in gv) < w0[2]
-                    or min(p.z() for p in gv) > w1[2]):
-                continue  # nowhere near what the push sweeps
             if abs(QVector3D.dotProduct(fn, g.normal().normalized())) < 0.999:
                 continue  # not parallel
             dist = QVector3D.dotProduct(g.centroid() - origin, push)

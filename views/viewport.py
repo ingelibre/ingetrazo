@@ -1220,6 +1220,22 @@ def _plain_edge_rules(scene):
     return scene.edges is scene.mesh.edges
 
 
+def _edge_rows(head, k, tail, edges):
+    """One of the pick index's edge arrays: the open mesh's part read in
+    flat passes (``head[k]``, or none) followed by the ``tail`` rows asked
+    edge by edge — or ``None`` with no edges at all."""
+    if not edges:
+        return None
+    import numpy as np
+    dtype = np.float64 if k < 2 else bool
+    rest = np.asarray(tail, dtype=dtype)
+    if head is None:
+        return rest
+    if k < 2:
+        rest = rest.reshape(-1, 3)
+    return np.concatenate([head[k], rest]) if len(rest) else head[k]
+
+
 def _ctx_changed(vp, before):
     """``History.context_changed`` (stub viewports in tests have no
     history, or one without it)."""
@@ -16898,34 +16914,40 @@ class Viewport(QOpenGLWidget):
         esoft: list = []
         show_hidden = bool(getattr(scene, "show_hidden_geometry", False))
         done = False
+        head = None
         if _plain_edge_rules(scene):
-            # A plain edge of the open mesh: selectable and snappable come
-            # down to its layer and its own Hide (see _plain_edge_rules),
-            # asked once per layer name — the two questions per edge were
-            # half of a 40 000-edge rebuild (~0.2 s, night of 19-11).
+            # Plain edges of the open mesh: selectable and snappable come
+            # down to their layer and their own Hide (see _plain_edge_rules),
+            # asked once per layer name, and the rest is read in flat
+            # passes — the two questions and the rows per edge were most
+            # of a 20 000-edge rebuild (~0.3 s, night of 19-11).
             from core.mesh import Edge as _Edge
-            states: dict = {}
-            layer_state = scene._layer_state
-            for e in scene.edges:
-                if type(e) is not _Edge:
-                    break
-                name = getattr(e, "layer", None)
-                st = states.get(name)
-                if st is None:
-                    st = states[name] = layer_state(e)
-                edges.append(e)
-                esoft.append(bool(getattr(e, "soft", False)))
-                p, q = e.v0.position, e.v1.position
-                ea.append([p.x(), p.y(), p.z()])
-                eb.append([q.x(), q.y(), q.z()])
-                shown = not getattr(e, "hidden", False) or show_hidden
-                esel.append(st[0] and not st[1] and shown)
-                esnap.append(st[0] and shown)
-            else:
+            elist = scene.edges
+            if all(type(e) is _Edge for e in elist):
+                n = len(elist)
+                xyz = np.fromiter(
+                    (c for e in elist for v in (e.v0, e.v1)
+                     for c in v.position.toTuple()),
+                    dtype=np.float64, count=6 * n).reshape(n, 6)
+                names = [getattr(e, "layer", None) for e in elist]
+                states: dict = {}
+                for nm, e in zip(names, elist):
+                    if nm not in states:
+                        states[nm] = scene._layer_state(e)
+                vis = np.fromiter((states[nm][0] for nm in names),
+                                  dtype=bool, count=n)
+                lock = np.fromiter((states[nm][1] for nm in names),
+                                   dtype=bool, count=n)
+                shown = ~np.fromiter(
+                    (bool(getattr(e, "hidden", False)) for e in elist),
+                    dtype=bool, count=n) | show_hidden
+                soft = np.fromiter(
+                    (bool(getattr(e, "soft", False)) for e in elist),
+                    dtype=bool, count=n)
+                edges.extend(elist)
+                head = (xyz[:, :3], xyz[:, 3:], vis & ~lock & shown,
+                        vis & shown, soft)
                 done = True
-            if not done:                    # an odd edge: ask for each
-                for buf in (edges, ea, eb, esel, esnap, esoft):
-                    buf.clear()
         for e in (() if done else scene.edges):
             edges.append(e)
             esoft.append(bool(getattr(e, "soft", False)))
@@ -16977,11 +16999,11 @@ class Viewport(QOpenGLWidget):
             tri_e2=_cat_kept(self, "e2", e2s) if v0s else None,
             tri_ent=_cat_kept(self, "te", tents) if v0s else None,
             edges=edges,
-            edge_a=np.asarray(ea, dtype=np.float64) if edges else None,
-            edge_b=np.asarray(eb, dtype=np.float64) if edges else None,
-            edge_sel=np.asarray(esel, dtype=bool) if edges else None,
-            edge_snap=np.asarray(esnap, dtype=bool) if edges else None,
-            edge_soft=np.asarray(esoft, dtype=bool) if edges else None,
+            edge_a=_edge_rows(head, 0, ea, edges),
+            edge_b=_edge_rows(head, 1, eb, edges),
+            edge_sel=_edge_rows(head, 2, esel, edges),
+            edge_snap=_edge_rows(head, 3, esnap, edges),
+            edge_soft=_edge_rows(head, 4, esoft, edges),
             gedge_a=gedge_a,
             gedge_b=gedge_b,
             gedge_gi=gedge_gi,

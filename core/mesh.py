@@ -1460,7 +1460,19 @@ class Mesh:
         self._mut_serial += 1
         seen: dict = {}
         removed = 0
-        for f in list(self.faces):
+        # Two faces on one cycle have the same corners, so the same lowest
+        # and highest corner id: a face alone with its pair can match no
+        # other, and its cycle is never built — every face's was, twice a
+        # push in a 9 674-face group of the Plaza (19-11).
+        faces = list(self.faces)
+        ends = [(min(map(id, f.loop)), max(map(id, f.loop))) if f.loop
+                else None for f in faces]
+        shared: dict = {}
+        for k in ends:
+            shared[k] = k in shared
+        for f, k in zip(faces, ends):
+            if not shared[k]:
+                continue
             sig = frozenset(
                 frozenset((id(f.loop[i]), id(f.loop[(i + 1) % len(f.loop)])))
                 for i in range(len(f.loop))

@@ -389,21 +389,23 @@ def _pack_lists(triangle_lists, face_ids=None) -> _PackedTris:
     """Flatten ``triangle_lists`` (iterable of triangle lists) into arrays.
     ``face_ids`` gives the face index per list (defaults to the list's order)."""
     import numpy as np
-    rows_a, rows_b, rows_c, idx = [], [], [], []
-    for li, tlist in enumerate(triangle_lists):
-        fi = face_ids[li] if face_ids is not None else li
-        for (ta, tb, tc) in tlist:
-            rows_a.append((ta.x(), ta.y(), ta.z()))
-            rows_b.append((tb.x(), tb.y(), tb.z()))
-            rows_c.append((tc.x(), tc.y(), tc.z()))
-            idx.append(fi)
-    if not rows_a:
+    # One flat pass over every corner (the rows built one by one were most
+    # of a rebuild's parity packing, night of 19-11).
+    lists = triangle_lists if isinstance(triangle_lists, list) \
+        else list(triangle_lists)
+    sizes = [len(t) for t in lists]
+    n = sum(sizes)
+    if not n:
         return _PackedTris(np.zeros((0, 3)), np.zeros((0, 3)),
                            np.zeros((0, 3)), np.zeros(0, dtype=np.int64))
-    a = np.asarray(rows_a, dtype=np.float64)
-    b = np.asarray(rows_b, dtype=np.float64)
-    c = np.asarray(rows_c, dtype=np.float64)
-    return _PackedTris(a, b - a, c - a, np.asarray(idx, dtype=np.int64))
+    xyz = np.fromiter((c for tlist in lists for tri in tlist for p in tri
+                       for c in p.toTuple()),
+                      dtype=np.float64, count=9 * n).reshape(n, 3, 3)
+    ids = (np.arange(len(lists), dtype=np.int64) if face_ids is None
+           else np.asarray(face_ids[:len(lists)], dtype=np.int64))
+    idx = np.repeat(ids, sizes)
+    a = np.ascontiguousarray(xyz[:, 0])
+    return _PackedTris(a, xyz[:, 1] - a, xyz[:, 2] - a, idx)
 
 
 def _cross_rows(a, b):

@@ -836,9 +836,8 @@ def built_plan(mesh, faces=None, edges=None):
     from core.lazy_mesh import Plan
     verts = mesh.vertices
     vid = {id(v): i for i, v in enumerate(verts)}
-    pos = np.array([(p.x(), p.y(), p.z()) for p in
-                    (v.position for v in verts)], dtype=np.float64
-                   ).reshape(-1, 3)
+    pos = np.fromiter((c for v in verts for c in v.position.toTuple()),
+                      dtype=np.float64, count=3 * len(verts)).reshape(-1, 3)
     part = faces is not None
     faces = list(mesh.faces) if faces is None else list(faces)
     fid = {id(f): i for i, f in enumerate(faces)}
@@ -864,8 +863,8 @@ def built_plan(mesh, faces=None, edges=None):
             face_attr[i] = k
     edges = list(mesh.edges) if edges is None else list(edges)
     ne = len(edges)
-    e_ab = np.array([(vid[id(e.v0)], vid[id(e.v1)]) for e in edges],
-                    dtype=np.int64).reshape(-1, 2)
+    e_ab = np.fromiter((vid[id(v)] for e in edges for v in (e.v0, e.v1)),
+                       dtype=np.int64, count=2 * ne).reshape(-1, 2)
     soft = np.fromiter((bool(getattr(e, "soft", False)) for e in edges),
                        dtype=bool, count=ne)
     hidden = np.fromiter((bool(getattr(e, "hidden", False)) for e in edges),

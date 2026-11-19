@@ -669,22 +669,51 @@ def orphaned_edges_at(
     elsewhere (only those touching the operation's vertices are considered).
     """
     vkeys = {_key(v) for v in vertices}
-    key = KeyMemo()
+    # A corner's key once per vertex (its position's key), read in place:
+    # the position lists and a memo call per corner were ~0.12 s a push in
+    # a 9 674-face group of the Plaza (19-11).
+    memo: dict = {}
+
+    def key(v):
+        hit = memo.get(id(v))
+        if hit is None:
+            hit = memo[id(v)] = (_key(v.position), v)
+        return hit[0]
+
+    get = memo.get
     face_edges: set = set()
     for f in faces:
-        loops = [[key(p) for p in lp] for lp in (f.vertices, *f.holes)]
+        rings = (f.loop, *f.hole_loops)
         # Only an edge with an end in ``vkeys`` is asked about, and a face
         # can only carry it if it has that corner: the others are skipped
         # (exact — every face was walked before).
-        if not any(k in vkeys for lk in loops for k in lk):
+        hit = False
+        for lp in rings:
+            for v in lp:
+                k = get(id(v))
+                if k is None:
+                    k = memo[id(v)] = (_key(v.position), v)
+                if k[0] in vkeys:
+                    hit = True
+                    break
+            if hit:
+                break
+        if not hit:
             continue
-        for lk in loops:
+        for lp in rings:
+            lk = [key(v) for v in lp]
             n = len(lk)
             face_edges.update(frozenset((lk[i], lk[(i + 1) % n]))
                               for i in range(n))
     out: list[Edge] = []
     for e in edges:
-        ka, kb = key(e.a), key(e.b)
+        a = get(id(e.v0))
+        if a is None:
+            a = memo[id(e.v0)] = (_key(e.v0.position), e.v0)
+        b = get(id(e.v1))
+        if b is None:
+            b = memo[id(e.v1)] = (_key(e.v1.position), e.v1)
+        ka, kb = a[0], b[0]
         if (ka in vkeys or kb in vkeys) and frozenset((ka, kb)) not in face_edges:
             out.append(e)
     return out
@@ -866,30 +895,42 @@ def classify_push_edge(
     return ("free", None)
 
 
-def _face_boxes(faces):
-    """``(faces, lo, hi, bare)`` for :func:`classify_push_edge`: each face's
-    corner box grown by 1 mm plus a thousandth of its diagonal, as (N, 3)
-    arrays, and which faces have no corner (always asked)."""
+def corner_boxes(faces):
+    """``(faces, lo, hi, bare)``: the list of ``faces`` and each one's
+    outer corners' exact box as (N, 3) arrays — the very min and max of
+    its corners — with ``bare`` marking the faces with no corner (their
+    rows are zeros). One flat pass, for the box filters that walked every
+    face's corners in Python."""
     import numpy as np
     flist = list(faces)
-    counts = [len(g.loop) for g in flist]
-    pts = np.array([(q.x(), q.y(), q.z()) for g in flist for q in g.vertices],
-                   dtype=np.float64).reshape(-1, 3)
+    cnt = np.fromiter((len(g.loop) for g in flist), dtype=np.int64,
+                      count=len(flist))
+    total = int(cnt.sum())
+    pts = np.fromiter((c for g in flist for v in g.loop
+                       for c in v.position.toTuple()),
+                      dtype=np.float64, count=3 * total).reshape(-1, 3)
     n = len(flist)
     lo = np.zeros((n, 3))
     hi = np.zeros((n, 3))
-    cnt = np.asarray(counts, dtype=np.int64)
     bare = cnt == 0
     has = np.flatnonzero(~bare)
     if len(has):
         starts = np.concatenate([[0], np.cumsum(cnt)[:-1]])[has]
-        mn = np.minimum.reduceat(pts, starts, axis=0)
-        mx = np.maximum.reduceat(pts, starts, axis=0)
-        d = mx - mn
-        m = (1e-3 + 1e-3 * np.sqrt((d * d).sum(axis=1)))[:, None]
-        lo[has] = mn - m
-        hi[has] = mx + m
+        lo[has] = np.minimum.reduceat(pts, starts, axis=0)
+        hi[has] = np.maximum.reduceat(pts, starts, axis=0)
     return flist, lo, hi, bare
+
+
+def _face_boxes(faces):
+    """``(faces, lo, hi, bare)`` for :func:`classify_push_edge`: each face's
+    corner box grown by 1 mm plus a thousandth of its diagonal, and which
+    faces have no corner (always asked)."""
+    import numpy as np
+    flist, lo, hi, bare = corner_boxes(faces)
+    d = hi - lo
+    m = (1e-3 + 1e-3 * np.sqrt((d * d).sum(axis=1)))[:, None]
+    m[bare] = 0.0
+    return flist, lo - m, hi + m, bare
 
 
 def face_is_bordered(face: Face, faces: Iterable[Face]) -> bool:
@@ -1745,11 +1786,13 @@ def sweep_tjunctions(mesh, seedkeys=None) -> None:
         edges = list(mesh.edges)
         if not verts or not edges:
             break
-        vpos = np.array([[v.position.x(), v.position.y(), v.position.z()]
-                         for v in verts])
+        # Flat passes (the lists of rows were ~3× slower; twice a push).
+        vpos = np.fromiter((c for v in verts for c in v.position.toTuple()),
+                           dtype=np.float64,
+                           count=3 * len(verts)).reshape(-1, 3)
         vslot = {id(v): i for i, v in enumerate(verts)}
-        ends = np.array([(vslot[id(e.v0)], vslot[id(e.v1)]) for e in edges],
-                        dtype=np.int64)
+        ends = np.fromiter((vslot[id(v)] for e in edges for v in (e.v0, e.v1)),
+                           dtype=np.int64, count=2 * len(edges)).reshape(-1, 2)
         va, vb = vpos[ends[:, 0]], vpos[ends[:, 1]]
         elo, ehi = np.minimum(va, vb), np.maximum(va, vb)
         if seed_lo is None:
