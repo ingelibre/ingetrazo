@@ -153,3 +153,52 @@ def test_guid_format():
                   "abcdefghijklmnopqrstuvwxyz_$")
     assert set(g) <= allowed
     assert g[0] in "0123"                           # 128 bits → top char < 4
+
+
+# --- project north and site location (#1493) -----------------------------------
+
+def _context_and_site(text):
+    """(TrueNorth ratios or None, (lat, lon, elev) raw strings) of an IFC text."""
+    ctx = re.search(r"IFCGEOMETRICREPRESENTATIONCONTEXT\(\$,'Model',3,1\.E-5,#\d+,"
+                    r"(#\d+|\$)\);", text)
+    assert ctx, "model context not found"
+    north = None
+    if ctx.group(1) != "$":
+        d = re.search(rf"{re.escape(ctx.group(1))}=IFCDIRECTION\(\(([^,]+),([^)]+)\)\);",
+                      text)
+        north = (float(d.group(1)), float(d.group(2)))
+    site = re.search(r"IFCSITE\((?:[^,]*,){9}(\([^)]*\)|\$),(\([^)]*\)|\$),([^,]+),",
+                     text)
+    return north, site.groups()
+
+
+@pytest.mark.parametrize("deg, expected", [
+    (0.0, (0.0, 1.0)),                 # default north: explicit +Y
+    (30.0, (0.5, 0.8660254)),
+    (350.0, (-0.1736482, 0.9848078)),  # folded to -10 degrees
+])
+def test_true_north_follows_scene_north(tmp_path, deg, expected):
+    from core.history import SetNorthCommand
+    scene = _tagged_wall_scene()
+    if deg:
+        History(scene).execute(SetNorthCommand(deg))
+    p = tmp_path / "north.ifc"
+    save_ifc(scene, p)
+    north, (lat, lon, elev) = _context_and_site(p.read_text())
+    assert north == pytest.approx(expected, abs=1e-6)
+    assert (lat, lon, elev) == ("$", "$", "$")       # no location, no site data
+
+
+def test_site_location_is_written_from_georef(tmp_path):
+    from core.history import SetNorthCommand
+    from georef.datum import SceneDatum
+    scene = _tagged_wall_scene()
+    scene.georef = SceneDatum(43.1536, -2.1689, alt=312.0)
+    History(scene).execute(SetNorthCommand(-12.5))
+    p = tmp_path / "site.ifc"
+    save_ifc(scene, p)
+    north, (lat, lon, elev) = _context_and_site(p.read_text())
+    assert north == pytest.approx((-0.2164396, 0.9762960), abs=1e-6)
+    assert lat == "(43,9,12,960000)"
+    assert lon == "(-2,-10,-8,-40000)"
+    assert float(elev) == pytest.approx(312.0)

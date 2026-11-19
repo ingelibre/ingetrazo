@@ -22,6 +22,7 @@ import uuid
 from pathlib import Path
 
 from core.bim import class_quantities, collect_objects, face_set_volume
+from core.sun import north_vector_xy, scene_north_deg
 
 _GUID_CHARS = ("0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
                "abcdefghijklmnopqrstuvwxyz_$")
@@ -66,14 +67,56 @@ def _f(v: float) -> str:
     return f"{v:.6f}"
 
 
+def _is_guid(value) -> bool:
+    """A well-formed compressed GlobalId: 22 characters of the IFC
+    alphabet, the first one 0-3 (128 bits)."""
+    return (isinstance(value, str) and len(value) == 22
+            and value[0] in "0123" and all(c in _GUID_CHARS for c in value))
+
+
+#: IfcRoot subtypes written by name (elements, their types and the
+#: relationships are recognised by pattern in :func:`_is_rooted`)
+_ROOTED = frozenset((
+    "IFCPROJECT", "IFCSITE", "IFCBUILDING", "IFCBUILDINGSTOREY", "IFCSPACE",
+    "IFCPROPERTYSET", "IFCELEMENTQUANTITY", "IFCOPENINGELEMENT",
+    "IFCVIRTUALELEMENT", "IFCEXTERNALSPATIALELEMENT", "IFCBUILDINGELEMENTPROXY",
+))
+
+
+def _is_rooted(entity: str, attrs) -> bool:
+    """True for an IfcRoot entity whose OwnerHistory (second attribute) is
+    left unset: its first attribute is a GlobalId and the entity is a
+    spatial element, a building element, a type, a property set or a
+    relationship."""
+    if len(attrs) < 2 or attrs[1] != "$":
+        return False
+    first = attrs[0]
+    if not (first[:1] == "'" and first[-1:] == "'" and _is_guid(first[1:-1])):
+        return False
+    from core.bim import IFC_CLASSES
+    return (entity in _ROOTED or entity.startswith("IFCREL")
+            or entity.endswith("TYPE")
+            or entity in {name.upper() for name in IFC_CLASSES})
+
+
 class _Writer:
     def __init__(self) -> None:
         self.lines: list[str] = []
         self._next = 1
+        # IfcOwnerHistory every rooted entity points to, once written: some
+        # importers require the owning application even though IFC4 makes
+        # the attribute optional
+        self.owner_history: int | None = None
+
+    def _owned(self, entity: str, attrs) -> tuple:
+        if self.owner_history is not None and _is_rooted(entity, attrs):
+            return (attrs[0], f"#{self.owner_history}") + tuple(attrs[2:])
+        return attrs
 
     def add(self, entity: str, *attrs) -> int:
         eid = self._next
         self._next += 1
+        attrs = self._owned(entity, attrs)
         self.lines.append(f"#{eid}={entity}({','.join(attrs)});")
         return eid
 
@@ -119,6 +162,34 @@ def _brep(w: _Writer, faces, context_id: int) -> int:
                  rep_type, f"(#{item})")
 
 
+def _compound_angle(deg):
+    """IfcCompoundPlaneAngleMeasure: (degrees, minutes, seconds, millionths),
+    all with the sign of the angle."""
+    sign = -1 if deg < 0 else 1
+    micro = round(abs(float(deg)) * 3600 * 1_000_000)
+    d, rest = divmod(micro, 3600 * 1_000_000)
+    m, rest = divmod(rest, 60 * 1_000_000)
+    sec, mil = divmod(rest, 1_000_000)
+    return "(" + ",".join(str(sign * v) for v in (d, m, sec, mil)) + ")"
+
+
+def _write_owner_history(w: _Writer, stamp) -> int:
+    """IfcOwnerHistory naming IngeTrazo as the owning application.
+
+    IFC4 makes OwnerHistory optional, but importers read the application
+    that wrote a file from it; one importer stops with a null-instance
+    assertion when no IfcApplication exists. The person is anonymous: the
+    file does not record who exported it."""
+    from core.version import __version__
+    person = w.add("IFCPERSON", "$", "'unknown'", "$", "$", "$", "$", "$", "$")
+    organization = w.add("IFCORGANIZATION", "$", "'IngeTrazo'", "$", "$", "$")
+    owner = w.add("IFCPERSONANDORGANIZATION", f"#{person}", f"#{organization}", "$")
+    application = w.add("IFCAPPLICATION", f"#{organization}", _s(__version__),
+                        "'IngeTrazo'", "'IngeTrazo'")
+    return w.add("IFCOWNERHISTORY", f"#{owner}", f"#{application}", "$",
+                 ".NOTDEFINED.", "$", "$", "$", str(int(stamp.timestamp())))
+
+
 def save_ifc(scene, path, project_name: str = "IngeTrazo project") -> int:
     """Write every tagged BIM object to ``path`` as IFC4. Returns how many
     elements were exported; raises ``ValueError`` when nothing is tagged."""
@@ -126,11 +197,16 @@ def save_ifc(scene, path, project_name: str = "IngeTrazo project") -> int:
     if not objects:
         raise ValueError("No tagged BIM objects to export")
 
+    stamp = datetime.datetime.now()
     w = _Writer()
+    w.owner_history = _write_owner_history(w, stamp)
     origin = w.add("IFCCARTESIANPOINT", "(0.,0.,0.)")
     axis = w.add("IFCAXIS2PLACEMENT3D", f"#{origin}", "$", "$")
+    # Tools > North: always written, so 0 degrees is +Y as in the scene.
+    nx, ny = north_vector_xy(scene_north_deg(scene))
+    true_north = w.add("IFCDIRECTION", f"({nx:.12f},{ny:.12f})")
     context = w.add("IFCGEOMETRICREPRESENTATIONCONTEXT",
-                    "$", "'Model'", "3", "1.E-5", f"#{axis}", "$")
+                    "$", "'Model'", "3", "1.E-5", f"#{axis}", f"#{true_north}")
     units = [
         w.add("IFCSIUNIT", "*", ".LENGTHUNIT.", "$", ".METRE."),
         w.add("IFCSIUNIT", "*", ".AREAUNIT.", "$", ".SQUARE_METRE."),
@@ -141,9 +217,14 @@ def save_ifc(scene, path, project_name: str = "IngeTrazo project") -> int:
     project = w.add("IFCPROJECT", _s(ifc_guid()), "$", _s(project_name),
                     "$", "$", "$", "$", f"(#{context})", f"#{unit_assign}")
     placement = w.add("IFCLOCALPLACEMENT", "$", f"#{axis}")
+    lat = lon = elev = "$"
+    datum = getattr(scene, "georef", None)       # the location, if any
+    if datum is not None:
+        lat, lon = _compound_angle(datum.lat), _compound_angle(datum.lon)
+        elev = f"{float(datum.alt):.3f}"
     site = w.add("IFCSITE", _s(ifc_guid()), "$", "'Site'", "$", "$",
                  f"#{placement}", "$", "$", ".ELEMENT.",
-                 "$", "$", "$", "$", "$")
+                 lat, lon, elev, "$", "$")
     building = w.add("IFCBUILDING", _s(ifc_guid()), "$", "'Building'", "$",
                      "$", f"#{placement}", "$", "$", ".ELEMENT.",
                      "$", "$", "$")
@@ -213,13 +294,13 @@ def save_ifc(scene, path, project_name: str = "IngeTrazo project") -> int:
     w.add("IFCRELCONTAINEDINSPATIALSTRUCTURE", _s(ifc_guid()), "$", "$", "$",
           "(" + ",".join(f"#{e}" for e in element_ids) + ")", f"#{storey}")
 
-    stamp = datetime.datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
     name = Path(path).name.replace("'", "''")
     header = (
         "ISO-10303-21;\n"
         "HEADER;\n"
-        "FILE_DESCRIPTION((''),'2;1');\n"
-        f"FILE_NAME('{name}','{stamp}',('IngeTrazo'),('IngeTrazo'),"
+        "FILE_DESCRIPTION(('ViewDefinition [CoordinationView]'),'2;1');\n"
+        f"FILE_NAME('{name}','{stamp.strftime('%Y-%m-%dT%H:%M:%S')}',"
+        "('IngeTrazo'),('IngeTrazo'),"
         "'IngeTrazo','IngeTrazo','');\n"
         "FILE_SCHEMA(('IFC4'));\n"
         "ENDSEC;\n"
