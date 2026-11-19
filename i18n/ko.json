@@ -4053,5 +4053,6 @@
  "Every layer is in the legend": "모든 레이어가 범례에 있습니다",
  "Free entry": "자유 항목",
  "New entry": "새 항목",
- "Every sheet as a page. Click: open it. Drag: change the order. Double-click or F2: rename. Delete: remove it. Right-click: more.": "각 시트를 페이지로 표시합니다. 클릭: 열기. 끌기: 순서 변경. 두 번 클릭 또는 F2: 이름 바꾸기. Delete: 삭제. 오른쪽 클릭: 더 보기."
+ "Every sheet as a page. Click: open it. Drag: change the order. Double-click or F2: rename. Delete: remove it. Right-click: more.": "각 시트를 페이지로 표시합니다. 클릭: 열기. 끌기: 순서 변경. 두 번 클릭 또는 F2: 이름 바꾸기. Delete: 삭제. 오른쪽 클릭: 더 보기.",
+ "Middle-button drag pans (Shift + drag orbits)": "가운데 버튼 드래그로 이동 (Shift + 드래그로 궤도 회전)"
 }

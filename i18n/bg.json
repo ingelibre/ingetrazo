@@ -4054,5 +4054,6 @@
  "Every layer is in the legend": "Всички слоеве са в легендата",
  "Free entry": "Свободен запис",
  "New entry": "Нов запис",
- "Every sheet as a page. Click: open it. Drag: change the order. Double-click or F2: rename. Delete: remove it. Right-click: more.": "Всеки чертожен лист като страница. Щракване: отваря го. Плъзгане: променя реда. Двойно щракване или F2: преименуване. Delete: изтрива го. Десен бутон: още."
+ "Every sheet as a page. Click: open it. Drag: change the order. Double-click or F2: rename. Delete: remove it. Right-click: more.": "Всеки чертожен лист като страница. Щракване: отваря го. Плъзгане: променя реда. Двойно щракване или F2: преименуване. Delete: изтрива го. Десен бутон: още.",
+ "Middle-button drag pans (Shift + drag orbits)": "Влачене със средния бутон мести изгледа (Shift + влачене завърта)"
 }
