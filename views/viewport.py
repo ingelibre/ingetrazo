@@ -2374,6 +2374,16 @@ class _AltWatch(QObject):
         return False
 
 
+def _baked_bytes(baked):
+    """A preview bake (``Viewport._bake_preview_faces_py``) as plain bytes
+    and tuples in draw order, to compare two of them bit for bit."""
+    if baked is None:
+        return None
+    data, runs, by_texture = baked
+    return (data.tobytes(), list(runs),
+            [(k, v.tobytes()) for k, v in by_texture.items()])
+
+
 def _face_geometry(f, memo, triangulate):
     """``(key, normal, area, triangles, centroid)`` of a mesh face, from
     ``memo`` when every corner (holes included) is exactly where it was
@@ -3236,6 +3246,8 @@ class Viewport(QOpenGLWidget):
     painting = 0
 
     def paintGL(self) -> None:
+        if Viewport._preview_native_state is None:
+            self._schedule_preview_check()
         if getattr(self, "_pick_warm_due", False):
             # After this first frame of a new document, not beside it.
             self._pick_warm_due = False
@@ -4726,7 +4738,15 @@ class Viewport(QOpenGLWidget):
                  tuple((ly.name, ly.visible, ly.locked) for ly in sc.layers),
                  _layer_look_sig(sc, self._view_style()),
                  len(sc.groups))
-        live = getattr(self, "_frozen_cache_version", None) is None
+        # A vertex drag (``begin_verts_preview``: a face moved inside a big
+        # group) freezes the version too, but moves no placement and
+        # mutates no mesh until its commit, which bumps the version: what
+        # the walk reads stays what it was. Treated as frozen, every hover
+        # of a Move in Group 3 of the Plaza walked its ~1 000 placements
+        # again (~5.7 ms a hover, 19-11).
+        live = (getattr(self, "_frozen_cache_version", None) is None
+                or (getattr(self, "_verts_preview", None) is not None
+                    and not getattr(self, "_preview_groups", None)))
         same = getattr(self, "_epoch_same", None)
         if live and same is not None and same[0] == cheap:
             self._epoch_memo = ((tick, _cache_ver(self)), same[1])
@@ -6853,7 +6873,11 @@ class Viewport(QOpenGLWidget):
         """Multiply ``base`` RGB by a subtle diffuse term from the face normal vs
         the fixed world light — the matte-model shading. Returns a clamped RGB
         tuple used as the render key (identical normals/colours group together)."""
-        shade = self._shade_factor(normal)
+        return self._shade_rgb(base, self._shade_factor(normal))
+
+    @staticmethod
+    def _shade_rgb(base, shade):
+        """:meth:`_shaded_color` for a known ``shade`` factor."""
         # Quantise to 1/64 steps: the tuple is the DRAW-RUN key, and a model
         # with thousands of distinct normals (imported trees, curved detail)
         # otherwise explodes into one draw call per unique shade — 63k draw
@@ -10766,25 +10790,7 @@ class Viewport(QOpenGLWidget):
         faces = provider()
         if not faces:
             return
-        data = array("f")
-        runs = []                        # (shaded_rgb, start_vertex, count)
-        by_texture: dict = {}            # (path, shade) -> interleaved pos+uv
-        for face in faces:
-            attrs = getattr(face, "attrs", None) or {}
-            tex = attrs.get("texture")
-            if tex and tex.get("path"):
-                self._append_textured_face(by_texture, face, tex)
-                continue
-            color = attrs.get("color") or self.DEFAULT_FACE_COLOR
-            start = len(data) // 3
-            for t0, t1, t2 in self._tris_of(face):
-                data.extend([
-                    t0.x(), t0.y(), t0.z(),
-                    t1.x(), t1.y(), t1.z(),
-                    t2.x(), t2.y(), t2.z(),
-                ])
-            runs.append((self._shaded_color(tuple(color[:3]), self._normal_of(face)),
-                         start, len(data) // 3 - start))
+        data, runs, by_texture = self._bake_preview_faces(faces, tool)
         if not data and not by_texture:
             return
         self._gl.glEnable(GL_POLYGON_OFFSET_FILL)
@@ -10835,6 +10841,246 @@ class Viewport(QOpenGLWidget):
             if opacity < 1.0:
                 self._program.setUniformValue1f(self._loc_opacity, 1.0)
         self._gl.glDisable(GL_POLYGON_OFFSET_FILL)
+
+    def _bake_preview_faces(self, faces, tool=None):
+        """``(data, runs, by_texture)`` for :meth:`_draw_preview_faces`:
+        the Rust engine's bake when it has one and it passed its check
+        (:meth:`_preview_native_ok`), else :meth:`_bake_preview_faces_py`.
+        A push's overlay on a 100-sided textured pillar is 101 fresh faces a
+        frame: ~8 ms of earcut, Newell and UV walks in Python, well under
+        1 ms in Rust (19-11)."""
+        out = None
+        if self._preview_native_ok():
+            sweeps = getattr(tool, "preview_sweeps", None)
+            spec = sweeps() if callable(sweeps) else None
+            if spec is not None and spec[0] is faces:
+                out = self._bake_preview_sweeps_native(spec[1])
+            else:
+                out = self._bake_preview_faces_native(faces)
+        if out is None:
+            out = self._bake_preview_faces_py(faces)
+        return out
+
+    def _bake_preview_faces_py(self, faces):
+        """The preview faces triangulated as the preview VBOs take them:
+        ``data`` the colour faces' positions, ``runs`` one ``(shaded_rgb,
+        start_vertex, count)`` per colour face, ``by_texture`` ``(path,
+        shade)`` → interleaved pos+uv (see _append_textured_face)."""
+        data = array("f")
+        runs = []                        # (shaded_rgb, start_vertex, count)
+        by_texture: dict = {}            # (path, shade) -> interleaved pos+uv
+        for face in faces:
+            attrs = getattr(face, "attrs", None) or {}
+            tex = attrs.get("texture")
+            if tex and tex.get("path"):
+                self._append_textured_face(by_texture, face, tex)
+                continue
+            color = attrs.get("color") or self.DEFAULT_FACE_COLOR
+            start = len(data) // 3
+            for t0, t1, t2 in self._tris_of(face):
+                data.extend([
+                    t0.x(), t0.y(), t0.z(),
+                    t1.x(), t1.y(), t1.z(),
+                    t2.x(), t2.y(), t2.z(),
+                ])
+            runs.append((self._shaded_color(tuple(color[:3]), self._normal_of(face)),
+                         start, len(data) // 3 - start))
+        return data, runs, by_texture
+
+    def _preview_mat(self, attrs, table) -> int:
+        """The row of ``table`` (``(rows, colours, paths, memo, groups)``,
+        see :meth:`_bake_preview_faces_native`) for a preview face's
+        ``attrs``: a colour, or a texture with what ``face_uv_axes`` reads
+        of it."""
+        rows, colors, paths, memo, groups = table
+        tex = attrs.get("texture") if attrs else None
+        if tex and tex.get("path"):
+            key = ("t", id(tex))
+            k = memo.get(key)
+            if k is None:
+                path = tex["path"]
+                g = groups.get(path)
+                if g is None:
+                    g = groups[path] = len(paths)
+                    paths.append(path)
+                uvw = tex.get("uvw")
+                if uvw:
+                    m = [float(uvw[i]) for i in range(8)]
+                    row = [1.0, float(g), 1.0, *m, 0.0, 1.0, 1.0]
+                else:
+                    rot = float(tex.get("rot", 0.0) or 0.0)
+                    sw = float(tex.get("sw", 1.0) or 1.0)
+                    sh = float(tex.get("sh", 1.0) or 1.0)
+                    row = [1.0, float(g), 0.0] + [0.0] * 8 + [rot, sw, sh]
+                k = memo[key] = len(rows)
+                rows.append(row)
+                colors.append(None)
+            return k
+        color = (attrs.get("color") if attrs else None) or self.DEFAULT_FACE_COLOR
+        rgb = tuple(color[:3])
+        key = ("c", rgb)
+        k = memo.get(key)
+        if k is None:
+            k = memo[key] = len(rows)
+            rows.append([0.0] * 14)
+            colors.append(rgb)
+        return k
+
+    def _preview_native_out(self, out, table):
+        """The engine's bake as ``_bake_preview_faces_py`` returns it."""
+        if out is None:
+            return None
+        col, nruns, tex = out
+        _rows, colors, paths, _memo, _groups = table
+        data = array("f")
+        data.frombytes(col)
+        shade_rgb = self._shade_rgb
+        runs = [(shade_rgb(colors[m], shade), start, count)
+                for m, start, count, shade in nruns]
+        by_texture: dict = {}
+        for g, shade, raw in tex:
+            buf = by_texture[(paths[g], shade)] = array("f")
+            buf.frombytes(raw)
+        return data, runs, by_texture
+
+    def _bake_preview_faces_native(self, faces):
+        """:meth:`_bake_preview_faces_py` in the Rust engine
+        (``preview_faces_bake``), or ``None``: no engine, a mesh face among
+        them, or anything Python would make another way (it then runs and
+        does what it always did)."""
+        import numpy as np
+        import core._native as _native
+        nat = _native.native
+        try:
+            xyz = array("f")
+            sizes, counts, fmat = [], [], []
+            table = ([], [], [], {}, {})
+            for face in faces:
+                if hasattr(face, "loop"):
+                    return None
+                fmat.append(self._preview_mat(
+                    getattr(face, "attrs", None) or {}, table))
+                rings = [face.vertices, *face.holes]
+                counts.append(len(rings))
+                for ring in rings:
+                    sizes.append(len(ring))
+                    for p in ring:
+                        xyz.extend((p.x(), p.y(), p.z()))
+            pos = np.frombuffer(xyz, dtype=np.float32).reshape(-1, 3)
+            mats = np.array(table[0], dtype=np.float64).reshape(-1, 14)
+            lt = self._LIGHT
+            out = nat.preview_faces_bake(pos, sizes, counts, fmat, mats,
+                                         (lt.x(), lt.y(), lt.z()),
+                                         _native.qt_hypot())
+            return self._preview_native_out(out, table)
+        except Exception:  # noqa: BLE001 — Python bakes it (and says why)
+            return None
+
+    def _bake_preview_sweeps_native(self, sweeps):
+        """The bake of a push's overlay (``tools.pushpull._build_light_faces``)
+        made in the engine from ``sweeps`` — ``(rings, off, cap_attrs,
+        wall_attrs)`` per swept face, ``rings`` its base rings outer first —
+        without walking the faces at all (``preview_sweep_bake``)."""
+        import numpy as np
+        import core._native as _native
+        nat = _native.native
+        try:
+            xyz = array("f")
+            sizes, counts, offs, caps, walls = [], [], array("f"), [], []
+            table = ([], [], [], {}, {})
+            for rings, off, cap_attrs, wall_attrs in sweeps:
+                caps.append(self._preview_mat(cap_attrs or {}, table))
+                walls.append(self._preview_mat(wall_attrs or {}, table))
+                offs.extend((off.x(), off.y(), off.z()))
+                counts.append(len(rings))
+                for ring in rings:
+                    sizes.append(len(ring))
+                    for p in ring:
+                        xyz.extend((p.x(), p.y(), p.z()))
+            pos = np.frombuffer(xyz, dtype=np.float32).reshape(-1, 3)
+            off3 = np.frombuffer(offs, dtype=np.float32).reshape(-1, 3)
+            mats = np.array(table[0], dtype=np.float64).reshape(-1, 14)
+            lt = self._LIGHT
+            out = nat.preview_sweep_bake(pos, sizes, counts, off3, caps, walls,
+                                         mats, (lt.x(), lt.y(), lt.z()),
+                                         _native.qt_hypot())
+            return self._preview_native_out(out, table)
+        except Exception:  # noqa: BLE001 — Python bakes it
+            return None
+
+    #: Whether the engine's preview bake matched the Python one on the
+    #: fixed sample (None: not tried yet). Once per session.
+    _preview_native_state = None
+
+    def _schedule_preview_check(self, delay_ms: int = 1500) -> None:
+        """Run :meth:`_check_preview_native` once, soon after the view is
+        on screen and not inside a paint: the check bakes its sample in
+        Python too (~15 ms, 19-11), which a drag's first frame must not
+        wait for."""
+        if getattr(self, "_preview_check_due", False):
+            return
+        self._preview_check_due = True
+        from PySide6.QtCore import QTimer
+        QTimer.singleShot(delay_ms, self, self._check_preview_native)
+
+    def _preview_native_ok(self) -> bool:
+        """Whether the engine bakes preview faces: only once it has baked a
+        fixed sample — every kind of face, map and turn — to the very bytes
+        the Python bake makes on this machine (``pow``, ``cos``, ``sin``
+        and Qt's ``hypot`` come from C libraries that may round otherwise).
+        Not checked yet: Python bakes this frame and the check is queued."""
+        state = Viewport._preview_native_state
+        if state is None:
+            self._schedule_preview_check(0)
+            return False
+        return state
+
+    def _check_preview_native(self) -> bool:
+        """The check :meth:`_preview_native_ok` reads (see there)."""
+        self._preview_check_due = False
+        state = Viewport._preview_native_state
+        if state is not None:
+            return state
+        # Not while the hand is working in the view: the check bakes its
+        # sample in Python too (~45 ms on the first start), and a drag that
+        # began within its first seconds took it as one frame. It waits for
+        # a pause (20 s at most; Python bakes meanwhile).
+        busy = getattr(self, "view_busy", None)
+        waited = getattr(self, "_preview_check_waits", 0)
+        try:
+            if busy is not None and busy() and waited < 66:
+                self._preview_check_waits = waited + 1
+                self._schedule_preview_check(300)
+                return False
+        except RuntimeError:
+            pass
+        import core._native as _native
+        nat = _native.native
+        if (nat is None or _native.qt_hypot() is None
+                or not hasattr(nat, "preview_faces_bake")
+                or not hasattr(nat, "preview_sweep_bake")):
+            return False                 # (the engine may still load later)
+        ok = False
+        try:
+            from core.preview_probe import probe_faces, probe_sweeps
+            faces = probe_faces()
+            ok = (_baked_bytes(self._bake_preview_faces_native(faces))
+                  == _baked_bytes(self._bake_preview_faces_py(faces)))
+            if ok:
+                built, sweeps = probe_sweeps()
+                ok = (_baked_bytes(self._bake_preview_sweeps_native(sweeps))
+                      == _baked_bytes(self._bake_preview_faces_py(built)))
+        except Exception as exc:  # noqa: BLE001 — then Python
+            import logging
+            logging.getLogger(__name__).warning(
+                "Native preview bake check failed: %s", exc)
+            ok = False
+        if not ok:
+            import logging
+            logging.getLogger(__name__).info(
+                "Native preview bake differs here: Python bakes previews")
+        Viewport._preview_native_state = ok
+        return ok
 
     def _draw_rubber_band(self) -> None:
         self._overlay_rubber = None

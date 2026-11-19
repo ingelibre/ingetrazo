@@ -28,15 +28,15 @@ pub struct V3(pub f32, pub f32, pub f32);
 
 impl V3 {
     #[inline]
-    fn sub(self, o: V3) -> V3 {
+    pub(crate) fn sub(self, o: V3) -> V3 {
         V3(self.0 - o.0, self.1 - o.1, self.2 - o.2)
     }
     #[inline]
-    fn mul(self, s: f32) -> V3 {
+    pub(crate) fn mul(self, s: f32) -> V3 {
         V3(self.0 * s, self.1 * s, self.2 * s)
     }
     #[inline]
-    fn div(self, s: f32) -> V3 {
+    pub(crate) fn div(self, s: f32) -> V3 {
         V3(self.0 / s, self.1 / s, self.2 / s)
     }
     #[inline]
@@ -647,7 +647,7 @@ pub struct FaceGeom {
     pub tris_unit: Option<Vec<[u32; 3]>>,
 }
 
-fn triangles(pos: &[V3], rings: &[&[u32]], normal: V3, h: Hypot) -> Vec<[u32; 3]> {
+pub(crate) fn triangles(pos: &[V3], rings: &[&[u32]], normal: V3, h: Hypot) -> Vec<[u32; 3]> {
     let outer = rings[0];
     let m = outer.len();
     let holes: Vec<&[u32]> = rings[1..].iter().copied().filter(|r| r.len() >= 3).collect();
