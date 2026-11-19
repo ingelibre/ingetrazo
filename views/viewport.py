@@ -1236,6 +1236,34 @@ def _edge_rows(head, k, tail, edges):
     return np.concatenate([head[k], rest]) if len(rest) else head[k]
 
 
+def wait_for_still_view(vp, timer, ms: int = 120) -> bool:
+    """For a panel's deferred refresh: ``True`` when it may run now;
+    otherwise ``timer`` is started again (``ms``) and the caller returns —
+    so the refresh lands once the user stops moving the view."""
+    busy = getattr(vp, "view_busy", None)
+    now = _time_mod.monotonic()
+    try:
+        if busy is not None and busy():
+            # Never starved: after WAIT_MAX_S of waiting it runs anyway.
+            first = getattr(timer, "_waiting_since", None)
+            if first is None:
+                timer._waiting_since = first = now
+            if now - first < WAIT_MAX_S:
+                timer.start(ms)
+                return False
+    except RuntimeError:                # a widget being torn down
+        pass
+    try:
+        timer._waiting_since = None
+    except (AttributeError, RuntimeError):
+        pass
+    return True
+
+
+#: The longest a panel's refresh waits for the view to settle.
+WAIT_MAX_S = 5.0
+
+
 def _ctx_changed(vp, before):
     """``History.context_changed`` (stub viewports in tests have no
     history, or one without it)."""
@@ -3184,8 +3212,40 @@ class Viewport(QOpenGLWidget):
         finally:
             Viewport.painting -= 1
 
+    #: How long the view must stay put before side panels catch up.
+    VIEW_STILL_S = 0.3
+
+    def _note_camera(self) -> None:
+        """Remember when the camera last moved (see :meth:`view_busy`)."""
+        try:
+            cam = self.camera
+            key = (tuple(cam.view_matrix().data()),
+                   tuple(cam.projection_matrix().data()))
+        except Exception:  # noqa: BLE001 — stand-in cameras in tests
+            return
+        if key != getattr(self, "_cam_key", None):
+            self._cam_key = key
+            self._cam_moved_t = _time_mod.monotonic()
+
+    def view_busy(self) -> bool:
+        """Whether the user is working in the view: a middle-button drag
+        held, or the pointer, a button, the wheel or the camera moved in
+        the last ``VIEW_STILL_S``. Side panels wait for the hand to pause
+        before their own refresh (night of 19-11: opening a group, the
+        layer counts and the in-model lists landed ~0.2 s inside the first
+        orbit, or the first stroke of a line, in the Plaza)."""
+        if getattr(self, "_middle_drag_active", False):
+            return True
+        now = _time_mod.monotonic()
+        for t in (getattr(self, "_cam_moved_t", None),
+                  getattr(self, "_hand_t", None)):
+            if t is not None and now - t < self.VIEW_STILL_S:
+                return True
+        return False
+
     def _paint_frame(self) -> None:
         self._tick = getattr(self, "_tick", 0) + 1     # a new epoch memo
+        self._note_camera()
         self._depth_clean = None          # see the read-back at the end
         self._sync_axes()
         # Camera from Photo: a stand-in viewport (tests, a context below
@@ -9672,13 +9732,29 @@ class Viewport(QOpenGLWidget):
                     buf = by_texture[hit[2]] = array("f")
                 buf.extend(hit[3])
                 return
-        key = (tex["path"], self._shade_factor(self._normal_of(face)))
+        if ckey is None:
+            # A preview face (a fresh object each frame): its normal once,
+            # for the shade, the map and the earcut alike — the very value
+            # each asked for (the 101 faces of a push's overlay on a round
+            # pillar walked Newell 303 times a frame, 19-11).
+            nrm = face.normal()
+            if len(face.vertices) < 3:
+                tris = []
+            else:
+                from core.triangulate import triangulate
+                tris = triangulate(face.vertices, face.holes, nrm)
+            fnrm = nrm
+        else:
+            nrm = self._normal_of(face)
+            tris = None
+            fnrm = face.normal()
+        key = (tex["path"], self._shade_factor(nrm))
         buf = by_texture.get(key)
         if buf is None:
             buf = by_texture[key] = array("f")
         out = array("f")
-        gu, cu, gv, cv = face_uv_axes(tex, face.normal())
-        for tri in self._tris_of(face):
+        gu, cu, gv, cv = face_uv_axes(tex, fnrm)
+        for tri in (self._tris_of(face) if tris is None else tris):
             for p in tri:
                 out.extend([
                     p.x(), p.y(), p.z(),
@@ -10277,6 +10353,17 @@ class Viewport(QOpenGLWidget):
                 groups = [g for g in groups if id(g) not in pv_sil]
             if got:
                 chunks.append(got)
+            # Each loose group's chunk, kept while the scene's version is
+            # the one _group_chunk keys its entries by: a refresh asked all
+            # ~880 groups of the Plaza for theirs (their paint, their
+            # checks) every ~80 ms of an orbit, ~12 ms each time (19-11).
+            vpv = getattr(self, "_verts_preview", None)
+            skey = (self.scene.version, id(self.scene.mesh),
+                    None if vpv is None else id(vpv))
+            smemo = getattr(self, "_sil_chunk_memo", None)
+            if smemo is None or smemo[0] != skey:
+                smemo = self._sil_chunk_memo = (skey, {})
+            known = smemo[1]
             for g in groups:
                 if getattr(g, "xform", None) is not None:
                     got = self._instance_silhouette(g, eye, planes)
@@ -10284,7 +10371,12 @@ class Viewport(QOpenGLWidget):
                         if got:
                             chunks.append(got)
                         continue
-                ch = self._group_chunk(g)
+                hit = known.get(id(g))
+                if hit is not None and hit[0] is g and hit[1] is g.mesh:
+                    ch = hit[2]
+                else:
+                    ch = self._group_chunk(g)
+                    known[id(g)] = (g, g.mesh, ch)
                 if ch["soft_pts"] is None:
                     continue
                 bb = ch.get("bbox")
@@ -15538,7 +15630,10 @@ class Viewport(QOpenGLWidget):
             memo = self._span_arrays = {}
         hit = memo.get(id(spans))
         if hit is None or hit[0] is not spans:
-            if len(memo) > 16:
+            # Roomy: a frame asks for every texture run's lists (~100 in the
+            # Plaza, twice when the rest of the model fades), and a bound of
+            # 16 emptied it every frame (night of 19-11).
+            if len(memo) > 1024:
                 memo.clear()
             n = len(spans)
             has = np.zeros(n, dtype=bool)
@@ -15586,13 +15681,25 @@ class Viewport(QOpenGLWidget):
         ``(context, subject)`` when the edited group's surroundings are
         fading. Without a fade everything is context and ``subject`` is
         empty, so callers draw one list either way."""
+        # The span lists of a run, made once: ``parts`` stays the same list
+        # until the next upload, and a list made again each frame was a new
+        # key to _visible_spans_np's arrays — 26 runs read span by span in
+        # Python every frame of an orbit (~13 ms in the Plaza, 19-11).
+        memo = getattr(self, "_tex_span_lists", None)
+        if memo is None:
+            memo = self._tex_span_lists = {}
+        hit = memo.get(id(parts))
+        if hit is None or hit[0] is not parts:
+            if len(memo) > 1024:
+                memo.clear()
+            hit = memo[id(parts)] = (
+                parts, [(bb, s, n) for bb, s, n, _ in parts],
+                [(bb, s, n) for bb, s, n, sub in parts if not sub],
+                [(bb, s, n) for bb, s, n, sub in parts if sub])
         if not fading:
-            return self._visible_spans(
-                [(bb, s, n) for bb, s, n, _ in parts], planes)[0], []
-        ctx = self._visible_spans(
-            [(bb, s, n) for bb, s, n, sub in parts if not sub], planes)[0]
-        subj = self._visible_spans(
-            [(bb, s, n) for bb, s, n, sub in parts if sub], planes)[0]
+            return self._visible_spans(hit[1], planes)[0], []
+        ctx = self._visible_spans(hit[2], planes)[0]
+        subj = self._visible_spans(hit[3], planes)[0]
         return ctx, subj
 
     #: Component placements holding more faces than this, all together,
@@ -21015,6 +21122,7 @@ class Viewport(QOpenGLWidget):
         # second click of a line) the tool is still busy and nothing moves.
         self._release_linear_mode()
         self._input_t = _time_mod.monotonic()   # P0: input→paint latency
+        self._hand_t = self._input_t            # see view_busy
         self._input_serial = getattr(self, "_input_serial", 0) + 1
         if ev.button() == Qt.LeftButton and self._press_on_box_chip(ev):
             return
@@ -21257,6 +21365,7 @@ class Viewport(QOpenGLWidget):
 
     def mouseMoveEvent(self, ev) -> None:
         self._input_t = _time_mod.monotonic()   # P0: input→paint latency
+        self._hand_t = self._input_t            # see view_busy
         self._input_serial = getattr(self, "_input_serial", 0) + 1
         # An Alt released while another window had the keyboard never
         # reaches any filter here; the pointer re-reads it on the move.
@@ -21759,6 +21868,7 @@ class Viewport(QOpenGLWidget):
             ev.accept()
             return
         self._input_t = _time_mod.monotonic()   # P0: input→paint latency
+        self._hand_t = self._input_t            # see view_busy
         self._input_serial = getattr(self, "_input_serial", 0) + 1
         # Zoom toward the cursor: keep the point under the
         # pointer fixed on screen, not the origin. During a wheel burst the

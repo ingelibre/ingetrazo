@@ -1336,8 +1336,13 @@ class ComponentsPanel(QWidget):
             from PySide6.QtCore import QTimer
             timer = self._in_model_timer = QTimer(self)
             timer.setSingleShot(True)
-            timer.timeout.connect(self.refresh_in_model)
+            timer.timeout.connect(self._in_model_when_still)
         timer.start(300)
+
+    def _in_model_when_still(self) -> None:
+        from views.viewport import wait_for_still_view
+        if wait_for_still_view(self._window.viewport, self._in_model_timer):
+            self.refresh_in_model()
 
     def showEvent(self, ev) -> None:
         super().showEvent(ev)
@@ -1418,8 +1423,13 @@ class ComponentsPanel(QWidget):
             from PySide6.QtCore import QTimer
             timer = self._thumbs_timer = QTimer(self)
             timer.setSingleShot(True)
-            timer.timeout.connect(self._draw_visible_thumbs)
+            timer.timeout.connect(self._thumbs_when_still)
         timer.start(0)
+
+    def _thumbs_when_still(self) -> None:
+        from views.viewport import wait_for_still_view
+        if wait_for_still_view(self._window.viewport, self._thumbs_timer):
+            self._draw_visible_thumbs()
 
     def _draw_visible_thumbs(self) -> None:
         from views.component_thumbs import thumbnail
@@ -6377,9 +6387,15 @@ class Tray(QDockWidget):
                 from PySide6.QtCore import QTimer
                 timer = self._mat_refresh_timer = QTimer(self)
                 timer.setSingleShot(True)
-                timer.timeout.connect(self.materials.refresh_in_model)
+                timer.timeout.connect(self._materials_when_still)
             timer.start(300)
         self._after_materials()
+
+    def _materials_when_still(self) -> None:
+        from views.viewport import wait_for_still_view
+        vp = getattr(self.materials._window, "viewport", None)
+        if wait_for_still_view(vp, self._mat_refresh_timer):
+            self.materials.refresh_in_model()
 
     def _after_materials(self) -> None:
         self.components.on_scene_changed()

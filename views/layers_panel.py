@@ -2859,7 +2859,7 @@ class LayersPanel(QWidget):
 
         self._count_timer = QTimer(self)
         self._count_timer.setSingleShot(True)
-        self._count_timer.timeout.connect(self.update_counts)
+        self._count_timer.timeout.connect(self._counts_when_still)
         # Back in the drawing, the rows picked here let go: a highlighted
         # row left behind reads as a layer still being worked on.
         QApplication.instance().focusChanged.connect(self._on_focus_changed)
@@ -3325,6 +3325,12 @@ class LayersPanel(QWidget):
         item.setText(COL_COUNT, str(n))
         item.setData(COL_COUNT, Qt.UserRole + 1, n)
         item.setTextAlignment(COL_COUNT, Qt.AlignRight | Qt.AlignVCenter)
+
+    def _counts_when_still(self) -> None:
+        from views.viewport import wait_for_still_view
+        if wait_for_still_view(getattr(self._window, "viewport", None),
+                               self._count_timer):
+            self.update_counts()
 
     def update_counts(self) -> None:
         """How many entities carry each layer — faces, edges, objects and
