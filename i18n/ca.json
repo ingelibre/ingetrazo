@@ -4086,5 +4086,6 @@
  "Do you want to resize the active component?": "Vols redimensionar el component actiu?",
  "Do you want to resize the active group?": "Vols redimensionar el grup actiu?",
  "Resize": "Redimensiona",
- "Type the new length and Enter to resize.": "Escriu la nova longitud i prem Retorn per redimensionar."
+ "Type the new length and Enter to resize.": "Escriu la nova longitud i prem Retorn per redimensionar.",
+ "No 3D mouse connection. On Linux start spacenavd; on Windows and macOS install the 3Dconnexion driver. Connection is retried automatically.": "No hi ha connexió amb el ratolí 3D. A Linux inicia spacenavd; a Windows i macOS instal·la el controlador de 3Dconnexion. La connexió es torna a provar automàticament."
 }

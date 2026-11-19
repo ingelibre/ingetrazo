@@ -4079,6 +4079,5 @@
  "Do you want to resize the active group?": "要调整当前组的大小吗？",
  "Resize": "调整大小",
  "Type the new length and Enter to resize.": "输入新长度并按 Enter 以调整大小。",
- "No 3D mouse driver found. On Linux install and start «spacenavd»; on Windows and macOS install the 3Dconnexion driver.": "未找到 3D 鼠标驱动程序。在 Linux 上安装并启动 «spacenavd»；在 Windows 和 macOS 上安装 3Dconnexion 驱动程序。",
  "No 3D mouse connection. On Linux start spacenavd; on Windows and macOS install the 3Dconnexion driver. Connection is retried automatically.": "未连接 3D 鼠标。在 Linux 上启动 spacenavd；在 Windows 和 macOS 上安装 3Dconnexion 驱动程序。系统会自动重试连接。"
 }

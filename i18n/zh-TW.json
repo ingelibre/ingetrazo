@@ -4081,5 +4081,6 @@
  "Do you want to resize the active component?": "要調整目前元件的大小嗎？",
  "Do you want to resize the active group?": "要調整目前群組的大小嗎？",
  "Resize": "調整大小",
- "Type the new length and Enter to resize.": "輸入新長度並按 Enter 調整大小。"
+ "Type the new length and Enter to resize.": "輸入新長度並按 Enter 調整大小。",
+ "No 3D mouse connection. On Linux start spacenavd; on Windows and macOS install the 3Dconnexion driver. Connection is retried automatically.": "沒有 3D 滑鼠連線。在 Linux 上請啟動 spacenavd；在 Windows 和 macOS 上請安裝 3Dconnexion 驅動程式。系統會自動重試連線。"
 }

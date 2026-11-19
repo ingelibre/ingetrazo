@@ -4078,5 +4078,6 @@
  "Do you want to resize the active component?": "編集中のコンポーネントのサイズを変更しますか？",
  "Do you want to resize the active group?": "編集中のグループのサイズを変更しますか？",
  "Resize": "サイズ変更",
- "Type the new length and Enter to resize.": "新しい長さを入力し、Enterでサイズ変更。"
+ "Type the new length and Enter to resize.": "新しい長さを入力し、Enterでサイズ変更。",
+ "No 3D mouse connection. On Linux start spacenavd; on Windows and macOS install the 3Dconnexion driver. Connection is retried automatically.": "3Dマウスに接続されていません。Linuxではspacenavdを起動し、WindowsとmacOSでは3Dconnexionドライバーをインストールしてください。接続は自動的に再試行されます。"
 }

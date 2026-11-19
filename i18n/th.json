@@ -4081,5 +4081,6 @@
  "Do you want to resize the active component?": "ต้องการปรับขนาดส่วนประกอบที่กำลังแก้ไขหรือไม่?",
  "Do you want to resize the active group?": "ต้องการปรับขนาดกลุ่มที่กำลังแก้ไขหรือไม่?",
  "Resize": "ปรับขนาด",
- "Type the new length and Enter to resize.": "ป้อนความยาวใหม่แล้วกด Enter เพื่อปรับขนาด"
+ "Type the new length and Enter to resize.": "ป้อนความยาวใหม่แล้วกด Enter เพื่อปรับขนาด",
+ "No 3D mouse connection. On Linux start spacenavd; on Windows and macOS install the 3Dconnexion driver. Connection is retried automatically.": "ไม่มีการเชื่อมต่อเมาส์ 3 มิติ บน Linux ให้เริ่ม spacenavd บน Windows และ macOS ให้ติดตั้งไดรเวอร์ 3Dconnexion ระบบจะลองเชื่อมต่อใหม่โดยอัตโนมัติ"
 }

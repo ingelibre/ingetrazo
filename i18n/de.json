@@ -4078,5 +4078,6 @@
  "Do you want to resize the active component?": "Möchtest du die Größe der aktiven Komponente ändern?",
  "Do you want to resize the active group?": "Möchtest du die Größe der aktiven Gruppe ändern?",
  "Resize": "Größe ändern",
- "Type the new length and Enter to resize.": "Gib die neue Länge ein, Enter ändert die Größe."
+ "Type the new length and Enter to resize.": "Gib die neue Länge ein, Enter ändert die Größe.",
+ "No 3D mouse connection. On Linux start spacenavd; on Windows and macOS install the 3Dconnexion driver. Connection is retried automatically.": "Keine Verbindung zur 3D-Maus. Unter Linux spacenavd starten; unter Windows und macOS den 3Dconnexion-Treiber installieren. Die Verbindung wird automatisch erneut versucht."
 }

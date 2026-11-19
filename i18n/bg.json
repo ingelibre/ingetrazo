@@ -4081,5 +4081,6 @@
  "Do you want to resize the active component?": "Искате ли да преоразмерите активния компонент?",
  "Do you want to resize the active group?": "Искате ли да преоразмерите активната група?",
  "Resize": "Преоразмеряване",
- "Type the new length and Enter to resize.": "Нова дължина и Enter за преоразмеряване."
+ "Type the new length and Enter to resize.": "Нова дължина и Enter за преоразмеряване.",
+ "No 3D mouse connection. On Linux start spacenavd; on Windows and macOS install the 3Dconnexion driver. Connection is retried automatically.": "Няма връзка с 3D мишка. В Linux стартирайте spacenavd; в Windows и macOS инсталирайте драйвера на 3Dconnexion. Връзката се опитва отново автоматично."
 }

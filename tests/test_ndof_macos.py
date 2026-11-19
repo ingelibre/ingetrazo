@@ -126,8 +126,10 @@ def test_callbacks_copy_data_and_deliver_motion_on_gui_thread(driver):
     got = []
     owner.motion.connect(lambda sample, dt: got.append((sample, dt, threading.get_ident())))
     gui_thread = threading.get_ident()
+    # The HID frame (core.ndof.from_hid): X right, Y away from the user,
+    # Z down — so +y pushes forward (the zoom sign fixed on Windows, 18-10).
     thread = threading.Thread(target=lib.send, args=(
-        _packet(axis=(350, -350, -350, -350, 0, -350)),))
+        _packet(axis=(350, 350, -350, -350, 0, -350)),))
     thread.start()
     thread.join()
     assert got == []  # queued; no work happens on the driver's thread

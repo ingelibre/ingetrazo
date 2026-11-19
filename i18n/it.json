@@ -4079,6 +4079,5 @@
  "Do you want to resize the active group?": "Vuoi ridimensionare il gruppo attivo?",
  "Resize": "Ridimensiona",
  "Type the new length and Enter to resize.": "Digita la nuova lunghezza e premi Invio per ridimensionare.",
- "No 3D mouse driver found. On Linux install and start «spacenavd»; on Windows and macOS install the 3Dconnexion driver.": "Nessun driver per mouse 3D trovato. Su Linux installa e avvia «spacenavd»; su Windows e macOS installa il driver 3Dconnexion.",
  "No 3D mouse connection. On Linux start spacenavd; on Windows and macOS install the 3Dconnexion driver. Connection is retried automatically.": "Nessuna connessione a un mouse 3D. Su Linux avvia spacenavd; su Windows e macOS installa il driver 3Dconnexion. La connessione viene ritentata automaticamente."
 }

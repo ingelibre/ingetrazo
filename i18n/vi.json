@@ -4105,5 +4105,6 @@
  "Do you want to resize the active component?": "Bạn có muốn đổi kích thước thành phần đang chỉnh sửa không?",
  "Do you want to resize the active group?": "Bạn có muốn đổi kích thước nhóm đang chỉnh sửa không?",
  "Resize": "Đổi kích thước",
- "Type the new length and Enter to resize.": "Nhập chiều dài mới, Enter để đổi kích thước."
+ "Type the new length and Enter to resize.": "Nhập chiều dài mới, Enter để đổi kích thước.",
+ "No 3D mouse connection. On Linux start spacenavd; on Windows and macOS install the 3Dconnexion driver. Connection is retried automatically.": "Không có kết nối chuột 3D. Trên Linux hãy khởi động spacenavd; trên Windows và macOS hãy cài trình điều khiển 3Dconnexion. Kết nối được tự động thử lại."
 }

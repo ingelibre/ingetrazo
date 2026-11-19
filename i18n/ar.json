@@ -4114,5 +4114,6 @@
  "Do you want to resize the active component?": "هل تريد تغيير حجم المكوّن النشط؟",
  "Do you want to resize the active group?": "هل تريد تغيير حجم المجموعة النشطة؟",
  "Resize": "تغيير الحجم",
- "Type the new length and Enter to resize.": "أدخل الطول الجديد واضغط Enter لتغيير الحجم."
+ "Type the new length and Enter to resize.": "أدخل الطول الجديد واضغط Enter لتغيير الحجم.",
+ "No 3D mouse connection. On Linux start spacenavd; on Windows and macOS install the 3Dconnexion driver. Connection is retried automatically.": "لا يوجد اتصال بفأرة ثلاثية الأبعاد. على Linux شغّل spacenavd؛ وعلى Windows وmacOS ثبّت برنامج تشغيل 3Dconnexion. تُعاد محاولة الاتصال تلقائيًا."
 }

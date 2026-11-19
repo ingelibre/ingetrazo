@@ -4081,5 +4081,6 @@
  "Do you want to resize the active component?": "ທ່ານຕ້ອງການປັບຂະໜາດອົງປະກອບທີ່ກຳລັງແກ້ໄຂບໍ?",
  "Do you want to resize the active group?": "ທ່ານຕ້ອງການປັບຂະໜາດກຸ່ມທີ່ກຳລັງແກ້ໄຂບໍ?",
  "Resize": "ປັບຂະໜາດ",
- "Type the new length and Enter to resize.": "ປ້ອນຄວາມຍາວໃໝ່ ແລ້ວ Enter ເພື່ອປັບຂະໜາດ."
+ "Type the new length and Enter to resize.": "ປ້ອນຄວາມຍາວໃໝ່ ແລ້ວ Enter ເພື່ອປັບຂະໜາດ.",
+ "No 3D mouse connection. On Linux start spacenavd; on Windows and macOS install the 3Dconnexion driver. Connection is retried automatically.": "ບໍ່ມີການເຊື່ອມຕໍ່ເມົ້າ 3D. ໃນ Linux ໃຫ້ເປີດ spacenavd; ໃນ Windows ແລະ macOS ໃຫ້ຕິດຕັ້ງໄດເວີ 3Dconnexion. ການເຊື່ອມຕໍ່ຈະລອງໃໝ່ອັດຕະໂນມັດ."
 }

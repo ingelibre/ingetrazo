@@ -4078,5 +4078,6 @@
  "Do you want to resize the active component?": "활성 구성 요소의 크기를 변경하시겠습니까?",
  "Do you want to resize the active group?": "활성 그룹의 크기를 변경하시겠습니까?",
  "Resize": "크기 변경",
- "Type the new length and Enter to resize.": "새 길이를 입력하고 Enter로 크기를 변경하세요."
+ "Type the new length and Enter to resize.": "새 길이를 입력하고 Enter로 크기를 변경하세요.",
+ "No 3D mouse connection. On Linux start spacenavd; on Windows and macOS install the 3Dconnexion driver. Connection is retried automatically.": "3D 마우스가 연결되지 않았습니다. Linux에서는 spacenavd를 시작하고, Windows와 macOS에서는 3Dconnexion 드라이버를 설치하세요. 연결은 자동으로 다시 시도됩니다."
 }
