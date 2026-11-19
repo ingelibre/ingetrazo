@@ -8,6 +8,8 @@ only read the loose faces and the top-level groups, so both objects
 vanished from them while the Browser still showed the class."""
 from __future__ import annotations
 
+import pytest
+
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QMatrix4x4
 from PySide6.QtGui import QVector3D as V
@@ -236,3 +238,22 @@ def test_picking_a_bim_row_keeps_the_folded_groups_folded():
     finally:
         win._saved_version = win.viewport.scene.version
         win.close()
+
+
+def test_the_panels_takeoff_measures_a_scaled_group_in_world_space():
+    """PR #1125 moved the takeoff into ``object_metrado``; it reads the
+    world-space faces (PR #984), not the definition's: a column scaled ×2
+    is eight times the concrete."""
+    from core.bim import collect_objects, object_metrado
+    from core.scene import Scene
+    from core.history import History
+    scene = Scene()
+    col = _group(scene, History(scene), _box(scene, 0.0, (0.4, 0.4, 3.0)))
+    tag_group(col, "IfcColumn", "C-1")
+    (obj,) = collect_objects(scene)
+    assert object_metrado(obj)[0] == pytest.approx(0.48)
+    m = QMatrix4x4()
+    m.scale(2.0)
+    col.xform = m
+    (obj,) = collect_objects(scene)
+    assert object_metrado(obj) == (pytest.approx(0.48 * 8), "m3")
