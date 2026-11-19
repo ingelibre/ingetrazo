@@ -1692,8 +1692,9 @@ def _moller_trumbore(o, d, v0, e1, e2):
 #: few thousand rows and the row gathers before them.
 _MT_NATIVE = None
 #: How many live passes are still answered by NumPy and compared with the
-#: engine before the engine answers alone (any difference: NumPy for good).
-_MT_SHADOW = [200]
+#: engine before the engine answers alone (any difference: NumPy for good);
+#: INGETRAZO_RAYS_SHADOW sets it (0: the engine alone at once, to measure).
+_MT_SHADOW = [int(os.environ.get("INGETRAZO_RAYS_SHADOW", "200"))]
 #: What a native ray pass that could not run stands in for.
 _MT_FAILED = object()
 #: The switch, for measuring and for the tests that compare both.
@@ -1709,6 +1710,9 @@ def _mt_judge(same: bool):
     """One live pass compared: one fewer to go, or NumPy for good."""
     if same:
         _MT_SHADOW[0] -= 1
+        if _MT_SHADOW[0] == 0:
+            logging.getLogger(__name__).info(
+                "Native ray pass matched NumPy on its live trial")
     else:
         _MT_SHADOW[0] = 0
         _mt_set(False)
