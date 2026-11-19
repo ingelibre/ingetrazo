@@ -3751,6 +3751,45 @@ class StitchSolidCommand(Command):
             scene.version += 1
 
 
+def collapse_collinear(mesh) -> None:
+    """Collapse every redundant valence-2 collinear vertex, always the first
+    collapsible one in ``mesh.vertices`` order — as the loop that restarted
+    its scan from vertex zero after each collapse did, without the restart.
+
+    That loop was O(collapses × V): inside a 9 674-face group a push's
+    stitch asked ~400 000 times (night of 19-11). A collapse of ``v`` can
+    make only its two neighbours collapsible (their edges change; every
+    other vertex keeps its edges, and loops only get shorter, which never
+    makes a vertex collapsible), so the scan goes on from where it was and
+    looks back only at a neighbour it already passed."""
+    import heapq
+    verts = list(mesh.vertices)
+    order = {id(v): i for i, v in enumerate(verts)}
+    pending: list = []
+    i = 0
+    while True:
+        v = None
+        while pending:
+            w = verts[heapq.heappop(pending)]
+            if mesh.collapsible_vertex(w):
+                v = w
+                break
+        if v is None:
+            while i < len(verts):
+                w = verts[i]
+                i += 1
+                if mesh.collapsible_vertex(w):
+                    v = w
+                    break
+        if v is None:
+            return
+        rec = mesh.collapse_vertex(v)
+        for n in (rec["n1"], rec["n2"]):
+            j = order.get(id(n))
+            if j is not None and j < i:
+                heapq.heappush(pending, j)
+
+
 def run_stitch(mesh, seedkeys: set, new_faces: Optional[set] = None,
                coplanar_merge: bool = True, dedupe: bool = True) -> None:
     """Three-phase watertight cleanup (no undo bookkeeping — the caller snapshots).
@@ -3810,15 +3849,7 @@ def run_stitch(mesh, seedkeys: set, new_faces: Optional[set] = None,
     from core.topology import sweep_tjunctions
     sweep_tjunctions(mesh, seedkeys)
     # Phase 2 — collapse redundant valence-2 collinear vertices (global).
-    while True:
-        collapsed = False
-        for v in list(mesh.vertices):
-            if mesh.collapsible_vertex(v):
-                mesh.collapse_vertex(v)
-                collapsed = True
-                break
-        if not collapsed:
-            break
+    collapse_collinear(mesh)
     if not coplanar_merge:
         return
     # Phase 3 — coplanar-merge, seeded to the operation. Fuses the whole coplanar

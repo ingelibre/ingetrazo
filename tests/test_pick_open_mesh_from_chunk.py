@@ -162,3 +162,44 @@ def test_the_selection_highlight_from_the_chunk_is_the_faces_own(win,
         b = np.asarray(want[k], np.float32).reshape(-1, 9)
         assert np.array_equal(a, b)
     del faces
+
+
+@pytest.mark.parametrize("show_hidden", [False, True])
+@pytest.mark.parametrize("group_layer", [None, "Oculta", "Bloqueada"])
+def test_the_edges_read_by_layer_are_the_rules_own(win, monkeypatch,
+                                                   show_hidden, group_layer):
+    import views.viewport as vpm
+    vp = _open_group(win)
+    sc = vp.scene
+    sc.edit_group.layer = group_layer
+    edges = list(sc.mesh.edges)
+    for k, e in enumerate(edges):
+        if k % 5 == 0:
+            e.layer = "Oculta"
+        elif k % 5 == 1:
+            e.layer = "Bloqueada"
+        elif k % 5 == 2:
+            e.layer = "Otra"
+        if k % 7 == 0:
+            e.hidden = True
+    sc.show_hidden_geometry = show_hidden
+    sc.version += 1
+    assert vpm._plain_edge_rules(sc)
+
+    def edge_part(fast):
+        vp._pick_index_cache = None
+        vp._pick_loose_memo = None
+        with monkeypatch.context() as mp:
+            if not fast:
+                mp.setattr(vpm, "_plain_edge_rules", lambda scene: False)
+            idx = vp._pick_index()
+        return idx
+
+    a, b = edge_part(True), edge_part(False)
+    assert [id(e) for e in a.edges] == [id(e) for e in b.edges]
+    for name in ("edge_a", "edge_b", "edge_sel", "edge_snap", "edge_soft"):
+        assert np.array_equal(getattr(a, name), getattr(b, name)), name
+    assert 0 < a.edge_sel.sum() < a.edge_snap.sum() < len(a.edges)
+    # A rule patched on the scene itself is asked for every edge.
+    monkeypatch.setattr(sc, "edge_snappable", lambda e: False)
+    assert not vpm._plain_edge_rules(sc)

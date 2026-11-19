@@ -211,6 +211,62 @@ def test_side_edges_are_classified_as_without_the_box_filter():
             assert got[0] == want[0] and got[1] is want[1]
 
 
+@pytest.mark.parametrize("seed", range(12))
+def test_side_edges_are_classified_as_without_the_box_filter_random(seed):
+    """Boxes, holed slabs, walls standing on part of an edge, a face with a
+    wider coplanar neighbour (the edge only a sub-segment of its border)."""
+    import random
+    from core.mesh import Mesh
+    from core import topology as T
+    rng = random.Random(seed)
+    m = Mesh()
+    for _ in range(rng.randint(3, 8)):
+        x, y = rng.randint(0, 6), rng.randint(0, 6)
+        w, d = rng.randint(1, 3), rng.randint(1, 3)
+        z = rng.choice([0.0, 0.0, 1.0])
+        holes = None
+        if w > 1 and d > 1 and rng.random() < .4:
+            holes = [[V(x + .4, y + .4, z), V(x + .8, y + .4, z),
+                      V(x + .8, y + .8, z), V(x + .4, y + .8, z)]]
+        m.add_face([V(x, y, z), V(x + w, y, z), V(x + w, y + d, z),
+                    V(x, y + d, z)], holes)
+        if rng.random() < .5:                  # a wall on part of an edge
+            t = rng.choice([0.0, 0.5])
+            m.add_face([V(x + t, y, z), V(x + w, y, z), V(x + w, y, z + 1),
+                        V(x + t, y, z + 1)])
+        if rng.random() < .3:                  # a wider coplanar neighbour
+            m.add_face([V(x - 1, y + d, z), V(x + w + 1, y + d, z),
+                        V(x + w + 1, y + d + 1, z), V(x - 1, y + d + 1, z)])
+    faces = list(m.faces)
+
+    def reference(face, a, b):
+        fn = face.normal()
+        cop = [g for g in faces if g is not face
+               and T._faces_coplanar(fn, g.normal())]
+        oth = [g for g in faces if g is not face and g not in cop]
+        es = frozenset((T._key(a), T._key(b)))
+        for g in cop:
+            if es in T._face_all_edges(g) or T._segment_on_face_boundary(a, b, g):
+                return ("coplanar", g)
+        for s in oth:
+            if T._segment_on_face_boundary(a, b, s):
+                return ("perp", s)
+        return ("free", None)
+
+    kinds = set()
+    for face in faces:
+        memo: dict = {}
+        for lp in (face.vertices, *face.holes):
+            for i in range(len(lp)):
+                a, b = lp[i], lp[(i + 1) % len(lp)]
+                got = T.classify_push_edge(face, a, b, faces, memo)
+                want = reference(face, a, b)
+                assert got[0] == want[0] and got[1] is want[1]
+                kinds.add(got[0])
+    assert "free" in kinds
+    assert len(kinds) == 3 or seed % 4, kinds
+
+
 # ---- Entity info ------------------------------------------------------------
 
 def test_entity_info_waits_for_calm_only_with_a_big_selection(win, monkeypatch):

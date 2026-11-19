@@ -2928,6 +2928,47 @@ class PushPullTool(Tool):
                 hit = shapes[id(f)] = (f, _face_shape(f))
             return hit[1]
 
+        # Two faces of one shape have the same lowest corner key (the
+        # rounding of _canon_loop, whose cycles lead with it), so a face a
+        # rebuild hands back is compared with the faces sharing its lowest
+        # corner, not with the shape of every face of the mesh — which,
+        # kept per face, still cost ~0.25 s a push in that group (19-11).
+        vkeys: dict = {}
+
+        def low(f):
+            best = None
+            for v in f.loop:
+                hit = vkeys.get(id(v))
+                if hit is None or hit[0] is not v:
+                    p = v.position
+                    hit = vkeys[id(v)] = (v, (round(p.x() / 1e-4),
+                                              round(p.y() / 1e-4),
+                                              round(p.z() / 1e-4)))
+                if best is None or hit[1] < best:
+                    best = hit[1]
+            return best
+
+        by_low: dict = {}
+        indexed: set = set()
+
+        def users_own(added, before, fresh):
+            """The faces of ``added`` with the shape of a face of
+            ``before`` that is not fresh: the user's own, handed back."""
+            for f in before - indexed:
+                by_low.setdefault(low(f), []).append(f)
+                indexed.add(f)
+            out = set()
+            for g in added:
+                sg = None
+                for f in by_low.get(low(g), ()):
+                    if f in before and f not in fresh:
+                        if sg is None:
+                            sg = shape_of(g)
+                        if shape_of(f) == sg:
+                            out.add(g)
+                            break
+            return out
+
         for _ in range(4):  # converges in 1-2 rounds; hard cap for safety
             # The op's own faces name the solids it may touch, so the plane
             # scans narrow to them instead of walking the whole group.
@@ -2962,9 +3003,8 @@ class PushPullTool(Tool):
                     # op's: counted as fresh, the next round read a free
                     # sheet (a triangle drawn on the ground beside the
                     # solid) as op debris and deleted it (#552).
-                    kept = {shape_of(f) for f in before_faces - fresh}
-                    fresh |= {f for f in set(mesh.faces) - before_faces
-                              if shape_of(f) not in kept}
+                    added = set(mesh.faces) - before_faces
+                    fresh |= added - users_own(added, before_faces, fresh)
             if not changed:
                 break
             fresh = {f for f in fresh if f in mesh.faces}

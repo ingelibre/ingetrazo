@@ -57,6 +57,37 @@ def _key(p: QVector3D) -> tuple[int, int, int]:
             round(z * _KEY_SCALE))
 
 
+def _cells_beside_held(keys, reg, offsets) -> list:
+    """Indices (sorted) of the ``keys`` with a cell held in ``reg`` among
+    their ``offsets`` — the only vertices the cross-cell weld may move."""
+    import numpy as np
+    held = list(reg.keys())
+    if not held:
+        return []
+    k = np.asarray(keys, dtype=np.int64).reshape(-1, 3)
+    h = np.asarray(held, dtype=np.int64).reshape(-1, 3)
+    lo = np.minimum(k.min(axis=0), h.min(axis=0)) - 1
+    span = np.maximum(k.max(axis=0), h.max(axis=0)) - lo + 2
+    if float(span[0]) * float(span[1]) * float(span[2]) >= 2.0 ** 62:
+        # Too far apart to code a cell in one integer: every vertex.
+        return list(range(len(keys)))
+    s1, s2 = int(span[1]) * int(span[2]), int(span[2])
+
+    def code(a):
+        a = a - lo
+        return a[:, 0] * s1 + a[:, 1] * s2 + a[:, 2]
+
+    held_codes = np.unique(code(h))
+    mine = code(k)
+    near = np.zeros(len(keys), dtype=bool)
+    for dx, dy, dz in offsets:
+        q = mine + (dx * s1 + dy * s2 + dz)
+        j = np.searchsorted(held_codes, q)
+        j[j >= len(held_codes)] = len(held_codes) - 1
+        near |= held_codes[j] == q
+    return np.flatnonzero(near).tolist()
+
+
 class Vertex:
     """A shared point in the mesh.
 
@@ -1351,37 +1382,69 @@ class Mesh:
         # float paths, 2e-6 apart across a 0.5e-4 edge). Probe neighbouring
         # cells and weld into the lexicographically smaller key — a
         # deterministic survivor.
+        return self._weld_across_cells() or changed
+
+    def _weld_across_cells(self) -> bool:
+        """The cross-cell pass of :meth:`weld_coincident`: always the first
+        vertex of ``self.vertices`` (registered in its own cell) with a
+        close one in a neighbouring cell, welded into the smaller key —
+        as the scan that started over after each weld did, without the
+        scan.
+
+        That scan probed 26 cells around every vertex, twice per push
+        (~70 ms each in a 9 674-face group of the Plaza, 19-11). The cells
+        that hold a vertex stay the cells that hold one (a weld only
+        repoints the duplicate's cell to the vertex kept), so a vertex with
+        no neighbour cell held at the start never welds; the ones that do
+        are found with NumPy. A weld changes what a vertex finds only for
+        the kept vertex and those registered around the duplicate's cell:
+        they are looked at again, the others keep their answer."""
+        import heapq
         step = 10.0 ** -_KEY_DECIMALS
         tol2 = step * step
-        merged = True
-        while merged:
-            merged = False
-            for v in list(self.vertices):
-                k = _key(v.position)
-                if self._registry.get(k) is not v:
+        reg = self._registry
+        verts = list(self.vertices)
+        if not verts:
+            return False
+        keys = [_key(v.position) for v in verts]
+        at = {id(v): i for i, v in enumerate(verts)}
+        offsets = [(dx, dy, dz) for dx in (-1, 0, 1) for dy in (-1, 0, 1)
+                   for dz in (-1, 0, 1) if (dx, dy, dz) != (0, 0, 0)]
+
+        def pair(i):
+            v, k = verts[i], keys[i]
+            if reg.get(k) is not v:
+                return None
+            for dx, dy, dz in offsets:
+                nk = (k[0] + dx, k[1] + dy, k[2] + dz)
+                w = reg.get(nk)
+                if (w is None or w is v
+                        or (w.position - v.position).lengthSquared() >= tol2):
                     continue
-                for dx in (-1, 0, 1):
-                    for dy in (-1, 0, 1):
-                        for dz in (-1, 0, 1):
-                            nk = (k[0] + dx, k[1] + dy, k[2] + dz)
-                            if nk == k:
-                                continue
-                            w = self._registry.get(nk)
-                            if (w is None or w is v or
-                                    (w.position - v.position)
-                                    .lengthSquared() >= tol2):
-                                continue
-                            kp, dp = (v, w) if k < nk else (w, v)
-                            self._weld_into(kp, dp)
-                            changed = True
-                            merged = True
-                            break
-                        if merged:
-                            break
-                    if merged:
-                        break
-                if merged:
-                    break
+                return (v, w) if k < nk else (w, v)
+            return None
+
+        heap = _cells_beside_held(keys, reg, offsets)
+        changed = False
+        while heap:
+            i = heapq.heappop(heap)
+            got = pair(i)
+            if got is None:
+                continue
+            kp, dp = got
+            dk = _key(dp.position)
+            self._weld_into(kp, dp)
+            changed = True
+            again = {at.get(id(kp))}
+            for dx in (-1, 0, 1):
+                for dy in (-1, 0, 1):
+                    for dz in (-1, 0, 1):
+                        u = reg.get((dk[0] + dx, dk[1] + dy, dk[2] + dz))
+                        if u is not None:
+                            again.add(at.get(id(u)))
+            for j in again:
+                if j is not None:
+                    heapq.heappush(heap, j)
         return changed
 
     def dedupe_faces(self) -> int:

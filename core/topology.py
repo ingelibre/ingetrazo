@@ -817,61 +817,79 @@ def classify_push_edge(
     """
     if memo is None:
         memo = {}
-    split = memo.get("split")
-    if split is None or split[0] is not face:
-        fn = face.normal()
-        coplanar, others = [], []
-        for g in faces:
-            if g is face:
-                continue
-            (coplanar if _faces_coplanar(fn, g.normal()) else others).append(g)
-        split = memo["split"] = (face, coplanar, others)
-        memo["edges"] = {}
-    _, coplanar, others = split
-    edges = memo["edges"]
     eset = frozenset((_key(a), _key(b)))
     # A segment on a face's boundary lies inside the face's box grown by the
-    # test's tolerances: a face whose box leaves out either end is not asked.
-    # Every face of the model was, for every side edge — ~115 000 boundary
-    # walks for one push inside a 9 674-face group of the Plaza (night of
-    # 18-11). Same answers: the box is wider than the test can reach.
+    # test's tolerances (and a face listing the edge has both ends among its
+    # corners): a face whose box leaves out either end is not asked. Every
+    # face of the model was, for every side edge — ~115 000 boundary walks
+    # for one push inside a 9 674-face group of the Plaza (night of 18-11).
+    # The boxes are one NumPy pass, and only the faces left get their
+    # normal read to tell coplanar from not: the normal of every face was
+    # ~0.1 s a push there (19-11). Same answers, in the same order.
     boxes = memo.get("boxes")
-    if boxes is None:
-        boxes = memo["boxes"] = {}
-
-    def near(g) -> bool:
-        bb = boxes.get(g)
-        if bb is None:
-            xs = [p.x() for p in g.vertices]
-            ys = [p.y() for p in g.vertices]
-            zs = [p.z() for p in g.vertices]
-            if not xs:
-                bb = boxes[g] = (0.0,) * 6 + (False,)
-            else:
-                diag = ((max(xs) - min(xs)) ** 2 + (max(ys) - min(ys)) ** 2
-                        + (max(zs) - min(zs)) ** 2) ** 0.5
-                m = 1e-3 + 1e-3 * diag
-                bb = boxes[g] = (min(xs) - m, min(ys) - m, min(zs) - m,
-                                 max(xs) + m, max(ys) + m, max(zs) + m, True)
-        if not bb[6]:
-            return True                     # no corners: let the test say
-        for p in (a, b):
-            if not (bb[0] <= p.x() <= bb[3] and bb[1] <= p.y() <= bb[4]
-                    and bb[2] <= p.z() <= bb[5]):
-                return False
-        return True
-
+    if boxes is None or boxes[0] is not face:
+        boxes = memo["boxes"] = (face,) + _face_boxes(faces)
+        memo["edges"] = {}
+        memo["coplanar"] = {}
+    _, flist, lo, hi, bare = boxes
+    edges = memo["edges"]
+    flat = memo["coplanar"]
+    if flist:
+        import numpy as np
+        p = np.array([[a.x(), a.y(), a.z()], [b.x(), b.y(), b.z()]])
+        inside = ((lo <= p[0]).all(axis=1) & (p[0] <= hi).all(axis=1)
+                  & (lo <= p[1]).all(axis=1) & (p[1] <= hi).all(axis=1))
+        near = np.flatnonzero(inside | bare).tolist()
+    else:
+        near = []
+    fn = None
+    coplanar, others = [], []
+    for i in near:
+        g = flist[i]
+        if g is face:
+            continue
+        c = flat.get(g)
+        if c is None:
+            if fn is None:
+                fn = face.normal()
+            c = flat[g] = _faces_coplanar(fn, g.normal())
+        (coplanar if c else others).append(g)
     for g in coplanar:
         all_edges = edges.get(g)
         if all_edges is None:
             all_edges = edges[g] = _face_all_edges(g)
-        if eset in all_edges or (near(g)
-                                 and _segment_on_face_boundary(a, b, g)):
+        if eset in all_edges or _segment_on_face_boundary(a, b, g):
             return ("coplanar", g)
     for s in others:
-        if near(s) and _segment_on_face_boundary(a, b, s):
+        if _segment_on_face_boundary(a, b, s):
             return ("perp", s)
     return ("free", None)
+
+
+def _face_boxes(faces):
+    """``(faces, lo, hi, bare)`` for :func:`classify_push_edge`: each face's
+    corner box grown by 1 mm plus a thousandth of its diagonal, as (N, 3)
+    arrays, and which faces have no corner (always asked)."""
+    import numpy as np
+    flist = list(faces)
+    counts = [len(g.loop) for g in flist]
+    pts = np.array([(q.x(), q.y(), q.z()) for g in flist for q in g.vertices],
+                   dtype=np.float64).reshape(-1, 3)
+    n = len(flist)
+    lo = np.zeros((n, 3))
+    hi = np.zeros((n, 3))
+    cnt = np.asarray(counts, dtype=np.int64)
+    bare = cnt == 0
+    has = np.flatnonzero(~bare)
+    if len(has):
+        starts = np.concatenate([[0], np.cumsum(cnt)[:-1]])[has]
+        mn = np.minimum.reduceat(pts, starts, axis=0)
+        mx = np.maximum.reduceat(pts, starts, axis=0)
+        d = mx - mn
+        m = (1e-3 + 1e-3 * np.sqrt((d * d).sum(axis=1)))[:, None]
+        lo[has] = mn - m
+        hi[has] = mx + m
+    return flist, lo, hi, bare
 
 
 def face_is_bordered(face: Face, faces: Iterable[Face]) -> bool:

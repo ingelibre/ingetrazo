@@ -1200,6 +1200,26 @@ def _snap_dropped_loose(vp):
     return drops
 
 
+def _plain_edge_rules(scene):
+    """Whether the pick index may read a plain edge of
+    ``scene.edges`` by its layer alone: the scene is a :class:`Scene` that
+    keeps its own rules. For a ``core.mesh.Edge`` — no children, no attrs,
+    no owner, never an annotation, and in the open mesh — selectable is
+    then «layer visible and unlocked», snappable «layer visible», and both
+    also want the edge not hidden unless the hidden-geometry view is on;
+    the layer state only depends on the edge's layer name."""
+    cls = type(scene)
+    if not isinstance(scene, Scene):
+        return False
+    for name in ("entity_selectable", "edge_snappable", "entity_visible",
+                 "_layer_state", "_open_group_layer", "similar_hidden",
+                 "outside_section_box", "entity_locked", "entity_hidden"):
+        if (getattr(cls, name, None) is not getattr(Scene, name, None)
+                or name in getattr(scene, "__dict__", {})):
+            return False
+    return scene.edges is scene.mesh.edges
+
+
 def _ctx_changed(vp, before):
     """``History.context_changed`` (stub viewports in tests have no
     history, or one without it)."""
@@ -8160,6 +8180,50 @@ class Viewport(QOpenGLWidget):
         self.update()
         return bent, bent_e, paint
 
+    def _chunk_without(self, group, hidden):
+        """The open group's chunk without the faces in ``hidden`` (a
+        push/pull preview hides the face being pushed), baked from arrays —
+        or ``None``, and the faces are bucketed one by one as before.
+
+        Only for the open mesh drawn in place, and not beside a soft edge;
+        the part keeps every edge, each listing the faces drawn (as the
+        mesh with ``hidden`` deleted would:
+        tests/test_push_preview_chunk_without.py). Kept until the model or
+        the hidden set changes."""
+        mesh = getattr(group, "mesh", None)
+        if (mesh is None or mesh is not self.scene.mesh
+                or getattr(group, "xform", None) is not None):
+            return None
+        array_bake = _array_bake()
+        if not array_bake.can_bake_built(mesh):
+            return None
+        # Beside a curved surface the walk shades the faces around the
+        # hidden one as it always has; the part would round them as if the
+        # hidden face were gone.
+        if any(getattr(e, "soft", False)
+               for f in hidden for lp in (f.loop, *f.hole_loops)
+               for v in lp for e in v.edges):
+            return None
+        paint = _paint_of(self, group)
+        msig = _material_sig(paint)
+        key = (_cache_ver(self), id(mesh), getattr(mesh, "_mut_serial", None),
+               msig, frozenset(id(f) for f in hidden))
+        memo = getattr(self, "_chunk_without_memo", None)
+        if memo is not None and memo[0] == key and memo[1]["mesh"] is mesh:
+            return memo[1]
+        faces = [f for f in mesh.faces if f not in hidden]
+        try:
+            entry = array_bake.bake_built(self, mesh, paint, msig, None,
+                                          faces, list(mesh.edges))
+        except Exception:  # noqa: BLE001 — the face-by-face path still draws it
+            entry = None
+        if entry is None:
+            return None
+        entry["uid"] = next(_chunk_uid)
+        entry["mesh"] = mesh
+        self._chunk_without_memo = (key, entry)
+        return entry
+
     def end_verts_preview(self) -> None:
         if getattr(self, "_verts_preview", None) is None:
             return
@@ -9075,8 +9139,15 @@ class Viewport(QOpenGLWidget):
                     f=len(chunk["vcol"]), d=len(chunk.get("dback") or b""),
                     t={p: len(r) for p, r in chunk["by_texture"].items()})
                 continue
-            if suppressed_faces and any(f in suppressed_faces
-                                        for f in g.mesh.faces):
+            chunk = None
+            hides = bool(suppressed_faces) and any(
+                f in suppressed_faces for f in g.mesh.faces)
+            if hides:
+                # The open mesh baked from arrays without the hidden faces:
+                # bucketing its 9 674 faces one by one was ~0.7 s of the
+                # first frame of a push in a group of the Plaza (19-11).
+                chunk = self._chunk_without(g, suppressed_faces)
+            if hides and chunk is None:
                 # Bucketed into the SUBJECT block at the tail, not the loose
                 # head — see ``sink``. The chunk is unusable while a face of
                 # it is hidden.
@@ -9089,7 +9160,8 @@ class Viewport(QOpenGLWidget):
                 sink["dback"] = dback_loose
                 subject_bucketed = True
                 continue
-            chunk = self._group_chunk(g)
+            if chunk is None:
+                chunk = self._group_chunk(g)
             sl.sizes.update(
                 f=len(chunk["vcol"]), d=len(chunk.get("dback") or b""),
                 t={p: len(r) for p, r in chunk["by_texture"].items()},
@@ -10525,6 +10597,8 @@ class Viewport(QOpenGLWidget):
         if faces == self._suppressed_faces:
             return
         self._suppressed_faces = faces
+        if not faces:
+            self._chunk_without_memo = None    # (a whole chunk's worth)
         self._edges_version = -1  # the faces VBO is rebuilt by _sync_edges
         self.update()
 
@@ -16822,7 +16896,37 @@ class Viewport(QOpenGLWidget):
         esel: list = []
         esnap: list = []
         esoft: list = []
-        for e in scene.edges:
+        show_hidden = bool(getattr(scene, "show_hidden_geometry", False))
+        done = False
+        if _plain_edge_rules(scene):
+            # A plain edge of the open mesh: selectable and snappable come
+            # down to its layer and its own Hide (see _plain_edge_rules),
+            # asked once per layer name — the two questions per edge were
+            # half of a 40 000-edge rebuild (~0.2 s, night of 19-11).
+            from core.mesh import Edge as _Edge
+            states: dict = {}
+            layer_state = scene._layer_state
+            for e in scene.edges:
+                if type(e) is not _Edge:
+                    break
+                name = getattr(e, "layer", None)
+                st = states.get(name)
+                if st is None:
+                    st = states[name] = layer_state(e)
+                edges.append(e)
+                esoft.append(bool(getattr(e, "soft", False)))
+                p, q = e.v0.position, e.v1.position
+                ea.append([p.x(), p.y(), p.z()])
+                eb.append([q.x(), q.y(), q.z()])
+                shown = not getattr(e, "hidden", False) or show_hidden
+                esel.append(st[0] and not st[1] and shown)
+                esnap.append(st[0] and shown)
+            else:
+                done = True
+            if not done:                    # an odd edge: ask for each
+                for buf in (edges, ea, eb, esel, esnap, esoft):
+                    buf.clear()
+        for e in (() if done else scene.edges):
             edges.append(e)
             esoft.append(bool(getattr(e, "soft", False)))
             ea.append([e.a.x(), e.a.y(), e.a.z()])

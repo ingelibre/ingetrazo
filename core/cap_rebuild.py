@@ -47,7 +47,8 @@ from core.arrangement import (
 )
 from core.mesh import _key as _vkey
 from core.orient import (
-    _face_components,
+    _component_arrays,
+    _flood_components,
     _face_triangles,
     _pack_lists,
     ray_parity_outside,
@@ -74,8 +75,9 @@ class RebuildCache:
     entry."""
 
     __slots__ = ("tris", "norm", "cent", "token", "_packed", "_comp",
-                 "_comp_token", "seed_faces", "_scope", "_scope_token",
-                 "dropped")
+                 "_comp_arrays", "_comp_token", "seed_faces", "_scope",
+                 "_scope_token", "dropped", "_part", "_part_token",
+                 "_part_next", "_part_live")
 
     def __init__(self) -> None:
         #: Outlines (3D segment pairs) of the strips a rebuild found inside
@@ -91,7 +93,14 @@ class RebuildCache:
         self.token = 0
         self._packed: tuple = (None, None, None)
         self._comp: Optional[dict] = None
+        self._comp_arrays: Optional[tuple] = None
         self._comp_token = -1
+        #: Labels of SOME components (those of the faces asked about), for
+        #: the current ``token``: see :meth:`components_of`.
+        self._part: dict = {}
+        self._part_token = -1
+        self._part_next = 0
+        self._part_live: Optional[set] = None
         #: The operation's own faces. Their components are the only solids a
         #: rebuild may touch, so every whole-mesh scan narrows to them.
         self.seed_faces: set = set()
@@ -102,9 +111,34 @@ class RebuildCache:
         """Face → edge-connected component label, recomputed when the mesh
         changes."""
         if self._comp is None or self._comp_token != self.token:
-            self._comp = _face_components(mesh)
+            arrays = _component_arrays(mesh)
+            self._comp = dict(zip(arrays[0], arrays[3].tolist()))
+            self._comp_arrays = arrays
             self._comp_token = self.token
         return self._comp
+
+    def components_of(self, mesh, roots) -> dict:
+        """Face → component label for every face of the components of
+        ``roots`` (the ones in the mesh) — and of any asked before since the
+        mesh last changed. Labels are only names: they match each other,
+        not :meth:`components`'.
+
+        Found by flooding from the roots (:func:`_flood_components`) — the
+        union-find of
+        :meth:`components` walked every edge of the group, eleven times for
+        one push in a 9 674-face group of the Plaza whose pushed solid held
+        ~320 faces (night of 19-11)."""
+        if self._part_token != self.token:
+            self._part = {}
+            self._part_token = self.token
+            self._part_next = 0
+            self._part_live = None
+        live = self._part_live
+        if live is None:
+            live = self._part_live = set(mesh.faces)
+        self._part_next = _flood_components(roots, live, self._part,
+                                            self._part_next)
+        return self._part
 
     def scope(self, mesh):
         """``(faces, edges)`` of the solids the operation is working in, or
@@ -125,7 +159,7 @@ class RebuildCache:
             return None
         if self._scope is not None and self._scope_token == self.token:
             return self._scope
-        comp = self.components(mesh)
+        comp = self.components_of(mesh, self.seed_faces)
         live = {comp[f] for f in self.seed_faces if f in comp}
         if not live:
             self._scope, self._scope_token = None, self.token
@@ -134,8 +168,21 @@ class RebuildCache:
         fset = set(faces)
         # An edge belongs to the scope when a face of it does. A faceless edge
         # is plane debris a rebuild may still need to re-trace, so it stays.
-        edges = [e for e in mesh.edges
-                 if not e.faces or any(f in fset for f in e.faces)]
+        # The faces an edge lists in the mesh are all of one component, so
+        # its first one answers — unless that one is gone from the mesh.
+        live_faces = self._part_live
+        edges = []
+        add = edges.append
+        for e in mesh.edges:
+            fs = e.faces
+            if not fs:
+                add(e)
+                continue
+            f0 = fs[0]
+            if f0 in fset:
+                add(e)
+            elif f0 not in live_faces and any(f in fset for f in fs):
+                add(e)
         self._scope = (faces, edges)
         self._scope_token = self.token
         return self._scope
@@ -161,16 +208,19 @@ class RebuildCache:
             self.cent[f] = c
         return c
 
-    def packed(self, mesh, shadowed, want=None):
+    def packed(self, mesh, shadowed, want=None, comp=None):
         """The packed parity triangles of the counted faces (boundary, not
-        shadowed, and — when ``want`` is given — in one of those components),
-        memoised until the mesh changes."""
+        shadowed, and — when ``want`` is given — in one of those components
+        of ``comp``, the labelling they come from: :meth:`components` when
+        not said), memoised until the mesh changes."""
+        part = comp is not None and comp is self._part
         key = (frozenset(shadowed) if shadowed else None,
-               frozenset(want) if want is not None else None)
+               frozenset(want) if want is not None else None, part)
         tok, k, val = self._packed
         if tok == self.token and k == key and val is not None:
             return val
-        comp = self.components(mesh) if want is not None else None
+        if want is not None and comp is None:
+            comp = self.components(mesh)
         val = _pack_lists([
             self.triangles(f) for f in mesh.faces
             if not f.interior and f not in shadowed
@@ -495,12 +545,15 @@ def rebuild_plane(mesh, origin: QVector3D, normal: QVector3D,
         packed = _pack_lists([t for f, t in _face_triangles(mesh).items()
                               if not f.interior and f not in shadowed])
     else:
-        comp = cache.components(mesh)
+        # Narrowed to the operation's solids, the labels of their components
+        # (and of the fresh faces') are all it reads; else every face's.
+        comp = (cache.components_of(mesh, fresh_set) if scope is not None
+                else cache.components(mesh))
         want = {comp[f] for f in scope_faces
                 if f in comp and _coplanar_on(f, origin, normal, cache)}
         # A push welding a new wall onto a neighbouring solid must see both.
         want |= {comp[f] for f in fresh_set if f in comp}
-        packed = cache.packed(mesh, shadowed, want or None)
+        packed = cache.packed(mesh, shadowed, want or None, comp)
     rng = random.Random(54321)
 
     def _fnormal(f):

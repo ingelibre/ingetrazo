@@ -99,9 +99,10 @@ def _face_shape(face) -> tuple:
                   for h in face.hole_loops))
 
 
-def _face_triangles(mesh) -> dict:
+def _face_triangles(mesh, only=None) -> dict:
     """Triangulate every face once. Returns ``{face: [Triangle, …]}`` in world
-    space (holes included via the face's own earcut triangulation).
+    space (holes included via the face's own earcut triangulation) — of the
+    faces in ``only`` alone when given, in mesh order.
 
     A face whose corners are where they were the last time is not cut
     again: an edit touches a handful of faces, and every pass re-cut all of
@@ -114,6 +115,8 @@ def _face_triangles(mesh) -> dict:
     tris: dict = {}
     kept: dict = {}
     for f in mesh.faces:
+        if only is not None and f not in only:
+            continue
         shape = _face_shape(f)
         known = memo.get(f)
         if known is not None and known[0] == shape:
@@ -122,7 +125,12 @@ def _face_triangles(mesh) -> dict:
             t = f.triangulate()
         tris[f] = t
         kept[f] = (shape, t)
-    memo.clear()
+    if only is None:
+        memo.clear()
+    else:
+        # The rest keep their entries; the faces gone from the mesh go.
+        for f in memo.keys() - set(mesh.faces):
+            del memo[f]
     memo.update(kept)
     return tris
 
@@ -195,28 +203,100 @@ def _face_components(mesh) -> dict:
     the semantically right call (a box modelled inside a room is its own
     outward solid, not "interior" of the room). The payoff is the imported
     group mesh (many welded bricks in one mesh): O(F·T) becomes Σ O(F_c·T_c)
-    — the barbecue's orientation pass dropped ~7×."""
-    idx = {f: i for i, f in enumerate(mesh.faces)}
-    parent = list(range(len(mesh.faces)))
+    — the barbecue's orientation pass dropped ~7×.
 
-    def find(x: int) -> int:
-        while parent[x] != x:
-            parent[x] = parent[parent[x]]
-            x = parent[x]
-        return x
+    A label only names its component (callers compare labels, never order
+    them): here it is the component's lowest face index."""
+    faces, _edges, _first, lab = _component_arrays(mesh)
+    return dict(zip(faces, lab.tolist()))
 
-    for e in mesh.edges:
-        it = iter(e.faces)
-        first = next((idx[f] for f in it if f in idx), None)
-        if first is None:
+
+def _flood_components(roots, live, lab: dict, label: int) -> int:
+    """Label the components of ``roots`` (those in ``live``, the faces of
+    the mesh) into ``lab``, starting at ``label``; returns the next free
+    label. A face already labelled is not flooded again.
+
+    The same split as :func:`_face_components`: from a face, every edge at
+    its corners that lists it leads to the other faces that edge lists —
+    the edges a face bounds are the ones at its corners."""
+    for r in roots:
+        if r in lab or r not in live:
             continue
-        for f in it:
-            j = idx.get(f)
-            if j is not None:
-                ra, rb = find(first), find(j)
-                if ra != rb:
-                    parent[ra] = rb
-    return {f: find(i) for f, i in idx.items()}
+        c = label
+        label += 1
+        lab[r] = c
+        stack = [r]
+        while stack:
+            f = stack.pop()
+            for lp in (f.loop, *f.hole_loops):
+                for v in lp:
+                    for e in v.edges:
+                        fs = e.faces
+                        if f not in fs:
+                            continue
+                        for g in fs:
+                            if g not in lab and g in live:
+                                lab[g] = c
+                                stack.append(g)
+    return label
+
+
+def _component_arrays(mesh):
+    """``(faces, edges, edge_face, labels)`` behind :func:`_face_components`.
+
+    ``faces``/``edges`` are the mesh's, in order; ``labels[i]`` is the
+    component of ``faces[i]`` (its lowest face index); ``edge_face[k]`` is
+    the index of a face of ``edges[k]`` (every face of an edge is in one
+    component), ``-1`` when none of its faces is in the mesh and ``-2`` when
+    it has none.
+
+    The union-find walked in Python, 11 times over the whole 9 674-face
+    group for one push in the Plaza (~45 ms each, night of 19-11): now one
+    pass gathers the face pairs and NumPy hooks and jumps the labels."""
+    import numpy as np
+    faces = list(mesh.faces)
+    edges = list(mesh.edges)
+    get = {f: i for i, f in enumerate(faces)}.get
+    first_of: list = []
+    pa: list = []
+    pb: list = []
+    add_e, add_a, add_b = first_of.append, pa.append, pb.append
+    for e in edges:
+        fs = e.faces
+        if len(fs) == 2:
+            a, b = get(fs[0]), get(fs[1])
+            if a is not None and b is not None:
+                add_e(a)
+                add_a(a)
+                add_b(b)
+                continue
+        first = -1 if fs else -2
+        for f in fs:
+            j = get(f)
+            if j is None:
+                continue
+            if first < 0:
+                first = j
+            else:
+                add_a(first)
+                add_b(j)
+        add_e(first)
+    lab = np.arange(len(faces), dtype=np.int64)
+    a = np.asarray(pa, dtype=np.int64)
+    b = np.asarray(pb, dtype=np.int64)
+    while len(a):
+        la, lb = lab[a], lab[b]
+        if np.array_equal(la, lb):
+            break
+        # Hook each pair's higher root under its lower one, then jump every
+        # face to its root: labels only fall, so it settles.
+        np.minimum.at(lab, np.maximum(la, lb), np.minimum(la, lb))
+        while True:
+            up = lab[lab]
+            if np.array_equal(up, lab):
+                break
+            lab = up
+    return faces, edges, np.asarray(first_of, dtype=np.int64), lab
 
 
 class _PackedTris:
@@ -669,7 +749,18 @@ def orient_outward(mesh, seed: int = 12345, only=None) -> list:
             f.interior = False
         return []
     import numpy as np
-    all_tris = _face_triangles(mesh)
+    # Scoped to some faces, only their components are read — triangulated,
+    # packed and labelled: the rest of the group never is (a push in a
+    # 9 674-face group of the Plaza packed all of it to decide ~320 faces,
+    # night of 19-11). Each face is judged against its own component, so
+    # their rows, and every verdict, are the same.
+    comp_of = None
+    if only is not None:
+        comp_of = {}
+        _flood_components(only, set(mesh.faces), comp_of, 0)
+        if not comp_of:
+            return []
+    all_tris = _face_triangles(mesh, comp_of)
     faces = list(all_tris)
     fidx = {f: i for i, f in enumerate(faces)}
     # Pack every triangle once; per-face queries exclude by mask instead of
@@ -679,7 +770,8 @@ def orient_outward(mesh, seed: int = 12345, only=None) -> list:
     # :func:`_face_components`): slice the packed rows per component up front.
     # A single-component mesh gets exactly one slice — the whole array — so
     # drawn geometry behaves bit-identically to the unsliced pass.
-    comp_of = _face_components(mesh)
+    if comp_of is None:
+        comp_of = _face_components(mesh)
     comp_idx = np.asarray([comp_of[f] for f in faces], dtype=np.int64)
     row_comp = (comp_idx[packed.face_idx] if len(packed.face_idx)
                 else np.zeros(0, dtype=np.int64))
@@ -708,7 +800,7 @@ def orient_outward(mesh, seed: int = 12345, only=None) -> list:
         live_comps = {comp_of[f] for f in only if f in comp_of}
         if not live_comps:
             return []
-        scope = [f for f in mesh.faces if comp_of[f] in live_comps]
+        scope = [f for f in mesh.faces if comp_of.get(f) in live_comps]
 
     boundary = dict(all_tris)
     probes: dict = {}
