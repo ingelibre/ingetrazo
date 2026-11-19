@@ -83,6 +83,10 @@ def test_xray_shortcut_preserves_edge_settings_opacity_and_edits():
         def _apply_display_style(self, style):
             self.viewport.scene.display_style = style.copy()
 
+        # main's per-view styles: Alt+X reads the active view's style.
+        def active_style(self):
+            return self.viewport.scene.display_style
+
     window = Window()
     window.viewport.scene.display_style = Style(face_mode="shaded", profile_width=8,
                                               xray_opacity=35, transparency_quality="nicer")

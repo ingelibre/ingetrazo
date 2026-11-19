@@ -13211,8 +13211,10 @@ class Viewport(QOpenGLWidget):
         tan = math.tan(math.radians(getattr(cam, "fov_deg", 45.0)) * 0.5)
         # The style's section-cut width in screen pixels (#1218); 2.5 px,
         # the default, is the line this always drew.
-        width_k = max(0.1, float(getattr(self._frame_style,
-                                         "section_cut_width", 2.5))) / 2.5
+        style = (getattr(self, "_frame_style", None)
+                 or getattr(self.scene, "display_style", None))
+        width_k = max(0.1, float(getattr(style, "section_cut_width",
+                                         2.5))) / 2.5
 
         def widths(p):
             """Half a line at ``p``, in the world: its plain size, across
@@ -20404,6 +20406,10 @@ class Viewport(QOpenGLWidget):
         ls: list = []
         ln: list = []
         lst: list = []
+        # The second face's normal aligned to the first's winding (#1218):
+        # a silhouette must not move when a face is flipped.
+        from core.profile_edges import edge_normal_sign
+        windings = {}
         for e in scene.loose_mesh.edges:
             if getattr(e, "hidden", False) or not scene.entity_visible(e):
                 continue
@@ -20415,6 +20421,8 @@ class Viewport(QOpenGLWidget):
                     continue
                 na = fs[0].normal()
                 nb = fs[1].normal() if len(fs) > 1 else None
+                if nb is not None and len(fs) == len(e.faces):
+                    nb *= edge_normal_sign(e, windings)
                 ls.append((p0, p1))
                 ln.append(((na.x(), na.y(), na.z()),
                            nan3 if nb is None else (nb.x(), nb.y(), nb.z())))

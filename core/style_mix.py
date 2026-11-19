@@ -13,7 +13,7 @@ STYLE_CATEGORIES = {
     "edges": ("edges", "profiles", "back_edges", "edge_color", "profile_width",
               "profile_cap", "depth_cue", "depth_cue_width", "extensions",
               "extension_length", "endpoints", "endpoint_length", "endpoint_type",
-              "endpoint_size", "dashes", "edge_color_mode"),
+              "endpoint_size", "dashes", "edge_color_mode", "model_linetypes"),
     "faces": ("face_mode", "front_color", "back_color", "material_transparency",
               "transparency_quality", "xray", "xray_opacity", "ambient_occlusion",
               "ao_distance", "ao_intensity"),
