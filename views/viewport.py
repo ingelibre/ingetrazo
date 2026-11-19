@@ -21399,6 +21399,13 @@ class Viewport(QOpenGLWidget):
     def _leave_group_edit(self, todos: bool) -> None:
         if self.scene.edit_group is None:
             return
+        # Level by level (from #1148, @mle-gall): leaving every level at once
+        # handed only the innermost share to a command, and the levels around
+        # it shared back headless, outside the history. A part shares back
+        # before the component around it takes its matrix back up.
+        while todos and len(getattr(self.scene, "_edit_stack", None)
+                            or ()) > 1:
+            self._leave_group_edit(todos=False)
         stack = getattr(self.scene, "_edit_stack", None) or ()
         mark = stack[-1].get("undo_mark") if stack else None
         if mark is None:
