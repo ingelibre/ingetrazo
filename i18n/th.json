@@ -3768,5 +3768,22 @@
  "Architect. The units system, the Browser, Layers 2.0, the Solid Inspector, Fillet 3D bevels, Bridge, Join Segments, Camera ▸ Axes, soft ambient occlusion, round curved surfaces, view layouts, scenes as tabs, cleaner exports and many everyday editing tools. And for 0.6.2: the North tool, camera settings, scene transitions with video and the view as layered SVG.": "สถาปนิก ระบบหน่วย, เบราว์เซอร์, เลเยอร์ 2.0, เครื่องมือตรวจสอบโซลิด, การลบมุมของ Fillet 3D, เชื่อมสะพาน, รวมเส้นย่อย, กล้อง ▸ แกน, แอมเบียนต์ออคคลูชันแบบนุ่ม, พื้นผิวโค้งที่กลมมน, เลย์เอาต์มุมมอง, ฉากแบบแท็บ, การส่งออกที่สะอาดขึ้น และเครื่องมือแก้ไขที่ใช้ประจำวันอีกมากมาย และสำหรับ 0.6.2: เครื่องมือทิศเหนือ การตั้งค่ากล้อง การเปลี่ยนฉากพร้อมวิดีโอ และมุมมองเป็น SVG แบบแยกชั้น",
  "Korean translation of the interface, and the AI key from an environment variable. In 0.6.2, soft shadows and fixes for macOS.": "คำแปลภาษาเกาหลีของส่วนติดต่อผู้ใช้ และคีย์ AI จากตัวแปรสภาพแวดล้อม ใน 0.6.2 มีเงานุ่มและการแก้ไขสำหรับ macOS",
  "Exact Move+Ctrl copies, overlapping rotated copies, faster box selection on huge models and the reviewed Indonesian translation.": "การคัดลอกด้วย ย้าย+Ctrl ที่แม่นยำ สำเนาที่หมุนแล้วซ้อนทับกัน การเลือกแบบกรอบที่เร็วขึ้นในโมเดลขนาดใหญ่มาก และคำแปลภาษาอินโดนีเซียที่ปรับปรุงแล้ว",
- "Snapping to the rest of the model from inside a group or component.": "การสแนปกับส่วนอื่นของโมเดลจากภายในกลุ่มหรือคอมโพเนนต์"
+ "Snapping to the rest of the model from inside a group or component.": "การสแนปกับส่วนอื่นของโมเดลจากภายในกลุ่มหรือคอมโพเนนต์",
+ "Paint with a material saved in a file: .igmat or .skm": "ระบายด้วยวัสดุที่บันทึกไว้ในไฟล์: .igmat หรือ .skm",
+ "Export material…": "ส่งออกวัสดุ…",
+ "Add to My materials": "เพิ่มไปยังวัสดุของฉัน",
+ "My materials": "วัสดุของฉัน",
+ "Remove from My materials": "เอาออกจากวัสดุของฉัน",
+ "Remove '{name}' from My materials?": "เอา '{name}' ออกจากวัสดุของฉันหรือไม่?",
+ "'{name}' added to My materials": "เพิ่ม '{name}' ไปยังวัสดุของฉันแล้ว",
+ "Export material": "ส่งออกวัสดุ",
+ "IngeTrazo material (*.igmat)": "วัสดุ IngeTrazo (*.igmat)",
+ "Material '{name}' exported": "ส่งออกวัสดุ '{name}' แล้ว",
+ "Import material": "นำเข้าวัสดุ",
+ "Could not read {file}: {error}": "อ่าน {file} ไม่ได้: {error}",
+ "{file} has no material to paint with.": "{file} ไม่มีวัสดุสำหรับระบาย",
+ "Material '{name}' ready — click faces to paint it": "วัสดุ '{name}' พร้อมแล้ว — คลิกที่พื้นผิวเพื่อระบายสี",
+ "{count} materials imported into Recent": "นำเข้าวัสดุ {count} รายการไปยังล่าสุดแล้ว",
+ "Material files (*.igmat *.skm)": "ไฟล์วัสดุ (*.igmat *.skm)",
+ "SKM material (*.skm)": "วัสดุ SKM (*.skm)"
 }

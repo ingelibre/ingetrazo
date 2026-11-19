@@ -3765,5 +3765,22 @@
  "Architect. The units system, the Browser, Layers 2.0, the Solid Inspector, Fillet 3D bevels, Bridge, Join Segments, Camera ▸ Axes, soft ambient occlusion, round curved surfaces, view layouts, scenes as tabs, cleaner exports and many everyday editing tools. And for 0.6.2: the North tool, camera settings, scene transitions with video and the view as layered SVG.": "Arquitecto. El sistema de unidades, el Navegador, Capas 2.0, el Inspector de sólidos, los biseles de Fillet 3D, Puente, Unir segmentos, Cámara ▸ Ejes, la oclusión ambiental suave, las superficies curvas redondeadas, las disposiciones de vistas, las escenas como pestañas, exportaciones más limpias y muchas herramientas de edición del día a día. Y para la 0.6.2: la herramienta Norte, los ajustes de cámara, las transiciones de escena con vídeo y la vista como SVG en capas.",
  "Korean translation of the interface, and the AI key from an environment variable. In 0.6.2, soft shadows and fixes for macOS.": "Traducción al coreano de la interfaz, y la clave de IA desde una variable de entorno. En la 0.6.2, las sombras suaves y arreglos para macOS.",
  "Exact Move+Ctrl copies, overlapping rotated copies, faster box selection on huge models and the reviewed Indonesian translation.": "Copias exactas con Mover+Ctrl, copias giradas que se solapan, selección por caja más rápida en modelos enormes y la traducción al indonesio revisada.",
- "Snapping to the rest of the model from inside a group or component.": "Los enganches con el resto del modelo desde dentro de un grupo o componente."
+ "Snapping to the rest of the model from inside a group or component.": "Los enganches con el resto del modelo desde dentro de un grupo o componente.",
+ "Paint with a material saved in a file: .igmat or .skm": "Pintar con un material guardado en un archivo: .igmat o .skm",
+ "Export material…": "Exportar material…",
+ "Add to My materials": "Añadir a Mis materiales",
+ "My materials": "Mis materiales",
+ "Remove from My materials": "Quitar de Mis materiales",
+ "Remove '{name}' from My materials?": "¿Quitar «{name}» de Mis materiales?",
+ "'{name}' added to My materials": "«{name}» añadido a Mis materiales",
+ "Export material": "Exportar material",
+ "IngeTrazo material (*.igmat)": "Material de IngeTrazo (*.igmat)",
+ "Material '{name}' exported": "Material «{name}» exportado",
+ "Import material": "Importar material",
+ "Could not read {file}: {error}": "No se pudo leer {file}: {error}",
+ "{file} has no material to paint with.": "{file} no tiene ningún material con el que pintar.",
+ "Material '{name}' ready — click faces to paint it": "Material «{name}» listo — haz clic en las caras para pintarlas",
+ "{count} materials imported into Recent": "{count} materiales importados en Recientes",
+ "Material files (*.igmat *.skm)": "Archivos de material (*.igmat *.skm)",
+ "SKM material (*.skm)": "Material SKM (*.skm)"
 }

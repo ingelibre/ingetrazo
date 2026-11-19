@@ -3768,5 +3768,22 @@
  "Architect. The units system, the Browser, Layers 2.0, the Solid Inspector, Fillet 3D bevels, Bridge, Join Segments, Camera ▸ Axes, soft ambient occlusion, round curved surfaces, view layouts, scenes as tabs, cleaner exports and many everyday editing tools. And for 0.6.2: the North tool, camera settings, scene transitions with video and the view as layered SVG.": "ສະຖາປະນິກ. ລະບົບຫົວໜ່ວຍ, ໂປຣແກຣມທ່ອງເບິ່ງ, ຊັ້ນວຽກ 2.0, ຕົວກວດຮູບຊົງຕັນ (Solid Inspector), ການລົບມຸມຂອງ Fillet 3D, ຂົວເຊື່ອມ, ເຊື່ອມຕໍ່ທ່ອນເສັ້ນ, ກ້ອງ ▸ ແກນ, ການບັງແສງລອບຂ້າງແບບອ່ອນ, ພື້ນຜິວໂຄ້ງທີ່ມົນ, ການຈັດວາງມຸມມອງ, ສາກເປັນແຖບ, ການສົ່ງອອກທີ່ສະອາດຂຶ້ນ ແລະ ເຄື່ອງມືແກ້ໄຂປະຈຳວັນອີກຫຼາຍຢ່າງ. ແລະສຳລັບ 0.6.2: ເຄື່ອງມືທິດເໜືອ, ການຕັ້ງຄ່າກ້ອງ, ການປ່ຽນສາກພ້ອມວິດີໂອ ແລະ ມຸມມອງເປັນ SVG ແບບຊັ້ນ.",
  "Korean translation of the interface, and the AI key from an environment variable. In 0.6.2, soft shadows and fixes for macOS.": "ການແປສ່ວນຕິດຕໍ່ເປັນພາສາເກົາຫຼີ, ແລະ ກະແຈ AI ຈາກຕົວແປສະພາບແວດລ້ອມ. ໃນ 0.6.2, ເງົາອ່ອນ ແລະ ການແກ້ໄຂສຳລັບ macOS.",
  "Exact Move+Ctrl copies, overlapping rotated copies, faster box selection on huge models and the reviewed Indonesian translation.": "ການສຳເນົາດ້ວຍ ຍ້າຍ+Ctrl ທີ່ຖືກຕ້ອງ, ສຳເນົາທີ່ໝູນແລ້ວຊ້ອນກັນ, ການເລືອກແບບກອບທີ່ໄວຂຶ້ນໃນແບບຈຳລອງຂະໜາດໃຫຍ່ ແລະ ການແປພາສາອິນໂດເນເຊຍທີ່ທົບທວນແລ້ວ.",
- "Snapping to the rest of the model from inside a group or component.": "ການຍຶດຕິດກັບສ່ວນອື່ນຂອງແບບຈຳລອງຈາກພາຍໃນກຸ່ມ ຫຼື ອົງປະກອບ."
+ "Snapping to the rest of the model from inside a group or component.": "ການຍຶດຕິດກັບສ່ວນອື່ນຂອງແບບຈຳລອງຈາກພາຍໃນກຸ່ມ ຫຼື ອົງປະກອບ.",
+ "Paint with a material saved in a file: .igmat or .skm": "ທາສີດ້ວຍວັດສະດຸທີ່ບັນທຶກໄວ້ໃນໄຟລ໌: .igmat ຫຼື .skm",
+ "Export material…": "ສົ່ງອອກວັດສະດຸ…",
+ "Add to My materials": "ເພີ່ມໃສ່ວັດສະດຸຂອງຂ້ອຍ",
+ "My materials": "ວັດສະດຸຂອງຂ້ອຍ",
+ "Remove from My materials": "ລຶບອອກຈາກວັດສະດຸຂອງຂ້ອຍ",
+ "Remove '{name}' from My materials?": "ລຶບ '{name}' ອອກຈາກວັດສະດຸຂອງຂ້ອຍບໍ?",
+ "'{name}' added to My materials": "ເພີ່ມ '{name}' ໃສ່ວັດສະດຸຂອງຂ້ອຍແລ້ວ",
+ "Export material": "ສົ່ງອອກວັດສະດຸ",
+ "IngeTrazo material (*.igmat)": "ວັດສະດຸ IngeTrazo (*.igmat)",
+ "Material '{name}' exported": "ສົ່ງອອກວັດສະດຸ '{name}' ແລ້ວ",
+ "Import material": "ນຳເຂົ້າວັດສະດຸ",
+ "Could not read {file}: {error}": "ບໍ່ສາມາດອ່ານ {file}: {error}",
+ "{file} has no material to paint with.": "{file} ບໍ່ມີວັດສະດຸທີ່ຈະທາສີ.",
+ "Material '{name}' ready — click faces to paint it": "ວັດສະດຸ '{name}' ພ້ອມແລ້ວ — ຄລິກໃສ່ໜ້າພຽງເພື່ອທາສີ",
+ "{count} materials imported into Recent": "ນຳເຂົ້າ {count} ວັດສະດຸໃສ່ຫຼ້າສຸດແລ້ວ",
+ "Material files (*.igmat *.skm)": "ໄຟລ໌ວັດສະດຸ (*.igmat *.skm)",
+ "SKM material (*.skm)": "ວັດສະດຸ SKM (*.skm)"
 }

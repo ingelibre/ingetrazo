@@ -3766,5 +3766,22 @@
  "Architect. The units system, the Browser, Layers 2.0, the Solid Inspector, Fillet 3D bevels, Bridge, Join Segments, Camera ▸ Axes, soft ambient occlusion, round curved surfaces, view layouts, scenes as tabs, cleaner exports and many everyday editing tools. And for 0.6.2: the North tool, camera settings, scene transitions with video and the view as layered SVG.": "Архитект. Системата от мерни единици, Браузърът, Слоеве 2.0, Проверката на плътни тела, фаските на Fillet 3D, Свързваща повърхнина, Обединяване на сегменти, Камера ▸ Оси, мекото фоново засенчване, заоблените криволинейни повърхнини, оформленията на изгледи, сцените като раздели, по-чистите експорти и много ежедневни инструменти за редактиране. А за 0.6.2: инструментът Север, настройките на камерата, преходите между сцени с видео и изгледът като SVG на слоеве.",
  "Korean translation of the interface, and the AI key from an environment variable. In 0.6.2, soft shadows and fixes for macOS.": "Корейски превод на интерфейса и ключът за ИИ от променлива на средата. В 0.6.2 – меките сенки и поправки за macOS.",
  "Exact Move+Ctrl copies, overlapping rotated copies, faster box selection on huge models and the reviewed Indonesian translation.": "Точни копия с Move+Ctrl, припокриващи се завъртени копия, по-бърз избор с рамка в огромни модели и прегледаният превод на индонезийски.",
- "Snapping to the rest of the model from inside a group or component.": "Прихващане към останалата част от модела отвътре на група или компонент."
+ "Snapping to the rest of the model from inside a group or component.": "Прихващане към останалата част от модела отвътре на група или компонент.",
+ "Paint with a material saved in a file: .igmat or .skm": "Оцветяване с материал, записан във файл: .igmat или .skm",
+ "Export material…": "Експортиране на материал…",
+ "Add to My materials": "Добавяне към Моите материали",
+ "My materials": "Моите материали",
+ "Remove from My materials": "Премахване от Моите материали",
+ "Remove '{name}' from My materials?": "Да се премахне ли „{name}“ от Моите материали?",
+ "'{name}' added to My materials": "„{name}“ е добавен към Моите материали",
+ "Export material": "Експортиране на материал",
+ "IngeTrazo material (*.igmat)": "Материал на IngeTrazo (*.igmat)",
+ "Material '{name}' exported": "Материалът „{name}“ е експортиран",
+ "Import material": "Импортиране на материал",
+ "Could not read {file}: {error}": "{file} не може да се прочете: {error}",
+ "{file} has no material to paint with.": "{file} не съдържа материал за оцветяване.",
+ "Material '{name}' ready — click faces to paint it": "Материалът „{name}“ е готов — щракнете върху лица, за да ги оцветите",
+ "{count} materials imported into Recent": "{count} материала са импортирани в Последни",
+ "Material files (*.igmat *.skm)": "Файлове с материали (*.igmat *.skm)",
+ "SKM material (*.skm)": "Материал SKM (*.skm)"
 }
