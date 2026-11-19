@@ -12,7 +12,10 @@ Register it with Claude Code:
     claude mcp add ingetrazo -- python3 /path/to/app/scripts/ingetrazo_mcp.py
 
 Tools: run_python (transactional, one undo step per call), query_model,
-screenshot (the agent SEES the viewport), undo, redo. Every mutation goes
+screenshot (the agent SEES the viewport), undo, redo — and the sheet tools
+(list_sheets, get_sheet, create/update/delete_sheet, add/update/remove_frame,
+fit_frame, set_title_block, add/update_text, list/create/update/delete_view,
+render_sheet, export_sheets; #1505). Every mutation goes
 through IngeTrazo's command engine — the hermeticity guard validates the
 agent's recipes, and Ctrl+Z always works.
 """
@@ -105,6 +108,172 @@ TOOLS = [
     },
 ]
 
+# ---- Sheets and saved views (#1505) -----------------------------------------
+# Stable tools over core/sheets_api.py — no run_python, no private composer
+# methods, no open Composer window. Each WRITE is one undo step, returns
+# {"result", "changed", "document_revision"} and accepts expected_revision:
+# a stale revision is refused, so two clients cannot build on each other's
+# deleted views unawares.
+
+#: The {placeholders} sheet texts and title blocks expand, every spelling.
+try:
+    sys.path.insert(0, _APP_ROOT)
+    from core.composition import FIELD_NAMES as _FIELDS
+    PLACEHOLDERS = "; ".join(
+        "{%s}" % es + "".join(", {%s}" % a for a in names)
+        for es, names in _FIELDS.items())
+except ImportError:                             # pragma: no cover - packaging
+    PLACEHOLDERS = ("{proyecto}/{project}/{projekt}, {lamina}/{sheet}, "
+                    "{escala}/{scale}/{massstab}, {fecha}/{date}/{datum}…")
+finally:
+    if sys.path and sys.path[0] == _APP_ROOT:
+        del sys.path[0]
+
+_S = {"type": ["string", "integer"],
+      "description": "Sheet: 0-based index in document order, or its name."}
+_F = {"type": ["string", "integer"],
+      "description": "Frame: index within the sheet, its uid or list name."}
+_REV = {"type": "string", "description": (
+    "Optional: the document_revision you last read; the call is refused "
+    "if the document changed since.")}
+_NUM = {"type": "number"}
+_FRAME_PROPS = {
+    "view": {"type": "string", "description": (
+        "A saved view (scene) name, 'std:top' / 'std:front' / 'std:iso'…, "
+        "or '__current__' for the live camera.")},
+    "scale": {"type": ["number", "string"],
+              "description": "Denominator (50) or '1:50' / '10:1'."},
+    "x_mm": _NUM, "y_mm": _NUM, "w_mm": _NUM, "h_mm": _NUM,
+    "fit": {"type": "string", "enum": ["content", "view"], "description": (
+        "content: centre on the visible geometry of the view (its hidden "
+        "layers respected); view: drop the frame's own target and use the "
+        "saved view's.")},
+    "style": {"type": "string", "description": (
+        "'style:Architectural', 'style:Hidden line', 'vectorial', "
+        "'sombreado'…")},
+    "perspective": {"type": "boolean"},
+    "cam_target": {"type": ["array", "null"], "items": _NUM,
+                   "description": "World point [x,y,z] in m, or null."},
+    "show_title": {"type": "boolean"}, "title_text": {"type": "string"},
+    "show_scale": {"type": "boolean"}, "hidden": {"type": "boolean"},
+    "list_name": {"type": "string"},
+}
+_TEXT_PROPS = {"text": {"type": "string", "description": (
+    "May hold placeholders: " + PLACEHOLDERS)},
+    "x_mm": _NUM, "y_mm": _NUM, "w_mm": _NUM, "size_pt": _NUM,
+    "bold": {"type": "boolean"}, "align": {"type": "string",
+                                           "enum": ["left", "center", "right"]},
+    "frame_uid": {"type": "string"}}
+
+
+def _tool(name, description, props=None, required=(), write=False):
+    props = dict(props or {})
+    if write:
+        props["expected_revision"] = _REV
+    schema = {"type": "object", "properties": props}
+    if required:
+        schema["required"] = list(required)
+    return {"name": name, "description": description, "inputSchema": schema}
+
+
+TOOLS += [
+    _tool("list_sheets", (
+        "All sheets in document order: index, name, paper, orientation, "
+        "frame/text counts, title block yes/no and WARNINGS (frames on a "
+        "missing saved view, content clipped at the frame's scale, "
+        "non-standard scales with a suggested one, placeholders that will "
+        "print literally). Start here.")),
+    _tool("get_sheet", (
+        "One sheet as JSON: frames (view, scale, x/y/w/h mm, style, "
+        "perspective, cam_target, content_mm = drawing extent on paper and "
+        "whether it is clipped), texts, title block fields, warnings. "
+        "Dimensions only as a count unless cotas=true."),
+        {"sheet": _S, "cotas": {"type": "boolean"}}, ["sheet"]),
+    _tool("create_sheet", (
+        "New sheet: empty with one frame filling the page, or a copy of "
+        "the sheet 'template' names; placed after the sheet 'after' names "
+        "(else last)."),
+        {"name": {"type": "string"}, "template": _S, "after": _S,
+         "paper": {"type": "string", "enum": ["A4", "A3", "A2", "A1", "A0"]},
+         "landscape": {"type": "boolean"}, "frame": {"type": "boolean"},
+         "title_block": {"type": "boolean"}}, ["name"], write=True),
+    _tool("update_sheet", "Rename a sheet, change its paper, or move it "
+          "to 'index'.",
+          {"sheet": _S, "name": {"type": "string"},
+           "paper": {"type": "string", "enum": ["A4", "A3", "A2", "A1",
+                                                "A0"]},
+           "landscape": {"type": "boolean"}, "index": {"type": "integer"},
+           "margin_mm": _NUM}, ["sheet"], write=True),
+    _tool("delete_sheet", "Delete a sheet (needs confirm=true; a document "
+          "keeps at least one).",
+          {"sheet": _S, "confirm": {"type": "boolean"}}, ["sheet"],
+          write=True),
+    _tool("add_frame", "Add a view frame to a sheet. Without x/y/w/h it "
+          "fills the page inside the margins.",
+          {"sheet": _S, **_FRAME_PROPS}, ["sheet"], write=True),
+    _tool("update_frame", "Change a frame: view, scale, position/size, "
+          "style, framing (fit)…",
+          {"sheet": _S, "frame": _F, **_FRAME_PROPS}, ["sheet", "frame"],
+          write=True),
+    _tool("remove_frame", "Remove a frame from a sheet.",
+          {"sheet": _S, "frame": _F}, ["sheet", "frame"], write=True),
+    _tool("fit_frame", "Re-frame a frame: mode 'content' centres it on what "
+          "its view shows, 'view' takes the saved view's target. Returns "
+          "the drawing extent in mm (content_mm) to check it fits.",
+          {"sheet": _S, "frame": _F, "mode": _FRAME_PROPS["fit"]},
+          ["sheet", "frame"], write=True),
+    _tool("set_title_block", (
+        "Title block of one sheet or of every sheet (sheet='all'). fields "
+        "= [[label, value], …], set row by row (added if missing) unless "
+        "replace=true. Values may use placeholders, so ONE set_title_block"
+        "('all', …) keeps every sheet current: " + PLACEHOLDERS),
+        {"sheet": _S, "fields": {"type": "array", "items": {
+            "type": "array", "items": {"type": "string"}}},
+         "columns": {"type": "integer"}, "replace": {"type": "boolean"},
+         "x_mm": _NUM, "y_mm": _NUM, "w_mm": _NUM, "h_mm": _NUM},
+        ["sheet"], write=True),
+    _tool("add_text", "Add a text block to a sheet.",
+          {"sheet": _S, **_TEXT_PROPS}, ["sheet", "text"], write=True),
+    _tool("update_text", "Change a text block (by its index in get_sheet).",
+          {"sheet": _S, "index": {"type": "integer"}, **_TEXT_PROPS},
+          ["sheet", "index"], write=True),
+    _tool("list_views", "Saved views (scenes): name, folder, section, "
+          "perspective, hidden layers, target, and the sheets that use "
+          "each one."),
+    _tool("create_view", "New saved view: a copy of from_view (or of the "
+          "live camera), optionally with other hidden layers / target.",
+          {"name": {"type": "string"}, "from_view": {"type": "string"},
+           "folder": {"type": "string"},
+           "hidden_layers": {"type": "array", "items": {"type": "string"}},
+           "target": {"type": "array", "items": _NUM}}, ["name"],
+          write=True),
+    _tool("update_view", "Change a saved view. Renaming it renames every "
+          "frame that shows it — no sheet is orphaned.",
+          {"view": {"type": "string"}, "name": {"type": "string"},
+           "folder": {"type": "string"},
+           "hidden_layers": {"type": "array", "items": {"type": "string"}},
+           "target": {"type": "array", "items": _NUM}}, ["view"],
+          write=True),
+    _tool("delete_view", "Delete a saved view (needs confirm=true; the "
+          "reply names the sheets left with a missing view).",
+          {"view": {"type": "string"}, "confirm": {"type": "boolean"}},
+          ["view"], write=True),
+    _tool("render_sheet", "Render one sheet to a PNG and LOOK at it — the "
+          "screenshot of a sheet. Works with the Composer window closed.",
+          {"sheet": _S, "dpi": {"type": "integer",
+                                "description": "20-300, default 80"}},
+          ["sheet"]),
+    _tool("export_sheets", (
+        "Export sheets without the Composer window: format 'pdf' writes "
+        "one file with every sheet a page; 'png' one file per sheet next "
+        "to path. Returns the files and the errors of each sheet (missing "
+        "views, frames that did not render)."),
+        {"path": {"type": "string", "description": "Absolute file path."},
+         "sheets": {"type": "array", "items": _S},
+         "format": {"type": "string", "enum": ["pdf", "png"]},
+         "dpi": {"type": "integer"}}, ["path"]),
+]
+
 _sock: socket.socket | None = None
 _req_id = 0
 
@@ -155,12 +324,17 @@ def _call(name: str, args: dict) -> dict:
     if not reply.get("ok"):
         return _tool_result(str(reply.get("error")), is_error=True)
     result = reply.get("result") or {}
-    if name == "screenshot" and result.get("path"):
+    if name in ("screenshot", "render_sheet") and result.get("path"):
         try:
             with open(result["path"], "rb") as fh:
                 data = base64.b64encode(fh.read()).decode()
-            return {"content": [{"type": "image", "data": data,
-                                 "mimeType": "image/png"}]}
+            content = [{"type": "image", "data": data,
+                        "mimeType": "image/png"}]
+            if name == "render_sheet":
+                meta = {k: v for k, v in result.items() if k != "path"}
+                content.append({"type": "text", "text": json.dumps(
+                    meta, indent=2, ensure_ascii=False)})
+            return {"content": content}
         except OSError as exc:
             return _tool_result(f"screenshot unreadable: {exc}",
                                 is_error=True)
@@ -206,7 +380,19 @@ def handle(msg: dict) -> dict | None:
             "error": {"code": -32601, "message": f"unknown {method}"}}
 
 
+def _utf8_stdio() -> None:
+    """MCP's stdio transport is UTF-8 by definition, but Python reads and
+    writes the console's locale encoding — cp1252 on Windows: a «Küche»
+    in run_python code arrived as «KÃ¼che» and matched nothing (#1505)."""
+    for stream in (sys.stdin, sys.stdout):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, ValueError):     # pragma: no cover
+            pass
+
+
 def main() -> None:
+    _utf8_stdio()
     for line in sys.stdin:
         line = line.strip()
         if not line:

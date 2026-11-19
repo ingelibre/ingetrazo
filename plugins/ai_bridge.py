@@ -220,10 +220,14 @@ class _Bridge(QObject):
         guard = _NoDialogs()
         QApplication.instance().installEventFilter(guard)
         try:
-            handler = getattr(self, f"_tool_{tool}", None)
+            handler = (getattr(self, f"_tool_{tool}", None)
+                       or self._sheet_handler(tool))
             if handler is None:
                 raise ValueError(f"unknown tool {tool!r}")
             result = handler(**args)
+            if isinstance(result, dict):
+                result.setdefault("document_revision",
+                                  self._document_revision())
             if guard.refused and isinstance(result, dict):
                 result["dialogs_cancelled"] = list(guard.refused)
                 result["stderr"] = (result.get("stderr") or "") + "".join(
@@ -244,7 +248,10 @@ class _Bridge(QObject):
         one undoable step, whole-rollback on error, no undo entry when
         nothing changed."""
         from core.ai import run_transactional
-        return run_transactional(self._viewport, code, self._scope)
+        result = run_transactional(self._viewport, code, self._scope)
+        if result.get("changed"):
+            self._sync_composer()
+        return result
 
     def _tool_query_model(self) -> dict:
         vp = self._viewport
@@ -281,12 +288,153 @@ class _Bridge(QObject):
     def _tool_undo(self) -> dict:
         ok = self._viewport.history.undo()
         self._viewport.update()
+        self._sync_composer()
         return {"ok": bool(ok)}
 
     def _tool_redo(self) -> dict:
         ok = self._viewport.history.redo()
         self._viewport.update()
+        self._sync_composer()
         return {"ok": bool(ok)}
+
+    # ---- Sheets and saved views (#1505) ---------------------------------------
+    # One tool per operation of core.sheets_api.SheetsAPI. The writing ones
+    # run as ONE undo step each (SnapshotImport tracks the sheets' content),
+    # take an optional ``expected_revision`` and refresh the composer when
+    # it exists — open or not; none of them needs the window shown.
+    _SHEET_READS = {"list_sheets": "list", "get_sheet": "get",
+                    "list_views": "list_views"}
+    _SHEET_WRITES = {
+        "create_sheet": "create", "update_sheet": "update",
+        "delete_sheet": "delete", "add_frame": "add_frame",
+        "update_frame": "update_frame", "remove_frame": "remove_frame",
+        "fit_frame": "fit", "set_title_block": "set_title_block",
+        "add_text": "add_text", "update_text": "update_text",
+        "create_view": "create_view", "update_view": "update_view",
+        "delete_view": "delete_view",
+    }
+
+    def _sheets_api(self):
+        from core.sheets_api import SheetsAPI
+        vp = self._viewport
+        return SheetsAPI(vp.scene, getattr(vp, "camera", None))
+
+    def _document_revision(self) -> str:
+        """A token that changes whenever the document does (a step done or
+        undone, by an agent or the user) and not when it is only read: two
+        clients see each other's edits as a changed revision."""
+        history = getattr(self._viewport, "history", None)
+        if history is None:
+            return ""
+        undo = getattr(history, "undo_stack", [])
+        top = id(undo[-1]) if undo else 0
+        return f"{len(undo)}-{top & 0xffffff:06x}"
+
+    def _check_revision(self, expected) -> None:
+        if expected and expected != self._document_revision():
+            raise RuntimeError(
+                f"the document changed since revision {expected} (now "
+                f"{self._document_revision()}): read it again before "
+                f"editing")
+
+    def _sync_composer(self) -> None:
+        composer = getattr(self._viewport.window(), "_composer", None)
+        sync = getattr(composer, "sync_with_document", None)
+        if sync is not None:
+            try:
+                sync()
+            except Exception:  # noqa: BLE001 — the step is done; UI catches up
+                import traceback
+                traceback.print_exc()
+        tabs = getattr(self._viewport.window(), "_refresh_sheet_tabs", None)
+        if tabs is not None:
+            tabs()
+
+    #: Tool argument → SheetsAPI parameter, where the names differ.
+    _ARG_RENAMES = {"get_sheet": {"sheet": "ref"},
+                    "update_sheet": {"sheet": "ref"},
+                    "delete_sheet": {"sheet": "ref"},
+                    "update_view": {"view": "ref"},
+                    "delete_view": {"view": "ref"}}
+
+    def _sheet_handler(self, tool: str):
+        renames = self._ARG_RENAMES.get(tool, {})
+
+        def args(kw: dict) -> dict:
+            return {renames.get(k, k): v for k, v in kw.items()}
+
+        if tool in self._SHEET_READS:
+            method = self._SHEET_READS[tool]
+
+            def read(expected_revision=None, **kw):
+                out = getattr(self._sheets_api(), method)(**args(kw))
+                return out if isinstance(out, dict) else {tool[5:]: out}
+            return read
+        if tool in self._SHEET_WRITES:
+            method = self._SHEET_WRITES[tool]
+            return lambda expected_revision=None, **kw: self._sheet_step(
+                method, expected_revision, args(kw))
+        return None
+
+    def _sheet_step(self, method: str, expected, kw: dict) -> dict:
+        """``SheetsAPI.<method>(**kw)`` as one undoable step; rolled back
+        whole when it raises."""
+        from core.history import SnapshotImport
+        self._check_revision(expected)
+        vp = self._viewport
+        api = self._sheets_api()
+        out: dict = {}
+
+        def mutate(_scene) -> None:
+            out["result"] = getattr(api, method)(**kw)
+
+        cmd = SnapshotImport(mutate)
+        saved_redo = list(vp.history.redo_stack)
+        vp.history.execute(cmd)
+        error = vp.history.last_error
+        if error is not None:
+            raise RuntimeError("rolled back, the document is unchanged: "
+                               + error.replace("SnapshotImport: ", ""))
+        if not cmd.changed and vp.history.undo_stack \
+                and vp.history.undo_stack[-1] is cmd:
+            vp.history.undo_stack.pop()        # nothing to undo: no step
+            vp.history.redo_stack[:] = saved_redo
+        vp.notify_scene_changed()
+        self._sync_composer()
+        result = out.get("result")
+        return {"result": result, "changed": bool(cmd.changed)}
+
+    def _ensure_composer(self):
+        """The project's composer — created hidden if it never opened."""
+        ensure = getattr(self._viewport.window(), "_ensure_composer", None)
+        if ensure is None:
+            raise RuntimeError("this window has no sheet composer")
+        return ensure()
+
+    def _tool_render_sheet(self, sheet=0, dpi: int = 80) -> dict:
+        """One sheet as a PNG the client can look at (like screenshot)."""
+        api = self._sheets_api()
+        comp = api.sheet(sheet)
+        dpi = max(20, min(int(dpi), 300))
+        image = self._ensure_composer().render_sheet_image(comp, dpi)
+        out_dir = Path(tempfile.gettempdir()) / "ingetrazo-ai"
+        out_dir.mkdir(parents=True, exist_ok=True)
+        out = out_dir / "sheet.png"
+        image.save(str(out))
+        return {"path": str(out), "sheet": comp.name,
+                "width": image.width(), "height": image.height(),
+                "warnings": api.warnings(comp)}
+
+    def _tool_export_sheets(self, path: str = "", sheets=None,
+                            format: str = "pdf", dpi: int = 150) -> dict:  # noqa: A002
+        """PDF (one file, every sheet a page) or PNG (one per sheet), with
+        the errors of each sheet — the window need not be open."""
+        if not path:
+            raise ValueError("path is required (an absolute file path)")
+        api = self._sheets_api()
+        comps = None if sheets is None else [api.sheet(s) for s in sheets]
+        return self._ensure_composer().export_sheets(str(path), comps, format,
+                                              float(dpi))
 
 
 def mcp_command(platform: str | None = None, frozen: bool | None = None,
