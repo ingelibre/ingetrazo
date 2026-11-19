@@ -3766,5 +3766,20 @@
  "Architect. The units system, the Browser, Layers 2.0, the Solid Inspector, Fillet 3D bevels, Bridge, Join Segments, Camera ▸ Axes, soft ambient occlusion, round curved surfaces, view layouts, scenes as tabs, cleaner exports and many everyday editing tools. And for 0.6.2: the North tool, camera settings, scene transitions with video and the view as layered SVG.": "建筑师。单位系统、浏览器、图层 2.0、实体检查器、Fillet 3D 倒角、桥接、合并线段、相机 ▸ 坐标轴、柔和环境光遮蔽、圆润曲面、视图布局、标签页形式的场景、更整洁的导出，以及许多日常编辑工具。0.6.2 中还有：指北工具、相机设置、带视频的场景过渡，以及分图层的 SVG 视图导出。",
  "Korean translation of the interface, and the AI key from an environment variable. In 0.6.2, soft shadows and fixes for macOS.": "界面的韩语翻译，以及从环境变量读取 AI 密钥。0.6.2 中还有柔和阴影和 macOS 修复。",
  "Exact Move+Ctrl copies, overlapping rotated copies, faster box selection on huge models and the reviewed Indonesian translation.": "精确的移动+Ctrl 复制、相互重叠的旋转复制、在超大模型上更快的框选，以及校订后的印尼语翻译。",
- "Snapping to the rest of the model from inside a group or component.": "在组或组件内部捕捉到模型其余部分。"
+ "Snapping to the rest of the model from inside a group or component.": "在组或组件内部捕捉到模型其余部分。",
+ "Add a sheet index: the table of contents of the document's sheets, kept up to date": "添加图纸目录：文档中各图纸的目录，始终保持最新",
+ "Sheet index": "图纸目录",
+ "SHEET INDEX": "图纸目录",
+ "Show the title": "显示标题",
+ "Leader": "引导线",
+ "Show sheet numbers": "显示图纸编号",
+ "Flat list": "平铺列表",
+ "By folder": "按文件夹",
+ "By folder lists the sheets under their folders, indented. Sheets outside any folder are listed flat.": "按文件夹会将图纸缩进列在其文件夹下。不在任何文件夹中的图纸平铺列出。",
+ "Border": "边框",
+ "Index page": "目录页",
+ "List this sheet too": "也列出本图纸",
+ "Split a long index over several sheets: put one index on each and pick the page each one shows.": "将较长的目录拆分到多张图纸上：在每张图纸上放一个目录，并选择各自显示的页。",
+ "Entries per page": "每页条目数",
+ "{n} entries on {pages} page(s)": "{n} 个条目，共 {pages} 页"
 }

@@ -3765,5 +3765,20 @@
  "Architect. The units system, the Browser, Layers 2.0, the Solid Inspector, Fillet 3D bevels, Bridge, Join Segments, Camera ▸ Axes, soft ambient occlusion, round curved surfaces, view layouts, scenes as tabs, cleaner exports and many everyday editing tools. And for 0.6.2: the North tool, camera settings, scene transitions with video and the view as layered SVG.": "Architecte. Le système d'unités, le Navigateur, Calques 2.0, l'Inspecteur de solides, les biseaux de Fillet 3D, Pont, Joindre les segments, Caméra ▸ Axes, l'occlusion ambiante douce, les surfaces courbes arrondies, les dispositions de vues, les scènes en onglets, des exports plus propres et de nombreux outils d'édition du quotidien. Et pour la 0.6.2 : l’outil Nord, les réglages de caméra, les transitions de scènes avec vidéo et la vue en SVG par calques.",
  "Korean translation of the interface, and the AI key from an environment variable. In 0.6.2, soft shadows and fixes for macOS.": "Traduction coréenne de l'interface, et la clé d'IA lue depuis une variable d'environnement. Dans la 0.6.2, les ombres douces et des corrections pour macOS.",
  "Exact Move+Ctrl copies, overlapping rotated copies, faster box selection on huge models and the reviewed Indonesian translation.": "Des copies exactes avec Déplacer+Ctrl, des copies pivotées qui se chevauchent, une sélection par cadre plus rapide sur les très gros modèles et la traduction indonésienne révisée.",
- "Snapping to the rest of the model from inside a group or component.": "L’accrochage au reste du modèle depuis l’intérieur d’un groupe ou d’un composant."
+ "Snapping to the rest of the model from inside a group or component.": "L’accrochage au reste du modèle depuis l’intérieur d’un groupe ou d’un composant.",
+ "Add a sheet index: the table of contents of the document's sheets, kept up to date": "Ajouter un index des feuilles : la table des matières des feuilles du document, toujours à jour",
+ "Sheet index": "Index des feuilles",
+ "SHEET INDEX": "INDEX DES FEUILLES",
+ "Show the title": "Afficher le titre",
+ "Leader": "Points de conduite",
+ "Show sheet numbers": "Afficher les numéros de feuille",
+ "Flat list": "Liste simple",
+ "By folder": "Par dossier",
+ "By folder lists the sheets under their folders, indented. Sheets outside any folder are listed flat.": "Par dossier liste les feuilles sous leurs dossiers, en retrait. Les feuilles hors dossier sont listées à plat.",
+ "Border": "Bordure",
+ "Index page": "Page de l'index",
+ "List this sheet too": "Inclure aussi cette feuille",
+ "Split a long index over several sheets: put one index on each and pick the page each one shows.": "Répartir un long index sur plusieurs feuilles : placez un index sur chacune et choisissez la page que chacun affiche.",
+ "Entries per page": "Entrées par page",
+ "{n} entries on {pages} page(s)": "{n} entrées sur {pages} page(s)"
 }

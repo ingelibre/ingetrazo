@@ -698,6 +698,149 @@ class Leyenda:
 
 
 @dataclass
+class IndiceLaminas:
+    """A table of contents of the document's sheets (issue #1409): one row
+    per sheet — its name, a leader and its sheet number — read LIVE from
+    the document every time it is drawn, so renaming, adding or reordering
+    sheets never leaves a stale index on paper.
+
+    A long index is split over several sheets the way a drawing set does
+    it: ``per_page`` rows on each element (0 = all of them) and ``page``
+    says which slice this element shows — put one element on sheet 1 with
+    page 1, another on sheet 2 with page 2, and so on.
+
+    ``layout`` = ``"tree"`` lists the sheets under their folders, indented
+    by depth. Sheets carry no folder yet; the layout reads one from a
+    ``folder`` attribute of a sheet (``"Plans/Ground floor"``) when there
+    is one (see :func:`sheet_folder`), and until then it lists flat."""
+
+    x_mm: float = 20.0
+    y_mm: float = 20.0
+    w_mm: float = 90.0
+    title: str = ""
+    show_title: bool = True
+    size_pt: float = 9.0
+    #: What fills the gap between a sheet's name and its number.
+    leader: str = "dots"          # dots | line | none
+    show_numbers: bool = True
+    layout: str = "flat"          # flat | tree (by sheet folder)
+    #: Rows on this element; 0 = every sheet on one element.
+    per_page: int = 0
+    #: Which slice of ``per_page`` rows this element shows, from 1.
+    page: int = 1
+    #: List the sheet the index itself sits on.
+    include_self: bool = True
+    border: bool = True
+    z: float = 0.0            # stacking order on the page (higher = on top)
+    locked: bool = False         # locked: shown but not movable/resizable
+    group_id: str = ""            # sheet group (Ctrl+G); "" = ungrouped
+    #: The name the user gave it in the Items list (issue #93); "" =
+    #: the automatic one (its kind and what it shows).
+    list_name: str = ""
+    #: Hidden from the sheet — not drawn, not printed, not picked;
+    #: shown again from the Items list's eye (QGIS; Marco, 26-09).
+    hidden: bool = False
+
+    # Row geometry, in multiples of the text height.
+    PAD_MM = 2.0
+    ROW_FACTOR = 1.6
+    TITLE_FACTOR = 1.15 * 1.6
+
+    def text_mm(self) -> float:
+        return max(0.5, float(self.size_pt)) * PT_TO_MM
+
+    def row_mm(self) -> float:
+        return self.text_mm() * self.ROW_FACTOR
+
+    def title_mm(self) -> float:
+        return self.text_mm() * self.TITLE_FACTOR if self.show_title else 0.0
+
+    def height_mm(self, n_rows: int) -> float:
+        """The box for ``n_rows`` rows: it grows with the index, like the
+        layer legend does. A paged element keeps the height of a FULL page
+        so the slices on every sheet line up."""
+        if self.per_page > 0:
+            n_rows = max(n_rows, self.per_page)
+        return (2 * self.PAD_MM + self.title_mm()
+                + self.row_mm() * max(n_rows, 1))
+
+
+@dataclass(frozen=True)
+class TocEntry:
+    """One row of a sheet index: a sheet, or (tree layout) a folder."""
+
+    label: str
+    number: str = ""              # the sheet number; "" for a folder
+    level: int = 0                # indentation depth
+    folder: bool = False
+    current: bool = False         # the sheet the index sits on
+
+
+def sheet_folder(comp) -> tuple:
+    """The folder path of a sheet as a tuple of names, ``()`` at the top.
+
+    Sheets have no folders yet. This is the one place the index reads
+    them from, so that when they arrive the tree layout only needs the
+    sheet to carry ``folder`` — a ``"A/B"`` path or a list of names."""
+    raw = getattr(comp, "folder", None) or ()
+    parts = (raw if isinstance(raw, (list, tuple))
+             else str(raw).replace("\\", "/").split("/"))
+    return tuple(str(p).strip() for p in parts if str(p).strip())
+
+
+def toc_entries(comps, toc: IndiceLaminas, here=None) -> list:
+    """Every row of index *toc* over the sheets *comps* (the document's
+    order), *here* being the sheet the index sits on. Sheet numbers are
+    the sheets' positions — what ``{hoja}`` prints on each of them."""
+    comps = list(comps or [])
+    rows = [(i, c) for i, c in enumerate(comps)
+            if toc.include_self or c is not here]
+    if toc.layout != "tree":
+        return [TocEntry(c.name, str(i + 1), 0, False, c is here)
+                for i, c in rows]
+    # By folder: sheets at the top first, then each folder in the order
+    # its first sheet appears, sub-folders inside it; the document's order
+    # within a folder. A folder heading is written when its branch opens.
+    first: dict = {}
+    for _i, c in rows:
+        path = sheet_folder(c)
+        for k in range(1, len(path) + 1):
+            first.setdefault(path[:k], len(first))
+    rows.sort(key=lambda r: tuple(first[sheet_folder(r[1])[:k]]
+                                  for k in range(1, len(sheet_folder(r[1])) + 1)))
+    out: list = []
+    open_path: tuple = ()
+    for i, c in rows:
+        path = sheet_folder(c)
+        same = 0
+        while (same < min(len(path), len(open_path))
+               and path[same] == open_path[same]):
+            same += 1
+        for depth in range(same, len(path)):
+            out.append(TocEntry(path[depth], "", depth, True))
+        open_path = path
+        out.append(TocEntry(c.name, str(i + 1), len(path), False, c is here))
+    return out
+
+
+def toc_page_count(n_entries: int, per_page: int) -> int:
+    if per_page <= 0:
+        return 1
+    return max(1, math.ceil(n_entries / per_page))
+
+
+def toc_slice(entries: list, toc: IndiceLaminas) -> tuple:
+    """``(rows, page, pages)``: the rows element *toc* shows, the page it
+    shows (clamped into range) and how many pages the index takes."""
+    pages = toc_page_count(len(entries), toc.per_page)
+    page = min(max(1, int(toc.page or 1)), pages)
+    if toc.per_page <= 0:
+        return list(entries), page, pages
+    start = (page - 1) * toc.per_page
+    return list(entries[start:start + toc.per_page]), page, pages
+
+
+@dataclass
 class FormaItem:
     """A drawing shape: line, arrow, rectangle or ellipse. Lines/arrows run
     corner to corner of the box (``invert`` flips which diagonal)."""
@@ -1367,6 +1510,8 @@ class Composicion:
     perfiles: list = field(default_factory=list)
     niveles: list = field(default_factory=list)
     llamadas: list = field(default_factory=list)
+    #: Tables of contents of the document's sheets (issue #1409).
+    indices: list = field(default_factory=list)
     cajetin: Optional[Cajetin] = None
     #: Sheet border drawn on the margin rectangle: width, colour, rounded
     #: corners and line type (single | double | dashed).
@@ -1409,7 +1554,7 @@ class Composicion:
                + list(self.cotas_ang) + list(self.cotas_rad)
                + list(self.etiquetas)
                + list(self.perfiles) + list(self.niveles)
-               + list(self.llamadas))
+               + list(self.llamadas) + list(self.indices))
         if self.cajetin is not None:
             out.append(self.cajetin)
         return out
@@ -1438,7 +1583,8 @@ class Composicion:
                          ("etiquetas", self.etiquetas),
                          ("perfiles", self.perfiles),
                          ("niveles", self.niveles),
-                         ("llamadas", self.llamadas)):
+                         ("llamadas", self.llamadas),
+                         ("indices", self.indices)):
             if lst:
                 d[key] = [asdict(it) for it in lst]
         if self.cajetin is not None:
@@ -1477,6 +1623,7 @@ class Composicion:
         c.perfiles = _items(PerfilTerreno, d.get("perfiles"))
         c.niveles = _items(NivelItem, d.get("niveles"))
         c.llamadas = _items(LlamadaItem, d.get("llamadas"))
+        c.indices = _items(IndiceLaminas, d.get("indices"))
         c.cotas = _items(CotaItem, d.get("cotas"))
         if isinstance(d.get("cajetin"), dict):
             c.cajetin = _build(Cajetin, d["cajetin"])
@@ -1732,6 +1879,8 @@ class AddItemCommand(ComposerCommand):
             return self.comp.niveles
         if isinstance(self.item, LlamadaItem):
             return self.comp.llamadas
+        if isinstance(self.item, IndiceLaminas):
+            return self.comp.indices
         return None
 
     def do(self) -> None:
@@ -1784,6 +1933,8 @@ class RemoveItemCommand(ComposerCommand):
             return self.comp.niveles
         if isinstance(self.item, LlamadaItem):
             return self.comp.llamadas
+        if isinstance(self.item, IndiceLaminas):
+            return self.comp.indices
         return None
 
     def do(self) -> None:
