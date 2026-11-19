@@ -90,3 +90,56 @@ def test_the_strip_waits_and_catches_up():
     finally:
         win._saved_version = win.viewport.scene.version
         win.close()
+
+
+def test_the_covered_model_window_does_not_paint():
+    """While the composer covers it the model window paints nothing; it
+    paints again once uncovered (a sheet's first render repainted its
+    toolbars six times, ~1 s each, 19-11)."""
+    from views.main_window import MainWindow
+    win = MainWindow()
+    try:
+        covered = [True]
+        win._covered_by_composer = lambda: covered[0]
+        win.sync_covered_paint()
+        assert not win.updatesEnabled()
+        win.sync_covered_paint()                    # idempotent
+        assert not win.updatesEnabled()
+        covered[0] = False
+        win.changeEvent(QEvent(QEvent.ActivationChange))
+        assert win.updatesEnabled()
+        # The viewport's repaint waits while covered and comes back after.
+        covered[0] = True
+        win.update_viewport_when_seen()
+        assert win._viewport_pending
+        covered[0] = False
+        win.changeEvent(QEvent(QEvent.WindowStateChange))
+        assert not win._viewport_pending and win.updatesEnabled()
+    finally:
+        win._saved_version = win.viewport.scene.version
+        win.close()
+
+
+def test_the_composer_tells_the_model_window():
+    """Moving, resizing, hiding or (de)activating the composer re-asks
+    whether the model window is covered."""
+    from views.composer import ComposerWindow
+    from views.main_window import MainWindow
+    win = MainWindow()
+    comp = None
+    try:
+        comp = ComposerWindow(win)
+        asked = []
+        win.sync_covered_paint = lambda: asked.append(1)
+        from PySide6.QtCore import QPoint, QSize
+        from PySide6.QtGui import QMoveEvent, QResizeEvent, QHideEvent
+        comp.moveEvent(QMoveEvent(QPoint(5, 5), QPoint(0, 0)))
+        comp.resizeEvent(QResizeEvent(QSize(800, 600), QSize(700, 500)))
+        comp.hideEvent(QHideEvent())
+        comp.changeEvent(QEvent(QEvent.ActivationChange))
+        assert len(asked) == 4
+    finally:
+        if comp is not None:
+            comp.close()
+        win._saved_version = win.viewport.scene.version
+        win.close()

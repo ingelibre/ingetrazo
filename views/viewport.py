@@ -3469,7 +3469,15 @@ class Viewport(QOpenGLWidget):
             self._draw_dimensions(painter)
             self._draw_text_labels(painter)
             painter.end()
-        self.update()                               # repaint the widget
+        # Repaint the widget — when it shows: a sheet's frames render here
+        # with the composer over the model window, and repainting that
+        # covered window waits ~1 s on the compositor per frame (19-11).
+        win = self.window()
+        later = getattr(win, "update_viewport_when_seen", None)
+        if later is not None and getattr(win, "viewport", None) is self:
+            later()
+        else:
+            self.update()
         return image
 
     def _sync_axes(self) -> None:

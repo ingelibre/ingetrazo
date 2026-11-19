@@ -1741,9 +1741,14 @@ class MainWindow(QMainWindow):
             QEvent.ThemeChange,
         ):
             self._refresh_toolbar_icons()
-        if (event.type() in (QEvent.ActivationChange, QEvent.WindowStateChange)
-                and self.__dict__.get("_sheet_strip_pending")):
-            self._refresh_sheet_tabs()     # waits again while still covered
+        if event.type() in (QEvent.ActivationChange, QEvent.WindowStateChange):
+            self.sync_covered_paint()
+            # What waited while the composer covered this window (each
+            # waits again while it still does).
+            if self.__dict__.get("_sheet_strip_pending"):
+                self._refresh_sheet_tabs()
+            if self.__dict__.get("_viewport_pending"):
+                self.update_viewport_when_seen()
         super().changeEvent(event)
 
     def _build_menubar(self) -> None:
@@ -7825,6 +7830,28 @@ class MainWindow(QMainWindow):
         self._strip_sheets = [last]
         tabs.set_show_new(False)
         tabs.refresh([comps[last].name], None)
+
+    def sync_covered_paint(self) -> None:
+        """No painting at all while the composer covers this window, one
+        whole repaint when it comes back. A covered window's repaints wait
+        on the compositor (~1 s each under XWayland), and a sheet's first
+        render repainted the toolbars and panels here six times: 6 s to
+        open a sheet of the final plaza, 0.7 s of it work (19-11)."""
+        covered = self._covered_by_composer()
+        if covered == self.__dict__.get("_paint_held", False):
+            return
+        self._paint_held = covered
+        self.setUpdatesEnabled(not covered)
+
+    def update_viewport_when_seen(self) -> None:
+        """Repaint the model's viewport now — or, while the composer covers
+        this window, when it comes back: nobody sees it, and its repaint
+        waits on the compositor (~1 s a time under XWayland, 19-11)."""
+        if self._covered_by_composer():
+            self._viewport_pending = True
+            return
+        self._viewport_pending = False
+        self.viewport.update()
 
     def _covered_by_composer(self) -> bool:
         """The composer is the window in use and lies over (nearly) all of

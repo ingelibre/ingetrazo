@@ -6396,6 +6396,30 @@ class ComposerWindow(QMainWindow):
                             QEvent.PaletteChange) and hasattr(self, "_view"):
             self._apply_desk_colour()
         super().changeEvent(event)
+        if event.type() in (QEvent.ActivationChange,
+                            QEvent.WindowStateChange):
+            self._model_window_covered()
+
+    # Whether this window covers the model window decides whether that one
+    # paints (MainWindow.sync_covered_paint): a covered window's repaints
+    # wait ~1 s each on the compositor, six per sheet rendered (19-11).
+    def moveEvent(self, event) -> None:  # noqa: N802 — Qt override
+        super().moveEvent(event)
+        self._model_window_covered()
+
+    def resizeEvent(self, event) -> None:  # noqa: N802 — Qt override
+        super().resizeEvent(event)
+        self._model_window_covered()
+
+    def hideEvent(self, event) -> None:  # noqa: N802 — Qt override
+        super().hideEvent(event)
+        self._model_window_covered()
+
+    def _model_window_covered(self) -> None:
+        sync = getattr(getattr(self, "_window", None), "sync_covered_paint",
+                       None)
+        if sync is not None:
+            sync()
 
     def __init__(self, main_window) -> None:
         # A window of its own, not one OWNED by the model window: an owned
@@ -13182,7 +13206,16 @@ class ComposerWindow(QMainWindow):
                  scene.show_hidden_geometry) = keep_hidden_shown
                 if hidden_moved and hasattr(scene, "bump_view"):
                     self._own_view_bump(scene)
-            vp.update()
+            # The live view gets its camera and objects back — redrawn now
+            # when it shows, when it comes back when this window covers it:
+            # a repaint of the covered model window waits ~1 s on the
+            # compositor, once per frame rendered or cota reprojected (6 s
+            # to open a sheet of the final plaza, 0.7 s of it work, 19-11).
+            later = getattr(self._window, "update_viewport_when_seen", None)
+            if later is not None:
+                later()
+            else:
+                vp.update()
 
     def frame_is_perspective(self, frame) -> bool:
         """Whether *frame* renders with a vanishing point. A plain read of
