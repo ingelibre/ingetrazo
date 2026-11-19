@@ -2108,7 +2108,7 @@
  "Remove the colour (back to the original image)": "Treu el color (torna a la imatge original)",
  "Shift": "Desplaça",
  "Tint": "Tenyeix",
- "Shift: move every pixel's hue toward the colour, keeping the texture's variation. Tint: replace hue and saturation, keeping only the lightness.": "Desplaça: mou el to de cada píxel cap al color, conservant la variació de la textura. Tenyeix: substitueix el to i la saturació i conserva només la lluminositat.",
+ "Shift: move every pixel's hue toward the colour, keeping the texture's variation. Tint: give every pixel the colour's hue, keeping the texture's variation in lightness and saturation.": "Desplaça: mou el to de cada píxel cap al color, conservant la variació de la textura. Tenyeix: dona a cada píxel el to del color i conserva la variació de lluminositat i saturació de la textura.",
  "Tint the texture": "Tenyeix la textura",
  "Resize/rotate/tint the active texture; with textured faces selected, re-stamps them (undoable)": "Canvia la mida, el gir o el tint de la textura activa; amb cares amb textura seleccionades, les torna a estampar (es pot desfer)",
  "inward": "cap a dins",
