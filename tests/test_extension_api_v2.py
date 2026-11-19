@@ -322,6 +322,18 @@ def test_the_tool_filter_keeps_other_tools_out(win):
     assert win._tool_actions["pushpull"].isEnabled()
 
 
+def test_the_tool_filter_also_refuses_placing_a_group(win):
+    from core.group import Group
+    from core.mesh import Mesh
+    ws = FakeWorkspace(allowed={"select", "line"})
+    _app_for(win).enter_workspace(ws)
+    win._start_place(Group(Mesh(), name="piece"))
+    assert type(win.viewport.active_tool).__name__ != "PlaceGroupTool"
+    win.leave_workspace()
+    win._start_place(Group(Mesh(), name="piece"))
+    assert type(win.viewport.active_tool).__name__ == "PlaceGroupTool"
+
+
 def test_a_workspace_that_will_not_go_stops_quitting(win):
     ws = FakeWorkspace(leave=False)
     _app_for(win).enter_workspace(ws)
