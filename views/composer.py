@@ -15698,6 +15698,7 @@ class SceneThumbnailer:
     frame_is_perspective = ComposerWindow.frame_is_perspective
     _with_frame_camera = ComposerWindow._with_frame_camera
     _scene = ComposerWindow._scene
+    comp = None            # no open sheet: read by the borrowed render_frame
 
     def __init__(self, window) -> None:
         self._window = window
@@ -15708,6 +15709,11 @@ class SceneThumbnailer:
 
     def compute_annotations(self, frame):
         return []                     # a list picture carries no paper text
+
+    def _touch_sheet_page(self, comp) -> None:
+        """No Sheets panel here: the borrowed ``render_frame`` tells the
+        composer's panel that a sheet's picture changed (19-11), and this
+        list picture has neither the panel nor a sheet to tell."""
 
     def compute_hlr(self, frame):
         return None                   # pictures are shaded, never vector
