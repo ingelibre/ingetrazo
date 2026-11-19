@@ -4062,5 +4062,6 @@
  "New entry": "Новий запис",
  "Every sheet as a page. Click: open it. Drag: change the order. Double-click or F2: rename. Delete: remove it. Right-click: more.": "Кожен аркуш як сторінка. Клацання: відкрити. Перетягування: змінити порядок. Подвійне клацання або F2: перейменувати. Delete: видалити. Правий клік: більше.",
  "Middle-button drag pans (Shift + drag orbits)": "Перетягування середньою кнопкою зсуває вид (Shift + перетягування обертає)",
- "Orbit Z": "Орбіта Z"
+ "Orbit Z": "Орбіта Z",
+ "Option = copy": "Option = копіювати"
 }

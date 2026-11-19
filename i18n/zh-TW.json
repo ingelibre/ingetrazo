@@ -4056,5 +4056,6 @@
  "New entry": "新項目",
  "Every sheet as a page. Click: open it. Drag: change the order. Double-click or F2: rename. Delete: remove it. Right-click: more.": "每張圖紙顯示為一頁。按一下：開啟。拖曳：變更順序。按兩下或 F2：重新命名。Delete：刪除。按右鍵：更多。",
  "Middle-button drag pans (Shift + drag orbits)": "中鍵拖曳平移（Shift + 拖曳環繞）",
- "Orbit Z": "環繞 Z"
+ "Orbit Z": "環繞 Z",
+ "Option = copy": "Option = 複製"
 }

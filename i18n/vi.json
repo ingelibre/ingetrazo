@@ -4082,5 +4082,6 @@
  "New entry": "Mục mới",
  "Every sheet as a page. Click: open it. Drag: change the order. Double-click or F2: rename. Delete: remove it. Right-click: more.": "Mỗi trang bản vẽ là một trang. Nhấp: mở. Kéo: đổi thứ tự. Nhấp đúp hoặc F2: đổi tên. Delete: xóa. Nhấp chuột phải: thêm.",
  "Middle-button drag pans (Shift + drag orbits)": "Kéo nút giữa để dời khung nhìn (Shift + kéo để xoay quanh)",
- "Orbit Z": "Xoay quanh Z"
+ "Orbit Z": "Xoay quanh Z",
+ "Option = copy": "Option = sao chép"
 }

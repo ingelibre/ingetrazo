@@ -4058,5 +4058,6 @@
  "New entry": "ລາຍການໃໝ່",
  "Every sheet as a page. Click: open it. Drag: change the order. Double-click or F2: rename. Delete: remove it. Right-click: more.": "ແຕ່ລະໜ້າເຈ້ຍເປັນໜ້າໜຶ່ງ. ຄລິກ: ເປີດ. ລາກ: ປ່ຽນລຳດັບ. ຄລິກສອງເທື່ອ ຫຼື F2: ປ່ຽນຊື່. Delete: ລຶບ. ຄລິກຂວາ: ເພີ່ມເຕີມ.",
  "Middle-button drag pans (Shift + drag orbits)": "ລາກປຸ່ມກາງເພື່ອເລື່ອນມຸມມອງ (Shift + ລາກເພື່ອໝູນອ້ອມ)",
- "Orbit Z": "ໂຄຈອນ Z"
+ "Orbit Z": "ໂຄຈອນ Z",
+ "Option = copy": "Option = ສຳເນົາ"
 }

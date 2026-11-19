@@ -4090,5 +4090,6 @@
  "New entry": "إدخال جديد",
  "Every sheet as a page. Click: open it. Drag: change the order. Double-click or F2: rename. Delete: remove it. Right-click: more.": "كل صفيحة كصفحة. نقرة: افتحها. اسحب: غيّر الترتيب. نقرة مزدوجة أو F2: إعادة التسمية. Delete: احذفها. نقرة يمنى: المزيد.",
  "Middle-button drag pans (Shift + drag orbits)": "السحب بالزر الأوسط يحرّك العرض (Shift + سحب يدوّر)",
- "Orbit Z": "تدوير المنظر Z"
+ "Orbit Z": "تدوير المنظر Z",
+ "Option = copy": "Option = نسخ"
 }
