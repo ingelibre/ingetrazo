@@ -4108,5 +4108,22 @@
  "List this sheet too": "Dieses Blatt mit aufführen",
  "Split a long index over several sheets: put one index on each and pick the page each one shows.": "Ein langes Verzeichnis auf mehrere Blätter verteilen: auf jedes ein Verzeichnis setzen und die Seite wählen, die es zeigt.",
  "Entries per page": "Einträge pro Seite",
- "{n} entries on {pages} page(s)": "{n} Einträge auf {pages} Seite(n)"
+ "{n} entries on {pages} page(s)": "{n} Einträge auf {pages} Seite(n)",
+ "Filter by IFC class": "Nach IFC-Klasse filtern",
+ "How the rows are structured": "Wie die Zeilen gegliedert sind",
+ "Group by group": "Nach Gruppe gliedern",
+ "Group by IFC class": "Nach IFC-Klasse gliedern",
+ "No grouping": "Keine Gliederung",
+ "Export all CSV…": "Alles als CSV exportieren…",
+ "The whole takeoff table — the bridge to IngePresupuestos": "Die ganze Mengentabelle — die Brücke zu IngePresupuestos",
+ "Export shown CSV…": "Angezeigtes als CSV exportieren…",
+ "Only the objects the search and the class filter show": "Nur die Objekte, die Suche und Klassenfilter zeigen",
+ "Filter by IFC class: {n} hidden": "Nach IFC-Klasse filtern: {n} ausgeblendet",
+ "Show all classes": "Alle Klassen zeigen",
+ "(no BIM objects)": "(keine BIM-Objekte)",
+ "Search name, class or outline… (* and ? work)": "Name, Klasse oder Gliederung suchen… (* und ? gehen)",
+ "Group by name": "Nach Name gliedern",
+ "Outline path": "Pfad in der Gliederung",
+ "(no name)": "(ohne Name)",
+ "Columns: show or hide Takeoff, Vol m³ and Outline path": "Spalten: Menge, Vol m³ und Pfad in der Gliederung ein- oder ausblenden"
 }

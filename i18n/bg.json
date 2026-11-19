@@ -4109,5 +4109,22 @@
  "List this sheet too": "Включи и този лист",
  "Split a long index over several sheets: put one index on each and pick the page each one shows.": "Раздели дълъг списък на няколко листа: сложи списък на всеки и избери страницата, която показва.",
  "Entries per page": "Записи на страница",
- "{n} entries on {pages} page(s)": "{n} записа на {pages} стр."
+ "{n} entries on {pages} page(s)": "{n} записа на {pages} стр.",
+ "Filter by IFC class": "Филтър по IFC клас",
+ "How the rows are structured": "Как са подредени редовете",
+ "Group by group": "Групиране по група",
+ "Group by IFC class": "Групиране по IFC клас",
+ "No grouping": "Без групиране",
+ "Export all CSV…": "Експорт на всичко в CSV…",
+ "The whole takeoff table — the bridge to IngePresupuestos": "Цялата таблица с количества — мостът към IngePresupuestos",
+ "Export shown CSV…": "Експорт на показаното в CSV…",
+ "Only the objects the search and the class filter show": "Само обектите, които търсенето и филтърът по клас показват",
+ "Filter by IFC class: {n} hidden": "Филтър по IFC клас: {n} скрити",
+ "Show all classes": "Покажи всички класове",
+ "(no BIM objects)": "(няма BIM обекти)",
+ "Search name, class or outline… (* and ? work)": "Търсене по име, клас или структура… (* и ? работят)",
+ "Group by name": "Групиране по име",
+ "Outline path": "Път в структурата",
+ "(no name)": "(без име)",
+ "Columns: show or hide Takeoff, Vol m³ and Outline path": "Колони: показване или скриване на Количество, Об. m³ и Път в структурата"
 }

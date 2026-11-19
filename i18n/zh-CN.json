@@ -4109,5 +4109,22 @@
  "List this sheet too": "也列出本图纸",
  "Split a long index over several sheets: put one index on each and pick the page each one shows.": "将较长的目录拆分到多张图纸上：在每张图纸上放一个目录，并选择各自显示的页。",
  "Entries per page": "每页条目数",
- "{n} entries on {pages} page(s)": "{n} 个条目，共 {pages} 页"
+ "{n} entries on {pages} page(s)": "{n} 个条目，共 {pages} 页",
+ "Filter by IFC class": "按 IFC 类筛选",
+ "How the rows are structured": "行的组织方式",
+ "Group by group": "按组分组",
+ "Group by IFC class": "按 IFC 类分组",
+ "No grouping": "不分组",
+ "Export all CSV…": "全部导出为 CSV…",
+ "The whole takeoff table — the bridge to IngePresupuestos": "整个工程量计算表 — 连接到 IngePresupuestos 的桥梁",
+ "Export shown CSV…": "将显示的行导出为 CSV…",
+ "Only the objects the search and the class filter show": "仅搜索和类筛选所显示的对象",
+ "Filter by IFC class: {n} hidden": "按 IFC 类筛选：已隐藏 {n} 个",
+ "Show all classes": "显示所有类",
+ "(no BIM objects)": "（无 BIM 对象）",
+ "Search name, class or outline… (* and ? work)": "搜索名称、类或路径…（可用 * 和 ?）",
+ "Group by name": "按名称分组",
+ "Outline path": "大纲路径",
+ "(no name)": "（无名称）",
+ "Columns: show or hide Takeoff, Vol m³ and Outline path": "列：显示或隐藏工程量、Vol m³ 和大纲路径"
 }

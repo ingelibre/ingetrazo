@@ -4111,5 +4111,22 @@
  "List this sheet too": "ລວມແຜ່ນນີ້ນຳ",
  "Split a long index over several sheets: put one index on each and pick the page each one shows.": "ແບ່ງສາລະບານຍາວໄປຫຼາຍແຜ່ນ: ວາງສາລະບານໜຶ່ງອັນໃນແຕ່ລະແຜ່ນ ແລ້ວເລືອກໜ້າທີ່ແຕ່ລະອັນສະແດງ.",
  "Entries per page": "ລາຍການຕໍ່ໜ້າ",
- "{n} entries on {pages} page(s)": "{n} ລາຍການ ໃນ {pages} ໜ້າ"
+ "{n} entries on {pages} page(s)": "{n} ລາຍການ ໃນ {pages} ໜ້າ",
+ "Filter by IFC class": "ກັ່ນຕອງຕາມຊັ້ນ IFC",
+ "How the rows are structured": "ວິທີຈັດແຖວ",
+ "Group by group": "ຈັດກຸ່ມຕາມກຸ່ມ",
+ "Group by IFC class": "ຈັດກຸ່ມຕາມຊັ້ນ IFC",
+ "No grouping": "ບໍ່ຈັດກຸ່ມ",
+ "Export all CSV…": "ສົ່ງອອກທັງໝົດເປັນ CSV…",
+ "The whole takeoff table — the bridge to IngePresupuestos": "ຕາຕະລາງປະລິມານວຽກທັງໝົດ — ຂົວຕໍ່ໄປສູ່ IngePresupuestos",
+ "Export shown CSV…": "ສົ່ງອອກແຖວທີ່ສະແດງເປັນ CSV…",
+ "Only the objects the search and the class filter show": "ສະເພາະວັດຖຸທີ່ການຄົ້ນຫາ ແລະ ຕົວກັ່ນຕອງຊັ້ນສະແດງ",
+ "Filter by IFC class: {n} hidden": "ກັ່ນຕອງຕາມຊັ້ນ IFC: ເຊື່ອງ {n}",
+ "Show all classes": "ສະແດງທຸກຊັ້ນ",
+ "(no BIM objects)": "(ບໍ່ມີວັດຖຸ BIM)",
+ "Search name, class or outline… (* and ? work)": "ຄົ້ນຫາຊື່, ຊັ້ນ ຫຼື ເສັ້ນທາງ… (ໃຊ້ * ແລະ ? ໄດ້)",
+ "Group by name": "ຈັດກຸ່ມຕາມຊື່",
+ "Outline path": "ເສັ້ນທາງໃນໂຄງສ້າງ",
+ "(no name)": "(ບໍ່ມີຊື່)",
+ "Columns: show or hide Takeoff, Vol m³ and Outline path": "ຖັນ: ສະແດງ ຫຼື ເຊື່ອງ ປະລິມານວຽກ, Vol m³ ແລະ ເສັ້ນທາງໃນໂຄງສ້າງ"
 }

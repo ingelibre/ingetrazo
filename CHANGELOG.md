@@ -8,6 +8,21 @@ follow [SemVer](https://semver.org).
 
 ### Añadido
 
+- **Buscar, filtrar y agrupar en la tabla BIM** (#1116): con muchos objetos
+  la tabla se llenaba. Ahora tiene un buscador (nombre, clase o ruta en el
+  esquema; `*` y `?` funcionan), un embudo para ocultar clases IFC (por
+  ejemplo, ver solo los IfcSpace) y una lista «Agrupar por grupo / por
+  clase IFC / por nombre / sin agrupar». Por clase o por nombre, cada
+  encabezado lleva su número de objetos y los totales de metrado y volumen
+  de las filas que se ven. La nueva columna «Ruta en el esquema» dice en
+  qué grupos está cada objeto («Planta 1/Núcleo»), y el botón al final del
+  encabezado (o el clic derecho sobre él) muestra u oculta Metrado, Vol m³
+  y Ruta en el esquema, como en el Navegador. La exportación se divide en «Exportar
+  todo a CSV» y «Exportar lo mostrado a CSV». «Taggear al dibujar» pasa a
+  la fila de «Taggear selección» y «Quitar tag», con botones más delgados.
+  *Cómo probarlo:* en la pestaña BIM de la barra lateral, taggea unas caras como IfcSpace y otras
+  como IfcWall, elige «Agrupar por clase IFC» y desmarca IfcWall en el
+  embudo.
 - **IngeTrazo sin ventana para automatizar con IA**: `ingetrazo --headless
   --ai-bridge --open Casa.igz` abre el documento sin nada en pantalla y
   enciende el puente IA (MCP), para que un agente (p. ej. Claude en un runner

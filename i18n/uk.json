@@ -4115,5 +4115,22 @@
  "List this sheet too": "Включати й цей аркуш",
  "Split a long index over several sheets: put one index on each and pick the page each one shows.": "Розбити довгу відомість на кілька аркушів: поставте відомість на кожен і виберіть сторінку, яку вона показує.",
  "Entries per page": "Записів на сторінці",
- "{n} entries on {pages} page(s)": "{n} записів на {pages} стор."
+ "{n} entries on {pages} page(s)": "{n} записів на {pages} стор.",
+ "Filter by IFC class": "Фільтр за класом IFC",
+ "How the rows are structured": "Як упорядковано рядки",
+ "Group by group": "Групувати за групами",
+ "Group by IFC class": "Групувати за класом IFC",
+ "No grouping": "Без групування",
+ "Export all CSV…": "Експортувати все в CSV…",
+ "The whole takeoff table — the bridge to IngePresupuestos": "Уся відомість обсягів — міст до IngePresupuestos",
+ "Export shown CSV…": "Експортувати показане в CSV…",
+ "Only the objects the search and the class filter show": "Лише об'єкти, які показують пошук і фільтр класів",
+ "Filter by IFC class: {n} hidden": "Фільтр за класом IFC: приховано {n}",
+ "Show all classes": "Показати всі класи",
+ "(no BIM objects)": "(немає об'єктів BIM)",
+ "Search name, class or outline… (* and ? work)": "Пошук за назвою, класом або шляхом… (* і ? працюють)",
+ "Group by name": "Групувати за назвою",
+ "Outline path": "Шлях у структурі",
+ "(no name)": "(без назви)",
+ "Columns: show or hide Takeoff, Vol m³ and Outline path": "Стовпці: показати або приховати Обсяг, Vol m³ і Шлях у структурі"
 }

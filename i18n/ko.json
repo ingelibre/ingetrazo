@@ -4108,5 +4108,22 @@
  "List this sheet too": "이 시트도 포함",
  "Split a long index over several sheets: put one index on each and pick the page each one shows.": "긴 목록을 여러 시트로 나누기: 각 시트에 목록을 놓고 각각 표시할 페이지를 고르세요.",
  "Entries per page": "페이지당 항목 수",
- "{n} entries on {pages} page(s)": "{n}개 항목, {pages}페이지"
+ "{n} entries on {pages} page(s)": "{n}개 항목, {pages}페이지",
+ "Filter by IFC class": "IFC 클래스로 필터",
+ "How the rows are structured": "행 구성 방식",
+ "Group by group": "그룹별로 묶기",
+ "Group by IFC class": "IFC 클래스별로 묶기",
+ "No grouping": "묶지 않음",
+ "Export all CSV…": "모두 CSV로 내보내기…",
+ "The whole takeoff table — the bridge to IngePresupuestos": "전체 물량 산출표 — IngePresupuestos로 연결되는 다리",
+ "Export shown CSV…": "표시된 행 CSV로 내보내기…",
+ "Only the objects the search and the class filter show": "검색과 클래스 필터가 보여 주는 객체만",
+ "Filter by IFC class: {n} hidden": "IFC 클래스로 필터: {n}개 숨김",
+ "Show all classes": "모든 클래스 표시",
+ "(no BIM objects)": "(BIM 객체 없음)",
+ "Search name, class or outline… (* and ? work)": "이름, 클래스 또는 경로 검색… (* 및 ? 사용 가능)",
+ "Group by name": "이름별로 묶기",
+ "Outline path": "구조 경로",
+ "(no name)": "(이름 없음)",
+ "Columns: show or hide Takeoff, Vol m³ and Outline path": "열: 물량, Vol m³, 구조 경로 표시/숨기기"
 }

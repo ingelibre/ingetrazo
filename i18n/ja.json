@@ -4108,5 +4108,22 @@
  "List this sheet too": "このシートも含める",
  "Split a long index over several sheets: put one index on each and pick the page each one shows.": "長いリストを複数のシートに分割: 各シートにリストを置き、それぞれが表示するページを選びます。",
  "Entries per page": "1ページあたりの項目数",
- "{n} entries on {pages} page(s)": "{n} 項目、{pages} ページ"
+ "{n} entries on {pages} page(s)": "{n} 項目、{pages} ページ",
+ "Filter by IFC class": "IFC クラスで絞り込む",
+ "How the rows are structured": "行のまとめ方",
+ "Group by group": "グループ別にまとめる",
+ "Group by IFC class": "IFC クラス別にまとめる",
+ "No grouping": "まとめない",
+ "Export all CSV…": "すべてを CSV に書き出す…",
+ "The whole takeoff table — the bridge to IngePresupuestos": "数量拾い出し表全体 — IngePresupuestos との連携",
+ "Export shown CSV…": "表示中の行を CSV に書き出す…",
+ "Only the objects the search and the class filter show": "検索とクラスの絞り込みで表示されるオブジェクトのみ",
+ "Filter by IFC class: {n} hidden": "IFC クラスで絞り込み：{n} 件非表示",
+ "Show all classes": "すべてのクラスを表示",
+ "(no BIM objects)": "（BIM オブジェクトなし）",
+ "Search name, class or outline… (* and ? work)": "名前・クラス・階層で検索…（* と ? が使えます）",
+ "Group by name": "名前別にまとめる",
+ "Outline path": "階層パス",
+ "(no name)": "（名前なし）",
+ "Columns: show or hide Takeoff, Vol m³ and Outline path": "列：数量、Vol m³、階層パスの表示を切り替えます"
 }

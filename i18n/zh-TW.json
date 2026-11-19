@@ -4109,5 +4109,22 @@
  "List this sheet too": "也列出本圖紙",
  "Split a long index over several sheets: put one index on each and pick the page each one shows.": "將較長的目錄分散到多張圖紙上：在每張圖紙上放一個目錄，並選擇各自顯示的頁。",
  "Entries per page": "每頁項目數",
- "{n} entries on {pages} page(s)": "{n} 個項目，共 {pages} 頁"
+ "{n} entries on {pages} page(s)": "{n} 個項目，共 {pages} 頁",
+ "Filter by IFC class": "依 IFC 類別篩選",
+ "How the rows are structured": "列的組織方式",
+ "Group by group": "依群組分組",
+ "Group by IFC class": "依 IFC 類別分組",
+ "No grouping": "不分組",
+ "Export all CSV…": "全部匯出為 CSV…",
+ "The whole takeoff table — the bridge to IngePresupuestos": "完整的數量計算表 — 通往 IngePresupuestos 的橋樑",
+ "Export shown CSV…": "匯出顯示的項目為 CSV…",
+ "Only the objects the search and the class filter show": "僅搜尋與類別篩選所顯示的物件",
+ "Filter by IFC class: {n} hidden": "依 IFC 類別篩選：已隱藏 {n} 個",
+ "Show all classes": "顯示所有類別",
+ "(no BIM objects)": "（沒有 BIM 物件）",
+ "Search name, class or outline… (* and ? work)": "搜尋名稱、類別或大綱…（可使用 * 和 ?）",
+ "Group by name": "依名稱分組",
+ "Outline path": "大綱路徑",
+ "(no name)": "（無名稱）",
+ "Columns: show or hide Takeoff, Vol m³ and Outline path": "欄位：顯示或隱藏數量、體積 m³ 與大綱路徑"
 }

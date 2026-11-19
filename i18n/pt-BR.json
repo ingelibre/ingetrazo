@@ -4115,5 +4115,22 @@
  "List this sheet too": "Incluir também esta folha",
  "Split a long index over several sheets: put one index on each and pick the page each one shows.": "Dividir um índice longo em várias folhas: coloque um índice em cada uma e escolha a página que cada um mostra.",
  "Entries per page": "Entradas por página",
- "{n} entries on {pages} page(s)": "{n} entradas em {pages} página(s)"
+ "{n} entries on {pages} page(s)": "{n} entradas em {pages} página(s)",
+ "Filter by IFC class": "Filtrar por classe IFC",
+ "How the rows are structured": "Como as linhas são estruturadas",
+ "Group by group": "Agrupar por grupo",
+ "Group by IFC class": "Agrupar por classe IFC",
+ "No grouping": "Sem agrupamento",
+ "Export all CSV…": "Exportar tudo em CSV…",
+ "The whole takeoff table — the bridge to IngePresupuestos": "A tabela inteira de quantitativos — a ponte para o IngePresupuestos",
+ "Export shown CSV…": "Exportar as linhas visíveis em CSV…",
+ "Only the objects the search and the class filter show": "Só os objetos que a busca e o filtro de classe mostram",
+ "Filter by IFC class: {n} hidden": "Filtrar por classe IFC: {n} ocultas",
+ "Show all classes": "Mostrar todas as classes",
+ "(no BIM objects)": "(nenhum objeto BIM)",
+ "Search name, class or outline… (* and ? work)": "Buscar nome, classe ou estrutura… (* e ? funcionam)",
+ "Group by name": "Agrupar por nome",
+ "Outline path": "Caminho na estrutura",
+ "(no name)": "(sem nome)",
+ "Columns: show or hide Takeoff, Vol m³ and Outline path": "Colunas: mostrar ou ocultar Quantitativo, Vol m³ e Caminho na estrutura"
 }

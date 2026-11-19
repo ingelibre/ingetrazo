@@ -4111,5 +4111,22 @@
  "List this sheet too": "Sertakan juga lembar ini",
  "Split a long index over several sheets: put one index on each and pick the page each one shows.": "Bagi indeks panjang ke beberapa lembar: letakkan satu indeks di tiap lembar dan pilih halaman yang ditampilkan masing-masing.",
  "Entries per page": "Entri per halaman",
- "{n} entries on {pages} page(s)": "{n} entri dalam {pages} halaman"
+ "{n} entries on {pages} page(s)": "{n} entri dalam {pages} halaman",
+ "Filter by IFC class": "Saring menurut kelas IFC",
+ "How the rows are structured": "Cara baris disusun",
+ "Group by group": "Kelompokkan menurut grup",
+ "Group by IFC class": "Kelompokkan menurut kelas IFC",
+ "No grouping": "Tanpa pengelompokan",
+ "Export all CSV…": "Ekspor semua ke CSV…",
+ "The whole takeoff table — the bridge to IngePresupuestos": "Seluruh tabel rekap volume — jembatan ke IngePresupuestos",
+ "Export shown CSV…": "Ekspor yang ditampilkan ke CSV…",
+ "Only the objects the search and the class filter show": "Hanya objek yang ditampilkan pencarian dan saringan kelas",
+ "Filter by IFC class: {n} hidden": "Saring menurut kelas IFC: {n} disembunyikan",
+ "Show all classes": "Tampilkan semua kelas",
+ "(no BIM objects)": "(tidak ada objek BIM)",
+ "Search name, class or outline… (* and ? work)": "Cari nama, kelas, atau jalur… (* dan ? bisa dipakai)",
+ "Group by name": "Kelompokkan menurut nama",
+ "Outline path": "Jalur di struktur",
+ "(no name)": "(tanpa nama)",
+ "Columns: show or hide Takeoff, Vol m³ and Outline path": "Kolom: tampilkan atau sembunyikan Volume, Vol m³, dan Jalur di struktur"
 }

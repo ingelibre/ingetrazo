@@ -4114,5 +4114,22 @@
  "List this sheet too": "Inclou també aquesta làmina",
  "Split a long index over several sheets: put one index on each and pick the page each one shows.": "Reparteix un índex llarg en diverses làmines: posa un índex a cadascuna i tria la pàgina que mostra cadascun.",
  "Entries per page": "Entrades per pàgina",
- "{n} entries on {pages} page(s)": "{n} entrades en {pages} pàgina(es)"
+ "{n} entries on {pages} page(s)": "{n} entrades en {pages} pàgina(es)",
+ "Filter by IFC class": "Filtra per classe IFC",
+ "How the rows are structured": "Com s'estructuren les files",
+ "Group by group": "Agrupa per grup",
+ "Group by IFC class": "Agrupa per classe IFC",
+ "No grouping": "Sense agrupar",
+ "Export all CSV…": "Exporta-ho tot a CSV…",
+ "The whole takeoff table — the bridge to IngePresupuestos": "Tota la taula d'amidaments — el pont a IngePresupuestos",
+ "Export shown CSV…": "Exporta el que es mostra a CSV…",
+ "Only the objects the search and the class filter show": "Només els objectes que mostren la cerca i el filtre de classe",
+ "Filter by IFC class: {n} hidden": "Filtra per classe IFC: {n} amagades",
+ "Show all classes": "Mostra totes les classes",
+ "(no BIM objects)": "(sense objectes BIM)",
+ "Search name, class or outline… (* and ? work)": "Cerca nom, classe o esquema… (* i ? funcionen)",
+ "Group by name": "Agrupa per nom",
+ "Outline path": "Ruta a l'esquema",
+ "(no name)": "(sense nom)",
+ "Columns: show or hide Takeoff, Vol m³ and Outline path": "Columnes: mostra o amaga Amidament, Vol m³ i Ruta a l'esquema"
 }
