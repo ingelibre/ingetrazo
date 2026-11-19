@@ -12,6 +12,7 @@ calls ``glClear`` first to avoid showing stale GPU memory.
 Navigation:
 - Middle-button drag: orbit
 - Shift + Middle-button drag: pan
+  (the two swap with Preferences ▸ "Middle-button drag pans")
 - Wheel: zoom
 - P: toggle perspective / parallel projection
 
@@ -2085,6 +2086,17 @@ def _load_invert_orbit_y() -> bool:
     return str(QSettings().value("nav/invert_orbit_y", "0")) != "0"
 
 
+def _load_middle_drag_pans() -> bool:
+    """Preferences ▸ middle-button drag pans, Shift + middle-drag orbits.
+
+    Off by default: the bare wheel-drag orbits, the classic way. This is
+    for the hands that learned the other convention in other modelers,
+    where the wheel-drag moves the view and a modifier turns it.
+    """
+    from PySide6.QtCore import QSettings
+    return str(QSettings().value("nav/middle_drag_pans", "0")) != "0"
+
+
 def _load_msaa() -> int:
     """Scene-FBO multisample count (Preferences ▸ General). 4 is the
     historical hardcoded value; the FBO still falls back to 0 on drivers
@@ -3017,6 +3029,7 @@ class Viewport(QOpenGLWidget):
         self.scene.hide_similar_components = _load_hide_similar()
         self._invert_wheel = _load_invert_wheel()
         self._invert_orbit_y = _load_invert_orbit_y()
+        self._middle_drag_pans = _load_middle_drag_pans()
         self._msaa = _load_msaa()
         self._soft_shadows = _load_soft_shadows()
         self._hard_shadow_image_cache = None
@@ -21694,11 +21707,16 @@ class Viewport(QOpenGLWidget):
         else:
             self._apply_tool_cursor()
 
-    def _set_middle_drag_pan_mode(self, pan: bool) -> None:
-        """Switch an active MMB drag between orbit and pan."""
+    def _set_middle_drag_pan_mode(self, shift: bool) -> None:
+        """Switch an active MMB drag between orbit and pan.
+
+        ``shift`` is whether Shift is held. Which of the two the bare drag
+        does is a preference (PR #467, Preferences ▸ "Middle-button drag
+        pans"), so Shift flips it from there instead of meaning pan.
+        """
         if not self._middle_drag_active or self.nav_mode is not None:
             return
-        pan = bool(pan)
+        pan = bool(shift) != bool(getattr(self, "_middle_drag_pans", False))
         if self._pan_mode == pan:
             return
         self._pan_mode = pan
@@ -21855,7 +21873,10 @@ class Viewport(QOpenGLWidget):
             return
         if ev.button() == Qt.MiddleButton:
             self._last_pos = ev.position().toPoint()
-            self._pan_mode = bool(ev.modifiers() & Qt.ShiftModifier)
+            # Shift swaps the drag between orbit and pan; which one is the
+            # bare drag is a preference (Preferences ▸ General).
+            self._pan_mode = (bool(ev.modifiers() & Qt.ShiftModifier)
+                              != self._middle_drag_pans)
             self._middle_drag_active = True
             self._orbit_pivot = self._orbit_pivot_at(
                 ev.position().x(), ev.position().y())
