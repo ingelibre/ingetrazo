@@ -14428,6 +14428,105 @@ class ComposerWindow(QMainWindow):
                 painter.end()
         return troubled
 
+    # ---- public door for the AI bridge / sheets API (#1505) -------------------
+    def sync_with_document(self) -> None:
+        """Catch up with sheets changed from outside the window — the AI
+        bridge's sheet tools, an undo of one of them: the open sheet may be
+        gone, renamed or rebuilt. Combo, tabs and canvas follow; frames
+        whose objects were replaced re-render on the next pass."""
+        comps = self._scene().compositions
+        if not comps:
+            return
+        if self.comp not in comps:
+            self.comp = comps[0]
+            self.history = ComposerHistory(on_change=self._on_history_change)
+        self._reload_comp_combo()
+        self._rebuild_canvas()
+        if self.isVisible():
+            QTimer.singleShot(0, self._auto_render_stale)
+
+    def render_sheet_image(self, comp: Composicion,
+                           dpi: float = 100.0, render: bool = True) -> QImage:
+        """``comp`` painted on white paper at ``dpi``, its frames rendered
+        fresh (unless ``render=False``) — the window may never have been
+        shown."""
+        if render:
+            self._render_frames_of(comp)
+        pw, ph = comp.page_size_mm()
+        scale = float(dpi) / 25.4
+        img = QImage(max(1, int(round(pw * scale))),
+                     max(1, int(round(ph * scale))), QImage.Format_RGB32)
+        img.fill(Qt.white)
+        painter = QPainter(img)
+        try:
+            painter.setRenderHint(QPainter.Antialiasing, True)
+            painter.setRenderHint(QPainter.TextAntialiasing, True)
+            painter.setRenderHint(QPainter.SmoothPixmapTransform, True)
+            painter.scale(scale, scale)
+            self._paint_sheet(painter, comp)
+        finally:
+            painter.end()
+        return img
+
+    def _render_frames_of(self, comp: Composicion) -> list:
+        """Render every frame of ``comp``; the indices that failed."""
+        failed = []
+        saved = self.comp
+        self.comp = comp
+        try:
+            for i, f in enumerate(comp.frames):
+                try:
+                    self.render_frame(f)
+                except Exception:  # noqa: BLE001 — one frame, not the sheet
+                    import traceback
+                    traceback.print_exc()
+                    self._forget_frame(f)
+                    failed.append(i)
+        finally:
+            self.comp = saved
+        return failed
+
+    def export_sheets(self, path: str, sheets=None, fmt: str = "pdf",
+                      dpi: float = 150.0) -> dict:
+        """Export ``sheets`` (default: all, in document order) without the
+        window being shown. ``pdf`` writes ONE file (the atlas); ``png``
+        writes one file per sheet, ``<path stem>-<nn>-<sheet>.png``.
+        Returns ``{"files": [...], "errors": {sheet: [messages]}}`` — a
+        frame that failed to render, a frame on a missing scene."""
+        import re
+        from pathlib import Path
+        comps = list(self._scene().compositions)
+        if sheets is not None:
+            wanted = {id(c) for c in sheets}
+            comps = [c for c in comps if id(c) in wanted]
+        errors: dict = {}
+        for c in comps:
+            for k, f in enumerate(c.frames):
+                gone = self.missing_scene(f)
+                if gone is not None:
+                    errors.setdefault(c.name, []).append(
+                        f"frame {k}: the scene «{gone}» is missing")
+        fmt = (fmt or "pdf").lower()
+        if fmt == "pdf":
+            for name in self.export_all_pdf(path, sheets=comps):
+                errors.setdefault(name, []).append("a frame did not render")
+            return {"files": [str(path)], "errors": errors}
+        if fmt != "png":
+            raise ValueError(f"format must be 'pdf' or 'png', not {fmt!r}")
+        out = Path(path)
+        files = []
+        for i, c in enumerate(comps):
+            for k in self._render_frames_of(c):
+                errors.setdefault(c.name, []).append(
+                    f"frame {k} did not render")
+            safe = re.sub(r"[^\w\-]+", "_", c.name)
+            target = out.with_name(f"{out.stem}-{i + 1:02d}-{safe}.png")
+            if not self.render_sheet_image(c, dpi, render=False).save(str(target)):
+                errors.setdefault(c.name, []).append(
+                    f"could not write {target}")
+            files.append(str(target))
+        return {"files": files, "errors": errors}
+
     def _set_field_context(self, comp) -> None:
         comps = list(getattr(self._scene(), "compositions", []) or [])
         idx = comps.index(comp) if comp in comps else None

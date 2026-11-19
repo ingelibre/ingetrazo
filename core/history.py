@@ -3707,19 +3707,64 @@ class SnapshotImport(Command):
         for _, added, removed in self._TRACKED:
             setattr(self, added, [])
             setattr(self, removed, [])
+        #: ``[(kind, obj, before, after)]`` — sheets, saved views and layers
+        #: that were there before AND after but whose CONTENT changed.
+        self.content_edits: list = []
 
     @property
     def changed(self) -> bool:
         """Whether the run did anything undo would have to revert."""
         return (self.before != self.after
+                or bool(self.content_edits)
                 or any(getattr(self, added) or getattr(self, removed)
                        for _, added, removed in self._TRACKED))
+
+    # ---- content of sheets, views and layers (#1505) -------------------------
+    # Membership alone missed every EDIT: a frame's scale set, a scene
+    # renamed, a title block filled in through ``run_python`` reported
+    # «changed: False», left no undo step and no dirty flag — and a script
+    # that raised after hiding a layer left it hidden. Each object is
+    # snapshotted by value (its .igz record; a layer's attributes) and put
+    # back IN PLACE, so the composer and the agent's scope keep their
+    # references.
+    @staticmethod
+    def _content_state(scene) -> dict:
+        state: dict = {}
+        for c in getattr(scene, "compositions", None) or ():
+            if hasattr(c, "to_dict"):
+                state[id(c)] = ("sheet", c, c.to_dict())
+        for v in getattr(scene, "saved_views", None) or ():
+            if hasattr(v, "to_dict"):
+                state[id(v)] = ("view", v, v.to_dict())
+        for ly in getattr(scene, "layers", None) or ():
+            if hasattr(ly, "__dict__"):
+                state[id(ly)] = ("layer", ly, dict(vars(ly)))
+        return state
+
+    @staticmethod
+    def _content_edits(before: dict, after: dict) -> list:
+        return [(kind, obj, old, after[key][2])
+                for key, (kind, obj, old) in before.items()
+                if key in after and after[key][1] is obj
+                and after[key][2] != old]
+
+    @staticmethod
+    def _put_content(kind: str, obj, state) -> None:
+        if kind == "sheet":
+            from core.composition import Composicion
+            obj.__dict__.update(Composicion.from_dict(state).__dict__)
+        elif kind == "view":
+            from core.saved_views import SavedView
+            obj.__dict__.update(SavedView.from_dict(state).__dict__)
+        else:
+            obj.__dict__.update(state)
 
     def do(self, scene) -> None:
         m = scene.mesh
         if self.after is None:
             lists_before = {name: list(getattr(scene, name))
                             for name, _, _ in self._TRACKED}
+            content_before = self._content_state(scene)
             self.before = m.capture_state()
             try:
                 self.mutate(scene)
@@ -3729,8 +3774,16 @@ class SnapshotImport(Command):
                 # Slice assignment preserves references held by scripting scopes.
                 for name, items in lists_before.items():
                     getattr(scene, name)[:] = items
+                # …and what the recipe changed INSIDE them: a layer it hid,
+                # a frame it rescaled before raising.
+                edits = self._content_edits(content_before,
+                                            self._content_state(scene))
+                for kind, obj, old, _new in edits:
+                    self._put_content(kind, obj, old)
                 raise
             self.after = m.capture_state()
+            self.content_edits = self._content_edits(
+                content_before, self._content_state(scene))
             for name, added, removed in self._TRACKED:
                 before, now = lists_before[name], getattr(scene, name)
                 setattr(self, added, [x for x in now if x not in before])
@@ -3748,11 +3801,15 @@ class SnapshotImport(Command):
                 for x in getattr(self, added):
                     if x not in items:
                         items.append(x)
+            for kind, obj, _old, new in self.content_edits:
+                self._put_content(kind, obj, new)
         scene.version += 1
 
     def undo(self, scene) -> None:
         if self.before is not None:
             scene.mesh.restore_state(self.before)
+        for kind, obj, old, _new in self.content_edits:
+            self._put_content(kind, obj, old)
         for name, added, removed in self._TRACKED:
             items = getattr(scene, name)
             for x in getattr(self, added):

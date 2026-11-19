@@ -84,6 +84,33 @@ cuerpo nunca llega a leerse. Aun así, **detén el puente cuando no lo uses**.
 | `screenshot` | Renderiza el viewport real — el agente mira e itera. |
 | `undo` / `redo` | La historia de siempre. |
 
+### Láminas y escenas (#1505)
+
+Herramientas estables sobre `core/sheets_api.py`: no hace falta
+`run_python`, ni métodos privados del compositor, ni tener la ventana del
+compositor abierta. Cada herramienta que escribe es **un** paso de undo,
+responde `{result, changed, document_revision}` y acepta
+`expected_revision` (si el documento cambió desde esa revisión, se
+rechaza: dos clientes no construyen sobre lo que el otro borró).
+
+| Tool | Qué hace |
+|---|---|
+| `list_sheets` | Láminas en orden: papel, orientación, marcos, cajetín y **avisos**: marco con escena inexistente, dibujo recortado a su escala, escala no normalizada (con la sugerida), marcadores `{…}` que se imprimirían tal cual. |
+| `get_sheet` | Una lámina en JSON: marcos (vista, escala, x/y/w/h mm, estilo, `cam_target`, `content_mm` = extensión del dibujo en papel), textos, cajetín. Cotas solo como número salvo `cotas=true`. |
+| `create_sheet` / `update_sheet` / `delete_sheet` | Nueva (vacía o copia de otra, en la posición pedida), renombrar/reordenar/papel, borrar (con `confirm`). |
+| `add_frame` / `update_frame` / `remove_frame` / `fit_frame` | Marcos de vista; `fit: "content"` centra en la geometría visible de la escena (respeta sus capas ocultas), `fit: "view"` toma el objetivo de la escena guardada. |
+| `set_title_block` | Cajetín de una lámina o de todas (`"all"`); los valores admiten marcadores (`{proyecto}`/`{project}`/`{projekt}`, `{fecha}`/`{date}`/`{datum}`, `{hoja}`/`{blatt}`, `{total}`/`{gesamt}`… — la lista completa va en la descripción de la tool). |
+| `add_text` / `update_text` | Textos de la lámina. |
+| `list_views` / `create_view` / `update_view` / `delete_view` | Escenas guardadas, con las láminas que usan cada una. Renombrar una escena renombra los marcos que la muestran. |
+| `render_sheet` | PNG de una lámina devuelto al cliente — el `screenshot` de las láminas. |
+| `export_sheets` | PDF (un archivo, una página por lámina) o PNG (uno por lámina) sin abrir el compositor, con los errores de cada lámina. |
+
+En `run_python` la misma API está en el scope como `sheets`
+(`sheets.list()`, `sheets.get("Planta")`, `sheets.update_frame(...)`…).
+Las ediciones del contenido de láminas, escenas y capas hechas con
+`run_python` cuentan ahora como cambio: un paso de undo, `changed: True`
+y rollback completo (también la visibilidad de capas) si el código falla.
+
 Sin el puente encendido, las tools responden con el aviso de cómo
 encenderlo. El servidor acepta un cliente a la vez y nunca escucha fuera
 de localhost.
