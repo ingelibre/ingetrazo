@@ -52,9 +52,11 @@ pub fn grid_bins(ax: &[f64], ay: &[f64], bx: &[f64], by: &[f64], ok: &[bool], w:
         let (lo, hi) = (lo as f64, hi as f64);
         (if f < lo { lo } else if f > hi { hi } else { f }) as i64
     };
-    let mut long_ids = Vec::new();
-    let mut pairs: Vec<(i64, i64)> = Vec::new();
-    for i in 0..ax.len() {
+    use rayon::prelude::*;
+    // Per segment: None (not live), Some(None) (too long to bin) or its
+    // first cell and extent — in parallel, each on its own.
+    let cells: Vec<Option<Option<(i64, i64, i64, i64)>>> = (0..ax.len()).into_par_iter()
+        .with_min_len(8192).map(|i| {
         // np.minimum / np.maximum: a NaN on either side gives NaN, which
         // the finiteness test below drops.
         let mn = |a: f64, b: f64| if a.is_nan() || b.is_nan() { f64::NAN } else if b < a { b } else { a };
@@ -65,25 +67,52 @@ pub fn grid_bins(ax: &[f64], ay: &[f64], bx: &[f64], by: &[f64], ok: &[bool], w:
             && hiy.is_finite() && hix >= -reach && lox <= w + reach && hiy >= -reach
             && loy <= h + reach;
         if !live {
-            continue;
+            return None;
         }
         let x0 = clip(lox / cell, cx0, cx1);
         let x1 = clip(hix / cell, cx0, cx1);
         let y0 = clip(loy / cell, cy0, cy1);
         let y1 = clip(hiy / cell, cy0, cy1);
         let (nx, ny) = (x1 - x0 + 1, y1 - y0 + 1);
-        let span = nx * ny;
-        if span > max_cells {
-            long_ids.push(i as i64);
-            continue;
+        if nx * ny > max_cells {
+            return Some(None);
         }
-        for k in 0..span {
-            let cx = x0 + k % nx;
-            let cy = y0 + k / nx;
-            pairs.push(((cy - cy0) * ncx + (cx - cx0), i as i64));
+        Some(Some((x0, y0, nx, ny)))
+    }).collect();
+    let mut long_ids = Vec::new();
+    let ncell = (ncx * ncy) as usize;
+    // NumPy's stable sort by cell key, as a counting sort: segment by
+    // segment, each segment's cells in order, every key's bucket filled in
+    // that same order.
+    let mut count = vec![0usize; ncell + 1];
+    for (i, c) in cells.iter().enumerate() {
+        match c {
+            None => {}
+            Some(None) => long_ids.push(i as i64),
+            Some(Some((x0, y0, nx, ny))) => {
+                for k in 0..nx * ny {
+                    let key = (y0 + k / nx - cy0) * ncx + (x0 + k % nx - cx0);
+                    count[key as usize + 1] += 1;
+                }
+            }
         }
     }
-    pairs.sort_by_key(|p| p.0);              // stable, as NumPy's
-    let (keys, ids) = pairs.into_iter().unzip();
+    for c in 1..=ncell {
+        count[c] += count[c - 1];
+    }
+    let total = count[ncell];
+    let mut keys = vec![0i64; total];
+    let mut ids = vec![0i64; total];
+    for (i, c) in cells.iter().enumerate() {
+        if let Some(Some((x0, y0, nx, ny))) = c {
+            for k in 0..nx * ny {
+                let key = (y0 + k / nx - cy0) * ncx + (x0 + k % nx - cx0);
+                let at = &mut count[key as usize];
+                keys[*at] = key;
+                ids[*at] = i as i64;
+                *at += 1;
+            }
+        }
+    }
     Bins { cx0, cy0, ncx, ncy, long_ids, keys, ids }
 }
