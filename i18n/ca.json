@@ -3765,5 +3765,9 @@
  "Architect. The units system, the Browser, Layers 2.0, the Solid Inspector, Fillet 3D bevels, Bridge, Join Segments, Camera ▸ Axes, soft ambient occlusion, round curved surfaces, view layouts, scenes as tabs, cleaner exports and many everyday editing tools. And for 0.6.2: the North tool, camera settings, scene transitions with video and the view as layered SVG.": "Arquitecte. El sistema d'unitats, el Navegador, Capes 2.0, l'Inspector de sòlids, els bisells de Fillet 3D, Pont, Uneix segments, Càmera ▸ Eixos, l'oclusió ambiental suau, les superfícies corbes arrodonides, les distribucions de vistes, les escenes com a pestanyes, exportacions més netes i moltes eines d'edició del dia a dia. I per a la 0.6.2: l'eina Nord, els ajustos de càmera, les transicions d'escena amb vídeo i la vista com a SVG en capes.",
  "Korean translation of the interface, and the AI key from an environment variable. In 0.6.2, soft shadows and fixes for macOS.": "Traducció al coreà de la interfície, i la clau d'IA des d'una variable d'entorn. A la 0.6.2, les ombres suaus i correccions per a macOS.",
  "Exact Move+Ctrl copies, overlapping rotated copies, faster box selection on huge models and the reviewed Indonesian translation.": "Còpies exactes amb Mou+Ctrl, còpies girades que se superposen, selecció per caixa més ràpida en models enormes i la traducció a l'indonesi revisada.",
- "Snapping to the rest of the model from inside a group or component.": "Els enganxaments amb la resta del model des de dins d'un grup o component."
+ "Snapping to the rest of the model from inside a group or component.": "Els enganxaments amb la resta del model des de dins d'un grup o component.",
+ "Location": "Ubicació",
+ "This model has no location yet.": "Aquest model encara no té ubicació.",
+ "Clear location": "Esborra la ubicació",
+ "This model has survey points, traced paths or a drone survey placed by its location: change it in the Terrain panel.": "Aquest model té punts topogràfics, traçats georef o un aixecament amb dron col·locats segons la seva ubicació: canvia-la al tauler Terreny."
 }
