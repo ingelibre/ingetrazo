@@ -55,9 +55,16 @@ def test_only_rows_on_screen_are_drawn(monkeypatch):
         assert len(drawn) < 60, "rows off screen wait to be scrolled to"
         first = set(drawn)
         lst.scrollToItem(lst.item(119))
-        _settle()
         last = lst.item(119).data(Qt.UserRole)[0].name
-        assert last in drawn and last not in first
+        # The pictures wait while the view has just moved (the window's
+        # first frames count): views/viewport.py wait_for_still_view.
+        import time
+        from PySide6.QtTest import QTest
+        end = time.monotonic() + 6.0
+        while last not in drawn and time.monotonic() < end:
+            QTest.qWait(20)
+        assert last in drawn
+        assert last not in first
         assert lst.item(119).data(Qt.UserRole + 2)
     finally:
         win._saved_version = win.viewport.scene.version
