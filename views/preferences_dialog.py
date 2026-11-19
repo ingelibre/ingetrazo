@@ -19,7 +19,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import QRect, QSettings, QSize, Qt
+from PySide6.QtCore import QRect, QSettings, QSize, Qt, Slot
 from PySide6.QtGui import QFontDatabase, QGuiApplication, QIcon, QPixmap
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -49,6 +49,24 @@ from core.i18n import LANGUAGE_NAMES as _LANGUAGE_NAMES
 from core.i18n import SYSTEM as SYSTEM_LANGUAGE
 from core.i18n import (available_languages, current_language,
                        resolve_language, tr)
+
+
+class _NdofStatusLabel(QLabel):
+    """Track connection status until Qt destroys the receiver widget."""
+
+    def __init__(self, device, parent=None):
+        super().__init__(parent)
+        self._device = device
+        self.refresh()
+        device.status_changed.connect(self.refresh)
+
+    @Slot()
+    def refresh(self):
+        name = self._device.backend_name
+        self.setText(tr("Device driver found: {name}", name=name) if name else tr(
+            "No 3D mouse connection. On Linux start spacenavd; "
+            "on Windows and macOS install the 3Dconnexion driver. "
+            "Connection is retried automatically."))
 
 
 #: The import dialogs' unit vocabularies (must match the dialogs in
@@ -435,11 +453,7 @@ class PreferencesDialog(QDialog):
         self._ndof_lock.setChecked(nd.lock_rotation)
         form.addRow("", self._ndof_lock)
         name = shared_input().backend_name
-        status = QLabel(
-            tr("Device driver found: {name}", name=name) if name else tr(
-                "No 3D mouse driver found. On Linux install and start "
-                "«spacenavd»; on Windows the 3Dconnexion driver is enough. "
-                "macOS is not supported yet."))
+        status = _NdofStatusLabel(shared_input(), self)
         status.setWordWrap(True)
         form.addRow("", status)
         # Live reading: nobody on the team has a device, so an owner can say

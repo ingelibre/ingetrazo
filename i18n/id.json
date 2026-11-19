@@ -4081,5 +4081,7 @@
  "Do you want to resize the active component?": "Apakah Anda ingin mengubah ukuran komponen aktif?",
  "Do you want to resize the active group?": "Apakah Anda ingin mengubah ukuran grup aktif?",
  "Resize": "Ubah Ukuran",
- "Type the new length and Enter to resize.": "Ketik panjang baru lalu Enter untuk mengubah ukuran."
+ "Type the new length and Enter to resize.": "Ketik panjang baru lalu Enter untuk mengubah ukuran.",
+ "No 3D mouse driver found. On Linux install and start «spacenavd»; on Windows and macOS install the 3Dconnexion driver.": "Driver mouse 3D tidak ditemukan. Di Linux pasang dan jalankan «spacenavd»; di Windows dan macOS pasang driver 3Dconnexion.",
+ "No 3D mouse connection. On Linux start spacenavd; on Windows and macOS install the 3Dconnexion driver. Connection is retried automatically.": "Tidak ada koneksi mouse 3D. Di Linux jalankan spacenavd; di Windows dan macOS pasang driver 3Dconnexion. Koneksi akan dicoba kembali secara otomatis."
 }
