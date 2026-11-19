@@ -4696,7 +4696,15 @@ class Viewport(QOpenGLWidget):
                  tuple((ly.name, ly.visible, ly.locked) for ly in sc.layers),
                  _layer_look_sig(sc, self._view_style()),
                  len(sc.groups))
-        live = getattr(self, "_frozen_cache_version", None) is None
+        # A vertex drag (``begin_verts_preview``: a face moved inside a big
+        # group) freezes the version too, but moves no placement and
+        # mutates no mesh until its commit, which bumps the version: what
+        # the walk reads stays what it was. Treated as frozen, every hover
+        # of a Move in Group 3 of the Plaza walked its ~1 000 placements
+        # again (~5.7 ms a hover, 19-11).
+        live = (getattr(self, "_frozen_cache_version", None) is None
+                or (getattr(self, "_verts_preview", None) is not None
+                    and not getattr(self, "_preview_groups", None)))
         same = getattr(self, "_epoch_same", None)
         if live and same is not None and same[0] == cheap:
             self._epoch_memo = ((tick, _cache_ver(self)), same[1])
