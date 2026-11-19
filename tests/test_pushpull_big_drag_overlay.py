@@ -115,3 +115,63 @@ def test_the_inference_keeps_an_unchanged_meshs_positions(monkeypatch):
     want = np.array([[p.x(), p.y(), p.z()]
                      for p in (u.position for u in mesh.vertices)])
     assert np.array_equal(arr, want)
+
+
+@pytest.mark.parametrize("dists", [[0.5, 0.0, -0.6, 1e-9, 0.8],
+                                   [-0.4, 0.3, -0.2]])
+def test_the_base_stays_hidden_across_the_plane(dists):
+    """The hidden set never changes during the drag (each change lays out
+    every group's faces again); at a distance too small to sweep, the
+    overlay draws the base where it is."""
+    scene, vp, tool = _start(_split_top, big=1)
+    base = tool.base_face
+    seen = []
+    for d in dists:
+        _frame(tool, vp, d)
+        seen.append(frozenset(vp.suppressed or ()))
+        faces = tool.preview_faces()
+        if abs(d) < 1e-6:
+            assert len(faces) == 1
+            assert faces[0].vertices == list(base.vertices)
+        else:
+            assert len(faces) > 1                # cap and walls
+    assert set(seen) == {frozenset({base})}
+
+
+def test_ctrl_shows_the_base_again():
+    scene, vp, tool = _start(_split_top, big=1)
+    _frame(tool, vp, 0.5)
+    assert vp.suppressed == {tool.base_face}
+    tool._keep_base = True
+    tool._show_light_preview(vp)
+    assert not vp.suppressed
+    tool._keep_base = False
+    _frame(tool, vp, 0.6)
+    assert vp.suppressed == {tool.base_face}
+
+
+def test_a_small_mesh_hides_the_base_only_away_from_the_eye():
+    scene, vp, tool = _start(_split_top)
+    assert not tool._holding_base()
+    _frame(tool, vp, 0.0)
+    assert not vp.suppressed and tool.preview_faces() == []
+
+
+def test_the_inference_reads_the_scene_right_after_the_click():
+    from PySide6.QtTest import QTest
+    scene, vp, tool = _start(_split_top)
+    assert getattr(tool, "_infer_cache", None) is None   # not in the click
+    QTest.qWait(20)
+    warm = tool._infer_cache
+    assert warm is not None and len(warm) == len(tool._infer_bounds)
+    rows = [np.asarray(a) for _v, a in warm]
+    tool._infer_cache = None
+    cold = tool._infer_entries(vp)
+    assert len(cold) == len(rows)
+    assert all(np.array_equal(x, np.asarray(a)) for x, (_v, a) in zip(rows, cold))
+    # A drag that ended first reads nothing.
+    tool.on_cancel(vp)
+    tool._infer_cache = None
+    tool._warm_inference(vp)
+    QTest.qWait(20)
+    assert tool._infer_cache is None

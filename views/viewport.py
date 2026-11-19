@@ -17807,6 +17807,27 @@ class Viewport(QOpenGLWidget):
     #: grid (core.edge_grid) instead of one pass over all of them.
     GEDGE_GRID_MIN = 20000
 
+    def warm_edge_grid(self) -> None:
+        """Bin the group edges for the current projection now (see
+        :meth:`_gedge_dist`), as its second hover would: a tool whose drag
+        keeps the camera and the model still (Push/Pull on the overlay)
+        asks right after its click, so no move of the drag builds it
+        (~14 ms in a 9 674-face group of the Plaza, 19-11)."""
+        from core.edge_grid import EdgeGrid
+        if _NO_SNAP_FAST or (getattr(self, "pick_threshold_px", 0.0)
+                             > Viewport.GEDGE_REACH_PX):
+            return
+        proj = self._gedge_screen()
+        ax, ay, bx, by, ok = proj
+        if len(ax) < Viewport.GEDGE_GRID_MIN:
+            return
+        slot = getattr(self, "_gedge_grid_cache", None)
+        if slot is not None and slot[0] is proj and slot[1] is not None:
+            return
+        self._gedge_grid_cache = (proj, EdgeGrid(
+            ax, ay, bx, by, ok, self.width(), self.height(),
+            Viewport.GEDGE_REACH_PX))
+
     def _gedge_dist(self, px: float, py: float):
         """Screen distance from the cursor to every group hard edge, shared
         by the hovered-edge pick and the snap prefilter (both used to

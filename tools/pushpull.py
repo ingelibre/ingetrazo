@@ -456,6 +456,8 @@ class PushPullTool(Tool):
         self._stage_refusal: tuple | None = None
         # A stage slower than _SLOW_STAGE_S: no more stages this drag.
         self._stage_slow: bool = False
+        # The base face is hidden for the whole drag (see _holding_base).
+        self._hold_base: bool = False
         # Levels (along the normal) of the parallel faces over/under the base,
         # collected at drag start: crossing one changes the topology.
         self._plane_levels: list = []
@@ -690,6 +692,7 @@ class PushPullTool(Tool):
             self._compute_plane_levels(target)
             self._preview_snapshot = None
             self._overlay_if_big(viewport, target.mesh)
+            self._warm_inference(viewport)
             # The live preview takes over from the hover shade now.
             viewport.set_hover(None)
             viewport.update()
@@ -707,6 +710,41 @@ class PushPullTool(Tool):
             return
         self._commit(viewport)
 
+    def _holding_base(self) -> bool:
+        """Whether this drag keeps its base face hidden throughout — a big
+        mesh on the overlay (see _overlay_if_big), single face, no Ctrl.
+        Toward the eye the sweep covers the base anyway, so the frame is
+        the same; at a distance too small to sweep, the overlay draws the
+        base in its place."""
+        return (self._hold_base and self.base_face is not None
+                and not self._keep_base and not self._extra_faces)
+
+    def _warm_inference(self, viewport) -> None:
+        """Read the scene's positions for the distance inference right after
+        the click, before the hand moves: the first move of the first push
+        read the ~900 meshes of the Plaza (~0.1 s, 19-11). Later drags find
+        most of them kept (``_infer_memo``)."""
+        from PySide6.QtCore import QTimer
+        face = self.base_face
+
+        def warm(face=face):
+            if not (self.dragging and self.base_face is face):
+                return
+            if getattr(self, "_infer_cache", None) is None:
+                try:
+                    self._infer_cache = self._infer_entries(viewport)
+                except Exception:  # noqa: BLE001 — the first move reads them
+                    self._infer_cache = None
+            # The edge pick's screen grid too, on the overlay: the model and
+            # the camera stay as they are for the drag.
+            grid = getattr(viewport, "warm_edge_grid", None)
+            if grid is not None and self._stage_slow:
+                try:
+                    grid()
+                except Exception:  # noqa: BLE001 — the second move builds it
+                    pass
+        QTimer.singleShot(0, warm)
+
     def _overlay_if_big(self, viewport, mesh) -> None:
         """A drag on a big mesh (see _BIG_STAGE_FACES), or on one whose last
         stage was slow, shows the overlay from the first frame. The open
@@ -722,6 +760,11 @@ class PushPullTool(Tool):
         if not slow and len(mesh.faces) < self._BIG_STAGE_FACES:
             return
         self._stage_slow = True
+        # The base stays hidden the whole drag (see _holding_base): the faces
+        # buffer of every group is laid out once, right after the click, and
+        # crossing the base plane no longer lays it out twice (~75 ms each,
+        # 19-11).
+        self._hold_base = True
         face = self.base_face
         warm = getattr(viewport, "_chunk_without", None)
         group = getattr(viewport.scene, "edit_group", None)
@@ -736,6 +779,8 @@ class PushPullTool(Tool):
                     warm(group, {face})
                 except Exception:  # noqa: BLE001 — the first frame bakes it then
                     pass
+                if self._hold_base and not self._keep_base:
+                    viewport.set_suppressed_faces({face})
         from PySide6.QtCore import QTimer
         QTimer.singleShot(0, bake)
 
@@ -790,6 +835,7 @@ class PushPullTool(Tool):
             self._compute_plane_levels(target)
             self._preview_snapshot = None
             self._overlay_if_big(viewport, target.mesh)
+            self._warm_inference(viewport)
             self._selected_arm = False  # never armed once a drag exists
         elif abs(self.extrusion) > _MIN_EXTRUDE:
             # Mid-drag with a real distance: treat as the commit click.
@@ -993,6 +1039,11 @@ class PushPullTool(Tool):
         self._light_rings = []
         if (self.base_face is None or self._normal is None
                 or abs(d) < _MIN_EXTRUDE):
+            if self.base_face is not None and self._holding_base():
+                # The hidden base, drawn where it is (see _hold_base).
+                f = self.base_face
+                return [Face(list(f.vertices), [list(h) for h in f.holes],
+                             attrs=dict(f.attrs) if f.attrs else None)]
             return []
         out = self._sweep_faces(self.base_face, self._normal * d)
         for face, n in zip(self._extra_faces, self._extra_normals):
@@ -1048,7 +1099,9 @@ class PushPullTool(Tool):
         # it while the commit worked («no se ve cuando hago push para
         # adentro cuando tengo la cara invertida», Marco, 2026-09-18).
         hidden = set()
-        if self._light_faces and not self._keep_base:
+        if self._holding_base():
+            hidden.add(self.base_face)
+        elif self._light_faces and not self._keep_base:
             if (self.base_face is not None and self._attached
                     and self._sweeps_away_from_eye(viewport)):
                 hidden.add(self.base_face)
@@ -1203,6 +1256,8 @@ class PushPullTool(Tool):
     #: then (see _infer_reference_distance). Meshes over _INFER_MEMO_MAX
     #: vertices are read each drag, as before, not held.
     _infer_memo = weakref.WeakKeyDictionary()
+    #: The same for a lazy mesh's plan: ``(plan, entry, bounds)``.
+    _infer_plans = weakref.WeakKeyDictionary()
     _INFER_MEMO_MAX = 200_000
 
     def _show_staged_preview(self, viewport) -> None:
@@ -1225,6 +1280,9 @@ class PushPullTool(Tool):
         self._light_faces = []
         self._light_rings = []
         d = self.extrusion
+        if abs(d) < _MIN_EXTRUDE and self._holding_base():
+            self._show_light_preview(viewport)   # the base, drawn in place
+            return
         if abs(d) < _MIN_EXTRUDE:
             # Nothing to show, as the overlay. Parked, not dropped: the
             # cursor is on its way to the other side and may come back.
@@ -1820,6 +1878,38 @@ class PushPullTool(Tool):
                 if not h:
                     yield i
 
+    def _corner_boxes(self, proj, boxes) -> None:
+        """Fill ``boxes`` (see _screen_boxes) for the entries it has none
+        for, from the corners of each entry's 3D box, all projected in one
+        go: in front of the camera, the box of a box's projected corners
+        holds every vertex inside it (the projection keeps convex sets
+        convex), so an entry it puts far from the cursor has no vertex near
+        it. Marked approximate (a fifth term): an entry the cursor comes
+        near is projected whole, and its exact box replaces this one.
+        Projecting each of the Plaza's ~900 meshes, its first move cost a
+        push ~0.1 s (19-11)."""
+        import numpy as np
+        bounds = getattr(self, "_infer_bounds", None)
+        if not bounds:
+            return
+        todo = [n for n in range(len(bounds)) if n not in boxes]
+        if not todo:
+            return
+        lo = np.array([bounds[n][0] for n in todo], dtype=np.float64)
+        hi = np.array([bounds[n][1] for n in todo], dtype=np.float64)
+        pick = np.array([[(k >> a) & 1 for a in range(3)] for k in range(8)],
+                        dtype=bool)                       # (8, 3)
+        corners = np.where(pick[None], hi[:, None, :], lo[:, None, :])
+        px, py, ok = proj(corners.reshape(-1, 3))
+        px, py, ok = (px.reshape(-1, 8), py.reshape(-1, 8),
+                      ok.reshape(-1, 8))
+        front = ok.all(axis=1)
+        x0, x1 = px.min(axis=1), px.max(axis=1)
+        y0, y1 = py.min(axis=1), py.max(axis=1)
+        for j in np.flatnonzero(front).tolist():
+            boxes[todo[j]] = (float(x0[j]), float(x1[j]), float(y0[j]),
+                              float(y1[j]), True)
+
     def _screen_boxes(self, vp):
         """Per entry of ``_infer_cache``, its vertices' box in pixels (as far
         as they are known) for this camera and size; None for a viewport that
@@ -1832,6 +1922,89 @@ class PushPullTool(Tool):
         if held is None or held[0] != key:
             held = self._infer_boxes = (key, {})
         return held[1]
+
+    def _infer_entries(self, vp) -> list:
+        """The distance inference's ``(vertices, positions)`` per mesh of
+        the scene (shared prototypes once), with each one's 3D box in
+        ``_infer_bounds`` — read on the first move of a drag, or right
+        after its click (see on_click), from the clean model."""
+        import numpy as np
+        cache = []
+        bounds = []                   # each entry's (lo, hi) in 3D
+
+        def add(entry, bnd=None):
+            cache.append(entry)
+            if bnd is None:
+                a = entry[1]
+                bnd = (a.min(axis=0), a.max(axis=0))
+            bounds.append(bnd)
+            return bnd
+        meshes = ([vp.scene.mesh]
+                  + [g.mesh for g in getattr(vp.scene, "groups", [])])
+        seen = set()
+        for mesh in meshes:
+            if id(mesh) in seen:      # shared prototypes: project once
+                continue
+            seen.add(id(mesh))
+            from core.lazy_mesh import plan_of, PlannedVertices
+            plan = plan_of(mesh)
+            if plan is not None:
+                # A lazy mesh (experimental engine): its planned
+                # positions, the same vertices in the same order —
+                # pushing beside a plant no longer builds all of it.
+                if len(plan.pos):
+                    # Kept between drags too: a plan's positions do
+                    # not change while it is the mesh's plan.
+                    try:
+                        held = PushPullTool._infer_plans.get(mesh)
+                    except TypeError:
+                        held = None
+                    if held is not None and held[0] is plan:
+                        add(held[1], held[2])
+                        continue
+                    entry = (PlannedVertices(plan.pos), plan.pos.copy())
+                    bnd = add(entry)
+                    if len(plan.pos) <= self._INFER_MEMO_MAX:
+                        try:
+                            PushPullTool._infer_plans[mesh] = (
+                                plan, entry, bnd)
+                        except TypeError:
+                            pass
+                continue
+            # Kept between drags while the mesh is unchanged: a push
+            # read the ~900 meshes of the Plaza again on its first move
+            # (~0.1 s), though only the one pushed in had changed.
+            key = (getattr(mesh, "_mut_serial", None),
+                   len(mesh.vertices))
+            try:
+                held = PushPullTool._infer_memo.get(mesh)
+            except TypeError:
+                held = None
+            if held is not None and key[0] is not None \
+                    and held[0] == key:
+                add(held[1], held[2])
+                continue
+            # A COPY: a staged preview edits the live list in place, and
+            # the rows of ``arr`` must keep naming the same vertices.
+            verts = list(mesh.vertices)
+            if not verts:
+                continue
+            # (One flat pass: the list of rows was ~3× slower, and this
+            # runs over every prototype on the first move of a push.)
+            arr = np.fromiter(
+                (c for v in verts for c in v.position.toTuple()),
+                dtype=np.float64, count=3 * len(verts)).reshape(-1, 3)
+            bnd = add((verts, arr))
+            if key[0] is not None and len(verts) <= self._INFER_MEMO_MAX:
+                try:
+                    PushPullTool._infer_memo[mesh] = (key, (verts, arr),
+                                                      bnd)
+                except TypeError:
+                    pass
+        self._infer_cache = cache
+        self._infer_bounds = bounds
+        self._infer_boxes = None
+        return cache
 
     def _infer_reference_distance(self, ctx: ToolContext):
         """Distance making the moved face level with the model geometry under the
@@ -1859,57 +2032,11 @@ class PushPullTool(Tool):
         import numpy as np
         cache = getattr(self, "_infer_cache", None)
         if cache is None:
-            cache = []
-            meshes = ([vp.scene.mesh]
-                      + [g.mesh for g in getattr(vp.scene, "groups", [])])
-            seen = set()
-            for mesh in meshes:
-                if id(mesh) in seen:      # shared prototypes: project once
-                    continue
-                seen.add(id(mesh))
-                from core.lazy_mesh import plan_of, PlannedVertices
-                plan = plan_of(mesh)
-                if plan is not None:
-                    # A lazy mesh (experimental engine): its planned
-                    # positions, the same vertices in the same order —
-                    # pushing beside a plant no longer builds all of it.
-                    if len(plan.pos):
-                        cache.append((PlannedVertices(plan.pos),
-                                      plan.pos.copy()))
-                    continue
-                # Kept between drags while the mesh is unchanged: a push
-                # read the ~900 meshes of the Plaza again on its first move
-                # (~0.1 s), though only the one pushed in had changed.
-                key = (getattr(mesh, "_mut_serial", None),
-                       len(mesh.vertices))
-                try:
-                    held = PushPullTool._infer_memo.get(mesh)
-                except TypeError:
-                    held = None
-                if held is not None and key[0] is not None \
-                        and held[0] == key:
-                    cache.append(held[1])
-                    continue
-                # A COPY: a staged preview edits the live list in place, and
-                # the rows of ``arr`` must keep naming the same vertices.
-                verts = list(mesh.vertices)
-                if not verts:
-                    continue
-                # (One flat pass: the list of rows was ~3× slower, and this
-                # runs over every prototype on the first move of a push.)
-                arr = np.fromiter(
-                    (c for v in verts for c in v.position.toTuple()),
-                    dtype=np.float64, count=3 * len(verts)).reshape(-1, 3)
-                cache.append((verts, arr))
-                if key[0] is not None and len(verts) <= self._INFER_MEMO_MAX:
-                    try:
-                        PushPullTool._infer_memo[mesh] = (key, (verts, arr))
-                    except TypeError:
-                        pass
-            self._infer_cache = cache
-            self._infer_boxes = None
+            cache = self._infer_entries(vp)
         proj = getattr(vp, "_project_px", None)
         boxes = self._screen_boxes(vp) if proj is not None else None
+        if boxes is not None:
+            self._corner_boxes(proj, boxes)
         for n, (verts, arr) in enumerate(cache):
             if proj is not None:
                 # A prototype whose box on screen is far from the cursor is
@@ -1921,7 +2048,7 @@ class PushPullTool(Tool):
                                         or sy - thr - 1 > box[3]):
                     continue
                 px, py, ok = proj(arr)
-                if boxes is not None and box is None:
+                if boxes is not None and (box is None or len(box) > 4):
                     boxes[n] = ((px[ok].min(), px[ok].max(),
                                  py[ok].min(), py[ok].max()) if ok.any()
                                 else (np.inf, -np.inf, np.inf, -np.inf))
@@ -3389,6 +3516,7 @@ class PushPullTool(Tool):
         self._stage_cache = {}
         self._stage_refusal = None
         self._stage_slow = False
+        self._hold_base = False
         self._plane_levels = []
         self._stage_serial = None
         self._drag_pre_oriented = False
