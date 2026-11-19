@@ -4060,5 +4060,13 @@
  "Option = copy": "Option = копиране",
  "Horizon:": "Хоризонт:",
  "Horizon color": "Цвят на хоризонта",
- "Sky, horizon and ground colors show with the sky on.": "Цветовете на небето, хоризонта и земята се показват, когато небето е включено."
+ "Sky, horizon and ground colors show with the sky on.": "Цветовете на небето, хоризонта и земята се показват, когато небето е включено.",
+ "Saving {name}…": "Записване на {name}…",
+ "Saved {name}.": "{name} е записан.",
+ "Saved {name} — {n} texture(s) packed into the document.": "{name} е записан — {n} текстура(и) вградени в документа.",
+ "Exporting {name}…": "Експортиране на {name}…",
+ "Serializing geometry…": "Сериализиране на геометрията…",
+ "Packing textures…": "Вграждане на текстурите…",
+ "Writing file…": "Записване на файла…",
+ "Saved": "Записано"
 }

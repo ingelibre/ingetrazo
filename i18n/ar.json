@@ -4093,5 +4093,13 @@
  "Option = copy": "Option = نسخ",
  "Horizon:": "الأفق:",
  "Horizon color": "لون الأفق",
- "Sky, horizon and ground colors show with the sky on.": "تظهر ألوان السماء والأفق والأرض عند تفعيل السماء."
+ "Sky, horizon and ground colors show with the sky on.": "تظهر ألوان السماء والأفق والأرض عند تفعيل السماء.",
+ "Saving {name}…": "جارٍ حفظ {name}…",
+ "Saved {name}.": "تم حفظ {name}.",
+ "Saved {name} — {n} texture(s) packed into the document.": "تم حفظ {name} — {n} نسيج(أنسجة) ضُمّنت في المستند.",
+ "Exporting {name}…": "جارٍ تصدير {name}…",
+ "Serializing geometry…": "جارٍ تسلسل الهندسة…",
+ "Packing textures…": "جارٍ تضمين الأنسجة…",
+ "Writing file…": "جارٍ كتابة الملف…",
+ "Saved": "تم الحفظ"
 }

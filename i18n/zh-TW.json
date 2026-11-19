@@ -4060,5 +4060,13 @@
  "Option = copy": "Option = 複製",
  "Horizon:": "地平線：",
  "Horizon color": "地平線顏色",
- "Sky, horizon and ground colors show with the sky on.": "啟用天空時顯示天空、地平線和地面的顏色。"
+ "Sky, horizon and ground colors show with the sky on.": "啟用天空時顯示天空、地平線和地面的顏色。",
+ "Saving {name}…": "正在儲存 {name}…",
+ "Saved {name}.": "已儲存 {name}。",
+ "Saved {name} — {n} texture(s) packed into the document.": "已儲存 {name} — {n} 個材質已封裝進文件。",
+ "Exporting {name}…": "正在匯出 {name}…",
+ "Serializing geometry…": "正在序列化幾何…",
+ "Packing textures…": "正在封裝材質…",
+ "Writing file…": "正在寫入檔案…",
+ "Saved": "已儲存"
 }

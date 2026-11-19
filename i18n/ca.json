@@ -4065,5 +4065,13 @@
  "Option = copy": "Opció = copiar",
  "Horizon:": "Horitzó:",
  "Horizon color": "Color de l'horitzó",
- "Sky, horizon and ground colors show with the sky on.": "Els colors del cel, l'horitzó i el terra es veuen amb el cel activat."
+ "Sky, horizon and ground colors show with the sky on.": "Els colors del cel, l'horitzó i el terra es veuen amb el cel activat.",
+ "Saving {name}…": "S'està desant {name}…",
+ "Saved {name}.": "S'ha desat {name}.",
+ "Saved {name} — {n} texture(s) packed into the document.": "S'ha desat {name} — {n} textura(es) empaquetada(es) al document.",
+ "Exporting {name}…": "S'està exportant {name}…",
+ "Serializing geometry…": "S'està serialitzant la geometria…",
+ "Packing textures…": "S'estan empaquetant les textures…",
+ "Writing file…": "S'està escrivint el fitxer…",
+ "Saved": "Desat"
 }
