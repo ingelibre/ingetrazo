@@ -289,6 +289,9 @@ CONTRIBUTORS = [
     ("DarkBiscuits",
      "A .skp component 10 000 times too big, traced.",
      "https://github.com/DarkBiscuits"),
+    ("İbrahim Halim Gökbulut",
+     "Turkish localization and workspace guide.",
+     "https://github.com/h-skycloud"),
 ]
 
 #: Roll speed: pixels per tick, and the tick.
