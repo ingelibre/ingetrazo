@@ -3,7 +3,7 @@
 """``.igmat`` — material files: materials kept apart from any document (#1427).
 
 The point is to set a material up once (an MDF panel with its name, picture
-and real tile size) and use it in every project, the way SketchUp's ``.skm``
+and real tile size) and use it in every project, the way ``.skm`` material
 files work. A file holds one material or several, so one ``.igmat`` can also
 be a small library.
 
