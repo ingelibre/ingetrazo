@@ -80,7 +80,15 @@ def _find_face_by_loop(mesh, loop_positions) -> Optional[Face]:
     """The mesh face whose outer loop matches ``loop_positions`` (by key), or
     ``None``. Used to resolve a command's target face against the live mesh."""
     target = frozenset(_key(p) for p in loop_positions)
+    # A match has every corner in ``target`` — its first one too, and at
+    # least as many corners as ``target`` has keys: one key per face first,
+    # not all of them (~0.1 s a call inside a 9 674-face group, 18-11).
+    # Same faces asked in the same order: the same answer.
+    n = len(target)
     for f in mesh.faces:
+        loop = f.loop
+        if len(loop) < n or not loop or _key(loop[0].position) not in target:
+            continue
         if frozenset(_key(p) for p in f.vertices) == target:
             return f
     return None
@@ -575,8 +583,11 @@ class EraseSelectionCommand(Command):
         # Loop->face lookups through ONE index: _find_face_by_loop scans the
         # whole mesh per call, and deleting thousands of box-selected faces
         # froze for ~26 s on a 28k-face mesh (piscina.igz report, round 2).
+        # Built only when faces are erased: rubbing out one line inside a
+        # 9 674-face group walked every face twice for indexes it never
+        # read (night of 18-11).
         by_loop: dict = {}
-        for f in m.faces:
+        for f in (m.faces if self._face_loops else ()):
             by_loop.setdefault(
                 frozenset(_key(p) for p in f.vertices), []).append(f)
         for loop in self._face_loops:
@@ -589,14 +600,24 @@ class EraseSelectionCommand(Command):
         # over every face was O(edges x faces) — deleting a curved tiled
         # wall (hundreds of curve segments) took 30+ s on an exploded
         # 28k-face mesh (piscina.igz report). Kept live as faces merge/die.
-        seg_faces: dict = {}
+        # Built on the first cascade that reads it, from the faces there are
+        # then (a merge before it is already among them): a line that only
+        # reunites two faces never needs it.
+        seg_box: list = []
+
+        def _seg_faces() -> dict:
+            if not seg_box:
+                idx: dict = {}
+                for f in m.faces:
+                    for ek in _loop_edges(f.vertices):
+                        idx.setdefault(ek, []).append(f)
+                seg_box.append(idx)
+            return seg_box[0]
 
         def _index_face(f) -> None:
-            for ek in _loop_edges(f.vertices):
-                seg_faces.setdefault(ek, []).append(f)
-
-        for f in m.faces:
-            _index_face(f)
+            if seg_box:
+                for ek in _loop_edges(f.vertices):
+                    seg_box[0].setdefault(ek, []).append(f)
         dead_faces: set = set()
         slit_planes: list = []
         across: list = []
@@ -648,7 +669,7 @@ class EraseSelectionCommand(Command):
                 # Cascade: the edge and every face bounding it (a face can't
                 # outlive a bounding edge) go away.
                 ekey = frozenset((_key(edge.v0.position), _key(edge.v1.position)))
-                dying = [f for f in seg_faces.get(ekey, ())
+                dying = [f for f in _seg_faces().get(ekey, ())
                          if id(f) not in dead_faces]
                 # A hole is not a boundary the face dies with — the face
                 # CAN outlive a hole edge, as the same face with the
@@ -887,9 +908,31 @@ class AddFaceCommand(Command):
         # Direction C: drawn against an existing face's boundary (corner / edge
         # rectangle) → carve a connected sub-region. Only when no hole applied.
         if not self._punches and not self._hole_swaps:
+            # Both carvings need every corner of the new loop inside the
+            # face or on its boundary (in its plane, to the planar
+            # tolerance): a face whose box, grown past every tolerance they
+            # use, leaves a corner out cannot be carved and is not asked.
+            # Every face of the group was — 19 349 calls, ~1.8 s for one
+            # rectangle inside a 9 674-face group of the Plaza (night of
+            # 18-11). The answers are the same.
+            lxs = [p.x() for p in self.face.vertices]
+            lys = [p.y() for p in self.face.vertices]
+            lzs = [p.z() for p in self.face.vertices]
+            pad = 4.0 * _PLANAR_TOLERANCE
             for other in list(m.faces):
                 if other is self.face:
                     continue
+                ov = other.loop
+                if ov:
+                    xs = [v.position.x() for v in ov]
+                    if min(lxs) < min(xs) - pad or max(lxs) > max(xs) + pad:
+                        continue
+                    ys = [v.position.y() for v in ov]
+                    if min(lys) < min(ys) - pad or max(lys) > max(ys) + pad:
+                        continue
+                    zs = [v.position.z() for v in ov]
+                    if min(lzs) < min(zs) - pad or max(lzs) > max(zs) + pad:
+                        continue
                 remainder = subtract_loop_from_face(other, self.face.vertices)
                 pieces = ([remainder] if remainder is not None
                           else carve_loop_by_chords(other, self.face.vertices))
@@ -984,7 +1027,7 @@ class DeleteFaceCommand(Command):
         scene.version += 1
 
 
-def _dirty_group_chunks(scene) -> None:
+def _dirty_group_chunks(scene, faces=None) -> None:
     """Attr edits bypass the mesh mutation primitives — flag every group
     mesh so the viewport's cached chunks re-validate their materials.
 
@@ -998,7 +1041,21 @@ def _dirty_group_chunks(scene) -> None:
 
     Nested placements are flagged too: their meshes render as part of the
     parent, and walking scene.groups as a flat list never reached them.
+
+    ``faces``: the faces whose attrs changed. When every one is a face of
+    the mesh in context (the open group's, or the loose one at the root),
+    only that mesh is flagged: flagging all of them made every painted face
+    re-fingerprint the ~800 untouched groups of the Plaza, 0.25 s a paint
+    and again an undo (night of 18-11). Any face elsewhere: all, as ever.
     """
+    mesh = getattr(scene, "mesh", None)
+    if faces is not None and mesh is not None:
+        faces = list(faces)
+        own = {id(f) for f in mesh.faces}
+        if all(id(f) in own for f in faces):
+            mesh._chunk_dirty = True
+            mesh._attrs_dirty = True
+            return
     from core.group import iter_placements
     for g in getattr(scene, "groups", []):
         for pg, _m in iter_placements(g):
@@ -1382,7 +1439,7 @@ class SetFaceColorCommand(Command):
                 f.attrs.pop("color", None)
             else:
                 f.attrs["color"] = list(self._color)
-        _dirty_group_chunks(scene)
+        _dirty_group_chunks(scene, self._faces)
         scene.version += 1
 
     def undo(self, scene) -> None:
@@ -1391,7 +1448,7 @@ class SetFaceColorCommand(Command):
                 f.attrs.pop("color", None)
             else:
                 f.attrs["color"] = list(old)
-        _dirty_group_chunks(scene)
+        _dirty_group_chunks(scene, self._faces)
         scene.version += 1
 
 
@@ -1414,7 +1471,7 @@ class SetFaceOpacityCommand(Command):
                 f.attrs.pop("opacity", None)
             else:
                 f.attrs["opacity"] = self._opacity
-        _dirty_group_chunks(scene)
+        _dirty_group_chunks(scene, self._faces)
         scene.version += 1
 
     def undo(self, scene) -> None:
@@ -1423,7 +1480,7 @@ class SetFaceOpacityCommand(Command):
                 f.attrs.pop("opacity", None)
             else:
                 f.attrs["opacity"] = old
-        _dirty_group_chunks(scene)
+        _dirty_group_chunks(scene, self._faces)
         scene.version += 1
 
 
@@ -3008,7 +3065,7 @@ class SetFaceTextureCommand(Command):
                 f.attrs.pop("texture", None)
             else:
                 f.attrs["texture"] = dict(self._tex)
-        _dirty_group_chunks(scene)
+        _dirty_group_chunks(scene, self._faces)
         scene.version += 1
 
     def undo(self, scene) -> None:
@@ -3017,7 +3074,7 @@ class SetFaceTextureCommand(Command):
                 f.attrs.pop("texture", None)
             else:
                 f.attrs["texture"] = dict(old)
-        _dirty_group_chunks(scene)
+        _dirty_group_chunks(scene, self._faces)
         scene.version += 1
 
 
@@ -3050,13 +3107,13 @@ class SetFaceBackCommand(Command):
             self._old = [f.attrs.get("back") for f in self._faces]
         for f, b in zip(self._faces, self._backs):
             self._put(f, b)
-        _dirty_group_chunks(scene)
+        _dirty_group_chunks(scene, self._faces)
         scene.version += 1
 
     def undo(self, scene) -> None:
         for f, old in zip(self._faces, self._old or []):
             self._put(f, old)
-        _dirty_group_chunks(scene)
+        _dirty_group_chunks(scene, self._faces)
         scene.version += 1
 
 

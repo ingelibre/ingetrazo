@@ -830,14 +830,46 @@ def classify_push_edge(
     _, coplanar, others = split
     edges = memo["edges"]
     eset = frozenset((_key(a), _key(b)))
+    # A segment on a face's boundary lies inside the face's box grown by the
+    # test's tolerances: a face whose box leaves out either end is not asked.
+    # Every face of the model was, for every side edge — ~115 000 boundary
+    # walks for one push inside a 9 674-face group of the Plaza (night of
+    # 18-11). Same answers: the box is wider than the test can reach.
+    boxes = memo.get("boxes")
+    if boxes is None:
+        boxes = memo["boxes"] = {}
+
+    def near(g) -> bool:
+        bb = boxes.get(g)
+        if bb is None:
+            xs = [p.x() for p in g.vertices]
+            ys = [p.y() for p in g.vertices]
+            zs = [p.z() for p in g.vertices]
+            if not xs:
+                bb = boxes[g] = (0.0,) * 6 + (False,)
+            else:
+                diag = ((max(xs) - min(xs)) ** 2 + (max(ys) - min(ys)) ** 2
+                        + (max(zs) - min(zs)) ** 2) ** 0.5
+                m = 1e-3 + 1e-3 * diag
+                bb = boxes[g] = (min(xs) - m, min(ys) - m, min(zs) - m,
+                                 max(xs) + m, max(ys) + m, max(zs) + m, True)
+        if not bb[6]:
+            return True                     # no corners: let the test say
+        for p in (a, b):
+            if not (bb[0] <= p.x() <= bb[3] and bb[1] <= p.y() <= bb[4]
+                    and bb[2] <= p.z() <= bb[5]):
+                return False
+        return True
+
     for g in coplanar:
         all_edges = edges.get(g)
         if all_edges is None:
             all_edges = edges[g] = _face_all_edges(g)
-        if eset in all_edges or _segment_on_face_boundary(a, b, g):
+        if eset in all_edges or (near(g)
+                                 and _segment_on_face_boundary(a, b, g)):
             return ("coplanar", g)
     for s in others:
-        if _segment_on_face_boundary(a, b, s):
+        if near(s) and _segment_on_face_boundary(a, b, s):
             return ("perp", s)
     return ("free", None)
 

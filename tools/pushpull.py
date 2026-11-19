@@ -1618,8 +1618,24 @@ class PushPullTool(Tool):
             mid = (p + loop3[(i + 1) % len(loop3)]) * 0.5
             samples.append(mid + (ip3 - mid) * 1e-3)
         lateral = None
+        # A ray along ±n meets a face only inside the face's shadow on the
+        # base plane: a face whose shadow box misses the samples' box cannot
+        # be crossed, and is not triangulated. Every face of the mesh was
+        # (~1.9 s pressing a face inside a 9 674-face group of the Plaza,
+        # night of 18-11); the answer is the same.
+        su = [QVector3D.dotProduct(q - origin3, u) for q in samples]
+        sw = [QVector3D.dotProduct(q - origin3, w) for q in samples]
+        pad = 1e-6 + 1e-9 * max(abs(c) for c in su + sw)
+        su0, su1 = min(su) - pad, max(su) + pad
+        sw0, sw1 = min(sw) - pad, max(sw) + pad
         for g in scene.faces:
             if g is self.base_face or g.interior:
+                continue
+            gu = [QVector3D.dotProduct(v.position - origin3, u) for v in g.loop]
+            if not gu or min(gu) > su1 or max(gu) < su0:
+                continue
+            gw = [QVector3D.dotProduct(v.position - origin3, w) for v in g.loop]
+            if min(gw) > sw1 or max(gw) < sw0:
                 continue
             if abs(QVector3D.dotProduct(g.normal().normalized(), n)) > 0.999:
                 continue  # parallel: blocker/through logic owns it
@@ -1716,11 +1732,38 @@ class PushPullTool(Tool):
                 start += 1
                 if _key(verts[i].position) not in exclude:
                     yield i
-        for i in cand[start:]:
-            i = int(i)
-            p = verts[i].position
-            if _key(p) not in exclude and not self._reference_hidden(vp, p):
-                yield i
+        rest = [int(i) for i in cand[start:]]
+        many = getattr(vp, "_occluded_many", None)
+        if many is None or len(rest) < 2:
+            for i in rest:
+                p = verts[i].position
+                if _key(p) not in exclude and not self._reference_hidden(vp,
+                                                                         p):
+                    yield i
+            return
+        # The rays in growing blocks, all of a block cast at once: one by
+        # one they were 1 300 rays a pointer move of a push inside the
+        # Plaza's 9 674-face group (~0.2 s, night of 18-11).
+        # ``_occluded_many`` is ``_is_occluded`` for many points (the cut
+        # first, then the same rays and the same acceptance).
+        from views.viewport import _active_cut
+        sp = _active_cut(vp.scene)
+        k, size = 0, 8
+        while k < len(rest):
+            block = [i for i in rest[k:k + size]
+                     if _key(verts[i].position) not in exclude]
+            k += size
+            size *= 4
+            if not block:
+                continue
+            pos = [verts[i].position for i in block]
+            hid = many(np.array([(p.x(), p.y(), p.z()) for p in pos],
+                                dtype=np.float64))
+            for i, p, h in zip(block, pos, hid):
+                if sp is not None and sp.side(p) > 1e-6:
+                    continue
+                if not h:
+                    yield i
 
     def _screen_boxes(self, vp):
         """Per entry of ``_infer_cache``, its vertices' box in pixels (as far
@@ -1957,7 +2000,7 @@ class PushPullTool(Tool):
         hovered = getattr(vp, "_hover_edge", None)
         if hovered is not None:
             edges.append(hovered)
-        best = None
+        near = []
         for edge in edges:
             if edge in self._stage_new or getattr(edge, "guide", False):
                 continue
@@ -1974,10 +2017,30 @@ class PushPullTool(Tool):
             if pixel is None:
                 continue
             dd = (pixel[0] - sx) ** 2 + (pixel[1] - sy) ** 2
-            if (dd <= thr * thr and (best is None or dd < best[0])
-                    and not self._reference_hidden(vp, point)):
-                best = (dd, point)
-        return None if best is None else best[1]
+            if dd <= thr * thr:
+                near.append((dd, point))
+        if not near:
+            return None
+        # The nearest visible one — the first of equals, as one by one —
+        # with the rays of all of them cast at once.
+        near.sort(key=lambda t: t[0])
+        import numpy as np
+        many = getattr(vp, "_occluded_many", None)
+        if many is None or len(near) < 2:
+            for dd, point in near:
+                if not self._reference_hidden(vp, point):
+                    return point
+            return None
+        from views.viewport import _active_cut
+        sp = _active_cut(vp.scene)
+        hid = many(np.array([(p.x(), p.y(), p.z()) for _d, p in near],
+                            dtype=np.float64))
+        for (dd, point), h in zip(near, hid):
+            if sp is not None and sp.side(point) > 1e-6:
+                continue
+            if not h:
+                return point
+        return None
 
     @staticmethod
     def _borders_base(face, base_keys) -> bool:
@@ -2852,6 +2915,19 @@ class PushPullTool(Tool):
         # entries stay valid. Without it each plane visit re-ran Newell over
         # the whole mesh — 76k normals per drag frame on the barbecue.
         cache = RebuildCache()
+        # The shape of each face, by identity, for the same reason: every
+        # plane that changed read the shape of EVERY face of the mesh to
+        # tell the user's own faces from the op's — 78 000 shapes for one
+        # push inside a 9 674-face group of the Plaza (~2.6 s, night of
+        # 18-11). A face keeps its shape while it lives here.
+        shapes: dict = {}
+
+        def shape_of(f):
+            hit = shapes.get(id(f))
+            if hit is None or hit[0] is not f:
+                hit = shapes[id(f)] = (f, _face_shape(f))
+            return hit[1]
+
         for _ in range(4):  # converges in 1-2 rounds; hard cap for safety
             # The op's own faces name the solids it may touch, so the plane
             # scans narrow to them instead of walking the whole group.
@@ -2886,9 +2962,9 @@ class PushPullTool(Tool):
                     # op's: counted as fresh, the next round read a free
                     # sheet (a triangle drawn on the ground beside the
                     # solid) as op debris and deleted it (#552).
-                    kept = {_face_shape(f) for f in before_faces - fresh}
+                    kept = {shape_of(f) for f in before_faces - fresh}
                     fresh |= {f for f in set(mesh.faces) - before_faces
-                              if _face_shape(f) not in kept}
+                              if shape_of(f) not in kept}
             if not changed:
                 break
             fresh = {f for f in fresh if f in mesh.faces}

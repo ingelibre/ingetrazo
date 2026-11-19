@@ -44,6 +44,16 @@ import inspect
 import re
 import sys
 import time as _time_mod
+
+#: When the hand last moved the mouse, pressed a button or a key over a
+#: view (monotonic seconds). Background work that blocks the window for a
+#: while (a scene's picture is a whole render) waits for the hand to rest.
+LAST_HAND = [0.0]
+
+
+def hand_rested(seconds: float) -> bool:
+    """Whether nothing has been done over a view for ``seconds``."""
+    return _time_mod.monotonic() - LAST_HAND[0] >= seconds
 import types
 from array import array
 from pathlib import Path
@@ -98,6 +108,10 @@ def _plog(tag: str, ms: float, extra: str = "", floor: float = 50.0) -> None:
 
 from PySide6.QtCore import (QEvent, QObject, Qt, QPointF, QRectF, QTimer,
                             Signal)
+
+_HAND_EVENTS = frozenset((QEvent.MouseMove, QEvent.MouseButtonPress,
+                          QEvent.MouseButtonRelease, QEvent.KeyPress,
+                          QEvent.Wheel))
 from PySide6.QtGui import (
     QColor,
     QFont,
@@ -2270,6 +2284,11 @@ def _face_geometry(f, memo, triangulate):
         hit = memo.get(id(f))
         if hit is not None and hit[0] == key:
             return hit
+        if hit is not None:
+            moved = _translated_geometry(hit, key)
+            if moved is not None:
+                memo[id(f)] = moved
+                return moved
     if len(loop) < 3:
         geom = (key, QVector3D(0.0, 0.0, 1.0), 0.0, [], None, {}, (), None)
     else:
@@ -2288,6 +2307,41 @@ def _face_geometry(f, memo, triangulate):
         memo[id(f)] = geom
     return geom
 
+
+
+#: "Not given" for an argument that may be None.
+_NO_PAINT = object()
+
+
+def _translated_geometry(hit, key):
+    """``hit`` (a :func:`_face_geometry` entry) carried to the corners
+    ``key`` when those are its own corners all moved by one same offset —
+    what Move does to a whole selection — else None. Normal, area and the
+    triangulation stay; points move by the offset. A Move of every face of
+    a 15 799-face group made the open bake, the pick index and the
+    highlight walk earcut for every face again (night of 18-11). Positions
+    are single floats, so the corners land a few 1e-7 apart: 0.01 mm is
+    far below the welding tolerance."""
+    old = hit[0]
+    if old is None or hit[4] is None or not key[0]:
+        return None
+    if (len(old[0]) != len(key[0]) or len(old[1]) != len(key[1])
+            or any(len(a) != len(b) for a, b in zip(old[1], key[1]))):
+        return None
+    o0, k0 = old[0][0], key[0][0]
+    dx, dy, dz = k0[0] - o0[0], k0[1] - o0[1], k0[2] - o0[2]
+    tol = 1e-5
+    for ko, kn in zip((old[0], *old[1]), (key[0], *key[1])):
+        for a, b in zip(ko, kn):
+            if (abs(b[0] - a[0] - dx) > tol or abs(b[1] - a[1] - dy) > tol
+                    or abs(b[2] - a[2] - dz) > tol):
+                return None
+    tris = [tuple((p[0] + dx, p[1] + dy, p[2] + dz) for p in tri)
+            for tri in hit[3]]
+    c = hit[4] + QVector3D(dx, dy, dz)
+    flat = tuple(x for tri in tris for corner in tri for x in corner)
+    props = (hit[7][0], (c.x(), c.y(), c.z())) if hit[7] is not None else None
+    return (key, hit[1], hit[2], tris, c, hit[5], flat, props)
 
 
 def _finite_point(p) -> bool:
@@ -3297,9 +3351,17 @@ class Viewport(QOpenGLWidget):
         fc = self._frame_cache_key(mvp, w, h, style, mode)
         settled = self._frame_cache_track(
             fc[0] if fc is not None else tuple(mvp.data()))
+        # A drag's previews (the solid a tool previews, the movers of a
+        # Move) change on every pointer move while the model does not:
+        # with a frame kept they go over it, after the static passes,
+        # instead of the whole model being drawn again on each move.
+        # Drawn so on every frame, kept or not, so the two come out the
+        # same pixel for pixel (tests/test_frame_cache.py).
+        self._previews_after = True
         if fc is None:
             self._paint_static(mvp, w, h, style, mode, _fmark,
                                self._hover_entity)
+            self._draw_previews_after(mvp)
         else:
             # The model as the last frame left it, when nothing it shows
             # changed (a pointer move): see _frame_cache_key.
@@ -3314,7 +3376,14 @@ class Viewport(QOpenGLWidget):
                 # once, as before.
                 if settled:
                     self._frame_cache_store(fc, w, h)
+            self._draw_previews_after(mvp)
             self._paint_hover(mvp, w, h)
+        # A preview drawn over the kept model writes depth of its own.
+        tool = self.active_tool
+        provider = getattr(tool, "preview_faces", None) if tool else None
+        previews_on = (bool(getattr(self, "_preview_groups", None))
+                       or getattr(self, "_verts_preview", None) is not None
+                       or (callable(provider) and bool(provider())))
         # The view at rest: measure what it shows for the fitted sun map
         # (#958) — read from the depth the model just left, before the
         # rubber band and the overlay draw over it.
@@ -3352,7 +3421,7 @@ class Viewport(QOpenGLWidget):
         # redrawn over the dots fail GL_LESS where they are — and the
         # read-back already made of it is kept: over the plant of #158 it
         # was ~5 ms of every pointer move, reading the same depth again.
-        clean = (fc is not None and not depth_wire
+        clean = (fc is not None and not depth_wire and not previews_on
                  and not isinstance(getattr(self, "_hover_entity", None),
                                     Edge))
         kept = (clean and getattr(self, "_depth_snap", None) is not None
@@ -3858,8 +3927,9 @@ class Viewport(QOpenGLWidget):
         # and reads as a real solid; its wireframe goes on top via the rubber
         # band below.
         self._set_section_clip(False)
-        self._draw_preview_faces()
-        self._draw_groups_preview(mvp)
+        if not getattr(self, "_previews_after", False):
+            self._draw_preview_faces()
+            self._draw_groups_preview(mvp)
         self._draw_hidden_ghosts(mvp)
 
         self._draw_scaffold(mvp, w, h)
@@ -4108,6 +4178,15 @@ class Viewport(QOpenGLWidget):
                 self._gl.glDepthMask(GL_TRUE)
                 self._guides_vao.release()
 
+    def _draw_previews_after(self, mvp) -> None:
+        """The drag's previews over the model's static passes (see
+        ``_previews_after``)."""
+        self._previews_after = False
+        self._set_section_clip(False)
+        self._draw_preview_faces()
+        self._draw_groups_preview(mvp)
+        self._set_section_clip(True)
+
     def _frame_cache_key(self, mvp, w, h, style, mode):
         """What the model this frame draws depends on, when a pointer move
         may reuse the last frame's (``_frame_cache_restore``) — or None:
@@ -4129,13 +4208,8 @@ class Viewport(QOpenGLWidget):
                 or getattr(self, "_clip_vecs", None)
                 or getattr(sc, "show_hidden_objects", False)
                 or getattr(sc, "show_hidden_geometry", False)
-                or getattr(self, "_preview_groups", None)
                 or self._base_map_showing() or self._terrain_showing()
                 or self._photo_showing()):
-            return None
-        tool = self.active_tool
-        provider = getattr(tool, "preview_faces", None) if tool else None
-        if callable(provider) and provider():
             return None
         v3 = lambda v: (None if v is None  # noqa: E731
                         else (v.x(), v.y(), v.z()))
@@ -6576,14 +6650,20 @@ class Viewport(QOpenGLWidget):
         self._program.setUniformValue(self._loc_back_color,
                                       QVector4D(r, g, b, a))
 
-    def _selection_dot_colors(self, face) -> tuple:
+    def _selection_dot_colors(self, face, paint=_NO_PAINT,
+                              back_default=None, dots=None) -> tuple:
         """``(front_dot, back_dot)``: the selection dot colour for each side
         of ``face``, each picked against the paint that side shows — its
         material colour (or the open group's paint), the two-sided back
-        paint, or the style's back-face tint."""
+        paint, or the style's back-face tint.
+
+        ``paint`` (the open group's), ``back_default`` (the style's back
+        tint) and ``dots`` (a dict remembering each colour's dot) let a
+        caller asking for thousands of faces find those once."""
         from core.materials import effective_attrs
-        attrs = effective_attrs(face.attrs,
-                                _paint_of(self, self.scene.edit_group))
+        if paint is _NO_PAINT:
+            paint = _paint_of(self, self.scene.edit_group)
+        attrs = effective_attrs(face.attrs, paint)
         tex = attrs.get("texture")
         if tex is not None and tex.get("path"):
             front = None                      # a texture: colour unknown
@@ -6596,9 +6676,15 @@ class Viewport(QOpenGLWidget):
             col = back_attr.get("color")
             back = tuple(col) if col is not None else None
         else:
-            back = effective_back_color(
-                self._view_style(), self.scene)
-        return selection_dot_color(front), selection_dot_color(back)
+            back = (back_default if back_default is not None
+                    else effective_back_color(self._view_style(), self.scene))
+        if dots is None:
+            return selection_dot_color(front), selection_dot_color(back)
+        out = dots.get((front, back))
+        if out is None:
+            out = dots[(front, back)] = (selection_dot_color(front),
+                                         selection_dot_color(back))
+        return out
 
     def _set_back_face_color(self) -> None:
         # The style's Back color wins; else the scene's adopted tint (from
@@ -6741,6 +6827,7 @@ class Viewport(QOpenGLWidget):
     #: meshes and placements — the render/pick chunks and what hangs off
     #: them. Nothing but the document boundary makes them all stale at once.
     _DOCUMENT_CACHES = ("_group_chunks", "_inst_chunks", "_fp_memo",
+                        "_tex_face_memo",
                         "_proto_wrappers", "_proto_draw", "_faceme_cache",
                         "_proto_pts_store", "_container_obb", "_placement_frames",
                         "_pick_live", "_pick_foot_keep",
@@ -6808,6 +6895,9 @@ class Viewport(QOpenGLWidget):
         self._frozen_cache_version = None
         self._sil_table = None            # holds the old document's bakes
         self._pick_cat_memo = None        # ...and its pick triangles
+        self._fresh_edit_chunk = None     # ...and the open mesh's last bake
+        self._verts_preview = None        # a vertex drag cannot outlive it
+        self._sel_runs_memo = None        # ...and the selected faces
         self._pick_te_memo = None
         self._pick_loose_memo = None
         self._lazy_native_memo = None
@@ -7855,47 +7945,54 @@ class Viewport(QOpenGLWidget):
                 self._pv_vcol_vao, self._pv_vcol_vbo = \
                     self._create_dynamic_vcol()
                 self._pv_tex_vao, self._pv_tex_vbo = self._create_dynamic_uv()
-            edge_parts: list = []
-            vcol_parts: list = []
-            tex_parts: dict = {}
+            chunks = []
             for g in groups:
                 if getattr(g, "billboard", False):
                     # Face-me figures preview through their OWN pass (the
                     # anchor rides the preview transform): their raw mesh
                     # quad in the scratch VBOs showed a swimming texture.
                     continue
-                ch = self._preview_chunk(g)
-                if ch["edges"]:
-                    edge_parts.append(ch["edges"])
-                if ch["vcol"]:
-                    vcol_parts.append(ch["vcol"])
-                for path, raw in ch["by_texture"].items():
-                    tex_parts.setdefault(path, []).append(raw)
-            raw = b"".join(edge_parts)
-            self._pv_edges_vbo.bind()
-            self._pv_edges_vbo.allocate(raw or b"\0" * 24, max(len(raw), 24))
-            self._pv_edges_vbo.release()
-            self._pv_edges_count = len(raw) // 12
-            raw = b"".join(vcol_parts)
-            self._pv_vcol_vbo.bind()
-            self._pv_vcol_vbo.allocate(raw or b"\0" * 24, max(len(raw), 24))
-            self._pv_vcol_vbo.release()
-            self._pv_vcol_count = len(raw) // 24
-            runs: list = []
-            blobs: list = []
-            off = 0
-            for path, parts in tex_parts.items():
-                blob = b"".join(parts)
-                runs.append((path, off // 20, len(blob) // 20))
-                blobs.append(blob)
-                off += len(blob)
-            raw = b"".join(blobs)
-            self._pv_tex_vbo.bind()
-            self._pv_tex_vbo.allocate(raw or b"\0" * 24, max(len(raw), 24))
-            self._pv_tex_vbo.release()
-            self._pv_tex_runs = runs
+                chunks.append(self._preview_chunk(g))
+            self._upload_preview_chunks(chunks)
         finally:
             self.doneCurrent()
+
+    def _upload_preview_chunks(self, chunks) -> None:
+        """Upload the arrays of ``chunks`` to the scratch VBOs the groups
+        preview draws at its offset (GL context current)."""
+        edge_parts: list = []
+        vcol_parts: list = []
+        tex_parts: dict = {}
+        for ch in chunks:
+            if ch["edges"]:
+                edge_parts.append(ch["edges"])
+            if ch["vcol"]:
+                vcol_parts.append(ch["vcol"])
+            for path, raw in ch["by_texture"].items():
+                tex_parts.setdefault(path, []).append(raw)
+        raw = b"".join(edge_parts)
+        self._pv_edges_vbo.bind()
+        self._pv_edges_vbo.allocate(raw or b"\0" * 24, max(len(raw), 24))
+        self._pv_edges_vbo.release()
+        self._pv_edges_count = len(raw) // 12
+        raw = b"".join(vcol_parts)
+        self._pv_vcol_vbo.bind()
+        self._pv_vcol_vbo.allocate(raw or b"\0" * 24, max(len(raw), 24))
+        self._pv_vcol_vbo.release()
+        self._pv_vcol_count = len(raw) // 24
+        runs: list = []
+        blobs: list = []
+        off = 0
+        for path, parts in tex_parts.items():
+            blob = b"".join(parts)
+            runs.append((path, off // 20, len(blob) // 20))
+            blobs.append(blob)
+            off += len(blob)
+        raw = b"".join(blobs)
+        self._pv_tex_vbo.bind()
+        self._pv_tex_vbo.allocate(raw or b"\0" * 24, max(len(raw), 24))
+        self._pv_tex_vbo.release()
+        self._pv_tex_runs = runs
 
     def _preview_chunk(self, g):
         """The arrays of a mover's scratch copy. A nested piece handed in as
@@ -7905,6 +8002,9 @@ class Viewport(QOpenGLWidget):
         return self._group_chunk(proxies.get(id(g), g))
 
     def end_groups_preview(self) -> None:
+        if getattr(self, "_verts_preview", None) is not None:
+            self.end_verts_preview()
+            return
         if not getattr(self, "_preview_external", False):
             self._frozen_cache_version = None
             self._edges_version = -1      # resync with the movers back in
@@ -7926,6 +8026,153 @@ class Viewport(QOpenGLWidget):
         self._pv_edges_count = 0
         self._pv_vcol_count = 0
         self._pv_tex_runs = []
+
+    #: Most faces a vertex drag may bend (a corner moving, another not)
+    #: for the drag to preview from frozen arrays; past it the old live
+    #: rebuild stays — the bent faces are drawn again on every frame.
+    VERTS_PREVIEW_BENT_MAX = 1500
+
+    def begin_verts_preview(self, verts):
+        """Preview a drag of ``verts`` (the open mesh's own vertices) the
+        way a group drag is previewed: nothing is mutated until the
+        commit. The open mesh is baked ONCE in two parts — what stays,
+        drawn in place of the open group's chunk, and the faces and
+        edges every corner of which rides the drag, uploaded to the
+        scratch VBOs and drawn at the preview offset. Each frame of a
+        Move of the 15 799-face flag re-baked the whole open group,
+        ~0.4 s (night of 18-11).
+
+        Returns ``(bent faces, bent edges, the open group's paint)`` — the
+        ones with corners on both sides: the tool draws the faces itself,
+        moved, each frame, the viewport the edges — or
+        None when the preview does not apply (no group open, a small
+        mesh, copies sharing it, too many bent faces), and the tool keeps
+        the live rebuild."""
+        sc = self.scene
+        E = sc.edit_group
+        mesh = sc.mesh
+        if (E is None or not verts or self._program is None
+                or getattr(self, "_verts_preview", None) is not None
+                or getattr(self, "_preview_groups", None)):
+            return None
+        array_bake = _array_bake()
+        if not array_bake.can_bake_built(mesh):
+            return None
+        # A mesh drawn twice (a component's copies, an instance) would
+        # show the hole the static part leaves.
+        holders = [g for g in self._placements()
+                   if getattr(g, "mesh", None) is mesh]
+        if len(holders) != 1 or getattr(holders[0], "xform", None) is not None:
+            return None
+        if sc.loose_mesh is mesh:
+            return None
+        moving = {id(v) for v in verts}
+        touched: dict = {}
+        for v in verts:
+            for e in getattr(v, "edges", ()):
+                for f in e.faces:
+                    touched[id(f)] = f
+        ride, bent = set(), []
+        for f in touched.values():
+            corners = [v for loop in (f.loop, *f.hole_loops) for v in loop]
+            if all(id(v) in moving for v in corners):
+                ride.add(id(f))
+            else:
+                bent.append(f)
+        if len(bent) > self.VERTS_PREVIEW_BENT_MAX:
+            return None
+        bent_ids = {id(f) for f in bent}
+        stay_f, ride_f = [], []
+        for f in mesh.faces:
+            if id(f) in ride:
+                ride_f.append(f)
+            elif id(f) not in bent_ids:
+                stay_f.append(f)
+        stay_e, ride_e, bent_e = [], [], []
+        for e in mesh.edges:
+            a, b = id(e.v0) in moving, id(e.v1) in moving
+            if a and b:
+                ride_e.append(e)
+            elif a or b:
+                bent_e.append(e)
+            else:
+                stay_e.append(e)
+        paint = _paint_of(self, holders[0])    # the paint above it too
+        msig = _material_sig(paint)
+        # The pick index answers for the drag from the frozen version:
+        # made now, from the whole open group's chunk — made later, the
+        # chunk would be the static part, and the walk is ~1 s.
+        try:
+            self._pick_index()
+        except Exception:  # noqa: BLE001 — a pick index made later is slower, not wrong
+            pass
+        stay = array_bake.bake_built(self, mesh, paint, msig, None,
+                                     stay_f, stay_e)
+        rider = array_bake.bake_built(self, mesh, paint, msig, None,
+                                      ride_f, ride_e)
+        if stay is None or rider is None:
+            return None
+        stay["vkey"] = (sc.version, id(mesh))
+        stay["uid"] = next(_chunk_uid)
+        stay["mesh"] = mesh
+        hide = ride | bent_ids
+        hide_e = {id(e) for e in ride_e} | {id(e) for e in bent_e}
+        import numpy as np
+        if bent_e:
+            ends = np.array([(p.x(), p.y(), p.z()) for e in bent_e
+                             for p in (e.v0.position, e.v1.position)],
+                            dtype=np.float32)
+            rides = np.array([id(v) in moving for e in bent_e
+                              for v in (e.v0, e.v1)], dtype=np.float32)
+            drawn = np.array([not getattr(e, "soft", False)
+                              and not getattr(e, "hidden", False)
+                              and sc.entity_visible(e)
+                              for e in bent_e for _ in (0, 1)], dtype=bool)
+            ends, rides = ends[drawn], rides[drawn]
+        else:
+            ends = rides = None
+        self._verts_preview = {"mesh": mesh, "stay": stay, "hide": hide,
+                               "hide_e": hide_e, "bent_ends": ends,
+                               "bent_rides": rides,
+                               "token": object()}
+        self._frozen_cache_version = sc.version
+        self._edges_version = -1          # one resync with the static part
+        # The index made above answers under the frozen version too: the
+        # geometry it holds is the geometry the drag starts from.
+        pc = getattr(self, "_pick_index_cache", None)
+        if pc is not None:
+            self._pick_index_cache = (
+                (_content_ver(self),) + tuple(pc[0][1:]),) + tuple(pc[1:])
+        # The scratch copy draws through the groups preview's pass. No
+        # placement changes: the pick index keeps what it has.
+        self._preview_offset = QVector3D(0.0, 0.0, 0.0)
+        self._preview_matrix = None
+        self.makeCurrent()
+        try:
+            if getattr(self, "_pv_edges_vao", None) is None:
+                self._pv_edges_vao, self._pv_edges_vbo = self._create_dynamic()
+                self._pv_vcol_vao, self._pv_vcol_vbo = \
+                    self._create_dynamic_vcol()
+                self._pv_tex_vao, self._pv_tex_vbo = self._create_dynamic_uv()
+            self._upload_preview_chunks([rider])
+        finally:
+            self.doneCurrent()
+        self.update()
+        return bent, bent_e, paint
+
+    def end_verts_preview(self) -> None:
+        if getattr(self, "_verts_preview", None) is None:
+            return
+        self._verts_preview = None
+        self._frozen_cache_version = None
+        self._edges_version = -1
+        self._sel_runs_memo = None
+        self._preview_offset = QVector3D(0.0, 0.0, 0.0)
+        self._preview_matrix = None
+        self._pv_edges_count = 0
+        self._pv_vcol_count = 0
+        self._pv_tex_runs = []
+        self.update()
 
     def set_groups_preview_offset(self, delta: QVector3D) -> None:
         self._preview_offset = QVector3D(delta)
@@ -7953,7 +8200,8 @@ class Viewport(QOpenGLWidget):
     def _draw_groups_preview(self, mvp) -> None:
         """Draw the frozen scratch copies of the moving groups at the
         current preview offset: one translated MVP, zero array churn."""
-        if not getattr(self, "_preview_groups", None):
+        if (not getattr(self, "_preview_groups", None)
+                and getattr(self, "_verts_preview", None) is None):
             return
         m = self._groups_preview_transform()
         self._program.setUniformValue(self._loc_mvp, mvp * m)
@@ -7993,6 +8241,25 @@ class Viewport(QOpenGLWidget):
             self._gl.glDrawArrays(GL_LINES, 0, n)
             self._pv_edges_vao.release()
         self._program.setUniformValue(self._loc_mvp, mvp)
+        vpv = getattr(self, "_verts_preview", None)
+        if vpv is not None and vpv.get("bent_ends") is not None \
+                and len(vpv["bent_ends"]):
+            # The edges a vertex drag stretches: one end rides, one stays.
+            import numpy as np
+            off = getattr(self, "_preview_offset", None) or QVector3D()
+            d = np.array([off.x(), off.y(), off.z()], dtype=np.float32)
+            pts = vpv["bent_ends"] + vpv["bent_rides"][:, None] * d
+            raw = pts.astype(np.float32).tobytes()
+            if getattr(self, "_pv_bent_vao", None) is None:
+                self._pv_bent_vao, self._pv_bent_vbo = self._create_dynamic()
+            self._pv_bent_vbo.bind()
+            self._pv_bent_vbo.allocate(raw, len(raw))
+            self._pv_bent_vbo.release()
+            ec = self._effective_style().edge_color
+            self._set_color(ec[0], ec[1], ec[2], 1.0)
+            self._pv_bent_vao.bind()
+            self._gl.glDrawArrays(GL_LINES, 0, len(pts))
+            self._pv_bent_vao.release()
 
     # ---- Hidden things shown (View ▸ Hidden Objects / Geometry) ------------
     def _sync_hidden_ghosts(self) -> bool:
@@ -8159,6 +8426,10 @@ class Viewport(QOpenGLWidget):
     #: A face this big (corners, holes included) is worth handing to the
     #: native earcut ahead of ``_tris_of``.
     NATIVE_TRIS_MIN_CORNERS = 64
+
+    #: Faces whose textured triangles :meth:`_append_textured_face` keeps
+    #: (about 100 bytes each); past it the memo starts again.
+    TEX_FACE_MEMO_MAX = 300_000
 
     def _seed_tris_native(self, faces) -> None:
         """Fill ``_tris_of``'s memo for the big faces among ``faces`` in one
@@ -9035,6 +9306,8 @@ class Viewport(QOpenGLWidget):
         return (_content_ver(self), self._placements_epoch(), id(sc.mesh),
                 id(sc.edit_group), self._rest_is_hidden(),
                 tuple(sorted(getattr(self, "_preview_groups", None) or ())),
+                id((getattr(self, "_verts_preview", None)
+                    or {}).get("token")),
                 frozenset(map(id, sup)) if sup else None,
                 bool(getattr(sc, "show_hidden_objects", False)),
                 bool(getattr(sc, "show_hidden_geometry", False)),
@@ -9049,8 +9322,12 @@ class Viewport(QOpenGLWidget):
         # moment the user clicked it.
         sel_loose = array("f")
         sel_edge_parts = []
+        vpv = getattr(self, "_verts_preview", None)
+        hide_e = vpv["hide_e"] if vpv is not None else ()
         for ent in self.scene.selection:
             if isinstance(ent, Edge):
+                if id(ent) in hide_e:
+                    continue             # it rides the vertex drag
                 sel_loose.extend([ent.a.x(), ent.a.y(), ent.a.z(),
                                   ent.b.x(), ent.b.y(), ent.b.z()])
             elif isinstance(ent, Group):
@@ -9080,17 +9357,7 @@ class Viewport(QOpenGLWidget):
             self._selected_vbo, "sel_edges",
             [sel_loose.tobytes()] + sel_edge_parts) // 12
 
-        sel_face_runs: dict = {}     # (front_dot, back_dot) -> array
-        for ent in self.scene.selection:
-            if isinstance(ent, Face):
-                buf = sel_face_runs.setdefault(
-                    self._selection_dot_colors(ent), array("f"))
-                for t0, t1, t2 in ent.triangulate():
-                    buf.extend([
-                        t0.x(), t0.y(), t0.z(),
-                        t1.x(), t1.y(), t1.z(),
-                        t2.x(), t2.y(), t2.z(),
-                    ])
+        sel_face_runs = self._selected_face_runs()
         self._sel_faces_spans = []
         first = 0
         for (front, back), buf in sel_face_runs.items():
@@ -9100,6 +9367,150 @@ class Viewport(QOpenGLWidget):
         self._sel_faces_count = self._upload_vbo(
             self._sel_faces_vbo, "sel_faces",
             [buf.tobytes() for buf in sel_face_runs.values()]) // 12
+
+    #: From this many selected faces on, a selection that only moved
+    #: (every corner by one same offset) shifts its highlight instead of
+    #: building it again.
+    SEL_SHIFT_MIN = 256
+
+    def _selected_face_runs(self) -> dict:
+        """``{(front_dot, back_dot): array}`` — the triangles of the
+        selected faces, by the dot colours they show.
+
+        A big selection inside an open group (every face of a 15 800-face
+        flag) was earcut face by face on each sync: ~0.8 s every update of
+        a Move, three of them per move (night of 18-11). The open mesh's
+        per-face geometry answers for faces that stayed where they were,
+        and a selection whose corners all moved by one same offset — what
+        Move does — shifts the triangles it had."""
+        import numpy as np
+        faces = [e for e in self.scene.selection if isinstance(e, Face)]
+        vpv = getattr(self, "_verts_preview", None)
+        if vpv is not None:
+            # Mid vertex drag: the scratch copy carries the moving faces.
+            hide = vpv["hide"]
+            faces = [f for f in faces if id(f) not in hide]
+        if len(faces) >= getattr(self, "SEL_SHIFT_MIN", 256):
+            # The selection is a set: the same faces can come in another
+            # order after an edit. Any order draws the same.
+            faces.sort(key=id)
+        paint = _paint_of(self, self.scene.edit_group)
+        back_default = effective_back_color(self._view_style(), self.scene)
+        dots: dict = {}
+        colors = [self._selection_dot_colors(f, paint, back_default, dots)
+                  for f in faces]
+        corners = None
+        if len(faces) >= getattr(self, "SEL_SHIFT_MIN", 256):
+            corners = np.array(
+                [(p.x(), p.y(), p.z()) for f in faces
+                 for loop in (f.vertices, *f.holes) for p in loop],
+                dtype=np.float64)
+            sig = (id(self.scene.mesh), tuple(id(f) for f in faces),
+                   tuple(colors))
+            kept = getattr(self, "_sel_runs_memo", None)
+            if (kept is not None and kept[0] == sig
+                    and kept[1].shape == corners.shape):
+                d = corners - kept[1]
+                # Positions are single floats: one offset added to all
+                # corners lands them a few 1e-7 apart. 0.01 mm is far below
+                # the welding tolerance and far below a pixel.
+                if not len(d) or float(np.ptp(d, axis=0).max()) < 1e-5:
+                    off = d[0] if len(d) else np.zeros(3)
+                    runs = {}
+                    for key, arr in kept[2].items():
+                        a = np.frombuffer(arr, np.float32).reshape(-1, 3)
+                        if off.any():
+                            a = (a.astype(np.float64) + off).astype(np.float32)
+                        runs[key] = array("f", a.tobytes())
+                    self._sel_runs_memo = (sig, corners, {
+                        k: v.tobytes() for k, v in runs.items()}, faces)
+                    return runs
+        from_chunk = getattr(self, "_selected_runs_from_chunk", None)
+        runs = from_chunk(faces, colors) if callable(from_chunk) else None
+        if runs is not None:
+            if corners is not None:
+                self._sel_runs_memo = (sig, corners,
+                                       {k: v.tobytes() for k, v in runs.items()},
+                                       faces)
+            return runs
+        gmemo = (self.scene.mesh.__dict__.get("_face_geom_memo")
+                 if self.scene.edit_group is not None else None)
+        if gmemo is not None:
+            from core.triangulate import triangulate as _earcut
+        runs: dict = {}
+        for f, key in zip(faces, colors):
+            buf = runs.setdefault(key, array("f"))
+            if gmemo is not None:
+                buf.extend(_face_geometry(f, gmemo, _earcut)[6])
+                continue
+            for t0, t1, t2 in f.triangulate():
+                buf.extend([
+                    t0.x(), t0.y(), t0.z(),
+                    t1.x(), t1.y(), t1.z(),
+                    t2.x(), t2.y(), t2.z(),
+                ])
+        if corners is not None:
+            # The faces are held so no new face takes one of their ids.
+            self._sel_runs_memo = (sig, corners,
+                                   {k: v.tobytes() for k, v in runs.items()},
+                                   faces)
+        else:
+            self._sel_runs_memo = None
+        return runs
+
+    def _selected_runs_from_chunk(self, faces, colors):
+        """:meth:`_selected_face_runs` from the open group's chunk — its
+        triangles of each selected face, in the face's order — or ``None``
+        (not inside a big group, a face not in its chunk). The same
+        triangles the face's own triangulation makes; the open mesh baked
+        from arrays keeps no per-face memo for the walk to read."""
+        import numpy as np
+        if len(faces) < getattr(self, "SEL_SHIFT_MIN", 256):
+            return None
+        scene = self.scene
+        E = scene.edit_group
+        mesh = scene.mesh
+        if (E is None or getattr(E, "xform", None) is not None
+                or getattr(E, "mesh", None) is not mesh
+                or not hasattr(self, "_group_chunk")):
+            return None
+        ch = self._group_chunk(E)
+        drawn = ch.get("faces")
+        if ch.get("mesh") is not mesh or drawn is None or ch.get("v0") is None:
+            return None
+        memo = ch.get("_face_rows")
+        # A Move shifts the chunk in place (a new rev, new arrays).
+        mkey = (ch.get("rev"), id(ch["v0"]), id(drawn))
+        if memo is None or memo[0] != mkey:
+            te = np.asarray(ch["tri_ent"], dtype=np.int64)
+            order = np.argsort(te, kind="stable")
+            n = len(drawn)
+            starts = np.searchsorted(te[order], np.arange(n), side="left")
+            ends = np.searchsorted(te[order], np.arange(n), side="right")
+            t = np.stack([ch["v0"], ch["v0"] + ch["e1"], ch["v0"] + ch["e2"]],
+                         axis=1).astype(np.float32).reshape(-1, 9)
+            memo = ch["_face_rows"] = (mkey,
+                                       {id(f): i for i, f in enumerate(drawn)},
+                                       order, starts, ends, t)
+        _k, index, order, starts, ends, t = memo
+        by_key: dict = {}
+        for f, key in zip(faces, colors):
+            i = index.get(id(f))
+            if i is None or drawn[i] is not f:
+                return None
+            by_key.setdefault(key, []).append(i)
+        runs: dict = {}
+        for key, ix in by_key.items():
+            ix = np.asarray(ix, dtype=np.int64)
+            a, b = starts[ix], ends[ix]
+            counts = b - a
+            if counts.sum():
+                rows = order[np.repeat(a - np.cumsum(counts) + counts,
+                                       counts) + np.arange(counts.sum())]
+                runs[key] = array("f", t[rows].tobytes())
+            else:
+                runs[key] = array("f")
+        return runs
 
     def _bucket_back_face(self, face, back):
         """Build the back-side override copy of a two-side-painted face.
@@ -9144,18 +9555,53 @@ class Viewport(QOpenGLWidget):
         world position. The SAME function the .skp exporter writes from, so
         the viewport cannot drift from what the .skp file will show (it did: a
         private copy of the projection here used a different basis)."""
+        # Remembered per face while its corners and its map stay as they
+        # are: an edit inside a big textured group re-bakes the whole group,
+        # and every untouched face's earcut, normal and UV walk was done
+        # again — most of the ~0.75 s each paint, line or undo took inside a
+        # 9 674-face group of the Plaza (night of 18-11). The key is the
+        # exact corners (holes too) and the whole map; the shade comes from
+        # the plane and the fixed light only, so a hit writes the floats a
+        # fresh walk would, into the same run.
+        memo = self.__dict__.get("_tex_face_memo")
+        if memo is None:
+            memo = self.__dict__["_tex_face_memo"] = {}
+        ckey = None
+        if hasattr(face, "loop"):           # a preview face: nothing to keep
+            ckey = (tuple([(p.x(), p.y(), p.z())
+                           for p in [v.position for v in face.loop]]),
+                    tuple([tuple([(v.position.x(), v.position.y(),
+                                   v.position.z()) for v in h])
+                           for h in face.hole_loops]),
+                    repr(sorted(tex.items())))
+            # One slot per face AND map: a two-sided face bakes its front
+            # and its back here, each with its own map.
+            slot = (id(face), ckey[2])
+            hit = memo.get(slot)
+            if hit is not None and hit[0] is face and hit[1] == ckey:
+                buf = by_texture.get(hit[2])
+                if buf is None:
+                    buf = by_texture[hit[2]] = array("f")
+                buf.extend(hit[3])
+                return
         key = (tex["path"], self._shade_factor(self._normal_of(face)))
         buf = by_texture.get(key)
         if buf is None:
             buf = by_texture[key] = array("f")
+        out = array("f")
         gu, cu, gv, cv = face_uv_axes(tex, face.normal())
         for tri in self._tris_of(face):
             for p in tri:
-                buf.extend([
+                out.extend([
                     p.x(), p.y(), p.z(),
                     QVector3D.dotProduct(gu, p) + cu,
                     QVector3D.dotProduct(gv, p) + cv,
                 ])
+        buf.extend(out)
+        if ckey is not None:
+            if len(memo) > getattr(self, "TEX_FACE_MEMO_MAX", 300_000):
+                memo.clear()
+            memo[slot] = (face, ckey, key, out)
 
     def _faceme_dir(self, anchor: QVector3D) -> QVector3D:
         """Direction a face-me sprite at ``anchor`` turns toward (not yet
@@ -14344,6 +14790,9 @@ class Viewport(QOpenGLWidget):
         by the instance matrix."""
         if getattr(group, "xform", None) is not None:
             return self._instance_chunk(group)
+        vpv = getattr(self, "_verts_preview", None)
+        if vpv is not None and getattr(group, "mesh", None) is vpv["mesh"]:
+            return vpv["stay"]           # a vertex drag: what stays
         cache = getattr(self, "_group_chunks", None)
         if cache is None:
             cache = self._group_chunks = {}
@@ -14432,6 +14881,18 @@ class Viewport(QOpenGLWidget):
                 entry["vkey"] = vkey
                 entry["serial"] = getattr(mesh, "_mut_serial", None)
                 return entry
+        # The mesh open for editing, baked a moment ago at this very scene
+        # version for another holder in the same paint: the bake is made of
+        # the mesh and the paint alone, so it is the same bake. An open
+        # component with copies elsewhere was baked twice per edit — once
+        # for the open group, once as the copies' prototype (~0.4 s each on
+        # the 15 799-face flag of the Plaza Yanque, night of 18-11).
+        fresh = getattr(self, "_fresh_edit_chunk", None)
+        if (fresh is not None and fresh[0] == vkey and fresh[1] is mesh
+                and fresh[2] == msig and fresh[3].get("mesh") is mesh
+                and fresh[3].get("vkey") == vkey):
+            cache[id(group)] = fresh[3]
+            return fresh[3]
         fp = self._group_fp(group)
         if msig is not None:
             fp = fp + (("paint",) + msig,)   # past [:3]/[4:]: the disk key too
@@ -14464,6 +14925,13 @@ class Viewport(QOpenGLWidget):
         # for ~6 s. Keyed by a STABLE content digest (the in-session
         # fingerprint uses process-salted hash()).
         _loader = getattr(self, "_chunk_cache_load", None)   # stub VPs in tests
+        # Not for the mesh being edited: its content was just changed by
+        # hand, so no saved chunk has it, and the stable digest the lookup
+        # computes walked the whole open group on every edit (~0.1 s on a
+        # 9 674-face group of the Plaza).
+        _editing = getattr(self, "_editing_meshes", None)
+        if callable(_editing) and id(mesh) in _editing():
+            _loader = None
         disk = _loader(group, fp, vkey) if callable(_loader) else None
         if disk is not None and not self._samples_match(disk, mesh):
             disk = None      # same digest, turned geometry (see above)
@@ -14478,6 +14946,32 @@ class Viewport(QOpenGLWidget):
                       (_time_mod.perf_counter() - _c0) * 1000.0,
                       extra=f"faces={disk['nf']}", floor=0.0)
             return disk
+        # A big built mesh is baked from arrays — the kernel's face
+        # geometry and NumPy — the very chunk the walk below makes
+        # (tests/test_array_bake_built.py): the mesh open for editing is
+        # baked again on every edit, ~0.4–1.3 s for the 15 799 faces of a
+        # flag walked in Python (night of 18-11).
+        if array_bake.can_bake_built(mesh):
+            entry = array_bake.bake_built(self, mesh, paint, msig, fp)
+            if entry is not None:
+                entry["vkey"] = vkey
+                entry["uid"] = next(_chunk_uid)
+                entry["serial"] = getattr(mesh, "_mut_serial", None)
+                if _PERF:
+                    _plog("chunk_rebuild_arrays",
+                          (_time_mod.perf_counter() - _c0) * 1000.0,
+                          extra=f"faces={len(entry['faces'])}")
+                _flags_read(mesh, entry)
+                entry["mesh"] = mesh
+                cache[id(group)] = entry
+                editing = getattr(self, "_editing_meshes", None)
+                if callable(editing) and id(mesh) in editing():
+                    self._fresh_edit_chunk = (vkey, mesh, msig, entry)
+                else:
+                    _store = getattr(self, "_chunk_cache_store", None)
+                    if callable(_store):
+                        _store(mesh, entry)
+                return entry
         import numpy as np
         mesh = group.mesh
         edges_data = array("f")
@@ -14723,6 +15217,8 @@ class Viewport(QOpenGLWidget):
         cache[id(group)] = entry
         _store = getattr(self, "_chunk_cache_store", None)   # stub VPs in tests
         editing = getattr(self, "_editing_meshes", None)
+        if callable(editing) and id(mesh) in editing():
+            self._fresh_edit_chunk = (vkey, mesh, msig, entry)
         if not (callable(editing) and id(mesh) in editing()):
             # The per-face memo only pays off for the mesh being edited
             # (each stroke rebuilds its chunk); kept for every mesh it cost
@@ -15976,6 +16472,51 @@ class Viewport(QOpenGLWidget):
                 billboard=False, hidden=False, locked=False, layer=None)
         return w
 
+    #: From this many faces on, the open mesh's part of the pick index
+    #: comes from its chunk (see :meth:`_open_mesh_pick_part`).
+    PICK_FROM_CHUNK_MIN = 500
+
+    def _open_mesh_pick_part(self):
+        """``(entities, areas, visible, selectable, (v0, e1, e2, tri_ent))``
+        of the open mesh's faces, read from the open group's chunk — the
+        triangles and areas the per-face walk would make, in its order
+        (tests/test_pick_open_mesh_from_chunk.py) — or ``None`` to walk.
+
+        Inside a 9 674-face group the walk was ~0.4 s an edit: every face
+        triangulated again and asked its layer twice. A face that is not
+        hidden is visible and selectable by its layer alone, so each layer
+        is asked once. Only when no face is hidden: the chunk leaves those
+        out, and the walk keeps them (as not visible)."""
+        scene = self.scene
+        E = scene.edit_group
+        mesh = scene.mesh
+        if (E is None or getattr(E, "xform", None) is not None
+                or getattr(E, "mesh", None) is not mesh
+                or len(mesh.faces) < getattr(self, "PICK_FROM_CHUNK_MIN", 500)
+                or not hasattr(self, "_group_chunk")):
+            return None
+        ch = self._group_chunk(E)
+        faces = mesh.faces
+        drawn = ch.get("faces")
+        if (ch.get("mesh") is not mesh or drawn is None
+                or len(drawn) != len(faces) or ch.get("v0") is None
+                or not all(a is b for a, b in zip(drawn, faces))):
+            return None
+        from core import layers as _layers
+        by_layer: dict = {}
+        vis: list = []
+        sel: list = []
+        for f in faces:
+            name = _layers.layer_of(f)
+            hit = by_layer.get(name)
+            if hit is None:
+                hit = by_layer[name] = (scene.entity_visible(f),
+                                        scene.entity_selectable(f))
+            vis.append(hit[0])
+            sel.append(hit[1])
+        return ([(f, None) for f in faces], ch["areas"].tolist(), vis, sel,
+                (ch["v0"], ch["e1"], ch["e2"], ch["tri_ent"]))
+
     def _pick_index(self, near=None):
         """Flat NumPy pick index of the scene — triangles of every loose and
         group face (with visibility/selectability masks and areas) plus the
@@ -16047,10 +16588,24 @@ class Viewport(QOpenGLWidget):
         tris_of = getattr(self, "_tris_of", None) or \
             (lambda f: f.triangulate())
 
+        # Inside a group its faces are the loose part, rebuilt here on every
+        # edit: the per-face geometry its chunk keeps (exact corners → the
+        # same normal, area and earcut) saves the walk for every face the
+        # edit did not touch — ~0.3 s an edit in a 9 674-face group of the
+        # Plaza (night of 18-11).
+        gmemo = None
+        if scene.edit_group is not None and getattr(self, "_tris_of", None):
+            gmemo = scene.mesh.__dict__.get("_face_geom_memo")
+        if gmemo is not None:
+            from core.triangulate import triangulate as _earcut
+
         def add_face(f, grp, vis, sel, infer=None, loose=None):
             i = len(entities)
             entities.append((f, grp))
-            ent_area.append(area_of(f))
+            geom = (_face_geometry(f, gmemo, _earcut)
+                    if gmemo is not None and grp is None
+                    and hasattr(f, "loop") else None)
+            ent_area.append(area_of(f) if geom is None else geom[2])
             ent_vis.append(vis)
             ent_sel.append(sel)
             # What the snap engine may INFER FROM: selectable, except that
@@ -16058,6 +16613,11 @@ class Viewport(QOpenGLWidget):
             # even though it cannot be picked (see _face_hits "infer").
             ent_infer.append(sel if infer is None else infer)
             ent_loose.append((grp is None) if loose is None else loose)
+            if geom is not None:
+                for t0, t1, t2 in geom[3]:
+                    tris.append(t0 + t1 + t2)
+                    tri_ent.append(i)
+                return
             for t0, t1, t2 in tris_of(f):
                 tris.append((t0.x(), t0.y(), t0.z(),
                              t1.x(), t1.y(), t1.z(),
@@ -16071,9 +16631,22 @@ class Viewport(QOpenGLWidget):
         if lmemo is not None and lmemo[0] == key[:4]:
             loose = lmemo[1]
         else:
-            for f in scene.faces:
-                add_face(f, None, scene.entity_visible(f),
-                         scene.entity_selectable(f))
+            # (Test stand-ins of the viewport have no such part.)
+            part = getattr(self, "_open_mesh_pick_part", None)
+            fast = part() if callable(part) else None
+            if fast is not None:
+                f_ents, f_area, f_vis, f_sel, f_tris = fast
+                entities.extend(f_ents)
+                ent_area.extend(f_area)
+                ent_vis.extend(f_vis)
+                ent_sel.extend(f_sel)
+                ent_infer.extend(f_sel)
+                ent_loose.extend([True] * len(f_ents))
+            else:
+                f_tris = None
+                for f in scene.faces:
+                    add_face(f, None, scene.entity_visible(f),
+                             scene.entity_selectable(f))
             # The loose mesh drawn AROUND an open group / component: the
             # rest of the model when it was never grouped. It cannot be
             # picked or selected from inside the context, but it is drawn
@@ -16089,22 +16662,33 @@ class Viewport(QOpenGLWidget):
                              loose=True)
             # Loose part → arrays; groups append their cached chunk arrays.
             cells = None
-            if tris:
-                t = np.asarray(tris, dtype=np.float64).reshape(-1, 3, 3)
+            if tris or f_tris is not None:
+                t = (np.asarray(tris, dtype=np.float64).reshape(-1, 3, 3)
+                     if tris else np.zeros((0, 3, 3)))
+                v0, e1, e2 = t[:, 0], t[:, 1] - t[:, 0], t[:, 2] - t[:, 0]
+                te = np.asarray(tri_ent, dtype=np.int64)
+                if f_tris is not None:
+                    # The open mesh's triangles come first, as its faces.
+                    v0 = np.concatenate([f_tris[0], v0])
+                    e1 = np.concatenate([f_tris[1], e1])
+                    e2 = np.concatenate([f_tris[2], e2])
+                    te = np.concatenate([f_tris[3], te])
                 # The loose part on the span grid a group's chunk gets: an
                 # open group's own faces are loose, and as ONE span every
                 # ray that met the model ran Möller–Trumbore over all of
                 # them — 25 800 faces, ~2.5 ms a ray, a few rays a hover
                 # (#1392). The order is free: each triangle carries its
                 # entity.
-                *lt, cells = _split_chunk_spans(
-                    {"v0": t[:, 0], "e1": t[:, 1] - t[:, 0],
-                     "e2": t[:, 2] - t[:, 0],
-                     "tri_ent": np.asarray(tri_ent, dtype=np.int64)})
-                lt = tuple(lt)
+                if len(te):
+                    *lt, cells = _split_chunk_spans(
+                        {"v0": v0, "e1": e1, "e2": e2, "tri_ent": te})
+                    lt = tuple(lt)
+                else:
+                    lt = None
             else:
                 lt = None
-            loose = (list(entities), lt, len(tris),
+            loose = (list(entities), lt,
+                     len(tris) + (len(f_tris[3]) if f_tris is not None else 0),
                      np.asarray(ent_area, dtype=np.float64),
                      np.asarray(ent_vis, dtype=bool),
                      np.asarray(ent_sel, dtype=bool),
@@ -21139,6 +21723,8 @@ class Viewport(QOpenGLWidget):
         return getattr(self, "_ctrl_alone", False)
 
     def event(self, ev) -> bool:
+        if ev.type() in _HAND_EVENTS:
+            LAST_HAND[0] = _time_mod.monotonic()
         if (ev.type() in (QEvent.ShortcutOverride, QEvent.KeyPress)
                 and ev.key() not in self._MODIFIER_KEYS):
             self._ctrl_alone = False

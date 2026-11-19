@@ -5105,10 +5105,20 @@ class ScenesPanel(QWidget):
         if self._thumb_queue and not queued:
             QTimer.singleShot(0, self._next_thumbnail)
 
+    #: The hand must have rested this long over the view before a scene's
+    #: picture is drawn: each is a whole render (0.1–0.4 s on the Plaza),
+    #: and one drawn between two moves of a drag is a stall in the drag.
+    HAND_REST_S = 2.0
+
     def _next_thumbnail(self) -> None:
         from shiboken6 import isValid
         if not isValid(self) or not self._thumb_queue or not self.thumbnails:
             self._thumb_queue = []
+            return
+        from views.viewport import hand_rested
+        if not hand_rested(self.HAND_REST_S):
+            from PySide6.QtCore import QTimer
+            QTimer.singleShot(int(self.HAND_REST_S * 1000), self._next_thumbnail)
             return
         view = self._thumb_queue.pop(0)
         if any(v is view for v in self._scene().saved_views):
@@ -6320,8 +6330,27 @@ class Tray(QDockWidget):
             (tr("Parts"), self.parts),
         ]))
 
+    #: From this many selected entities on, Entity info refreshes once a
+    #: burst of changes is over: its totals walk every face (~0.16 s for
+    #: the 15 800 faces of a flag, four times a Move, night of 18-11).
+    INFO_DEFER_FROM = 2000
+    INFO_DEFER_MS = 250
+
     def on_scene_changed(self) -> None:
-        self.entity_info.refresh()
+        timer = getattr(self, "_info_timer", None)
+        if (len(self.entity_info._window.viewport.scene.selection)
+                > self.INFO_DEFER_FROM):
+            if timer is None:
+                from PySide6.QtCore import QTimer
+                timer = self._info_timer = QTimer(self)
+                timer.setSingleShot(True)
+                timer.setInterval(self.INFO_DEFER_MS)
+                timer.timeout.connect(self.entity_info.refresh)
+            timer.start()
+        else:
+            if timer is not None:
+                timer.stop()
+            self.entity_info.refresh()
         # The materials panel scans every render face for its swatches —
         # ~0.5 s on an exploded 28k-face mesh, paid per EDIT when run
         # inline. Debounced: one refresh 300 ms after the last edit.

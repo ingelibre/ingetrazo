@@ -622,6 +622,18 @@ class MoveTool(Tool):
                 if begin is not None:
                     begin(self._groups)
                     self._vp_preview = True
+            elif (self._verts and not self._groups
+                  and getattr(viewport.scene, "edit_group", None) is not None):
+                # Vertices of a big open group: the same viewport-side
+                # preview — the rest of the mesh baked once, what rides
+                # the drag drawn at the offset, the faces it stretches
+                # drawn moved here (preview_faces). A frame re-baked the
+                # whole open group before (~0.4 s, night of 18-11).
+                begin = getattr(viewport, "begin_verts_preview", None)
+                got = begin(self._verts) if begin is not None else None
+                if got is not None:
+                    self._bent_faces, _e, self._bent_paint = got
+                    self._vp_preview = True
             self._gather_copy_entities(ctx)
             return
         self._commit(viewport, self._glided(ctx) - self.grab)
@@ -817,6 +829,29 @@ class MoveTool(Tool):
             d = self.hover_point - self.grab
             segments.extend((a + d, b + d) for a, b in self._base_segments)
         return segments
+
+    def preview_faces(self):
+        """Mid vertex drag (see begin_verts_preview): the faces it
+        stretches, drawn where they are going — with their own look."""
+        bent = getattr(self, "_bent_faces", None)
+        if (not bent or not getattr(self, "_vp_preview", False)
+                or self._copy):
+            return []
+        from core.geometry import Face as GeomFace
+        from core.materials import effective_attrs
+        d = self._preview_delta
+        moving = {id(v) for v in self._verts}
+        paint = getattr(self, "_bent_paint", None)
+        out = []
+        for f in bent:
+            if not f.attrs.get("hidden"):
+                out.append(GeomFace(
+                    [v.position + d if id(v) in moving else v.position
+                     for v in f.loop],
+                    [[v.position + d if id(v) in moving else v.position
+                      for v in h] for h in f.hole_loops],
+                    attrs=effective_attrs(f.attrs, paint) or None))
+        return out
 
     def value_label(self):
         if self._grip_rot is not None:
@@ -1330,4 +1365,5 @@ class MoveTool(Tool):
         self._base_segments = []
         self._groups_ghost_due = False
         self._vp_preview = False
+        self._bent_faces = []
         self._copy = False      # the Ctrl modifier arms ONE operation
