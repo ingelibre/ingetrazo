@@ -106,3 +106,22 @@ def test_a_menu_entrys_description_shows_in_the_status_bar():
     finally:
         w._saved_version = w.viewport.scene.version
         w.close()
+
+
+def test_the_picker_opens_on_the_colour_being_edited(monkeypatch):
+    # On a desktop with a native colour dialog (xcb + a platform theme) the
+    # constructor hands the colour to the native helper, and switching to
+    # Qt's own widgets afterwards dropped it: the picker opened on white
+    # with the fields at 0. Offscreen has no helper, so the switch is
+    # simulated by an options change that forgets the colour.
+    from views.color_dialog import _OpacityColorDialog
+    real = QColorDialog.setOptions
+
+    def forgetful(self, options):
+        real(self, options)
+        self.setCurrentColor(QColor(255, 255, 255))
+
+    monkeypatch.setattr(QColorDialog, "setOptions", forgetful)
+    dialog = _OpacityColorDialog(QColor(40, 120, 200, 128))
+    assert dialog.currentColor().getRgb()[:3] == (40, 120, 200)
+    assert dialog.picked_color().alpha() in (127, 128)

@@ -35,6 +35,13 @@ class _OpacityColorDialog(QColorDialog):
             options | QColorDialog.ColorDialogOption.DontUseNativeDialog)
         # The percent slider replaces Qt's small 0–255 Alpha channel box.
         self.setOption(QColorDialog.ColorDialogOption.ShowAlphaChannel, False)
+        # Under a desktop platform theme the constructor hands the colour to
+        # the native helper; switching to Qt's own widgets afterwards loses
+        # it and the picker opened on white/black instead of the colour
+        # being edited. Set it again on the widgets now in use.
+        if initial.isValid():
+            self.setCurrentColor(QColor(initial.red(), initial.green(),
+                                        initial.blue()))
 
         panel = QWidget(self)
         column = QVBoxLayout(panel)
