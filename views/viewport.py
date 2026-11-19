@@ -3260,6 +3260,10 @@ class Viewport(QOpenGLWidget):
         self._loc_d_use_tex = self._depth_program.uniformLocation(
             "u_use_texture")
         self._loc_d_tex = self._depth_program.uniformLocation("u_tex")
+        self._loc_d_bias_const = self._depth_program.uniformLocation(
+            "u_bias_const")
+        self._loc_d_bias_slope_max = self._depth_program.uniformLocation(
+            "u_bias_slope_max")
         self._shadow_fbo = None
         self._shadow_key = None
         self._shadow_vp = None
@@ -3779,7 +3783,8 @@ class Viewport(QOpenGLWidget):
             # the slope-scaled bias the CASTER writes (depth.frag) — a
             # constant big enough to silence grazing faces peeled every
             # shadow off its base instead.
-            self._program.setUniformValue1f(self._loc_shadow_bias, 0.0006)
+            self._program.setUniformValue1f(
+                self._loc_shadow_bias, self._shadow_biases(self._shadow_vp)[2])
             self._set_soft_shadow_uniforms()
             sun = getattr(self, "_frame_sun", None) or (0.0, 0.0, 1.0)
             self._program.setUniformValue(
@@ -7903,6 +7908,30 @@ class Viewport(QOpenGLWidget):
             self._program.setUniformValue(self._loc_shadow_world,
                                           QVector2D(across, along))
 
+    #: The shadow margins as they were tuned (depth units of the map: the
+    #: caster's constant, the most its slope term adds, the receiver's
+    #: constant) and the most each may be in the WORLD, metres along the
+    #: sun. A model a few tens of metres deep keeps the tuned values; a map
+    #: as deep as a plaza with its orthophoto (~1 300 m) turned them into
+    #: 0.5 + 13 + 0.8 m, and the arch's shadow began 1.5 m from its
+    #: columns, the figure's away from its feet (Marco, 16-11, sheet L-08).
+    _SHADOW_BIAS_TUNED = (0.0004, 0.01, 0.0006)
+    _SHADOW_BIAS_MAX_M = (0.015, 0.50, 0.02)
+
+    @classmethod
+    def _shadow_biases(cls, light_vp) -> tuple[float, float, float]:
+        """``(caster constant, caster slope cap, receiver constant)`` in the
+        map's depth units for ``light_vp``: the tuned values, capped at
+        :attr:`_SHADOW_BIAS_MAX_M` metres of its depth range."""
+        tuned = cls._SHADOW_BIAS_TUNED
+        if light_vp is None:
+            return tuned
+        depth = cls._shadow_footprint(light_vp)[1]
+        if not depth > 0.0:
+            return tuned
+        return tuple(min(t, m / depth)
+                     for t, m in zip(tuned, cls._SHADOW_BIAS_MAX_M))
+
     @staticmethod
     def _shadow_footprint(light_vp) -> tuple[float, float]:
         """Metres across one side of the map and along its depth range.
@@ -8143,6 +8172,9 @@ class Viewport(QOpenGLWidget):
         prog.bind()
         prog.setUniformValue(self._loc_d_mvp, light_vp)
         prog.setUniformValue(self._loc_d_use_tex, 0)
+        const, slope_max, _recv = self._shadow_biases(light_vp)
+        prog.setUniformValue1f(self._loc_d_bias_const, const)
+        prog.setUniformValue1f(self._loc_d_bias_slope_max, slope_max)
         clips = getattr(self, "_clip_vecs", None) or []
         for i, c in enumerate(clips):
             prog.setUniformValue(self._loc_d_clip_planes[i], c)
