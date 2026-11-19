@@ -1830,7 +1830,7 @@
  "Remove the colour (back to the original image)": "Удалить цвет (вернуть исходное изображение)",
  "Shift": "Сдвиг (Shift)",
  "Tint": "Оттенок (Tint)",
- "Shift: move every pixel's hue toward the colour, keeping the texture's variation. Tint: replace hue and saturation, keeping only the lightness.": "Сдвиг: сдвигает оттенок каждого пикселя к выбранному цвету, сохраняя переходы текстуры. Оттенок: заменяет оттенок и насыщенность, сохраняя только яркость.",
+ "Shift: move every pixel's hue toward the colour, keeping the texture's variation. Tint: give every pixel the colour's hue, keeping the texture's variation in lightness and saturation.": "Сдвиг: сдвигает оттенок каждого пикселя к выбранному цвету, сохраняя переходы текстуры. Оттенок: придаёт каждому пикселю оттенок выбранного цвета, сохраняя перепады яркости и насыщенности текстуры.",
  "Tint the texture": "Подкрасить текстуру",
  "Resize/rotate/tint the active texture; with textured faces selected, re-stamps them (undoable)": "Изменить размер/вращать/подкрасить активную текстуру; с выбранными гранями — накладывает заново (можно отменить)",
  "inward": "внутрь",

@@ -1829,7 +1829,7 @@
  "Remove the colour (back to the original image)": "移除顏色（還原為原始圖像）",
  "Shift": "Shift 鍵",
  "Tint": "染色",
- "Shift: move every pixel's hue toward the colour, keeping the texture's variation. Tint: replace hue and saturation, keeping only the lightness.": "Shift：將每個像素的色相移向該顏色，並保留紋理的變化。染色：取代色相與飽和度，只保留明度。",
+ "Shift: move every pixel's hue toward the colour, keeping the texture's variation. Tint: give every pixel the colour's hue, keeping the texture's variation in lightness and saturation.": "Shift：將每個像素的色相移向該顏色，並保留紋理的變化。染色：讓每個像素採用該顏色的色相，並保留紋理在明度與飽和度上的變化。",
  "Tint the texture": "紋理染色",
  "Resize/rotate/tint the active texture; with textured faces selected, re-stamps them (undoable)": "調整大小／旋轉／染色使用中的紋理；若已選取有紋理的表面，會重新套用到這些表面（可復原）",
  "inward": "向內",

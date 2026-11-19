@@ -1846,7 +1846,7 @@
  "Remove the colour (back to the original image)": "إزالة اللون (العودة إلى الصورة الأصلية)",
  "Shift": "مفتاح Shift",
  "Tint": "لون",
- "Shift: move every pixel's hue toward the colour, keeping the texture's variation. Tint: replace hue and saturation, keeping only the lightness.": "Shift: إزاحة تدرج الألوان نحو اللون المحدد مع الحفاظ على تفاصيل الإكساء. Tint: استبدال التدرج والتشبع مع الإبقاء على درجة السطوع فقط.",
+ "Shift: move every pixel's hue toward the colour, keeping the texture's variation. Tint: give every pixel the colour's hue, keeping the texture's variation in lightness and saturation.": "Shift: إزاحة تدرج الألوان نحو اللون المحدد مع الحفاظ على تفاصيل الإكساء. Tint: منح كل بكسل تدرج اللون المحدد مع الحفاظ على تباين السطوع والتشبع في الإكساء.",
  "Tint the texture": "تلوين الملمس",
  "Resize/rotate/tint the active texture; with textured faces selected, re-stamps them (undoable)": "تغيير حجم/تدوير/تلوين الإكساء النشط؛ عند تحديد أوجه مكسوة، يعيد تطبيق الإكساء عليها (يمكن التراجع عنه)",
  "inward": "إلى الداخل",
