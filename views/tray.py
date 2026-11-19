@@ -6845,9 +6845,9 @@ class BimPanel(QWidget):
             from core.units import localized, model_units_of
             settings = model_units_of(scene)
             met, vol = localized(met, settings), localized(vol, settings)
-            from views.bim_labels import class_label
+            from views.bim_labels import class_label, short_class_label
             item = QTreeWidgetItem([
-                class_label(obj["class"]),
+                short_class_label(obj["class"]),
                 obj["name"], met, vol])
             item.setToolTip(0, class_label(obj["class"]))
             item.setData(0, Qt.UserRole, idx)
