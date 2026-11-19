@@ -21,6 +21,7 @@ mod instances;
 mod jsondoc;
 mod occlusion;
 mod parity;
+mod snap;
 mod visible;
 mod weld;
 
@@ -40,6 +41,7 @@ fn ingetrazo_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(boxes_near_px, m)?)?;
     m.add_function(wrap_pyfunction!(points_near_px, m)?)?;
     m.add_function(wrap_pyfunction!(segment_distances, m)?)?;
+    m.add_function(wrap_pyfunction!(snap::px_near_sorted, m)?)?;
     m.add_function(wrap_pyfunction!(nearest_within, m)?)?;
     m.add_function(wrap_pyfunction!(visible_parts, m)?)?;
     m.add_function(wrap_pyfunction!(earcut_indices, m)?)?;

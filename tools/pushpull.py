@@ -322,6 +322,45 @@ def _face_shape(face) -> tuple:
     return (loop(face.vertices), frozenset(loop(h) for h in face.holes),
             face.interior)
 
+
+def _scan_kernel(vp, proj):
+    """``(native, mvp, width, height)`` when the engine can stand in for
+    ``proj`` in the corner scan — the real ``Viewport._project_px``, whose
+    arithmetic it repeats — else None (Python; test stubs project their
+    own way)."""
+    if proj is None:
+        return None
+    from core import _native
+    mod = _native.native
+    if mod is None or not hasattr(mod, "px_near_sorted"):
+        return None
+    from views.viewport import Viewport
+    if getattr(proj, "__func__", None) is not Viewport._project_px:
+        return None
+    import numpy as np
+    m = np.ascontiguousarray(vp._np_mvp(), dtype=np.float64)
+    return mod, m, float(vp.width()), float(vp.height())
+
+
+class _MergedRows:
+    """The candidate vertices of several meshes as one list (global row
+    ``k`` is the ``k``-th candidate of the concatenation), read only where
+    asked: a pile of prototypes holds a million corners within the radius
+    (#1092)."""
+
+    def __init__(self, found):
+        import numpy as np
+        self._parts = [(f[0], f[2]) for f in found]
+        self._ends = np.cumsum([len(f[2]) for f in found])
+
+    def __getitem__(self, k):
+        import numpy as np
+        k = int(k)
+        j = int(np.searchsorted(self._ends, k, side="right"))
+        verts, cand = self._parts[j]
+        start = int(self._ends[j - 1]) if j else 0
+        return verts[int(cand[k - start])]
+
 class PushPullTool(Tool):
     name = "Push / Pull"
     #: P is the usual key for this tool (Marco, 2026-09-10). U, the one
@@ -2037,6 +2076,9 @@ class PushPullTool(Tool):
         boxes = self._screen_boxes(vp) if proj is not None else None
         if boxes is not None:
             self._corner_boxes(proj, boxes)
+        kernel = _scan_kernel(vp, proj)
+        thr2 = thr * thr
+        found = []              # per mesh with candidates: (verts, arr, cand, d2)
         for n, (verts, arr) in enumerate(cache):
             if proj is not None:
                 # A prototype whose box on screen is far from the cursor is
@@ -2047,37 +2089,44 @@ class PushPullTool(Tool):
                                         or sy + thr + 1 < box[2]
                                         or sy - thr - 1 > box[3]):
                     continue
-                px, py, ok = proj(arr)
-                if boxes is not None and (box is None or len(box) > 4):
-                    boxes[n] = ((px[ok].min(), px[ok].max(),
-                                 py[ok].min(), py[ok].max()) if ok.any()
-                                else (np.inf, -np.inf, np.inf, -np.inf))
-                d2 = (px - sx) ** 2 + (py - sy) ** 2
-                near = ok & (d2 <= thr * thr)
-                if best is not None:
-                    near &= d2 < best[0]
-                near = np.flatnonzero(near)
-                # Nearest first, ties in vertex order: the first that counts
-                # is the one the whole scan would keep, and the rest are never
-                # read. Over a million vertices fall within the radius when
-                # the prototypes pile up at their local origin (#1092).
-                cand = near[np.argsort(d2[near], kind="stable")]
+                if kernel is not None:
+                    # Projected, filtered and sorted in one native pass:
+                    # ~0.2 ms of NumPy a mesh, ~10 meshes a move of a push
+                    # inside the Plaza's 9 674-face group (19-11).
+                    cand, d2, nb = kernel[0].px_near_sorted(
+                        arr, kernel[1], kernel[2], kernel[3],
+                        float(sx), float(sy), thr2)
+                    if boxes is not None and (box is None or len(box) > 4):
+                        boxes[n] = (nb if nb is not None
+                                    else (np.inf, -np.inf, np.inf, -np.inf))
+                else:
+                    px, py, ok = proj(arr)
+                    if boxes is not None and (box is None or len(box) > 4):
+                        boxes[n] = ((px[ok].min(), px[ok].max(),
+                                     py[ok].min(), py[ok].max()) if ok.any()
+                                    else (np.inf, -np.inf, np.inf, -np.inf))
+                    d2all = (px - sx) ** 2 + (py - sy) ** 2
+                    near = np.flatnonzero(ok & (d2all <= thr2))
+                    # Nearest first, ties in vertex order.
+                    cand = near[np.argsort(d2all[near], kind="stable")]
+                    d2 = d2all[cand]
             else:
                 # Stub viewports (tests) expose only the scalar projector.
-                d2 = {}
+                dd2 = {}
                 for i, vtx in enumerate(verts):
                     pix = vp._world_to_pixel(vtx.position)
                     if pix is None:
                         continue
                     dd = (pix[0] - sx) ** 2 + (pix[1] - sy) ** 2
-                    if dd <= thr * thr and (best is None or dd < best[0]):
-                        d2[i] = dd
-                cand = sorted(d2, key=d2.get)
-            for i in self._clear_candidates(vp, arr, cand, exclude, verts):
-                p = verts[i].position
-                best = (float(d2[i]), QVector3D.dotProduct(
-                    p - self._anchor, self._normal), QVector3D(p), "vertex")
-                break
+                    if dd <= thr2:
+                        dd2[i] = dd
+                cand = sorted(dd2, key=dd2.get)
+                d2 = [dd2[i] for i in cand]
+                cand = np.array(cand, dtype=np.int64)
+                d2 = np.array(d2, dtype=np.float64)
+            if len(cand):
+                found.append((verts, arr, cand, d2))
+        best = self._nearest_clear_vertex(vp, found, exclude)
         # Tape Measure guides (issue #165): a guide POINT is a corner like
         # any vertex -- the nearest one on screen wins -- and a guide LINE
         # is tried right after, like an edge. They live in ``scene.guides``,
@@ -2184,6 +2233,54 @@ class PushPullTool(Tool):
         self._inference_point = None
         self._inference_kind = None
         return None
+
+    #: Up to this many corners within the radius, all meshes' go through
+    #: the occlusion test as one list; past it, mesh by mesh, each only
+    #: under the best so far (prototypes piled up at their origin, #1092).
+    _MERGE_MAX = 65536
+
+    def _nearest_clear_vertex(self, vp, found, exclude):
+        """``(d2, push distance, point, "vertex")`` of the nearest corner
+        that may be a reference among ``found`` — per mesh, in cache order,
+        its candidate rows nearest first and their squared pixel distances
+        — or None. The first of equals wins, mesh order then vertex order:
+        what scanning the meshes one by one, each only under the best so
+        far, keeps. Asked as one list, the occlusion rays of all meshes go
+        in one call: mesh by mesh, a push inside the Plaza's 9 674-face
+        group cast 2–3 batches a move, ~1.8 ms each (19-11)."""
+        import numpy as np
+        if not found:
+            return None
+        total = sum(len(f[2]) for f in found)
+        if len(found) > 1 and total <= self._MERGE_MAX:
+            d2 = np.concatenate([f[3] for f in found])
+            # What _clear_candidates reads of each row: its QVector3D's
+            # float values (so the float32 round trip there keeps them).
+            pts = np.concatenate([
+                (f[1][f[2]].astype(np.float32).astype(np.float64)
+                 if f[1].dtype != np.float32
+                 else f[1][f[2]].astype(np.float64)) for f in found])
+            rows = _MergedRows(found)
+            order = np.argsort(d2, kind="stable")
+            for i in self._clear_candidates(vp, pts, order, exclude, rows):
+                p = rows[i].position
+                return (float(d2[i]), QVector3D.dotProduct(
+                    p - self._anchor, self._normal), QVector3D(p), "vertex")
+            return None
+        best = None
+        for verts, arr, cand, d2 in found:
+            if best is not None:
+                # The sorted prefix under the best so far.
+                cand = cand[:int(np.searchsorted(d2, best[0], side="left"))]
+                if not len(cand):
+                    continue
+            pos = {int(c): k for k, c in enumerate(cand.tolist())}
+            for i in self._clear_candidates(vp, arr, cand, exclude, verts):
+                p = verts[i].position
+                best = (float(d2[pos[i]]), QVector3D.dotProduct(
+                    p - self._anchor, self._normal), QVector3D(p), "vertex")
+                break
+        return best
 
     def _infer_edge_midpoint(self, vp, sx, sy, thr, exclude):
         """A visible fixed midpoint within the normal point-snap radius.
