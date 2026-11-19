@@ -13088,6 +13088,21 @@ class ComposerWindow(QMainWindow):
         # with shadows; the live viewport gets its own settings back.
         shadows = getattr(scene, "shadows", None)
         keep_shadows = shadows.to_dict() if shadows is not None else None
+        # The objects a scene hides (hidden_objects sets ``hidden`` on
+        # every group of the tree, nested ones too) and its «show hidden»
+        # switches come back as well: they did not, and a detail sheet
+        # left the live model with its 3 402 groups hidden — the next
+        # sheet drew the pergola over a missing fountain, the model tab
+        # lost the plaza while orbiting (Marco, 16/19-11, final plaza).
+        hides = (saved_view is not None
+                 and (getattr(saved_view, "hidden_objects", None) is not None
+                      or getattr(saved_view, "hidden_shown", None) is not None))
+        keep_hidden = ([(g, bool(getattr(g, "hidden", False)))
+                        for g in scene.groups_by_uid().values()]
+                       if hides else None)
+        keep_hidden_shown = (getattr(scene, "show_hidden_objects", False),
+                             getattr(scene, "show_hidden_geometry", False))
+        hidden_moved = False
         # ``Scene.bounds()`` caches by version, and swapping layer
         # visibility here does not bump it: a bounds read during the frame
         # would outlive it, and Zoom Extents would frame the sheet's view
@@ -13096,6 +13111,20 @@ class ComposerWindow(QMainWindow):
         try:
             apply_frame_camera(cam, frame, saved_view, scene)
             apply_frame_shadows(frame, scene)
+            if keep_hidden is not None:
+                # What is drawn, picked and collected keys on the version:
+                # objects shown or hidden by the scene must be seen (the
+                # edges of hidden lamp posts drew on the fountain's sheet).
+                # A view-only bump — the document is not edited — and only
+                # when something changed: the usual frame is the live view.
+                hidden_moved = (
+                    any(bool(getattr(g, "hidden", False)) != was
+                        for g, was in keep_hidden)
+                    or keep_hidden_shown != (
+                        getattr(scene, "show_hidden_objects", False),
+                        getattr(scene, "show_hidden_geometry", False)))
+                if hidden_moved and hasattr(scene, "bump_view"):
+                    scene.bump_view()
             # A layer set not to print stays out of every sheet, whatever
             # the frame's scene shows (the visibility comes back below).
             # A scene's picture in the Scenes tab is the screen, where
@@ -13127,6 +13156,13 @@ class ComposerWindow(QMainWindow):
                 obj.visible = visible
             if keep_shadows is not None:
                 apply_shadow_state(scene, keep_shadows)
+            if keep_hidden is not None:
+                for g, was in keep_hidden:
+                    g.hidden = was
+                (scene.show_hidden_objects,
+                 scene.show_hidden_geometry) = keep_hidden_shown
+                if hidden_moved and hasattr(scene, "bump_view"):
+                    scene.bump_view()
             vp.update()
 
     def frame_is_perspective(self, frame) -> bool:
@@ -13176,13 +13212,22 @@ class ComposerWindow(QMainWindow):
                        dtype=np.float64).reshape(-1, 2, 3))
 
     def _visibility_sig(self) -> tuple:
-        """Which layers and map / terrain objects are switched on, now."""
+        """Which layers and map / terrain objects are switched on, now —
+        and which objects are hidden: a detail scene hides all but one, and
+        a frame of it collected the live model's lines (the edges of hidden
+        posts and pines drew on the fountain's sheet, 16-11)."""
         scene = self._scene()
+        by_uid = getattr(scene, "groups_by_uid", None)
+        hidden = (frozenset(uid for uid, g in by_uid().items()
+                            if getattr(g, "hidden", False))
+                  if callable(by_uid) else frozenset())
         return (tuple((ly.name, bool(ly.visible))
                       for ly in getattr(scene, "layers", []) or []),
                 tuple(bool(getattr(obj, "visible", True))
                       for _k, obj in georef_objects(scene)
-                      if obj is not None))
+                      if obj is not None),
+                hidden,
+                bool(getattr(scene, "show_hidden_objects", False)))
 
     def _frame_geometry(self, live_sig: tuple):
         """The geometry a frame shows — called with its camera applied.
