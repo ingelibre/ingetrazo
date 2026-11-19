@@ -5044,7 +5044,8 @@ class MainWindow(QMainWindow):
         pending, self._status_pending = self._status_pending, {}
         coord = pending.get("coordinate")
         if coord is not None and coord != self._coord_label.text():
-            self._coord_label.setText(coord)
+            from views.status_hold import set_text_held
+            set_text_held(self._coord_label, coord)
             # The compact readout above; the full one, zone included, on hover.
             self._coord_label.setToolTip(
                 getattr(self.viewport, "_last_coordinate_full", "") or "")
@@ -5059,7 +5060,8 @@ class MainWindow(QMainWindow):
         self.viewport._last_coordinate = ""
         self.viewport._last_coordinate_full = ""
         self._status_pending.pop("coordinate", None)
-        self._coord_label.setText("")
+        from views.status_hold import set_text_held
+        set_text_held(self._coord_label, "")        # and lets its width go
         self._coord_label.setToolTip("")
 
     def _on_measurement(self, text: str) -> None:
@@ -5081,17 +5083,29 @@ class MainWindow(QMainWindow):
             caption = "Field of view"
             cam = self.viewport.camera
             live = (f"{cam.focal_mm:.0f} mm" if cam.perspective else "—")
+        from views.status_hold import release, set_text_held
+        if tool is not getattr(self, "_vcb_tool", None):
+            # Another tool: the box sizes to its text again.
+            self._vcb_tool = tool
+            release(self._vcb_value, 130)
         self._vcb_name.setVisible(caption is not None)
         self._vcb_value.setVisible(caption is not None)
         if caption is None:
+            release(self._vcb_value, 130)
             return
-        self._vcb_name.setText(tr(caption))
-        if self._vcb_buffer:
-            self._vcb_value.setText(f"{self._vcb_buffer}")
-            self._vcb_value.setStyleSheet(self._VCB_ACTIVE_STYLE)
-        else:
-            self._vcb_value.setText(live)
-            self._vcb_value.setStyleSheet(self._VCB_IDLE_STYLE)
+        # Each call came with every measurement (~12 a second while drawing)
+        # and set the box's style sheet again, the same one: Qt repolishes,
+        # the status bar lays itself out again and the whole window under it
+        # repaints — ~5 ms in one frame of six of a Line in the Plaza
+        # (19-11). Only what changed is set now.
+        if self._vcb_name.text() != tr(caption):
+            self._vcb_name.setText(tr(caption))
+        text, style = ((f"{self._vcb_buffer}", self._VCB_ACTIVE_STYLE)
+                       if self._vcb_buffer else (live, self._VCB_IDLE_STYLE))
+        # Held at its widest while the number runs (views/status_hold.py).
+        set_text_held(self._vcb_value, text, 130)
+        if self._vcb_value.styleSheet() != style:
+            self._vcb_value.setStyleSheet(style)
 
     # ---- Tool routing -------------------------------------------------------
     def _activate_tool(self, key: str) -> None:

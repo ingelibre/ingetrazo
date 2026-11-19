@@ -2894,6 +2894,13 @@ class Viewport(QOpenGLWidget):
             self.gl_info["fallback"] = _app.property("gl_fallback") or ""
         write_gl_report(self.gl_info)
         self.glReady.emit(self.gl_info)
+        # Every pixel of the view is drawn (paintGL clears with an opaque
+        # background, even below GL 3.3), so nothing under it needs painting.
+        # Without this, any status text redrawn in the same frame as the view
+        # merged into one dirty rectangle with it and the window painted its
+        # whole background under the view again — ~765 px tall instead of
+        # the bar's 34, in one frame of six of a Line in the Plaza (19-11).
+        self.setAttribute(Qt.WA_OpaquePaintEvent, True)
         if not self.gl_info["supported"]:
             # Below GL 3.3 the shaders cannot compile (issue #751). Make no
             # GL object on this context, so none is freed on it at exit
