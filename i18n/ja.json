@@ -4053,5 +4053,9 @@
  "Every layer is in the legend": "すべてのレイヤーが凡例にあります",
  "Free entry": "自由項目",
  "New entry": "新しい項目",
- "Every sheet as a page. Click: open it. Drag: change the order. Double-click or F2: rename. Delete: remove it. Right-click: more.": "各シートをページとして表示。クリック: 開く。ドラッグ: 順序を変更。ダブルクリックまたは F2: 名前を変更。Delete: 削除。右クリック: その他。"
+ "Every sheet as a page. Click: open it. Drag: change the order. Double-click or F2: rename. Delete: remove it. Right-click: more.": "各シートをページとして表示。クリック: 開く。ドラッグ: 順序を変更。ダブルクリックまたは F2: 名前を変更。Delete: 削除。右クリック: その他。",
+ "Location": "位置情報",
+ "This model has no location yet.": "このモデルにはまだ位置情報がありません。",
+ "Clear location": "位置情報をクリア",
+ "This model has survey points, traced paths or a drone survey placed by its location: change it in the Terrain panel.": "このモデルには、位置情報に基づいて配置された測量点、地理経路、またはドローン測量があります。地形パネルで変更してください。"
 }

@@ -4054,5 +4054,9 @@
  "Every layer is in the legend": "所有圖層都已在圖例中",
  "Free entry": "自由項目",
  "New entry": "新項目",
- "Every sheet as a page. Click: open it. Drag: change the order. Double-click or F2: rename. Delete: remove it. Right-click: more.": "每張圖紙顯示為一頁。按一下：開啟。拖曳：變更順序。按兩下或 F2：重新命名。Delete：刪除。按右鍵：更多。"
+ "Every sheet as a page. Click: open it. Drag: change the order. Double-click or F2: rename. Delete: remove it. Right-click: more.": "每張圖紙顯示為一頁。按一下：開啟。拖曳：變更順序。按兩下或 F2：重新命名。Delete：刪除。按右鍵：更多。",
+ "Location": "位置",
+ "This model has no location yet.": "此模型尚未設定位置。",
+ "Clear location": "清除位置",
+ "This model has survey points, traced paths or a drone survey placed by its location: change it in the Terrain panel.": "此模型含有依其位置放置的測量點、地理路徑或無人機測量：請在「地形」面板中變更。"
 }

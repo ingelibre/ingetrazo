@@ -4056,5 +4056,9 @@
  "Every layer is in the legend": "ທຸກຊັ້ນຢູ່ໃນຄຳອະທິບາຍສັນຍາລັກແລ້ວ",
  "Free entry": "ລາຍການອິດສະຫຼະ",
  "New entry": "ລາຍການໃໝ່",
- "Every sheet as a page. Click: open it. Drag: change the order. Double-click or F2: rename. Delete: remove it. Right-click: more.": "ແຕ່ລະໜ້າເຈ້ຍເປັນໜ້າໜຶ່ງ. ຄລິກ: ເປີດ. ລາກ: ປ່ຽນລຳດັບ. ຄລິກສອງເທື່ອ ຫຼື F2: ປ່ຽນຊື່. Delete: ລຶບ. ຄລິກຂວາ: ເພີ່ມເຕີມ."
+ "Every sheet as a page. Click: open it. Drag: change the order. Double-click or F2: rename. Delete: remove it. Right-click: more.": "ແຕ່ລະໜ້າເຈ້ຍເປັນໜ້າໜຶ່ງ. ຄລິກ: ເປີດ. ລາກ: ປ່ຽນລຳດັບ. ຄລິກສອງເທື່ອ ຫຼື F2: ປ່ຽນຊື່. Delete: ລຶບ. ຄລິກຂວາ: ເພີ່ມເຕີມ.",
+ "Location": "ຕຳແໜ່ງທີ່ຕັ້ງ",
+ "This model has no location yet.": "ໂມເດວນີ້ຍັງບໍ່ມີຕຳແໜ່ງທີ່ຕັ້ງ.",
+ "Clear location": "ລຶບຕຳແໜ່ງທີ່ຕັ້ງ",
+ "This model has survey points, traced paths or a drone survey placed by its location: change it in the Terrain panel.": "ໂມເດວນີ້ມີຈຸດສຳຫຼວດ, ເສັ້ນທາງອ້າງອີງພິກັດພູມສາດ ຫຼື ການສຳຫຼວດດ້ວຍໂດຣນ ທີ່ວາງຕາມຕຳແໜ່ງທີ່ຕັ້ງຂອງມັນ: ປ່ຽນມັນໃນແຜງພື້ນດິນ."
 }

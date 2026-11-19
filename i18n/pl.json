@@ -4061,5 +4061,9 @@
  "Every layer is in the legend": "Wszystkie warstwy są w legendzie",
  "Free entry": "Wpis dowolny",
  "New entry": "Nowy wpis",
- "Every sheet as a page. Click: open it. Drag: change the order. Double-click or F2: rename. Delete: remove it. Right-click: more.": "Każdy arkusz jako strona. Kliknięcie: otwiera go. Przeciągnięcie: zmienia kolejność. Dwuklik lub F2: zmiana nazwy. Delete: usuwa go. Prawy przycisk: więcej."
+ "Every sheet as a page. Click: open it. Drag: change the order. Double-click or F2: rename. Delete: remove it. Right-click: more.": "Każdy arkusz jako strona. Kliknięcie: otwiera go. Przeciągnięcie: zmienia kolejność. Dwuklik lub F2: zmiana nazwy. Delete: usuwa go. Prawy przycisk: więcej.",
+ "Location": "Lokalizacja",
+ "This model has no location yet.": "Ten model nie ma jeszcze lokalizacji.",
+ "Clear location": "Wyczyść lokalizację",
+ "This model has survey points, traced paths or a drone survey placed by its location: change it in the Terrain panel.": "Ten model zawiera punkty pomiarowe, ścieżki geograficzne lub pomiar z drona umieszczone według jego lokalizacji: zmień ją w panelu Teren."
 }

@@ -4088,5 +4088,9 @@
  "Every layer is in the legend": "كل الطبقات موجودة في وسيلة الإيضاح",
  "Free entry": "إدخال حر",
  "New entry": "إدخال جديد",
- "Every sheet as a page. Click: open it. Drag: change the order. Double-click or F2: rename. Delete: remove it. Right-click: more.": "كل صفيحة كصفحة. نقرة: افتحها. اسحب: غيّر الترتيب. نقرة مزدوجة أو F2: إعادة التسمية. Delete: احذفها. نقرة يمنى: المزيد."
+ "Every sheet as a page. Click: open it. Drag: change the order. Double-click or F2: rename. Delete: remove it. Right-click: more.": "كل صفيحة كصفحة. نقرة: افتحها. اسحب: غيّر الترتيب. نقرة مزدوجة أو F2: إعادة التسمية. Delete: احذفها. نقرة يمنى: المزيد.",
+ "Location": "الموقع",
+ "This model has no location yet.": "لا يملك هذا النموذج موقعًا بعد.",
+ "Clear location": "مسح الموقع",
+ "This model has survey points, traced paths or a drone survey placed by its location: change it in the Terrain panel.": "يحتوي هذا النموذج على نقاط مسح أو مسارات جغرافية أو مسح بطائرة مسيّرة موضوعة وفق موقعه: غيّره من لوحة التضاريس."
 }

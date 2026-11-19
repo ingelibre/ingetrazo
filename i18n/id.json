@@ -4056,5 +4056,9 @@
  "Every layer is in the legend": "Semua layer sudah ada di legenda",
  "Free entry": "Entri bebas",
  "New entry": "Entri baru",
- "Every sheet as a page. Click: open it. Drag: change the order. Double-click or F2: rename. Delete: remove it. Right-click: more.": "Setiap lembar sebagai halaman. Klik: buka. Seret: ubah urutan. Klik ganda atau F2: ganti nama. Delete: hapus. Klik kanan: lainnya."
+ "Every sheet as a page. Click: open it. Drag: change the order. Double-click or F2: rename. Delete: remove it. Right-click: more.": "Setiap lembar sebagai halaman. Klik: buka. Seret: ubah urutan. Klik ganda atau F2: ganti nama. Delete: hapus. Klik kanan: lainnya.",
+ "Location": "Lokasi",
+ "This model has no location yet.": "Model ini belum memiliki lokasi.",
+ "Clear location": "Hapus lokasi",
+ "This model has survey points, traced paths or a drone survey placed by its location: change it in the Terrain panel.": "Model ini memiliki titik survei, jalur georef, atau survei drone yang ditempatkan menurut lokasinya: ubah lokasinya di panel medan."
 }
