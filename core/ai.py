@@ -451,7 +451,12 @@ def run_transactional(viewport, code: str, scope: dict) -> dict:
     cmd = SnapshotImport(mutate)
     saved_redo = list(history.redo_stack)
     history.execute(cmd)
-    error = history.last_error
+    # A refused command is rolled back but reported as last_rejected, not
+    # last_error. Only count it when cmd itself missed the undo stack: code
+    # may run a refused command of its own and still succeed.
+    committed = bool(history.undo_stack) and history.undo_stack[-1] is cmd
+    error = history.last_error or (
+        None if committed else history.last_rejected)
     changed = True
     if error is None:
         unchanged = not cmd.changed
