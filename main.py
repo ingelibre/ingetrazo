@@ -582,6 +582,108 @@ def _run_cli(argv: list[str]) -> int:
     return 0
 
 
+def _parse_server(argv: list[str]):
+    import argparse
+    parser = argparse.ArgumentParser(
+        prog="ingetrazo --server",
+        description="IngeTrazo without a window, with the AI bridge on: "
+                    "an MCP client (ingetrazo --mcp) drives the document.")
+    parser.add_argument("--server", action="store_true", help="this mode")
+    parser.add_argument("file", nargs="?", type=Path,
+                        help="a document to open first (.igz)")
+    parser.add_argument("--port", type=int, default=None,
+                        help="the bridge's port on 127.0.0.1 (default: "
+                             "INGETRAZO_AI_PORT, else 4763; 0 = any free)")
+    return parser.parse_args(argv)
+
+
+def _run_server(argv: list[str]) -> int:
+    """``ingetrazo --server [file.igz] [--port N]``: the app with no window
+    on screen and the AI bridge listening, for agents (Marco, 19-11, after
+    Xavi Montero's idea; IfcMCP works without a screen too).
+
+    Built as ``ingetrazo -p`` builds it: the main window exists and is
+    "shown" with ``WA_DontShowOnScreen``, which is what gives the viewport
+    a GL context where there is a display — under the offscreen platform
+    there is none, and the tools that render say so instead of hanging. No
+    single instance (a running IngeTrazo is neither asked nor disturbed),
+    no window state written on the way out: the user's settings see no
+    more of this than of a normal session. A line «ready» on stderr names
+    the port; SIGINT / SIGTERM end it cleanly."""
+    _attach_console()
+    args = _parse_server(argv)
+    src = None
+    if args.file is not None:
+        src = args.file.resolve()
+        if not src.is_file():
+            print(f"ingetrazo: no such file: {src}", file=sys.stderr)
+            return 2
+    if (sys.platform.startswith("linux") and not os.environ.get("DISPLAY")
+            and not os.environ.get("WAYLAND_DISPLAY")
+            and not os.environ.get("QT_QPA_PLATFORM")):
+        # No display at all (a container, ssh): Qt would abort on xcb.
+        os.environ["QT_QPA_PLATFORM"] = "offscreen"
+    _configure_surface_format()
+    app = _App(sys.argv[:1])
+    app.setApplicationName("IngeTrazo")
+    app.setOrganizationName("IngeTrazo")
+    _init_language()
+    window = MainWindow(defer_extensions=True)
+    window.setAttribute(Qt.WA_DontShowOnScreen, True)
+    window.show()
+    app.processEvents()
+
+    from plugins.ai_bridge import _NoDialogs, _bridge_of
+    from views.bridge_tools import NO_GL, can_render, quiet
+    # Nobody is at this screen: a dialog that comes up between two calls
+    # (a box opened by a timer) is cancelled as one during a call is.
+    guard = _NoDialogs()
+    app.installEventFilter(guard)
+    with quiet(window):
+        window.load_extensions()
+        if src is not None and not window.open_path(src):
+            print(f"ingetrazo: could not open {src}"
+                  + "".join(f" — {t}" for t in guard.refused),
+                  file=sys.stderr)
+            return 1
+    app.processEvents()
+
+    bridge = _bridge_of(window.viewport)
+    try:
+        port = bridge.start(args.port)
+    except OSError as exc:
+        print(f"ingetrazo: the AI bridge could not listen: {exc}",
+              file=sys.stderr)
+        return 1
+
+    import signal
+    from PySide6.QtCore import QTimer
+
+    def _stop(*_):
+        app.quit()
+
+    signal.signal(signal.SIGINT, _stop)
+    signal.signal(signal.SIGTERM, _stop)
+    # Python runs a signal handler only when it gets the thread back: the
+    # tick hands it over to the interpreter while Qt's loop waits.
+    tick = QTimer()
+    tick.timeout.connect(lambda: None)
+    tick.start(200)
+
+    gl = can_render(window.viewport)
+    print(f"IngeTrazo server ready on 127.0.0.1:{port}"
+          + (f" — {src.name}" if src is not None else "")
+          + ("" if gl else f" (screenshot and render_sheet: {NO_GL})"),
+          file=sys.stderr, flush=True)
+    try:
+        app.exec()
+    finally:
+        tick.stop()
+        bridge.stop()
+    print("IngeTrazo server stopped", file=sys.stderr, flush=True)
+    return 0
+
+
 def main() -> int:
     # HTTPS from Python (the AI assistant) must find a CA bundle: the macOS
     # package asked for one where only the build machine had it (#198).
@@ -591,6 +693,8 @@ def main() -> int:
         return _self_check()
     if "--mcp" in sys.argv[1:]:
         return _run_mcp_server()
+    if "--server" in sys.argv[1:]:
+        return _run_server(sys.argv[1:])
     if _wants_cli(sys.argv[1:]):
         return _run_cli(sys.argv[1:])
     # Hang autopsy (Linux): `kill -USR1 <pid>` dumps every thread's Python
