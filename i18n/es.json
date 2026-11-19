@@ -4070,5 +4070,13 @@
  "Make a component from photos separately from model geometry": "Cree un componente con las fotos por separado de la geometría del modelo",
  "This group contains a photo, not editable geometry — explode it to edit the image": "Este grupo contiene una foto, no geometría editable — explótelo para editar la imagen",
  "Image corner placed — move the pointer and click to set its size, or type a width and press Enter (Esc cancels)": "Esquina de la imagen colocada — mueva el puntero y haga clic para definir su tamaño, o escriba un ancho y pulse Intro (Esc cancela)",
- "Image placed at its natural display size — use Image size… for an exact model width": "Imagen colocada a su tamaño de visualización natural — use Tamaño de imagen… para indicar un ancho exacto en el modelo"
+ "Image placed at its natural display size — use Image size… for an exact model width": "Imagen colocada a su tamaño de visualización natural — use Tamaño de imagen… para indicar un ancho exacto en el modelo",
+ "Type a length greater than zero to resize": "Teclea una longitud mayor que cero para redimensionar",
+ "Resized: the distance is now {d}": "Redimensionado: la distancia es ahora {d}",
+ "Do you want to resize the model?": "¿Quieres redimensionar el modelo?",
+ "Note that components loaded from external files will not be resized.": "Ten en cuenta que los componentes cargados desde archivos externos no se redimensionarán.",
+ "Do you want to resize the active component?": "¿Quieres redimensionar el componente activo?",
+ "Do you want to resize the active group?": "¿Quieres redimensionar el grupo activo?",
+ "Resize": "Redimensionar",
+ "Type the new length and Enter to resize.": "Teclea la nueva longitud y Enter para redimensionar."
 }

@@ -4097,5 +4097,13 @@
  "Image corner placed — move the pointer and click to set its size, or type a width and press Enter (Esc cancels)": "Đã đặt góc ảnh — di chuyển con trỏ và nhấp để đặt kích thước, hoặc nhập chiều rộng rồi nhấn Enter (Esc để hủy)",
  "Image placed at its natural display size — use Image size… for an exact model width": "Đã đặt ảnh ở kích thước hiển thị tự nhiên — dùng Kích thước ảnh… để đặt chiều rộng chính xác trong mô hình",
  "Make a component from photos separately from model geometry": "Tạo thành phần từ ảnh riêng biệt với hình học của mô hình",
- "This group contains a photo, not editable geometry — explode it to edit the image": "Nhóm này chứa ảnh, không phải hình học có thể chỉnh sửa — phá nhóm để chỉnh sửa ảnh"
+ "This group contains a photo, not editable geometry — explode it to edit the image": "Nhóm này chứa ảnh, không phải hình học có thể chỉnh sửa — phá nhóm để chỉnh sửa ảnh",
+ "Type a length greater than zero to resize": "Nhập chiều dài lớn hơn không để đổi kích thước",
+ "Resized: the distance is now {d}": "Đã đổi kích thước: khoảng cách hiện là {d}",
+ "Do you want to resize the model?": "Bạn có muốn đổi kích thước mô hình không?",
+ "Note that components loaded from external files will not be resized.": "Các thành phần được tải từ tệp bên ngoài sẽ giữ nguyên kích thước.",
+ "Do you want to resize the active component?": "Bạn có muốn đổi kích thước thành phần đang chỉnh sửa không?",
+ "Do you want to resize the active group?": "Bạn có muốn đổi kích thước nhóm đang chỉnh sửa không?",
+ "Resize": "Đổi kích thước",
+ "Type the new length and Enter to resize.": "Nhập chiều dài mới, Enter để đổi kích thước."
 }

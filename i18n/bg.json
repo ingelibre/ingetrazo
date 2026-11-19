@@ -4073,5 +4073,13 @@
  "Image corner placed — move the pointer and click to set its size, or type a width and press Enter (Esc cancels)": "Ъгълът на изображението е поставен — преместете показалеца и щракнете за размера или въведете ширина и натиснете Enter (Esc отменя)",
  "Image placed at its natural display size — use Image size… for an exact model width": "Изображението е поставено в естествения му екранен размер — използвайте Размер на изображението… за точна ширина в модела",
  "Make a component from photos separately from model geometry": "Създайте компонент от снимки отделно от геометрията на модела",
- "This group contains a photo, not editable geometry — explode it to edit the image": "Тази група съдържа снимка, а не редактируема геометрия — разгрупирайте я, за да редактирате изображението"
+ "This group contains a photo, not editable geometry — explode it to edit the image": "Тази група съдържа снимка, а не редактируема геометрия — разгрупирайте я, за да редактирате изображението",
+ "Type a length greater than zero to resize": "Въведете дължина, по-голяма от нула, за да преоразмерите",
+ "Resized: the distance is now {d}": "Преоразмерено: разстоянието вече е {d}",
+ "Do you want to resize the model?": "Искате ли да преоразмерите модела?",
+ "Note that components loaded from external files will not be resized.": "Компонентите, заредени от външни файлове, няма да бъдат преоразмерени.",
+ "Do you want to resize the active component?": "Искате ли да преоразмерите активния компонент?",
+ "Do you want to resize the active group?": "Искате ли да преоразмерите активната група?",
+ "Resize": "Преоразмеряване",
+ "Type the new length and Enter to resize.": "Нова дължина и Enter за преоразмеряване."
 }

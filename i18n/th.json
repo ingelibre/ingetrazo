@@ -4073,5 +4073,13 @@
  "Image corner placed — move the pointer and click to set its size, or type a width and press Enter (Esc cancels)": "วางมุมภาพแล้ว — เลื่อนตัวชี้แล้วคลิกเพื่อกำหนดขนาด หรือพิมพ์ความกว้างแล้วกด Enter (Esc เพื่อยกเลิก)",
  "Image placed at its natural display size — use Image size… for an exact model width": "วางภาพตามขนาดแสดงผลปกติแล้ว — ใช้ ขนาดภาพ… เพื่อกำหนดความกว้างในโมเดลอย่างแม่นยำ",
  "Make a component from photos separately from model geometry": "สร้างคอมโพเนนต์จากภาพถ่ายแยกจากเรขาคณิตของโมเดล",
- "This group contains a photo, not editable geometry — explode it to edit the image": "กลุ่มนี้มีภาพถ่าย ไม่ใช่เรขาคณิตที่แก้ไขได้ — แยกกลุ่มเพื่อแก้ไขภาพ"
+ "This group contains a photo, not editable geometry — explode it to edit the image": "กลุ่มนี้มีภาพถ่าย ไม่ใช่เรขาคณิตที่แก้ไขได้ — แยกกลุ่มเพื่อแก้ไขภาพ",
+ "Type a length greater than zero to resize": "ป้อนความยาวที่มากกว่าศูนย์เพื่อปรับขนาด",
+ "Resized: the distance is now {d}": "ปรับขนาดแล้ว: ระยะทางตอนนี้คือ {d}",
+ "Do you want to resize the model?": "ต้องการปรับขนาดโมเดลหรือไม่?",
+ "Note that components loaded from external files will not be resized.": "ส่วนประกอบที่โหลดจากไฟล์ภายนอกจะไม่ถูกปรับขนาด",
+ "Do you want to resize the active component?": "ต้องการปรับขนาดส่วนประกอบที่กำลังแก้ไขหรือไม่?",
+ "Do you want to resize the active group?": "ต้องการปรับขนาดกลุ่มที่กำลังแก้ไขหรือไม่?",
+ "Resize": "ปรับขนาด",
+ "Type the new length and Enter to resize.": "ป้อนความยาวใหม่แล้วกด Enter เพื่อปรับขนาด"
 }

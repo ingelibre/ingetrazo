@@ -4073,5 +4073,13 @@
  "Image corner placed — move the pointer and click to set its size, or type a width and press Enter (Esc cancels)": "已放置影像角點 — 移動指標並按一下以設定大小，或輸入寬度後按 Enter（Esc 取消）",
  "Image placed at its natural display size — use Image size… for an exact model width": "已按原始顯示大小放置影像 — 使用「影像大小…」設定精確的模型寬度",
  "Make a component from photos separately from model geometry": "將相片與模型幾何分開建立元件",
- "This group contains a photo, not editable geometry — explode it to edit the image": "此群組包含相片，而非可編輯的幾何 — 請炸開群組以編輯影像"
+ "This group contains a photo, not editable geometry — explode it to edit the image": "此群組包含相片，而非可編輯的幾何 — 請炸開群組以編輯影像",
+ "Type a length greater than zero to resize": "輸入大於零的長度以調整大小",
+ "Resized: the distance is now {d}": "已調整大小：目前距離為 {d}",
+ "Do you want to resize the model?": "要調整模型的大小嗎？",
+ "Note that components loaded from external files will not be resized.": "請注意，從外部檔案載入的元件不會調整大小。",
+ "Do you want to resize the active component?": "要調整目前元件的大小嗎？",
+ "Do you want to resize the active group?": "要調整目前群組的大小嗎？",
+ "Resize": "調整大小",
+ "Type the new length and Enter to resize.": "輸入新長度並按 Enter 調整大小。"
 }
