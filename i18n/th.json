@@ -4057,5 +4057,6 @@
  "Free entry": "รายการอิสระ",
  "New entry": "รายการใหม่",
  "Every sheet as a page. Click: open it. Drag: change the order. Double-click or F2: rename. Delete: remove it. Right-click: more.": "แผ่นแบบแต่ละแผ่นเป็นหนึ่งหน้า คลิก: เปิด ลาก: เปลี่ยนลำดับ ดับเบิลคลิกหรือ F2: เปลี่ยนชื่อ Delete: ลบ คลิกขวา: เพิ่มเติม",
- "Middle-button drag pans (Shift + drag orbits)": "ลากปุ่มกลางเพื่อเลื่อนมุมมอง (Shift + ลากเพื่อหมุนรอบ)"
+ "Middle-button drag pans (Shift + drag orbits)": "ลากปุ่มกลางเพื่อเลื่อนมุมมอง (Shift + ลากเพื่อหมุนรอบ)",
+ "Orbit Z": "วงโคจร Z"
 }

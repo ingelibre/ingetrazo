@@ -4062,5 +4062,6 @@
  "Free entry": "Wpis dowolny",
  "New entry": "Nowy wpis",
  "Every sheet as a page. Click: open it. Drag: change the order. Double-click or F2: rename. Delete: remove it. Right-click: more.": "Każdy arkusz jako strona. Kliknięcie: otwiera go. Przeciągnięcie: zmienia kolejność. Dwuklik lub F2: zmiana nazwy. Delete: usuwa go. Prawy przycisk: więcej.",
- "Middle-button drag pans (Shift + drag orbits)": "Przeciąganie środkowym przyciskiem przesuwa (Shift + przeciąganie obraca)"
+ "Middle-button drag pans (Shift + drag orbits)": "Przeciąganie środkowym przyciskiem przesuwa (Shift + przeciąganie obraca)",
+ "Orbit Z": "Orbita Z"
 }

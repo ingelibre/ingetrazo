@@ -481,8 +481,10 @@ class PreferencesDialog(QDialog):
         axis_labels = ("Move left / right", "Move up / down", "Push / pull",
                        "Tilt forward / back", "Twist left / right",
                        "Roll left / right")
+        # One label per entry of ndof.ACTIONS, in its order: zip() stops at
+        # the shorter, and a missing one shifted "Disabled" onto Orbit Z.
         action_labels = ("Pan X", "Pan Y", "Zoom", "Orbit X", "Orbit Y",
-                         "Disabled")
+                         "Orbit Z", "Disabled")
         for axis, axis_label in zip(AXES, axis_labels):
             row = QHBoxLayout()
             action = QComboBox()

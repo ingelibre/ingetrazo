@@ -4055,5 +4055,6 @@
  "Every layer is in the legend": "所有图层都已在图例中",
  "Free entry": "自由条目",
  "New entry": "新条目",
- "Every sheet as a page. Click: open it. Drag: change the order. Double-click or F2: rename. Delete: remove it. Right-click: more.": "每张图纸显示为一页。单击：打开。拖动：更改顺序。双击或 F2：重命名。Delete：删除。右键：更多。"
+ "Every sheet as a page. Click: open it. Drag: change the order. Double-click or F2: rename. Delete: remove it. Right-click: more.": "每张图纸显示为一页。单击：打开。拖动：更改顺序。双击或 F2：重命名。Delete：删除。右键：更多。",
+ "Orbit Z": "环绕 Z"
 }

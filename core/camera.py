@@ -420,24 +420,20 @@ class OrbitCamera:
         return up
 
     def roll(self, angle_rad: float) -> None:
-        """Roll the view around its forward axis by *angle_rad* radians.
+        """Roll the view around its forward axis by *angle_rad* radians
+        (the 3D mouse's Orbit Z, PR #1406).
 
-        The camera position and target stay fixed; only the screen-up vector
-        changes. This gives the 3D mouse's Orbit Z action a real camera
-        operation to call.
+        It turns :attr:`roll_deg`, the same roll Camera Settings sets: the
+        up the camera keeps (``up``) stays Z, so orbiting, the standard
+        views and a scene's saved lens all go on agreeing with it, and the
+        roll is undone the way it is set. A two-point perspective takes no
+        roll (see :meth:`up_vector`), so there it does nothing.
         """
         angle = float(angle_rad)
-        if not math.isfinite(angle) or abs(angle) < 1e-12:
+        if not math.isfinite(angle) or abs(angle) < 1e-12 or self.two_point:
             return
-        forward = self.forward()
-        up = self.up_vector()
-        right = QVector3D.crossProduct(forward, up)
-        if right.lengthSquared() < 1e-18:
-            return
-        right.normalize()
-        screen_up = QVector3D.crossProduct(right, forward).normalized()
-        c, s = math.cos(angle), math.sin(angle)
-        self.up = screen_up * c - right * s
+        self.roll_deg = math.remainder(self.roll_deg + math.degrees(angle),
+                                       360.0)
 
     # ---- First person (Position Camera / Look Around / Walk) ---------------
     # The orbit model stays: a walkthrough only ever asks "the eye is HERE,

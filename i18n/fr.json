@@ -4054,5 +4054,6 @@
  "Free entry": "Entrée libre",
  "New entry": "Nouvelle entrée",
  "Every sheet as a page. Click: open it. Drag: change the order. Double-click or F2: rename. Delete: remove it. Right-click: more.": "Chaque feuille comme une page. Clic : l'ouvrir. Glisser : changer l'ordre. Double-clic ou F2 : renommer. Suppr : la supprimer. Clic droit : plus.",
- "Middle-button drag pans (Shift + drag orbits)": "Glisser avec le bouton central déplace la vue (Maj + glisser tourne autour)"
+ "Middle-button drag pans (Shift + drag orbits)": "Glisser avec le bouton central déplace la vue (Maj + glisser tourne autour)",
+ "Orbit Z": "Orbite Z"
 }

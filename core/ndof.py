@@ -69,10 +69,11 @@ class NdofSample:
 
 AXES = ("right", "up", "forward", "tilt", "spin", "roll")
 ACTIONS = ("pan_x", "pan_y", "zoom", "orbit_x", "orbit_y", "orbit_z", "disabled")
+# The roll axis stays off in the Original mapping: an accidental roll tips
+# a plan out of square. Orbit Z (PR #1406) is there to pick in Custom.
 DEFAULT_MAPPING = dict(zip(AXES, ("pan_x", "pan_y", "zoom",
-                                  "orbit_y", "orbit_x", "orbit_z", "disabled")))
-# Based on the user's tested FreeCAD-style configuration; true camera roll
-# is not supported by OrbitCamera yet.
+                                  "orbit_y", "orbit_x", "disabled")))
+# Based on the user's tested FreeCAD-style configuration.
 FREECAD_MAPPING = dict(zip(AXES, ("pan_x", "zoom", "pan_y",
                                   "orbit_y", "disabled", "orbit_x")))
 FREECAD_INVERSION = {axis: axis in ("up", "tilt") for axis in AXES}
@@ -99,7 +100,7 @@ def effective_axis_mapping(settings):
 
 
 def mapped_movements(sample, settings):
-    """Five camera actions from six physical axes; sum duplicate assignments."""
+    """Six camera actions from six physical axes; sum duplicate assignments."""
     outputs = {action: 0.0 for action in ACTIONS if action != "disabled"}
     mapping = effective_axis_mapping(settings)
     for axis in AXES:
@@ -121,7 +122,7 @@ def mapped_movements(sample, settings):
                 "forward": settings.invert_zoom,
                 "tilt": settings.invert_rotate != settings.invert_tilt,
                 "spin": settings.invert_rotate != settings.invert_spin,
-                "roll": settings.invert_rotate != getattr(settings, "invert_roll", False),
+                "roll": False,
             }
             if legacy.get(axis, False):
                 value = -value
@@ -147,7 +148,6 @@ class NdofSettings:
     invert_spin: bool = False      # orbit around (cap twisted)
     #: Only translations (pan + zoom) — for plan drawing, where an accidental
     #: twist that tips the view out of Top is the last thing wanted.
-    invert_roll: bool = False      # MODIFICACIÓN: Inversión para el eje roll / orbit_z
     lock_rotation: bool = False
     mapping_preset: str = "original"
     axis_mapping: dict = field(default_factory=default_axis_mapping)
@@ -202,8 +202,6 @@ def apply_ndof(camera, sample: NdofSample, dt: float, viewport_h: int,
         px = ORBIT_RAD_PER_S * k * h / math.pi
         camera.orbit(spin * px, tilt * px, h)
         moved = True
-        
-    # MODIFICACIÓN: Manejo de la rotación en el eje Z (Roll / orbit_z)
     if roll_z:
         px_roll = ORBIT_RAD_PER_S * k
         # Orbit Z rolls the view around its forward axis. OrbitCamera.roll
@@ -212,7 +210,6 @@ def apply_ndof(camera, sample: NdofSample, dt: float, viewport_h: int,
         if callable(roll):
             roll(roll_z * px_roll)
             moved = True
-            
     return moved
 
 
