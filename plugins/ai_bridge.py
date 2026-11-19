@@ -17,6 +17,10 @@ the app + an MCP process outside), with three legs up:
   "the agent can't see what it built" gap: describe → build → LOOK → fix.
 - The hermeticity guard stays in the loop: recipes that would commit a
   broken solid are refused by the engine itself.
+- Named tools with a schema (``views/bridge_tools.py``: scene info,
+  layers, scenes, camera, selection, materials, sheets, open / save /
+  import / export) for the clients that do not allow ``run_python``; and
+  ``ingetrazo --server`` runs all of it without a window (main.py).
 
 Protocol (framed for the bridge, not for humans): newline-delimited JSON on
 127.0.0.1:4763 (``INGETRAZO_AI_PORT`` overrides). Request
@@ -31,7 +35,6 @@ import json
 import os
 import socket
 import sys
-import tempfile
 import threading
 from pathlib import Path
 
@@ -40,6 +43,7 @@ from PySide6.QtWidgets import (QHBoxLayout, QLabel, QPlainTextEdit,
                                QPushButton, QVBoxLayout, QWidget)
 
 from core.i18n import tr
+from views.bridge_tools import BridgeTools
 from views.fold_section import FoldSection, narrow
 
 DEFAULT_PORT = 4763
@@ -73,9 +77,11 @@ class _NoDialogs(QObject):
         return False
 
 
-class _Bridge(QObject):
+class _Bridge(BridgeTools, QObject):
     """The in-app half: accepts one agent connection and executes its tool
-    calls on the Qt main thread."""
+    calls on the Qt main thread. The named tools (scene info, layers,
+    camera, files…) come from :class:`views.bridge_tools.BridgeTools` and
+    go through the same request check as ``run_python`` (Marco, 19-11)."""
 
     # Signal(object), NOT Signal(dict): a dict payload on a queued
     # connection may be marshalled into a QVariantMap — the slot then gets a
@@ -106,8 +112,11 @@ class _Bridge(QObject):
         self._dispatch.connect(self._run_on_main, Qt.QueuedConnection)
 
     # ---- Lifecycle ----------------------------------------------------------
-    def start(self) -> int:
-        port = int(os.environ.get("INGETRAZO_AI_PORT", DEFAULT_PORT))
+    def start(self, port: int | None = None) -> int:
+        """Listen on loopback, on ``port`` (``ingetrazo --server --port``),
+        else ``INGETRAZO_AI_PORT``, else 4763; 0 picks a free one."""
+        if port is None:
+            port = int(os.environ.get("INGETRAZO_AI_PORT", DEFAULT_PORT))
         srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         srv.bind(("127.0.0.1", port))
@@ -218,6 +227,7 @@ class _Bridge(QObject):
         self._busy = True
         from PySide6.QtWidgets import QApplication
         guard = _NoDialogs()
+        self._guard = guard          # the named tools read what it cancelled
         QApplication.instance().installEventFilter(guard)
         try:
             handler = getattr(self, f"_tool_{tool}", None)
@@ -235,6 +245,7 @@ class _Bridge(QObject):
                             "error": f"{type(exc).__name__}: {exc}"}
         finally:
             QApplication.instance().removeEventFilter(guard)
+            self._guard = None
             self._busy = False
             job["done"].set()
 
@@ -267,16 +278,6 @@ class _Bridge(QObject):
                        {"min": [lo.x(), lo.y(), lo.z()],
                         "max": [hi.x(), hi.y(), hi.z()]}),
         }
-
-    def _tool_screenshot(self, width: int = 1024, height: int = 768) -> dict:
-        width = max(64, min(int(width), 4096))
-        height = max(64, min(int(height), 4096))
-        image = self._viewport.render_image(width, height)
-        out_dir = Path(tempfile.gettempdir()) / "ingetrazo-ai"
-        out_dir.mkdir(parents=True, exist_ok=True)
-        out = out_dir / "viewport.png"
-        image.save(str(out))
-        return {"path": str(out), "width": width, "height": height}
 
     def _tool_undo(self) -> dict:
         ok = self._viewport.history.undo()

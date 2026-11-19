@@ -11357,6 +11357,12 @@ class MainWindow(QMainWindow):
         scale = self._obj_unit(path)
         if scale is None:
             return
+        self._import_obj_path(path, scale)
+
+    def _import_obj_path(self, path: Path, scale: float) -> bool:
+        """Import an OBJ at ``scale`` metres per unit, one undo step — the
+        menu after asking the unit, and the AI bridge's ``import_file``
+        (Marco, 19-11: named tools that reuse what the menus do)."""
         dlg, cb = self._import_progress(tr("Importing {name}…", name=path.name))
         moved: dict = {}
 
@@ -11367,13 +11373,14 @@ class MainWindow(QMainWindow):
 
         cmd = self._run_import(load, dlg, tr("Import OBJ failed"))
         if cmd is None:
-            return
+            return False
         self._prepare_import_display(cmd, cb)
         dlg.close()
         self.viewport.update()
         self._import_name = path.name
         self._update_title()
         self._report_import(path.name, moved.get("offset"))
+        return True
 
     def _on_import_stl(self) -> None:
         from PySide6.QtWidgets import (QComboBox, QDialog, QDialogButtonBox,
@@ -11425,6 +11432,12 @@ class MainWindow(QMainWindow):
         simplify_mode = simplify.currentData()
         settings.setValue("import/stl_unit", unit)
         settings.setValue("import/stl_simplify_mode", simplify_mode)
+        self._import_stl_path(path, scale, simplify_mode)
+
+    def _import_stl_path(self, path: Path, scale: float,
+                         simplify_mode: str = "principal") -> bool:
+        """Import an STL at ``scale`` metres per unit, one undo step — the
+        menu after its dialog, and the AI bridge's ``import_file``."""
         dlg, cb = self._import_progress(
             tr("Importing {name}…", name=path.name))
         moved: dict = {}
@@ -11433,18 +11446,19 @@ class MainWindow(QMainWindow):
         if exc is not None:
             dlg.close()
             QMessageBox.critical(self, tr("Import STL failed"), str(exc))
-            return
+            return False
         cmd = self._run_import(
             lambda scene: stl_format.add_stl_mesh(scene, path, target),
             dlg, tr("Import STL failed"))
         if cmd is None:
-            return
+            return False
         self._prepare_import_display(cmd, cb)
         dlg.close()
         self.viewport.update()
         self._import_name = path.name
         self._update_title()
         self._report_import(path.name, moved.get("offset"))
+        return True
 
     def _on_import_image(self) -> None:
         """Import a picture to trace over (``Import ▸ image``).
@@ -11767,7 +11781,7 @@ class MainWindow(QMainWindow):
         if path_str:
             self._import_dwg_path(Path(path_str))
 
-    def _import_dwg_path(self, path: Path) -> bool:
+    def _import_dwg_path(self, path: Path, options=None) -> bool:
         """Import a DWG through the LibreDWG satellite (D3): convert to a
         temporary DXF, feed the DXF pipeline, discard the temp. The user
         never sees the intermediate — IngeCAD's dwg_bridge pattern."""
@@ -11807,7 +11821,7 @@ class MainWindow(QMainWindow):
             converter.deleteLater()
         dlg.close()
         try:
-            ok = self._import_dxf_path(dxf, label=path)
+            ok = self._import_dxf_path(dxf, label=path, options=options)
         finally:
             discard_temp_dxf(dxf)
         return ok
@@ -11833,11 +11847,17 @@ class MainWindow(QMainWindow):
         if path_str:
             self._import_dxf_path(Path(path_str))
 
-    def _import_dxf_path(self, path: Path, label: "Path | None" = None) -> bool:
+    def _import_dxf_path(self, path: Path, label: "Path | None" = None,
+                         options=None) -> bool:
         """Import a DXF: 2D CAD linework as tagged layer groups (D1). The
         unit comes from the header; a unitless file is asked about, the OBJ
         importer's rule — never guess in silence. ``label`` is the file the
-        USER opened when ``path`` is an intermediate (the DWG bridge)."""
+        USER opened when ``path`` is an intermediate (the DWG bridge).
+
+        ``options`` answers the question in advance, for the AI bridge
+        where nobody is at the screen (Marco, 19-11): ``(scale,
+        make_faces)``, the scale ``None`` for the drawing's own
+        suggestion."""
         shown = label or path
         from formats.dxf_in import (load_dxf, open_document,
                                     suggest_unit_scale)
@@ -11853,10 +11873,13 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, tr("Import DXF failed"), str(exc))
             return False
         suggested, _code = suggest_unit_scale(doc)
-        options = self._dxf_options(shown, suggested)
         if options is None:
-            return False
+            options = self._dxf_options(shown, suggested)
+            if options is None:
+                return False
         scale, make_faces = options
+        if scale is None:
+            scale = suggested or 1.0
         dlg, cb = self._import_progress(tr("Importing {name}…",
                                            name=shown.name))
         stats: dict = {}
@@ -12575,14 +12598,21 @@ class MainWindow(QMainWindow):
         path = Path(path_str)
         if path.suffix.lower() != f".{suffix}":
             path = path.with_suffix(f".{suffix}")
+        self._write_export(label, path, writer)
+
+    def _write_export(self, label: str, path: Path, writer) -> bool:
+        """``writer(scene, path)`` with the failure shown — the menus'
+        exports once the file is chosen, and the AI bridge's
+        ``export_file``. False when it failed."""
         try:
             writer(self.viewport.scene, path)
         except Exception as exc:  # noqa: BLE001
             QMessageBox.critical(
                 self, tr("Export {label} failed", label=label), str(exc))
-            return
+            return False
         self.statusBar().showMessage(
             tr("Exported {label} → {name}", label=label, name=path.name), 3000)
+        return True
 
     def _confirm_discard(self, prompt: str) -> bool:
         """Return True if it's safe to discard the current drawing."""
