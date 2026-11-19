@@ -43,6 +43,8 @@ class EdgeGrid:
         self.reach = float(reach)
         self.cell = float(cell)
         self.width, self.height = float(width), float(height)
+        if self._bin_native(ax, ay, bx, by, ok, max_cells):
+            return
         with np.errstate(invalid="ignore"):
             lox = np.minimum(ax, bx)
             hix = np.maximum(ax, bx)
@@ -89,6 +91,27 @@ class EdgeGrid:
         order = np.argsort(sk, kind="stable")
         self.keys = keys[order]
         self.ids = ids[rep[order]]
+
+    def _bin_native(self, ax, ay, bx, by, ok, max_cells) -> bool:
+        """The binning below in the native engine, the same cells and the
+        same order to the last index (the first hover with Line after a
+        click binned the Plaza's group edges, ~10 ms of NumPy, 19-11):
+        ``False`` where it cannot (no engine, a view it does not take)."""
+        from core import _native
+        mod = _native.native
+        if mod is None or not hasattr(mod, "edge_grid_bins"):
+            return False
+        vals = (self.width, self.height, self.reach, self.cell)
+        if not all(np.isfinite(vals)) or self.cell <= 0.0:
+            return False
+        f = np.ascontiguousarray
+        (self.cx0, self.cy0, self.ncx, self.ncy, self.long_ids, self.keys,
+         self.ids) = mod.edge_grid_bins(
+            f(ax, np.float64), f(ay, np.float64), f(bx, np.float64),
+            f(by, np.float64), f(ok, bool), self.width, self.height,
+            self.reach, self.cell, int(max_cells))
+        self.n = len(ax)
+        return True
 
     def near(self, px: float, py: float, reach: float | None = None):
         """Indices of the segments that MAY lie within ``reach`` (at most

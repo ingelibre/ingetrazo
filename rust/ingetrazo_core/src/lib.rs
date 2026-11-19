@@ -43,6 +43,7 @@ fn ingetrazo_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(segment_distances, m)?)?;
     m.add_function(wrap_pyfunction!(nearest_within, m)?)?;
     m.add_function(wrap_pyfunction!(project_px, m)?)?;
+    m.add_function(wrap_pyfunction!(edge_grid_bins, m)?)?;
     m.add_function(wrap_pyfunction!(visible_parts, m)?)?;
     m.add_function(wrap_pyfunction!(earcut_indices, m)?)?;
     m.add_function(wrap_pyfunction!(faces_view, m)?)?;
@@ -475,6 +476,35 @@ fn project_px<'py>(py: Python<'py>, pts: PyReadonlyArray2<'py, f64>, mvp: Vec<f6
         ok.push(k);
     }
     Ok((PyArray1::from_vec(py, xs), PyArray1::from_vec(py, ys), PyArray1::from_vec(py, ok)))
+}
+
+/// ``core.edge_grid.EdgeGrid``'s binning (pick::grid_bins): ``(cx0, cy0,
+/// ncx, ncy, long_ids, keys, ids)``, NumPy's to the last index. The first
+/// hover with Line after a click bins the Plaza's group edges (~10 ms of
+/// NumPy, 19-11).
+#[pyfunction]
+#[allow(clippy::too_many_arguments, clippy::type_complexity)]
+fn edge_grid_bins<'py>(py: Python<'py>, ax: PyReadonlyArray1<'py, f64>,
+                       ay: PyReadonlyArray1<'py, f64>, bx: PyReadonlyArray1<'py, f64>,
+                       by: PyReadonlyArray1<'py, f64>, ok: PyReadonlyArray1<'py, bool>,
+                       width: f64, height: f64, reach: f64, cell: f64, max_cells: i64)
+    -> PyResult<(i64, i64, i64, i64, Bound<'py, PyArray1<i64>>, Bound<'py, PyArray1<i64>>,
+                 Bound<'py, PyArray1<i64>>)> {
+    let v = |a: &PyReadonlyArray1<'py, f64>| a.as_array().to_vec();
+    let (ax, ay, bx, by) = (v(&ax), v(&ay), v(&bx), v(&by));
+    let ok: Vec<bool> = ok.as_array().to_vec();
+    let n = ax.len();
+    if ay.len() != n || bx.len() != n || by.len() != n || ok.len() != n {
+        return Err(pyo3::exceptions::PyValueError::new_err("lengths"));
+    }
+    if !(width.is_finite() && height.is_finite() && reach.is_finite() && cell.is_finite()
+         && cell > 0.0) {
+        return Err(pyo3::exceptions::PyValueError::new_err("view"));
+    }
+    let b = py.detach(|| pick::grid_bins(&ax, &ay, &bx, &by, &ok, width, height, reach, cell,
+                                         max_cells));
+    Ok((b.cx0, b.cy0, b.ncx, b.ncy, PyArray1::from_vec(py, b.long_ids),
+        PyArray1::from_vec(py, b.keys), PyArray1::from_vec(py, b.ids)))
 }
 
 /// ``flat`` (3 values a row) as an (N,3) array, without a Vec per row: making
