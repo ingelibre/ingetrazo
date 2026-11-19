@@ -1969,7 +1969,7 @@
  "Remove the colour (back to the original image)": "Xóa màu (trở lại ảnh gốc)",
  "Shift": "Sự thay đổi",
  "Tint": "Pha màu",
- "Shift: move every pixel's hue toward the colour, keeping the texture's variation. Tint: replace hue and saturation, keeping only the lightness.": "Shift: chuyển tông màu của từng pixel về phía màu đã chọn nhưng vẫn giữ nguyên độ tương phản vân họa tiết. Tint: thay thế toàn bộ tông màu và độ bão hòa, chỉ giữ lại độ sáng.",
+ "Shift: move every pixel's hue toward the colour, keeping the texture's variation. Tint: give every pixel the colour's hue, keeping the texture's variation in lightness and saturation.": "Shift: chuyển tông màu của từng pixel về phía màu đã chọn nhưng vẫn giữ nguyên độ tương phản vân họa tiết. Tint: gán tông màu đã chọn cho từng pixel, vẫn giữ sự biến đổi về độ sáng và độ bão hòa của họa tiết.",
  "Tint the texture": "Pha màu họa tiết",
  "Resize/rotate/tint the active texture; with textured faces selected, re-stamps them (undoable)": "Thay đổi kích thước/xoay/pha màu họa tiết hiện hành; khi các bề mặt có họa tiết được chọn, sẽ áp lại họa tiết (có thể hoàn tác)",
  "inward": "hướng nội",

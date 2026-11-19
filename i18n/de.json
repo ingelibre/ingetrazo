@@ -1969,7 +1969,7 @@
  "Remove the colour (back to the original image)": "Farbe entfernen (zurück zum Originalbild)",
  "Shift": "Verschieben",
  "Tint": "Tönen",
- "Shift: move every pixel's hue toward the colour, keeping the texture's variation. Tint: replace hue and saturation, keeping only the lightness.": "Verschieben: den Farbton jedes Pixels zur Farbe hin verschieben und die Variation der Textur behalten. Tönen: Farbton und Sättigung ersetzen und nur die Helligkeit behalten.",
+ "Shift: move every pixel's hue toward the colour, keeping the texture's variation. Tint: give every pixel the colour's hue, keeping the texture's variation in lightness and saturation.": "Verschieben: den Farbton jedes Pixels zur Farbe hin verschieben und die Variation der Textur behalten. Tönen: jedem Pixel den Farbton der Farbe geben und die Variation von Helligkeit und Sättigung der Textur behalten.",
  "Tint the texture": "Textur tönen",
  "Resize/rotate/tint the active texture; with textured faces selected, re-stamps them (undoable)": "Aktive Textur skalieren/drehen/tönen; bei ausgewählten texturierten Flächen werden diese neu aufgebracht (rückgängig machbar)",
  "inward": "nach innen",

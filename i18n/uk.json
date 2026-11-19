@@ -1973,7 +1973,7 @@
  "Remove the colour (back to the original image)": "Прибрати колір (повернути вихідне зображення)",
  "Shift": "Зсув",
  "Tint": "Відтінок",
- "Shift: move every pixel's hue toward the colour, keeping the texture's variation. Tint: replace hue and saturation, keeping only the lightness.": "Зсув: зміщує відтінок кожного пікселя до вибраного кольору, зберігаючи переходи текстури. Відтінок: замінює відтінок і насиченість, зберігаючи лише яскравість.",
+ "Shift: move every pixel's hue toward the colour, keeping the texture's variation. Tint: give every pixel the colour's hue, keeping the texture's variation in lightness and saturation.": "Зсув: зміщує відтінок кожного пікселя до вибраного кольору, зберігаючи переходи текстури. Відтінок: надає кожному пікселю відтінок вибраного кольору, зберігаючи перепади яскравості й насиченості текстури.",
  "Tint the texture": "Підфарбувати текстуру",
  "Resize/rotate/tint the active texture; with textured faces selected, re-stamps them (undoable)": "Змінити розмір / повернути / підфарбувати активну текстуру; якщо вибрано грані з текстурою, текстура накладається на них заново (можна скасувати)",
  "inward": "всередину",

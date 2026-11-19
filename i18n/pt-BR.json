@@ -1973,7 +1973,7 @@
  "Remove the colour (back to the original image)": "Remover a cor (de volta à imagem original)",
  "Shift": "Shift",
  "Tint": "Tingir",
- "Shift: move every pixel's hue toward the colour, keeping the texture's variation. Tint: replace hue and saturation, keeping only the lightness.": "Shift: move o matiz de cada pixel em direção à cor, mantendo a variação da textura. Tingir: substitui matiz e saturação, mantendo apenas a luminosidade.",
+ "Shift: move every pixel's hue toward the colour, keeping the texture's variation. Tint: give every pixel the colour's hue, keeping the texture's variation in lightness and saturation.": "Shift: move o matiz de cada pixel em direção à cor, mantendo a variação da textura. Tingir: dá a cada pixel o matiz da cor, mantendo a variação de luminosidade e saturação da textura.",
  "Tint the texture": "Tingir a textura",
  "Resize/rotate/tint the active texture; with textured faces selected, re-stamps them (undoable)": "Redimensionar/rotacionar/tingir a textura ativa; com faces texturizadas selecionadas, re-estampa-as (desfazível)",
  "inward": "para dentro",

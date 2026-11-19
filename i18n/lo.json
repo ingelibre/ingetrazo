@@ -1969,7 +1969,7 @@
  "Remove the colour (back to the original image)": "ລຶບສີອອກ (ກັບຄືນສູ່ຮູບພາບເດີມ)",
  "Shift": "ປັບໂທນສີ",
  "Tint": "ຍ້ອມສີ",
- "Shift: move every pixel's hue toward the colour, keeping the texture's variation. Tint: replace hue and saturation, keeping only the lightness.": "ປັບໂທນສີ: ປ່ຽນຄ່າສີ (Hue) ຂອງທຸກພິກເຊວໄປຫາສີທີ່ເລືອກ ໂດຍຍັງຮັກສາລວດລາຍຂອງພື້ນຜິວໄວ້. ຍ້ອມສີ: ແທນທີ່ຄ່າສີ ແລະ ຄວາມອິ່ມຕົວຂອງສີ ໂດຍຮັກສາໄວ້ພຽງແຕ່ຄວາມສະຫວ່າງເທົ່ານັ້ນ.",
+ "Shift: move every pixel's hue toward the colour, keeping the texture's variation. Tint: give every pixel the colour's hue, keeping the texture's variation in lightness and saturation.": "ປັບໂທນສີ: ປ່ຽນຄ່າສີ (Hue) ຂອງທຸກພິກເຊວໄປຫາສີທີ່ເລືອກ ໂດຍຍັງຮັກສາລວດລາຍຂອງພື້ນຜິວໄວ້. ຍ້ອມສີ: ໃຫ້ທຸກພິກເຊວມີຄ່າສີ (Hue) ຂອງສີທີ່ເລືອກ ໂດຍຍັງຮັກສາຄວາມແຕກຕ່າງຂອງຄວາມສະຫວ່າງ ແລະ ຄວາມອິ່ມຕົວຂອງສີຂອງພື້ນຜິວໄວ້.",
  "Tint the texture": "ຍ້ອມສີພື້ນຜິວ",
  "Resize/rotate/tint the active texture; with textured faces selected, re-stamps them (undoable)": "ປ່ຽນຂະໜາດ/ໝຸນ/ຍ້ອມສີ ພື້ນຜິວທີ່ໃຊ້ງານຢູ່; ເມື່ອມີການເລືອກໜ້າທີ່ມີລວດລາຍ ຈະທຳການລົງລາຍໃໝ່ (ສາມາດຍົກເລີກການກະທຳໄດ້)",
  "inward": "ເຂົ້າທາງໃນ",

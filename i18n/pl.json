@@ -1969,7 +1969,7 @@
  "Remove the colour (back to the original image)": "Usuń kolor (powrót do oryginalnego obrazu)",
  "Shift": "Przesunięcie",
  "Tint": "Zabarwienie",
- "Shift: move every pixel's hue toward the colour, keeping the texture's variation. Tint: replace hue and saturation, keeping only the lightness.": "Przesunięcie: zbliż odcień każdego piksela do wybranego koloru, zachowując zróżnicowanie tekstury. Zabarwienie: zastąp odcień i nasycenie, zachowując tylko jasność.",
+ "Shift: move every pixel's hue toward the colour, keeping the texture's variation. Tint: give every pixel the colour's hue, keeping the texture's variation in lightness and saturation.": "Przesunięcie: zbliż odcień każdego piksela do wybranego koloru, zachowując zróżnicowanie tekstury. Zabarwienie: nadaj każdemu pikselowi odcień wybranego koloru, zachowując zróżnicowanie jasności i nasycenia tekstury.",
  "Tint the texture": "Zabarw teksturę",
  "Resize/rotate/tint the active texture; with textured faces selected, re-stamps them (undoable)": "Zmień rozmiar, obrót lub zabarwienie aktywnej tekstury; jeśli zaznaczono ściany z teksturami, zastosuj do nich zmiany (można cofnąć)",
  "inward": "do wewnątrz",

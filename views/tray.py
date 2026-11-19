@@ -2189,8 +2189,8 @@ class MaterialsPanel(QWidget):
         self._tint_mode.addItem(tr("Tint"), 1)
         self._tint_mode.setToolTip(tr(
             "Shift: move every pixel's hue toward the colour, keeping the "
-            "texture's variation. Tint: replace hue and saturation, keeping "
-            "only the lightness."))
+            "texture's variation. Tint: give every pixel the colour's hue, "
+            "keeping the texture's variation in lightness and saturation."))
         tint_row.addWidget(self._tint_mode)
         tint_row.addStretch(1)
         apply_btn = QPushButton(tr("Apply"))

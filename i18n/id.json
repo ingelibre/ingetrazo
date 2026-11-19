@@ -1951,7 +1951,7 @@
  "Remove the colour (back to the original image)": "Hapus warna (kembali ke gambar asli)",
  "Shift": "Geser",
  "Tint": "Warnai",
- "Shift: move every pixel's hue toward the colour, keeping the texture's variation. Tint: replace hue and saturation, keeping only the lightness.": "Geser: menggeser rona setiap piksel ke arah warna tersebut sambil mempertahankan variasi tekstur. Warnai: mengganti rona dan saturasi, hanya mempertahankan kecerahan.",
+ "Shift: move every pixel's hue toward the colour, keeping the texture's variation. Tint: give every pixel the colour's hue, keeping the texture's variation in lightness and saturation.": "Geser: menggeser rona setiap piksel ke arah warna tersebut sambil mempertahankan variasi tekstur. Warnai: memberi setiap piksel rona warna tersebut sambil mempertahankan variasi kecerahan dan saturasi tekstur.",
  "Tint the texture": "Warnai tekstur",
  "Resize/rotate/tint the active texture; with textured faces selected, re-stamps them (undoable)": "Ubah ukuran/putar/warnai tekstur aktif; jika bidang bertekstur dipilih, tekstur dicap ulang (dapat diurungkan)",
  "inward": "ke dalam",

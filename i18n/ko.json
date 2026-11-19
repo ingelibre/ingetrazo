@@ -1968,7 +1968,7 @@
  "Remove the colour (back to the original image)": "색상 제거 (원본 이미지로)",
  "Shift": "색조 이동",
  "Tint": "착색",
- "Shift: move every pixel's hue toward the colour, keeping the texture's variation. Tint: replace hue and saturation, keeping only the lightness.": "색조 이동: 텍스처의 변화를 유지하면서 모든 픽셀의 색조를 해당 색상 쪽으로 옮깁니다. 착색: 색조와 채도를 바꾸고 명도만 유지합니다.",
+ "Shift: move every pixel's hue toward the colour, keeping the texture's variation. Tint: give every pixel the colour's hue, keeping the texture's variation in lightness and saturation.": "색조 이동: 텍스처의 변화를 유지하면서 모든 픽셀의 색조를 해당 색상 쪽으로 옮깁니다. 착색: 모든 픽셀에 해당 색상의 색조를 입히고, 텍스처의 명도와 채도 변화는 유지합니다.",
  "Tint the texture": "텍스처 착색",
  "Resize/rotate/tint the active texture; with textured faces selected, re-stamps them (undoable)": "활성 텍스처의 크기/회전/착색 조정. 텍스처가 입혀진 면을 선택한 상태면 다시 입힙니다 (실행 취소 가능)",
  "inward": "안쪽으로",
