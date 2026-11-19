@@ -101,13 +101,25 @@ def layer_counts(scene, *, photo: bool = True) -> dict[str, int]:
     import numpy as np
 
     from core import lazy_mesh
+    from core.mesh import Edge as _Edge, Face as _Face
 
     tally: Counter = Counter()          # raw names; None folds in at the end
     for mesh in iter_meshes(scene):
         plan = lazy_mesh.plan_of(mesh)
         if plan is None:
-            tally.update(layer_of(f) for f in mesh.faces)
-            tally.update(layer_of(e) for e in mesh.edges)
+            # The plain mesh's own faces and edges read in place (a call to
+            # layer_of each was ~0.1 s of every refresh in a 9 674-face
+            # group, night of 19-11); the names fold into the default
+            # below exactly as layer_of folds them. Anything else asks.
+            faces, edges = mesh.faces, mesh.edges
+            if all(type(f) is _Face for f in faces):
+                tally.update(f.attrs.get("layer") for f in faces)
+            else:
+                tally.update(layer_of(f) for f in faces)
+            if all(type(e) is _Edge for e in edges):
+                tally.update(e.layer for e in edges)
+            else:
+                tally.update(layer_of(e) for e in edges)
             continue
         tally.update(plan.layer)
         src = mesh.__dict__["_deferred_source"]
