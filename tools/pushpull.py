@@ -1025,6 +1025,16 @@ class PushPullTool(Tool):
     def preview_faces(self):
         return self._light_faces
 
+    def preview_sweeps(self):
+        """``(faces, sweeps)`` when :meth:`preview_faces` is the sweep
+        ``_build_light_faces`` made — ``sweeps`` the ``(rings, off,
+        cap_attrs, wall_attrs)`` of each swept face, what the viewport's
+        engine bakes them from without walking them — else ``None``."""
+        spec = getattr(self, "_light_spec", None)
+        if spec is not None and spec[0] is self._light_faces:
+            return spec
+        return None
+
     # ---- Drag preview ------------------------------------------------------
 
     def _build_light_faces(self):
@@ -1037,6 +1047,8 @@ class PushPullTool(Tool):
         is exactly what you cannot see while the shape is still moving."""
         d = self.extrusion
         self._light_rings = []
+        self._light_sweeps = []
+        self._light_spec = None
         if (self.base_face is None or self._normal is None
                 or abs(d) < _MIN_EXTRUDE):
             if self.base_face is not None and self._holding_base():
@@ -1048,6 +1060,7 @@ class PushPullTool(Tool):
         out = self._sweep_faces(self.base_face, self._normal * d)
         for face, n in zip(self._extra_faces, self._extra_normals):
             out += self._sweep_faces(face, n * d)
+        self._light_spec = (out, self._light_sweeps)
         return out
 
     def _sweep_faces(self, face, off: QVector3D) -> list:
@@ -1061,6 +1074,9 @@ class PushPullTool(Tool):
         rings = [(list(face.vertices), [p + off for p in face.vertices])]
         rings += [(list(h), [p + off for p in h]) for h in face.holes]
         self._light_rings += rings
+        sweeps = getattr(self, "_light_sweeps", None)
+        if sweeps is not None:
+            sweeps.append(([r[0] for r in rings], off, attrs, wall_attrs))
         cap = Face(rings[0][1], [r[1] for r in rings[1:]], attrs=attrs)
         out = [cap]
         for low, high in rings:

@@ -21,6 +21,7 @@ mod instances;
 mod jsondoc;
 mod occlusion;
 mod parity;
+mod preview;
 mod visible;
 mod weld;
 
@@ -44,6 +45,8 @@ fn ingetrazo_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(visible_parts, m)?)?;
     m.add_function(wrap_pyfunction!(earcut_indices, m)?)?;
     m.add_function(wrap_pyfunction!(faces_view, m)?)?;
+    m.add_function(wrap_pyfunction!(preview_faces_bake, m)?)?;
+    m.add_function(wrap_pyfunction!(preview_sweep_bake, m)?)?;
     m.add_class::<GlReplay>()?;
     m.add_class::<InstanceProto>()?;
     m.add_class::<InstanceSet>()?;
@@ -1506,4 +1509,156 @@ fn faces_view<'py>(
         arr2(py, &wc, 3)?, PyArray1::from_vec(py, wro), PyArray1::from_vec(py, wfo),
         arr2(py, &pc, 2)?, PyArray1::from_vec(py, pd), PyArray1::from_vec(py, pro), PyArray1::from_vec(py, pfo),
     ))
+}
+
+
+// ---- tool preview faces (preview.rs) --------------------------------------
+
+/// ``pos`` (N,3), ``ring_sizes`` and ``ring_counts`` (rings per face, outer
+/// first) as the faces' rings, each face's corners its own.
+fn preview_rings(pos: &numpy::ndarray::ArrayView2<'_, f32>, sizes: &[i64], counts: &[i64])
+    -> Result<Vec<(Vec<facegeom::V3>, Vec<Vec<u32>>)>, &'static str> {
+    let mut out = Vec::with_capacity(counts.len());
+    let mut at = 0usize;
+    let mut r = 0usize;
+    for &c in counts {
+        if c < 1 || r + c as usize > sizes.len() {
+            return Err("ring counts");
+        }
+        let mut p = Vec::new();
+        let mut rings = Vec::with_capacity(c as usize);
+        for &s in &sizes[r..r + c as usize] {
+            if s < 0 || at + s as usize > pos.shape()[0] {
+                return Err("ring sizes");
+            }
+            let mut ring = Vec::with_capacity(s as usize);
+            for i in at..at + s as usize {
+                ring.push(p.len() as u32);
+                p.push(facegeom::V3(pos[[i, 0]], pos[[i, 1]], pos[[i, 2]]));
+            }
+            at += s as usize;
+            rings.push(ring);
+        }
+        r += c as usize;
+        out.push((p, rings));
+    }
+    if r != sizes.len() || at != pos.shape()[0] {
+        return Err("ring sizes");
+    }
+    Ok(out)
+}
+
+/// Rows ``[kind (0 colour, 1 texture), group, has_uvw, uvw×8, rot, sw, sh]``.
+fn preview_mats(m: &numpy::ndarray::ArrayView2<'_, f64>) -> Result<Vec<preview::Mat>, &'static str> {
+    if m.shape()[0] > 0 && m.shape()[1] != 14 {
+        return Err("material rows");
+    }
+    Ok((0..m.shape()[0]).map(|k| {
+        if m[[k, 0]] == 0.0 {
+            preview::Mat::Color
+        } else {
+            let mut uvw = [0.0f64; 8];
+            for (j, u) in uvw.iter_mut().enumerate() {
+                *u = m[[k, 3 + j]];
+            }
+            preview::Mat::Tex {
+                group: m[[k, 1]] as u32,
+                uvw: if m[[k, 2]] != 0.0 { Some(uvw) } else { None },
+                rot: m[[k, 11]], sw: m[[k, 12]], sh: m[[k, 13]],
+            }
+        }
+    }).collect())
+}
+
+type PreviewOut<'py> = Option<(Bound<'py, PyBytes>, Vec<(u32, u32, u32, f64)>,
+                               Vec<(u32, f64, Bound<'py, PyBytes>)>)>;
+
+fn f32_bytes(v: &[f32]) -> Vec<u8> {
+    v.iter().flat_map(|x| x.to_ne_bytes()).collect()
+}
+
+fn preview_out<'py>(py: Python<'py>, b: Option<preview::Baked>) -> PyResult<PreviewOut<'py>> {
+    let Some(b) = b else { return Ok(None) };
+    let color = PyBytes::new(py, &f32_bytes(&b.color));
+    let tex = b.tex.iter().map(|(g, s, v)| (*g, *s, PyBytes::new(py, &f32_bytes(v)))).collect();
+    Ok(Some((color, b.runs, tex)))
+}
+
+/// views.viewport.Viewport._bake_preview_faces_py over preview faces given
+/// as arrays: ``pos`` (N,3) float32 corners, ring by ring (``ring_sizes``),
+/// face by face (``ring_counts``, outer ring first), ``face_mat`` each
+/// face's row of ``mats`` (see preview_mats), ``light`` the viewport's
+/// light. Returns ``(colour positions as float32 bytes, [(material, first
+/// vertex, vertex count, shade)] per colour face, [(group, shade, pos+uv
+/// float32 bytes)] per texture run in first-use order)``, or ``None`` for
+/// a NaN or infinite corner (Python bakes those).
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+fn preview_faces_bake<'py>(
+    py: Python<'py>,
+    pos: PyReadonlyArray2<'_, f32>,
+    ring_sizes: Vec<i64>,
+    ring_counts: Vec<i64>,
+    face_mat: Vec<i64>,
+    mats: PyReadonlyArray2<'_, f64>,
+    light: (f32, f32, f32),
+    hypot: &str,
+) -> PyResult<PreviewOut<'py>> {
+    let h = hypot_of(hypot)?;
+    let p = pos.as_array();
+    let m = mats.as_array();
+    let err = pyo3::exceptions::PyValueError::new_err;
+    let mats = preview_mats(&m).map_err(err)?;
+    let rings = preview_rings(&p, &ring_sizes, &ring_counts).map_err(err)?;
+    if face_mat.len() != rings.len() || face_mat.iter().any(|&k| k < 0 || k as usize >= mats.len()) {
+        return Err(err("face materials"));
+    }
+    let faces: Vec<preview::PFace> = rings.into_iter().zip(&face_mat)
+        .map(|((pos, rings), &k)| preview::PFace { pos, rings, mat: k as usize }).collect();
+    let l = facegeom::V3(light.0, light.1, light.2);
+    let b = py.detach(|| preview::bake(&faces, &mats, l, h));
+    preview_out(py, b)
+}
+
+/// tools.pushpull._build_light_faces baked: the sweep of each source face
+/// (``pos``/``ring_sizes``/``ring_counts`` as in preview_faces_bake) by its
+/// row of ``offs`` (S,3) float32 — cap with material ``cap_mat``, walls with
+/// ``wall_mat`` — the faces in the tool's order. Returns what
+/// preview_faces_bake returns for those faces.
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+fn preview_sweep_bake<'py>(
+    py: Python<'py>,
+    pos: PyReadonlyArray2<'_, f32>,
+    ring_sizes: Vec<i64>,
+    ring_counts: Vec<i64>,
+    offs: PyReadonlyArray2<'_, f32>,
+    cap_mat: Vec<i64>,
+    wall_mat: Vec<i64>,
+    mats: PyReadonlyArray2<'_, f64>,
+    light: (f32, f32, f32),
+    hypot: &str,
+) -> PyResult<PreviewOut<'py>> {
+    let h = hypot_of(hypot)?;
+    let p = pos.as_array();
+    let m = mats.as_array();
+    let o = offs.as_array();
+    let err = pyo3::exceptions::PyValueError::new_err;
+    let mats = preview_mats(&m).map_err(err)?;
+    let rings = preview_rings(&p, &ring_sizes, &ring_counts).map_err(err)?;
+    let n = rings.len();
+    let ok = |v: &[i64]| v.len() == n && v.iter().all(|&k| k >= 0 && (k as usize) < mats.len());
+    if o.shape()[0] != n || (n > 0 && o.shape()[1] != 3) || !ok(&cap_mat) || !ok(&wall_mat) {
+        return Err(err("sweep rows"));
+    }
+    let l = facegeom::V3(light.0, light.1, light.2);
+    let b = py.detach(|| {
+        let mut faces = Vec::new();
+        for (k, (pos, rings)) in rings.iter().enumerate() {
+            let off = facegeom::V3(o[[k, 0]], o[[k, 1]], o[[k, 2]]);
+            preview::sweep(pos, rings, off, cap_mat[k] as usize, wall_mat[k] as usize, &mut faces);
+        }
+        preview::bake(&faces, &mats, l, h)
+    });
+    preview_out(py, b)
 }
