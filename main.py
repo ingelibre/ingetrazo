@@ -248,7 +248,15 @@ class _App(QApplication):
     def __init__(self, argv: list[str]) -> None:
         super().__init__(argv)
         from core.macos_accessibility import install_cocoa_accessibility_fix
-        install_cocoa_accessibility_fix(self)
+        try:
+            install_cocoa_accessibility_fix(self)
+        except RuntimeError as error:
+            # The workaround only guards against a crash when an
+            # accessibility client inspects the window; a Mac with another
+            # Qt, or a source checkout without Apple's command line tools,
+            # must still start (it ran before PR #657 the same way).
+            print(f"IngeTrazo: Cocoa accessibility fix not installed: {error}",
+                  file=sys.stderr)
         self.open_window = None            # set once MainWindow exists
         self.pending_open_path: Path | None = None
 

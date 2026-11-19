@@ -356,3 +356,21 @@ def test_build_cli_reports_failure_without_traceback(monkeypatch, capsys):
     monkeypatch.setattr(fix, "build_cocoa_accessibility_fix", build)
     assert fix.main() == 1
     assert "Command Line Tools are missing" in capsys.readouterr().err
+
+
+def test_the_app_still_starts_when_the_fix_cannot_be_installed(monkeypatch):
+    """main._App catches the fix's RuntimeError (another Qt on a Mac, no
+    compiler in a source checkout): the workaround is optional, starting
+    the program is not."""
+    import ast
+    from pathlib import Path
+    source = (Path(__file__).resolve().parent.parent / "main.py").read_text(
+        encoding="utf-8")
+    tree = ast.parse(source)
+    guarded = [node for node in ast.walk(tree) if isinstance(node, ast.Try)
+               and any(isinstance(n, ast.Call) and getattr(n.func, "id", "")
+                       == "install_cocoa_accessibility_fix"
+                       for n in ast.walk(node))
+               and any(getattr(h.type, "id", "") == "RuntimeError"
+                       for h in node.handlers)]
+    assert guarded, "install_cocoa_accessibility_fix must be wrapped in try"
