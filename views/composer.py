@@ -11361,6 +11361,25 @@ class ComposerWindow(QMainWindow):
                     break
         self._pending_sel = None
 
+    def _own_view_bump(self, scene) -> None:
+        """A frame's view-only bump (its scene's hidden objects in and
+        out), counted as OURS like a sheet edit: taken for a model change,
+        it made every frame stale, the re-render bumped again, and the
+        sheet never stopped rendering — ~1.5 s passes for as long as it
+        was open (final plaza, 19-11). Only when the composer had already
+        seen the version before it: a real edit not yet reported must
+        still reach :meth:`_on_model_version`."""
+        before = scene.version
+        known = (before == getattr(self, "_last_model_version", None)
+                 or before == getattr(self, "_sheet_version", None)
+                 or before in self.__dict__.get("_sheet_versions", ()))
+        scene.bump_view()
+        if known:
+            own = self.__dict__.setdefault("_sheet_versions", set())
+            own.add(scene.version)
+            if len(own) > 256:
+                own.difference_update(sorted(own)[:128])
+
     def _mark_dirty(self) -> None:
         scene = self._scene()
         scene.version += 1
@@ -13124,7 +13143,7 @@ class ComposerWindow(QMainWindow):
                         getattr(scene, "show_hidden_objects", False),
                         getattr(scene, "show_hidden_geometry", False)))
                 if hidden_moved and hasattr(scene, "bump_view"):
-                    scene.bump_view()
+                    self._own_view_bump(scene)
             # A layer set not to print stays out of every sheet, whatever
             # the frame's scene shows (the visibility comes back below).
             # A scene's picture in the Scenes tab is the screen, where
@@ -13162,7 +13181,7 @@ class ComposerWindow(QMainWindow):
                 (scene.show_hidden_objects,
                  scene.show_hidden_geometry) = keep_hidden_shown
                 if hidden_moved and hasattr(scene, "bump_view"):
-                    scene.bump_view()
+                    self._own_view_bump(scene)
             vp.update()
 
     def frame_is_perspective(self, frame) -> bool:

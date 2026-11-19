@@ -114,3 +114,48 @@ def test_a_frame_of_the_live_view_leaves_the_version_alone():
             comp.close()
         win._saved_version = win.viewport.scene.version
         win.close()
+
+
+def test_a_frame_render_is_not_taken_for_a_model_change():
+    """The frame's own view-only bumps are the composer's: reported back by
+    the viewport they must not make the sheet stale, or the auto render
+    loops — every pass bumps again (final plaza, 19-11: each sheet kept
+    rendering ~1.5 s passes for as long as it was open). A real edit made
+    before the render still counts."""
+    from core.composition import MarcoVista
+    from core.saved_views import SavedView
+    from views.composer import ComposerWindow
+    from views.main_window import MainWindow
+    win = MainWindow()
+    comp = None
+    try:
+        sc = win.viewport.scene
+        fountain, water, pergola, post = _plaza(sc)
+        cam = win.viewport.camera
+        pergola.hidden = post.hidden = True
+        sc.saved_views.append(SavedView.capture("Fountain", sc, cam))
+        pergola.hidden = post.hidden = False
+        comp = ComposerWindow(win)
+        frame = MarcoVista(view_key="scene:Fountain", style="vectorial")
+        comp.comp.frames.append(frame)
+        comp._on_model_version(sc.version)          # the composer is up to date
+        comp._stale.clear()
+        for _ in range(3):
+            v0 = sc.version
+            seen = []
+            comp._with_frame_camera(
+                frame, lambda: (seen.append(sc.version),
+                                comp._on_model_version(sc.version)))
+            assert sc.version > v0
+            comp._on_model_version(sc.version)       # the viewport's next paint
+            assert not comp.is_stale(frame), "its own render made it stale"
+        # A real edit, not yet reported, before the next render: it counts.
+        sc.version += 1
+        comp._with_frame_camera(frame, lambda: None)
+        comp._on_model_version(sc.version)
+        assert comp.is_stale(frame), "a model edit was swallowed by the frame"
+    finally:
+        if comp is not None:
+            comp.close()
+        win._saved_version = win.viewport.scene.version
+        win.close()
