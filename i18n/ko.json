@@ -4037,5 +4037,6 @@
  "Opacity:": "불투명도:",
  "Spacing:": "간격:",
  "Keys: Enter = done, Esc = cancel, F = photo's focal length. Right-click over the photo for this menu. Orbiting leaves the photo; its scene tab brings it back.": "키: Enter = 완료, Esc = 취소, F = 사진의 초점 거리. 사진 위에서 오른쪽 클릭하면 이 메뉴. 궤도 회전하면 사진에서 나가고, 장면 탭으로 돌아옵니다.",
- "Camera: {model}": "카메라: {model}"
+ "Camera: {model}": "카메라: {model}",
+ "Every sheet as a page. Click: open it. Drag: change the order. Double-click or F2: rename. Delete: remove it. Right-click: more.": "각 시트를 페이지로 표시합니다. 클릭: 열기. 끌기: 순서 변경. 두 번 클릭 또는 F2: 이름 바꾸기. Delete: 삭제. 오른쪽 클릭: 더 보기."
 }

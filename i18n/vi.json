@@ -4064,5 +4064,6 @@
  "Opacity:": "Độ mờ:",
  "Spacing:": "Khoảng cách lưới:",
  "Keys: Enter = done, Esc = cancel, F = photo's focal length. Right-click over the photo for this menu. Orbiting leaves the photo; its scene tab brings it back.": "Phím: Enter = xong, Esc = hủy, F = tiêu cự của ảnh. Nhấp phải trên ảnh để mở menu này. Xoay quanh sẽ rời ảnh; thẻ cảnh của nó đưa ảnh trở lại.",
- "Camera: {model}": "Máy ảnh: {model}"
+ "Camera: {model}": "Máy ảnh: {model}",
+ "Every sheet as a page. Click: open it. Drag: change the order. Double-click or F2: rename. Delete: remove it. Right-click: more.": "Mỗi trang bản vẽ là một trang. Nhấp: mở. Kéo: đổi thứ tự. Nhấp đúp hoặc F2: đổi tên. Delete: xóa. Nhấp chuột phải: thêm."
 }

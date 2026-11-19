@@ -4037,5 +4037,6 @@
  "Opacity:": "Opacidad:",
  "Spacing:": "Separación:",
  "Keys: Enter = done, Esc = cancel, F = photo's focal length. Right-click over the photo for this menu. Orbiting leaves the photo; its scene tab brings it back.": "Teclas: Enter = listo, Esc = cancelar, F = focal de la foto. Clic derecho sobre la foto para este menú. Orbitar sale de la foto; su pestaña de escena la devuelve.",
- "Camera: {model}": "Cámara: {model}"
+ "Camera: {model}": "Cámara: {model}",
+ "Every sheet as a page. Click: open it. Drag: change the order. Double-click or F2: rename. Delete: remove it. Right-click: more.": "Cada lámina como una página. Clic: abrirla. Arrastrar: cambiar el orden. Doble clic o F2: cambiar el nombre. Supr: eliminarla. Clic derecho: más."
 }

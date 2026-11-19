@@ -4045,5 +4045,6 @@
  "Opacity:": "Nieprzezroczystość:",
  "Spacing:": "Odstęp:",
  "Keys: Enter = done, Esc = cancel, F = photo's focal length. Right-click over the photo for this menu. Orbiting leaves the photo; its scene tab brings it back.": "Klawisze: Enter = gotowe, Esc = anuluj, F = ogniskowa zdjęcia. Prawy klik na zdjęciu otwiera to menu. Orbitowanie opuszcza zdjęcie; karta jego sceny je przywraca.",
- "Camera: {model}": "Aparat: {model}"
+ "Camera: {model}": "Aparat: {model}",
+ "Every sheet as a page. Click: open it. Drag: change the order. Double-click or F2: rename. Delete: remove it. Right-click: more.": "Każdy arkusz jako strona. Kliknięcie: otwiera go. Przeciągnięcie: zmienia kolejność. Dwuklik lub F2: zmiana nazwy. Delete: usuwa go. Prawy przycisk: więcej."
 }

@@ -7798,6 +7798,11 @@ class MainWindow(QMainWindow):
         composer = getattr(self, "_composer", None)
         if composer is not None and hasattr(composer, "views_panel"):
             composer.views_panel.on_scene_changed()
+        # The composer's Sheets panel, for a sheet moved, renamed or
+        # deleted from this window (the Views and sheets panel, the strip).
+        pages = getattr(composer, "_sheet_pages", None)
+        if pages is not None:
+            pages.sync()
         tabs = getattr(self, "_sheet_tabs", None)
         if tabs is None:
             return

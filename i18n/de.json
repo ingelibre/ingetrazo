@@ -4037,5 +4037,6 @@
  "Opacity:": "Deckkraft:",
  "Spacing:": "Rasterabstand:",
  "Keys: Enter = done, Esc = cancel, F = photo's focal length. Right-click over the photo for this menu. Orbiting leaves the photo; its scene tab brings it back.": "Tasten: Enter = fertig, Esc = abbrechen, F = Brennweite des Fotos. Rechtsklick auf das Foto für dieses Menü. Orbit verlässt das Foto; der Szenen-Tab holt es zurück.",
- "Camera: {model}": "Kamera: {model}"
+ "Camera: {model}": "Kamera: {model}",
+ "Every sheet as a page. Click: open it. Drag: change the order. Double-click or F2: rename. Delete: remove it. Right-click: more.": "Jedes Blatt als Seite. Klick: öffnen. Ziehen: Reihenfolge ändern. Doppelklick oder F2: umbenennen. Entf: löschen. Rechtsklick: mehr."
 }

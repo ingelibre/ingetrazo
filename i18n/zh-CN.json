@@ -4038,5 +4038,6 @@
  "Opacity:": "不透明度：",
  "Spacing:": "间距：",
  "Keys: Enter = done, Esc = cancel, F = photo's focal length. Right-click over the photo for this menu. Orbiting leaves the photo; its scene tab brings it back.": "按键：Enter = 完成，Esc = 取消，F = 照片焦距。在照片上右键打开此菜单。环绕会离开照片；点其场景标签可返回。",
- "Camera: {model}": "相机：{model}"
+ "Camera: {model}": "相机：{model}",
+ "Every sheet as a page. Click: open it. Drag: change the order. Double-click or F2: rename. Delete: remove it. Right-click: more.": "每张图纸显示为一页。单击：打开。拖动：更改顺序。双击或 F2：重命名。Delete：删除。右键：更多。"
 }

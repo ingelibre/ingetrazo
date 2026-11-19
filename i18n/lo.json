@@ -4040,5 +4040,6 @@
  "Opacity:": "ຄວາມທຶບແສງ:",
  "Spacing:": "ໄລຍະຫ່າງຕາໜ່າງ:",
  "Keys: Enter = done, Esc = cancel, F = photo's focal length. Right-click over the photo for this menu. Orbiting leaves the photo; its scene tab brings it back.": "ປຸ່ມ: Enter = ສຳເລັດ, Esc = ຍົກເລີກ, F = ໂຟກັສຂອງຮູບ. ຄລິກຂວາເທິງຮູບເພື່ອເປີດເມນູນີ້. ການໝູນອ້ອມຈະອອກຈາກຮູບ; ແຖບສາກຂອງມັນຈະນຳກັບມາ.",
- "Camera: {model}": "ກ້ອງ: {model}"
+ "Camera: {model}": "ກ້ອງ: {model}",
+ "Every sheet as a page. Click: open it. Drag: change the order. Double-click or F2: rename. Delete: remove it. Right-click: more.": "ແຕ່ລະໜ້າເຈ້ຍເປັນໜ້າໜຶ່ງ. ຄລິກ: ເປີດ. ລາກ: ປ່ຽນລຳດັບ. ຄລິກສອງເທື່ອ ຫຼື F2: ປ່ຽນຊື່. Delete: ລຶບ. ຄລິກຂວາ: ເພີ່ມເຕີມ."
 }

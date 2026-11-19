@@ -6207,7 +6207,8 @@ class _PanelTabs(QTabWidget):
     #: tab shows its icon and name, the others their icon alone (the name
     #: their tooltip) — so all fit on the bar (Marco, 2026-11-12).
     PAGE_ICONS = {"layout": "sheet_layout", "items": "sheet_items",
-                  "props": "panel_properties", "views": "sheet_views"}
+                  "props": "panel_properties", "views": "sheet_views",
+                  "sheets": "sheet_pages"}
 
     def __init__(self, composer, side: str) -> None:
         super().__init__()
@@ -6493,6 +6494,19 @@ class ComposerWindow(QMainWindow):
         self.views_panel = SheetsPanel(main_window, composer=self)
         self._pages["views"] = self.views_panel
         self._page_titles["views"] = tr("Views and sheets")
+        # Every sheet as a page, as a PDF reader lists its pages (Marco,
+        # 19-11: «como un gestor de laminas … que se muestren en miniatura»):
+        # a tab of its own at the end of the right side, the others where
+        # they were.
+        from views.sheet_pages import SheetPagesPanel
+        self._sheet_pages = SheetPagesPanel(self)
+        self._pages["sheets"] = self._sheet_pages
+        self._page_titles["sheets"] = tr("Sheets")
+        # A sheet's picture follows what the canvas shows: any change on
+        # it (an edit, a render that landed, a new paper) paints it again,
+        # 300 ms after the last one.
+        self.canvas.changed.connect(
+            lambda *_a: self._touch_sheet_page(self.comp))
         self._left_tabs = _PanelTabs(self, "left")
         left = QWidget()
         left_lay = QVBoxLayout(left)
@@ -6521,7 +6535,8 @@ class ComposerWindow(QMainWindow):
                              on_sheet=self.show_sheet,
                              on_new=self._new_sheet_tab,
                              on_menu=lambda i, pos: self.sheet_tab_menu(
-                                 i, pos, self))
+                                 i, pos, self),
+                             on_move=self.move_sheet)
         self.setStatusBar(bar)
         self._build_window_actions()
         self._build_sidebar_handle()
@@ -8846,6 +8861,8 @@ class ComposerWindow(QMainWindow):
         comps = self._scene().compositions
         cur = comps.index(self.comp) if self.comp in comps else 0
         tabs.refresh([c.name for c in comps], cur)
+        # (the Sheets panel follows through the main window's refresh,
+        # which catches the changes made over there too)
         sync = getattr(self._window, "_refresh_sheet_tabs", None)
         if sync is not None:
             sync()
@@ -8993,6 +9010,50 @@ class ComposerWindow(QMainWindow):
             self._mark_dirty()
             self._reload_comp_combo()
         return True
+
+    def move_sheet(self, index: int, to: int) -> None:
+        """Sheet ``index`` to place ``to`` — a tab dragged along the strip
+        or a page in the Sheets panel (Marco, 19-11) — as one undo step.
+        The sheet open here stays open."""
+        comps = self._scene().compositions
+        if not (0 <= index < len(comps)) or index == to:
+            return
+        from views.sheet_pages import SheetOrderCommand
+        self.history.execute(SheetOrderCommand(
+            self._scene(), comps[index], to, after=self._after_sheet_order))
+
+    def _after_sheet_order(self, old: int, new: int) -> None:
+        """A sheet went from ``old`` to ``new`` (or back, on undo)."""
+        scene = self._scene()
+        # The move bumped the version itself: ours, not a model change —
+        # taken for one it made every frame stale and re-rendered them.
+        own = self.__dict__.setdefault("_sheet_versions", set())
+        own.add(scene.version)
+        self._sheet_version = scene.version
+        # The sheets in between changed number ({hoja}): their pictures.
+        comps = scene.compositions
+        for i in range(min(old, new), max(old, new) + 1):
+            if 0 <= i < len(comps):
+                self._touch_sheet_page(comps[i])
+        self._reload_comp_combo()
+
+    def _touch_sheet_page(self, comp) -> None:
+        pages = getattr(self, "_sheet_pages", None)
+        if pages is not None and comp is not None:
+            pages.touch(comp)
+
+    def sheet_thumbnail(self, comp, w_px: int, h_px: int):
+        """``comp`` as a ``w_px``×``h_px`` picture, painted from what this
+        window already holds — the frames' cached renders and drawings, as
+        the export prints them. NEVER a render: the Sheets panel calls this
+        for every sheet, and one frame of a big model costs seconds."""
+        from views.sheet_pages import paint_thumbnail
+        try:
+            return paint_thumbnail(self._paint_sheet, comp, w_px, h_px)
+        finally:
+            # _paint_sheet points the sheet fields ({hoja}, {lamina}…) at
+            # the sheet it paints; the canvas reads them for the open one.
+            self._set_field_context(self.comp)
 
     def sheet_tab_menu(self, index: int, global_pos, parent) -> None:
         """The right-click menu of a sheet tab (either window's strip)."""
@@ -14143,6 +14204,7 @@ class ComposerWindow(QMainWindow):
         self.annot_cache[id(frame)] = self.compute_annotations(frame)
         if frame.style == "vectorial" and not self.frame_is_perspective(frame):
             self.compute_hlr(frame)
+            self._touch_sheet_page(self.comp)   # its picture in Sheets
             return None
 
         def run():
@@ -14205,6 +14267,7 @@ class ComposerWindow(QMainWindow):
         if image is not None:
             self.render_cache[id(frame)] = image
         self._stale.discard(id(frame))
+        self._touch_sheet_page(self.comp)       # its picture in Sheets
         return image
 
     def _on_renumber(self) -> None:
@@ -14726,7 +14789,8 @@ class ComposerWindow(QMainWindow):
     #: left side starts empty and folded, and opens when a tab is dragged
     #: there.
     _DEFAULT_SIDES = {"left": [],
-                      "right": ["layout", "views", "items", "props"]}
+                      "right": ["layout", "views", "items", "props",
+                                "sheets"]}
 
     def _side_tabs(self, side: str):
         return self._left_tabs if side == "left" else self._tabs

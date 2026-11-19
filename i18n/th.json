@@ -4040,5 +4040,6 @@
  "Opacity:": "ความทึบแสง:",
  "Spacing:": "ระยะห่าง:",
  "Keys: Enter = done, Esc = cancel, F = photo's focal length. Right-click over the photo for this menu. Orbiting leaves the photo; its scene tab brings it back.": "ปุ่ม: Enter = เสร็จ, Esc = ยกเลิก, F = โฟกัสของภาพ คลิกขวาบนภาพเพื่อเปิดเมนูนี้ การหมุนรอบจะออกจากภาพ แท็บฉากของภาพจะพากลับมา",
- "Camera: {model}": "กล้อง: {model}"
+ "Camera: {model}": "กล้อง: {model}",
+ "Every sheet as a page. Click: open it. Drag: change the order. Double-click or F2: rename. Delete: remove it. Right-click: more.": "แผ่นแบบแต่ละแผ่นเป็นหนึ่งหน้า คลิก: เปิด ลาก: เปลี่ยนลำดับ ดับเบิลคลิกหรือ F2: เปลี่ยนชื่อ Delete: ลบ คลิกขวา: เพิ่มเติม"
 }
