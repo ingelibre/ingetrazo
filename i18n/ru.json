@@ -4053,5 +4053,11 @@
  "Every layer is in the legend": "Все слои уже в легенде",
  "Free entry": "Свободная запись",
  "New entry": "Новая запись",
- "Every sheet as a page. Click: open it. Drag: change the order. Double-click or F2: rename. Delete: remove it. Right-click: more.": "Каждый лист как страница. Щелчок: открыть. Перетаскивание: изменить порядок. Двойной щелчок или F2: переименовать. Delete: удалить. Правый щелчок: ещё."
+ "Every sheet as a page. Click: open it. Drag: change the order. Double-click or F2: rename. Delete: remove it. Right-click: more.": "Каждый лист как страница. Щелчок: открыть. Перетаскивание: изменить порядок. Двойной щелчок или F2: переименовать. Delete: удалить. Правый щелчок: ещё.",
+ "Automatic (compact)": "Автоматически (компактно)",
+ "Plain JSON (for version control)": "Простой JSON (для контроля версий)",
+ "Automatic packs textures and big models into a compact archive. Plain JSON always writes readable text, so Git and other version control can show what changed; its images go to a folder beside the document (Name.assets) that travels with it.": "Автоматический формат упаковывает текстуры и большие модели в компактный архив. Простой JSON всегда записывает читаемый текст, чтобы Git и другие системы контроля версий показывали, что изменилось; его изображения кладутся в папку рядом с документом (Имя.assets), которая переносится вместе с ним.",
+ "Save format": "Формат сохранения",
+ "Allow the agent to save the document": "Разрешить агенту сохранять документ",
+ "Lets the agent write the open document to disk with its save_document tool (File ▸ Save, in the format chosen in Preferences). Off: it can change the model, never the file.": "Позволяет агенту записывать открытый документ на диск инструментом save_document (Файл ▸ Сохранить, в формате, выбранном в настройках). Выключено: он может менять модель, но не файл."
 }

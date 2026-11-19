@@ -4053,5 +4053,11 @@
  "Every layer is in the legend": "すべてのレイヤーが凡例にあります",
  "Free entry": "自由項目",
  "New entry": "新しい項目",
- "Every sheet as a page. Click: open it. Drag: change the order. Double-click or F2: rename. Delete: remove it. Right-click: more.": "各シートをページとして表示。クリック: 開く。ドラッグ: 順序を変更。ダブルクリックまたは F2: 名前を変更。Delete: 削除。右クリック: その他。"
+ "Every sheet as a page. Click: open it. Drag: change the order. Double-click or F2: rename. Delete: remove it. Right-click: more.": "各シートをページとして表示。クリック: 開く。ドラッグ: 順序を変更。ダブルクリックまたは F2: 名前を変更。Delete: 削除。右クリック: その他。",
+ "Automatic (compact)": "自動 (コンパクト)",
+ "Plain JSON (for version control)": "プレーン JSON (バージョン管理向け)",
+ "Automatic packs textures and big models into a compact archive. Plain JSON always writes readable text, so Git and other version control can show what changed; its images go to a folder beside the document (Name.assets) that travels with it.": "自動では、テクスチャと大きなモデルをコンパクトなアーカイブにまとめます。プレーン JSON は常に読めるテキストで書き出すので、Git などのバージョン管理で変更点を確認できます。画像は文書の横のフォルダー (名前.assets) に置かれ、文書と一緒に持ち運びます。",
+ "Save format": "保存形式",
+ "Allow the agent to save the document": "エージェントに文書の保存を許可",
+ "Lets the agent write the open document to disk with its save_document tool (File ▸ Save, in the format chosen in Preferences). Off: it can change the model, never the file.": "エージェントが save_document ツールで開いている文書をディスクに書き込めるようにします (ファイル ▸ 保存、環境設定で選んだ形式)。オフ: モデルは変更できますが、ファイルは変更できません。"
 }

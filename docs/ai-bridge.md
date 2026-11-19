@@ -82,7 +82,8 @@ Python sobre el documento. Las **herramientas con nombre** tienen un
 esquema y no ejecutan código, así que un cliente que no permita
 `run_python` puede trabajar igual. Cada una llama a una orden del puente
 que reutiliza lo mismo que usan los menús: los mismos importadores y
-exportadores, el panel de escenas, la cámara y el compositor.
+exportadores, el panel de escenas, la cámara y el compositor. Hay una sola
+herramienta para cada trabajo.
 
 Reglas comunes:
 
@@ -90,19 +91,20 @@ Reglas comunes:
   es **un paso de deshacer**, como `run_python`. La cámara, la selección
   y la escena mostrada son la vista, no el documento: quedan fuera del
   historial, como en la aplicación.
-- Las rutas de archivo deben ser **absolutas**. Una ruta relativa se
-  rechaza.
+- Las rutas de archivo deben ser **absolutas** (se acepta `~`). Una ruta
+  relativa se rechaza.
 - Nadie está frente a la pantalla para responder un diálogo: el puente lo
   cancela, y si el paso falló, el error repite lo que decía.
-- Sin OpenGL, `screenshot`, `render_sheet` y las exportaciones que
-  necesitan una imagen devuelven un error que explica el motivo. Nunca se
-  cuelgan.
+- Sin OpenGL, `screenshot`, `export_view`, `render_sheet` y `export_pdf`
+  con vistas renderizadas devuelven un error que explica el motivo. Nunca
+  se cuelgan.
 
 | Herramienta | Qué hace | Ejemplo de argumentos |
 |---|---|---|
 | `run_python` | Ejecuta Python sobre el documento vivo (scope: `scene`, `mesh`, `selection`, `groups`, `bim`, `QVector3D`… y los constructores `revolve(perfil)` / `extrude(contorno, z0, z1)`: una línea → un grupo sólido, suave y orientado). Un undo por llamada; rollback total si falla. | `{"code": "extrude([(0,0),(4,0),(4,3),(0,3)], 0, 2.5, name='Caseta')"}` |
 | `query_model` | Conteos, nombres de grupos/componentes, materiales, capas, bounds. | `{}` |
-| `get_scene_info` | Lo de `query_model` más el archivo, si hay cambios sin guardar, las escenas, las láminas (con su número del cajetín), las capas con su visibilidad, la georreferencia y si puede renderizar. Es la primera llamada. | `{}` |
+| `document_info` | Ruta del documento, si tiene cambios sin guardar (`modified`), formato de guardado, láminas, escenas y qué está permitido (`saving_allowed`, `shutdown_allowed`). | `{}` |
+| `get_scene_info` | Lo de `query_model` y `document_info` más las escenas, las láminas (con su número del cajetín), las capas con su visibilidad, la georreferencia y si puede renderizar. Es la primera llamada. | `{}` |
 | `get_object_info` | Un grupo o componente por nombre o identificador: caja (mín., máx., tamaño), capa, material, hijos y etiqueta BIM (IFC). | `{"name": "Caseta"}` o `{"id": "3f2a9c0d1e4b5a67"}` |
 | `list_layers` | Las capas: nombre, visible, bloqueada, carpeta; y la activa. | `{}` |
 | `set_layer_visibility` | Muestra u oculta capas (un paso de deshacer). | `{"layers": ["Mobiliario"], "visible": false}` |
@@ -110,15 +112,18 @@ Reglas comunes:
 | `show_scene` | Muestra una escena como un clic en su fila: cámara, capas, estilo y objetos ocultos. | `{"name": "Planta"}` |
 | `set_camera` | Vista estándar (`top`, `bottom`, `front`, `back`, `left`, `right`, `iso`) o `eye`/`target` (Z arriba, metros); proyección `perspective`, `parallel` o `two_point`; `fov` en grados; `zoom_extents` encuadra todo. | `{"view": "iso", "zoom_extents": true}` o `{"eye": [20, -15, 8], "target": [0, 0, 1], "projection": "perspective"}` |
 | `select` | Selecciona grupos o componentes por `names` o `ids` (`mode`: `replace`, `add`, `remove` o `toggle`), o vacía la selección con `clear`. | `{"names": ["Banca 1", "Banca 2"]}` o `{"clear": true}` |
-| `screenshot` | Renderiza la vista. El agente la mira e itera. Con `scene` renderiza esa escena y deja la vista del usuario como estaba; con `path` guarda además el PNG ahí. | `{"width": 1280, "height": 720, "scene": "Vista 3D"}` |
+| `screenshot` | Renderiza la vista. El agente la mira e itera; con `path` guarda además el PNG (o JPG) ahí. | `{"width": 1280, "height": 720}` |
+| `export_view` | Renderiza una escena guardada a PNG y el agente la mira; con `path` la guarda ahí. La vista del usuario (cámara, capas, estilo, ocultos) vuelve a como estaba y un documento guardado sigue guardado. | `{"view": "Vista 3D", "path": "/home/ana/obra/vista.png"}` |
 | `render_sheet` | PNG de una lámina, pintado por el compositor como su exportación de imagen. La lámina se indica por nombre, por número del cajetín (`L-02`) o por posición (1 = la primera); `width` en píxeles o `dpi`. | `{"sheet": "L-02", "width": 1600}` |
-| `open_file` | Abre un documento (`.igz`, `.dae`, `.skp`, `.dxf`, `.dwg`) en lugar del que está al frente. Si ese tiene cambios sin guardar, devuelve un error y no muestra el diálogo «¿guardar cambios?», salvo con `discard_changes`. | `{"path": "/home/ana/obra/plaza.igz"}` |
-| `save_file` | Guarda el documento; con `path` (un `.igz`), lo guarda como ese archivo. | `{}` o `{"path": "/home/ana/obra/plaza-v2.igz"}` |
+| `export_pdf` | Las láminas (todas, o las de `sheets`: nombre, número del cajetín o posición) a un solo PDF. | `{"path": "/home/ana/obra/plaza.pdf"}` o `{"path": "/home/ana/obra/L-02.pdf", "sheets": ["L-02"]}` |
+| `open_document` | Abre un documento (`.igz`, `.dae`, `.skp`, `.dxf`, `.dwg`) en lugar del que está al frente. Si ese tiene cambios sin guardar, devuelve un error y no muestra el diálogo «¿guardar cambios?», salvo con `discard_changes`. | `{"path": "/home/ana/obra/plaza.igz"}` |
+| `save_document` | Guarda el documento; con `path` (un `.igz`), lo guarda como ese archivo; `format`: `auto` o `json`. **Solo si el usuario lo permite** (ver abajo). | `{}` o `{"path": "/home/ana/obra/plaza-v2.igz", "format": "json"}` |
 | `import_file` | Importa al documento (un paso de deshacer): `.igz` (como componente), `.dae`, `.glb`/`.gltf`, `.skp`, `.obj`, `.stl`, `.dxf`, `.dwg`. `unit` (`m`, `cm`, `mm`, `in`, `ft`) para OBJ, STL y DXF; `make_faces` para DXF/DWG. | `{"path": "/home/ana/muebles/banca.obj", "unit": "cm"}` |
-| `export_file` | Exporta según la extensión: `.ifc` (los objetos etiquetados en BIM), `.glb`, `.dae`, `.stl` (`unit`, por defecto mm), `.obj`, `.dxf` (las líneas de la vista), `.pdf` (una lámina con `sheet`, o todas) y `.png`/`.jpg` (la vista, `width`). `selection_only` para GLB. | `{"path": "/home/ana/obra/plaza.ifc"}` o `{"path": "/home/ana/obra/L-02.pdf", "sheet": "L-02"}` |
+| `export_file` | Exporta el modelo según la extensión: `.ifc` (los objetos etiquetados en BIM), `.glb`, `.dae`, `.stl` (`unit`, por defecto mm), `.obj` y `.dxf` (las líneas de la vista). `selection_only` para GLB. Las láminas van con `export_pdf` y las imágenes con `screenshot`, `export_view` y `render_sheet`. | `{"path": "/home/ana/obra/plaza.ifc"}` |
 | `list_materials` | Los materiales del documento: nombre, color, textura, opacidad. | `{}` |
 | `apply_material` | Pinta con un material del documento los objetos nombrados (`names`/`ids`) como un todo, o si no, la selección. Un paso de deshacer. | `{"material": "Ladrillo", "names": ["Muro norte"]}` |
 | `undo` / `redo` | La historia de siempre. | `{}` |
+| `shutdown` | Cierra un IngeTrazo sin ventana arrancado con `--allow-shutdown`. Con cambios sin guardar se niega, salvo con `discard_changes`. | `{}` |
 
 Sin el puente encendido, las tools responden con el aviso de cómo
 encenderlo. El servidor acepta un cliente a la vez y nunca escucha fuera
@@ -127,35 +132,65 @@ de localhost.
 La exportación a IFC usa el exportador actual. La ida y vuelta de IFC sin
 pérdidas llegará en la 0.6.4.
 
-## Modo servidor (sin ventana)
+**Guardar desde el agente** está apagado por defecto: en la ventana, la
+casilla **Permitir que el agente guarde el documento** de la sección Puente
+IA (MCP); sin ventana, `--allow-save`. Sin permiso, el agente puede cambiar
+el modelo pero nunca el archivo. (Recuerda que `run_python` ejecuta código
+dentro de la aplicación: el permiso evita accidentes, no es una barrera de
+seguridad.)
 
-    ingetrazo --server [archivo.igz] [--port N]
+## Sin ventana: automatización y control de versiones
 
-Arranca IngeTrazo **sin mostrar la ventana principal**, abre el archivo si
-se indica y enciende el puente. Cuando está listo, escribe en la salida de
-errores una línea como esta:
+IngeTrazo puede correr **sin ventana** para que un agente trabaje un
+documento de principio a fin — por ejemplo en un runner de CI que abre un
+`.igz` de un repositorio Git, deja que Claude haga cambios, guarda y abre
+un pull request para revisarlo.
 
-    IngeTrazo server ready on 127.0.0.1:4763 — plaza.igz
+    ingetrazo --headless --ai-bridge --open Casa.igz \
+              --allow-save --save-format json --allow-shutdown \
+              --port 0 --ready-file puerto.txt
 
-`--port 0` toma un puerto libre, que aparece en esa línea. Sin `--port`,
-se usa `INGETRAZO_AI_PORT` o, si no está definida, 4763. `Ctrl+C`
-(SIGINT) o SIGTERM lo cierran limpio, sin preguntar nada: guarda antes
-con `save_file` lo que quieras conservar. El modo servidor no usa la instancia única, así que un
-IngeTrazo abierto no se entera, y no escribe en la configuración del
-usuario nada que la aplicación normal no escriba.
+La forma corta `ingetrazo --server [Casa.igz] [--port N] [opciones…]` es
+lo mismo que `--headless --ai-bridge --open Casa.igz`: el mismo modo, con
+las mismas opciones y códigos de salida.
 
-Desde el repositorio: `python3 main.py --server plaza.igz`. Luego conecta
-el cliente MCP de siempre (`ingetrazo --mcp`, `ingetrazo-mcp.exe` o
-`scripts/ingetrazo_mcp.py`) al mismo puerto (`INGETRAZO_AI_PORT`).
+| Opción | Qué hace |
+|---|---|
+| `--headless` | Ninguna ventana en pantalla (la vista se sigue dibujando en una ventana oculta). Ningún diálogo espera respuesta: todos se cancelan. |
+| `--ai-bridge` | Enciende el puente (solo 127.0.0.1). |
+| `--open ARCHIVO` | Abre el documento. **Si no se puede abrir, IngeTrazo termina al instante** con el código 3, antes de encender el puente. |
+| `--port N` | Puerto del puente (por defecto `INGETRAZO_AI_PORT` o 4763; `0` = uno libre). |
+| `--ready-file RUTA` | Escribe ahí el puerto cuando el documento ya está abierto y el puente escucha (también se imprime `INGETRAZO_BRIDGE_PORT=<n>`, y en la salida de errores una línea que dice si hay OpenGL). |
+| `--allow-save` | El agente puede usar `save_document`. |
+| `--save-format auto\|json` | Cómo se guarda: `auto` (como siempre) o `json` (ver abajo). |
+| `--allow-shutdown` | El agente puede usar `shutdown`. Solo por línea de comandos. |
+| `--exit-on-stdin-eof` | Termina (código 5) cuando se cierra su entrada estándar: para un proceso padre que podría morir. |
 
-**OpenGL.** La captura y las láminas con vistas renderizadas necesitan un
-contexto OpenGL. El resto de las herramientas funciona sin él. Si no hay
-contexto, la línea «ready» lo dice y esas herramientas devuelven un error
-que explica el motivo. Las láminas dibujadas solo con líneas (estilo
-vectorial) se renderizan igual. En Linux sin pantalla (un contenedor, una
-sesión ssh), el modo servidor elige solo la plataforma `offscreen`. Con
-ella, OpenGL depende de los controladores de la máquina. Para tener GL
-seguro:
+Sin ventana no se hacen copias `.igz.bak` ni copias de recuperación al
+guardar: el historial es Git. No usa la instancia única, así que un
+IngeTrazo abierto no se entera.
+
+**Códigos de salida**
+
+| Código | Significa |
+|---|---|
+| 0 | El agente llamó a `shutdown` — el único final limpio. |
+| 2 | Línea de comandos incorrecta. |
+| 3 | El documento de `--open` no se pudo abrir. |
+| 4 | El puente no pudo escuchar (puerto ocupado…). |
+| 5 | Terminó de otra forma: señal (`Ctrl+C`, SIGTERM), entrada estándar cerrada… |
+
+En Windows, un proceso terminado desde fuera (`TerminateProcess`) sale con
+el código que pone quien lo mata (1 con `Popen.terminate`) — nunca 0.
+
+**OpenGL.** `screenshot`, `export_view` y las láminas con vistas
+renderizadas necesitan un contexto OpenGL. El resto de las herramientas
+funciona sin él. Si no hay contexto, la línea de la salida de errores lo
+dice y esas herramientas devuelven un error que explica el motivo. Las
+láminas dibujadas solo con líneas (estilo vectorial) se renderizan igual.
+En Linux sin pantalla (un contenedor, una sesión ssh), el modo sin ventana
+elige solo la plataforma `offscreen`. Con ella, OpenGL depende de los
+controladores de la máquina. Para tener GL seguro:
 
 - **Xvfb**, una pantalla virtual:
 
@@ -166,8 +201,60 @@ seguro:
 - **En un escritorio**: `QT_QPA_PLATFORM=xcb ingetrazo --server …` usa la
   pantalla real sin mostrar la ventana. También puedes abrir IngeTrazo
   normalmente, minimizarlo y encender el puente desde la pestaña IA.
-- En Windows y macOS, el modo servidor usa la pantalla del sistema sin
+- En Windows y macOS, el modo sin ventana usa la pantalla del sistema sin
   mostrar la ventana.
+
+### Un solo comando para el cliente MCP
+
+El servidor MCP puede arrancar su propio IngeTrazo sin ventana: no hace
+falta tener IngeTrazo abierto antes.
+
+    claude mcp add ingetrazo-headless -- ingetrazo --mcp --headless \
+        --open /ruta/Casa.igz --allow-save --save-format json --allow-shutdown
+
+(En Windows: `ingetrazo-mcp.exe --headless --open …`; desde el repositorio:
+`python3 scripts/ingetrazo_mcp.py --headless --open …`.) El servidor busca
+un puerto libre, espera a que el documento esté abierto y cierra su
+IngeTrazo cuando el cliente se va. Si el documento no abre, el servidor
+termina con el mismo código (3) sin llegar a servir. Tras un `shutdown`,
+termina con 0.
+
+### Ejemplo de runner
+
+Cuando el script necesita el código de salida, conviene arrancar IngeTrazo
+aparte y apuntar el servidor MCP normal a su puerto:
+
+    ingetrazo --headless --ai-bridge --open Casa.igz --allow-save \
+        --save-format json --allow-shutdown --port 0 \
+        --ready-file /tmp/puerto &
+    PID=$!
+    while [ ! -s /tmp/puerto ]; do
+        kill -0 $PID 2>/dev/null || { wait $PID; exit $?; }   # no abrió
+        sleep 0.2
+    done
+    INGETRAZO_AI_PORT=$(cat /tmp/puerto) claude -p \
+        "Añade una ventana de 1×1 m en el muro sur, guarda y llama a shutdown" \
+        --mcp-config ingetrazo-mcp.json --allowedTools "mcp__ingetrazo__*"
+    wait $PID || exit 1                     # 0 solo si el agente terminó bien
+    git checkout -b ia/ventana-sur && git add Casa.igz Casa.assets
+    git commit -m "Ventana sur (Claude)" && gh pr create --fill
+
+### Formato JSON plano
+
+Con **Preferencias ▸ General ▸ Formato de guardado ▸ JSON plano** (o
+`--save-format json`) el `.igz` es siempre texto JSON con sangría, sea cual
+sea su tamaño, así que `git diff` muestra qué cambió. Las imágenes
+(texturas, el levantamiento fotogramétrico) no caben en texto: van a una
+carpeta junto al documento, `Casa.assets/`, que hay que versionar con él.
+Una imagen que ya no se usa se borra de esa carpeta al guardar; lo demás que
+haya en ella no se toca. Es un `.igz` de formato 1 con la marca
+`"layout": "plain-json"`: un documento abierto con esa marca **se sigue
+guardando en JSON plano** aunque el formato elegido sea Automático, para que
+no se convierta en ZIP en el repositorio; pedir otro formato por su nombre
+(`save_document(format="auto")`) sí lo cambia. Los formatos de siempre (1, 2
+y 3) no cambian: **Automático** sigue siendo el valor por defecto. Un modelo muy
+grande en JSON plano ocupa más y abre más despacio que en el formato
+automático.
 
 ## Asistente IA (dentro de la app)
 

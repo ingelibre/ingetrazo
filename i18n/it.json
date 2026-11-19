@@ -4054,5 +4054,11 @@
  "Every layer is in the legend": "Tutti i livelli sono nella legenda",
  "Free entry": "Voce libera",
  "New entry": "Nuova voce",
- "Every sheet as a page. Click: open it. Drag: change the order. Double-click or F2: rename. Delete: remove it. Right-click: more.": "Ogni tavola come una pagina. Clic: aprirla. Trascinare: cambiare l'ordine. Doppio clic o F2: rinominare. Canc: eliminarla. Clic destro: altro."
+ "Every sheet as a page. Click: open it. Drag: change the order. Double-click or F2: rename. Delete: remove it. Right-click: more.": "Ogni tavola come una pagina. Clic: aprirla. Trascinare: cambiare l'ordine. Doppio clic o F2: rinominare. Canc: eliminarla. Clic destro: altro.",
+ "Automatic (compact)": "Automatico (compatto)",
+ "Plain JSON (for version control)": "JSON semplice (per il controllo di versione)",
+ "Automatic packs textures and big models into a compact archive. Plain JSON always writes readable text, so Git and other version control can show what changed; its images go to a folder beside the document (Name.assets) that travels with it.": "Automatico raccoglie le texture e i modelli grandi in un archivio compatto. JSON semplice scrive sempre testo leggibile, così Git e gli altri sistemi di controllo di versione mostrano cosa è cambiato; le sue immagini vanno in una cartella accanto al documento (Nome.assets) che viaggia con esso.",
+ "Save format": "Formato di salvataggio",
+ "Allow the agent to save the document": "Consenti all'agente di salvare il documento",
+ "Lets the agent write the open document to disk with its save_document tool (File ▸ Save, in the format chosen in Preferences). Off: it can change the model, never the file.": "Permette all'agente di scrivere su disco il documento aperto con il suo strumento save_document (File ▸ Salva, nel formato scelto nelle Preferenze). Disattivato: può cambiare il modello, mai il file."
 }

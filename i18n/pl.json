@@ -4061,5 +4061,11 @@
  "Every layer is in the legend": "Wszystkie warstwy są w legendzie",
  "Free entry": "Wpis dowolny",
  "New entry": "Nowy wpis",
- "Every sheet as a page. Click: open it. Drag: change the order. Double-click or F2: rename. Delete: remove it. Right-click: more.": "Każdy arkusz jako strona. Kliknięcie: otwiera go. Przeciągnięcie: zmienia kolejność. Dwuklik lub F2: zmiana nazwy. Delete: usuwa go. Prawy przycisk: więcej."
+ "Every sheet as a page. Click: open it. Drag: change the order. Double-click or F2: rename. Delete: remove it. Right-click: more.": "Każdy arkusz jako strona. Kliknięcie: otwiera go. Przeciągnięcie: zmienia kolejność. Dwuklik lub F2: zmiana nazwy. Delete: usuwa go. Prawy przycisk: więcej.",
+ "Automatic (compact)": "Automatyczny (zwarty)",
+ "Plain JSON (for version control)": "Czysty JSON (do kontroli wersji)",
+ "Automatic packs textures and big models into a compact archive. Plain JSON always writes readable text, so Git and other version control can show what changed; its images go to a folder beside the document (Name.assets) that travels with it.": "Automatyczny pakuje tekstury i duże modele do zwartego archiwum. Czysty JSON zawsze zapisuje czytelny tekst, aby Git i inne systemy kontroli wersji pokazywały, co się zmieniło; jego obrazy trafiają do folderu obok dokumentu (Nazwa.assets), który podróżuje razem z nim.",
+ "Save format": "Format zapisu",
+ "Allow the agent to save the document": "Pozwól agentowi zapisać dokument",
+ "Lets the agent write the open document to disk with its save_document tool (File ▸ Save, in the format chosen in Preferences). Off: it can change the model, never the file.": "Pozwala agentowi zapisać otwarty dokument na dysku narzędziem save_document (Plik ▸ Zapisz, w formacie wybranym w Preferencjach). Wyłączone: może zmieniać model, nigdy plik."
 }

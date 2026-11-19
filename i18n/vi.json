@@ -4080,5 +4080,11 @@
  "Every layer is in the legend": "Mọi lớp đều đã có trong chú giải",
  "Free entry": "Mục tự do",
  "New entry": "Mục mới",
- "Every sheet as a page. Click: open it. Drag: change the order. Double-click or F2: rename. Delete: remove it. Right-click: more.": "Mỗi trang bản vẽ là một trang. Nhấp: mở. Kéo: đổi thứ tự. Nhấp đúp hoặc F2: đổi tên. Delete: xóa. Nhấp chuột phải: thêm."
+ "Every sheet as a page. Click: open it. Drag: change the order. Double-click or F2: rename. Delete: remove it. Right-click: more.": "Mỗi trang bản vẽ là một trang. Nhấp: mở. Kéo: đổi thứ tự. Nhấp đúp hoặc F2: đổi tên. Delete: xóa. Nhấp chuột phải: thêm.",
+ "Automatic (compact)": "Tự động (gọn)",
+ "Plain JSON (for version control)": "JSON thuần (cho quản lý phiên bản)",
+ "Automatic packs textures and big models into a compact archive. Plain JSON always writes readable text, so Git and other version control can show what changed; its images go to a folder beside the document (Name.assets) that travels with it.": "Tự động gói các vân bề mặt và mô hình lớn vào một tệp nén gọn. JSON thuần luôn ghi văn bản đọc được, để Git và các công cụ quản lý phiên bản khác cho thấy những gì đã thay đổi; hình ảnh của nó được đặt trong một thư mục cạnh tài liệu (Tên.assets) đi cùng với nó.",
+ "Save format": "Định dạng lưu",
+ "Allow the agent to save the document": "Cho phép tác tử lưu tài liệu",
+ "Lets the agent write the open document to disk with its save_document tool (File ▸ Save, in the format chosen in Preferences). Off: it can change the model, never the file.": "Cho phép tác tử ghi tài liệu đang mở ra đĩa bằng công cụ save_document (Tệp ▸ Lưu, theo định dạng chọn trong Tùy chọn). Tắt: nó có thể thay đổi mô hình, nhưng không bao giờ thay đổi tệp."
 }

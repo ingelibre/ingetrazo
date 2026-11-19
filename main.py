@@ -456,8 +456,14 @@ def _run_mcp_server() -> int:
             sys.stdout = open(1, "w", encoding="utf-8")
         except OSError:
             return 2
+    # The rest of the line is the server's own (``--headless --open …``:
+    # it starts a window-less IngeTrazo of its own to talk to).
+    sys.argv = [str(script)] + [a for a in sys.argv[1:] if a != "--mcp"]
     import runpy
-    runpy.run_path(str(script), run_name="__main__")
+    try:
+        runpy.run_path(str(script), run_name="__main__")
+    except SystemExit as stop:
+        return stop.code if isinstance(stop.code, int) else 0
     return 0
 
 
@@ -471,25 +477,41 @@ def _wants_cli(argv: list[str]) -> bool:
     return any(a.split("=", 1)[0] in _CLI_FLAGS for a in argv)
 
 
+def _server_argv(argv: list[str]) -> list[str]:
+    """``ingetrazo --server [file.igz] [--port N] [flags…]`` — the short form
+    Marco asked for (19-11) of ``--headless --ai-bridge --open file.igz``:
+    the same mode, the same code (PR #1494's ``--headless``), not a second
+    window-less run. The other ``--headless`` flags are taken as they are."""
+    out = ["--headless", "--ai-bridge"]
+    rest = [a for a in argv if a not in ("--server", "--headless",
+                                         "--ai-bridge")]
+    takes_value = {"--open", "--port", "--ready-file", "--save-format"}
+    i = 0
+    while i < len(rest):
+        a = rest[i]
+        if a in takes_value and i + 1 < len(rest):
+            out += [a, rest[i + 1]]
+            i += 2
+            continue
+        if not a.startswith("-") and "--open" not in out:
+            out += ["--open", a]          # the positional document
+        else:
+            out.append(a)
+        i += 1
+    return out
+
+
+def _wants_headless(argv: list[str]) -> bool:
+    """``--headless`` — unless the line is the PDF export's, which is
+    window-less already (``--help`` then is the headless one's)."""
+    pdf = _CLI_FLAGS - {"-h", "--help"}
+    return "--headless" in argv and not any(
+        a.split("=", 1)[0] in pdf for a in argv)
+
+
 def _attach_console() -> None:
-    """A windowed Windows exe has no sys.stdout: borrow the console of
-    the shell that started us, so the CLI's messages are seen there."""
-    if sys.stdout is not None and sys.stderr is not None:
-        return
-    if sys.platform == "win32":
-        try:
-            import ctypes
-            ctypes.windll.kernel32.AttachConsole(-1)   # ATTACH_PARENT_PROCESS
-            sys.stdout = open("CONOUT$", "w", encoding="utf-8")
-            sys.stderr = sys.stdout
-            return
-        except (OSError, AttributeError):
-            pass
-    # Nobody to talk to: the messages go nowhere instead of raising.
-    if sys.stdout is None:
-        sys.stdout = open(os.devnull, "w")
-    if sys.stderr is None:
-        sys.stderr = sys.stdout
+    from views.headless import attach_console
+    attach_console()
 
 
 def _parse_cli(argv: list[str]):
@@ -529,39 +551,23 @@ def _run_cli(argv: list[str]) -> int:
         return 2
     out = (args.output_file or src.with_suffix(".pdf")).resolve()
 
-    _configure_surface_format()
-    app = _App(sys.argv[:1])
-    app.setApplicationName("IngeTrazo")
-    app.setOrganizationName("IngeTrazo")
-    _init_language()
-    window = MainWindow(defer_extensions=True)
-    window.setAttribute(Qt.WA_DontShowOnScreen, True)
-    window.show()
-    app.processEvents()
+    app = _headless_app()
+    from views.headless import DialogRefuser, build_hidden_window, open_quietly
+    window = build_hidden_window(app)
     if getattr(window.viewport, "_gl", None) is None:
         print("ingetrazo: no OpenGL context — the sheets' views will come "
               "out empty", file=sys.stderr)
 
     # Opening must not stop to ask: no progress bar on screen, and an
-    # auto-saved copy of the document is left alone (open_path would ask
-    # whether to recover it, and «no» deletes it) — the file on disk is
-    # what gets exported.
-    class _NoDialog:
-        def close(self):
-            pass
-
-    window._import_progress = lambda title: (
-        _NoDialog(), lambda frac, text: app.processEvents())
-    from core import autosave
-    pending = autosave.pending
-    autosave.pending = lambda path: None
-    try:
-        window.load_extensions()
-        opened = window.open_path(src)
-    finally:
-        autosave.pending = pending
+    # auto-saved copy of the document is left alone — the file on disk is
+    # what gets exported. A failure's message box is answered at once.
+    refuser = DialogRefuser()
+    app.installEventFilter(refuser)
+    opened = open_quietly(window, src)
     if not opened:
         print(f"ingetrazo: could not open {src}", file=sys.stderr)
+        for text in refuser.refused:
+            print(f"ingetrazo: {text}", file=sys.stderr)
         return 1
     app.processEvents()
 
@@ -582,106 +588,180 @@ def _run_cli(argv: list[str]) -> int:
     return 0
 
 
-def _parse_server(argv: list[str]):
-    import argparse
-    parser = argparse.ArgumentParser(
-        prog="ingetrazo --server",
-        description="IngeTrazo without a window, with the AI bridge on: "
-                    "an MCP client (ingetrazo --mcp) drives the document.")
-    parser.add_argument("--server", action="store_true", help="this mode")
-    parser.add_argument("file", nargs="?", type=Path,
-                        help="a document to open first (.igz)")
-    parser.add_argument("--port", type=int, default=None,
-                        help="the bridge's port on 127.0.0.1 (default: "
-                             "INGETRAZO_AI_PORT, else 4763; 0 = any free)")
-    return parser.parse_args(argv)
-
-
-def _run_server(argv: list[str]) -> int:
-    """``ingetrazo --server [file.igz] [--port N]``: the app with no window
-    on screen and the AI bridge listening, for agents (Marco, 19-11, after
-    Xavi Montero's idea; IfcMCP works without a screen too).
-
-    Built as ``ingetrazo -p`` builds it: the main window exists and is
-    "shown" with ``WA_DontShowOnScreen``, which is what gives the viewport
-    a GL context where there is a display — under the offscreen platform
-    there is none, and the tools that render say so instead of hanging. No
-    single instance (a running IngeTrazo is neither asked nor disturbed),
-    no window state written on the way out: the user's settings see no
-    more of this than of a normal session. A line «ready» on stderr names
-    the port; SIGINT / SIGTERM end it cleanly."""
-    _attach_console()
-    args = _parse_server(argv)
-    src = None
-    if args.file is not None:
-        src = args.file.resolve()
-        if not src.is_file():
-            print(f"ingetrazo: no such file: {src}", file=sys.stderr)
-            return 2
+def _headless_app():
+    """The QApplication of a run with no window on screen."""
     if (sys.platform.startswith("linux") and not os.environ.get("DISPLAY")
             and not os.environ.get("WAYLAND_DISPLAY")
             and not os.environ.get("QT_QPA_PLATFORM")):
-        # No display at all (a container, ssh): Qt would abort on xcb.
+        # No display at all (a container, ssh): Qt would abort on xcb. The
+        # offscreen platform runs everything but the GL renders, and the
+        # tools that render say so (n63-mcp, 19-11).
         os.environ["QT_QPA_PLATFORM"] = "offscreen"
     _configure_surface_format()
     app = _App(sys.argv[:1])
     app.setApplicationName("IngeTrazo")
     app.setOrganizationName("IngeTrazo")
     _init_language()
-    window = MainWindow(defer_extensions=True)
-    window.setAttribute(Qt.WA_DontShowOnScreen, True)
-    window.show()
-    app.processEvents()
+    return app
 
-    from plugins.ai_bridge import _NoDialogs, _bridge_of
-    from views.bridge_tools import NO_GL, can_render, quiet
-    # Nobody is at this screen: a dialog that comes up between two calls
-    # (a box opened by a timer) is cancelled as one during a call is.
-    guard = _NoDialogs()
-    app.installEventFilter(guard)
-    with quiet(window):
-        window.load_extensions()
-        if src is not None and not window.open_path(src):
-            print(f"ingetrazo: could not open {src}"
-                  + "".join(f" — {t}" for t in guard.refused),
-                  file=sys.stderr)
-            return 1
-    app.processEvents()
 
+# ``--headless``: an IngeTrazo with no window that an agent drives over the
+# AI bridge (docs/ai-bridge.md). How it ended, for the script that ran it:
+EXIT_SHUTDOWN = 0      # the agent called shutdown (the only clean end)
+EXIT_USAGE = 2         # bad command line
+EXIT_OPEN_FAILED = 3   # --open: the document could not be opened
+EXIT_BRIDGE_FAILED = 4  # the bridge could not listen (port taken…)
+EXIT_ENDED = 5         # anything else: SIGTERM/SIGINT, stdin closed, …
+
+
+def _parse_headless(argv: list[str]):
+    import argparse
+    parser = argparse.ArgumentParser(
+        prog="ingetrazo --headless",
+        description="IngeTrazo with no window, driven by an AI agent over "
+                    "the AI bridge (MCP).",
+        epilog="Exit codes: 0 ended by the agent's shutdown (needs "
+               "--allow-shutdown); 2 bad command line; 3 the --open document "
+               "could not be opened; 4 the bridge could not listen; 5 ended "
+               "any other way (signal, stdin closed).")
+    parser.add_argument("--headless", action="store_true",
+                        help="no window on screen")
+    parser.add_argument("--open", dest="open_file", type=Path,
+                        metavar="FILE", help="the document to open")
+    parser.add_argument("--ai-bridge", action="store_true",
+                        help="start the AI bridge (127.0.0.1 only)")
+    parser.add_argument("--port", type=int, default=None,
+                        help="the bridge's port (default INGETRAZO_AI_PORT "
+                             "or 4763; 0 = any free port)")
+    parser.add_argument("--ready-file", type=Path, metavar="PATH",
+                        help="write the bridge's port here once the "
+                             "document is open and the bridge listens")
+    parser.add_argument("--allow-save", action="store_true",
+                        help="let the agent save the document "
+                             "(save_document)")
+    parser.add_argument("--save-format", choices=("auto", "json"),
+                        default=None,
+                        help="how the document is saved: auto (as the app "
+                             "does) or json (plain JSON for version "
+                             "control)")
+    parser.add_argument("--allow-shutdown", action="store_true",
+                        help="let the agent end this IngeTrazo (shutdown); "
+                             "that end is exit code 0")
+    parser.add_argument("--exit-on-stdin-eof", action="store_true",
+                        help="end (code 5) when standard input closes — "
+                             "for a parent process that may die")
+    args = parser.parse_args(argv)
+    if not args.ai_bridge:
+        parser.error("nothing to do: add --ai-bridge (or use -i/-p for a "
+                     "PDF)")
+    return args
+
+
+def _run_headless(argv: list[str]) -> int:
+    """``ingetrazo --headless --ai-bridge [--open Casa.igz] …``: no window
+    on screen, the document opened, the bridge listening — until the agent
+    calls ``shutdown`` (exit 0) or something else ends it (see the EXIT_
+    codes). An open that fails ends it at once, before the bridge starts,
+    so a waiting client never meets an empty document."""
+    _attach_console()
+    try:
+        args = _parse_headless(argv)
+    except SystemExit as stop:
+        return EXIT_USAGE if stop.code else 0
+    src = None
+    if args.open_file is not None:
+        src = args.open_file.expanduser().resolve()
+        if not src.is_file():
+            print(f"ingetrazo: no such file: {src}", file=sys.stderr)
+            return EXIT_OPEN_FAILED
+
+    app = _headless_app()
+    from views.headless import DialogRefuser, build_hidden_window, open_quietly
+    # Nobody can answer a dialog: every one is cancelled, and said.
+    refuser = DialogRefuser()
+    app.installEventFilter(refuser)
+    window = build_hidden_window(app)
+    window.save_format_override = args.save_format
+    window.backup_override = False         # Git (or the caller) keeps those
+    # No recovery copies either: the agent saves what it means to keep,
+    # and a copy of work it discarded must not be offered back to the
+    # next session that opens the file.
+    timer = getattr(window, "_autosave_timer", None)
+    if timer is not None:
+        timer.stop()
+    if src is not None:
+        if not open_quietly(window, src):
+            print(f"ingetrazo: could not open {src}", file=sys.stderr)
+            for text in refuser.refused:
+                print(f"ingetrazo: {text}", file=sys.stderr)
+            return EXIT_OPEN_FAILED
+        app.processEvents()
+
+    from plugins.ai_bridge import _bridge_of
     bridge = _bridge_of(window.viewport)
+    bridge.allow_save = bool(args.allow_save)
+    bridge.allow_shutdown = bool(args.allow_shutdown)
+    ended = {"by_agent": False}
+
+    def _agent_shutdown():
+        ended["by_agent"] = True
+        app.exit(EXIT_SHUTDOWN)
+    bridge.on_shutdown = _agent_shutdown
     try:
         port = bridge.start(args.port)
     except OSError as exc:
         print(f"ingetrazo: the AI bridge could not listen: {exc}",
               file=sys.stderr)
-        return 1
-
-    import signal
-    from PySide6.QtCore import QTimer
-
-    def _stop(*_):
-        app.quit()
-
-    signal.signal(signal.SIGINT, _stop)
-    signal.signal(signal.SIGTERM, _stop)
-    # Python runs a signal handler only when it gets the thread back: the
-    # tick hands it over to the interpreter while Qt's loop waits.
-    tick = QTimer()
-    tick.timeout.connect(lambda: None)
-    tick.start(200)
-
-    gl = can_render(window.viewport)
-    print(f"IngeTrazo server ready on 127.0.0.1:{port}"
+        return EXIT_BRIDGE_FAILED
+    print(f"INGETRAZO_BRIDGE_PORT={port}", flush=True)
+    from views.bridge_tools import NO_GL, can_render
+    print(f"IngeTrazo without a window, AI bridge on 127.0.0.1:{port}"
           + (f" — {src.name}" if src is not None else "")
-          + ("" if gl else f" (screenshot and render_sheet: {NO_GL})"),
+          + ("" if can_render(window.viewport)
+             else f" (screenshot, export_view and render_sheet: {NO_GL})"),
           file=sys.stderr, flush=True)
-    try:
-        app.exec()
-    finally:
-        tick.stop()
-        bridge.stop()
-    print("IngeTrazo server stopped", file=sys.stderr, flush=True)
-    return 0
+    if args.ready_file is not None:
+        ready = args.ready_file.expanduser()
+        tmp = ready.with_name(ready.name + ".part")
+        tmp.write_text(str(port), encoding="utf-8")
+        tmp.replace(ready)               # whole, or not there at all
+
+    # Python only runs signal handlers between bytecodes: a tick lets it
+    # in while Qt's loop waits. The same tick watches standard input.
+    import signal
+    import threading
+    stop = {"why": None}
+
+    def _on_signal(signum, _frame):
+        stop["why"] = f"signal {signum}"
+    for name in ("SIGINT", "SIGTERM", "SIGBREAK"):
+        sig = getattr(signal, name, None)
+        if sig is not None:
+            try:
+                signal.signal(sig, _on_signal)
+            except (ValueError, OSError):
+                pass
+    if args.exit_on_stdin_eof:
+        def _watch_stdin():
+            try:
+                while os.read(0, 4096):
+                    pass
+            except OSError:
+                pass
+            stop["why"] = stop["why"] or "standard input closed"
+        threading.Thread(target=_watch_stdin, name="ingetrazo-stdin",
+                         daemon=True).start()
+    from PySide6.QtCore import QTimer
+    tick = QTimer()
+    tick.timeout.connect(lambda: stop["why"] and app.exit(EXIT_ENDED))
+    tick.start(200)
+    code = app.exec()
+    bridge.stop()
+    if ended["by_agent"]:
+        return EXIT_SHUTDOWN
+    if stop["why"]:
+        print(f"ingetrazo: ended ({stop['why']})", file=sys.stderr)
+    return EXIT_ENDED if code == 0 else code
 
 
 def main() -> int:
@@ -694,7 +774,9 @@ def main() -> int:
     if "--mcp" in sys.argv[1:]:
         return _run_mcp_server()
     if "--server" in sys.argv[1:]:
-        return _run_server(sys.argv[1:])
+        return _run_headless(_server_argv(sys.argv[1:]))
+    if _wants_headless(sys.argv[1:]):
+        return _run_headless(sys.argv[1:])
     if _wants_cli(sys.argv[1:]):
         return _run_cli(sys.argv[1:])
     # Hang autopsy (Linux): `kill -USR1 <pid>` dumps every thread's Python

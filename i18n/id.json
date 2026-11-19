@@ -4056,5 +4056,11 @@
  "Every layer is in the legend": "Semua layer sudah ada di legenda",
  "Free entry": "Entri bebas",
  "New entry": "Entri baru",
- "Every sheet as a page. Click: open it. Drag: change the order. Double-click or F2: rename. Delete: remove it. Right-click: more.": "Setiap lembar sebagai halaman. Klik: buka. Seret: ubah urutan. Klik ganda atau F2: ganti nama. Delete: hapus. Klik kanan: lainnya."
+ "Every sheet as a page. Click: open it. Drag: change the order. Double-click or F2: rename. Delete: remove it. Right-click: more.": "Setiap lembar sebagai halaman. Klik: buka. Seret: ubah urutan. Klik ganda atau F2: ganti nama. Delete: hapus. Klik kanan: lainnya.",
+ "Automatic (compact)": "Otomatis (ringkas)",
+ "Plain JSON (for version control)": "JSON polos (untuk kontrol versi)",
+ "Automatic packs textures and big models into a compact archive. Plain JSON always writes readable text, so Git and other version control can show what changed; its images go to a folder beside the document (Name.assets) that travels with it.": "Otomatis mengemas tekstur dan model besar ke dalam arsip yang ringkas. JSON polos selalu menulis teks yang terbaca, sehingga Git dan kontrol versi lain dapat menunjukkan apa yang berubah; gambarnya disimpan di folder di samping dokumen (Nama.assets) yang ikut terbawa bersamanya.",
+ "Save format": "Format simpan",
+ "Allow the agent to save the document": "Izinkan agen menyimpan dokumen",
+ "Lets the agent write the open document to disk with its save_document tool (File ▸ Save, in the format chosen in Preferences). Off: it can change the model, never the file.": "Mengizinkan agen menulis dokumen yang terbuka ke disk dengan alat save_document (Berkas ▸ Simpan, dalam format yang dipilih di Preferensi). Mati: agen dapat mengubah model, tetapi tidak pernah berkasnya."
 }

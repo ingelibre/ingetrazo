@@ -15,21 +15,37 @@ Tools: run_python (transactional, one undo step per call), query_model,
 screenshot (the agent SEES the viewport), undo, redo — and named tools
 with a schema, for clients that do not allow code: get_scene_info,
 get_object_info, list_layers, set_layer_visibility, list_scenes,
-show_scene, set_camera, select, render_sheet, open_file, save_file,
-import_file, export_file, list_materials, apply_material. Every mutation
-goes through IngeTrazo's command engine — the hermeticity guard validates
-the agent's recipes, and Ctrl+Z always works.
+show_scene, set_camera, select, render_sheet, export_view, list_materials,
+apply_material, import_file, export_file; and for automation
+document_info, open_document, save_document, export_pdf and shutdown.
+Every mutation goes through IngeTrazo's command engine — the hermeticity
+guard validates the agent's recipes, and Ctrl+Z always works.
 
-Without a window: ``ingetrazo --server [file.igz] [--port N]`` starts the
-app headless with the bridge on (docs/ai-bridge.md).
+**Without a window** — one command for the MCP client, no IngeTrazo to
+start first:
+
+    ingetrazo_mcp.py --headless --open Casa.igz [--allow-save]
+                     [--save-format json] [--allow-shutdown]
+
+starts an IngeTrazo of its own with no window (``ingetrazo --headless``)
+on a free port, talks to it, and ends it when the client goes. When that
+IngeTrazo ends — the agent's ``shutdown``, or an open that failed — this
+server ends too, with its exit code (see ``main.EXIT_*``). An IngeTrazo
+started by hand without a window (``ingetrazo --server [file.igz]``, the
+short form of ``--headless --ai-bridge --open``) is reached like a
+windowed one.
 """
 from __future__ import annotations
 
+import atexit
 import base64
 import json
 import os
 import socket
+import subprocess
 import sys
+import tempfile
+import time
 from pathlib import Path
 
 PORT = int(os.environ.get("INGETRAZO_AI_PORT", 4763))
@@ -69,7 +85,10 @@ INSTRUCTIONS = (
     "historial de deshacer.\n" + REFERENCE + "\nEmpieza por "
     "get_scene_info para ver qué hay, construye con run_python (o con las "
     "herramientas con nombre si tu cliente no permite código) y MIRA el "
-    "resultado con screenshot o render_sheet.")
+    "resultado con screenshot, export_view o render_sheet. Automatización: "
+    "document_info dice qué está abierto y qué se permite; save_document "
+    "guarda (si IngeTrazo lo permite); export_pdf saca las láminas; "
+    "shutdown cierra un IngeTrazo sin ventana al terminar.")
 
 TOOLS = [
     {
@@ -94,10 +113,9 @@ TOOLS = [
     {
         "name": "screenshot",
         "description": ("Render the current viewport and LOOK at it — use "
-                        "after building to verify and iterate. With "
-                        "`scene`, render that saved scene instead; the "
-                        "user's view is put back right after. Needs "
-                        "OpenGL (an error says so when there is none)."),
+                        "after building to verify and iterate (a saved "
+                        "scene: export_view). Needs OpenGL (an error says "
+                        "so when there is none)."),
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -105,10 +123,9 @@ TOOLS = [
                           "maximum": 4096},
                 "height": {"type": "integer", "minimum": 64,
                            "maximum": 4096},
-                "scene": {"type": "string",
-                          "description": "a saved scene's name"},
                 "path": {"type": "string",
-                         "description": "absolute .png path to keep it"},
+                         "description": "absolute .png / .jpg path to "
+                                        "keep it"},
             },
         },
     },
@@ -121,6 +138,84 @@ TOOLS = [
         "name": "redo",
         "description": "Redo the last undone step in IngeTrazo.",
         "inputSchema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "document_info",
+        "description": ("The open document: its path, whether it has unsaved "
+                        "changes, the save format, its sheets and scenes "
+                        "(saved views), and whether save_document and "
+                        "shutdown are allowed."),
+        "inputSchema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "open_document",
+        "description": ("Open a document (absolute path; .igz, .dae, .skp, "
+                        ".dxf, .dwg) in place of the one in front. An error "
+                        "if it cannot be opened, and a refusal if the one "
+                        "in front has unsaved changes, unless "
+                        "discard_changes is true."),
+        "inputSchema": {
+            "type": "object",
+            "properties": {"path": {"type": "string"},
+                           "discard_changes": {"type": "boolean"}},
+            "required": ["path"],
+        },
+    },
+    {
+        "name": "save_document",
+        "description": (
+            "Save the open document, to its own path or to `path` (.igz). "
+            "`format`: 'json' (plain JSON for version control; images go to "
+            "a <name>.assets folder beside it) or 'auto'; default: the one "
+            "IngeTrazo was told to use. Only works when the user allowed it "
+            "(--allow-save, or the checkbox in the AI tab)."),
+        "inputSchema": {
+            "type": "object",
+            "properties": {"path": {"type": "string"},
+                           "format": {"type": "string",
+                                      "enum": ["auto", "json"]}},
+        },
+    },
+    {
+        "name": "export_pdf",
+        "description": ("Export the document's sheets (all, or the ones "
+                        "given by name, title-block number such as L-02, "
+                        "or place, 1 = first) into one PDF at `path`."),
+        "inputSchema": {
+            "type": "object",
+            "properties": {"path": {"type": "string"},
+                           "sheets": {"type": "array",
+                                      "items": {"type": ["string",
+                                                         "integer"]}}},
+            "required": ["path"],
+        },
+    },
+    {
+        "name": "export_view",
+        "description": ("Render a scene (saved view, by name — see "
+                        "document_info) to a PNG and LOOK at it; kept at "
+                        "`path` when given. The user's view (camera, "
+                        "layers, style, hidden objects) is put back "
+                        "afterwards. Needs OpenGL."),
+        "inputSchema": {
+            "type": "object",
+            "properties": {"view": {"type": "string"},
+                           "path": {"type": "string"},
+                           "width": {"type": "integer"},
+                           "height": {"type": "integer"}},
+            "required": ["view"],
+        },
+    },
+    {
+        "name": "shutdown",
+        "description": (
+            "End this IngeTrazo when the work is done (exit code 0). Only "
+            "for an IngeTrazo started with --allow-shutdown. Refused with "
+            "unsaved changes unless discard_changes is true."),
+        "inputSchema": {
+            "type": "object",
+            "properties": {"discard_changes": {"type": "boolean"}},
+        },
     },
 ]
 
@@ -239,25 +334,6 @@ TOOLS += [
         },
     },
     {
-        "name": "open_file",
-        "description": ("Open a document (absolute path; .igz, .dae, .skp, "
-                        ".dxf, .dwg) in place of the one in front. Refuses "
-                        "if that one has unsaved changes, unless "
-                        "discard_changes is true."),
-        "inputSchema": {
-            "type": "object",
-            "properties": {"path": _STR,
-                           "discard_changes": {"type": "boolean"}},
-            "required": ["path"],
-        },
-    },
-    {
-        "name": "save_file",
-        "description": ("Save the document; with path (absolute .igz), "
-                        "save it as that file."),
-        "inputSchema": {"type": "object", "properties": {"path": _STR}},
-    },
-    {
         "name": "import_file",
         "description": ("Import a file into the document (one undo step): "
                         ".igz (as a component), .dae, .glb/.gltf, .skp, "
@@ -272,16 +348,15 @@ TOOLS += [
     },
     {
         "name": "export_file",
-        "description": ("Export by the file's extension (absolute path): "
-                        ".ifc (BIM-tagged objects), .glb, .dae, .stl "
-                        "(unit, default mm), .obj, .dxf (the view's lines), "
-                        ".pdf (sheet, or every sheet), .png/.jpg (the "
-                        "view, width px)."),
+        "description": ("Export the model by the file's extension "
+                        "(absolute path): .ifc (BIM-tagged objects), .glb, "
+                        ".dae, .stl (unit, default mm), .obj, .dxf (the "
+                        "view's lines). Sheets: export_pdf; pictures: "
+                        "screenshot, export_view, render_sheet."),
         "inputSchema": {
             "type": "object",
-            "properties": {"path": _STR, "sheet": _SHEET, "unit": _UNIT,
-                           "selection_only": {"type": "boolean"},
-                           "width": {"type": "integer"}},
+            "properties": {"path": _STR, "unit": _UNIT,
+                           "selection_only": {"type": "boolean"}},
             "required": ["path"],
         },
     },
@@ -304,7 +379,7 @@ TOOLS += [
 ]
 
 #: The tools whose reply is a picture the client is shown.
-IMAGE_TOOLS = ("screenshot", "render_sheet")
+IMAGE_TOOLS = ("screenshot", "render_sheet", "export_view")
 
 _sock: socket.socket | None = None
 _req_id = 0
@@ -410,7 +485,91 @@ def handle(msg: dict) -> dict | None:
             "error": {"code": -32601, "message": f"unknown {method}"}}
 
 
+# ---- A window-less IngeTrazo of our own (--headless) -------------------------
+_child: subprocess.Popen | None = None
+#: How long the child may take to open its document and start listening.
+READY_TIMEOUT = float(os.environ.get("INGETRAZO_HEADLESS_TIMEOUT", 300))
+
+
+def _app_command() -> list[str]:
+    """How to start IngeTrazo from here: the program beside this one in a
+    package (``ingetrazo-mcp.exe`` → ``ingetrazo.exe``; ``ingetrazo --mcp``
+    is the program itself), or ``main.py`` from a checkout."""
+    if getattr(sys, "frozen", False):
+        exe = Path(sys.executable)
+        if exe.stem.lower() == "ingetrazo-mcp":
+            return [str(exe.with_name("ingetrazo" + exe.suffix))]
+        return [str(exe)]
+    return [sys.executable, str(Path(_APP_ROOT) / "main.py")]
+
+
+def _start_child(argv: list[str]) -> int:
+    """Start ``ingetrazo --headless`` with ``argv`` and wait until its
+    bridge listens; the port. If it ends first (its document would not
+    open…), so does this server, with its exit code."""
+    global _child
+    ready = Path(tempfile.mkdtemp(prefix="ingetrazo-mcp-")) / "port"
+    cmd = _app_command() + ["--headless", "--ai-bridge", "--port", "0",
+                            "--ready-file", str(ready),
+                            "--exit-on-stdin-eof"]
+    cmd += [a for a in argv if a not in ("--headless", "--ai-bridge",
+                                         "--exit-on-stdin-eof")]
+    try:
+        err_out = sys.stderr.fileno()
+    except (AttributeError, OSError, ValueError):
+        err_out = subprocess.DEVNULL
+    # Our stdout is the MCP channel: nothing of the child's may land there.
+    # Its stdin is a pipe we never write — when this process goes, however
+    # it goes, the pipe closes and the child ends (--exit-on-stdin-eof).
+    _child = subprocess.Popen(
+        cmd, stdin=subprocess.PIPE, stdout=err_out, stderr=err_out,
+        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    atexit.register(_stop_child)
+    end = time.monotonic() + READY_TIMEOUT
+    while time.monotonic() < end:
+        if ready.is_file():
+            try:
+                return int(ready.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                pass
+        code = _child.poll()
+        if code is not None:
+            sys.stderr.write(f"ingetrazo-mcp: IngeTrazo ended before it was "
+                             f"ready (exit code {code})\n")
+            raise SystemExit(code or 1)
+        time.sleep(0.1)
+    sys.stderr.write("ingetrazo-mcp: IngeTrazo was not ready in time\n")
+    _stop_child()
+    raise SystemExit(1)
+
+
+def _stop_child() -> None:
+    if _child is None or _child.poll() is not None:
+        return
+    try:
+        _child.stdin.close()               # asks it to end (code 5)
+        _child.wait(timeout=10)
+    except (OSError, subprocess.TimeoutExpired):
+        _child.kill()
+        _child.wait()
+
+
+def _child_ended(wait: float = 0.0) -> int | None:
+    """The child's exit code once it has ended (waiting up to ``wait``
+    seconds), else None. None too without a child."""
+    if _child is None:
+        return None
+    try:
+        return _child.wait(timeout=wait) if wait else _child.poll()
+    except subprocess.TimeoutExpired:
+        return None
+
+
 def main() -> None:
+    global PORT
+    argv = sys.argv[1:]
+    if "--headless" in argv:
+        PORT = _start_child(argv)
     for line in sys.stdin:
         line = line.strip()
         if not line:
@@ -423,6 +582,19 @@ def main() -> None:
         if reply is not None:
             sys.stdout.write(json.dumps(reply) + "\n")
             sys.stdout.flush()
+        if _child is not None:
+            shut = (msg.get("method") == "tools/call"
+                    and (msg.get("params") or {}).get("name") == "shutdown"
+                    and not (reply or {}).get("result", {}).get("isError"))
+            code = _child_ended(30.0 if shut else 0.0)
+            if code is not None:
+                # Its IngeTrazo is gone (the agent's shutdown, a crash):
+                # nothing left to serve — end with its code.
+                raise SystemExit(code)
+    # The client went away: so does our IngeTrazo, and we end with its code.
+    if _child is not None:
+        _stop_child()
+        raise SystemExit(_child.returncode)
 
 
 if __name__ == "__main__":

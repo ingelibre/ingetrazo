@@ -4056,5 +4056,11 @@
  "Every layer is in the legend": "ทุกเลเยอร์อยู่ในคำอธิบายสัญลักษณ์แล้ว",
  "Free entry": "รายการอิสระ",
  "New entry": "รายการใหม่",
- "Every sheet as a page. Click: open it. Drag: change the order. Double-click or F2: rename. Delete: remove it. Right-click: more.": "แผ่นแบบแต่ละแผ่นเป็นหนึ่งหน้า คลิก: เปิด ลาก: เปลี่ยนลำดับ ดับเบิลคลิกหรือ F2: เปลี่ยนชื่อ Delete: ลบ คลิกขวา: เพิ่มเติม"
+ "Every sheet as a page. Click: open it. Drag: change the order. Double-click or F2: rename. Delete: remove it. Right-click: more.": "แผ่นแบบแต่ละแผ่นเป็นหนึ่งหน้า คลิก: เปิด ลาก: เปลี่ยนลำดับ ดับเบิลคลิกหรือ F2: เปลี่ยนชื่อ Delete: ลบ คลิกขวา: เพิ่มเติม",
+ "Automatic (compact)": "อัตโนมัติ (กะทัดรัด)",
+ "Plain JSON (for version control)": "JSON ล้วน (สำหรับการควบคุมเวอร์ชัน)",
+ "Automatic packs textures and big models into a compact archive. Plain JSON always writes readable text, so Git and other version control can show what changed; its images go to a folder beside the document (Name.assets) that travels with it.": "อัตโนมัติจะรวมพื้นผิวและโมเดลขนาดใหญ่ไว้ในไฟล์บีบอัดที่กะทัดรัด JSON ล้วนจะเขียนเป็นข้อความที่อ่านได้เสมอ เพื่อให้ Git และระบบควบคุมเวอร์ชันอื่นแสดงสิ่งที่เปลี่ยนไปได้ ส่วนรูปภาพจะอยู่ในโฟลเดอร์ข้างเอกสาร (ชื่อ.assets) ที่ต้องย้ายไปพร้อมกัน",
+ "Save format": "รูปแบบการบันทึก",
+ "Allow the agent to save the document": "อนุญาตให้เอเจนต์บันทึกเอกสาร",
+ "Lets the agent write the open document to disk with its save_document tool (File ▸ Save, in the format chosen in Preferences). Off: it can change the model, never the file.": "ให้เอเจนต์เขียนเอกสารที่เปิดอยู่ลงดิสก์ด้วยเครื่องมือ save_document (ไฟล์ ▸ บันทึก ในรูปแบบที่เลือกในการตั้งค่า) ปิด: เอเจนต์เปลี่ยนโมเดลได้ แต่เปลี่ยนไฟล์ไม่ได้"
 }

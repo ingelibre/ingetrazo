@@ -4054,5 +4054,11 @@
  "Every layer is in the legend": "所有图层都已在图例中",
  "Free entry": "自由条目",
  "New entry": "新条目",
- "Every sheet as a page. Click: open it. Drag: change the order. Double-click or F2: rename. Delete: remove it. Right-click: more.": "每张图纸显示为一页。单击：打开。拖动：更改顺序。双击或 F2：重命名。Delete：删除。右键：更多。"
+ "Every sheet as a page. Click: open it. Drag: change the order. Double-click or F2: rename. Delete: remove it. Right-click: more.": "每张图纸显示为一页。单击：打开。拖动：更改顺序。双击或 F2：重命名。Delete：删除。右键：更多。",
+ "Automatic (compact)": "自动（紧凑）",
+ "Plain JSON (for version control)": "纯 JSON（用于版本控制）",
+ "Automatic packs textures and big models into a compact archive. Plain JSON always writes readable text, so Git and other version control can show what changed; its images go to a folder beside the document (Name.assets) that travels with it.": "自动会把纹理和大模型打包成紧凑的压缩文件。纯 JSON 始终写成可读文本，便于 Git 等版本控制显示改动；其图片放在文档旁边的文件夹（名称.assets）中，需与文档一起携带。",
+ "Save format": "保存格式",
+ "Allow the agent to save the document": "允许智能体保存文档",
+ "Lets the agent write the open document to disk with its save_document tool (File ▸ Save, in the format chosen in Preferences). Off: it can change the model, never the file.": "允许智能体用 save_document 工具把打开的文档写入磁盘（文件 ▸ 保存，使用首选项中选择的格式）。关闭：它可以修改模型，但永远不能修改文件。"
 }

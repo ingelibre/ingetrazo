@@ -43,38 +43,33 @@ from PySide6.QtWidgets import (QHBoxLayout, QLabel, QPlainTextEdit,
                                QPushButton, QVBoxLayout, QWidget)
 
 from core.i18n import tr
-from views.bridge_tools import BridgeTools
+from views.bridge_tools import NO_GL, BridgeTools, absolute, out_dir
 from views.fold_section import FoldSection, narrow
+from views.headless import DialogRefuser, open_quietly
 
 DEFAULT_PORT = 4763
+#: QSettings key of the panel's «Allow the agent to save the document».
+ALLOW_SAVE_KEY = "ai_bridge/allow_save"
 _REFUSED = b'{"id": null, "ok": false, "error": "not a bridge request; closing"}\n'
 
 
-class _NoDialogs(QObject):
-    """While an agent's code runs, nobody is at the screen to answer a
-    dialog it opens (#694): «Delete sheet» asks Yes/No, a sheet the
-    document cannot lose says so in a box. ``exec()`` then waited on the UI
-    thread for good — the agent got «timed out», the app looked hung, and
-    the next call ran INSIDE that dialog's event loop, nested in the first
-    call's undo step. Every dialog shown meanwhile is answered «Cancel» at
-    once (as Escape would) and named in the reply, so the agent knows."""
+#: While an agent's code runs, nobody is at the screen to answer a dialog it
+#: opens (#694): «Delete sheet» asks Yes/No, a sheet the document cannot
+#: lose says so in a box. ``exec()`` then waited on the UI thread for good —
+#: the agent got «timed out», the app looked hung, and the next call ran
+#: INSIDE that dialog's event loop, nested in the first call's undo step.
+#: Every dialog shown meanwhile is answered «Cancel» at once (as Escape
+#: would) and named in the reply. The same filter the window-less run keeps
+#: on for good (views/headless.py) — one copy since PR #1494.
+_NoDialogs = DialogRefuser
 
-    def __init__(self) -> None:
-        super().__init__()
-        self.refused: list[str] = []
 
-    def eventFilter(self, obj, event):  # noqa: N802 — Qt override
-        if event.type() == QEvent.Show:
-            from PySide6.QtWidgets import QDialog, QMessageBox
-            if isinstance(obj, QDialog):
-                text = obj.windowTitle()
-                if isinstance(obj, QMessageBox) and obj.text():
-                    text = f"{text}: {obj.text()}" if text else obj.text()
-                self.refused.append(text or type(obj).__name__)
-                # Not from inside the Show: exec() only enters its loop
-                # after show() returns, and a reject before that is lost.
-                QTimer.singleShot(0, obj, obj.reject)
-        return False
+def _expand(path):
+    """``~`` expanded, the rest as given (``absolute`` refuses a relative
+    path rather than resolving it against wherever the app started)."""
+    if isinstance(path, str) and path.startswith("~"):
+        return str(Path(path).expanduser())
+    return path
 
 
 class _Bridge(BridgeTools, QObject):
@@ -88,6 +83,8 @@ class _Bridge(BridgeTools, QObject):
     # COPY, sets the copied Event, and the worker times out forever. object
     # passes the PyObject by reference. (Cost us a hunt; now documented.)
     _dispatch = Signal(object)
+    #: From the worker once a shutdown's reply is sent (see _after_reply).
+    _shutdown_now = Signal()
 
     @property
     def _viewport(self):
@@ -107,14 +104,26 @@ class _Bridge(BridgeTools, QObject):
         self._scope: dict = {"__name__": "__ai__"}
         self.port: int | None = None
         self._busy = False
+        #: Whether ``save_document`` may write: ``--allow-save`` without a
+        #: window, else the panel's checkbox (remembered, off by default).
+        self.allow_save: bool | None = None
+        #: Whether ``shutdown`` may end the app — set from the command
+        #: line only (``--allow-shutdown``), never from the window.
+        self.allow_shutdown = False
+        #: Called by ``shutdown`` instead of quitting outright, so the
+        #: window-less run can tell its exit apart (main._run_headless).
+        self.on_shutdown = None
         # Queued to a BOUND method of this main-thread QObject — connecting a
         # lambda would run the slot on the worker thread (CLAUDE.md gotcha).
         self._dispatch.connect(self._run_on_main, Qt.QueuedConnection)
+        self._shutdown_now.connect(self._finish_shutdown, Qt.QueuedConnection)
+        self._shutdown_pending = False
 
     # ---- Lifecycle ----------------------------------------------------------
     def start(self, port: int | None = None) -> int:
-        """Listen on loopback, on ``port`` (``ingetrazo --server --port``),
-        else ``INGETRAZO_AI_PORT``, else 4763; 0 picks a free one."""
+        """Listen on ``port`` (None: ``INGETRAZO_AI_PORT`` or the default;
+        0: any free one — :attr:`port` says which). Raises OSError when it
+        cannot."""
         if port is None:
             port = int(os.environ.get("INGETRAZO_AI_PORT", DEFAULT_PORT))
         srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -192,10 +201,21 @@ class _Bridge(BridgeTools, QObject):
             try:
                 conn.sendall(reply if reply is not None else _REFUSED)
             except OSError:
-                return False
+                return self._after_reply(False)
             if reply is None:
                 return False
+            if not self._after_reply(True):
+                return False
         return True
+
+    def _after_reply(self, keep: bool) -> bool:
+        """A shutdown asked for in the call just answered starts now, on
+        the main thread; the connection closes. Else ``keep``."""
+        if not self._shutdown_pending:
+            return keep
+        self._shutdown_pending = False
+        self._shutdown_now.emit()
+        return False
 
     def _handle_line(self, line: bytes) -> bytes | None:
         """The reply to one request line, or None if it is not a request."""
@@ -288,6 +308,213 @@ class _Bridge(BridgeTools, QObject):
         ok = self._viewport.history.redo()
         self._viewport.update()
         return {"ok": bool(ok)}
+
+    # ---- Document tools (headless automation) --------------------------------
+    def _window(self):
+        return self._viewport.window()
+
+    def saving_allowed(self) -> bool:
+        if self.allow_save is not None:
+            return bool(self.allow_save)
+        from PySide6.QtCore import QSettings
+        return str(QSettings().value(ALLOW_SAVE_KEY, "0")) == "1"
+
+    def _tool_document_info(self) -> dict:
+        """What is open and what the agent may do with it. The model itself
+        is ``query_model`` / ``get_scene_info``."""
+        w = self._window()
+        scene = self._viewport.scene
+        path = getattr(w, "_current_path", None)
+        return {
+            "path": str(path) if path is not None else None,
+            "modified": bool(w._is_dirty()),
+            "save_format": (w.save_format() if hasattr(w, "save_format")
+                            else "auto"),
+            "saving_allowed": self.saving_allowed(),
+            "shutdown_allowed": bool(self.allow_shutdown),
+            "sheets": [getattr(c, "name", "") for c in
+                       getattr(scene, "compositions", []) or []],
+            "views": [v.name for v in
+                      getattr(scene, "saved_views", []) or []],
+        }
+
+    # Reconciled with the named tools (PR #1494 + n63-mcp, 19-11): one
+    # tool per job, under the PR's name, with what the other side had more
+    # — the refusal to drop unsaved work, the tab put in place of the one in
+    # front, the dialogs a failure showed, the sheets by number or place.
+    def _tool_open_document(self, path: str = "",
+                            discard_changes: bool = False) -> dict:
+        """Open ``path`` in place of the document in front, with no
+        question asked (an auto-saved copy is left alone). Unsaved changes
+        there are never dropped in silence: an error, unless
+        ``discard_changes`` — no «save changes?» box nobody would answer."""
+        src = absolute(_expand(path), must_exist=True)
+        win = self._window()
+        suffix = src.suffix.lower()
+        known = (".igz", ".dae", ".skp", ".dxf", ".dwg",
+                 *getattr(win, "file_openers", {}))
+        if suffix not in known:
+            raise ValueError(f"IngeTrazo does not open {suffix!r} files; "
+                             "one of " + ", ".join(known)
+                             + " (import_file takes more)")
+        if win._is_dirty() and not discard_changes:
+            current = getattr(win, "_current_path", None)
+            raise RuntimeError(
+                "the document in front has unsaved changes ("
+                + (current.name if current else "untitled")
+                + "): save it with save_document first, or pass "
+                "discard_changes=true to drop them")
+        previous = win._doc
+        mark = self._mark()
+        win.viewport.end_group_edit()
+        if not open_quietly(win, src):
+            raise self._failed(f"could not open {src}", mark)
+        if previous is not win._doc and previous in win._documents:
+            # In place of the one in front, not beside it: an agent that
+            # opens ten files must not leave ten tabs behind.
+            win.close_document(previous, ask=False)
+        return self._tool_document_info()
+
+    def _tool_save_document(self, path: str | None = None,
+                            format: str | None = None) -> dict:  # noqa: A002
+        """File ▸ Save — or, with ``path``, Save As (``.igz``) — in the
+        format asked, else the one IngeTrazo was told to use. Only when the
+        user allowed it."""
+        if not self.saving_allowed():
+            raise PermissionError(
+                "saving over the bridge is off: start IngeTrazo with "
+                "--allow-save, or tick «Allow the agent to save the "
+                "document» in the AI tab")
+        w = self._window()
+        if path:
+            target = absolute(_expand(path))
+            if not target.parent.is_dir():
+                raise FileNotFoundError(
+                    f"the folder does not exist: {target.parent}")
+        else:
+            target = getattr(w, "_current_path", None)
+        if target is None:
+            raise ValueError("the document has never been saved: give a "
+                             "path (an absolute .igz path)")
+        if target.suffix.lower() != ".igz":
+            raise ValueError(f"not an .igz path: {target} (a document is "
+                             "saved as .igz; export_file writes the other "
+                             "formats)")
+        mark = self._mark()
+        w._end_group_edits()
+        reply = w.write_document(target, format or None)
+        warned = self._cancelled(mark)
+        if warned:
+            reply["warnings"] = warned
+        return reply
+
+    def _tool_export_pdf(self, path: str = "", sheets=None) -> dict:
+        """Every sheet (or the given ones: name, title-block number or
+        place) into one PDF, as File ▸ Export all sheets (PDF) does."""
+        if not path:
+            raise ValueError("give the PDF path")
+        out = absolute(_expand(path))
+        scene = self._viewport.scene
+        comps = list(getattr(scene, "compositions", []) or [])
+        if not comps:
+            raise ValueError("the document has no sheets")
+        if sheets:
+            if isinstance(sheets, (str, int)):
+                sheets = [sheets]
+            picked = []
+            for ref in sheets:
+                try:
+                    comp = self._sheet(ref)
+                except KeyError as exc:
+                    raise ValueError(exc.args[0]) from None
+                if comp not in picked:
+                    picked.append(comp)
+            # In the document's order, as the atlas prints them.
+            comps = [c for c in comps if c in picked]
+        composer = self._window()._ensure_composer()
+        if not self._has_gl() and any(
+                not (f.style == "vectorial"
+                     and not composer.frame_is_perspective(f))
+                for c in comps for f in c.frames):
+            raise RuntimeError(NO_GL)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        troubled = composer.export_all_pdf(str(out), comps)
+        if not out.is_file():
+            raise RuntimeError(f"the PDF was not written: {out}")
+        return {"path": str(out), "sheets": len(comps),
+                "sheet_names": [c.name for c in comps],
+                "views_not_rendered": list(troubled or [])}
+
+    def _tool_export_view(self, view: str = "", path: str | None = None,
+                          width: int = 1920, height: int = 1080) -> dict:
+        """Scene ``view`` rendered to a PNG (at ``path``, else the bridge's
+        own folder). The camera and what the scene shows are put back
+        afterwards, and a document that was saved stays saved."""
+        from core.saved_views import SavedView, shown_state
+        vp = self._viewport
+        scene = vp.scene
+        try:
+            target = self._scene_view(view)
+        except KeyError as exc:
+            raise ValueError(exc.args[0]) from None
+        if not self._has_gl():
+            # Before the scene is put up: nothing to put back.
+            raise RuntimeError("the view did not render (" + NO_GL + ")")
+        width = max(64, min(int(width), 8192))
+        height = max(64, min(int(height), 8192))
+        out = absolute(_expand(path)) if path else out_dir() / "view.png"
+        w = self._window()
+        was_clean = not w._is_dirty()
+        before = SavedView.capture("__bridge_before__", scene, vp.camera)
+        state = shown_state(scene)
+        bumped = False
+        try:
+            target.apply(scene, vp.camera)
+            if shown_state(scene) != state:
+                # What the scene shows changed: the caches keyed on the
+                # version rebuild — and again once it is put back.
+                scene.version += 1
+                bumped = True
+            image = self._render_view(width, height)
+        finally:
+            before.apply(scene, vp.camera)
+            if bumped:
+                scene.version += 1
+            if was_clean:
+                w._saved_version = scene.version
+            vp.notify_scene_changed()
+        out.parent.mkdir(parents=True, exist_ok=True)
+        if not image.save(str(out)):
+            raise RuntimeError(f"could not write {out}")
+        return {"path": str(out), "view": target.name,
+                "width": width, "height": height}
+
+    def _tool_shutdown(self, discard_changes: bool = False) -> dict:
+        """End IngeTrazo — only when started with ``--allow-shutdown``.
+        Refused with unsaved changes unless ``discard_changes``."""
+        if not self.allow_shutdown:
+            raise PermissionError(
+                "shutdown over the bridge is off: start IngeTrazo with "
+                "--allow-shutdown")
+        w = self._window()
+        dirty = getattr(w, "_doc_is_dirty", None)
+        if not discard_changes and callable(dirty) and dirty(w._doc):
+            raise RuntimeError(
+                "the document has unsaved changes: save_document first, or "
+                "call shutdown with discard_changes=true")
+        # Not now: once this reply has gone out (see _drain), so the agent
+        # hears that it worked before the connection drops.
+        self._shutdown_pending = True
+        return {"shutting_down": True}
+
+    def _finish_shutdown(self) -> None:
+        """Main thread, after the shutdown reply was sent."""
+        self.stop()
+        if self.on_shutdown is not None:
+            self.on_shutdown()
+        else:
+            from PySide6.QtWidgets import QApplication
+            QApplication.instance().exit(0)
 
 
 def mcp_command(platform: str | None = None, frozen: bool | None = None,
@@ -422,6 +649,20 @@ class BridgeSection(QWidget):
         self._copy.clicked.connect(self._on_copy)
         row.addWidget(self._copy)
         body.addLayout(row)
+        from PySide6.QtCore import QSettings
+        from PySide6.QtWidgets import QCheckBox
+        self._allow_save = QCheckBox(tr("Allow the agent to save the "
+                                        "document"))
+        self._allow_save.setToolTip(tr(
+            "Lets the agent write the open document to disk with its "
+            "save_document tool (File ▸ Save, in the format chosen in "
+            "Preferences). Off: it can change the model, never the file."))
+        self._allow_save.setChecked(
+            str(QSettings().value(ALLOW_SAVE_KEY, "0")) == "1")
+        self._allow_save.toggled.connect(
+            lambda on: QSettings().setValue(ALLOW_SAVE_KEY,
+                                            "1" if on else "0"))
+        body.addWidget(self._allow_save)
         self._text = QPlainTextEdit()
         self._text.setReadOnly(True)
         self._text.setLineWrapMode(QPlainTextEdit.WidgetWidth)

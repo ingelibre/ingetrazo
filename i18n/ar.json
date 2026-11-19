@@ -4088,5 +4088,11 @@
  "Every layer is in the legend": "كل الطبقات موجودة في وسيلة الإيضاح",
  "Free entry": "إدخال حر",
  "New entry": "إدخال جديد",
- "Every sheet as a page. Click: open it. Drag: change the order. Double-click or F2: rename. Delete: remove it. Right-click: more.": "كل صفيحة كصفحة. نقرة: افتحها. اسحب: غيّر الترتيب. نقرة مزدوجة أو F2: إعادة التسمية. Delete: احذفها. نقرة يمنى: المزيد."
+ "Every sheet as a page. Click: open it. Drag: change the order. Double-click or F2: rename. Delete: remove it. Right-click: more.": "كل صفيحة كصفحة. نقرة: افتحها. اسحب: غيّر الترتيب. نقرة مزدوجة أو F2: إعادة التسمية. Delete: احذفها. نقرة يمنى: المزيد.",
+ "Automatic (compact)": "تلقائي (مضغوط)",
+ "Plain JSON (for version control)": "JSON عادي (للتحكم في الإصدارات)",
+ "Automatic packs textures and big models into a compact archive. Plain JSON always writes readable text, so Git and other version control can show what changed; its images go to a folder beside the document (Name.assets) that travels with it.": "يجمع التلقائي الخامات والنماذج الكبيرة في أرشيف مضغوط. أما JSON العادي فيكتب دائمًا نصًا مقروءًا، ليتمكن Git وأدوات التحكم في الإصدارات الأخرى من إظهار ما تغيّر؛ وتوضع صوره في مجلد بجوار المستند (الاسم.assets) يرافقه أينما انتقل.",
+ "Save format": "تنسيق الحفظ",
+ "Allow the agent to save the document": "السماح للوكيل بحفظ المستند",
+ "Lets the agent write the open document to disk with its save_document tool (File ▸ Save, in the format chosen in Preferences). Off: it can change the model, never the file.": "يتيح للوكيل كتابة المستند المفتوح على القرص بأداته save_document (ملف ▸ حفظ، بالتنسيق المختار في التفضيلات). عند الإيقاف: يمكنه تغيير النموذج، لكن ليس الملف أبدًا."
 }

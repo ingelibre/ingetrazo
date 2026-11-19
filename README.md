@@ -170,9 +170,12 @@ the document), **import STL (with principal-plane or advanced all-surface
   and an **AI Bridge** (drive the live document from Claude Code/Desktop
   or any MCP client: Python recipes, or named tools for clients that allow
   no code — scene info, layers, scenes, camera, selection, materials,
-  sheet renders, open/save/import/export; `ingetrazo --server` runs it
-  without a window — see [docs/ai-bridge.md](docs/ai-bridge.md)). Every
-  AI action is one transactional undo step. A broken
+  sheet renders, open/save/import/export). Every AI action is one
+  transactional undo step. The bridge also runs **without a window**
+  (`ingetrazo --headless --ai-bridge --open Casa.igz`, or for short
+  `ingetrazo --server Casa.igz`) for automation, and documents can be saved
+  as **plain JSON** for clean Git diffs — see
+  [docs/ai-bridge.md](docs/ai-bridge.md). A broken
   plugin can never prevent IngeTrazo from starting. Plugins are the
   lowest-friction way to contribute — see [docs/plugins.md](docs/plugins.md).
 - **Undo/redo** — every edit is a single atomic step (console scripts

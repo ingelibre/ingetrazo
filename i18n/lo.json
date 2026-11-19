@@ -4056,5 +4056,11 @@
  "Every layer is in the legend": "ທຸກຊັ້ນຢູ່ໃນຄຳອະທິບາຍສັນຍາລັກແລ້ວ",
  "Free entry": "ລາຍການອິດສະຫຼະ",
  "New entry": "ລາຍການໃໝ່",
- "Every sheet as a page. Click: open it. Drag: change the order. Double-click or F2: rename. Delete: remove it. Right-click: more.": "ແຕ່ລະໜ້າເຈ້ຍເປັນໜ້າໜຶ່ງ. ຄລິກ: ເປີດ. ລາກ: ປ່ຽນລຳດັບ. ຄລິກສອງເທື່ອ ຫຼື F2: ປ່ຽນຊື່. Delete: ລຶບ. ຄລິກຂວາ: ເພີ່ມເຕີມ."
+ "Every sheet as a page. Click: open it. Drag: change the order. Double-click or F2: rename. Delete: remove it. Right-click: more.": "ແຕ່ລະໜ້າເຈ້ຍເປັນໜ້າໜຶ່ງ. ຄລິກ: ເປີດ. ລາກ: ປ່ຽນລຳດັບ. ຄລິກສອງເທື່ອ ຫຼື F2: ປ່ຽນຊື່. Delete: ລຶບ. ຄລິກຂວາ: ເພີ່ມເຕີມ.",
+ "Automatic (compact)": "ອັດຕະໂນມັດ (ກະທັດຮັດ)",
+ "Plain JSON (for version control)": "JSON ລ້ວນ (ສຳລັບການຄວບຄຸມເວີຊັນ)",
+ "Automatic packs textures and big models into a compact archive. Plain JSON always writes readable text, so Git and other version control can show what changed; its images go to a folder beside the document (Name.assets) that travels with it.": "ອັດຕະໂນມັດຈະລວມພື້ນຜິວ ແລະ ໂມເດວໃຫຍ່ໄວ້ໃນໄຟລ໌ບີບອັດທີ່ກະທັດຮັດ. JSON ລ້ວນຈະຂຽນເປັນຂໍ້ຄວາມທີ່ອ່ານໄດ້ສະເໝີ ເພື່ອໃຫ້ Git ແລະ ລະບົບຄວບຄຸມເວີຊັນອື່ນສະແດງສິ່ງທີ່ປ່ຽນໄປໄດ້; ຮູບພາບຂອງມັນຈະຢູ່ໃນໂຟນເດີຂ້າງເອກະສານ (ຊື່.assets) ທີ່ຍ້າຍໄປພ້ອມກັນ.",
+ "Save format": "ຮູບແບບການບັນທຶກ",
+ "Allow the agent to save the document": "ອະນຸຍາດໃຫ້ຕົວແທນບັນທຶກເອກະສານ",
+ "Lets the agent write the open document to disk with its save_document tool (File ▸ Save, in the format chosen in Preferences). Off: it can change the model, never the file.": "ໃຫ້ຕົວແທນຂຽນເອກະສານທີ່ເປີດຢູ່ລົງດິສກ໌ດ້ວຍເຄື່ອງມື save_document (ໄຟລ໌ ▸ ບັນທຶກ, ໃນຮູບແບບທີ່ເລືອກໃນການຕັ້ງຄ່າ). ປິດ: ມັນປ່ຽນໂມເດວໄດ້, ແຕ່ບໍ່ເຄີຍປ່ຽນໄຟລ໌."
 }
