@@ -4094,5 +4094,20 @@
  "Printed by Print all and Export all — click a row's printer to switch it; a folder switched off leaves out everything inside it": "Preso da Stampa tutto ed Esporta tutto — un clic sulla stampante di una riga la cambia; una cartella spenta esclude tutto ciò che contiene",
  "Left out by the folder «{name}», switched off": "Esclusa dalla cartella «{name}», spenta",
  "Left out by the folder «{name}»: switch it on first": "Esclusa dalla cartella «{name}»: accendila prima",
- "Show the sheets as a list or with a picture of each page": "Mostra le tavole come elenco o con un'immagine di ogni pagina"
+ "Show the sheets as a list or with a picture of each page": "Mostra le tavole come elenco o con un'immagine di ogni pagina",
+ "Add a sheet index: the table of contents of the document's sheets, kept up to date": "Aggiungi un indice delle tavole: l'indice delle tavole del documento, sempre aggiornato",
+ "Sheet index": "Indice delle tavole",
+ "SHEET INDEX": "INDICE DELLE TAVOLE",
+ "Show the title": "Mostra il titolo",
+ "Leader": "Linea di guida",
+ "Show sheet numbers": "Mostra i numeri delle tavole",
+ "Flat list": "Elenco semplice",
+ "By folder": "Per cartella",
+ "By folder lists the sheets under their folders, indented. Sheets outside any folder are listed flat.": "Per cartella elenca le tavole sotto le loro cartelle, rientrate. Le tavole fuori da una cartella sono elencate in piano.",
+ "Border": "Bordo",
+ "Index page": "Pagina dell'indice",
+ "List this sheet too": "Includi anche questa tavola",
+ "Split a long index over several sheets: put one index on each and pick the page each one shows.": "Dividi un indice lungo su più tavole: metti un indice su ognuna e scegli la pagina che mostra ciascuno.",
+ "Entries per page": "Voci per pagina",
+ "{n} entries on {pages} page(s)": "{n} voci su {pages} pagina/e"
 }

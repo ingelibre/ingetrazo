@@ -4096,5 +4096,20 @@
  "Printed by Print all and Export all — click a row's printer to switch it; a folder switched off leaves out everything inside it": "ຖືກເອົາໄປໂດຍ «ພິມທັງໝົດ» ແລະ «ສົ່ງອອກທັງໝົດ» — ຄລິກເຄື່ອງພິມຂອງແຖວເພື່ອສະຫຼັບ; ໂຟນເດີທີ່ປິດໄວ້ຈະບໍ່ລວມທຸກຢ່າງຂ້າງໃນ",
  "Left out by the folder «{name}», switched off": "ບໍ່ລວມ ເພາະໂຟນເດີ «{name}» ປິດໄວ້",
  "Left out by the folder «{name}»: switch it on first": "ບໍ່ລວມ ເພາະໂຟນເດີ «{name}»: ເປີດໂຟນເດີກ່ອນ",
- "Show the sheets as a list or with a picture of each page": "ສະແດງແຜ່ນເປັນລາຍການ ຫຼື ພ້ອມຮູບຂອງແຕ່ລະໜ້າ"
+ "Show the sheets as a list or with a picture of each page": "ສະແດງແຜ່ນເປັນລາຍການ ຫຼື ພ້ອມຮູບຂອງແຕ່ລະໜ້າ",
+ "Add a sheet index: the table of contents of the document's sheets, kept up to date": "ເພີ່ມສາລະບານແຜ່ນ: ສາລະບານຂອງແຜ່ນໃນເອກະສານ, ອັບເດດສະເໝີ",
+ "Sheet index": "ສາລະບານແຜ່ນ",
+ "SHEET INDEX": "ສາລະບານແຜ່ນ",
+ "Show the title": "ສະແດງຫົວຂໍ້",
+ "Leader": "ເສັ້ນນຳ",
+ "Show sheet numbers": "ສະແດງເລກແຜ່ນ",
+ "Flat list": "ລາຍການແບບແປ",
+ "By folder": "ຕາມໂຟນເດີ",
+ "By folder lists the sheets under their folders, indented. Sheets outside any folder are listed flat.": "ຕາມໂຟນເດີຈະສະແດງແຜ່ນພາຍໃຕ້ໂຟນເດີຂອງມັນແບບຫຍໍ້ໜ້າ. ແຜ່ນທີ່ຢູ່ນອກໂຟນເດີຈະສະແດງແບບແປ.",
+ "Border": "ຂອບ",
+ "Index page": "ໜ້າຂອງສາລະບານ",
+ "List this sheet too": "ລວມແຜ່ນນີ້ນຳ",
+ "Split a long index over several sheets: put one index on each and pick the page each one shows.": "ແບ່ງສາລະບານຍາວໄປຫຼາຍແຜ່ນ: ວາງສາລະບານໜຶ່ງອັນໃນແຕ່ລະແຜ່ນ ແລ້ວເລືອກໜ້າທີ່ແຕ່ລະອັນສະແດງ.",
+ "Entries per page": "ລາຍການຕໍ່ໜ້າ",
+ "{n} entries on {pages} page(s)": "{n} ລາຍການ ໃນ {pages} ໜ້າ"
 }

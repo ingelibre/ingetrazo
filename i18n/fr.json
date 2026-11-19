@@ -4093,5 +4093,20 @@
  "Printed by Print all and Export all — click a row's printer to switch it; a folder switched off leaves out everything inside it": "Pris par Tout imprimer et Tout exporter — un clic sur l’imprimante d’une ligne la bascule ; un dossier désactivé laisse de côté tout ce qu’il contient",
  "Left out by the folder «{name}», switched off": "Laissée de côté par le dossier « {name} », désactivé",
  "Left out by the folder «{name}»: switch it on first": "Laissée de côté par le dossier « {name} » : activez-le d’abord",
- "Show the sheets as a list or with a picture of each page": "Afficher les planches en liste ou avec une image de chaque page"
+ "Show the sheets as a list or with a picture of each page": "Afficher les planches en liste ou avec une image de chaque page",
+ "Add a sheet index: the table of contents of the document's sheets, kept up to date": "Ajouter un index des feuilles : la table des matières des feuilles du document, toujours à jour",
+ "Sheet index": "Index des feuilles",
+ "SHEET INDEX": "INDEX DES FEUILLES",
+ "Show the title": "Afficher le titre",
+ "Leader": "Points de conduite",
+ "Show sheet numbers": "Afficher les numéros de feuille",
+ "Flat list": "Liste simple",
+ "By folder": "Par dossier",
+ "By folder lists the sheets under their folders, indented. Sheets outside any folder are listed flat.": "Par dossier liste les feuilles sous leurs dossiers, en retrait. Les feuilles hors dossier sont listées à plat.",
+ "Border": "Bordure",
+ "Index page": "Page de l'index",
+ "List this sheet too": "Inclure aussi cette feuille",
+ "Split a long index over several sheets: put one index on each and pick the page each one shows.": "Répartir un long index sur plusieurs feuilles : placez un index sur chacune et choisissez la page que chacun affiche.",
+ "Entries per page": "Entrées par page",
+ "{n} entries on {pages} page(s)": "{n} entrées sur {pages} page(s)"
 }

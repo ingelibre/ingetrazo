@@ -4094,5 +4094,20 @@
  "Printed by Print all and Export all — click a row's printer to switch it; a folder switched off leaves out everything inside it": "Включено в „Печат на всички“ и „Експортиране на всички“ — щракнете върху принтера на ред, за да го превключите; изключена папка изключва всичко в нея",
  "Left out by the folder «{name}», switched off": "Изключено от изключената папка «{name}»",
  "Left out by the folder «{name}»: switch it on first": "Изключено от папката «{name}»: първо я включете",
- "Show the sheets as a list or with a picture of each page": "Показване на листовете като списък или с изображение на всяка страница"
+ "Show the sheets as a list or with a picture of each page": "Показване на листовете като списък или с изображение на всяка страница",
+ "Add a sheet index: the table of contents of the document's sheets, kept up to date": "Добави списък на листовете: съдържанието на листовете на документа, винаги актуално",
+ "Sheet index": "Списък на листовете",
+ "SHEET INDEX": "СПИСЪК НА ЛИСТОВЕТЕ",
+ "Show the title": "Показване на заглавието",
+ "Leader": "Запълваща линия",
+ "Show sheet numbers": "Показване на номерата на листовете",
+ "Flat list": "Обикновен списък",
+ "By folder": "По папки",
+ "By folder lists the sheets under their folders, indented. Sheets outside any folder are listed flat.": "По папки изброява листовете под техните папки, с отстъп. Листовете извън папка се изброяват без отстъп.",
+ "Border": "Рамка",
+ "Index page": "Страница на списъка",
+ "List this sheet too": "Включи и този лист",
+ "Split a long index over several sheets: put one index on each and pick the page each one shows.": "Раздели дълъг списък на няколко листа: сложи списък на всеки и избери страницата, която показва.",
+ "Entries per page": "Записи на страница",
+ "{n} entries on {pages} page(s)": "{n} записа на {pages} стр."
 }

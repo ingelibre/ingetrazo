@@ -1600,6 +1600,16 @@ def _comp_leyenda(p, ink):
         p.drawLine(QPointF(20, y), QPointF(40, y))
 
 
+def _comp_indice(p, ink):
+    """Sheet index: a heading, then rows of name · · · number."""
+    p.drawLine(QPointF(8, 9), QPointF(28, 9))
+    for y in (19, 28, 37):
+        p.drawLine(QPointF(8, y), QPointF(20, y))
+        for x in (24, 29, 34):
+            p.drawPoint(QPointF(x, y))
+        p.drawLine(QPointF(38, y), QPointF(41, y))
+
+
 def _comp_escala(p, ink):
     p.setBrush(ink)
     p.drawRect(6, 20, 9, 7)
@@ -2836,7 +2846,8 @@ _DRAW = {
     "rectangle": _rectangle, "rectangle_center": _rectangle_center,
     "image": _image_icon,
     "comp_vista": _comp_vista, "comp_norte": _comp_norte,
-    "comp_leyenda": _comp_leyenda, "comp_escala": _comp_escala,
+    "comp_leyenda": _comp_leyenda, "comp_indice": _comp_indice,
+    "comp_escala": _comp_escala,
     "comp_cajetin": _comp_cajetin, "comp_flecha": _comp_flecha,
     "comp_terreno": _comp_terreno,
     "save": _save, "refresh": _refresh, "export_pdf": _export_pdf,

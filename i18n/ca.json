@@ -4099,5 +4099,20 @@
  "Drag a scene onto a sheet. Double-click places it on the open sheet.": "Arrossega una escena a una làmina. Doble clic la col·loca a la làmina oberta.",
  "Printed by Print all and Export all — click a row's printer to switch it; a folder switched off leaves out everything inside it": "El que prenen Imprimeix-ho tot i Exporta-ho tot — un clic a la impressora d'una fila la canvia; una carpeta desactivada deixa fora tot el que conté",
  "Left out by the folder «{name}», switched off": "Exclosa per la carpeta «{name}», desactivada",
- "Left out by the folder «{name}»: switch it on first": "Exclosa per la carpeta «{name}»: activa-la primer"
+ "Left out by the folder «{name}»: switch it on first": "Exclosa per la carpeta «{name}»: activa-la primer",
+ "Add a sheet index: the table of contents of the document's sheets, kept up to date": "Afegeix un índex de làmines: la taula de continguts de les làmines del document, sempre al dia",
+ "Sheet index": "Índex de làmines",
+ "SHEET INDEX": "ÍNDEX DE LÀMINES",
+ "Show the title": "Mostra el títol",
+ "Leader": "Línia guia",
+ "Show sheet numbers": "Mostra els números de làmina",
+ "Flat list": "Llista plana",
+ "By folder": "Per carpeta",
+ "By folder lists the sheets under their folders, indented. Sheets outside any folder are listed flat.": "Per carpeta llista les làmines sota les seves carpetes, sagnades. Les làmines fora de cap carpeta es llisten planes.",
+ "Border": "Vora",
+ "Index page": "Pàgina de l'índex",
+ "List this sheet too": "Inclou també aquesta làmina",
+ "Split a long index over several sheets: put one index on each and pick the page each one shows.": "Reparteix un índex llarg en diverses làmines: posa un índex a cadascuna i tria la pàgina que mostra cadascun.",
+ "Entries per page": "Entrades per pàgina",
+ "{n} entries on {pages} page(s)": "{n} entrades en {pages} pàgina(es)"
 }

@@ -4094,5 +4094,20 @@
  "Printed by Print all and Export all — click a row's printer to switch it; a folder switched off leaves out everything inside it": "由「全部列印」與「全部匯出」包含 — 按一下列的印表機以切換；關閉的資料夾會排除其中所有內容",
  "Left out by the folder «{name}», switched off": "因資料夾「{name}」已關閉而排除",
  "Left out by the folder «{name}»: switch it on first": "因資料夾「{name}」而排除：請先開啟該資料夾",
- "Show the sheets as a list or with a picture of each page": "以清單或附每頁圖片的方式顯示圖紙"
+ "Show the sheets as a list or with a picture of each page": "以清單或附每頁圖片的方式顯示圖紙",
+ "Add a sheet index: the table of contents of the document's sheets, kept up to date": "新增圖紙目錄：文件中各圖紙的目錄，隨時保持最新",
+ "Sheet index": "圖紙目錄",
+ "SHEET INDEX": "圖紙目錄",
+ "Show the title": "顯示標題",
+ "Leader": "引導線",
+ "Show sheet numbers": "顯示圖紙編號",
+ "Flat list": "平面清單",
+ "By folder": "依資料夾",
+ "By folder lists the sheets under their folders, indented. Sheets outside any folder are listed flat.": "依資料夾會將圖紙縮排列在其資料夾下。不在任何資料夾中的圖紙以平面方式列出。",
+ "Border": "邊框",
+ "Index page": "目錄頁",
+ "List this sheet too": "也列出本圖紙",
+ "Split a long index over several sheets: put one index on each and pick the page each one shows.": "將較長的目錄分散到多張圖紙上：在每張圖紙上放一個目錄，並選擇各自顯示的頁。",
+ "Entries per page": "每頁項目數",
+ "{n} entries on {pages} page(s)": "{n} 個項目，共 {pages} 頁"
 }

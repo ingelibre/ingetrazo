@@ -4093,5 +4093,20 @@
  "Printed by Print all and Export all — click a row's printer to switch it; a folder switched off leaves out everything inside it": "'모두 인쇄'와 '모두 내보내기'에 포함 — 행의 프린터를 클릭하여 전환; 꺼진 폴더는 안의 모든 것을 제외합니다",
  "Left out by the folder «{name}», switched off": "꺼진 폴더 «{name}» 때문에 제외됨",
  "Left out by the folder «{name}»: switch it on first": "폴더 «{name}» 때문에 제외됨: 먼저 폴더를 켜세요",
- "Show the sheets as a list or with a picture of each page": "시트를 목록 또는 각 페이지 그림과 함께 표시"
+ "Show the sheets as a list or with a picture of each page": "시트를 목록 또는 각 페이지 그림과 함께 표시",
+ "Add a sheet index: the table of contents of the document's sheets, kept up to date": "도면 목록 추가: 문서 시트의 목차, 항상 최신 상태",
+ "Sheet index": "도면 목록",
+ "SHEET INDEX": "도면 목록",
+ "Show the title": "제목 표시",
+ "Leader": "지시선",
+ "Show sheet numbers": "시트 번호 표시",
+ "Flat list": "단순 목록",
+ "By folder": "폴더별",
+ "By folder lists the sheets under their folders, indented. Sheets outside any folder are listed flat.": "폴더별은 시트를 폴더 아래에 들여쓰기하여 나열합니다. 폴더 밖의 시트는 평평하게 나열됩니다.",
+ "Border": "테두리",
+ "Index page": "목록 페이지",
+ "List this sheet too": "이 시트도 포함",
+ "Split a long index over several sheets: put one index on each and pick the page each one shows.": "긴 목록을 여러 시트로 나누기: 각 시트에 목록을 놓고 각각 표시할 페이지를 고르세요.",
+ "Entries per page": "페이지당 항목 수",
+ "{n} entries on {pages} page(s)": "{n}개 항목, {pages}페이지"
 }

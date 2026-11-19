@@ -4093,5 +4093,20 @@
  "Printed by Print all and Export all — click a row's printer to switch it; a folder switched off leaves out everything inside it": "Lo que toman Imprimir todo y Exportar todo — un clic en la impresora de una fila la cambia; una carpeta apagada deja fuera todo lo que contiene",
  "Left out by the folder «{name}», switched off": "Excluida por la carpeta «{name}», apagada",
  "Left out by the folder «{name}»: switch it on first": "Excluida por la carpeta «{name}»: enciéndala primero",
- "Show the sheets as a list or with a picture of each page": "Ver las láminas en lista o con una imagen de cada página"
+ "Show the sheets as a list or with a picture of each page": "Ver las láminas en lista o con una imagen de cada página",
+ "Add a sheet index: the table of contents of the document's sheets, kept up to date": "Añadir un índice de láminas: la tabla de contenido de las láminas del documento, siempre al día",
+ "Sheet index": "Índice de láminas",
+ "SHEET INDEX": "ÍNDICE DE LÁMINAS",
+ "Show the title": "Mostrar el título",
+ "Leader": "Línea guía",
+ "Show sheet numbers": "Mostrar los números de lámina",
+ "Flat list": "Lista plana",
+ "By folder": "Por carpeta",
+ "By folder lists the sheets under their folders, indented. Sheets outside any folder are listed flat.": "Por carpeta lista las láminas bajo sus carpetas, sangradas. Las láminas fuera de una carpeta se listan planas.",
+ "Border": "Borde",
+ "Index page": "Página del índice",
+ "List this sheet too": "Incluir también esta lámina",
+ "Split a long index over several sheets: put one index on each and pick the page each one shows.": "Repartir un índice largo en varias láminas: pon un índice en cada una y elige la página que muestra cada uno.",
+ "Entries per page": "Entradas por página",
+ "{n} entries on {pages} page(s)": "{n} entradas en {pages} página(s)"
 }

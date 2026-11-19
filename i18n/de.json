@@ -4093,5 +4093,20 @@
  "Printed by Print all and Export all — click a row's printer to switch it; a folder switched off leaves out everything inside it": "Von „Alle drucken“ und „Alle exportieren“ genommen — Klick auf den Drucker einer Zeile schaltet ihn um; ein ausgeschalteter Ordner lässt alles darin weg",
  "Left out by the folder «{name}», switched off": "Ausgelassen durch den ausgeschalteten Ordner «{name}»",
  "Left out by the folder «{name}»: switch it on first": "Ausgelassen durch den Ordner «{name}»: zuerst den Ordner einschalten",
- "Show the sheets as a list or with a picture of each page": "Blätter als Liste oder mit Bild jeder Seite anzeigen"
+ "Show the sheets as a list or with a picture of each page": "Blätter als Liste oder mit Bild jeder Seite anzeigen",
+ "Add a sheet index: the table of contents of the document's sheets, kept up to date": "Planverzeichnis einfügen: das Inhaltsverzeichnis der Blätter des Dokuments, immer aktuell",
+ "Sheet index": "Planverzeichnis",
+ "SHEET INDEX": "PLANVERZEICHNIS",
+ "Show the title": "Titel anzeigen",
+ "Leader": "Füllzeichen",
+ "Show sheet numbers": "Blattnummern anzeigen",
+ "Flat list": "Flache Liste",
+ "By folder": "Nach Ordner",
+ "By folder lists the sheets under their folders, indented. Sheets outside any folder are listed flat.": "Nach Ordner listet die Blätter eingerückt unter ihren Ordnern auf. Blätter ohne Ordner werden flach aufgelistet.",
+ "Border": "Rahmen",
+ "Index page": "Verzeichnisseite",
+ "List this sheet too": "Dieses Blatt mit aufführen",
+ "Split a long index over several sheets: put one index on each and pick the page each one shows.": "Ein langes Verzeichnis auf mehrere Blätter verteilen: auf jedes ein Verzeichnis setzen und die Seite wählen, die es zeigt.",
+ "Entries per page": "Einträge pro Seite",
+ "{n} entries on {pages} page(s)": "{n} Einträge auf {pages} Seite(n)"
 }

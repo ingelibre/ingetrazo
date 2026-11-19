@@ -4093,5 +4093,20 @@
  "Printed by Print all and Export all — click a row's printer to switch it; a folder switched off leaves out everything inside it": "Берётся «Печатать все» и «Экспортировать все» — щелчок по принтеру строки переключает его; выключенная папка исключает всё своё содержимое",
  "Left out by the folder «{name}», switched off": "Исключено выключенной папкой «{name}»",
  "Left out by the folder «{name}»: switch it on first": "Исключено папкой «{name}»: сначала включите её",
- "Show the sheets as a list or with a picture of each page": "Показывать листы списком или с картинкой каждой страницы"
+ "Show the sheets as a list or with a picture of each page": "Показывать листы списком или с картинкой каждой страницы",
+ "Add a sheet index: the table of contents of the document's sheets, kept up to date": "Добавить ведомость листов: оглавление листов документа, всегда актуальное",
+ "Sheet index": "Ведомость листов",
+ "SHEET INDEX": "ВЕДОМОСТЬ ЛИСТОВ",
+ "Show the title": "Показывать заголовок",
+ "Leader": "Заполнитель",
+ "Show sheet numbers": "Показывать номера листов",
+ "Flat list": "Простой список",
+ "By folder": "По папкам",
+ "By folder lists the sheets under their folders, indented. Sheets outside any folder are listed flat.": "По папкам — листы перечисляются под своими папками, с отступом. Листы вне папок перечисляются без отступа.",
+ "Border": "Рамка",
+ "Index page": "Страница ведомости",
+ "List this sheet too": "Включать и этот лист",
+ "Split a long index over several sheets: put one index on each and pick the page each one shows.": "Разбить длинную ведомость на несколько листов: поставьте ведомость на каждый и выберите страницу, которую она показывает.",
+ "Entries per page": "Записей на странице",
+ "{n} entries on {pages} page(s)": "{n} записей на {pages} стр."
 }

@@ -4094,5 +4094,20 @@
  "Printed by Print all and Export all — click a row's printer to switch it; a folder switched off leaves out everything inside it": "由“全部打印”和“全部导出”采用 — 单击某行的打印机图标切换；关闭的文件夹会排除其中的所有内容",
  "Left out by the folder «{name}», switched off": "被已关闭的文件夹“{name}”排除",
  "Left out by the folder «{name}»: switch it on first": "被文件夹“{name}”排除：请先打开该文件夹",
- "Show the sheets as a list or with a picture of each page": "以列表或带每页图片的方式显示图纸"
+ "Show the sheets as a list or with a picture of each page": "以列表或带每页图片的方式显示图纸",
+ "Add a sheet index: the table of contents of the document's sheets, kept up to date": "添加图纸目录：文档中各图纸的目录，始终保持最新",
+ "Sheet index": "图纸目录",
+ "SHEET INDEX": "图纸目录",
+ "Show the title": "显示标题",
+ "Leader": "引导线",
+ "Show sheet numbers": "显示图纸编号",
+ "Flat list": "平铺列表",
+ "By folder": "按文件夹",
+ "By folder lists the sheets under their folders, indented. Sheets outside any folder are listed flat.": "按文件夹会将图纸缩进列在其文件夹下。不在任何文件夹中的图纸平铺列出。",
+ "Border": "边框",
+ "Index page": "目录页",
+ "List this sheet too": "也列出本图纸",
+ "Split a long index over several sheets: put one index on each and pick the page each one shows.": "将较长的目录拆分到多张图纸上：在每张图纸上放一个目录，并选择各自显示的页。",
+ "Entries per page": "每页条目数",
+ "{n} entries on {pages} page(s)": "{n} 个条目，共 {pages} 页"
 }

@@ -4100,5 +4100,20 @@
  "Printed by Print all and Export all — click a row's printer to switch it; a folder switched off leaves out everything inside it": "Друкується через «Друкувати все» та «Експортувати все» — клацніть принтер рядка, щоб перемкнути; вимкнена тека виключає все, що в ній",
  "Left out by the folder «{name}», switched off": "Виключено вимкненою текою «{name}»",
  "Left out by the folder «{name}»: switch it on first": "Виключено текою «{name}»: спершу ввімкніть її",
- "Show the sheets as a list or with a picture of each page": "Показувати аркуші списком або з картинкою кожної сторінки"
+ "Show the sheets as a list or with a picture of each page": "Показувати аркуші списком або з картинкою кожної сторінки",
+ "Add a sheet index: the table of contents of the document's sheets, kept up to date": "Додати відомість аркушів: зміст аркушів документа, завжди актуальний",
+ "Sheet index": "Відомість аркушів",
+ "SHEET INDEX": "ВІДОМІСТЬ АРКУШІВ",
+ "Show the title": "Показувати заголовок",
+ "Leader": "Заповнювач",
+ "Show sheet numbers": "Показувати номери аркушів",
+ "Flat list": "Простий список",
+ "By folder": "За теками",
+ "By folder lists the sheets under their folders, indented. Sheets outside any folder are listed flat.": "За теками — аркуші перелічуються під своїми теками, з відступом. Аркуші поза теками перелічуються без відступу.",
+ "Border": "Рамка",
+ "Index page": "Сторінка відомості",
+ "List this sheet too": "Включати й цей аркуш",
+ "Split a long index over several sheets: put one index on each and pick the page each one shows.": "Розбити довгу відомість на кілька аркушів: поставте відомість на кожен і виберіть сторінку, яку вона показує.",
+ "Entries per page": "Записів на сторінці",
+ "{n} entries on {pages} page(s)": "{n} записів на {pages} стор."
 }

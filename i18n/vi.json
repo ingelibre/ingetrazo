@@ -4120,5 +4120,20 @@
  "Printed by Print all and Export all — click a row's printer to switch it; a folder switched off leaves out everything inside it": "Được «In tất cả» và «Xuất tất cả» lấy — nhấp vào máy in của một dòng để bật/tắt; thư mục bị tắt sẽ bỏ qua mọi thứ bên trong",
  "Left out by the folder «{name}», switched off": "Bị bỏ qua do thư mục «{name}» đã tắt",
  "Left out by the folder «{name}»: switch it on first": "Bị bỏ qua do thư mục «{name}»: hãy bật thư mục trước",
- "Show the sheets as a list or with a picture of each page": "Xem các bản vẽ dạng danh sách hoặc kèm hình của từng trang"
+ "Show the sheets as a list or with a picture of each page": "Xem các bản vẽ dạng danh sách hoặc kèm hình của từng trang",
+ "Add a sheet index: the table of contents of the document's sheets, kept up to date": "Thêm mục lục bản vẽ: mục lục các bản vẽ của tài liệu, luôn cập nhật",
+ "Sheet index": "Mục lục bản vẽ",
+ "SHEET INDEX": "MỤC LỤC BẢN VẼ",
+ "Show the title": "Hiện tiêu đề",
+ "Leader": "Đường dẫn",
+ "Show sheet numbers": "Hiện số bản vẽ",
+ "Flat list": "Danh sách phẳng",
+ "By folder": "Theo thư mục",
+ "By folder lists the sheets under their folders, indented. Sheets outside any folder are listed flat.": "Theo thư mục liệt kê các bản vẽ dưới thư mục của chúng, thụt lề. Bản vẽ ngoài thư mục được liệt kê phẳng.",
+ "Border": "Viền",
+ "Index page": "Trang mục lục",
+ "List this sheet too": "Liệt kê cả bản vẽ này",
+ "Split a long index over several sheets: put one index on each and pick the page each one shows.": "Chia mục lục dài ra nhiều bản vẽ: đặt một mục lục trên mỗi bản vẽ và chọn trang mà mỗi mục lục hiển thị.",
+ "Entries per page": "Số mục mỗi trang",
+ "{n} entries on {pages} page(s)": "{n} mục trên {pages} trang"
 }

@@ -4128,5 +4128,20 @@
  "Printed by Print all and Export all — click a row's printer to switch it; a folder switched off leaves out everything inside it": "تشملها «طباعة الكل» و«تصدير الكل» — انقر على طابعة الصف لتبديلها؛ المجلد المُطفأ يستبعد كل ما بداخله",
  "Left out by the folder «{name}», switched off": "مستبعدة بسبب المجلد «{name}» المُطفأ",
  "Left out by the folder «{name}»: switch it on first": "مستبعدة بسبب المجلد «{name}»: شغّله أولًا",
- "Show the sheets as a list or with a picture of each page": "عرض اللوحات كقائمة أو مع صورة لكل صفحة"
+ "Show the sheets as a list or with a picture of each page": "عرض اللوحات كقائمة أو مع صورة لكل صفحة",
+ "Add a sheet index: the table of contents of the document's sheets, kept up to date": "إضافة فهرس اللوحات: جدول محتويات لوحات المستند، محدَّث دائمًا",
+ "Sheet index": "فهرس اللوحات",
+ "SHEET INDEX": "فهرس اللوحات",
+ "Show the title": "إظهار العنوان",
+ "Leader": "خط إرشادي",
+ "Show sheet numbers": "إظهار أرقام اللوحات",
+ "Flat list": "قائمة مسطحة",
+ "By folder": "حسب المجلد",
+ "By folder lists the sheets under their folders, indented. Sheets outside any folder are listed flat.": "حسب المجلد يسرد اللوحات تحت مجلداتها بإزاحة. اللوحات خارج أي مجلد تُسرد مسطحة.",
+ "Border": "إطار",
+ "Index page": "صفحة الفهرس",
+ "List this sheet too": "تضمين هذه اللوحة أيضًا",
+ "Split a long index over several sheets: put one index on each and pick the page each one shows.": "تقسيم فهرس طويل على عدة لوحات: ضع فهرسًا على كل لوحة واختر الصفحة التي يعرضها كل منها.",
+ "Entries per page": "مدخلات لكل صفحة",
+ "{n} entries on {pages} page(s)": "{n} مدخلات في {pages} صفحة"
 }

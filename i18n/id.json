@@ -4096,5 +4096,20 @@
  "Printed by Print all and Export all — click a row's printer to switch it; a folder switched off leaves out everything inside it": "Diambil Cetak semua dan Ekspor semua — klik printer sebuah baris untuk mengubahnya; folder yang dimatikan mengecualikan semua isinya",
  "Left out by the folder «{name}», switched off": "Dikecualikan oleh folder «{name}» yang dimatikan",
  "Left out by the folder «{name}»: switch it on first": "Dikecualikan oleh folder «{name}»: nyalakan folder itu dulu",
- "Show the sheets as a list or with a picture of each page": "Tampilkan lembar sebagai daftar atau dengan gambar tiap halaman"
+ "Show the sheets as a list or with a picture of each page": "Tampilkan lembar sebagai daftar atau dengan gambar tiap halaman",
+ "Add a sheet index: the table of contents of the document's sheets, kept up to date": "Tambahkan indeks lembar: daftar isi lembar dokumen, selalu diperbarui",
+ "Sheet index": "Indeks lembar",
+ "SHEET INDEX": "INDEKS LEMBAR",
+ "Show the title": "Tampilkan judul",
+ "Leader": "Garis penuntun",
+ "Show sheet numbers": "Tampilkan nomor lembar",
+ "Flat list": "Daftar datar",
+ "By folder": "Per folder",
+ "By folder lists the sheets under their folders, indented. Sheets outside any folder are listed flat.": "Per folder mencantumkan lembar di bawah foldernya, menjorok. Lembar di luar folder dicantumkan datar.",
+ "Border": "Bingkai",
+ "Index page": "Halaman indeks",
+ "List this sheet too": "Sertakan juga lembar ini",
+ "Split a long index over several sheets: put one index on each and pick the page each one shows.": "Bagi indeks panjang ke beberapa lembar: letakkan satu indeks di tiap lembar dan pilih halaman yang ditampilkan masing-masing.",
+ "Entries per page": "Entri per halaman",
+ "{n} entries on {pages} page(s)": "{n} entri dalam {pages} halaman"
 }
