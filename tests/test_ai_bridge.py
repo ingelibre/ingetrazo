@@ -202,16 +202,23 @@ def test_a_call_arriving_inside_a_running_one_is_refused():
     win = MainWindow()
     try:
         bridge = _Bridge(win.viewport)
+        bridge.start()
         bridge._busy = True
-        job = {"req": {"id": 7, "tool": "query_model"}, "done": _t.Event(),
-               "reply": None}
+        # #892: a job names its window and document, from a running bridge.
+        req = {"id": 7, "tool": "query_model",
+               "instance_id": bridge.instance_id,
+               "document_id": bridge._document_id()}
+        job = {"req": req, "done": _t.Event(), "reply": None,
+               "stop": bridge._stop}
         bridge._run_on_main(job)
         assert job["done"].is_set() and job["reply"]["ok"] is False
         assert "previous call" in job["reply"]["error"]
         bridge._busy = False
+        job["done"].clear()
         bridge._run_on_main(job)
-        assert job["reply"]["ok"] is True
+        assert job["reply"]["ok"] is True, job["reply"]
     finally:
+        bridge.stop()
         win._saved_version = win.viewport.scene.version
         win.close()
 
@@ -232,8 +239,16 @@ def test_mcp_server_protocol_and_bridge_down_message(monkeypatch):
     assert mcp.handle({"jsonrpc": "2.0",
                        "method": "notifications/initialized"}) is None
 
+    # #892: without a document the client refuses before any socket...
     call = mcp.handle({"jsonrpc": "2.0", "id": 3, "method": "tools/call",
                        "params": {"name": "query_model", "arguments": {}}})
+    result = call["result"]
+    assert result["isError"] is True
+    assert "list_documents" in result["content"][0]["text"]
+    # ...and with one whose bridge is down, it says to enable the bridge.
+    call = mcp.handle({"jsonrpc": "2.0", "id": 4, "method": "tools/call",
+                       "params": {"name": "query_model",
+                                  "arguments": {"document_id": "a:b"}}})
     result = call["result"]
     assert result["isError"] is True
     assert "AI bridge" in result["content"][0]["text"]

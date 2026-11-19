@@ -469,8 +469,15 @@ def _call(name: str, args: dict) -> dict:
                 or result.get("mimeType") != "image/png"):
             return _tool_result("Bridge returned an invalid screenshot.",
                                 is_error=True)
-        return {"content": [{"type": "image", "data": result["data"],
-                             "mimeType": result["mimeType"]}]}
+        content = [{"type": "image", "data": result["data"],
+                    "mimeType": result["mimeType"]}]
+        # main's named renders also say what was drawn (sheet, size, path).
+        meta = {k: v for k, v in result.items()
+                if k not in ("data", "mimeType")}
+        if meta:
+            content.append({"type": "text",
+                            "text": json.dumps(meta, ensure_ascii=False)})
+        return {"content": content}
     if name == "run_python":
         parts = []
         if result.get("stdout"):

@@ -302,12 +302,14 @@ def test_stop_and_window_close_cancel_already_queued_operations(bridge_window):
     assert len(window.viewport.scene.mesh.edges) == edges
     assert _document(bridge)["document_id"] == target["document_id"]
 
-    window._confirm_discard = lambda *args: False
+    # main asks once for all of a window's projects (_confirm_quit), and
+    # only when one has changes: the refusal is stubbed at that question.
+    window._confirm_quit = lambda *args: False
     assert not window.close()
     assert bridge.running
     assert len(ai_discovery.read_endpoints()) == 1
     thread, out = _queue_request(bridge, request)
-    window._confirm_discard = lambda *args: True
+    window._confirm_quit = lambda *args: True
     assert window.close()
     thread.join(timeout=5.0)
     assert not thread.is_alive()

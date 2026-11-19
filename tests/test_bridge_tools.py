@@ -31,9 +31,11 @@ if QApplication.instance() is None:
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def _rpc(sock, tool, args=None):
+def _rpc(sock, tool, args=None, ids=None):
+    # #892: every request but list_documents names its window and document.
     sock.sendall((json.dumps(
-        {"id": 1, "tool": tool, "args": args or {}}) + "\n").encode())
+        {"id": 1, "tool": tool, "args": args or {}, **(ids or {})})
+        + "\n").encode())
     buf = b""
     while b"\n" not in buf:
         chunk = sock.recv(65536)
@@ -64,10 +66,17 @@ def _pump_while(fn):
     return out["value"]
 
 
+def _ids(bridge) -> dict:
+    return {"instance_id": bridge.instance_id,
+            "document_id": bridge._document_id()}
+
+
 def _ask(bridge, tool, args=None):
+    ids = _ids(bridge)
+
     def call():
         with socket.create_connection(("127.0.0.1", bridge.port), 30) as s:
-            return _rpc(s, tool, args)
+            return _rpc(s, tool, args, ids)
     return _pump_while(call)
 
 
@@ -95,13 +104,11 @@ def _mcp_call(bridge, name, args=None):
     """The MCP server's own ``tools/call``, against this bridge."""
     mod = _mcp_module()
     mod.PORT = bridge.port
-    try:
-        return _pump_while(lambda: mod.handle({
-            "jsonrpc": "2.0", "id": 7, "method": "tools/call",
-            "params": {"name": name, "arguments": args or {}}})["result"])
-    finally:
-        if mod._sock is not None:
-            mod._sock.close()
+    # #892: the client opens a fresh socket per call and needs the document.
+    args = {"document_id": bridge._document_id(), **(args or {})}
+    return _pump_while(lambda: mod.handle({
+        "jsonrpc": "2.0", "id": 7, "method": "tools/call",
+        "params": {"name": name, "arguments": args}})["result"])
 
 
 def _sheet(name, style):
@@ -184,8 +191,11 @@ def test_tools_list_gives_every_tool_with_its_schema_and_a_bridge_order():
     for name, tool in tools.items():
         params = inspect.signature(getattr(_Bridge, f"_tool_{name}")).parameters
         for prop in tool["inputSchema"].get("properties", {}):
+            if prop == "document_id":     # #892: the client's, not sent on
+                continue
             assert prop in params, (name, prop)
-    assert tools["open_file"]["inputSchema"]["required"] == ["path"]
+    assert tools["open_file"]["inputSchema"]["required"] == [
+        "path", "document_id"]                      # #892: the document too
     assert "discard_changes" in tools["open_file"]["inputSchema"]["properties"]
 
 
@@ -504,7 +514,7 @@ def test_a_web_page_cannot_reach_the_named_tools_either(env, tmp_path):
     win, vp, bridge = env
     target = tmp_path / "robado.igz"
     body = json.dumps({"id": 1, "tool": "save_file",
-                       "args": {"path": str(target)}})
+                       "args": {"path": str(target)}, **_ids(bridge)})
     raw = (f"POST / HTTP/1.1\r\nHost: 127.0.0.1\r\nContent-Type: text/plain"
            f"\r\nContent-Length: {len(body)}\r\n\r\n{body}\n").encode()
 
@@ -568,18 +578,24 @@ def test_the_server_mode_answers_and_ends_on_sigterm(tmp_path):
         renders = "no OpenGL context" not in seen[-1]
         with socket.create_connection(("127.0.0.1", port), 30) as s:
             s.settimeout(60)
-            reply = _rpc(s, "get_scene_info")
+            # #892: the server names its one document; every order names it.
+            listed = _rpc(s, "list_documents")
+            assert listed["ok"], listed
+            doc_meta = listed["result"]["documents"][0]
+            ids = {"instance_id": doc_meta["instance_id"],
+                   "document_id": doc_meta["document_id"]}
+            reply = _rpc(s, "get_scene_info", None, ids)
             assert reply["ok"], reply
             assert reply["result"]["group_names"] == ["Mesa"]
             assert reply["result"]["file"] == str(doc)
             png = tmp_path / "vista.png"
             shot = _rpc(s, "screenshot", {"width": 320, "height": 200,
-                                          "path": str(png)})
+                                          "path": str(png)}, ids)
             if renders:
                 assert shot["ok"] and png.is_file(), shot
             else:
                 assert shot["ok"] is False and "no OpenGL" in shot["error"]
-            assert _rpc(s, "list_layers")["ok"]       # still alive
+            assert _rpc(s, "list_layers", None, ids)["ok"]   # still alive
         proc.send_signal(signal.SIGTERM)
         assert proc.wait(timeout=30) == 0
         assert "server stopped" in proc.stderr.read()

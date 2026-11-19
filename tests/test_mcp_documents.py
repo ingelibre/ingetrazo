@@ -127,8 +127,14 @@ def test_open_new_save_and_close_have_explicit_target_lifetimes(documents, tmp_p
     window._do_save(renamed)
     assert next(d for d in _list(client) if d["document_id"] == a)["path"] == str(renamed)
     assert _query(client, a)["group_names"] == ["Building"]
-    # Reopening even the same path creates a new lifetime and clears scope.
+    # On main, opening a path that is already open brings that project to
+    # the front; it is not reloaded, so its identity stays.
     assert window.open_path(renamed)
+    assert any(d["document_id"] == a for d in _list(client))
+    # Loading the file again creates a new lifetime and clears the scope.
+    from formats import igz
+    igz.load_into(window.viewport.scene, renamed)
+    window.viewport.scene.version += 1
     fresh = next(d["document_id"] for d in _list(client) if d["path"] == str(renamed))
     assert fresh != a
     for tool in ("query_model", "run_python", "screenshot", "undo", "redo"):

@@ -307,7 +307,7 @@ class _Bridge(BridgeTools, QObject):
             if (not self.running or job["stop"] is not self._stop
                     or job["stop"].is_set()):
                 raise RuntimeError("AI bridge stopped; enable it and call list_documents.")
-            if not self._viewport.updatesEnabled():
+            if self._replacing_document():
                 raise RuntimeError("Document replacement in progress; call list_documents again.")
             if ("instance_id" in req
                     and req["instance_id"] != self.instance_id):
@@ -338,6 +338,17 @@ class _Bridge(BridgeTools, QObject):
             job["done"].set()
 
     # ---- Tools ---------------------------------------------------------------
+    def _replacing_document(self) -> bool:
+        """A document is coming in: the window's open is running, or its
+        viewport is held still for it (#892). The whole window is also held
+        while the composer covers it (main, 19-11); that is no replacement,
+        and the sheets are exactly what an agent may be working on."""
+        window = self._viewport.window()
+        if getattr(window, "_open_in_progress", False):
+            return True
+        return (not self._viewport.updatesEnabled()
+                and not getattr(window, "_paint_held", False))
+
     def _document_id(self) -> str:
         document_id = f"{self.instance_id}:{self._viewport.scene.document_id}"
         if document_id != self._scope_document_id:
