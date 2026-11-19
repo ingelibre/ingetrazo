@@ -176,3 +176,22 @@ def test_the_drawn_bake_is_the_sweep_one(vp, monkeypatch):
     assert calls
     other = list(faces)
     _same(vp._bake_preview_faces(other, Tool()), vp._bake_preview_faces_py(other))
+
+
+@needs_engine
+def test_the_start_check_waits_for_the_hand_to_pause(vp, monkeypatch):
+    """The check bakes its sample in Python too: not while the user drags
+    (19-11) — it waits for a pause, then runs."""
+    from views.viewport import Viewport
+    monkeypatch.setattr(Viewport, "_preview_native_state", None)
+    monkeypatch.setattr(vp, "_preview_check_waits", 0, raising=False)
+    busy = [True]
+    monkeypatch.setattr(vp, "view_busy", lambda: busy[0])
+    queued = []
+    monkeypatch.setattr(vp, "_schedule_preview_check",
+                        lambda delay_ms=1500: queued.append(delay_ms))
+    assert vp._check_preview_native() is False
+    assert Viewport._preview_native_state is None and queued == [300]
+    busy[0] = False
+    assert vp._check_preview_native() is True
+    assert Viewport._preview_native_state is True

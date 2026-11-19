@@ -10999,6 +10999,19 @@ class Viewport(QOpenGLWidget):
         state = Viewport._preview_native_state
         if state is not None:
             return state
+        # Not while the hand is working in the view: the check bakes its
+        # sample in Python too (~45 ms on the first start), and a drag that
+        # began within its first seconds took it as one frame. It waits for
+        # a pause (20 s at most; Python bakes meanwhile).
+        busy = getattr(self, "view_busy", None)
+        waited = getattr(self, "_preview_check_waits", 0)
+        try:
+            if busy is not None and busy() and waited < 66:
+                self._preview_check_waits = waited + 1
+                self._schedule_preview_check(300)
+                return False
+        except RuntimeError:
+            pass
         import core._native as _native
         nat = _native.native
         if (nat is None or _native.qt_hypot() is None
