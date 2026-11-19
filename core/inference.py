@@ -77,6 +77,29 @@ def _tool_is_planar(tool) -> bool:
     return isinstance(tool, PlaneLock)
 
 
+
+def _projector(vp):
+    """The viewport's world-to-pixel for one snap search, each point
+    projected once: the search's passes ask for the same edge ends over
+    and over — ~6 of every 10 of the ~370 points a Line hover projected
+    inside the Plaza's 9 674-face group were repeats (19-11). The camera
+    does not move under one search, so the pixels are the same. A test's
+    stand-in (``_world_to_pixel`` set on the viewport) is asked as is."""
+    if not hasattr(vp, "_pixel_projector"):
+        return vp._world_to_pixel
+    fn = vp._pixel_projector()
+    if "_world_to_pixel" in vars(vp):
+        return fn
+    known = {}
+
+    def world_to_pixel(world):
+        key = (world.x(), world.y(), world.z())
+        hit = known.get(key, known)
+        if hit is known:
+            hit = known[key] = fn(world)
+        return hit
+    return world_to_pixel
+
 class InferenceEngine:
     """Snap-target state the viewport keeps between moves.
 
@@ -242,9 +265,7 @@ class InferenceEngine:
             candidate_world=world_raw,
             candidate_pixel=(px_x, px_y),
             scene=vp._snap_scene(px_x, px_y),
-            world_to_pixel=(vp._pixel_projector()
-                            if hasattr(vp, "_pixel_projector")
-                            else vp._world_to_pixel),
+            world_to_pixel=_projector(vp),
             threshold_px=vp.snap_threshold_px,
             project_onto_line=lambda s, d: vp._project_to_lock_line(
                 s, d, px_x, px_y),
