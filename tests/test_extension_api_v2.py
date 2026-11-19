@@ -80,6 +80,8 @@ def test_the_api_version_stays_2():
     from views.extension_api import API_VERSION, ExtensionApp
     assert API_VERSION == 2 and ExtensionApp.api_version == 2
     assert hasattr(ExtensionApp, "on_document_closed")
+    # The resource library (#412) also only adds: found by its methods.
+    assert hasattr(ExtensionApp, "register_resource_type")
 
 
 # ---- panels -----------------------------------------------------------------------

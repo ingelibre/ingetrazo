@@ -330,6 +330,35 @@ If an installed extension fails to load at startup, its manager entry shows
 the load error and offers actions to disable it, open its folder, and open
 IngeTrazo's log folder for the full traceback.
 
+### Reusable resources and libraries
+
+This only adds to API 2: to know whether the running build has it, test
+`hasattr(app, "register_resource_type")`.
+
+Extensions may register their own reusable resource types without teaching
+the core what those resources mean. The extension owns the schema and payload;
+IngeTrazo owns discovery, namespacing, libraries, dependency resolution,
+search and portable bundle transport.
+
+The public entry points on `ExtensionApp` are:
+
+- `register_resource_type(...)` — register one extension-owned resource type;
+- `resource_types()` — inspect registered types;
+- `export_resource_bundle(...)` — write a portable `.iglib` bundle;
+- `import_resource_bundle(...)` — import a bundle with explicit conflict policy.
+
+The generic models and registry live in `core/resource_library.py`. Portable
+`.iglib` bundles live in `core/resource_bundle.py`; the bundle manifest is
+versioned independently from an extension's own resource schema.
+
+A resource type is intentionally opaque to the core. A wall preset, CAM tool
+library, component type or any future extension resource remains owned by its
+extension. The core does not define architectural concepts such as walls,
+layers, profiles, materials or BIM semantics.
+
+See `docs/resource_api.md`, `docs/resource_bundle.md` and the example
+`docs/examples/resource_api_demo.py` for the complete contract and a minimal example.
+
 ### Where your interface goes
 
 The side tray is one place, not the only one. Pick by how the user works
