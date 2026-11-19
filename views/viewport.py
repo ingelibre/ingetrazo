@@ -8177,8 +8177,10 @@ class Viewport(QOpenGLWidget):
         Per-vertex colours; GL interpolates per pixel. The class constants
         ``_SKY_RGB`` / ``_HORIZON_RGB`` / ``_GROUND_RGB`` are the historical
         defaults, kept as fallbacks."""
+        # Read before the colours: the sky / ground switches below need it
+        # also when the fogged colours (#1139) come in as ``colors``.
+        style = getattr(self, "_frame_style", None) or self._effective_style()
         if colors is None:
-            style = getattr(self, "_frame_style", None)
             sky_rgb = tuple(getattr(style, "sky_color", None)
                             or self._SKY_RGB)[:3]
             picked_horizon = getattr(style, "horizon_color", None)
