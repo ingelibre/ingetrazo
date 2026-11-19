@@ -1146,6 +1146,39 @@ class AssignLayerCommand(Command):
         scene.version += 1
 
 
+class SetLayersVisibleCommand(Command):
+    """Show or hide layers as ONE undo step — the AI bridge's
+    ``set_layer_visibility`` (Marco, 19-11: everything an agent changes in
+    the document is a step it can undo). The Layers panel's eye stays
+    outside the history, as it always was; this goes through the same
+    ``core.layers.set_visible`` and puts back the whole display state
+    (``layer_state``) on undo. What the hide makes unpickable leaves the
+    selection, as the panel does."""
+
+    keeps_paint = True
+
+    def __init__(self, names, on: bool) -> None:
+        self._names = list(names)
+        self._on = bool(on)
+        self._before: dict | None = None
+
+    def do(self, scene) -> None:
+        from core.layers import layer_state, set_visible
+        self._before = layer_state(scene)
+        set_visible(scene, self._names, self._on)
+        if not self._on:
+            for ent in [e for e in scene.selection
+                        if not scene.entity_selectable(e)]:
+                scene.selection.discard(ent)
+        scene.version += 1
+
+    def undo(self, scene) -> None:
+        from core.layers import apply_layer_state
+        if self._before is not None:
+            apply_layer_state(scene, self._before)
+        scene.version += 1
+
+
 class DeleteLayerCommand(Command):
     """Delete a layer: what it carried goes to the default layer, and the
     scenes forget it. Undo puts the layer back at its place in the list,
