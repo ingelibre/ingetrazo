@@ -26,7 +26,7 @@ from core.paths import app_root
 _I18N_DIR = app_root() / "i18n"
 
 #: How each language names itself in the Language menu and Preferences.
-LANGUAGE_NAMES = {"en": "English", "es": "Español",
+LANGUAGE_NAMES = {"en": "English", "es": "Español", "ca": "Català",
                   "pt-BR": "Português (Brasil)", "zh-CN": "简体中文",
                   "zh-TW": "正體中文", "it": "Italiano",
                   "id": "Bahasa Indonesia", "fr": "Français", "de": "Deutsch",
