@@ -13952,7 +13952,9 @@ class ComposerWindow(QMainWindow):
                             None)
         else:
             return False
-        return getattr(style, "face_mode", "") in ("wireframe", "xray")
+        # X-ray is a flag of the style since #1218, not a face mode.
+        from core.style import sees_through_faces
+        return style is not None and sees_through_faces(style)
 
     def frame_snap_points(self, frame: MarcoVista):
         """Snappable geometry points of *frame*'s view — an ``(M, 2)`` array

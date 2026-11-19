@@ -478,22 +478,29 @@ def test_a_locked_image_draws_its_border_only_while_selected():
     an unlocked image keeps it so it can be found and clicked."""
     from types import SimpleNamespace
 
+    from PySide6.QtGui import QColor
+    from core.style import Style
     from views.viewport import Viewport
 
     free, scan = _image("free.png"), _image("scan.png")
     scan.locked = True
     selection = set()
     lines = []
-    painter = SimpleNamespace(setPen=lambda pen: None,
+    pens = []
+    locked_color = (0.1, 0.7, 0.3)
+    painter = SimpleNamespace(setPen=pens.append,
                               drawLine=lambda a, b: lines.append(a))
     vp = SimpleNamespace(
         scene=SimpleNamespace(image_planes=[free, scan], selection=selection,
+                              display_style=Style(modeling_colors={"locked": locked_color}),
                               entity_visible=lambda e: True),
         _clip_segment_front=lambda a, b: (a, b),
         _world_to_pixel=lambda p: (p.x(), p.y()))
+    vp._modeling_color = Viewport._modeling_color.__get__(vp)
     Viewport._draw_image_outlines(vp, painter)
     assert len(lines) == 4
     selection.add(scan)
     lines.clear()
     Viewport._draw_image_outlines(vp, painter)
     assert len(lines) == 8
+    assert pens[-1].color() == QColor.fromRgbF(*locked_color)
