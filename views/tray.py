@@ -2333,7 +2333,7 @@ class MaterialsPanel(QWidget):
         purge.clicked.connect(self._on_purge)
         import_btn = QPushButton(tr("Import…"))
         import_btn.setToolTip(tr("Paint with a material saved in a file: "
-                                 ".igmat, or SketchUp's .skm"))
+                                 ".igmat or .skm"))
         import_btn.clicked.connect(self._on_import_material)
         btns.addWidget(add_color)
         btns.addWidget(add_tex)
@@ -2639,7 +2639,7 @@ class MaterialsPanel(QWidget):
 
     def _on_import_material(self) -> None:
         """Import…: the file's first material becomes the active paint; all
-        of them go into «Recent». An IngeTrazo ``.igmat`` or a SketchUp
+        of them go into «Recent». An IngeTrazo ``.igmat`` or an
         ``.skm`` (#1482)."""
         from PySide6.QtWidgets import QMessageBox
         from formats.igmat import MaterialFileError, load_materials
@@ -2648,7 +2648,7 @@ class MaterialsPanel(QWidget):
             self, tr("Import material"), str(Path.home()),
             ";;".join((tr("Material files (*.igmat *.skm)"),
                        tr("IngeTrazo material (*.igmat)"),
-                       tr("SketchUp material (*.skm)"))))
+                       tr("SKM material (*.skm)"))))
         if not path:
             return
         try:
