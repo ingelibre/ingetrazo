@@ -1,9 +1,11 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2026 Marco Sumari Tellez and IngeTrazo contributors.
-"""Reordering sheets by dragging their tabs, and the composer's «Sheets»
-panel — every sheet as a page, as a PDF reader lists them (Marco, 19-11:
-«me gustaria poder cambiar el orden arrastrando una pestaña … como un
-gestor de laminas … que se muestren en miniatura»)."""
+"""Reordering sheets by dragging their tabs, and every sheet as a page, as
+a PDF reader lists them (Marco, 19-11: «me gustaria poder cambiar el orden
+arrastrando una pestaña … como un gestor de laminas … que se muestren en
+miniatura»). Since PR #932 was merged (19-11) the pages are the sheet
+explorer's Thumbnails mode — one panel with the folders and the Print
+switch — not a «Sheets» tab of their own."""
 from __future__ import annotations
 
 import os
@@ -63,9 +65,29 @@ def _order(comp) -> list:
     return [c.name for c in comp._scene().compositions]
 
 
+def _explorer(comp):
+    return comp.views_panel.sheets
+
+
+def _sheet_items(comp) -> list:
+    """The explorer's sheet rows, top to bottom."""
+    out = []
+    tree = _explorer(comp).tree
+
+    def walk(item):
+        for i in range(item.childCount()):
+            child = item.child(i)
+            d = child.data(0, Qt.UserRole)
+            if d and d[0] == "sheet":
+                out.append(child)
+            walk(child)
+    walk(tree.invisibleRootItem())
+    return out
+
+
 def _rows(comp) -> list:
-    lst = comp._sheet_pages.list
-    return [lst.item(i).text() for i in range(lst.count())]
+    _explorer(comp).refresh()
+    return [it.text(0) for it in _sheet_items(comp)]
 
 
 # ---- the strip ------------------------------------------------------------------
@@ -174,131 +196,65 @@ def test_a_reorder_is_not_taken_for_a_model_change(composer):
     assert not composer.is_stale(frame)
 
 
-# ---- the Sheets panel -----------------------------------------------------------
+# ---- one panel for the sheets ---------------------------------------------------
 def _open_panel(composer):
-    composer._show_page("sheets")
+    composer._show_page("views")
     _spin(50)
-    return composer._sheet_pages
+    return _explorer(composer)
 
 
-def test_the_panel_is_a_new_tab_at_the_end_of_the_right_side(composer):
-    assert composer.page_side("sheets") == "right"
+def test_there_is_one_sheets_panel_not_two(composer):
+    """The old «Sheets» page of thumbnails is the explorer's Thumbnails
+    mode now: no page of its own beside the explorer's."""
+    assert "sheets" not in composer._pages
     tabs = composer._side_tabs("right")
     keys = [composer.page_key(tabs.widget(i)) for i in range(tabs.count())]
-    assert keys[-1] == "sheets"
-    assert keys[:-1] == [k for k in ("layout", "views", "items", "props")
-                         if k in keys]
+    assert keys == ["layout", "views", "items", "props"]
+    assert composer._page_titles["views"] == "Sheets"
 
 
-def test_the_panel_lists_the_pages_and_marks_the_open_one(composer):
+def test_thumbnails_or_a_list_and_the_choice_is_kept(composer):
+    from PySide6.QtCore import QSettings
     panel = _open_panel(composer)
-    assert _rows(composer) == ["A", "B", "C", "D"]
-    assert panel.list.currentRow() == 0
-    composer.show_sheet(2)
-    _spin()
-    assert panel.list.currentRow() == 2
+    assert panel.thumbnails                     # what Marco asked for
+    assert panel.view_btn is not None
+    panel.set_thumbnails(False)
+    assert QSettings().value(panel.THUMBS_KEY) in (False, "false")
+    assert all(it.data(0, Qt.UserRole + 7) is None
+               for it in _sheet_items(composer))
+    panel.set_thumbnails(True)
+    _spin(100)
+    assert all(it.data(0, Qt.UserRole + 7) is not None
+               for it in _sheet_items(composer))
 
 
-def test_a_click_on_a_page_opens_that_sheet(composer):
-    panel = _open_panel(composer)
-    lst = panel.list
-    QTest.mouseClick(lst.viewport(), Qt.LeftButton, Qt.NoModifier,
-                     lst.visualItemRect(lst.item(3)).center())
-    _spin()
-    assert composer.comp.name == "D"
-    assert composer._sheet_tabs.current() == 3
-
-
-def test_a_page_dropped_among_the_others_moves_the_sheet(composer):
-    panel = _open_panel(composer)
-    lst = panel.list
-    # Where a drop lands: above a page's middle, before it; below, after.
-    r = lst.visualItemRect(lst.item(2))
-    assert lst.drop_row(QPoint(r.center().x(), r.top() + 3)) == 2
-    assert lst.drop_row(QPoint(r.center().x(), r.bottom() - 3)) == 3
-    panel.move(0, 2)                                  # what the drop calls
-    _spin()
+def test_a_tab_dragged_in_a_document_with_folders_joins_that_folder(
+        composer):
+    """The sheet order follows the explorer's tree (PR #932): a tab
+    dropped among the sheets of a folder puts the sheet in that folder —
+    a plain reorder would be sorted back to the tree at once."""
+    from core import sheet_folders as sf
+    scene = composer._scene()
+    a, b, c, d = scene.compositions
+    folder = sf.SheetFolder(name="Cortes")
+    folder.pos = 2                              # after A and B
+    scene.sheet_folders.append(folder)
+    c.folder_id = d.folder_id = folder.id
+    sf.sync_order(scene)
+    assert _order(composer) == ["A", "B", "C", "D"]
+    composer.move_sheet(0, 2)                   # «A» between C and D
     assert _order(composer) == ["B", "C", "A", "D"]
+    assert a.folder_id == folder.id
+    assert sf.tree_order(scene) == scene.compositions   # tree and strip agree
     assert _rows(composer) == ["B", "C", "A", "D"]
-    assert composer._sheet_tabs.names() == ["Model", "B", "C", "A", "D"]
-    assert lst.currentRow() == 2                      # «A» is still open
     composer.history.undo()
-    _spin()
-    assert _rows(composer) == ["A", "B", "C", "D"]
+    assert _order(composer) == ["A", "B", "C", "D"] and a.folder_id is None
     composer.history.redo()
-    _spin()
-    assert _rows(composer) == ["B", "C", "A", "D"]
+    assert _order(composer) == ["B", "C", "A", "D"]
+    assert a.folder_id == folder.id
 
 
-def test_a_real_drop_on_the_list_goes_through_the_composer(composer):
-    """The drop event itself: Qt must not shuffle the rows, the composer
-    moves the sheet and the rows follow."""
-    from PySide6.QtCore import QMimeData, QPointF
-    from PySide6.QtGui import QDropEvent
-    panel = _open_panel(composer)
-    lst = panel.list
-    lst.setCurrentRow(0)
-    _spin()
-    r = lst.visualItemRect(lst.item(3))
-    ev = QDropEvent(QPointF(r.center().x(), r.bottom() - 3), Qt.MoveAction,
-                    QMimeData(), Qt.LeftButton, Qt.NoModifier)
-    lst.dropEvent(ev)
-    assert ev.dropAction() == Qt.IgnoreAction
-    _spin()
-    assert _order(composer) == ["B", "C", "D", "A"]
-    assert _rows(composer) == ["B", "C", "D", "A"]
-
-
-def test_rename_from_the_panel(composer):
-    panel = _open_panel(composer)
-    panel.rename(1, "Cortes")
-    _spin()
-    assert _order(composer) == ["A", "Cortes", "C", "D"]
-    assert composer._sheet_tabs.names()[2] == "Cortes"
-    assert _rows(composer)[1] == "Cortes"
-    panel.rename(1, "   ")                            # empty: not a rename
-    _spin()
-    assert _rows(composer)[1] == "Cortes"
-    assert _order(composer)[1] == "Cortes"
-
-
-def test_delete_from_the_panel_asks_first(composer, monkeypatch):
-    panel = _open_panel(composer)
-    asked = []
-
-    def answer(reply):
-        def question(*a, **k):
-            asked.append(a)
-            return reply
-        return question
-
-    monkeypatch.setattr(QMessageBox, "question", answer(QMessageBox.No))
-    lst = panel.list
-    lst.setCurrentRow(2)
-    _spin()
-    QTest.keyClick(lst, Qt.Key_Delete)
-    _spin()
-    assert len(asked) == 1 and _order(composer) == ["A", "B", "C", "D"]
-    monkeypatch.setattr(QMessageBox, "question", answer(QMessageBox.Yes))
-    QTest.keyClick(lst, Qt.Key_Delete)
-    _spin()
-    assert _order(composer) == ["A", "B", "D"]
-    assert _rows(composer) == ["A", "B", "D"]
-    assert composer._sheet_tabs.names() == ["Model", "A", "B", "D"]
-
-
-def test_the_panel_follows_sheets_added_and_duplicated(composer):
-    _open_panel(composer)
-    composer._on_comp_add()
-    _spin()
-    assert len(_rows(composer)) == 5
-    composer.duplicate_sheet(0)
-    _spin()
-    assert _rows(composer)[1].startswith("A")
-    assert len(_rows(composer)) == 6
-
-
-def test_the_panel_follows_a_sheet_moved_in_the_model_window(composer):
+def test_the_explorer_follows_a_sheet_moved_in_the_model_window(composer):
     _open_panel(composer)
     win = composer._window
     from core.history import MoveSheetCommand
@@ -324,17 +280,20 @@ def test_pictures_are_in_proportion_to_the_paper(composer):
 
 
 def test_every_page_gets_a_picture_without_any_render(composer):
-    panel = _open_panel(composer)
+    panel = _open_panel(composer).pictures
     _spin(100)
     assert all(panel.pixmap_for(id(c)) is not None
                for c in composer._scene().compositions)
     # one each — and the open one again, at most, after its canvas settled
     assert 4 <= panel.painted <= 5
+    # …and each sheet row shows its own.
+    assert all(not it.icon(0).isNull() and it.data(0, Qt.UserRole + 7)
+               for it in _sheet_items(composer))
 
 
 def test_a_changed_sheet_gets_a_new_picture_and_only_it(composer):
     from core.composition import AddItemCommand, FormaItem
-    panel = _open_panel(composer)
+    panel = _open_panel(composer).pictures
     _spin(100)
     comps = composer._scene().compositions
     before = {id(c): panel.pixmap_for(id(c)).toImage() for c in comps}
