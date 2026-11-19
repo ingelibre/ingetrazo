@@ -4037,5 +4037,20 @@
  "Opacity:": "Deckkraft:",
  "Spacing:": "Rasterabstand:",
  "Keys: Enter = done, Esc = cancel, F = photo's focal length. Right-click over the photo for this menu. Orbiting leaves the photo; its scene tab brings it back.": "Tasten: Enter = fertig, Esc = abbrechen, F = Brennweite des Fotos. Rechtsklick auf das Foto für dieses Menü. Orbit verlässt das Foto; der Szenen-Tab holt es zurück.",
- "Camera: {model}": "Kamera: {model}"
+ "Camera: {model}": "Kamera: {model}",
+ "Rows": "Zeilen",
+ "Add a row": "Zeile hinzufügen",
+ "Remove row": "Zeile entfernen",
+ "Move row up": "Zeile nach oben",
+ "Move row down": "Zeile nach unten",
+ "Only the legend changes: the model's layer stays as it is.": "Nur die Legende ändert sich: die Ebene des Modells bleibt, wie sie ist.",
+ "As the layer": "Wie die Ebene",
+ "Line and fill": "Linie und Füllung",
+ "Background margin": "Hintergrundrand",
+ "Re-read the visible layers of the model. Rows you edited and your own rows stay as they are; new layers are added at the end.": "Liest die sichtbaren Ebenen des Modells neu ein. Von dir bearbeitete und eigene Zeilen bleiben, wie sie sind; neue Ebenen kommen ans Ende.",
+ "Layer: {name}": "Ebene: {name}",
+ "Own row (no layer)": "Eigene Zeile (ohne Ebene)",
+ "Every layer is in the legend": "Alle Ebenen sind in der Legende",
+ "Free entry": "Freier Eintrag",
+ "New entry": "Neuer Eintrag"
 }

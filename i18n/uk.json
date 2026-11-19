@@ -4044,5 +4044,20 @@
  "Opacity:": "Непрозорість:",
  "Spacing:": "Крок:",
  "Keys: Enter = done, Esc = cancel, F = photo's focal length. Right-click over the photo for this menu. Orbiting leaves the photo; its scene tab brings it back.": "Клавіші: Enter — готово, Esc — скасувати, F — фокусна фото. Правий клік по фото — це меню. Орбіта виходить із фото; вкладка сцени повертає його.",
- "Camera: {model}": "Камера: {model}"
+ "Camera: {model}": "Камера: {model}",
+ "Rows": "Рядки",
+ "Add a row": "Додати рядок",
+ "Remove row": "Вилучити рядок",
+ "Move row up": "Перемістити рядок угору",
+ "Move row down": "Перемістити рядок униз",
+ "Only the legend changes: the model's layer stays as it is.": "Змінюється лише легенда: шар моделі лишається як є.",
+ "As the layer": "Як у шару",
+ "Line and fill": "Лінія й заливка",
+ "Background margin": "Відступ фону",
+ "Re-read the visible layers of the model. Rows you edited and your own rows stay as they are; new layers are added at the end.": "Перечитує видимі шари моделі. Змінені вами та ваші власні рядки лишаються як є; нові шари додаються в кінець.",
+ "Layer: {name}": "Шар: {name}",
+ "Own row (no layer)": "Власний рядок (без шару)",
+ "Every layer is in the legend": "Усі шари вже в легенді",
+ "Free entry": "Вільний запис",
+ "New entry": "Новий запис"
 }

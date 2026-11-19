@@ -4072,5 +4072,20 @@
  "Opacity:": "العتامة:",
  "Spacing:": "التباعد:",
  "Keys: Enter = done, Esc = cancel, F = photo's focal length. Right-click over the photo for this menu. Orbiting leaves the photo; its scene tab brings it back.": "المفاتيح: Enter = تم، Esc = إلغاء، F = البعد البؤري للصورة. انقر بزر الفأرة الأيمن فوق الصورة لهذه القائمة. الدوران يخرج من الصورة؛ وتعيدها علامة تبويب مشهدها.",
- "Camera: {model}": "الكاميرا: {model}"
+ "Camera: {model}": "الكاميرا: {model}",
+ "Rows": "الصفوف",
+ "Add a row": "إضافة صف",
+ "Remove row": "إزالة الصف",
+ "Move row up": "نقل الصف لأعلى",
+ "Move row down": "نقل الصف لأسفل",
+ "Only the legend changes: the model's layer stays as it is.": "تتغير وسيلة الإيضاح فقط: تبقى طبقة النموذج كما هي.",
+ "As the layer": "كما في الطبقة",
+ "Line and fill": "خط وتعبئة",
+ "Background margin": "هامش الخلفية",
+ "Re-read the visible layers of the model. Rows you edited and your own rows stay as they are; new layers are added at the end.": "يعيد قراءة الطبقات المرئية في النموذج. تبقى الصفوف التي حررتها وصفوفك الخاصة كما هي؛ وتُضاف الطبقات الجديدة في النهاية.",
+ "Layer: {name}": "الطبقة: {name}",
+ "Own row (no layer)": "صف خاص (بلا طبقة)",
+ "Every layer is in the legend": "كل الطبقات موجودة في وسيلة الإيضاح",
+ "Free entry": "إدخال حر",
+ "New entry": "إدخال جديد"
 }

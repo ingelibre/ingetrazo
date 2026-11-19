@@ -4038,5 +4038,20 @@
  "Opacity:": "不透明度：",
  "Spacing:": "间距：",
  "Keys: Enter = done, Esc = cancel, F = photo's focal length. Right-click over the photo for this menu. Orbiting leaves the photo; its scene tab brings it back.": "按键：Enter = 完成，Esc = 取消，F = 照片焦距。在照片上右键打开此菜单。环绕会离开照片；点其场景标签可返回。",
- "Camera: {model}": "相机：{model}"
+ "Camera: {model}": "相机：{model}",
+ "Rows": "行",
+ "Add a row": "添加一行",
+ "Remove row": "删除行",
+ "Move row up": "上移行",
+ "Move row down": "下移行",
+ "Only the legend changes: the model's layer stays as it is.": "只更改图例：模型的图层保持不变。",
+ "As the layer": "同图层",
+ "Line and fill": "线和填充",
+ "Background margin": "背景边距",
+ "Re-read the visible layers of the model. Rows you edited and your own rows stay as they are; new layers are added at the end.": "重新读取模型中可见的图层。你编辑过的行和你自己的行保持不变；新图层添加到末尾。",
+ "Layer: {name}": "图层：{name}",
+ "Own row (no layer)": "自有行（无图层）",
+ "Every layer is in the legend": "所有图层都已在图例中",
+ "Free entry": "自由条目",
+ "New entry": "新条目"
 }

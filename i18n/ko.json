@@ -4037,5 +4037,20 @@
  "Opacity:": "불투명도:",
  "Spacing:": "간격:",
  "Keys: Enter = done, Esc = cancel, F = photo's focal length. Right-click over the photo for this menu. Orbiting leaves the photo; its scene tab brings it back.": "키: Enter = 완료, Esc = 취소, F = 사진의 초점 거리. 사진 위에서 오른쪽 클릭하면 이 메뉴. 궤도 회전하면 사진에서 나가고, 장면 탭으로 돌아옵니다.",
- "Camera: {model}": "카메라: {model}"
+ "Camera: {model}": "카메라: {model}",
+ "Rows": "행",
+ "Add a row": "행 추가",
+ "Remove row": "행 제거",
+ "Move row up": "행 위로",
+ "Move row down": "행 아래로",
+ "Only the legend changes: the model's layer stays as it is.": "범례만 바뀝니다. 모델의 레이어는 그대로입니다.",
+ "As the layer": "레이어대로",
+ "Line and fill": "선과 채우기",
+ "Background margin": "배경 여백",
+ "Re-read the visible layers of the model. Rows you edited and your own rows stay as they are; new layers are added at the end.": "모델의 보이는 레이어를 다시 읽습니다. 편집한 행과 직접 만든 행은 그대로 두고, 새 레이어는 끝에 추가합니다.",
+ "Layer: {name}": "레이어: {name}",
+ "Own row (no layer)": "직접 만든 행(레이어 없음)",
+ "Every layer is in the legend": "모든 레이어가 범례에 있습니다",
+ "Free entry": "자유 항목",
+ "New entry": "새 항목"
 }

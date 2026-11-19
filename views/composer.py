@@ -1258,8 +1258,29 @@ def paint_frame_mm(painter: QPainter, frame: MarcoVista,
         _paint_scale_label_mm(painter, frame)
 
 
+def scalebar_ink_rect(sb: BarraEscala) -> QRectF:
+    """What a scale bar inks (mm, item coordinates): the boxes, the end
+    labels that hang past them and the caption under them."""
+    from PySide6.QtGui import QFontMetricsF
+    font = QFont("Sans Serif")
+    font.setPixelSize(100)
+    fm = QFontMetricsF(font)
+    s = 2.6 / 100.0 * 0.75                  # the scale _draw_text_mm applies
+    seg_m = sb.segment_m()
+    first = fm.horizontalAdvance("0") * s
+    last = fm.horizontalAdvance(f"{sb.segments * seg_m:g}") * s
+    cap = fm.horizontalAdvance(
+        tr("metres — scale 1:{n}", n=f"{sb.scale_n:g}")) * s
+    w = sb.w_mm
+    left = min(-first / 2.0, (w - cap) / 2.0, 0.0)
+    right = max(w + last / 2.0, (w + cap) / 2.0, w)
+    bottom = 2.4 + 4.6 + fm.height() * s
+    return QRectF(left, -0.15, right - left, bottom + 0.15)
+
+
 def paint_scalebar_mm(painter: QPainter, sb: BarraEscala) -> None:
     """Alternating black/white boxes + metre labels + the 1:N caption."""
+    paint_item_bg(painter, sb)
     seg_mm = sb.segment_mm()
     seg_m = sb.segment_m()
     bar_h = 2.4
@@ -1443,6 +1464,7 @@ def paint_norte_mm(painter: QPainter, n: FlechaNorte) -> None:
     compass. The compass is centred in the box and sized so the letter
     stays inside the box at every angle: the item paints nothing beyond
     its own bounds."""
+    paint_item_bg(painter, n)
     sz = n.size_mm
     c = sz / 2.0
     rad = sz * 0.30
@@ -1470,9 +1492,121 @@ def paint_norte_mm(painter: QPainter, n: FlechaNorte) -> None:
     painter.restore()
 
 
+def _entry_rgb(sw: dict, default: QColor) -> QColor:
+    rgb = sw.get("color")
+    if isinstance(rgb, (list, tuple)) and len(rgb) >= 3:
+        try:
+            return QColor.fromRgbF(*[max(0.0, min(1.0, float(c)))
+                                     for c in rgb[:3]])
+        except (TypeError, ValueError):
+            pass
+    return QColor(default)
+
+
+def _entry_pattern(sw: dict) -> list:
+    from core.layers import LINETYPES
+    return list(sw.get("pattern") or LINETYPES.get(sw.get("linetype"), ()))
+
+
+def _sample_pen(color: QColor, width: float, pattern) -> QPen:
+    """A legend sample's line: the line type shrunk to fit the 4 mm box,
+    as the legend always drew it."""
+    pen = QPen(color, width)
+    pen.setCapStyle(Qt.FlatCap)
+    if pattern:
+        pen.setDashPattern([max(0.05, d) / width * 0.4 for d in pattern])
+    return pen
+
+
+def _paint_entry_hatch(painter: QPainter, sw: dict, box: QRectF) -> None:
+    """The layer's cut hatch over its colour, as on the cut."""
+    hatch = sw.get("hatch")
+    if not hatch:
+        return
+    from PySide6.QtGui import QPainterPath
+    from views.hatch_paint import paint_hatch
+    path = QPainterPath()
+    path.addRect(box)
+    under = sw.get("hatch_ground")
+    own = sw.get("hatch_color")
+    paint_hatch(painter, path, hatch,
+                QColor.fromRgbF(*[float(c) for c in own[:3]])
+                if isinstance(own, (list, tuple)) and len(own) >= 3
+                else QColor(30, 36, 44), 0.12, 0.6,
+                angle=float(sw.get("hatch_angle", 0.0) or 0.0),
+                families=sw.get("hatch_families"),
+                ground=(QColor.fromRgbF(*[float(c) for c in under[:3]])
+                        if isinstance(under, (list, tuple))
+                        and len(under) >= 3
+                        else QColor(255, 255, 255)
+                        if hatch != "solid" else None))
+    painter.setPen(QPen(QColor(30, 36, 44), 0.2))
+    painter.setBrush(Qt.NoBrush)
+    painter.drawRect(box)
+
+
+def paint_legend_sample(painter: QPainter, sw: dict, box: QRectF) -> None:
+    """One legend row's sample in ``box`` (mm): the layer's own look, or
+    the line / fill / line-and-fill the user picked for the row (Marco,
+    19-11: «como lo hace QGIS»)."""
+    ink = QColor(30, 36, 44)
+    symbol = sw.get("symbol", "") or ""
+    mid = box.center().y()
+    if symbol == "line":
+        painter.setPen(_sample_pen(_entry_rgb(sw, ink), 0.35,
+                                   _entry_pattern(sw)))
+        painter.drawLine(QPointF(box.left(), mid), QPointF(box.right(), mid))
+        return
+    if symbol == "line_fill":
+        col = _entry_rgb(sw, ink)
+        fill = QColor(col)
+        fill.setAlphaF(0.35)
+        painter.setBrush(QBrush(fill))
+        painter.setPen(_sample_pen(col, 0.35, _entry_pattern(sw)))
+        painter.drawRect(box)
+        return
+    painter.setBrush(QBrush(_entry_rgb(sw, QColor(226, 232, 238))))
+    painter.setPen(QPen(ink, 0.2))
+    painter.drawRect(box)
+    _paint_entry_hatch(painter, sw, box)
+    if symbol == "fill":
+        return
+    pattern = _entry_pattern(sw)
+    if pattern:
+        # The layer's line type, drawn across the swatch.
+        painter.setPen(_sample_pen(ink, 0.25, pattern))
+        painter.drawLine(QPointF(box.left(), mid), QPointF(box.right(), mid))
+
+
+def item_bg_rect(m) -> Optional[QRectF]:
+    """Where an item's background fill goes (mm, item coordinates), or None
+    when it has none: the drawing's own extent plus the margin."""
+    if not (getattr(m, "bg_color", "") or ""):
+        return None
+    pad = max(0.0, float(getattr(m, "bg_margin_mm", 0.0) or 0.0))
+    if isinstance(m, BarraEscala):
+        r = scalebar_ink_rect(m)
+    elif isinstance(m, FlechaNorte):
+        r = QRectF(0, 0, m.size_mm, m.size_mm)
+    else:
+        r = QRectF(0, 0, m.w_mm, m.h_mm)
+    return r.adjusted(-pad, -pad, pad, pad)
+
+
+def paint_item_bg(painter: QPainter, m) -> None:
+    """The fill behind a scale bar, a north arrow or a legend — painted
+    first, so the drawing sits on it on the canvas and in every export."""
+    r = item_bg_rect(m)
+    if r is None:
+        return
+    painter.fillRect(r, _with_opacity(m.bg_color,
+                                      getattr(m, "bg_opacity", 1.0)))
+
+
 def paint_leyenda_mm(painter: QPainter, le: Leyenda) -> None:
+    from core.composition import legend_entries
     r = QRectF(0, 0, le.w_mm, le.h_mm)
-    painter.fillRect(r, QColor(255, 255, 255))
+    paint_item_bg(painter, le)
     pen = QPen(QColor(30, 36, 44))
     pen.setWidthF(0.3)
     painter.setPen(pen)
@@ -1481,53 +1615,11 @@ def paint_leyenda_mm(painter: QPainter, le: Leyenda) -> None:
     _draw_text_mm(painter, QRectF(2, 1.4, le.w_mm - 4, 5), le.title,
                   3.2, bold=True)
     y = 7.5
-    rows = le.rows or [tr("(no layers)")]
-    from core.layers import LINETYPES
-    swatches = getattr(le, "swatches", None) or {}
-    for name in rows:
-        sw = swatches.get(name) or {}
-        rgb = sw.get("color")
-        fill = (QColor.fromRgbF(*[float(c) for c in rgb[:3]])
-                if isinstance(rgb, (list, tuple)) and len(rgb) >= 3
-                else QColor(226, 232, 238))
-        painter.setBrush(QBrush(fill))
-        painter.setPen(QPen(QColor(30, 36, 44), 0.2))
-        painter.drawRect(QRectF(2.2, y + 0.8, 4.0, 3.2))
-        hatch = sw.get("hatch")
-        if hatch:
-            # The layer's cut hatch over its colour, as on the cut.
-            from PySide6.QtGui import QPainterPath
-            from views.hatch_paint import paint_hatch
-            box = QPainterPath()
-            box.addRect(QRectF(2.2, y + 0.8, 4.0, 3.2))
-            under = sw.get("hatch_ground")
-            own = sw.get("hatch_color")
-            paint_hatch(painter, box, hatch,
-                        QColor.fromRgbF(*[float(c) for c in own[:3]])
-                        if isinstance(own, (list, tuple)) and len(own) >= 3
-                        else QColor(30, 36, 44), 0.12, 0.6,
-                        angle=float(sw.get("hatch_angle", 0.0) or 0.0),
-                        families=sw.get("hatch_families"),
-                        ground=(QColor.fromRgbF(*[float(c)
-                                                  for c in under[:3]])
-                                if isinstance(under, (list, tuple))
-                                and len(under) >= 3
-                                else QColor(255, 255, 255)
-                                if hatch != "solid" else None))
-            painter.setPen(QPen(QColor(30, 36, 44), 0.2))
-            painter.setBrush(Qt.NoBrush)
-            painter.drawRect(QRectF(2.2, y + 0.8, 4.0, 3.2))
-        pattern = (sw.get("pattern")
-                   or LINETYPES.get(sw.get("linetype"), ()))
-        if pattern:
-            # The layer's line type, drawn across the swatch.
-            line = QPen(QColor(30, 36, 44), 0.25)
-            line.setCapStyle(Qt.FlatCap)
-            line.setDashPattern([max(0.05, d) / 0.25 * 0.4 for d in pattern])
-            painter.setPen(line)
-            painter.drawLine(QPointF(2.2, y + 2.4), QPointF(6.2, y + 2.4))
+    entries = legend_entries(le) or [{"label": tr("(no layers)")}]
+    for sw in entries:
+        paint_legend_sample(painter, sw, QRectF(2.2, y + 0.8, 4.0, 3.2))
         _draw_text_mm(painter, QRectF(8, y + 0.7, le.w_mm - 10, 5),
-                      name, 2.8)
+                      str(sw.get("label", "")), 2.8)
         y += 5.5
 
 
@@ -3535,11 +3627,19 @@ class FrameItem(_SheetItem):
         event.accept()
 
 
+def _with_bg_bounds(rect: QRectF, model) -> QRectF:
+    """An item's bounds grown to take its background and margin in."""
+    bg = item_bg_rect(model)
+    return rect if bg is None else rect.united(bg.adjusted(-0.5, -0.5,
+                                                           0.5, 0.5))
+
+
 class ScaleBarItem(_SheetItem):
     RESIZABLE = False
 
     def boundingRect(self) -> QRectF:
-        return QRectF(-12.5, -0.5, self.model.w_mm + 25.0, 12.0)
+        return _with_bg_bounds(
+            QRectF(-12.5, -0.5, self.model.w_mm + 25.0, 12.0), self.model)
 
     def paint(self, painter, option, widget=None) -> None:
         paint_scalebar_mm(painter, self.model)
@@ -3596,6 +3696,9 @@ class CajetinItem(_SheetItem):
 
 
 class NorteItem(_SheetItem):
+    def boundingRect(self) -> QRectF:
+        return _with_bg_bounds(super().boundingRect(), self.model)
+
     def paint(self, painter, option, widget=None) -> None:
         paint_norte_mm(painter, self.model)
         self._paint_selection(painter)
@@ -3611,6 +3714,9 @@ class NorteItem(_SheetItem):
 
 
 class LeyendaItem(_SheetItem):
+    def boundingRect(self) -> QRectF:
+        return _with_bg_bounds(super().boundingRect(), self.model)
+
     def mouseMoveEvent(self, event) -> None:
         if self._resizing:
             self.prepareGeometryChange()
@@ -7956,18 +8062,123 @@ class ComposerWindow(QMainWindow):
         self.norte_angle.setSuffix(" °")
         self.norte_angle.valueChanged.connect(self._on_norte_props)
         form.addRow(tr("Angle"), self.norte_angle)
+        self._add_bg_rows(form, "norte")
         return w
 
+    def _add_bg_rows(self, form: QFormLayout, prefix: str) -> None:
+        """Background, its colour, opacity and margin — for the items that
+        get lost over an orthophoto (Marco, 19-11: «debería poder
+        configurarse su fondo de algún color como blanco u otro»). The
+        same rows a text or a label has; white is the first colour."""
+        check = QCheckBox(tr("Background"))
+        btn = QPushButton()
+        btn.setFixedHeight(22)
+        check.toggled.connect(
+            lambda on, b=btn: self._toggle_item_bg("bg_color", on, b))
+        btn.clicked.connect(
+            lambda _=False, c=check, b=btn: self._pick_item_bg(
+                "bg_color", c, b))
+        form.addRow("", check)
+        form.addRow(tr("Background colour"), btn)
+        opacity = self._opacity_spin("bg_opacity")
+        form.addRow(tr("Background opacity"), opacity)
+        margin = QDoubleSpinBox()
+        margin.setRange(0.0, 20.0)
+        margin.setSingleStep(0.5)
+        margin.setSuffix(" mm")
+        margin.valueChanged.connect(self._on_bg_margin)
+        form.addRow(tr("Background margin"), margin)
+        setattr(self, f"{prefix}_bg_check", check)
+        setattr(self, f"{prefix}_bg_btn", btn)
+        setattr(self, f"{prefix}_bg_opacity", opacity)
+        setattr(self, f"{prefix}_bg_margin", margin)
+
+    def _sync_bg_rows(self, prefix: str, m) -> None:
+        """Show item ``m``'s background in its page's rows (``_updating`` is
+        already on)."""
+        bg = getattr(m, "bg_color", "") or ""
+        getattr(self, f"{prefix}_bg_check").setChecked(bool(bg))
+        getattr(self, f"{prefix}_bg_btn").setStyleSheet(
+            f"QAbstractButton {{ background: {bg}; }}" if bg else "")
+        getattr(self, f"{prefix}_bg_opacity").setValue(
+            100.0 * float(getattr(m, "bg_opacity", 1.0)))
+        getattr(self, f"{prefix}_bg_margin").setValue(
+            float(getattr(m, "bg_margin_mm", 0.0) or 0.0))
+
+    def _on_bg_margin(self, value: float) -> None:
+        item = self._selected_item()
+        if (self._updating or item is None
+                or not hasattr(item.model, "bg_margin_mm")):
+            return
+        self._panel_edit(item, {"bg_margin_mm": float(value)})
+
     def _page_leyenda(self) -> QWidget:
+        from PySide6.QtWidgets import QListWidget, QMenu, QToolButton
         w = QWidget()
         form = QFormLayout(w)
         self.ley_title = QLineEdit()
         self.ley_title.editingFinished.connect(self._on_leyenda_props)
         form.addRow(tr("Title"), self.ley_title)
+        # The rows, QGIS-style: a list with + − ↑ ↓ under it and the
+        # selected row's text and sample below (Marco, 19-11: «debería
+        # poder editar cada capa en lámina cambiando el nombre, color del
+        # layer… como agregar otras capas o líneas en leyenda, algo así
+        # como lo hace QGIS»). It edits the legend only, never the layer.
+        form.addRow(QLabel(tr("Rows")))
+        self.ley_rows = QListWidget()
+        self.ley_rows.setIconSize(QSize(24, 16))
+        self.ley_rows.setFixedHeight(140)
+        self.ley_rows.currentRowChanged.connect(self._on_ley_row_selected)
+        form.addRow(self.ley_rows)
+        bar = QHBoxLayout()
+        self.ley_add_btn = QToolButton()
+        self.ley_add_btn.setText("+")
+        self.ley_add_btn.setToolTip(tr("Add a row"))
+        self.ley_add_menu = QMenu(self.ley_add_btn)
+        self.ley_add_menu.aboutToShow.connect(self._fill_ley_add_menu)
+        self.ley_add_btn.setMenu(self.ley_add_menu)
+        self.ley_add_btn.setPopupMode(QToolButton.InstantPopup)
+        bar.addWidget(self.ley_add_btn)
+        for attr, text, tip, slot in (
+                ("ley_del_btn", "\u2212", "Remove row", self._on_ley_remove),
+                ("ley_up_btn", "\u2191", "Move row up",
+                 lambda: self._on_ley_move(-1)),
+                ("ley_down_btn", "\u2193", "Move row down",
+                 lambda: self._on_ley_move(1))):
+            b = QToolButton()
+            b.setText(text)
+            b.setToolTip(tr(tip))
+            b.clicked.connect(slot)
+            bar.addWidget(b)
+            setattr(self, attr, b)
+        bar.addStretch(1)
+        form.addRow(bar)
+        self.ley_label = QLineEdit()
+        self.ley_label.setToolTip(tr(
+            "Only the legend changes: the model's layer stays as it is."))
+        self.ley_label.editingFinished.connect(self._on_ley_label)
+        form.addRow(tr("Text"), self.ley_label)
+        self.ley_color_btn = QPushButton()
+        self.ley_color_btn.setFixedHeight(22)
+        self.ley_color_btn.clicked.connect(self._on_ley_color)
+        form.addRow(tr("Colour"), self.ley_color_btn)
+        self.ley_symbol = QComboBox()
+        for key, label in (("", "As the layer"), ("line", "Line"),
+                           ("fill", "Fill"), ("line_fill", "Line and fill")):
+            self.ley_symbol.addItem(tr(label), key)
+        self.ley_symbol.currentIndexChanged.connect(self._on_ley_symbol)
+        form.addRow(tr("Symbol"), self.ley_symbol)
+        self.ley_linetype = QComboBox()
+        self.ley_linetype.currentIndexChanged.connect(self._on_ley_linetype)
+        form.addRow(tr("Line type"), self.ley_linetype)
         btn = QPushButton(tr("Refresh layers"))
-        btn.setToolTip(tr("Re-read the visible layers of the model."))
+        btn.setToolTip(tr(
+            "Re-read the visible layers of the model. Rows you edited and "
+            "your own rows stay as they are; new layers are added at the "
+            "end."))
         btn.clicked.connect(self._on_leyenda_refresh)
         form.addRow(btn)
+        self._add_bg_rows(form, "ley")
         return w
 
     def _page_forma(self) -> QWidget:
@@ -8768,6 +8979,7 @@ class ComposerWindow(QMainWindow):
         self.sb_segments.setDecimals(0)
         self.sb_segments.valueChanged.connect(self._on_scalebar_props)
         form.addRow(tr("Segments"), self.sb_segments)
+        self._add_bg_rows(form, "sb")
         return w
 
     def _page_perfil(self) -> QWidget:
@@ -9357,13 +9569,17 @@ class ComposerWindow(QMainWindow):
             elif isinstance(item, ScaleBarItem):
                 self.sb_scale.setCurrentText(f"1:{item.model.scale_n:g}")
                 self.sb_segments.setValue(item.model.segments)
+                self._sync_bg_rows("sb", item.model)
                 self.props.setCurrentIndex(5)
             elif isinstance(item, NorteItem):
                 self.norte_size.setValue(item.model.size_mm)
                 self.norte_angle.setValue(item.model.angle_deg)
+                self._sync_bg_rows("norte", item.model)
                 self.props.setCurrentIndex(6)
             elif isinstance(item, LeyendaItem):
                 self.ley_title.setText(item.model.title)
+                self._sync_bg_rows("ley", item.model)
+                self._ley_reload(item.model)
                 self.props.setCurrentIndex(7)
             elif isinstance(item, FormaCanvasItem):
                 fm = item.model
@@ -12235,13 +12451,268 @@ class ComposerWindow(QMainWindow):
         self._panel_edit(item, {"title": self.ley_title.text()})
 
     def _on_leyenda_refresh(self) -> None:
+        """Re-read the model's layers. A legend never edited takes them as
+        it always did; an edited one keeps the rows the user touched and
+        his own rows, refreshes the others and gains the new layers at the
+        end (see ``refreshed_legend_entries``)."""
         item = self._selected_item()
         if not isinstance(item, LeyendaItem):
             return
         item.prepareGeometryChange()
+        from core.composition import refreshed_legend_entries
         from core.layers import legend_rows
         rows, swatches = legend_rows(self._scene())
-        self._panel_edit(item, {"rows": rows, "swatches": swatches})
+        changes = {"rows": rows, "swatches": swatches}
+        if item.model.entries is None:
+            self._panel_edit(item, changes)
+        else:
+            # this legend's own rows: not copied to other selected legends
+            changes["entries"] = refreshed_legend_entries(
+                item.model.entries, rows, swatches)
+            self.history.execute(EditItemCommand(item.model, changes),
+                                 notify=False)
+            self._mark_dirty()
+            item.update()
+        self._ley_reload(item.model)
+
+    # ---- legend rows (Marco, 19-11) -----------------------------------------
+    def _ley_item(self) -> Optional["LeyendaItem"]:
+        item = self._selected_item()
+        return item if isinstance(item, LeyendaItem) else None
+
+    def _ley_set_entries(self, item: "LeyendaItem", entries: list,
+                         row: Optional[int] = None) -> None:
+        """One undo step per row edit — never coalesced: an added row and
+        its retyping are two steps, as they were two actions."""
+        item.prepareGeometryChange()
+        self.history.execute(EditItemCommand(item.model,
+                                             {"entries": entries}),
+                             notify=False)
+        self._mark_dirty()
+        item.update()
+        self._ley_reload(item.model, row)
+
+    def _ley_current(self):
+        """(item, entries, row) of the legend row selected in the panel, or
+        None. ``entries`` is a fresh copy to edit and hand back."""
+        from core.composition import legend_entries
+        item = self._ley_item()
+        if item is None:
+            return None
+        entries = legend_entries(item.model)
+        row = self.ley_rows.currentRow()
+        if not 0 <= row < len(entries):
+            return None
+        return item, entries, row
+
+    def _ley_reload(self, model, row: Optional[int] = None) -> None:
+        """Fill the rows list and the selected row's editors."""
+        from PySide6.QtWidgets import QListWidgetItem
+        from core.composition import legend_entries
+        entries = legend_entries(model)
+        if row is None:
+            row = getattr(self, "_ley_row", 0)
+        row = max(0, min(int(row), len(entries) - 1))
+        was = self._updating
+        self._updating = True
+        try:
+            self.ley_rows.clear()
+            for e in entries:
+                it = QListWidgetItem(self._ley_icon(e),
+                                     str(e.get("label", "")))
+                layer = e.get("layer", "") or ""
+                it.setToolTip(tr("Layer: {name}", name=layer) if layer
+                              else tr("Own row (no layer)"))
+                self.ley_rows.addItem(it)
+            if entries:
+                self.ley_rows.setCurrentRow(row)
+        finally:
+            self._updating = was
+        self._ley_row = row
+        self._ley_sync_row(entries[row] if entries else None)
+
+    def _ley_icon(self, entry: dict):
+        from PySide6.QtGui import QIcon, QPixmap
+        pm = QPixmap(24, 16)
+        pm.fill(QColor(255, 255, 255))
+        p = QPainter(pm)
+        p.setRenderHint(QPainter.Antialiasing)
+        p.scale(4.0, 4.0)
+        paint_legend_sample(p, entry, QRectF(0.5, 0.6, 5.0, 2.8))
+        p.end()
+        return QIcon(pm)
+
+    def _ley_sync_row(self, entry: Optional[dict]) -> None:
+        from views.layers_panel import LayersPanel
+        on = entry is not None
+        for wdg in (self.ley_label, self.ley_color_btn, self.ley_symbol,
+                    self.ley_linetype, self.ley_del_btn, self.ley_up_btn,
+                    self.ley_down_btn):
+            wdg.setEnabled(on)
+        was = self._updating
+        self._updating = True
+        try:
+            self.ley_linetype.clear()
+            for key, label in LayersPanel.LINETYPE_LABELS:
+                self.ley_linetype.addItem(tr(label), key)
+            if not on:
+                self.ley_label.clear()
+                self.ley_color_btn.setStyleSheet("")
+                return
+            self.ley_label.setText(str(entry.get("label", "")))
+            col = _entry_rgb(entry, QColor(226, 232, 238))
+            self.ley_color_btn.setStyleSheet(
+                f"QAbstractButton {{ background: {col.name()}; }}")
+            self.ley_symbol.setCurrentIndex(max(0, self.ley_symbol.findData(
+                entry.get("symbol", "") or "")))
+            lt = entry.get("linetype") or "continuous"
+            i = self.ley_linetype.findData(lt)
+            if i < 0:
+                # a custom line type of the layer: offered as it is
+                self.ley_linetype.addItem(str(lt).split(":", 1)[-1], lt)
+                i = self.ley_linetype.count() - 1
+            self.ley_linetype.setCurrentIndex(i)
+        finally:
+            self._updating = was
+
+    def _on_ley_row_selected(self, row: int) -> None:
+        if self._updating:
+            return
+        from core.composition import legend_entries
+        item = self._ley_item()
+        if item is None:
+            return
+        entries = legend_entries(item.model)
+        self._ley_row = row
+        self._ley_sync_row(entries[row] if 0 <= row < len(entries) else None)
+
+    def _ley_edit_row(self, changes: dict) -> None:
+        cur = self._ley_current()
+        if cur is None or self._updating:
+            return
+        item, entries, row = cur
+        e = entries[row]
+        if all(e.get(k) == v for k, v in changes.items()):
+            return
+        e.update(changes)
+        e["edited"] = True
+        self._ley_set_entries(item, entries, row)
+
+    def _on_ley_label(self) -> None:
+        cur = self._ley_current()
+        if cur is None or self._updating:
+            return
+        text = self.ley_label.text().strip()
+        if not text:
+            text = cur[1][cur[2]].get("layer", "") or ""
+        self._ley_edit_row({"label": text})
+
+    def _on_ley_color(self) -> None:
+        cur = self._ley_current()
+        if cur is None:
+            return
+        e = cur[1][cur[2]]
+        col = get_color(_entry_rgb(e, QColor(30, 36, 44)), self, tr("Colour"))
+        if col.isValid():
+            self._ley_edit_row({"color": [round(col.redF(), 4),
+                                          round(col.greenF(), 4),
+                                          round(col.blueF(), 4)]})
+
+    def _on_ley_symbol(self, *_a) -> None:
+        if self._updating:
+            return
+        self._ley_edit_row({"symbol": self.ley_symbol.currentData() or ""})
+
+    def _on_ley_linetype(self, *_a) -> None:
+        cur = self._ley_current()
+        if cur is None or self._updating:
+            return
+        key = self.ley_linetype.currentData() or "continuous"
+        item, entries, row = cur
+        e = entries[row]
+        if e.get("linetype") == key:
+            return
+        e["linetype"] = key
+        # a custom layer pattern belongs to the layer's own line type only
+        if not str(key).startswith("lin:"):
+            e.pop("pattern", None)
+        e["edited"] = True
+        self._ley_set_entries(item, entries, row)
+
+    def _ley_missing_layers(self) -> list:
+        """The model's layers the legend does not list, in model order."""
+        from core.composition import legend_entries
+        item = self._ley_item()
+        if item is None:
+            return []
+        listed = {e.get("layer") for e in legend_entries(item.model)}
+        return [ly for ly in getattr(self._scene(), "layers", ())
+                if ly.name not in listed]
+
+    def _fill_ley_add_menu(self) -> None:
+        menu = self.ley_add_menu
+        menu.clear()
+        missing = self._ley_missing_layers()
+        for ly in missing:
+            menu.addAction(ly.name,
+                           lambda _=False, n=ly.name: self.add_legend_layer(n))
+        if not missing:
+            act = menu.addAction(tr("Every layer is in the legend"))
+            act.setEnabled(False)
+        menu.addSeparator()
+        menu.addAction(tr("Free entry"), self.add_legend_free_row)
+
+    def _ley_insert(self, entry: dict) -> None:
+        from core.composition import legend_entries
+        item = self._ley_item()
+        if item is None:
+            return
+        entries = legend_entries(item.model)
+        row = self.ley_rows.currentRow()
+        at = row + 1 if 0 <= row < len(entries) else len(entries)
+        entries.insert(at, entry)
+        self._ley_set_entries(item, entries, at)
+
+    def add_legend_layer(self, name: str) -> None:
+        """Add model layer ``name`` to the selected legend, under the
+        selected row — kept by «Refresh layers» even if hidden later."""
+        from core.composition import layer_legend_entry
+        from core.layers import layer_swatch
+        ly = next((ly for ly in getattr(self._scene(), "layers", ())
+                   if ly.name == name), None)
+        if ly is None:
+            return
+        entry = layer_legend_entry(name, {name: layer_swatch(self._scene(),
+                                                             ly)})
+        entry["edited"] = True
+        self._ley_insert(entry)
+
+    def add_legend_free_row(self) -> None:
+        """A row of the legend's own, under the selected one; its text is
+        ready to type."""
+        from core.composition import free_legend_entry
+        self._ley_insert(free_legend_entry(tr("New entry")))
+        self.ley_label.setFocus()
+        self.ley_label.selectAll()
+
+    def _on_ley_remove(self) -> None:
+        cur = self._ley_current()
+        if cur is None:
+            return
+        item, entries, row = cur
+        del entries[row]
+        self._ley_set_entries(item, entries, min(row, len(entries) - 1))
+
+    def _on_ley_move(self, step: int) -> None:
+        cur = self._ley_current()
+        if cur is None:
+            return
+        item, entries, row = cur
+        to = row + step
+        if not 0 <= to < len(entries):
+            return
+        entries[row], entries[to] = entries[to], entries[row]
+        self._ley_set_entries(item, entries, to)
 
     def _on_forma_props(self, *_a) -> None:
         item = self._selected_item()

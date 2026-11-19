@@ -4037,5 +4037,20 @@
  "Opacity:": "Непрозрачность:",
  "Spacing:": "Шаг:",
  "Keys: Enter = done, Esc = cancel, F = photo's focal length. Right-click over the photo for this menu. Orbiting leaves the photo; its scene tab brings it back.": "Клавиши: Enter — готово, Esc — отмена, F — фокусное фото. Правый щелчок по фото — это меню. Орбита выходит из фото; вкладка сцены возвращает его.",
- "Camera: {model}": "Камера: {model}"
+ "Camera: {model}": "Камера: {model}",
+ "Rows": "Строки",
+ "Add a row": "Добавить строку",
+ "Remove row": "Удалить строку",
+ "Move row up": "Переместить строку вверх",
+ "Move row down": "Переместить строку вниз",
+ "Only the legend changes: the model's layer stays as it is.": "Меняется только легенда: слой модели остаётся как есть.",
+ "As the layer": "Как у слоя",
+ "Line and fill": "Линия и заливка",
+ "Background margin": "Отступ фона",
+ "Re-read the visible layers of the model. Rows you edited and your own rows stay as they are; new layers are added at the end.": "Перечитывает видимые слои модели. Изменённые вами и ваши собственные строки остаются как есть; новые слои добавляются в конец.",
+ "Layer: {name}": "Слой: {name}",
+ "Own row (no layer)": "Своя строка (без слоя)",
+ "Every layer is in the legend": "Все слои уже в легенде",
+ "Free entry": "Свободная запись",
+ "New entry": "Новая запись"
 }

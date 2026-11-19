@@ -4037,5 +4037,20 @@
  "Opacity:": "Opacidad:",
  "Spacing:": "Separación:",
  "Keys: Enter = done, Esc = cancel, F = photo's focal length. Right-click over the photo for this menu. Orbiting leaves the photo; its scene tab brings it back.": "Teclas: Enter = listo, Esc = cancelar, F = focal de la foto. Clic derecho sobre la foto para este menú. Orbitar sale de la foto; su pestaña de escena la devuelve.",
- "Camera: {model}": "Cámara: {model}"
+ "Camera: {model}": "Cámara: {model}",
+ "Rows": "Filas",
+ "Add a row": "Añadir una fila",
+ "Remove row": "Quitar fila",
+ "Move row up": "Subir fila",
+ "Move row down": "Bajar fila",
+ "Only the legend changes: the model's layer stays as it is.": "Solo cambia la leyenda: la capa del modelo queda como está.",
+ "As the layer": "Como la capa",
+ "Line and fill": "Línea y relleno",
+ "Background margin": "Margen del fondo",
+ "Re-read the visible layers of the model. Rows you edited and your own rows stay as they are; new layers are added at the end.": "Vuelve a leer las capas visibles del modelo. Las filas que editaste y las tuyas propias quedan como están; las capas nuevas se añaden al final.",
+ "Layer: {name}": "Capa: {name}",
+ "Own row (no layer)": "Fila propia (sin capa)",
+ "Every layer is in the legend": "Todas las capas están en la leyenda",
+ "Free entry": "Entrada libre",
+ "New entry": "Entrada nueva"
 }

@@ -4037,5 +4037,20 @@
  "Opacity:": "Opacité :",
  "Spacing:": "Espacement :",
  "Keys: Enter = done, Esc = cancel, F = photo's focal length. Right-click over the photo for this menu. Orbiting leaves the photo; its scene tab brings it back.": "Touches : Entrée = terminé, Échap = annuler, F = focale de la photo. Clic droit sur la photo pour ce menu. Orbiter quitte la photo ; l'onglet de sa scène la ramène.",
- "Camera: {model}": "Appareil : {model}"
+ "Camera: {model}": "Appareil : {model}",
+ "Rows": "Lignes",
+ "Add a row": "Ajouter une ligne",
+ "Remove row": "Supprimer la ligne",
+ "Move row up": "Monter la ligne",
+ "Move row down": "Descendre la ligne",
+ "Only the legend changes: the model's layer stays as it is.": "Seule la légende change : le calque du modèle reste tel quel.",
+ "As the layer": "Comme le calque",
+ "Line and fill": "Ligne et remplissage",
+ "Background margin": "Marge de l'arrière-plan",
+ "Re-read the visible layers of the model. Rows you edited and your own rows stay as they are; new layers are added at the end.": "Relit les calques visibles du modèle. Les lignes que vous avez modifiées et vos propres lignes restent telles quelles ; les nouveaux calques sont ajoutés à la fin.",
+ "Layer: {name}": "Calque : {name}",
+ "Own row (no layer)": "Ligne personnelle (sans calque)",
+ "Every layer is in the legend": "Tous les calques sont dans la légende",
+ "Free entry": "Entrée libre",
+ "New entry": "Nouvelle entrée"
 }
