@@ -34,6 +34,33 @@ DMG="$OUT/IngeTrazo-$VERSION-macos-$ARCH.dmg"
 
 echo "==> IngeTrazo $VERSION -> $DMG"
 
+echo "==> PyInstaller and Qt runtime"
+"$PYTHON" -m PyInstaller --version >/dev/null 2>&1 \
+    || "$PYTHON" -m pip install --quiet pyinstaller
+# A pre-existing venv must not silently freeze a Qt version excluded by the
+# macOS accessibility workaround. PyInstaller supplies packaging.
+"$PYTHON" - <<'PY'
+from pathlib import Path
+import PySide6
+from PySide6.QtCore import qVersion
+from packaging.requirements import Requirement
+
+for line in Path("requirements.txt").read_text().splitlines():
+    if not line.startswith("PySide6"):
+        continue
+    requirement = Requirement(line)
+    if requirement.marker is not None and not requirement.marker.evaluate():
+        continue
+    if (PySide6.__version__ not in requirement.specifier
+            or qVersion() not in requirement.specifier):
+        raise SystemExit(
+            f"Unsupported macOS runtime: PySide6 {PySide6.__version__}, Qt {qVersion()}. "
+            "Run python -m pip install -r requirements.txt with the build interpreter.")
+PY
+
+echo "==> native Cocoa accessibility fix"
+"$PYTHON" -m core.macos_accessibility
+
 echo "==> icon (.icns from the committed PNGs, via iconutil)"
 # The Windows .ico is built by scripts/gen_app_icon.py + ImageMagick/Inkscape;
 # .icns only needs macOS's own iconutil, so it is generated here rather than
@@ -56,8 +83,6 @@ iconutil -c icns "$ICONSET" -o "$ICNS"
 rm -rf "$ICONSET"
 
 echo "==> PyInstaller"
-"$PYTHON" -m PyInstaller --version >/dev/null 2>&1 \
-    || "$PYTHON" -m pip install --quiet pyinstaller
 rm -rf "$BUILD_APP" "$WORK/pyi"
 "$PYTHON" -m PyInstaller --noconfirm \
     --distpath "$WORK/pyi" --workpath "$WORK/pyi-work" \
