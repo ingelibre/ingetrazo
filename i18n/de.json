@@ -4065,5 +4065,10 @@
  "Every sheet as a page. Click: open it. Drag: change the order. Double-click or F2: rename. Delete: remove it. Right-click: more.": "Jedes Blatt als Seite. Klick: öffnen. Ziehen: Reihenfolge ändern. Doppelklick oder F2: umbenennen. Entf: löschen. Rechtsklick: mehr.",
  "Middle-button drag pans (Shift + drag orbits)": "Ziehen mit der mittleren Taste verschiebt (Umschalt + Ziehen umkreist)",
  "Orbit Z": "Orbit Z",
- "Option = copy": "Option = Kopie"
+ "Option = copy": "Option = Kopie",
+ "Group photos separately from model geometry": "Fotos getrennt von der Modellgeometrie gruppieren",
+ "Make a component from photos separately from model geometry": "Eine Komponente aus Fotos getrennt von der Modellgeometrie erstellen",
+ "This group contains a photo, not editable geometry — explode it to edit the image": "Diese Gruppe enthält ein Foto und keine bearbeitbare Geometrie – lösen Sie die Gruppe auf, um das Bild zu bearbeiten",
+ "Image corner placed — move the pointer and click to set its size, or type a width and press Enter (Esc cancels)": "Bildecke platziert – bewegen Sie den Zeiger und klicken Sie, um die Größe festzulegen, oder geben Sie eine Breite ein und drücken Sie die Eingabetaste (Esc bricht ab)",
+ "Image placed at its natural display size — use Image size… for an exact model width": "Bild in seiner natürlichen Anzeigegröße platziert – verwenden Sie Bildgröße…, um eine genaue Modellbreite festzulegen"
 }

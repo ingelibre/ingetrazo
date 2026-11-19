@@ -4073,5 +4073,10 @@
  "Serializing geometry…": "Серіалізація геометрії…",
  "Packing textures…": "Пакування текстур…",
  "Writing file…": "Запис файлу…",
- "Saved": "Збережено"
+ "Saved": "Збережено",
+ "Group photos separately from model geometry": "Групуйте фотографії окремо від геометрії моделі",
+ "Image corner placed — move the pointer and click to set its size, or type a width and press Enter (Esc cancels)": "Кут зображення розміщено — перемістіть вказівник і клацніть, щоб задати розмір, або введіть ширину й натисніть Enter (Esc скасовує)",
+ "Image placed at its natural display size — use Image size… for an exact model width": "Зображення розміщено в природному екранному розмірі — скористайтеся Розмір зображення…, щоб задати точну ширину в моделі",
+ "Make a component from photos separately from model geometry": "Створюйте компонент із фотографій окремо від геометрії моделі",
+ "This group contains a photo, not editable geometry — explode it to edit the image": "Ця група містить фотографію, а не редаговану геометрію — розгрупуйте її, щоб редагувати зображення"
 }

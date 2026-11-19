@@ -4072,5 +4072,10 @@
  "New entry": "Nova entrada",
  "Every sheet as a page. Click: open it. Drag: change the order. Double-click or F2: rename. Delete: remove it. Right-click: more.": "Cada folha como uma página. Clique: abri-la. Arrastar: mudar a ordem. Clique duplo ou F2: renomear. Delete: excluí-la. Clique direito: mais.",
  "Orbit Z": "Orbitar Z",
- "Option = copy": "Option = copiar"
+ "Option = copy": "Option = copiar",
+ "Group photos separately from model geometry": "Agrupe as fotos separadamente da geometria do modelo",
+ "Make a component from photos separately from model geometry": "Crie um componente com as fotos separadamente da geometria do modelo",
+ "This group contains a photo, not editable geometry — explode it to edit the image": "Este grupo contém uma foto, não geometria editável — exploda-o para editar a imagem",
+ "Image corner placed — move the pointer and click to set its size, or type a width and press Enter (Esc cancels)": "Canto da imagem posicionado — mova o ponteiro e clique para definir o tamanho, ou digite uma largura e pressione Enter (Esc cancela)",
+ "Image placed at its natural display size — use Image size… for an exact model width": "Imagem posicionada no tamanho natural de exibição — use Tamanho da imagem… para definir uma largura exata no modelo"
 }

@@ -4068,5 +4068,10 @@
  "Serializing geometry…": "正在序列化幾何…",
  "Packing textures…": "正在封裝材質…",
  "Writing file…": "正在寫入檔案…",
- "Saved": "已儲存"
+ "Saved": "已儲存",
+ "Group photos separately from model geometry": "將相片與模型幾何分開群組",
+ "Image corner placed — move the pointer and click to set its size, or type a width and press Enter (Esc cancels)": "已放置影像角點 — 移動指標並按一下以設定大小，或輸入寬度後按 Enter（Esc 取消）",
+ "Image placed at its natural display size — use Image size… for an exact model width": "已按原始顯示大小放置影像 — 使用「影像大小…」設定精確的模型寬度",
+ "Make a component from photos separately from model geometry": "將相片與模型幾何分開建立元件",
+ "This group contains a photo, not editable geometry — explode it to edit the image": "此群組包含相片，而非可編輯的幾何 — 請炸開群組以編輯影像"
 }

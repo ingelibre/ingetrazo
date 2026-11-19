@@ -4066,5 +4066,10 @@
  "New entry": "新条目",
  "Every sheet as a page. Click: open it. Drag: change the order. Double-click or F2: rename. Delete: remove it. Right-click: more.": "每张图纸显示为一页。单击：打开。拖动：更改顺序。双击或 F2：重命名。Delete：删除。右键：更多。",
  "Orbit Z": "环绕 Z",
- "Option = copy": "Option = 复制"
+ "Option = copy": "Option = 复制",
+ "Group photos separately from model geometry": "将照片与模型几何体分开编组",
+ "Make a component from photos separately from model geometry": "将照片与模型几何体分开创建为组件",
+ "This group contains a photo, not editable geometry — explode it to edit the image": "此组包含照片，而非可编辑的几何体——请炸开该组以编辑图像",
+ "Image corner placed — move the pointer and click to set its size, or type a width and press Enter (Esc cancels)": "已放置图像角点——移动指针并单击以设置大小，或输入宽度后按 Enter（Esc 取消）",
+ "Image placed at its natural display size — use Image size… for an exact model width": "图像已按自然显示大小放置——使用图像大小…可设置精确的模型宽度"
 }

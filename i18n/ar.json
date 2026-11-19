@@ -4101,5 +4101,10 @@
  "Serializing geometry…": "جارٍ تسلسل الهندسة…",
  "Packing textures…": "جارٍ تضمين الأنسجة…",
  "Writing file…": "جارٍ كتابة الملف…",
- "Saved": "تم الحفظ"
+ "Saved": "تم الحفظ",
+ "Group photos separately from model geometry": "جمّع الصور بشكل منفصل عن هندسة النموذج",
+ "Image corner placed — move the pointer and click to set its size, or type a width and press Enter (Esc cancels)": "تم وضع زاوية الصورة — حرّك المؤشر وانقر لتحديد حجمها، أو اكتب عرضًا واضغط Enter (Esc للإلغاء)",
+ "Image placed at its natural display size — use Image size… for an exact model width": "تم وضع الصورة بحجم عرضها الطبيعي — استخدم حجم الصورة… لتحديد عرض دقيق في النموذج",
+ "Make a component from photos separately from model geometry": "أنشئ مكوّنًا من الصور بشكل منفصل عن هندسة النموذج",
+ "This group contains a photo, not editable geometry — explode it to edit the image": "تحتوي هذه المجموعة على صورة وليست هندسة قابلة للتحرير — فكّ المجموعة لتحرير الصورة"
 }

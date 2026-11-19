@@ -4092,5 +4092,10 @@
  "Serializing geometry…": "Đang tuần tự hóa hình học…",
  "Packing textures…": "Đang đóng gói họa tiết…",
  "Writing file…": "Đang ghi tệp…",
- "Saved": "Đã lưu"
+ "Saved": "Đã lưu",
+ "Group photos separately from model geometry": "Nhóm ảnh riêng biệt với hình học của mô hình",
+ "Image corner placed — move the pointer and click to set its size, or type a width and press Enter (Esc cancels)": "Đã đặt góc ảnh — di chuyển con trỏ và nhấp để đặt kích thước, hoặc nhập chiều rộng rồi nhấn Enter (Esc để hủy)",
+ "Image placed at its natural display size — use Image size… for an exact model width": "Đã đặt ảnh ở kích thước hiển thị tự nhiên — dùng Kích thước ảnh… để đặt chiều rộng chính xác trong mô hình",
+ "Make a component from photos separately from model geometry": "Tạo thành phần từ ảnh riêng biệt với hình học của mô hình",
+ "This group contains a photo, not editable geometry — explode it to edit the image": "Nhóm này chứa ảnh, không phải hình học có thể chỉnh sửa — phá nhóm để chỉnh sửa ảnh"
 }

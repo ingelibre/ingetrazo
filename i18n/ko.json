@@ -4065,5 +4065,10 @@
  "Every sheet as a page. Click: open it. Drag: change the order. Double-click or F2: rename. Delete: remove it. Right-click: more.": "각 시트를 페이지로 표시합니다. 클릭: 열기. 끌기: 순서 변경. 두 번 클릭 또는 F2: 이름 바꾸기. Delete: 삭제. 오른쪽 클릭: 더 보기.",
  "Middle-button drag pans (Shift + drag orbits)": "가운데 버튼 드래그로 이동 (Shift + 드래그로 궤도 회전)",
  "Orbit Z": "궤도 Z",
- "Option = copy": "Option = 복사"
+ "Option = copy": "Option = 복사",
+ "Group photos separately from model geometry": "사진은 모델 형상과 별도로 그룹화하세요",
+ "Image corner placed — move the pointer and click to set its size, or type a width and press Enter (Esc cancels)": "이미지 모서리를 배치했습니다 — 포인터를 이동하고 클릭하여 크기를 설정하거나 너비를 입력하고 Enter를 누르세요(Esc로 취소)",
+ "Image placed at its natural display size — use Image size… for an exact model width": "이미지를 원래 표시 크기로 배치했습니다 — 정확한 모델 너비를 지정하려면 이미지 크기…를 사용하세요",
+ "Make a component from photos separately from model geometry": "사진으로 구성요소를 만들 때는 모델 형상과 분리하세요",
+ "This group contains a photo, not editable geometry — explode it to edit the image": "이 그룹에는 편집 가능한 형상이 아닌 사진이 있습니다 — 이미지를 편집하려면 그룹을 분해하세요"
 }

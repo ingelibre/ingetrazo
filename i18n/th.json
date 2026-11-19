@@ -4068,5 +4068,10 @@
  "Every sheet as a page. Click: open it. Drag: change the order. Double-click or F2: rename. Delete: remove it. Right-click: more.": "แผ่นแบบแต่ละแผ่นเป็นหนึ่งหน้า คลิก: เปิด ลาก: เปลี่ยนลำดับ ดับเบิลคลิกหรือ F2: เปลี่ยนชื่อ Delete: ลบ คลิกขวา: เพิ่มเติม",
  "Middle-button drag pans (Shift + drag orbits)": "ลากปุ่มกลางเพื่อเลื่อนมุมมอง (Shift + ลากเพื่อหมุนรอบ)",
  "Orbit Z": "วงโคจร Z",
- "Option = copy": "Option = คัดลอก"
+ "Option = copy": "Option = คัดลอก",
+ "Group photos separately from model geometry": "จัดกลุ่มภาพถ่ายแยกจากเรขาคณิตของโมเดล",
+ "Image corner placed — move the pointer and click to set its size, or type a width and press Enter (Esc cancels)": "วางมุมภาพแล้ว — เลื่อนตัวชี้แล้วคลิกเพื่อกำหนดขนาด หรือพิมพ์ความกว้างแล้วกด Enter (Esc เพื่อยกเลิก)",
+ "Image placed at its natural display size — use Image size… for an exact model width": "วางภาพตามขนาดแสดงผลปกติแล้ว — ใช้ ขนาดภาพ… เพื่อกำหนดความกว้างในโมเดลอย่างแม่นยำ",
+ "Make a component from photos separately from model geometry": "สร้างคอมโพเนนต์จากภาพถ่ายแยกจากเรขาคณิตของโมเดล",
+ "This group contains a photo, not editable geometry — explode it to edit the image": "กลุ่มนี้มีภาพถ่าย ไม่ใช่เรขาคณิตที่แก้ไขได้ — แยกกลุ่มเพื่อแก้ไขภาพ"
 }
