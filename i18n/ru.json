@@ -1243,7 +1243,6 @@
  "Save this title block as a template…": "Сохранить основную надпись как шаблон…",
  "Saved views": "Сохраненные виды",
  "Saved with missing textures": "Сохранено с отсутствующими текстурами",
- "Saved — {n} texture(s) packed into the document.": "Сохранено — {n} текстур(ы) упаковано в документ.",
  "Scale": "Масштаб",
  "Scale Uniformly: off": "Равномерный масштаб: выкл",
  "Scale Uniformly: on": "Равномерный масштаб: вкл",
@@ -4058,5 +4057,13 @@
  "Every sheet as a page. Click: open it. Drag: change the order. Double-click or F2: rename. Delete: remove it. Right-click: more.": "Каждый лист как страница. Щелчок: открыть. Перетаскивание: изменить порядок. Двойной щелчок или F2: переименовать. Delete: удалить. Правый щелчок: ещё.",
  "Middle-button drag pans (Shift + drag orbits)": "Перетаскивание средней кнопкой сдвигает вид (Shift + перетаскивание вращает)",
  "Orbit Z": "Орбита Z",
- "Option = copy": "Option = копия"
+ "Option = copy": "Option = копия",
+ "Saving {name}…": "Сохранение {name}…",
+ "Saved {name}.": "Сохранено {name}.",
+ "Saved {name} — {n} texture(s) packed into the document.": "Сохранено {name} — {n} текстур(ы) упаковано в документ.",
+ "Exporting {name}…": "Экспорт {name}…",
+ "Serializing geometry…": "Сериализация геометрии…",
+ "Packing textures…": "Упаковка текстур…",
+ "Writing file…": "Запись файла…",
+ "Saved": "Сохранено"
 }

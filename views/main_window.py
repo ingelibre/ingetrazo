@@ -10354,6 +10354,8 @@ class MainWindow(QMainWindow):
             except OSError:
                 self.statusBar().showMessage(
                     tr("Could not write the backup copy."), 4000)
+        self.statusBar().showMessage(tr("Saving {name}…", name=path.name))
+        self.statusBar().repaint()
         try:
             vp.scene.camera_home = self._camera_dict(vp)
             vp.scene.views_home = self._views_dict(doc)
@@ -10364,6 +10366,7 @@ class MainWindow(QMainWindow):
             stats = igz_format.save_scene(vp.scene, path,
                                           thumbnail=picture) or {}
         except Exception as exc:  # noqa: BLE001
+            self.statusBar().clearMessage()
             QMessageBox.critical(self, tr("Save failed"), str(exc))
             return
         # A clean save ends the recovery window for this document — and for
@@ -10376,16 +10379,19 @@ class MainWindow(QMainWindow):
         # an image could not be read (that face's texture will NOT travel).
         embedded = int(stats.get("embedded", 0))
         missing = int(stats.get("missing", 0))
+        if embedded:
+            self.statusBar().showMessage(
+                tr("Saved {name} — {n} texture(s) packed into the document.",
+                   name=path.name, n=embedded), 4000)
+        else:
+            self.statusBar().showMessage(
+                tr("Saved {name}.", name=path.name), 4000)
         if missing:
             QMessageBox.warning(
                 self, tr("Saved with missing textures"),
                 tr("{n} texture image(s) could not be read, so they were not "
                    "packed into the document — those faces will lose their "
                    "texture on another computer.", n=missing))
-        elif embedded:
-            self.statusBar().showMessage(
-                tr("Saved — {n} texture(s) packed into the document.",
-                   n=embedded), 4000)
         doc.path = path
         self._remember_recent(path)
         self._saved_version = vp.scene.version
@@ -12251,9 +12257,13 @@ class MainWindow(QMainWindow):
             tr("IFC4 (*.ifc);;All files (*)"))
         if not path_str:
             return
+        path = Path(path_str)
+        self.statusBar().showMessage(tr("Exporting {name}…", name=path.name))
+        self.statusBar().repaint()
         try:
             count = ifc_format.save_ifc(self.viewport.scene, path_str)
         except Exception as exc:  # noqa: BLE001
+            self.statusBar().clearMessage()
             QMessageBox.critical(self, tr("Export IFC failed"), str(exc))
             return
         self.statusBar().showMessage(
@@ -12609,14 +12619,17 @@ class MainWindow(QMainWindow):
         """``writer(scene, path)`` with the failure shown — the menus'
         exports once the file is chosen, and the AI bridge's
         ``export_file``. False when it failed."""
+        self.statusBar().showMessage(tr("Exporting {name}…", name=path.name))
+        self.statusBar().repaint()
         try:
             writer(self.viewport.scene, path)
         except Exception as exc:  # noqa: BLE001
+            self.statusBar().clearMessage()
             QMessageBox.critical(
                 self, tr("Export {label} failed", label=label), str(exc))
             return False
         self.statusBar().showMessage(
-            tr("Exported {label} → {name}", label=label, name=path.name), 3000)
+            tr("Exported {label} → {name}", label=label, name=path.name), 4000)
         return True
 
     def _confirm_discard(self, prompt: str) -> bool:

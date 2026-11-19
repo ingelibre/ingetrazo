@@ -37,5 +37,13 @@
  "Strong": "Strong",
  "Shadow edges that soften away from what casts them, as in daylight. They cost the graphics card more while the sun casts shadows.": "Shadow edges that soften away from what casts them, as in daylight. They cost the graphics card more while the sun casts shadows.",
  "Export materials CSV": "Export materials CSV",
- "Export materials CSV…": "Export materials CSV…"
+ "Export materials CSV…": "Export materials CSV…",
+ "Saving {name}…": "Saving {name}…",
+ "Saved {name}.": "Saved {name}.",
+ "Saved {name} — {n} texture(s) packed into the document.": "Saved {name} — {n} texture(s) packed into the document.",
+ "Exporting {name}…": "Exporting {name}…",
+ "Serializing geometry…": "Serializing geometry…",
+ "Packing textures…": "Packing textures…",
+ "Writing file…": "Writing file…",
+ "Saved": "Saved"
 }
