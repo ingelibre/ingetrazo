@@ -1828,7 +1828,7 @@
  "Remove the colour (back to the original image)": "Retirer la couleur (retour à l'image d'origine)",
  "Shift": "Décaler",
  "Tint": "Teinter",
- "Shift: move every pixel's hue toward the colour, keeping the texture's variation. Tint: replace hue and saturation, keeping only the lightness.": "Décaler : déplace la teinte de chaque pixel vers la couleur en conservant la variation de la texture. Teinter : remplace la teinte et la saturation en ne gardant que la luminosité.",
+ "Shift: move every pixel's hue toward the colour, keeping the texture's variation. Tint: give every pixel the colour's hue, keeping the texture's variation in lightness and saturation.": "Décaler : déplace la teinte de chaque pixel vers la couleur en conservant la variation de la texture. Teinter : donne à chaque pixel la teinte de la couleur en conservant la variation de luminosité et de saturation de la texture.",
  "Tint the texture": "Teinter la texture",
  "Resize/rotate/tint the active texture; with textured faces selected, re-stamps them (undoable)": "Redimensionne/fait pivoter/teinte la texture active ; avec des faces texturées sélectionnées, les re-estampille (annulable)",
  "inward": "vers l'intérieur",

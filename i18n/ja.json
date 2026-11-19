@@ -1813,7 +1813,7 @@
  "Remove the colour (back to the original image)": "色の変更を解除（元の画像に戻す）",
  "Shift": "色相を寄せる",
  "Tint": "着色",
- "Shift: move every pixel's hue toward the colour, keeping the texture's variation. Tint: replace hue and saturation, keeping only the lightness.": "色相を寄せる: テクスチャの変化を保ち、各ピクセルの色相を指定色に近づけます。着色: 明度だけを保ち、色相と彩度を置き換えます。",
+ "Shift: move every pixel's hue toward the colour, keeping the texture's variation. Tint: give every pixel the colour's hue, keeping the texture's variation in lightness and saturation.": "色相を寄せる: テクスチャの変化を保ち、各ピクセルの色相を指定色に近づけます。着色: 各ピクセルを指定色の色相にし、テクスチャの明度と彩度の変化は保ちます。",
  "Tint the texture": "テクスチャに着色",
  "Resize/rotate/tint the active texture; with textured faces selected, re-stamps them (undoable)": "現在のテクスチャを拡大縮小 / 回転 / 着色。テクスチャ付きの面を選択すると再適用します（元に戻せます）。",
  "inward": "内側へ",

@@ -1825,7 +1825,7 @@
  "Remove the colour (back to the original image)": "ลบโทนสีออก (กลับสู่ภาพต้นฉบับ)",
  "Shift": "เลื่อนโทนสี (Shift)",
  "Tint": "ย้อมสี (Tint)",
- "Shift: move every pixel's hue toward the colour, keeping the texture's variation. Tint: replace hue and saturation, keeping only the lightness.": "เลื่อนโทนสี (Shift): ปรับค่าเฉดสี (Hue) ของทุกพิกเซลไปทางสีที่เลือก โดยรักษาความหลากหลายของพื้นผิวไว้; ย้อมสี (Tint): แทนที่เฉดสีและความอิ่มตัวของสี โดยรักษาไว้เฉพาะความสว่าง",
+ "Shift: move every pixel's hue toward the colour, keeping the texture's variation. Tint: give every pixel the colour's hue, keeping the texture's variation in lightness and saturation.": "เลื่อนโทนสี (Shift): ปรับค่าเฉดสี (Hue) ของทุกพิกเซลไปทางสีที่เลือก โดยรักษาความหลากหลายของพื้นผิวไว้; ย้อมสี (Tint): ให้ทุกพิกเซลมีเฉดสีของสีที่เลือก โดยรักษาความแตกต่างของความสว่างและความอิ่มตัวของสีในพื้นผิวไว้",
  "Tint the texture": "ย้อมสีพื้นผิวสัมผัส",
  "Resize/rotate/tint the active texture; with textured faces selected, re-stamps them (undoable)": "ปรับขนาด/หมุน/ย้อมสีพื้นผิวสัมผัสที่ใช้งาน; เมื่อเลือกพื้นผิวที่มีลวดลาย จะประทับลายใหม่ (สามารถยกเลิกได้)",
  "inward": "เข้าด้านใน",

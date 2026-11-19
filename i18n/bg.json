@@ -1828,7 +1828,7 @@
  "Remove the colour (back to the original image)": "Премахване на оцветяването (връщане към оригиналното изображение)",
  "Shift": "Изместване",
  "Tint": "Тониране",
- "Shift: move every pixel's hue toward the colour, keeping the texture's variation. Tint: replace hue and saturation, keeping only the lightness.": "Изместване: доближава цветовия тон на всеки пиксел до избрания цвят, като запазва цветовите вариации на текстурата. Тониране: заменя цветовия тон и наситеността, като запазва само светлотата.",
+ "Shift: move every pixel's hue toward the colour, keeping the texture's variation. Tint: give every pixel the colour's hue, keeping the texture's variation in lightness and saturation.": "Изместване: доближава цветовия тон на всеки пиксел до избрания цвят, като запазва цветовите вариации на текстурата. Тониране: придава на всеки пиксел цветовия тон на избрания цвят, като запазва вариациите в светлотата и наситеността на текстурата.",
  "Tint the texture": "Тониране на текстурата",
  "Resize/rotate/tint the active texture; with textured faces selected, re-stamps them (undoable)": "Промяна на размера, завъртане или тониране на активната текстура; при избрани текстурирани повърхнини текстурата се нанася отново (операцията може да се отмени)",
  "inward": "навътре",

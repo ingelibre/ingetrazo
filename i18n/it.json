@@ -1807,7 +1807,7 @@
  "Remove the colour (back to the original image)": "Rimuovi il colore (torna all'immagine originale)",
  "Shift": "Sposta tonalità",
  "Tint": "Tinta",
- "Shift: move every pixel's hue toward the colour, keeping the texture's variation. Tint: replace hue and saturation, keeping only the lightness.": "Sposta tonalità: sposta la tonalità di ogni pixel verso il colore, mantenendo la variazione della texture. Tinta: sostituisce tonalità e saturazione, mantenendo solo la luminosità.",
+ "Shift: move every pixel's hue toward the colour, keeping the texture's variation. Tint: give every pixel the colour's hue, keeping the texture's variation in lightness and saturation.": "Sposta tonalità: sposta la tonalità di ogni pixel verso il colore, mantenendo la variazione della texture. Tinta: dà a ogni pixel la tonalità del colore, mantenendo la variazione di luminosità e saturazione della texture.",
  "Tint the texture": "Colora la texture",
  "Resize/rotate/tint the active texture; with textured faces selected, re-stamps them (undoable)": "Ridimensiona/ruota/colora la texture attiva; con facce con texture selezionate, le riapplica (annullabile)",
  "inward": "verso l'interno",

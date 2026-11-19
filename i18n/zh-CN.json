@@ -1828,7 +1828,7 @@
  "Remove the colour (back to the original image)": "移除颜色 (恢复到原始图像)",
  "Shift": "平移",
  "Tint": "着色",
- "Shift: move every pixel's hue toward the colour, keeping the texture's variation. Tint: replace hue and saturation, keeping only the lightness.": "平移：将每个像素的色调向颜色移动，保留纹理变化。着色：替换色调和饱和度，只保留亮度。",
+ "Shift: move every pixel's hue toward the colour, keeping the texture's variation. Tint: give every pixel the colour's hue, keeping the texture's variation in lightness and saturation.": "平移：将每个像素的色调向颜色移动，保留纹理变化。着色：为每个像素赋予该颜色的色调，保留纹理的亮度和饱和度变化。",
  "Tint the texture": "着色纹理",
  "Resize/rotate/tint the active texture; with textured faces selected, re-stamps them (undoable)": "调整/旋转/着色活动纹理；选择有纹理的面后，重新盖章（可撤销）",
  "inward": "向内",
