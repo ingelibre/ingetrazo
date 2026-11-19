@@ -1854,6 +1854,12 @@ def layer_of(entity) -> str:
     return getattr(entity, "layer", None) or DEFAULT_LAYER
 
 
+def is_taggable(entity) -> bool:
+    """Whether one entity takes a layer: :func:`taggable` for one (PR #701,
+    which found images skipped by every road that moves the selection)."""
+    return bool(taggable((entity,)))
+
+
 def assign_layer(entity, name: str) -> None:
     """Label an entity with a layer (default name clears the label)."""
     value = None if name == DEFAULT_LAYER else name
