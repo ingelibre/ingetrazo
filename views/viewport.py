@@ -673,6 +673,9 @@ def _lean_instanced() -> bool:
         return _LEAN_INSTANCED
     from core import _native
     return _native.native is not None
+#: From this many loose edges the snap prefilter's distances go to the
+#: engine (10 000: 0.44 ms in NumPy, 0.12 ms native; 2 000: the same).
+_LOOSE_NATIVE_MIN = 4096
 #: The snap engine's occlusion rays go through core._native's kernel when
 #: the experimental engine is on (tests compare both).
 _OCCL_NATIVE = True
@@ -18329,12 +18332,19 @@ class Viewport(QOpenGLWidget):
         ax, ay, bx, by, ok = proj
         if not ok.any():
             return []
-        dx, dy = bx - ax, by - ay
-        l2 = dx * dx + dy * dy
-        safe = np.where(l2 > 1e-12, l2, 1.0)
-        t = np.clip(((px - ax) * dx + (py - ay) * dy) / safe, 0.0, 1.0)
-        d = np.hypot(ax + t * dx - px, ay + t * dy - py)
-        d = np.where(ok, d, np.inf)
+        # The same distances through the engine when it is on (its
+        # arithmetic is _numpy_distances', checked at start-up by
+        # _native_pass): ~0.4 ms of NumPy a snap over the Plaza's 9 674-face
+        # group, and again each move of a push (19-11).
+        from core.edge_grid import _native_pass, _numpy_distances
+        mod = _native_pass() if len(ax) >= _LOOSE_NATIVE_MIN else None
+        if mod is not None:
+            f = np.ascontiguousarray
+            d = np.asarray(mod.segment_distances(
+                f(ax, np.float64), f(ay, np.float64), f(bx, np.float64),
+                f(by, np.float64), f(ok, bool), float(px), float(py), None))
+        else:
+            d = _numpy_distances(ax, ay, bx, by, ok, px, py)
         cand = np.where(d < radius_px)[0]
         if len(cand) > cap:
             cand = cand[np.argsort(d[cand])[:cap]]

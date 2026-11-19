@@ -1430,6 +1430,169 @@ def _perpendicular_face_snap(
     return SnapResult(locked, "perp_face", COLOR_REFERENCE)
 
 
+def _pair_meetings(edges):
+    """``(e1, e2, point)`` for each pair of ``edges`` (in pair order) that
+    ``segment_intersection`` finds meeting. Through the engine when it
+    gives Python's very points (``_native_hits``): the first stroke of a
+    Line inside the Plaza's 9 674-face group asked ~470 pairs, ~20 ms of
+    Python (19-11); a pair whose arithmetic raises in Python is asked of
+    Python, which raises there as before."""
+    from core.topology import segment_intersection
+    pairs = list(_pairs_that_may_meet(edges))
+    mod, hypot = (_native_hits() if len(pairs) >= _HITS_NATIVE_MIN
+                  else (None, None))
+    if mod is None:
+        for i, j in pairs:
+            e1, e2 = edges[i], edges[j]
+            hit = segment_intersection(e1.a, e1.b, e2.a, e2.b)
+            if hit is not None:
+                yield e1, e2, hit
+        return
+    import numpy as np
+    from core.topology import _SPLIT_TOLERANCE
+    ends = np.array([(e.a.x(), e.a.y(), e.a.z(), e.b.x(), e.b.y(), e.b.z())
+                     for e in edges], dtype=np.float32).reshape(-1, 2, 3)
+    ij = np.array(pairs, dtype=np.int64).reshape(-1, 2)
+    status, pts = mod.segment_hits(ends, np.ascontiguousarray(ij[:, 0]),
+                                   np.ascontiguousarray(ij[:, 1]),
+                                   _SPLIT_TOLERANCE, hypot)
+    if _HITS_SHADOW[0] > 0:
+        # Still on trial: Python answers, and the engine's answers are
+        # compared with it (see _native_hits).
+        out = []
+        same = True
+        for k, (i, j) in enumerate(pairs):
+            e1, e2 = edges[i], edges[j]
+            hit = segment_intersection(e1.a, e1.b, e2.a, e2.b)
+            if status[k] != 2 and not _same_hit(status[k], pts[k], hit):
+                same = False
+            if hit is not None:
+                out.append((e1, e2, hit))
+        _HITS_SHADOW[0] = _HITS_SHADOW[0] - len(pairs) if same else 0
+        if not same:
+            _set_hits_native((None, None))
+        yield from out
+        return
+    for k in np.flatnonzero(status).tolist():
+        e1, e2 = edges[pairs[k][0]], edges[pairs[k][1]]
+        if status[k] == 1:
+            x, y, z = pts[k].tolist()
+            yield e1, e2, QVector3D(x, y, z)
+        else:
+            hit = segment_intersection(e1.a, e1.b, e2.a, e2.b)
+            if hit is not None:
+                yield e1, e2, hit
+
+
+#: From this many pairs the intersection snap asks the engine.
+_HITS_NATIVE_MIN = 8
+#: (module, hypot) once the engine's pairs were found to be Python's, or
+#: (None, None); unset until first asked.
+_HITS_NATIVE = None
+#: How many live pairs are still answered by Python and compared with the
+#: engine before the engine answers alone (any difference: Python for good).
+_HITS_SHADOW = [300]
+
+
+def _set_hits_native(value):
+    global _HITS_NATIVE
+    _HITS_NATIVE = value
+
+
+def _same_hit(status, pt, hit) -> bool:
+    if hit is None:
+        return status == 0
+    return status == 1 and tuple(pt.tolist()) == (hit.x(), hit.y(), hit.z())
+
+
+def _native_hits():
+    """``(core._native module, its QVector3D hypot)`` when the engine's
+    ``segment_hits`` may stand in for ``segment_intersection`` here, else
+    ``(None, None)``. Checked once on a fixed sample — crossings, near
+    misses, parallels, shared ends, zero length, guide lines of ±10 km,
+    NaN and infinity: the sums are CPython's compensated ``sum`` and the
+    powers its C library's ``pow``, which another build may round
+    otherwise — and then on the first live pairs (``_HITS_SHADOW``), still
+    answered by Python: the sample is kept small (~5 ms), as it runs on the
+    first stroke."""
+    if _HITS_NATIVE is not None:
+        return _HITS_NATIVE
+    from core import _native
+    mod = _native.native
+    if mod is None or not hasattr(mod, "segment_hits"):
+        return None, None                 # not cached: the switch may change
+    hypot = _native.qt_hypot()
+    _set_hits_native((None, None))
+    if hypot is None:
+        return _HITS_NATIVE
+    try:
+        if _hits_match(mod, hypot, _hit_sample()):
+            _set_hits_native((mod, hypot))
+    except Exception:  # noqa: BLE001 — then Python
+        pass
+    return _HITS_NATIVE
+
+
+def _hit_sample(seed=1458, n=400):
+    """Segments (N, 2, 3) float32 and pairs for ``_hits_match``: ones that
+    cross, near misses, parallels, shared ends, zero length, guide lines
+    of ±10 km, and NaN and infinity."""
+    import numpy as np
+    rng = np.random.default_rng(seed)
+    a = rng.normal(size=(n, 3)) * 10.0 ** rng.uniform(-2, 3, (n, 1))
+    b = a + rng.normal(size=(n, 3)) * 10.0 ** rng.uniform(-5, 4, (n, 1))
+    ends = np.stack([a, b], axis=1)
+    m = n // 2
+    # The second half crosses the first: through a point on it.
+    on = a[:m] + (b[:m] - a[:m]) * rng.uniform(-0.01, 1.01, (m, 1))
+    off = rng.normal(size=(m, 3)) * 10.0 ** rng.uniform(-6, -2, (m, 1))
+    off[: m // 2] = 0.0
+    d = rng.normal(size=(m, 3)) * 10.0 ** rng.uniform(-3, 4, (m, 1))
+    t = rng.uniform(-1.2, 0.2, (m, 1))
+    ends[m:, 0] = on + off + d * t
+    ends[m:, 1] = on + off + d * (t + 1.0)
+    ends[m:m + 20, :, :] = np.round(ends[m:m + 20] * 4) / 4   # on a lattice
+    ends[m + 20:m + 40, 1] = ends[:20, 1] * 3 - ends[:20, 0] * 2  # parallel
+    ends[m + 40:m + 60, 0] = ends[40:60, 1]               # shared ends
+    ends[m + 60:m + 65, 1] = ends[m + 60:m + 65, 0]       # zero length
+    ends[m + 65:m + 85] *= 1e4 / np.maximum(               # guide lines
+        1.0, np.abs(ends[m + 65:m + 85]).max(axis=(1, 2), keepdims=True))
+    ends[m + 85:m + 90, 0, 0] = (np.nan, np.inf, -np.inf, 1e38, -1e38)
+    ends = ends.astype(np.float32)
+    ii = np.arange(m, dtype=np.int64)
+    pairs = np.stack([ii, ii + m], axis=1)
+    extra = rng.integers(0, n, (100, 2))
+    return ends, np.concatenate([pairs, extra]).astype(np.int64)
+
+
+def _hits_match(mod, hypot, sample) -> bool:
+    """Whether the engine's ``segment_hits`` is ``segment_intersection``
+    on ``sample`` (ends, pairs), point for point."""
+    import numpy as np
+    from core.topology import _SPLIT_TOLERANCE, segment_intersection
+    ends, pairs = sample
+    status, pts = mod.segment_hits(ends, np.ascontiguousarray(pairs[:, 0]),
+                                   np.ascontiguousarray(pairs[:, 1]),
+                                   _SPLIT_TOLERANCE, hypot)
+    rows = ends.tolist()
+    for k, (i, j) in enumerate(pairs.tolist()):
+        if status[k] == 2:
+            continue                      # asked of Python anyway
+        p = [QVector3D(*rows[i][0]), QVector3D(*rows[i][1]),
+             QVector3D(*rows[j][0]), QVector3D(*rows[j][1])]
+        try:
+            want = segment_intersection(*p)
+        except (OverflowError, ValueError, ZeroDivisionError):
+            return False                  # Python raised, the engine did not
+        if want is None:
+            if status[k] != 0:
+                return False
+        elif status[k] != 1 or tuple(pts[k].tolist()) != (
+                want.x(), want.y(), want.z()):
+            return False
+    return True
+
+
 def _pairs_that_may_meet(edges):
     """The pairs (i < j, in order) of ``edges`` whose boxes come close
     enough for ``segment_intersection`` to find a meeting: it accepts a
@@ -1477,10 +1640,6 @@ def _intersection_snap(
     topology pass (the endpoint snap wins first); this mainly catches the
     guides, which live outside the mesh, and any unsplit crossing."""
 
-    # Local import: keep the snap engine free of a module-load dependency on
-    # the topology package (and any import cycle it might grow into).
-    from core.topology import segment_intersection
-
     # Only edges whose screen span passes under the cursor can contribute:
     # that keeps the pairwise test tiny and stops a far-away crossing (whose
     # pixel happens to land near the cursor by coincidence of depth) from
@@ -1524,11 +1683,8 @@ def _intersection_snap(
         if dh <= et:
             found.append((dh, hit, o1, o2))
 
-    for i, j in _pairs_that_may_meet(near_edges):
-        e1, e2 = near_edges[i], near_edges[j]
-        hit = segment_intersection(e1.a, e1.b, e2.a, e2.b)
-        if hit is not None:
-            _offer(hit, e1, e2)
+    for e1, e2, hit in _pair_meetings(near_edges):
+        _offer(hit, e1, e2)
     for circ in near_circles:
         for e in near_edges:
             for p in _segment_circle_intersections(
