@@ -3765,5 +3765,9 @@
  "Architect. The units system, the Browser, Layers 2.0, the Solid Inspector, Fillet 3D bevels, Bridge, Join Segments, Camera ▸ Axes, soft ambient occlusion, round curved surfaces, view layouts, scenes as tabs, cleaner exports and many everyday editing tools. And for 0.6.2: the North tool, camera settings, scene transitions with video and the view as layered SVG.": "Architekt. Das Einheitensystem, der Browser, Ebenen 2.0, der Körper-Prüfer, die Fasen von Fillet 3D, Brücke, Segmente verbinden, Kamera ▸ Achsen, weiche Umgebungsverdeckung, gerundete gekrümmte Flächen, Ansichtslayouts, Szenen als Registerkarten, sauberere Exporte und viele alltägliche Bearbeitungswerkzeuge. Und für 0.6.2: das Nord-Werkzeug, die Kameraeinstellungen, Szenenübergänge mit Video und die Ansicht als SVG in Ebenen.",
  "Korean translation of the interface, and the AI key from an environment variable. In 0.6.2, soft shadows and fixes for macOS.": "Koreanische Übersetzung der Oberfläche und der KI-Schlüssel aus einer Umgebungsvariablen. In 0.6.2 die weichen Schatten und Korrekturen für macOS.",
  "Exact Move+Ctrl copies, overlapping rotated copies, faster box selection on huge models and the reviewed Indonesian translation.": "Exakte Kopien mit Verschieben+Strg, sich überlappende gedrehte Kopien, schnellere Rahmenauswahl in riesigen Modellen und die überarbeitete indonesische Übersetzung.",
- "Snapping to the rest of the model from inside a group or component.": "Fangen am übrigen Modell aus einer Gruppe oder Komponente heraus."
+ "Snapping to the rest of the model from inside a group or component.": "Fangen am übrigen Modell aus einer Gruppe oder Komponente heraus.",
+ "Location": "Standort",
+ "This model has no location yet.": "Dieses Modell hat noch keinen Standort.",
+ "Clear location": "Standort entfernen",
+ "This model has survey points, traced paths or a drone survey placed by its location: change it in the Terrain panel.": "Dieses Modell enthält Vermessungspunkte, Geo-Pfade oder eine Drohnenvermessung, die nach seinem Standort platziert sind: Ändere ihn im Gelände-Bereich."
 }
