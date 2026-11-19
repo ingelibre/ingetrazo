@@ -10804,6 +10804,12 @@ class MainWindow(QMainWindow):
         (3D text) re-orients the group onto the face under the cursor;
         ``anchor`` is the point the cursor holds (default: base centre)."""
         from tools.place_group import PlaceGroupTool
+        if self.__dict__.get("_empty_on"):
+            # Inserting from the empty area (its filter refuses every tool)
+            # goes into the blank project behind it, like an import does:
+            # bring it on show instead of refusing, or placing in a hidden
+            # viewport.
+            self._leave_empty_area()
         if not self._tool_allowed("place_group", PlaceGroupTool.name):
             return
         self.viewport.set_active_tool(PlaceGroupTool(
