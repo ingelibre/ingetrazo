@@ -351,3 +351,27 @@ def test_the_resize_hint_fits_the_bar_in_every_language(monkeypatch):
             assert len(text) <= 112, f"{lang}: {text}"
     finally:
         set_language("en")
+
+
+def test_a_model_resize_takes_grouped_photos_along():
+    # Photos kept as images inside a group (#935) are not mesh vertices:
+    # the photo group keeps a placement matrix (it never bakes, see
+    # Group.make_unique), so the resize must reach them through it, or the
+    # picture would stay at its old size while the model around it grows.
+    from core.history import MakeImageGroupCommand
+    scene = Scene()
+    _square(scene.mesh, 0.0, 0.0, 1.0)
+    photo = ImagePlane("a.png", V(1, 0), V(2, 0), V(0, 1))
+    scene.image_planes.append(photo)
+    hist = History(scene)
+    hist.execute(MakeImageGroupCommand([photo]))
+    group = scene.groups[0]
+    assert group.xform is not None and not scene.image_planes
+
+    def corners():
+        return [group.xform.map(c) for c in group.images[0].corners()]
+
+    hist.execute(ResizeCommand(scene, 2.0, anchor=V(0, 0)))
+    assert _close(corners()[0], V(2, 0)) and _close(corners()[2], V(6, 2))
+    assert hist.undo()
+    assert _close(corners()[0], V(1, 0)) and _close(corners()[2], V(3, 1))

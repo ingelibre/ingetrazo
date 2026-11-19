@@ -4078,5 +4078,13 @@
  "Make a component from photos separately from model geometry": "Fes un component amb les fotos a part de la geometria del model",
  "This group contains a photo, not editable geometry — explode it to edit the image": "Aquest grup conté una foto, no geometria editable — descompon-lo per editar la imatge",
  "Image corner placed — move the pointer and click to set its size, or type a width and press Enter (Esc cancels)": "Cantonada de la imatge col·locada — mou el punter i fes clic per fixar-ne la mida, o escriu una amplada i prem Retorn (Esc cancel·la)",
- "Image placed at its natural display size — use Image size… for an exact model width": "Imatge col·locada a la seva mida natural de visualització — fes servir Mida de la imatge… per a una amplada exacta al model"
+ "Image placed at its natural display size — use Image size… for an exact model width": "Imatge col·locada a la seva mida natural de visualització — fes servir Mida de la imatge… per a una amplada exacta al model",
+ "Type a length greater than zero to resize": "Escriu una longitud més gran que zero per redimensionar",
+ "Resized: the distance is now {d}": "Redimensionat: la distància ara és {d}",
+ "Do you want to resize the model?": "Vols redimensionar el model?",
+ "Note that components loaded from external files will not be resized.": "Tingues en compte que els components carregats des de fitxers externs no es redimensionaran.",
+ "Do you want to resize the active component?": "Vols redimensionar el component actiu?",
+ "Do you want to resize the active group?": "Vols redimensionar el grup actiu?",
+ "Resize": "Redimensiona",
+ "Type the new length and Enter to resize.": "Escriu la nova longitud i prem Retorn per redimensionar."
 }
