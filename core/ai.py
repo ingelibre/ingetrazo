@@ -424,10 +424,17 @@ def run_transactional(viewport, code: str, scope: dict) -> dict:
     build_scope(viewport, scope)
     history = viewport.history
     out_buf, err_buf = io.StringIO(), io.StringIO()
+    scene = viewport.scene
+    version_before = scene.version
+    #: Version bumps the agent's own code made (an API call that reports a
+    #: change bumps it): those keep the document dirty even when the
+    #: snapshot finds nothing different.
+    code_bumps = [0]
 
     def mutate(_scene) -> None:
         old_out, old_err = sys.stdout, sys.stderr
         sys.stdout, sys.stderr = out_buf, err_buf
+        v_in = _scene.version
         try:
             try:
                 compiled = compile(code, "<ai>", "eval")
@@ -447,6 +454,7 @@ def run_transactional(viewport, code: str, scope: dict) -> dict:
             raise
         finally:
             sys.stdout, sys.stderr = old_out, old_err
+            code_bumps[0] = _scene.version - v_in
 
     cmd = SnapshotImport(mutate)
     saved_redo = list(history.redo_stack)
@@ -465,6 +473,16 @@ def run_transactional(viewport, code: str, scope: dict) -> dict:
             history.undo_stack.pop()
             history.redo_stack[:] = saved_redo
             changed = False
+            # The command's own machinery bumped ``version`` (the snapshot
+            # command does on every run): nothing changed, so those bumps are
+            # view-only and ``content_version`` — what «unsaved changes»
+            # compares — stays put. Left as content, «x = 1» answered
+            # «changed: False» and still marked the document modified, and
+            # the agent's shutdown was then refused (0.6.3 modelling test,
+            # 20-11). ``version`` still moves on, so every cache refreshes.
+            machinery = scene.version - version_before - code_bumps[0]
+            if machinery > 0:
+                scene.view_version += machinery
     else:
         changed = False
     viewport.notify_scene_changed()
