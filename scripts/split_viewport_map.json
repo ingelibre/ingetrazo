@@ -245,6 +245,14 @@
   "_pick_vertex_unbaked": {
    "module": "picking",
    "why": "pick_vertex over the lazy placements, beside pick_vertex"
+  },
+  "_apply_fog_uniforms": {
+   "module": "render",
+   "why": "arms the distance fog in the frame, right after the sky and backdrop are drawn"
+  },
+  "_draw_style_ground": {
+   "module": "render",
+   "why": "the style's optional ground plane, composited in the frame after the model"
   }
  },
  "pr901": {
