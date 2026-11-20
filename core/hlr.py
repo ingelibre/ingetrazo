@@ -72,10 +72,16 @@ def collect_geometry(scene, layers: bool = False):
     (silhouette test happens per view).
 
     ``layers=True`` also returns, for every hard and soft edge, the layer
-    its line is inked with on a sheet — its own, else its object's (the
-    insides of an object follow the object) — and the same for every
+    its line is inked with on a sheet — its own, else the nearest
+    container's that has one (the insides of an object follow the object)
+    — and the same for every
     triangle, whose layer its section cut is inked and filled with:
-    ``(tris, hard, soft, hard_layers, soft_layers, tri_layers)``."""
+    ``(tris, hard, soft, hard_layers, soft_layers, tri_layers)``.
+
+    The hard and soft edges of a folded group still take the top-level
+    object's layer: the fold welds them, so a shared edge no longer knows
+    which placement it came from — only the triangles carry the nearest
+    container's layer there (#1503)."""
     from core.group import visible_placements, world_mesh
     from core.layers import DEFAULT_LAYER, layer_of
 
@@ -86,13 +92,15 @@ def collect_geometry(scene, layers: bool = False):
     soft_l: list = []
     tri_l: list = []
 
-    def eat_mesh(mesh, visible=lambda _e: True, owner=DEFAULT_LAYER):
-        for face in mesh.faces:
+    def eat_mesh(mesh, visible=lambda _e: True, owner=DEFAULT_LAYER,
+                 owners=None):
+        for i, face in enumerate(mesh.faces):
             _progress.tick()
             if not visible(face):
                 continue
             own = layer_of(face)
-            tag = own if own != DEFAULT_LAYER else owner
+            tag = own if own != DEFAULT_LAYER else (
+                owners[i] if owners is not None else owner)
             for a, b, c in face.triangulate():
                 tri_l.append(tag)
                 tris.append(((a.x(), a.y(), a.z()),
@@ -126,14 +134,29 @@ def collect_geometry(scene, layers: bool = False):
     for g in scene.groups:
         if not scene.entity_visible(g) or getattr(g, "billboard", False):
             continue
+        placed = None
         if g.children:
-            mesh = world_mesh(g, visible_placements(scene, g))
+            if layers:
+                # The fold welds every placement's faces into one mesh, in
+                # placement order and one face per source face — so each
+                # face keeps the layer of the placement it came from, the
+                # nearest container's, not the top-level object's (#1503).
+                placed = list(visible_placements(scene, g, with_layer=True))
+                mesh = world_mesh(g, [(pg, m) for pg, m, _ly in placed])
+            else:
+                mesh = world_mesh(g, visible_placements(scene, g))
         else:
             mesh = world_mesh(g) if g.xform is not None else g.mesh
         # A face hidden inside a group (Edit ▸ Hide) leaves the group's
         # chunk in the viewport; it leaves the sheet too.
+        owners = None
+        if placed is not None:
+            owners = [ly for pg, _m, ly in placed
+                      for _ in range(len(pg.mesh.faces))]
+            if len(owners) != len(mesh.faces):
+                owners = None     # never mis-tag on a miscount
         eat_mesh(mesh, visible=lambda e: not scene.entity_hidden(e),
-                 owner=layer_of(g))
+                 owner=layer_of(g), owners=owners)
     if layers:
         return tris, hard, soft, hard_l, soft_l, tri_l
     return tris, hard, soft

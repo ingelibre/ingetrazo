@@ -1586,6 +1586,31 @@ def layer_of(entity) -> str:
     return getattr(entity, "layer", None) or DEFAULT_LAYER
 
 
+def inherited_layer(entity, parents=None) -> str:
+    """The layer an entity is drawn with: its own, else the nearest
+    ancestor's that has one, else the default layer.
+
+    ``entity`` is a group (a face maps to its owning object first: the
+    face's own layer wins before this is even asked). The walk follows
+    ``owner`` — the object a click selects — and then ``parents``, a
+    ``{id(group): parent group}`` map for trees the entity does not
+    carry (the pick index's placement proxies already wear the nearest
+    container's layer in ``layer`` itself, so they answer at once).
+    A cycle or a missing link ends at the default layer, never a loop."""
+    seen: set = set()
+    node = entity
+    while node is not None and id(node) not in seen:
+        seen.add(id(node))
+        name = layer_of(node)
+        if name != DEFAULT_LAYER:
+            return name
+        nxt = getattr(node, "owner", None)
+        if nxt is None and parents is not None:
+            nxt = parents.get(id(node))
+        node = nxt
+    return DEFAULT_LAYER
+
+
 def assign_layer(entity, name: str) -> None:
     """Label an entity with a layer (default name clears the label)."""
     value = None if name == DEFAULT_LAYER else name
