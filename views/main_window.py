@@ -12969,7 +12969,10 @@ class MainWindow(QMainWindow):
     def _saved_version(self, version: int) -> None:
         doc = self.__dict__.get("_doc")
         scene = getattr(getattr(doc, "viewport", None), "scene", None)
-        view = getattr(scene, "view_version", 0) if version >= 0 else 0
+        # What content_version leaves out: the view-only bumps and the
+        # objects a sheet frame showed for a moment (Scene.bump_shown).
+        view = ((getattr(scene, "view_version", 0)
+                 + getattr(scene, "shown_version", 0)) if version >= 0 else 0)
         self._saved_content = version - view
 
     def _is_dirty(self) -> bool:

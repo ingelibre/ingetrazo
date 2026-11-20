@@ -846,7 +846,7 @@ def test_the_scene_pictures_do_not_rebuild_the_list_nor_touch_the_document():
     panel = page.scenes
     panel._icon_for = lambda name: QIcon(pm)
     win._composer.show()
-    win._composer._show_page("views")
+    win._composer._show_page("scenes")       # their own tab (20-11)
     fills = []
     real = panel.refresh
     panel.refresh = lambda: (fills.append(1), real())
