@@ -7,6 +7,13 @@ below were recorded from the writer BEFORE that work (main at bebde88d,
 v0.6.2): a default save of the same scenes — and a resave of every example
 document — must still produce the same document.
 
+Re-recorded once on the 0.6.3 integration when batch 3 was merged (19-11),
+after checking member by member that the only differences are optional
+keys older readers ignore: the document's ``ifc_namespace`` (#1236), the
+uid a pre-uid group now derives from it instead of a fresh random one
+(#1236, so IFC GlobalIds stay stable across opens), and the five fog
+fields a non-default display style now writes (#1139).
+
 A plain-JSON document is fingerprinted byte for byte. A ZIP container by
 its members — name, compression method, timestamp and uncompressed bytes —
 so the fingerprint holds on any zlib build (a different deflate library
@@ -36,22 +43,22 @@ _PNG = bytes.fromhex(
     "8ed2668001260624809b030036840118deb819e60000000049454e44ae426082")
 
 SCENE_FINGERPRINTS = {
-    "format1": "14f3f466a75b1ca9e0d88886e5d03d163e157f7a87bc20b71b3bca760a40bbcd",
-    "format2": "3ff5ea15fffafc295bb3ad22b11d40293a2b6f9d51b4570f9e500e78ebbbb10d",
-    "format3": "55d8ad28101acb5d6d60190ddb0c78c29187565537a21c337f4ef4f8311e5cc3",
+    "format1": "1a9896a000e204097c28bb58099fa8079414c3037832c0d593a43dc3e0ae574e",
+    "format2": "e4a80180974c857086ae8ea75d13f229a5b5c6123c2f18bee870bd0e50821503",
+    "format3": "dbd3015084bf45dee3548f6e687e05057b1d5635c27ddcaa44eab5fc8d9a1799",
 }
 EXAMPLE_FINGERPRINTS = {
-    "arco-yanque.igz": "47841b1c98c75881f55e1b403ec69602c1f83cb35667372c7dd254b43fd096b4",
-    "banca-pergola-yanque.igz": "a69689671277576ffb7a9d27f2a492324fb612ff6a5a1aeef97aa8876e0bc791",
+    "arco-yanque.igz": "618fe8eed2a53e39f0eb9826fa7f9a4237a296048f2f117c906a3732d68219a2",
+    "banca-pergola-yanque.igz": "0794d9b73bbe9b6654340927068cb85c2561c1363c014029f1f1b5c3526472ca",
     # Re-recorded on the 0.6.3 base (n63-tanda-e, c511b2e7) when PR #1494
     # was merged: that example has a legend, and 0.6.3 writes a legend's
     # new optional fields (editable rows, a background) — added with
     # defaults, an older file opens the same. The PR's writer gives the
     # same document as that base, which is what this test guards.
-    "capas-prueba.igz": "b04244026a4fefdc65c5ddc90ba673f9a4df3c65cabf19c39542f7b81770ea89",
-    "luminaria-solar-yanque.igz": "a771e3753d9f6f86f7afce0b0891ab7bb5ba082c890041d0a81df3f5be8bd561",
-    "pestanas-prueba.igz": "bce41ef590f2b2c68050fe62c8e9772c57922eb852d78bfc83ac57944bc1753e",
-    "pileta-fuente-yanque.igz": "4d8d29ba1eb2238cb61b2e546c960a86f5bd1396a51b3fb5fcbbdc1009161b97",
+    "capas-prueba.igz": "9d1e0b1828801a4863dfc57e94161367f7d3a7c0e800d5cc81772b0c1730013e",
+    "luminaria-solar-yanque.igz": "06479e076ed3cab8f9a97c40b6d963b093eb397dba413030087657728f521e99",
+    "pestanas-prueba.igz": "5fe020d57bc410ebadfe34ec4db91e75d248753e28d89707a79df65550fd39b6",
+    "pileta-fuente-yanque.igz": "4fa5286c8afe2d14882c68c82a6e6030b0b3618a73093f9fdbab12ae58ed21c9",
 }
 
 
@@ -116,7 +123,10 @@ def save_kind(kind: str, tmp_path: Path, monkeypatch) -> Path:
         texture = tmp_path / "wood.png"
         texture.write_bytes(_PNG)
     out = tmp_path / f"{kind}.igz"
-    igz.save_scene(_scene(texture), out)
+    scene = _scene(texture)
+    # PR #1236: a new document draws a random IFC namespace; pinned here.
+    scene.ifc_namespace = "0123456789abcdef0123456789abcdef"
+    igz.save_scene(scene, out)
     return out
 
 

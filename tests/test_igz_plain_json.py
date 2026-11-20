@@ -118,7 +118,11 @@ def test_untextured_it_is_a_format_1_document_with_its_mark(tmp_path,
         count = itertools.count()
         monkeypatch.setattr(core.group, "new_uid",
                             lambda: f"{next(count):016x}")
-        igz.save_scene(_scene(), tmp_path / f"{name}.igz", fmt=name)
+        scene = _scene()
+        # PR #1236: every document carries its own random IFC namespace;
+        # the two saves must compare as the same document.
+        scene.ifc_namespace = "0123456789abcdef0123456789abcdef"
+        igz.save_scene(scene, tmp_path / f"{name}.igz", fmt=name)
     auto = json.loads((tmp_path / "auto.igz").read_bytes())
     plain = json.loads((tmp_path / "json.igz").read_bytes())
     assert plain.pop("layout") == igz.PLAIN_JSON_LAYOUT
