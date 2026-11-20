@@ -615,7 +615,12 @@ class _ViewportPackage(_vp_types.ModuleType):
 
     def __setattr__(self, name, value):
         held = [p for p in _PARTS if name in vars(p)]
-        if not isinstance(value, _vp_types.ModuleType):
+        # Python itself sets a part on the package as it imports it; that
+        # one is not passed on. Any other module (``sys`` given back after
+        # a test faked it) is, or the parts keep the fake.
+        own_part = (isinstance(value, _vp_types.ModuleType)
+                    and value.__name__ == f"{self.__name__}.{name}")
+        if not own_part:
             for part in held:
                 setattr(part, name, value)
         if not held or name in vars(self):
