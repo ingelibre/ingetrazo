@@ -84,11 +84,20 @@ class _Client:
         self.sock = socket.create_connection(("127.0.0.1", port), timeout=120)
         self.n = 0
         self.buf = b""
+        self.ids: dict | None = None
 
     def call(self, tool: str, **args) -> dict:
+        # #892: every request but list_documents names its window and
+        # document; the window-less IngeTrazo has exactly one.
+        if tool != "list_documents" and self.ids is None:
+            doc = self.call("list_documents")["result"]["documents"][0]
+            self.ids = {"instance_id": doc["instance_id"],
+                        "document_id": doc["document_id"]}
         self.n += 1
-        self.sock.sendall((json.dumps({"id": self.n, "tool": tool,
-                                       "args": args}) + "\n").encode())
+        self.sock.sendall((json.dumps(
+            {"id": self.n, "tool": tool, "args": args,
+             **(self.ids if tool != "list_documents" else {})})
+            + "\n").encode())
         while b"\n" not in self.buf:
             chunk = self.sock.recv(65536)
             if not chunk:

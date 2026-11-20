@@ -36,6 +36,11 @@ def _rpc(proc, n, method, params=None) -> dict:
 
 
 def _tool(proc, n, name, **args) -> dict:
+    if name != "list_documents" and "document_id" not in args:
+        # #892: the agent names the document; the server's own IngeTrazo
+        # has exactly one.
+        listed = json.loads(_text(_tool(proc, 1000 + n, "list_documents")))
+        args["document_id"] = listed["documents"][0]["document_id"]
     return _rpc(proc, n, "tools/call", {"name": name, "arguments": args})[
         "result"]
 

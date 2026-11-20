@@ -325,7 +325,8 @@ def test_stdio_preserves_initialize_notifications_and_json_rpc(monkeypatch):
     assert [response["id"] for response in responses] == [1, 2, 3, 4, 5]
     assert all(response["jsonrpc"] == "2.0" for response in responses)
     initialize = responses[0]["result"]
-    assert initialize["protocolVersion"] == "2024-11-05"
+    # PR #463: a client that names no revision gets the newest one.
+    assert initialize["protocolVersion"] == module.PROTOCOLS[0]
     assert initialize["capabilities"] == {"tools": {}}
     assert initialize["serverInfo"]["name"] == "ingetrazo"
     assert "list_documents" in initialize["instructions"]
