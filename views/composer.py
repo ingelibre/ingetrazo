@@ -11848,7 +11848,9 @@ class ComposerWindow(QMainWindow):
         known = (before == getattr(self, "_last_model_version", None)
                  or before == getattr(self, "_sheet_version", None)
                  or before in self.__dict__.get("_sheet_versions", ()))
-        scene.bump_view()
+        # Shown, not merely viewed: the caches of what the model draws key
+        # on geometry_version, which a view bump does not move (20-11).
+        getattr(scene, "bump_shown", scene.bump_view)()
         if known:
             own = self.__dict__.setdefault("_sheet_versions", set())
             own.add(scene.version)
@@ -16033,3 +16035,12 @@ class SceneThumbnailer:
 
     def compute_hlr(self, frame):
         return None                   # pictures are shaded, never vector
+
+    def _own_view_bump(self, scene) -> None:
+        """The borrowed ``_with_frame_camera`` bumps the view when a scene
+        hides objects, through the composer's own counting (19-11). There
+        is no composer here to count it: a plain view bump. Without it the
+        picture raised half way, the live view kept the scene's hidden
+        objects in its caches and the sheets drew a detail scene's objects
+        (Marco, final plaza, 20-11)."""
+        getattr(scene, "bump_shown", scene.bump_view)()

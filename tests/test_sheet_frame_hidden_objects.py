@@ -159,3 +159,73 @@ def test_a_frame_render_is_not_taken_for_a_model_change():
             comp.close()
         win._saved_version = win.viewport.scene.version
         win.close()
+
+
+def test_what_the_model_draws_sees_the_frame_but_the_document_stays_clean():
+    """The caches of what the model IS key on ``geometry_version`` (#158),
+    which a view-only bump does not move: a frame that hid objects with one
+    drew the previous scene's objects (a lamp-post sheet showed the flag,
+    20-11). The frame's bumps move it — in and out — and leave
+    ``content_version``, what «unsaved changes» compares, alone."""
+    from core.composition import MarcoVista
+    from core.saved_views import SavedView
+    from views.composer import ComposerWindow
+    from views.main_window import MainWindow
+    win = MainWindow()
+    comp = None
+    try:
+        sc = win.viewport.scene
+        fountain, water, pergola, post = _plaza(sc)
+        pergola.hidden = post.hidden = True
+        sc.saved_views.append(SavedView.capture("Fountain", sc,
+                                                win.viewport.camera))
+        pergola.hidden = post.hidden = False
+        comp = ComposerWindow(win)
+        frame = MarcoVista(view_key="scene:Fountain", style="vectorial")
+        g0, c0 = sc.geometry_version, sc.content_version
+        inside = comp._with_frame_camera(
+            frame, lambda: (sc.geometry_version, sc.content_version))
+        assert inside[0] > g0, "the model's caches kept the live objects"
+        assert sc.geometry_version > inside[0], \
+            "the model's caches kept the frame's objects after it"
+        assert inside[1] == c0 and sc.content_version == c0, \
+            "showing a scene's objects marked the document as changed"
+    finally:
+        if comp is not None:
+            comp.close()
+        win._saved_version = win.viewport.scene.version
+        win.close()
+
+
+def test_a_scenes_picture_without_the_composer_gives_the_model_back():
+    """The Scenes tab draws its pictures through SceneThumbnailer, which
+    borrows ``_with_frame_camera``: it lacked the composer's
+    ``_own_view_bump``, raised half way, and every picture of a scene that
+    hides objects failed — grey — with the live caches left on that scene
+    (20-11). Each scene's picture is its own, and the model comes back."""
+    from core.saved_views import SavedView
+    from views.composer import SceneThumbnailer
+    from views.main_window import MainWindow
+    win = MainWindow()
+    try:
+        sc = win.viewport.scene
+        fountain, water, pergola, post = _plaza(sc)
+        cam = win.viewport.camera
+        pergola.hidden = post.hidden = True
+        sc.saved_views.append(SavedView.capture("Fountain", sc, cam))
+        pergola.hidden = post.hidden = False
+        fountain.hidden = post.hidden = True
+        sc.saved_views.append(SavedView.capture("Pergola", sc, cam))
+        fountain.hidden = post.hidden = False
+        live = _hidden(sc)
+        th = SceneThumbnailer(win)
+        frame = th.screen_frame(sc.saved_views[0])
+        g0, c0 = sc.geometry_version, sc.content_version
+        seen = th._with_frame_camera(frame, lambda: _hidden(sc))
+        assert {k: seen[k] for k in _OURS} == {
+            "Fountain": False, "Water": False, "Pergola": True, "Post": True}
+        assert _hidden(sc) == live
+        assert sc.geometry_version > g0 and sc.content_version == c0
+    finally:
+        win._saved_version = win.viewport.scene.version
+        win.close()

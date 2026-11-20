@@ -540,6 +540,9 @@ class ShadowMixin:
             bool(self.camera.perspective), self._effective_style().face_mode,
             float(getattr(sh, "darkness", 0.55)),
             bool(getattr(self.scene, "show_section_cuts", True)),
-            getattr(self, "_clip_vec", None).toTuple()
-            if getattr(self, "_clip_vec", None) is not None else None,
+            # Every cut that clips the frame (a plane, or the six faces of
+            # a section box): it read the single _clip_vec of before the
+            # box, gone since, so moving a cut kept the old shadow picture.
+            tuple(v.toTuple() for v in (getattr(self, "_clip_vecs", None)
+                                        or ())),
         )

@@ -86,6 +86,13 @@ class Scene:
     #: arrow rebuilt the pick index of the whole model, ~2 s a move on a
     #: furnished house.
     section_version: int = 0
+    #: How many of ``version``'s bumps showed or hid objects for a moment
+    #: and put them back -- a sheet frame or a scene's picture applying the
+    #: scene's hidden objects. Not a document edit, but what the model draws
+    #: changed: ``geometry_version`` counts them, ``content_version`` not. A
+    #: plain view bump left the caches of what the model is on the previous
+    #: scene's objects (a lamp-post sheet drew the flag, 20-11).
+    shown_version: int = 0
     # Encapsulated chunks (own meshes), isolated from the main mesh's welding.
     groups: list = field(default_factory=list)
     # Annotation entities (static dimensions) — not geometry, drawn as overlays.
@@ -824,6 +831,13 @@ class Scene:
         self.version += 1
         self.view_version += 1
 
+    def bump_shown(self) -> None:
+        """Objects shown or hidden for a moment, not as an edit (see
+        ``shown_version``): every cache refreshes, the document stays
+        clean."""
+        self.version += 1
+        self.shown_version += 1
+
     def bump_sections(self) -> None:
         """The section planes changed and nothing else (see
         ``section_version``): the document is edited, the model is not."""
@@ -832,15 +846,17 @@ class Scene:
 
     @property
     def geometry_version(self) -> int:
-        """``content_version`` without the section planes' own bumps: what
-        the faces, edges and objects are."""
+        """``content_version`` without the section planes' own bumps, and
+        with the objects a frame showed or hid (``shown_version``): what the
+        faces, edges and objects drawn are."""
         return self.version - self.view_version - self.section_version
 
     @property
     def content_version(self) -> int:
         """``version`` minus the view-only bumps: what "unsaved changes"
         compares against the version that was saved."""
-        return self.version - self.view_version
+        return (self.version - self.view_version
+                - getattr(self, "shown_version", 0))
 
     def invert_selection(self) -> int:
         """Edit ▸ Invert Selection (Ctrl+Shift+I): select every
