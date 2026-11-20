@@ -81,6 +81,14 @@ def test_solo_con_aristas_no_aparece(ventana, monkeypatch):
     assert "Hide" in textos, "y las aristas siguen con lo suyo"
 
 
+def test_soft_is_not_in_the_edge_context_menu(ventana, monkeypatch):
+    scene = ventana.viewport.scene
+    face = _cara(scene)
+    edges = scene.mesh.edges[:2]
+    assert "Soft" not in _entradas(ventana, monkeypatch, edges)
+    assert "Soft" not in _entradas(ventana, monkeypatch, [face, edges[0]])
+
+
 def test_invertir_desde_el_menu_da_la_vuelta_a_la_cara(ventana):
     """La entrada tiene que hacer el trabajo, no solo estar."""
     scene = ventana.viewport.scene

@@ -8,8 +8,7 @@ Holds collapsible sections:
   and switches to the Paint tool. ``+ Textura…`` adds an image with a tile size.
 - **Estilo de cota** — precision, unit, font size and colour of dimensions,
   applied live to ``scene.dimension_style``.
-- **Info de entidad** — read-only facts about the current selection (face area,
-  edge length, dimension value, material).
+- **Info de entidad** — facts and editable properties of the current selection.
 
 A ``QDockWidget`` gives docking/floating/closing for free; the sections are a
 vertical stack of lightweight collapsibles inside a scroll area.
@@ -64,6 +63,7 @@ from core.mesh import Edge, Face
 from core.bim import face_net_area
 from core.group import Group
 from core.dimension import Dimension
+from core.section import SectionPlane
 from georef.datum import SceneDatum
 from georef.geopath import GeoPath
 from georef.tiles import DEFAULT_SOURCE_ID, PRESETS, TileLayer, custom_source
@@ -219,6 +219,32 @@ def _color_pixmap(rgb, size=_SWATCH) -> QPixmap:
     pm = QPixmap(size, size)
     pm.fill(QColor.fromRgbF(*rgb))
     return pm
+
+
+def _split_pixmap(front, back, size=_SWATCH) -> QPixmap:
+    """A rectangle split diagonally into two triangles: ``front`` below the
+    diagonal, ``back`` above it."""
+    from PySide6.QtCore import QPointF
+    from PySide6.QtGui import QPainter, QPolygonF
+    pm = QPixmap(size, size)
+    pm.fill(Qt.transparent)
+    painter = QPainter(pm)
+    painter.setPen(Qt.NoPen)
+    painter.setBrush(QColor.fromRgbF(*back[:3]))
+    painter.drawPolygon(QPolygonF([QPointF(0, 0), QPointF(size, 0),
+                                   QPointF(0, size)]))
+    painter.setBrush(QColor.fromRgbF(*front[:3]))
+    painter.drawPolygon(QPolygonF([QPointF(size, size), QPointF(size, 0),
+                                   QPointF(0, size)]))
+    painter.end()
+    return pm
+
+
+def _default_pixmap(size=_SWATCH) -> QPixmap:
+    """The default material — nothing assigned: the front's colour in one
+    triangle and the back's in the other."""
+    from core.style import DEFAULT_BACK_COLOR, DEFAULT_FACE_COLOR
+    return _split_pixmap(DEFAULT_FACE_COLOR, DEFAULT_BACK_COLOR, size)
 
 
 def _default_pixmap(size=_SWATCH) -> QPixmap:
@@ -3954,16 +3980,12 @@ class ShadowsPanel(QWidget):
 
 
 class EntityInfoPanel(QWidget):
-    """Facts about the current selection, plus the one thing an Entity
-    Info panel lets you CHANGE here: the layer (its Tag field). Rafael
-    went looking for it exactly here — «debo de tener que ir a las
-    propiedades del objeto… no sé cómo cambiarlo de aquí» (2026-09-16,
-    39:00) — and found only the Layers panel's button, which he did not
-    understand."""
+    """Facts and editable properties of the current selection."""
 
     def __init__(self, window) -> None:
         super().__init__()
         from PySide6.QtWidgets import QComboBox, QHBoxLayout
+        from views.length_field import LengthSpinBox
         self._window = window
         self._updating = False
         lay = QVBoxLayout(self)
@@ -3972,6 +3994,7 @@ class EntityInfoPanel(QWidget):
         self._label.setWordWrap(True)
         self._label.setTextFormat(Qt.RichText)
         self._label.setStyleSheet("font-size: 12px;")
+        self._label.setAlignment(Qt.AlignLeft | Qt.AlignTop)
         lay.addWidget(self._label)
         # The name of ONE group or component, edited here — where everyone
         # looks for it (issue #214: «there seems to be no way to name this
@@ -3987,11 +4010,20 @@ class EntityInfoPanel(QWidget):
         self._name_edit.editingFinished.connect(self._on_name_edited)
         name_row.addWidget(self._name_caption)
         name_row.addWidget(self._name_edit, 1)
-        self._named = None               # the group the field is showing
+        self._symbol_caption = QLabel(f"{tr('Symbol')}:")
+        self._symbol_edit = QLineEdit()
+        self._symbol_edit.setMaxLength(3)
+        self._symbol_edit.setFixedWidth(
+            self._symbol_edit.fontMetrics().horizontalAdvance("MMM") + 20)
+        self._symbol_edit.editingFinished.connect(self._on_symbol_edited)
+        name_row.addWidget(self._symbol_caption)
+        name_row.addWidget(self._symbol_edit)
+        self._symbol_caption.hide()
+        self._symbol_edit.hide()
+        self._named = None               # the group or section plane shown
         # The segment count of ONE circle, arc or polygon, changed after
         # it is drawn — the «24s» of the tools only reaches the shape just
-        # drawn. It shares the name's line: a curve is never a group, and
-        # the panel keeps its height (see below).
+        # drawn. It shares the name's line: a curve is never a group.
         seg_row = QHBoxLayout()
         seg_row.setContentsMargins(0, 0, 0, 0)
         self._seg_caption = QLabel(tr("Sides:"))
@@ -4002,6 +4034,7 @@ class EntityInfoPanel(QWidget):
         seg_row.addWidget(self._seg_box)
         seg_row.addStretch(1)
         self._curve = None               # (edge, shape) the field is showing
+        self._guide_circle = None
         self._first_row = QStackedWidget()
         for row_lay in (name_row, seg_row):
             page = QWidget()
@@ -4010,6 +4043,49 @@ class EntityInfoPanel(QWidget):
         self._first_row.setSizePolicy(QSizePolicy.Preferred,
                                       QSizePolicy.Fixed)
         lay.addWidget(self._first_row)
+        # Radius of one curve or analytic guide circle.
+        radius_row = QHBoxLayout()
+        radius_row.setContentsMargins(0, 0, 0, 0)
+        self._radius_caption = QLabel(tr("Radius:"))
+        self._radius_box = LengthSpinBox(minimum=0.001, maximum=100000.0)
+        self._radius_box.setKeyboardTracking(False)   # one rebuild per entry
+        self._radius_box.valueChanged.connect(self._on_radius_picked)
+        radius_row.addWidget(self._radius_caption)
+        radius_row.addWidget(self._radius_box)
+        radius_row.addStretch(1)
+        lay.addLayout(radius_row)
+        # The front and back paint of one face, as colour swatches — the same
+        # idiom the Styles panel uses. A click opens the colour dialog.
+        paint_row = QHBoxLayout()
+        paint_row.setContentsMargins(0, 0, 0, 0)
+        self._front_caption = QLabel(tr("Front:"))
+        self._front_btn = QPushButton()
+        self._front_btn.setToolTip(tr("Paint the front of this face"))
+        self._front_btn.clicked.connect(self._on_pick_front)
+        self._back_caption = QLabel(tr("Back:"))
+        self._back_btn = QPushButton()
+        self._back_btn.setToolTip(tr("Paint the back of this face"))
+        self._back_btn.clicked.connect(self._on_pick_back)
+        self._paint_faces = []
+        paint_row.addWidget(self._front_caption)
+        paint_row.addWidget(self._front_btn)
+        paint_row.addWidget(self._back_caption)
+        paint_row.addWidget(self._back_btn)
+        paint_row.addStretch(1)
+        lay.addLayout(paint_row)
+        # The material of one group or component, picked from the document's
+        # named materials — the same list the Materials tab offers.
+        mat_row = QHBoxLayout()
+        mat_row.setContentsMargins(0, 0, 0, 0)
+        self._mat_caption = QLabel(tr("Material:"))
+        self._mat_btn = QPushButton()
+        self._mat_btn.setToolTip(tr("The material of this group or component"))
+        self._mat_btn.clicked.connect(self._on_pick_group_material)
+        self._material_group = None    # the group the material swatch shows
+        mat_row.addWidget(self._mat_caption)
+        mat_row.addWidget(self._mat_btn)
+        mat_row.addStretch(1)
+        lay.addLayout(mat_row)
         row = QHBoxLayout()
         self._layer_caption = QLabel(tr("Layer:"))
         self._layer_box = QComboBox()
@@ -4019,56 +4095,121 @@ class EntityInfoPanel(QWidget):
         row.addWidget(self._layer_caption)
         row.addWidget(self._layer_box, 1)
         lay.addLayout(row)
-        # A steady height. Selecting something used to resize this panel —
-        # one line for nothing, two for an edge, four and a layer row for a
-        # face — and everything below it (layers, scenes, the materials
-        # library) slid up and down with every click (Marco, 23-09, four
-        # screenshots). The layer row keeps its place when hidden, and the
-        # text keeps room for the four lines a face or a solid shows.
-        for w in (self._layer_caption, self._layer_box, self._first_row):
-            pol = w.sizePolicy()
-            pol.setRetainSizeWhenHidden(True)
-            w.setSizePolicy(pol)
+        # Object flags (a group or component): hide and lock as checkboxes,
+        # the way Entity Info shows them. Checking one runs the undo command;
+        # as hide/lock deselect their object, the panel empties afterwards.
+        flags_row = QHBoxLayout()
+        flags_row.setContentsMargins(0, 0, 0, 0)
+        self._hidden_check = QCheckBox(tr("Hidden"))
+        self._hidden_check.setToolTip(
+            tr("Hide this object — it stops drawing and picking until unhidden"))
+        self._hidden_check.toggled.connect(self._on_hidden_toggled)
+        self._locked_check = QCheckBox(tr("Locked"))
+        self._locked_check.setToolTip(
+            tr("Lock this object — it stays drawn but cannot be picked or edited"))
+        self._locked_check.toggled.connect(self._on_locked_toggled)
+        self._soft_check = QCheckBox(tr("Soft"))
+        self._soft_check.clicked.connect(self._on_soft_clicked)
+        self._flagged = None          # the group/component the flags are showing
+        flags_row.addWidget(self._hidden_check)
+        flags_row.addWidget(self._locked_check)
+        flags_row.addWidget(self._soft_check)
+        flags_row.addStretch(1)
+        lay.addLayout(flags_row)
         # One caption column, so the name, count and layer fields start
         # at the same x (they sat at three different ones).
         fm = self._layer_caption.fontMetrics()
         cap_w = max(fm.horizontalAdvance(t) for t in (
-            tr("Name:"), tr("Sides:"), tr("Segments:"), tr("Layer:"))) + 4
+            tr("Name:"), tr("Sides:"), tr("Segments:"), tr("Radius:"),
+            tr("Front:"), tr("Back:"), tr("Material:"), tr("Layer:"))) + 4
         for cap in (self._name_caption, self._seg_caption,
+                    self._radius_caption, self._front_caption,
+                    self._back_caption, self._mat_caption,
                     self._layer_caption):
             cap.setFixedWidth(cap_w)
-        from PySide6.QtGui import QFont, QFontMetrics
-        font = QFont(self._label.font())
-        font.setPixelSize(12)
-        self._label.setMinimumHeight(QFontMetrics(font).lineSpacing() * 4 + 4)
+        lay.addStretch(1)
         self._layer_caption.hide()
         self._layer_box.hide()
         self._first_row.hide()
+        self._radius_caption.hide()
+        self._radius_box.hide()
+        self._front_caption.hide()
+        self._front_btn.hide()
+        self._back_caption.hide()
+        self._back_btn.hide()
+        self._mat_caption.hide()
+        self._mat_btn.hide()
+        self._hidden_check.hide()
+        self._locked_check.hide()
+        self._soft_check.hide()
+        self._update_minimum_height()
+
+    def sizeHint(self):
+        hint = super().sizeHint()
+        hint.setHeight(max(self.minimumHeight(),
+                           self.layout().heightForWidth(self.width())))
+        return hint
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        if event.size().width() != event.oldSize().width():
+            self._update_minimum_height()
+
+    def _update_minimum_height(self):
+        layout = self.layout()
+        # Hidden controls can leave nested row size hints cached until later.
+        for i in range(layout.count()):
+            child = layout.itemAt(i).layout()
+            if child is not None:
+                child.invalidate()
+        layout.invalidate()
+        self.setMinimumHeight(max(0, layout.heightForWidth(self.width())))
 
     def refresh(self) -> None:
         sel = list(self._window.viewport.scene.selection)
         self._label.setText(self._styled(self._describe(sel)))
         self._refresh_name(sel)
         self._refresh_segments(sel)
+        self._refresh_radius(sel)
+        self._refresh_paint(sel)
+        self._refresh_material(sel)
         self._first_row.setVisible(self._named is not None
                                    or self._curve is not None)
         self._refresh_layer(sel)
+        self._refresh_flags(sel)
+        self._refresh_soft(sel)
+        self._update_minimum_height()
 
     # ---- Name field ---------------------------------------------------------
     def _refresh_name(self, sel: list) -> None:
-        one = sel[0] if len(sel) == 1 and isinstance(sel[0], Group) else None
+        one = (sel[0] if len(sel) == 1
+               and isinstance(sel[0], (Group, SectionPlane)) else None)
         changed = one is not self._named
         self._named = one
+        section = isinstance(one, SectionPlane)
+        self._symbol_caption.setVisible(section)
+        self._symbol_edit.setVisible(section)
         if one is None:
             return
         self._first_row.setCurrentIndex(0)
         # Not while typing into it — unless the selection moved on.
-        if changed or not self._name_edit.hasFocus():
+        if (changed or not self._name_edit.hasFocus()
+                or (section and not self._name_edit.isModified())):
             self._name_edit.setText(one.name or "")
+        if section and (changed or not self._symbol_edit.hasFocus()
+                        or not self._symbol_edit.isModified()):
+            self._symbol_edit.setText(one.symbol or "")
+        self._name_edit.setToolTip(
+            tr("Name")
+            if section else
+            tr("The name of the selected group or component — Enter keeps it"))
 
     def _on_name_edited(self) -> None:
         group = self._named
         if group is None:
+            return
+        if isinstance(group, SectionPlane):
+            self._on_section_field_edited("name", self._name_edit)
             return
         name = self._name_edit.text().strip()
         if not name or name == (group.name or ""):
@@ -4077,6 +4218,30 @@ class EntityInfoPanel(QWidget):
         from core.history import RenameGroupCommand
         self._window.viewport.history.execute(RenameGroupCommand(group, name))
         self._window.viewport.update()
+
+    def _on_symbol_edited(self) -> None:
+        self._on_section_field_edited("symbol", self._symbol_edit)
+
+    def _on_section_field_edited(self, field: str, edit: QLineEdit) -> None:
+        plane = self._named
+        vp = self._window.viewport
+        if (not isinstance(plane, SectionPlane)
+                or vp.scene.selection != {plane}):
+            return
+        value = edit.text().strip()
+        old = getattr(plane, field) or ""
+        edit.setModified(False)
+        if not value or value == old:
+            edit.setText(old)
+            return
+        from core.history import RenameSectionPlaneCommand
+        name = value if field == "name" else plane.name
+        symbol = value if field == "symbol" else plane.symbol
+        vp.history.execute(RenameSectionPlaneCommand(plane, name, symbol))
+        if vp.history.last_error:
+            self._window.statusBar().showMessage(vp.history.last_error, 5000)
+        vp.notify_scene_changed()
+        self.refresh()
 
     # ---- Segments field -----------------------------------------------------
     def _refresh_segments(self, sel: list) -> None:
@@ -4127,6 +4292,369 @@ class EntityInfoPanel(QWidget):
                 tr("This curve cannot be rebuilt"), 2500)
         self.refresh()
 
+    # ---- Radius field -------------------------------------------------------
+    def _refresh_radius(self, sel: list) -> None:
+        from core.guide import GuideCircle
+
+        self._guide_circle = (sel[0] if len(sel) == 1
+                              and isinstance(sel[0], GuideCircle) else None)
+        curve = self._curve
+        show = curve is not None or self._guide_circle is not None
+        self._radius_caption.setVisible(show)
+        self._radius_box.setVisible(show)
+        if not show:
+            return
+        self._updating = True
+        try:
+            if self._guide_circle is not None:
+                self._radius_box.setRange(1e-9, max(100000.0, self._guide_circle.radius))
+                self._radius_box.setEnabled(True)
+                self._radius_box.setToolTip(tr("The radius of this guide circle"))
+                self._radius_box.setValue(self._guide_circle.radius)
+            else:
+                _edge, shape = curve
+                self._radius_box.setRange(0.001, 100000.0)
+                self._radius_box.setEnabled(shape.flat or shape.closed)
+                self._radius_box.setToolTip(
+                    tr("The radius of this curve — its connected geometry follows")
+                    if shape.flat or shape.closed else
+                    tr("Only for a flat arc"))
+                self._radius_box.setValue(shape.radius)
+        finally:
+            self._updating = False
+
+    def _on_radius_picked(self, radius: float) -> None:
+        if self._updating:
+            return
+        if self._guide_circle is not None:
+            if radius != self._guide_circle.radius:
+                from core.history import SetGuideCircleRadiusCommand
+                vp = self._window.viewport
+                vp.history.execute(SetGuideCircleRadiusCommand(
+                    self._guide_circle, radius))
+                vp.notify_scene_changed()
+                vp.update()
+                self.refresh()
+            return
+        if self._curve is None:
+            return
+        edge, shape = self._curve
+        if abs(radius - shape.radius) < 1e-9:
+            return
+        from core.curve_segments import RescaleCurveRadiusCommand
+        vp = self._window.viewport
+        vp.history.execute(RescaleCurveRadiusCommand(edge, radius))
+        vp.notify_scene_changed()
+        vp.update()
+        if getattr(vp.history, "last_rejected", None):
+            self._window.statusBar().showMessage(
+                tr("This curve cannot be rescaled"), 2500)
+        elif vp.history.last_error:
+            self._window.statusBar().showMessage(vp.history.last_error, 5000)
+        self.refresh()
+
+    # ---- Materials (face front/back, and a group's container paint) ---------
+    @staticmethod
+    def _set_swatch(btn, color=None, texture=None) -> None:
+        path = (texture or {}).get("path")
+        pm = _texture_pixmap(path) if path else None
+        if pm is None:
+            pm = _default_pixmap() if color is None else _color_pixmap(color)
+        btn.setIcon(QIcon(pm))
+        btn.setIconSize(QSize(_SWATCH, _SWATCH))
+
+    def _named_materials(self):
+        """The document's named materials — the Materials tab's list."""
+        scene = self._window.viewport.scene
+        return [mat for _name, mat in sorted(scene.materials.items())]
+
+    @staticmethod
+    def _texture_paint(attrs):
+        texture = (attrs or {}).get("texture") or {}
+        if not texture.get("path"):
+            return None
+        paint = {key: attrs[key] for key in ("mat", "color", "opacity")
+                 if attrs.get(key) is not None}
+        paint["texture"] = {key: value for key, value in texture.items()
+                            if key != "uvw"}
+        if "color" in paint:
+            paint["color"] = tuple(paint["color"])
+        return paint
+
+    def _model_texture_paints(self):
+        from core.group import iter_placements
+        from core.mesh import face_attrs
+
+        scene = self._window.viewport.scene
+        meshes = [scene.loose_mesh, scene.mesh]
+        seen_meshes = set()
+        for top in scene.groups:
+            for group, _matrix in iter_placements(top):
+                paint = self._texture_paint(group.material)
+                if paint:
+                    yield paint
+                meshes.append(group.mesh)
+        for mesh in meshes:
+            if id(mesh) in seen_meshes:
+                continue
+            seen_meshes.add(id(mesh))
+            for attrs in face_attrs(mesh):
+                for side in (attrs, attrs.get("back")):
+                    if not isinstance(side, dict):
+                        continue
+                    paint = self._texture_paint(side)
+                    if paint:
+                        yield paint
+
+    def _add_material_actions(self, menu, current_name, on_mat, on_default,
+                              same_as_front=False, is_default=False,
+                              current_paint=None) -> None:
+        texture_paints = []
+        labels = set()
+        selected_texture = self._texture_paint(current_paint)
+        for mat in self._named_materials():
+            path = (mat.texture or {}).get("path")
+            pm = _texture_pixmap(path) if path else None
+            if pm is None and mat.color is not None:
+                pm = _color_pixmap(mat.color)
+            icon = QIcon(pm) if pm is not None else QIcon()
+            act = menu.addAction(icon, mat.name)
+            act.setCheckable(True)
+            paint = self._texture_paint(mat.face_attrs())
+            act.setChecked(mat.name == current_name
+                           and (selected_texture is None
+                                or paint == selected_texture))
+            act.triggered.connect(lambda _c=False, m=mat: on_mat(m))
+            labels.add(mat.name)
+            if paint:
+                texture_paints.append(paint)
+        for paint in self._model_texture_paints():
+            if paint in texture_paints:
+                continue
+            texture_paints.append(paint)
+            path = paint["texture"]["path"]
+            label = paint.get("mat") or Path(path).stem
+            base, suffix = label, 2
+            while label in labels:
+                label = f"{base} ({suffix})"
+                suffix += 1
+            labels.add(label)
+            pm = _texture_pixmap(path)
+            act = menu.addAction(QIcon(pm) if pm is not None else QIcon(), label)
+            act.setCheckable(True)
+            act.setChecked(paint == selected_texture)
+            act.triggered.connect(lambda _c=False, p=paint: on_mat(p))
+        if menu.actions():
+            menu.addSeparator()
+        if same_as_front:
+            act = menu.addAction(tr("Same as front"))
+            act.setCheckable(True)
+            act.setChecked(current_name == "__same__")
+            act.triggered.connect(lambda _c=False: on_mat(None, same=True))
+        act = menu.addAction(tr("Default material"))
+        act.setCheckable(True)
+        act.setChecked(is_default)
+        act.triggered.connect(lambda _c=False: on_default())
+
+    def _refresh_material(self, sel: list) -> None:
+        one = sel[0] if len(sel) == 1 and isinstance(sel[0], Group) else None
+        self._material_group = one
+        show = one is not None
+        self._mat_caption.setVisible(show)
+        self._mat_btn.setVisible(show)
+        if one is None:
+            return
+        material = one.material or {}
+        name = material.get("mat")
+        color = material.get("color")
+        texture = material.get("texture") or {}
+        if color is None and name:
+            mat = self._window.viewport.scene.materials.get(name)
+            if mat is not None:
+                color = mat.color
+                if not texture:
+                    texture = mat.texture or {}
+        self._set_swatch(self._mat_btn, color, texture)
+        path = texture.get("path")
+        self._mat_btn.setToolTip(
+            name or (Path(path).stem if path else tr("Color") if color is not None
+                     else tr("Default material — click to paint")))
+
+    def _refresh_paint(self, sel: list) -> None:
+        from core.style import DEFAULT_BACK_COLOR
+        self._paint_faces = [e for e in sel if isinstance(e, Face)]
+        show = bool(self._paint_faces)
+        self._front_caption.setVisible(show)
+        self._front_btn.setVisible(show)
+        self._back_caption.setVisible(show)
+        self._back_btn.setVisible(show)
+        if not show:
+            return
+        for side, btn in (("front", self._front_btn), ("back", self._back_btn)):
+            keys = [self._face_material_identity(face, side)
+                    for face in self._paint_faces]
+            if any(key != keys[0] for key in keys[1:]):
+                btn.setIcon(QIcon())
+                btn.setText("?")
+                btn.setToolTip(tr("Several materials"))
+                continue
+            attrs = self._paint_faces[0].attrs
+            back = attrs.get("back")
+            paint = self._face_side_paint(self._paint_faces[0], side) or {}
+            color = paint.get("color")
+            if side == "back" and isinstance(back, dict) and back and color is None:
+                color = DEFAULT_BACK_COLOR
+            btn.setText("")
+            self._set_swatch(btn, color, paint.get("texture"))
+            if side == "back" and all(
+                    self._face_side_paint(face, side) is face.attrs
+                    for face in self._paint_faces):
+                btn.setToolTip(tr("Same as front"))
+            else:
+                hint = (tr("Paint the front of this face") if side == "front"
+                        else tr("Back painted — click to change")
+                        if isinstance(back, dict)
+                        else tr("Paint the back of this face"))
+                btn.setToolTip(paint.get("mat") or hint)
+
+    @staticmethod
+    def _face_side_paint(face, side):
+        from core.materials import back_is_default
+
+        attrs = face.attrs
+        if side == "front":
+            return attrs
+        back = attrs.get("back")
+        if isinstance(back, dict) and back:
+            return back
+        return None if back_is_default(attrs) else attrs
+
+    @classmethod
+    def _face_material_identity(cls, face, side):
+        attrs = cls._face_side_paint(face, side)
+        if attrs is None:
+            return ("default back",)
+        name = attrs.get("mat")
+        if name:
+            return ("named", name)
+        color = attrs.get("color")
+        texture = attrs.get("texture")
+        if color is None and not texture and attrs.get("opacity") is None:
+            return ("default front",)
+        texture = ({k: v for k, v in texture.items() if k != "uvw"}
+                   if texture else None)
+        return ("paint", tuple(color) if color is not None else None,
+                texture, attrs.get("opacity"))
+
+    def _apply_face_material(self, faces, side, mat, *, same=False) -> None:
+        from core.history import (
+            CompoundCommand, SetFaceBackCommand, SetFaceColorCommand,
+            SetFaceMaterialTagCommand, SetFaceOpacityCommand,
+            SetFaceTextureCommand)
+        vp = self._window.viewport
+        paint = (mat if isinstance(mat, dict)
+                 else mat.face_attrs() if mat is not None else None)
+        if side == "back":
+            if same:
+                vp.history.execute(SetFaceBackCommand(faces, True))
+            elif mat is None:
+                vp.history.execute(SetFaceBackCommand(faces, None))
+            else:
+                vp.history.execute(SetFaceBackCommand(faces, paint))
+        else:
+            if mat is None:
+                vp.history.execute(CompoundCommand([
+                    SetFaceColorCommand(faces, None),
+                    SetFaceTextureCommand(faces, None),
+                    SetFaceOpacityCommand(faces, None),
+                    SetFaceMaterialTagCommand(faces, None),
+                ]))
+            else:
+                vp.history.execute(CompoundCommand([
+                    SetFaceColorCommand(faces, paint.get("color")),
+                    SetFaceTextureCommand(faces, paint.get("texture")),
+                    SetFaceOpacityCommand(faces, paint.get("opacity")),
+                    SetFaceMaterialTagCommand(
+                        faces, paint.get("mat"),
+                        None if isinstance(mat, dict) else mat),
+                ]))
+        vp.notify_scene_changed()
+        vp.update()
+        if vp.history.last_error:
+            self._window.statusBar().showMessage(vp.history.last_error, 5000)
+        self.refresh()
+
+    def _on_pick_front(self) -> None:
+        faces = self._paint_faces
+        if not faces:
+            return
+        from PySide6.QtGui import QCursor
+        identities = [self._face_material_identity(face, "front") for face in faces]
+        same = all(key == identities[0] for key in identities[1:])
+        current = faces[0].attrs.get("mat") if same else None
+        is_default = same and identities[0] == ("default front",)
+        menu = QMenu(self)
+        self._add_material_actions(
+            menu, current,
+            lambda m, same=False: self._apply_face_material(faces, "front", m,
+                                                            same=same),
+            lambda: self._apply_face_material(faces, "front", None),
+            is_default=is_default, current_paint=faces[0].attrs if same else None)
+        menu.exec(QCursor.pos())
+
+    def _on_pick_back(self) -> None:
+        faces = self._paint_faces
+        if not faces:
+            return
+        from PySide6.QtGui import QCursor
+        backs = [face.attrs.get("back") for face in faces]
+        identities = [self._face_material_identity(face, "back") for face in faces]
+        same = all(key == identities[0] for key in identities[1:])
+        if all(back is True for back in backs):
+            current = "__same__"
+        elif same and all(isinstance(back, dict) for back in backs):
+            current = backs[0].get("mat")
+        else:
+            current = None
+        is_default = all(back is not True and not isinstance(back, dict)
+                         for back in backs)
+        menu = QMenu(self)
+        self._add_material_actions(
+            menu, current,
+            lambda m, same=False: self._apply_face_material(faces, "back", m,
+                                                            same=same),
+            lambda: self._apply_face_material(faces, "back", None),
+            same_as_front=True, is_default=is_default,
+            current_paint=backs[0] if same and isinstance(backs[0], dict) else None)
+        menu.exec(QCursor.pos())
+
+    def _apply_group_material(self, group, mat) -> None:
+        from core.history import SetGroupMaterialCommand
+        vp = self._window.viewport
+        paint = (mat if isinstance(mat, dict)
+                 else mat.face_attrs() if mat is not None else None)
+        vp.history.execute(SetGroupMaterialCommand(
+            group, paint))
+        vp.update()
+        self.refresh()
+
+    def _on_pick_group_material(self) -> None:
+        group = self._material_group
+        if group is None:
+            return
+        from PySide6.QtGui import QCursor
+        material = group.material or {}
+        current = material.get("mat")
+        is_default = (current is None and material.get("color") is None
+                      and not material.get("texture"))
+        menu = QMenu(self)
+        self._add_material_actions(
+            menu, current,
+            lambda m, same=False: self._apply_group_material(group, m),
+            lambda: self._apply_group_material(group, None),
+            is_default=is_default, current_paint=material)
+        menu.exec(QCursor.pos())
+
     # ---- Layer field --------------------------------------------------------
     def _refresh_layer(self, sel: list) -> None:
         from core.layers import layer_of, taggable
@@ -4175,27 +4703,92 @@ class EntityInfoPanel(QWidget):
             tr("{n} entities moved to '{layer}'", n=len(targets), layer=name),
             2500)
 
+    # ---- Object flags (Hidden / Locked) -------------------------------------
+    def _refresh_flags(self, sel: list) -> None:
+        one = sel[0] if len(sel) == 1 and isinstance(sel[0], Group) else None
+        self._flagged = one
+        show = one is not None
+        self._hidden_check.setVisible(show)
+        self._locked_check.setVisible(show)
+        if one is None:
+            return
+        self._updating = True
+        try:
+            self._hidden_check.setChecked(bool(one.hidden))
+            self._locked_check.setChecked(bool(one.locked))
+        finally:
+            self._updating = False
+
+    def _on_hidden_toggled(self, hidden: bool) -> None:
+        if self._updating or self._flagged is None:
+            return
+        from core.history import HideCommand
+        vp = self._window.viewport
+        vp.history.execute(HideCommand([self._flagged], hidden=hidden))
+        vp.update()
+        self.refresh()
+
+    def _on_locked_toggled(self, locked: bool) -> None:
+        if self._updating or self._flagged is None:
+            return
+        from core.history import LockCommand
+        vp = self._window.viewport
+        vp.history.execute(LockCommand([self._flagged], locked=locked))
+        vp.update()
+        self.refresh()
+
+    def _refresh_soft(self, sel: list) -> None:
+        edges = [edge for edge in sel if isinstance(edge, Edge)]
+        self._soft_check.setVisible(bool(edges))
+        if not edges:
+            return
+        states = {bool(edge.soft) for edge in edges}
+        mixed = len(states) > 1
+        self._soft_check.setTristate(mixed)
+        self._soft_check.setCheckState(
+            Qt.PartiallyChecked if mixed
+            else Qt.Checked if True in states else Qt.Unchecked)
+
+    def _on_soft_clicked(self, soft: bool) -> None:
+        from core.history import SetEdgeSoftCommand
+
+        vp = self._window.viewport
+        targets = [edge for edge in vp.scene.selection
+                   if isinstance(edge, Edge) and bool(edge.soft) != soft]
+        if targets:
+            vp.history.execute(SetEdgeSoftCommand(targets, soft=soft))
+            vp.notify_scene_changed()
+            if vp.history.last_error:
+                self._window.statusBar().showMessage(vp.history.last_error, 5000)
+        self.refresh()
+
     #: Past this many selected entities the totals are left out (#274).
     TOTALS_UP_TO = 20000
 
     def _describe(self, sel: list) -> str:
+        from core.guide import Guide, GuideCircle
+        from core.image_plane import ImagePlane
+        from core.section import SectionPlane
+        from core.textlabel import TextLabel
         if not sel:
             return tr("Nothing selected")
         if len(sel) == 1:
             e = sel[0]
             if isinstance(e, Face):
-                mat = self._material_of(e)
-                return (f"<b>{tr('Face')}</b><br>{tr('Area')}: {fmt_area(face_net_area(e))}<br>"
-                        f"{tr('Vertices')}: {len(e.vertices)}<br>"
-                        f"{tr('Material')}: {mat}")
+                return self._describe_face(e)
             if isinstance(e, Edge):
                 return (f"<b>{tr('Edge')}</b><br>"
                         f"{tr('Length')}: {fmt_len((e.b - e.a).length())}")
+            if isinstance(e, GuideCircle):
+                return (f"<b>{tr('Guide Circle')}</b><br>"
+                        f"{tr('Diameter')}: {fmt_len(2.0 * e.radius)}")
             if isinstance(e, Dimension):
                 return f"<b>{tr('Dimension')}</b><br>{tr('Measure')}: {fmt_len(e.value())}"
             if isinstance(e, GeoPath):
                 return self._describe_geopath(e)
             if isinstance(e, Group):
+                if getattr(e, "text3d", None) is not None:
+                    return self._describe_text3d(e)
                 # The usual «Solid Group» / «Solid Component» with its
                 # volume, the Solid Tools' own test (core.solids).
                 vol = self._solid_volume(e)
@@ -4216,10 +4809,21 @@ class EntityInfoPanel(QWidget):
                 title = tr("Solid Group") if vol is not None else tr("Group")
                 return (f"<b>{title}</b><br>"
                         f"{tr('Faces')}: {len(e.mesh.faces)}{solid}")
+            if isinstance(e, SectionPlane):
+                return self._describe_section(e)
+            if isinstance(e, ImagePlane):
+                return self._describe_image(e)
+            if isinstance(e, Guide):
+                return self._describe_guide(e)
+            if isinstance(e, TextLabel):
+                return self._describe_textlabel(e)
             return f"<b>{tr('1 entity')}</b>"
         curve = self._describe_curve(sel)
         if curve is not None:
             return curve
+        freehand = self._describe_freehand(sel)
+        if freehand is not None:
+            return freehand
         counts = {"faces": 0, "edges": 0, "dimensions": 0, "groups": 0}
         for e in sel:
             if isinstance(e, Face):
@@ -4282,21 +4886,19 @@ class EntityInfoPanel(QWidget):
             import math
             return "<br>".join([
                 f"<b>{tr('Arc')}</b>",
-                f"{tr('Radius')}: {fmt_len(shape.radius)}",
                 f"{tr('Angle')}: {math.degrees(shape.sweep):.1f}°",
                 f"{tr('Length')}: {fmt_len(length)}"])
         # The Circle and Polygon tools draw the same thing, a regular
         # N-gon; from a dozen sides on it reads as a circle (the tools
-        # default to 24 and 6).
+        # default to 24 and 6). The radius is the editable field below, so
+        # the read-only text keeps only what has no field of its own.
         if n >= 12:
             return "<br>".join([
                 f"<b>{tr('Circle')}</b>",
-                f"{tr('Radius')}: {fmt_len(shape.radius)}",
                 f"{tr('Diameter')}: {fmt_len(2.0 * shape.radius)}",
                 f"{tr('Perimeter')}: {fmt_len(length)}"])
         return "<br>".join([
             f"<b>{tr('Polygon')}</b>",
-            f"{tr('Radius')}: {fmt_len(shape.radius)}",
             f"{tr('Side')}: {fmt_len(side)}",
             f"{tr('Perimeter')}: {fmt_len(length)}"])
 
@@ -4328,17 +4930,89 @@ class EntityInfoPanel(QWidget):
         return "<br>".join(rows)
 
     @staticmethod
-    def _material_of(face) -> str:
-        tex = face.attrs.get("texture")
+    def _material_of(attrs) -> str:
+        """A paint dict (face front, face back or a group's material) as a
+        swatch: a texture's file stem, a named material, or a colour's hex.
+        Accepts the dict itself, or an entity that carries one in ``attrs``."""
+        if hasattr(attrs, "attrs"):
+            attrs = attrs.attrs
+        attrs = attrs or {}
+        tex = attrs.get("texture")
         if tex and tex.get("path"):
             return Path(tex["path"]).stem
-        col = face.attrs.get("color")
+        mat = attrs.get("mat")
+        if mat:
+            return str(mat)
+        col = attrs.get("color")
         if col is not None:
-            # A swatch of the colour and its hex code, not a tuple of floats.
             hexa = "#" + "".join(f"{max(0, min(255, round(c * 255))):02X}"
                                  for c in col[:3])
             return f'<span style="color:{hexa}">■</span> {hexa}'
         return "—"
+
+    def _describe_face(self, e) -> str:
+        # Front/back paint is the editable swatch row below, not read-only text.
+        return "<br>".join([
+            f"<b>{tr('Face')}</b>",
+            f"{tr('Area')}: {fmt_area(face_net_area(e))}",
+            f"{tr('Vertices')}: {len(e.vertices)}",
+        ])
+
+    def _describe_text3d(self, e) -> str:
+        return "<br>".join([
+            f"<b>{tr('3D Text')}</b>",
+            f"{tr('Height')}: {fmt_len(e.text3d.get('height', 0.0))}",
+            f"{tr('Thickness')}: {fmt_len(e.text3d.get('thickness', 0.0))}",
+        ])
+
+    @staticmethod
+    def _describe_section(e) -> str:
+        rows = [f"<b>{tr('Section Plane')}</b>"]
+        rows.append(f"{tr('Active')}: {'✓' if e.active else '—'}")
+        fill = e.fill or {}
+        pattern = fill.get("pattern", "solid")
+        if pattern and pattern != "none":
+            spacing = fill.get("spacing")
+            rows.append(f"{tr('Fill')}: {pattern}"
+                        + (f" · {fmt_len(spacing)}" if spacing else ""))
+        return "<br>".join(rows)
+
+    @staticmethod
+    def _describe_image(e) -> str:
+        rows = [f"<b>{tr('Image')}</b>"]
+        if e.name:
+            rows.append(f"{tr('Name')}: {e.name}")
+        rows.append(f"{tr('Size')}: {fmt_len(e.width())} × {fmt_len(e.height())}")
+        rows.append(f"{tr('Opacity')}: {e.opacity:.0%}")
+        if e.locked:
+            rows.append(f"{tr('Locked')}: ✓")
+        return "<br>".join(rows)
+
+    @staticmethod
+    def _describe_guide(e) -> str:
+        kind = tr("Guide Line") if e.direction is not None else tr("Guide Point")
+        return f"<b>{tr('Guide')}</b><br>{tr('Type')}: {kind}"
+
+    @staticmethod
+    def _describe_textlabel(e) -> str:
+        return "<br>".join([
+            f"<b>{tr('Text Label')}</b>",
+            f"{tr('Text')}: {e.text}",
+            f"{tr('Offset')}: ({fmt_len(e.offset.x())}, "
+            f"{fmt_len(e.offset.y())}, {fmt_len(e.offset.z())})",
+        ])
+
+    def _describe_freehand(self, sel: list) -> str | None:
+        """A freehand stroke — one contour that is not a regular circle/arc."""
+        if not sel or not all(isinstance(e, Edge) for e in sel):
+            return None
+        ids = {e.curve for e in sel}
+        if len(ids) != 1 or None in ids:
+            return None
+        contour = self._window.viewport.scene.mesh.curve_edges(sel[0])
+        if len(sel) != len(contour) or len(contour) < 2:
+            return None
+        return f"<b>{tr('Freehand')}</b><br>{tr('Edges')}: {len(contour)}"
 
 
 class _ScrollAnchor(QObject):
@@ -4353,6 +5027,12 @@ class _ScrollAnchor(QObject):
     def __init__(self, scroll: QScrollArea) -> None:
         super().__init__(scroll)
         self._scroll = scroll
+        self._target = None
+
+    def _apply_target(self) -> None:
+        target, self._target = self._target, None
+        if target is not None:
+            self._scroll.verticalScrollBar().setValue(target)
 
     def eventFilter(self, obj, event) -> bool:
         from PySide6.QtCore import QEvent, QTimer
@@ -4364,10 +5044,12 @@ class _ScrollAnchor(QObject):
             # for it too doubled the correction.
             if (delta and event.oldSize().height() > 0
                     and obj.y() + event.oldSize().height() <= bar.value()):
-                target = bar.value() + delta
                 # After the layout has taken the new height, or the bar's
                 # range would clamp the move.
-                QTimer.singleShot(0, lambda b=bar, t=target: b.setValue(t))
+                if self._target is None:
+                    self._target = bar.value()
+                    QTimer.singleShot(0, self._apply_target)
+                self._target += delta
         return False
 
 

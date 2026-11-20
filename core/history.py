@@ -1182,6 +1182,28 @@ class HideEdgesCommand(HideCommand):
         super().__init__(edges, hidden=hidden)
 
 
+class SetEdgeSoftCommand(Command):
+    """Set or clear the soft flag on a set of edges, undoably."""
+
+    def __init__(self, edges, soft: bool) -> None:
+        self._edges = list(edges)
+        self._soft = bool(soft)
+        self._prev: list[bool] = []
+
+    def do(self, scene) -> None:
+        self._prev = [bool(edge.soft) for edge in self._edges]
+        for edge in self._edges:
+            edge.soft = self._soft
+        _dirty_group_chunks(scene)
+        scene.version += 1
+
+    def undo(self, scene) -> None:
+        for edge, soft in zip(self._edges, self._prev):
+            edge.soft = soft
+        _dirty_group_chunks(scene)
+        scene.version += 1
+
+
 class SetFaceColorCommand(Command):
     """Paint a set of faces with an RGB colour (or clear it with ``None``),
     stored in each face's ``attrs["color"]`` — the first user-facing use of the
@@ -2314,6 +2336,23 @@ class ChangeGuideCommand(Command):
         scene.version += 1
 
 
+class SetGuideCircleRadiusCommand(Command):
+    """Change an analytic guide circle's radius, undoably."""
+
+    def __init__(self, guide, radius: float) -> None:
+        self.guide = guide
+        self.radius = radius
+        self.old = guide.radius
+
+    def do(self, scene) -> None:
+        self.guide.radius = self.radius
+        scene.version += 1
+
+    def undo(self, scene) -> None:
+        self.guide.radius = self.old
+        scene.version += 1
+
+
 class DeleteGuidesCommand(Command):
     """Remove construction guides (the Eraser, or Edit ▸ Delete Guides)."""
 
@@ -2771,10 +2810,10 @@ class SetFaceBackCommand(Command):
 
     def __init__(self, faces, backs) -> None:
         self._faces = list(faces)
-        # One dict per face, or None for all.
-        if backs is None or isinstance(backs, dict):
+        # One dict per face, ``True`` (mirror the front) or None for all.
+        if backs is None or backs is True or isinstance(backs, dict):
             backs = [backs] * len(self._faces)
-        self._backs = [dict(b) if isinstance(b, dict) else None for b in backs]
+        self._backs = [dict(b) if isinstance(b, dict) else b for b in backs]
         self._old: Optional[list] = None
 
     @staticmethod
