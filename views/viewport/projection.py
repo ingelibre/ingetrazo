@@ -442,12 +442,15 @@ class ProjectionMixin:
 
         base = self._start_point_plane(tool, start)
         from tools.base import PlaneLock
-        hover_plane = getattr(tool, "hover_plane", None)
-        if isinstance(tool, PlaneLock) and hover_plane is not None:
+        hover_plane = (tool.start_plane() if isinstance(tool, PlaneLock)
+                       else None)
+        if hover_plane is not None:
             # A planar shape started on a free point lives in the plane the
             # cursor showed at the first click. The near-horizon vertical
             # escape in ``_start_point_plane`` is for a Line to rise in Z;
-            # here it flipped the shape from XY to XZ on that click.
+            # here it flipped the shape from XY to XZ on that click. Not
+            # the live ``hover_plane``: that one takes the plane of any face
+            # crossed on the way (``PlaneLock.note_plane``).
             base = (QVector3D(start), QVector3D(hover_plane[1]))
         if cursor is not None and self.axis_lock is None:
             # On Face for the SECOND point (Move's target, the

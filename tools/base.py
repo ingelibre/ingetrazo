@@ -158,12 +158,41 @@ class PlaneLock:
     #: plane while the sides were measured along X/Y).
     hover_plane: tuple | None = None
 
+    #: ``hover_plane`` as it stood when the first point went down: the
+    #: plane a shape started on a free point keeps (``start_plane``).
+    _start_hover_plane: tuple | None = None
+
     def note_plane(self, viewport) -> None:
         """Remember the plane the viewport just hit — call on every hover
         and click before using the point."""
+        # The plane the first point went down on is kept apart before the
+        # live one moves on. ``hover_plane`` follows every face the cursor
+        # crosses (#545: over a wall the shape lands on the wall), and the
+        # viewport reads the free shape's plane from it — so merely brushing
+        # a face, even the corner pixel of a box while acquiring its vertex,
+        # left that face's normal behind: the rectangle stood up on a
+        # vertical plane through its first corner once the cursor was back
+        # on the ground, and lost its «From point» (0.6.3 modelling test,
+        # 20-11). Frozen at the first hover after the click, not in the
+        # click itself, so a tool that sets the plane along with its start
+        # (the arc's fillet, ``_round_corner``) is kept as it set it.
+        if getattr(self, "start_point", None) is None:
+            self._start_hover_plane = None
+        elif self._start_hover_plane is None:
+            self._start_hover_plane = self.hover_plane
         plane = getattr(viewport, "_last_work_plane", None)
         if plane is not None:
             self.hover_plane = plane
+
+    def start_plane(self):
+        """The plane a shape started on a free point lives in: the one the
+        cursor showed when the first point went down (``note_plane``), not
+        the face it happens to be crossing now; ``hover_plane`` before the
+        first point, or when nothing was noted since."""
+        if (getattr(self, "start_point", None) is not None
+                and self._start_hover_plane is not None):
+            return self._start_hover_plane
+        return self.hover_plane
 
     def drawing_plane(self):
         """``(point, normal)`` the shape is laid out on: the captured or
