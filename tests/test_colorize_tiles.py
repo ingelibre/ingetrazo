@@ -17,8 +17,8 @@ def _whole_image_colorize(data, target_rgb, ctype=COLORIZE_SHIFT):
 
     ``ctype`` 0 ("shift") moves every pixel's hue/lightness/saturation by
     the delta between the image average and the material colour; ``1``
-    ("tint") replaces hue/saturation outright, keeping the per-pixel
-    lightness variation. Alpha is preserved (the chain-link cutout must
+    ("tint") gives every pixel the colour's hue outright and moves only
+    lightness and saturation by that delta (#1499). Alpha is preserved (the chain-link cutout must
     survive). Returns PNG bytes, or ``data`` unchanged on any failure."""
     try:
         import numpy as np
@@ -42,10 +42,9 @@ def _whole_image_colorize(data, target_rgb, ctype=COLORIZE_SHIFT):
         hue, lum, sat = rgb_to_hls(rgb)
         if ctype == 1:
             hue = np.full_like(hue, float(ht[0]))
-            sat = np.full_like(sat, float(st[0]))
         else:
             hue = (hue + (float(ht[0]) - float(h0[0]))) % 1.0
-            sat = np.clip(sat + (float(st[0]) - float(s0[0])), 0.0, 1.0)
+        sat = np.clip(sat + (float(st[0]) - float(s0[0])), 0.0, 1.0)
         lum = np.clip(lum + (float(lt[0]) - float(l0[0])), 0.0, 1.0)
         out = np.clip(hls_to_rgb(hue, lum, sat) * 255.0 + 0.5,
                       0, 255).astype(np.uint8)

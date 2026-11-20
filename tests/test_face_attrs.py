@@ -90,7 +90,7 @@ def test_attrs_survive_corner_notch_through_floor():
 
 # ---- flush-dissolve: the host wall rebuilt by the collapse keeps attrs ---------
 
-def test_attrs_survive_bump_flush_dissolve():
+def test_attrs_survive_bump_pushed_flush_back():
     scene, hist, user = _cube_scene()
     wall = next(f for f in scene.mesh.faces
                 if all(abs(v.y()) < 1e-6 for v in f.vertices))
@@ -108,10 +108,13 @@ def test_attrs_survive_bump_flush_dissolve():
     n = bump_cap.normal()
     _push(scene, hist, bump_cap, -1.0 if n.y() < 0 else 1.0)  # flush back
     m = scene.mesh
-    assert is_closed(m) and len(m.faces) == 6   # pristine cube again
-    healed = next(f for f in m.faces
-                  if all(abs(v.y()) < 1e-6 for v in f.vertices))
-    assert healed.attrs == RED
+    # Pushed flush, the pane keeps its outline (#864): the wall with the
+    # pane as its hole, and the pane, both still red.
+    assert is_closed(m) and len(m.faces) == 7
+    front = [f for f in m.faces
+             if all(abs(v.y()) < 1e-6 for v in f.vertices)]
+    assert len(front) == 2 and sum(bool(f.holes) for f in front) == 1
+    assert all(f.attrs == RED for f in front)
 
 
 # ---- fold: both planar pieces continue the warped mother -----------------------
