@@ -719,7 +719,28 @@ def signed_volume(mesh) -> float:
     return total / 6.0
 
 
-def orient_outward(mesh, seed: int = 12345, only=None) -> list:
+def orient_outward_each(mesh, faces, seed: int = 12345) -> list:
+    """Exactly ``for f in faces: orient_outward(mesh, seed, only=(f,))`` —
+    the same flips, the same ``interior`` marks, the same rays — without
+    re-reading a whole component for every face of it.
+
+    Each scoped call decides the face's whole component, and before casting
+    its few rays it triangulates, packs and floods every face of it: a push
+    started on one of 100 selected faces of a 16 000-face group re-read the
+    group 100 times, ~0.2 s a face and 21 s for the click (0.6.3 modelling
+    test, 20-11). Those reads depend only on the mesh, so they are kept
+    between the calls for as long as no call has turned a face; the first
+    turn throws them away, and the next call reads the mesh afresh, as the
+    loop did. What each call asks with its own face — the sample of a
+    shell, the rays and their random draws — is asked again every time."""
+    ctx: dict = {}
+    flipped: list = []
+    for f in faces:
+        flipped.extend(orient_outward(mesh, seed, only=(f,), _ctx=ctx))
+    return flipped
+
+
+def orient_outward(mesh, seed: int = 12345, only=None, _ctx=None) -> list:
     """Flip the faces of a closed solid so every boundary normal points
     outward, and mark interior partitions (``face.interior``). Returns the
     faces that were flipped.
@@ -756,6 +777,15 @@ def orient_outward(mesh, seed: int = 12345, only=None) -> list:
     # 9 674-face group of the Plaza packed all of it to decide ~320 faces,
     # night of 19-11). Each face is judged against its own component, so
     # their rows, and every verdict, are the same.
+    # ``_ctx`` (``orient_outward_each``): what a scoped call of one face
+    # reads of its component, kept from an earlier call on the same
+    # component while no face has been turned since. Pure functions of the
+    # mesh, so the call goes on exactly as if it had read them itself.
+    kept = None
+    if _ctx is not None and only is not None and len(only) == 1:
+        kept = _ctx.get(next(iter(only)))
+    if kept is not None:
+        return _orient_scoped(mesh, seed, only, _ctx, **kept)
     comp_of = None
     if only is not None:
         comp_of = {}
@@ -782,16 +812,6 @@ def orient_outward(mesh, seed: int = 12345, only=None) -> list:
     sub = {c: _PackedTris(packed.a[r], packed.e1[r], packed.e2[r],
                           packed.face_idx[r])
            for c, r in comp_rows.items()}
-
-    def _boundary_base(boundary_set):
-        # ONE isin per round — rebuilding the boundary-id array and running
-        # isin over every packed triangle PER FACE repeated identical work
-        # F times per round (imported brick barbecue: the push click hung
-        # for minutes at 195% CPU; SIGUSR1 autopsy pinned np.isin here).
-        ids = np.fromiter((fidx[f] for f in boundary_set), dtype=np.int64,
-                          count=len(boundary_set))
-        base = np.isin(packed.face_idx, ids)
-        return {c: base[r] for c, r in comp_rows.items()}
 
     # Faces this call decides. Out-of-scope faces stay in ``boundary`` (so the
     # in-scope components' masks are built the same way) but are never queried
@@ -823,6 +843,35 @@ def orient_outward(mesh, seed: int = 12345, only=None) -> list:
     seeds = {f for f in in_scope
              if f in all_tris and edge_count.get(f) and f not in touches_manifold}
     boundary = {f: t for f, t in all_tris.items() if f not in seeds}
+    mesh_closed = is_closed(mesh)
+    shells = _coherent_shells(scope, comp_of) if scope else set()
+    read = dict(comp_of=comp_of, all_tris=all_tris, fidx=fidx,
+                packed=packed, comp_rows=comp_rows, sub=sub, scope=scope,
+                boundary=boundary, mesh_closed=mesh_closed, shells=shells)
+    if _ctx is not None and only is not None and len(only) == 1:
+        for f in comp_of:
+            _ctx[f] = read
+    return _orient_scoped(mesh, seed, only, _ctx, **read)
+
+
+def _orient_scoped(mesh, seed, only, _ctx, comp_of, all_tris, fidx, packed,
+                   comp_rows, sub, scope, boundary, mesh_closed,
+                   shells) -> list:
+    """The deciding half of :func:`orient_outward`, from what it read of
+    the mesh. ``_ctx`` is emptied as soon as a face is turned: what was
+    read no longer holds."""
+    import numpy as np
+
+    def _boundary_base(boundary_set):
+        # ONE isin per round — rebuilding the boundary-id array and running
+        # isin over every packed triangle PER FACE repeated identical work
+        # F times per round (imported brick barbecue: the push click hung
+        # for minutes at 195% CPU; SIGUSR1 autopsy pinned np.isin here).
+        ids = np.fromiter((fidx[f] for f in boundary_set), dtype=np.int64,
+                          count=len(boundary_set))
+        base = np.isin(packed.face_idx, ids)
+        return {c: base[r] for c, r in comp_rows.items()}
+
     probes: dict = {}
 
     # A closed skin wound one way is decided by a few of its faces, not by
@@ -830,9 +879,7 @@ def orient_outward(mesh, seed: int = 12345, only=None) -> list:
     # rays of six agree with the rays of two thousand. One that the sample
     # does not read plainly (a skin crossing itself, a tied vote) goes
     # through the full pass below, as every other component does.
-    mesh_closed = is_closed(mesh)
     shell_flips: list = []
-    shells = _coherent_shells(scope, comp_of) if scope else set()
     if shells:
         by_comp: dict = {}
         for f in scope:
@@ -856,6 +903,8 @@ def orient_outward(mesh, seed: int = 12345, only=None) -> list:
                 shell_flips.extend(members)
         if decided:
             scope = [f for f in scope if comp_of[f] not in decided]
+            if shell_flips and _ctx is not None:
+                _ctx.clear()
             for f in shell_flips:
                 turn_face_over(f)
             if not scope:
@@ -944,6 +993,8 @@ def orient_outward(mesh, seed: int = 12345, only=None) -> list:
             if comp_of[f] in flip_comps:
                 members.setdefault(comp_of[f], []).append(f)
         before_bad = {c: _incoherent_edges(fs) for c, fs in members.items()}
+    if to_flip and _ctx is not None:
+        _ctx.clear()
     for f in to_flip:
         # Flip in place: reversing the loops reverses the winding (so the normal
         # flips) while keeping the *same* Face object and its shared edges/

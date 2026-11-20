@@ -65,7 +65,8 @@ from core.history import (
     translate_points,
 )
 from core.arrangement import _interior_point, _point_in_polygon, plane_basis
-from core.orient import _ray_triangle, is_closed, orient_outward
+from core.orient import (_ray_triangle, is_closed, orient_outward,
+                         orient_outward_each)
 from core.cap_rebuild import (
     RebuildCache,
     _canon_loop,
@@ -2681,8 +2682,10 @@ class PushPullTool(Tool):
         place = {id(f): i for i, f in enumerate(mesh.faces)}
         faces.sort(key=lambda f: place.get(id(f), 0))
         self._extra_faces = [f for f in faces if f is not face]
-        for f in self._extra_faces:
-            orient_outward(mesh, only=(f,))
+        # The same as orienting them one by one, but the component is read
+        # once, not once per face: 100 faces of a 16 000-face group took
+        # 21 s on the click (0.6.3 modelling test, 20-11).
+        orient_outward_each(mesh, self._extra_faces)
         self._extra_normals = [self._outward_normal(f, mesh)
                                for f in self._extra_faces]
 
