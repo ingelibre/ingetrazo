@@ -9373,33 +9373,40 @@ class ComposerWindow(QMainWindow):
     # pages of a PDF reader — move, copy, paste, delete).
     def _sheet_set_step(self, change) -> bool:
         """Run ``change()`` on the set of sheets as one undo step; whether
-        it changed anything (nothing changed: no step)."""
+        it changed anything (nothing changed: no step, and the document is
+        not marked modified)."""
         from views.sheet_pages import SheetSetCommand
         cmd = SheetSetCommand(self._scene(), change, composer=self,
                               after=self._after_sheet_set)
-        cmd.do()
-        if not cmd.changed:
+        if not cmd.run():
             return False
         self.history._undo.append(cmd)
         self.history._redo.clear()
+        self._after_sheet_set(cmd, None)
         self._on_history_change()
         return True
 
     def _after_sheet_set(self, cmd, opened) -> None:
         """The set of sheets changed (a step done, undone or redone): the
-        sheet shown, the strips, the sheet numbers and the pages follow."""
+        sheet shown, the strips, the sheet numbers and the pages follow.
+        The canvas is rebuilt — once — by the history's own change call
+        (:meth:`_on_history_change`), which also marks the document."""
+        from views.sheet_pages import holds
         scene = self._scene()
         comps = scene.compositions
         if opened is not None and opened is not self.comp:
             self.comp = opened
-        elif self.comp not in comps and comps:
+        elif not holds(comps, self.comp) and comps:
             self.comp = comps[0]
-        self._mark_dirty()
+        # This window made the change and follows it here: the sheet strip's
+        # call back (sheet_browser.sync_composer) need not rebuild the
+        # canvas again — the history's change call does, once.
+        from core import outliner
+        self._synced_shape = outliner.sheets_shape(scene)
         self._reload_comp_combo()
-        self._rebuild_canvas()
         # Numbers ({hoja}) may have changed on every page after the first
         # one that moved: those pages are painted again.
-        before = cmd._before[0] if cmd._before else []
+        before = cmd._before["sheets"] if cmd._before else []
         for i, c in enumerate(comps):
             if i >= len(before) or before[i] is not c:
                 self._touch_sheet_page(c)
@@ -9436,17 +9443,18 @@ class ComposerWindow(QMainWindow):
 
     def duplicate_sheets(self, sheets) -> list:
         """A copy of each of ``sheets`` right after it, in its folder — one
-        undo step. Returns the copies."""
-        from views.sheet_pages import place_block
+        undo step. Returns the copies. Sheets are told apart by identity:
+        two copies of one sheet are equal."""
+        from views.sheet_pages import holds, index_of, place_block
         scene = self._scene()
-        sheets = [c for c in scene.compositions if c in sheets]
+        sheets = [c for c in scene.compositions if holds(sheets, c)]
         made: list = []
 
         def change():
             for src in sheets:
                 dup = self._copy_of(src.to_dict(), src.name)
                 comps = list(scene.compositions)
-                at = comps.index(src) + 1
+                at = index_of(comps, src) + 1
                 place_block(scene, comps[:at] + [dup] + comps[at:], [dup])
                 made.append(dup)
         self._sheet_set_step(change)
@@ -9456,17 +9464,18 @@ class ComposerWindow(QMainWindow):
         """Copies of the sheets in ``data`` (``to_dict()`` of each) right
         after sheet ``after`` (``None``: the open one), in its folder —
         one undo step. Returns the new sheets."""
-        from views.sheet_pages import place_block
+        from views.sheet_pages import holds, index_of, place_block
         scene = self._scene()
         if not data:
             return []
-        anchor = after if after in scene.compositions else self.comp
+        anchor = after if holds(scene.compositions, after) else self.comp
         made = [self._copy_of(d, d.get("name") or tr("Sheet"))
                 for d in data]
 
         def change():
             comps = list(scene.compositions)
-            at = comps.index(anchor) + 1 if anchor in comps else len(comps)
+            at = index_of(comps, anchor)
+            at = at + 1 if at >= 0 else len(comps)
             for c in made:
                 c.folder_id = getattr(anchor, "folder_id", None)
             place_block(scene, comps[:at] + made + comps[at:], made)
@@ -9477,10 +9486,10 @@ class ComposerWindow(QMainWindow):
         """``sheets`` (in the order of the set) to place ``gap`` between
         two sheets (0: the front, ``len``: the end) — a drag in the Sheets
         tab — as one undo step. The sheet open here stays open."""
-        from views.sheet_pages import moved_order, place_block
+        from views.sheet_pages import holds, moved_order, place_block
         scene = self._scene()
         comps = list(scene.compositions)
-        block = [c for c in comps if c in sheets]
+        block = [c for c in comps if holds(sheets, c)]
         if not block:
             return False
         order = moved_order(comps, block, gap)
@@ -9491,7 +9500,7 @@ class ComposerWindow(QMainWindow):
     def new_sheet_after(self, after=None):
         """A new sheet — as the «+» tab makes it — right after sheet
         ``after`` (``None``: at the end), opened here; one undo step."""
-        from views.sheet_pages import place_block
+        from views.sheet_pages import index_of, place_block
         scene = self._scene()
         made: list = []
 
@@ -9500,9 +9509,10 @@ class ComposerWindow(QMainWindow):
             new = scene.compositions[-1]
             made.append(new)
             comps = [c for c in scene.compositions if c is not new]
-            at = comps.index(after) + 1 if after in comps else len(comps)
+            k = index_of(comps, after) if after is not None else -1
+            at = k + 1 if k >= 0 else len(comps)
             new.folder_id = getattr(after, "folder_id", None) \
-                if after in comps else None
+                if k >= 0 else None
             place_block(scene, comps[:at] + [new] + comps[at:], [new])
         self._sheet_set_step(change)
         return made[0] if made else None
@@ -9519,9 +9529,10 @@ class ComposerWindow(QMainWindow):
         """Delete ``sheets`` after asking once — one undo step; a document
         keeps at least one sheet. If this window showed one of them, the
         sheet after it (or before) takes over."""
+        from views.sheet_pages import holds, index_of
         scene = self._scene()
         comps = scene.compositions
-        victims = [c for c in comps if c in sheets]
+        victims = [c for c in comps if holds(sheets, c)]
         if not victims:
             return False
         if len(victims) >= len(comps):
@@ -9539,7 +9550,7 @@ class ComposerWindow(QMainWindow):
 
         def change():
             if id(self.comp) in gone:
-                at = comps.index(self.comp)
+                at = index_of(comps, self.comp)
                 rest = ([c for c in comps[at:] if id(c) not in gone]
                         + [c for c in reversed(comps[:at])
                            if id(c) not in gone])
@@ -9596,20 +9607,29 @@ class ComposerWindow(QMainWindow):
     #: leaves room for a wide panel and a sharp screen.
     THUMB_RENDER_DPI = 50
 
+    def _thumb_store(self):
+        """The pages' small renders (:class:`views.sheet_pages.ThumbRenders`)."""
+        store = self.__dict__.get("_thumb_renders")
+        if store is None:
+            from views.sheet_pages import ThumbRenders
+            store = self.__dict__["_thumb_renders"] = ThumbRenders()
+        return store
+
     def thumbnail_missing(self, comp):
         """The first frame of ``comp`` whose page picture still has nothing
         to show — no render or drawing of its own in this window and no
         small render either (or an old one: the model changed since) — or
         ``None``. A frame whose scene is missing shows that already."""
-        small = self.__dict__.setdefault("_thumb_renders", {})
-        old = self.__dict__.setdefault("_thumb_old", set())
+        store = self._thumb_store()
         for f in comp.frames:
+            if not isinstance(f, MarcoVista):
+                continue
             key = id(f)
             if key in self.render_cache:
                 continue                # even an old one: the canvas shows it
             if f.style == "vectorial" and self.hlr_cache.get(key) is not None:
                 continue
-            if key in small and key not in old:
+            if store.fresh(f):
                 continue
             if self.missing_scene(f) is not None:
                 continue
@@ -9623,8 +9643,6 @@ class ComposerWindow(QMainWindow):
         hidden-line pass costs seconds. Returns the picture (``None``:
         it would not render — not tried again until the model changes)."""
         import copy
-        small = self.__dict__.setdefault("_thumb_renders", {})
-        self.__dict__.setdefault("_thumb_old", set()).discard(id(frame))
         tmp = copy.copy(frame)
         if tmp.style == "vectorial":
             tmp.style = "lineas"
@@ -9642,14 +9660,13 @@ class ComposerWindow(QMainWindow):
             self._stale.discard(id(tmp))
         if image is not None and image.isNull():
             image = None
-        small[id(frame)] = (image, annots)
+        self._thumb_store().put(frame, image, annots)
         return image
 
     def _forget_thumbnail_renders(self) -> None:
         """The model changed: every small render is old (kept on show until
         its new one lands)."""
-        small = self.__dict__.get("_thumb_renders") or {}
-        self.__dict__.setdefault("_thumb_old", set()).update(small)
+        self._thumb_store().forget()
         panel = getattr(getattr(self, "views_panel", None), "sheets", None)
         if panel is not None and panel.pictures is not None:
             panel.pictures.kick_later()
@@ -9661,7 +9678,7 @@ class ComposerWindow(QMainWindow):
         (:meth:`thumbnail_render`) where a frame has none. Never a render
         of its own: the Sheets tab calls this for every sheet."""
         from views.sheet_pages import paint_thumbnail
-        small = self.__dict__.get("_thumb_renders") or {}
+        small = self._thumb_store()
         try:
             return paint_thumbnail(
                 lambda painter, c: self._paint_sheet(painter, c,
@@ -15720,9 +15737,12 @@ class ComposerWindow(QMainWindow):
                 image = self.render_cache.get(id(m))
                 hlr = self.hlr_cache.get(id(m))
                 annots = self.annot_cache.get(id(m))
-                if (small and id(m) in small and image is None
-                        and not (m.style == "vectorial" and hlr is not None)):
-                    shot, shot_annots = small[id(m)]
+                held = (small.get(m) if small is not None
+                        and image is None and not (
+                            m.style == "vectorial" and hlr is not None)
+                        else None)
+                if held is not None:
+                    shot, shot_annots = held
                     if shot is not None:
                         if m.style == "vectorial":
                             import copy

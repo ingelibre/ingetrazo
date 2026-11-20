@@ -676,9 +676,7 @@ def _fake_small_renders(composer, monkeypatch, colour=Qt.red) -> list:
         w, h = frame.render_px(self.THUMB_RENDER_DPI)
         image = QImage(max(1, w), max(1, h), QImage.Format_RGB32)
         image.fill(colour)
-        self.__dict__.setdefault("_thumb_renders", {})[id(frame)] = (
-            image, None)
-        self.__dict__.setdefault("_thumb_old", set()).discard(id(frame))
+        self._thumb_store().put(frame, image, None)
         return image
     monkeypatch.setattr(type(composer), "thumbnail_render", small)
     return made
@@ -776,3 +774,217 @@ def test_the_pages_on_screen_are_painted_first(composer):
     _spin(10)
     first = pics.painted_keys[:len(shown)]
     assert first and all(k in {id(c) for c in shown} for k in first)
+
+
+# ---- review 20-11: sheets are themselves, two undos, pictures while away -------
+def _pick_rows(comp, *rows) -> None:
+    """Select the pages at ``rows``, the last one current — by place, for
+    sheets that share a name."""
+    from PySide6.QtCore import QItemSelectionModel
+    pages = _pages(comp)
+    pages.clearSelection()
+    for r in rows:
+        pages.item(r).setSelected(True)
+    pages.setCurrentItem(pages.item(rows[-1]), QItemSelectionModel.NoUpdate)
+
+
+def _cortes_folder(scene):
+    """Sheets C and D in a folder «Cortes»."""
+    from core import sheet_folders as sf
+    a, b, c, d = scene.compositions
+    folder = sf.SheetFolder(name="Cortes")
+    folder.pos = 2
+    scene.sheet_folders.append(folder)
+    c.folder_id = d.folder_id = folder.id
+    sf.sync_order(scene)
+    return folder
+
+
+def test_two_copies_of_a_sheet_are_two_sheets(composer, monkeypatch):
+    """Pasted twice, a sheet's two copies are equal in every field — and
+    still two sheets: Delete takes only the page picked, F2 renames only
+    it (equality made Delete take both and F2 rename the other one)."""
+    asked = _yes(monkeypatch)
+    _open_panel(composer)
+    scene = composer._scene()
+    _pick_pages(composer, "B")
+    _key(composer, Qt.Key_C, Qt.ControlModifier)
+    _key(composer, Qt.Key_V, Qt.ControlModifier)
+    _pick_pages(composer, "D")
+    _key(composer, Qt.Key_V, Qt.ControlModifier)
+    assert _order(composer) == ["A", "B", "B (copy)", "C", "D", "B (copy)"]
+    first, second = scene.compositions[2], scene.compositions[5]
+    assert first is not second and first.to_dict() == second.to_dict()
+    assert scene.compositions.index(second) == 5
+    _pick_rows(composer, 5)
+    _key(composer, Qt.Key_Delete)
+    assert asked == ["Delete 'B (copy)'?"]
+    assert _order(composer) == ["A", "B", "B (copy)", "C", "D"]
+    assert scene.compositions[2] is first
+    # F2 on the second of two equal copies renames that one.
+    _pick_pages(composer, "B")
+    _key(composer, Qt.Key_D, Qt.ControlModifier)
+    copies = [c for c in scene.compositions if c.name == "B (copy)"]
+    assert len(copies) == 2 and copies[0].to_dict() == copies[1].to_dict()
+    _explorer(composer).rename_page(copies[1], "Z")
+    _spin(30)
+    assert copies[1].name == "Z" and copies[0].name == "B (copy)"
+
+
+def test_pasting_and_duplicating_twice_in_a_folder(composer):
+    """In a document with folders the second paste — and the second
+    Ctrl+D — of one sheet lands too, each as its own undo step (it did
+    nothing, yet marked the document modified)."""
+    scene = composer._scene()
+    folder = _cortes_folder(scene)
+    _open_panel(composer)
+    _explorer(composer).refresh(force=True)
+    _pick_pages(composer, "C")
+    _key(composer, Qt.Key_C, Qt.ControlModifier)
+    n0 = len(composer.history._undo)
+    _key(composer, Qt.Key_V, Qt.ControlModifier)
+    _pick_pages(composer, "D")
+    _key(composer, Qt.Key_V, Qt.ControlModifier)
+    assert _order(composer) == ["A", "B", "C", "C (copy)", "D", "C (copy)"]
+    assert len(composer.history._undo) - n0 == 2
+    assert all(c.folder_id == folder.id for c in scene.compositions[2:])
+    _pick_rows(composer, 2)
+    _key(composer, Qt.Key_D, Qt.ControlModifier)
+    _pick_rows(composer, 2)
+    _key(composer, Qt.Key_D, Qt.ControlModifier)
+    assert _order(composer).count("C (copy)") == 4
+    assert len(composer.history._undo) - n0 == 4
+
+
+def test_a_step_that_changes_nothing_leaves_the_document_alone(composer):
+    scene = composer._scene()
+    v0, n0 = scene.version, len(composer.history._undo)
+    assert composer._sheet_set_step(lambda: None) is False
+    assert not composer.move_sheets([scene.compositions[1]], 1)
+    assert composer.duplicate_sheets([]) == []
+    assert scene.version == v0 and len(composer.history._undo) == n0
+
+
+def test_undoing_a_paste_keeps_what_the_list_changed_since(composer):
+    """The composer's undo of a paste takes the pasted sheet away and
+    nothing else: a Print switch flipped and a folder renamed afterwards
+    — steps of the model window's undo — stay (it put the whole tree
+    back and undid them behind that undo's back)."""
+    from core.history import RenameSheetFolderCommand
+    scene = composer._scene()
+    folder = _cortes_folder(scene)
+    a, b, c, d = scene.compositions
+    _open_panel(composer)
+    panel = _explorer(composer)
+    panel.refresh(force=True)
+    _pick_pages(composer, "A")
+    _key(composer, Qt.Key_C, Qt.ControlModifier)
+    _key(composer, Qt.Key_V, Qt.ControlModifier)
+    assert _order(composer) == ["A", "A (copy)", "B", "C", "D"]
+    panel.set_printed([d], False)
+    panel._history().execute(RenameSheetFolderCommand(folder, "Secciones"))
+    _spin(30)
+    composer.history.undo()
+    _spin(30)
+    assert _order(composer) == ["A", "B", "C", "D"]
+    assert d.print_in_all is False
+    assert folder.name == "Secciones"
+    assert c.folder_id == d.folder_id == folder.id
+    composer.history.redo()
+    _spin(30)
+    assert _order(composer) == ["A", "A (copy)", "B", "C", "D"]
+    assert d.print_in_all is False and folder.name == "Secciones"
+
+
+def test_a_step_rebuilds_the_canvas_once(composer, monkeypatch):
+    """One rebuild per step of the Sheets tab, done or undone (three: the
+    step's own, the history's and the sheet strip's call back)."""
+    calls = []
+    real = type(composer)._rebuild_canvas
+    monkeypatch.setattr(type(composer), "_rebuild_canvas",
+                        lambda self, *a, **k: (calls.append(1),
+                                               real(self, *a, **k))[1])
+    _open_panel(composer)
+    _pick_pages(composer, "B")
+    _key(composer, Qt.Key_D, Qt.ControlModifier)
+    _spin(30)
+    assert len(calls) == 1
+    composer.history.undo()
+    _spin(30)
+    assert len(calls) == 2
+
+
+def test_the_pages_leave_keys_with_other_modifiers_alone(composer,
+                                                         monkeypatch):
+    """Shift+Del, Ctrl+Shift+D and Ctrl+F2 are not the pages' keys."""
+    asked = _yes(monkeypatch)
+    _open_panel(composer)
+    _pick_pages(composer, "B")
+    panel = _explorer(composer)
+    renamed = []
+    monkeypatch.setattr(panel, "rename_current", lambda: renamed.append(1))
+    _key(composer, Qt.Key_Delete, Qt.ShiftModifier)
+    _key(composer, Qt.Key_D, Qt.ControlModifier | Qt.ShiftModifier)
+    _key(composer, Qt.Key_F2, Qt.ControlModifier)
+    assert _order(composer) == ["A", "B", "C", "D"]
+    assert asked == [] and renamed == []
+    _key(composer, Qt.Key_F2)
+    assert renamed == [1]
+
+
+def test_the_small_renders_wait_while_the_composer_is_not_in_use(
+        composer, monkeypatch):
+    """Behind the model window (or minimized) the composer makes no small
+    render — each one stalled the modelling — and goes on as it is
+    activated again."""
+    from PySide6.QtCore import QEvent
+    from PySide6.QtWidgets import QApplication
+    from core.composition import MarcoVista
+    from views.sheet_pages import SheetPictures
+    made = _fake_small_renders(composer, monkeypatch)
+    away = [True]
+    monkeypatch.setattr(SheetPictures, "away", lambda self: away[0])
+    comps = composer._scene().compositions
+    comps[1].frames = [MarcoVista(view_key="std:front")]
+    pics = _open_panel(composer).pictures
+    _spin(300)
+    assert made == []
+    away[0] = False
+    QApplication.sendEvent(composer, QEvent(QEvent.ActivationChange))
+    _spin(300)
+    assert len(made) == 1
+
+
+def test_frames_that_render_alike_share_one_small_render(composer,
+                                                         monkeypatch):
+    """Eight 3D views of one scene and camera on a sheet: one small
+    render, not eight."""
+    from core.composition import MarcoVista
+    made = _fake_small_renders(composer, monkeypatch)
+    comps = composer._scene().compositions
+    comps[1].frames = [MarcoVista(x_mm=10 + 30 * k, y_mm=10,
+                                  view_key="std:iso") for k in range(8)]
+    comps[2].frames = [MarcoVista(view_key="std:top")]
+    pics = _open_panel(composer).pictures
+    _spin(600)
+    assert len(made) == 2
+    assert not any(composer.thumbnail_missing(c) for c in comps)
+    assert pics.filled == 2
+
+
+def test_the_small_renders_are_kept_for_live_frames_only():
+    """A frame gone takes its small render with it; a new frame that gets
+    its id never sees the old render."""
+    import gc
+    from core.composition import MarcoVista
+    from views.sheet_pages import ThumbRenders
+    store = ThumbRenders()
+    frame = MarcoVista(view_key="std:front")
+    store.put(frame, "picture", None)
+    assert store.get(frame) == ("picture", None) and len(store) == 1
+    del frame
+    gc.collect()
+    other = MarcoVista(view_key="std:top")
+    assert store.get(other) is None
+    store.forget()
+    assert len(store) == 0

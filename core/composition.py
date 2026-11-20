@@ -1639,9 +1639,14 @@ class CotaRadialItem:
         return self.auto_label()
 
 
-@dataclass
+@dataclass(eq=False)
 class Composicion:
-    """One sheet: a page plus its items."""
+    """One sheet: a page plus its items.
+
+    A sheet is itself, not its content (``eq=False``: ``==``, ``in`` and
+    ``index`` compare identity): two copies of one sheet — pasted twice,
+    Ctrl+D twice — are equal field by field, and as equals Delete took
+    both, F2 renamed the other one and a drag moved the two (20-11)."""
 
     name: str = field(default_factory=lambda: _tr("Sheet {n}", n=1))
     paper: str = "A4"

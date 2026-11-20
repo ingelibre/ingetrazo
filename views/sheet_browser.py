@@ -29,6 +29,7 @@ from PySide6.QtWidgets import (
 
 from core import sheet_folders as sf
 from core.i18n import tr
+from views.sheet_pages import holds, index_of
 
 #: The sheet explorer's columns (its List view).
 COL_NAME, COL_PRINT = 0, 1
@@ -47,37 +48,50 @@ PAGE_MIME = "application/x-ingetrazo-sheet-pages"
 SCENE_ROWS = 7
 
 
+def _own_key(ev):
+    """Which of the Sheets tab's own keys ``ev`` is — ``"up"``, ``"down"``,
+    ``"delete"``, ``"rename"``, ``"copy"``, ``"paste"``, ``"duplicate"`` —
+    or ``None``. Exactly those keys: with another modifier held (Shift+Del,
+    Ctrl+F2, Ctrl+Shift+D…) the key is someone else's."""
+    from PySide6.QtGui import QKeySequence
+    key = ev.key()
+    mods = ev.modifiers() & ~Qt.KeypadModifier
+    if mods == Qt.AltModifier and key in (Qt.Key_Up, Qt.Key_Down):
+        return "up" if key == Qt.Key_Up else "down"
+    if mods == Qt.NoModifier and key == Qt.Key_Delete:
+        return "delete"
+    if mods == Qt.NoModifier and key == Qt.Key_F2:
+        return "rename"
+    if ev.matches(QKeySequence.Copy):
+        return "copy"
+    if ev.matches(QKeySequence.Paste):
+        return "paste"
+    if mods == Qt.ControlModifier and key == Qt.Key_D:
+        return "duplicate"
+    return None
+
+
 def _shortcut_keys(ev) -> bool:
     """The keys the Sheets tab answers itself while it has the focus — and
     only then: the canvas keeps Ctrl+C / Ctrl+V / Ctrl+D / Delete for its
     own items everywhere else."""
-    from PySide6.QtGui import QKeySequence
-    key, mods = ev.key(), ev.modifiers()
-    if key in (Qt.Key_Delete, Qt.Key_F2):
-        return True
-    if key in (Qt.Key_Up, Qt.Key_Down) and mods & Qt.AltModifier:
-        return True
-    if ev.matches(QKeySequence.Copy) or ev.matches(QKeySequence.Paste):
-        return True
-    return key == Qt.Key_D and mods & Qt.ControlModifier \
-        and not mods & Qt.ShiftModifier
+    return _own_key(ev) is not None
 
 
 def _panel_key(panel, ev) -> bool:
     """Run the Sheets tab's own key ``ev``; whether it was one."""
-    from PySide6.QtGui import QKeySequence
-    key, mods = ev.key(), ev.modifiers()
-    if key in (Qt.Key_Up, Qt.Key_Down) and mods & Qt.AltModifier:
-        panel.move_current(-1 if key == Qt.Key_Up else 1)
-    elif key == Qt.Key_Delete:
+    what = _own_key(ev)
+    if what in ("up", "down"):
+        panel.move_current(-1 if what == "up" else 1)
+    elif what == "delete":
         panel.delete_selected()
-    elif key == Qt.Key_F2:
+    elif what == "rename":
         panel.rename_current()
-    elif ev.matches(QKeySequence.Copy):
+    elif what == "copy":
         panel.copy_selected()
-    elif ev.matches(QKeySequence.Paste):
+    elif what == "paste":
         panel.paste()
-    elif key == Qt.Key_D and mods & Qt.ControlModifier:
+    elif what == "duplicate":
         panel.duplicate_selected()
     else:
         return False
@@ -1026,7 +1040,7 @@ class SheetExplorer(QWidget):
                 continue
             if d[0] == _FOLDER:
                 folders.append(d[1])
-            elif d[1] not in sheets:
+            elif not holds(sheets, d[1]):
                 sheets.append(d[1])
         return sheets, folders
 
@@ -1044,7 +1058,7 @@ class SheetExplorer(QWidget):
     def selected_sheets(self) -> list:
         """The selected sheets, in the order of the set."""
         sheets = self._picked()[0]
-        return [c for c in self._scene().compositions if c in sheets]
+        return [c for c in self._scene().compositions if holds(sheets, c)]
 
     def _target_folder_id(self):
         """Where a new sheet or folder goes: into the selected folder, or
@@ -1118,9 +1132,9 @@ class SheetExplorer(QWidget):
 
     def open_sheet(self, sheet) -> None:
         comps = self._scene().compositions
-        if sheet not in comps:
+        if not holds(comps, sheet):
             return
-        index = comps.index(sheet)
+        index = index_of(comps, sheet)
         if self._composer_win is not None:
             self._composer_win.show_sheet(index)
         else:
@@ -1170,7 +1184,7 @@ class SheetExplorer(QWidget):
         # On one of several selected rows: all of them, as the Browser's
         # eye does.
         sheets, folders = self._picked()
-        if obj not in sheets and obj not in folders:
+        if not holds(sheets, obj) and not holds(folders, obj):
             sheets, folders = (([], [obj]) if d[0] == _FOLDER
                                else ([obj], []))
         self.set_printed(sheets, not obj.print_in_all, defer=True,
@@ -1212,14 +1226,14 @@ class SheetExplorer(QWidget):
             folder_id = self._target_folder_id()
         before = list(scene.compositions)
         self._window._show_new_sheet()
-        new = [c for c in scene.compositions if c not in before]
+        new = [c for c in scene.compositions if not holds(before, c)]
         if new and folder_id is not None:
             for c in new:
                 c.folder_id = folder_id
             sf.sync_order(scene)
             composer = getattr(self._window, "_composer", None)
             if composer is not None:
-                composer.show_sheet(scene.compositions.index(new[-1]))
+                composer.show_sheet(index_of(scene.compositions, new[-1]))
         self._after_tree_change()
 
     def add_folder(self, parent=...) -> None:
@@ -1272,8 +1286,8 @@ class SheetExplorer(QWidget):
 
         def later():
             comps = self._scene().compositions
-            if sheet in comps:
-                self._composer().rename_sheet(comps.index(sheet), name)
+            if holds(comps, sheet):
+                self._composer().rename_sheet(index_of(comps, sheet), name)
                 self._after_tree_change()
         QTimer.singleShot(0, self, later)
 
@@ -1388,7 +1402,7 @@ class SheetExplorer(QWidget):
         self._after_tree_change()
         if moved:
             self.select_sheets(sheets, self.current_sheet()
-                               if self.current_sheet() in sheets else None)
+                               if holds(sheets, self.current_sheet()) else None)
         return moved
 
     def drop_on_pages(self, mime, gap: int, sheet) -> None:
@@ -1472,7 +1486,7 @@ class SheetExplorer(QWidget):
             if not sheets:
                 return
             comps = self._scene().compositions
-            rows = [comps.index(c) for c in sheets]
+            rows = [index_of(comps, c) for c in sheets]
             gap = min(rows) - 1 if step < 0 else max(rows) + 2
             if 0 <= gap <= len(comps):
                 self.move_pages(sheets, gap)
@@ -1514,8 +1528,8 @@ class SheetExplorer(QWidget):
             # Beside the page: open that sheet and put the view in a free
             # place of it, as one step of the composer's own undo.
             comps = scene.compositions
-            if comp_win.comp is not sheet and sheet in comps:
-                comp_win.show_sheet(comps.index(sheet))
+            if comp_win.comp is not sheet and holds(comps, sheet):
+                comp_win.show_sheet(index_of(comps, sheet))
             return comp_win.place_scene_at(view.name)
         cmds = []
         if sheet is None:
@@ -1582,7 +1596,7 @@ class SheetExplorer(QWidget):
         scene = self._scene()
         if sheet is not None:
             sheets = self.selected_sheets()
-            if sheet not in sheets:
+            if not holds(sheets, sheet):
                 sheets = [sheet]
             menu.addAction(_icon("sheet"), tr("Open sheet"),
                            lambda: self.open_sheet(sheet))
@@ -1648,7 +1662,7 @@ class SheetExplorer(QWidget):
         sheets, folders = self._picked()
         if d and d[0] == _SHEET:
             sheet = d[1]
-            if sheet not in sheets:
+            if not holds(sheets, sheet):
                 sheets, folders = [sheet], []
             menu.addAction(_icon("sheet"), tr("Open sheet"),
                            lambda: self.open_sheet(sheet))
@@ -1730,7 +1744,7 @@ class SheetExplorer(QWidget):
     def print_sheets(self, sheets) -> None:
         if not sheets:
             return
-        order = [c for c in self._scene().compositions if c in sheets]
+        order = [c for c in self._scene().compositions if holds(sheets, c)]
         self._window._ensure_composer().print_sheets(order, self)
 
     def export_sheets(self, sheets, path=None) -> None:
