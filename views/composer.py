@@ -47,7 +47,8 @@ from views.color_dialog import get_color
 from core.i18n import tr
 from views.theme import style as theme_style
 from core.composition import pen_px
-from core.saved_views import apply_shadow_state, georef_objects
+from core.saved_views import (apply_shadow_state, georef_objects,
+                              visibility_sig)
 from PySide6.QtWidgets import QGraphicsLineItem, QGridLayout, QWidget as _QWidget  # noqa: E402
 from views.filedialogs import file_dialogs
 from views.icons import toolbar_icon_px
@@ -13044,6 +13045,12 @@ class ComposerWindow(QMainWindow):
         # with shadows; the live viewport gets its own settings back.
         shadows = getattr(scene, "shadows", None)
         keep_shadows = shadows.to_dict() if shadows is not None else None
+        # Hidden objects too: a scene records them, and the frame must not
+        # leave them hidden in the live model after it (#1450).
+        keep_hidden = [(g, bool(getattr(g, "hidden", False)))
+                       for g in scene.groups_by_uid().values()]
+        keep_shown = (bool(getattr(scene, "show_hidden_objects", False)),
+                      bool(getattr(scene, "show_hidden_geometry", False)))
         # ``Scene.bounds()`` caches by version, and swapping layer
         # visibility here does not bump it: a bounds read during the frame
         # would outlive it, and Zoom Extents would frame the sheet's view
@@ -13073,6 +13080,9 @@ class ComposerWindow(QMainWindow):
                 obj.visible = visible
             if keep_shadows is not None:
                 apply_shadow_state(scene, keep_shadows)
+            for g, hidden in keep_hidden:
+                g.hidden = hidden
+            scene.show_hidden_objects, scene.show_hidden_geometry = keep_shown
             vp.update()
 
     def frame_is_perspective(self, frame) -> bool:
@@ -13092,16 +13102,31 @@ class ComposerWindow(QMainWindow):
         """collect_geometry(scene), cached — camera-independent, so every
         frame (and every re-snap) shares one collection. Follows the same
         staleness rule as the frame renders: refreshed when the composer
-        reopens or a frame is explicitly refreshed, not on sheet edits."""
+        reopens or a frame is explicitly refreshed, not on sheet edits.
+        Keyed on the visibility too: a frame whose scene matches the live
+        one shares it, but the live layers may have moved since it was
+        built — a scene recalled while the version signal is still on its
+        way — and serving the old collection would draw the old layers
+        (#1450: a copied frame came back with the ORIGINAL portal's
+        layers). A rebuild then re-collects from the layers as they are
+        now, not from the pick index: the index OMITS the faces of hidden
+        layers outright, so re-reading it under the new layers still
+        shows the old ones."""
         cached = getattr(self, "_geom_cache", None)
-        if cached is not None:
+        sig = self._visibility_sig()
+        if cached is not None and getattr(self, "_geom_cache_sig", None) == sig:
             return cached
         vp = self._window.viewport
-        fast = getattr(vp, "hlr_geometry", None)
-        if fast is not None:
-            self._geom_cache = fast()               # arrays, ~30 ms
-        else:                                       # stub viewports (tests)
-            self._geom_cache = self._collect_geometry_arrays()
+        now = getattr(vp, "hlr_geometry_now", None)
+        if now is not None and getattr(self, "_geom_cache_sig", None) is not None:
+            self._geom_cache = now()   # layers as they are switched NOW
+        else:
+            fast = getattr(vp, "hlr_geometry", None)
+            if fast is not None:
+                self._geom_cache = fast()           # arrays, ~30 ms
+            else:                                   # stub viewports (tests)
+                self._geom_cache = self._collect_geometry_arrays()
+        self._geom_cache_sig = sig
         return self._geom_cache
 
     def _collect_geometry_arrays(self):
@@ -13122,13 +13147,10 @@ class ComposerWindow(QMainWindow):
                        dtype=np.float64).reshape(-1, 2, 3))
 
     def _visibility_sig(self) -> tuple:
-        """Which layers and map / terrain objects are switched on, now."""
-        scene = self._scene()
-        return (tuple((ly.name, bool(ly.visible))
-                      for ly in getattr(scene, "layers", []) or []),
-                tuple(bool(getattr(obj, "visible", True))
-                      for _k, obj in georef_objects(scene)
-                      if obj is not None))
+        """Which layers and map / terrain objects are switched on, now —
+        plus the objects hidden: what a frame's scene can change (see
+        :func:`core.saved_views.visibility_sig`)."""
+        return visibility_sig(self._scene())
 
     def _frame_geometry(self, live_sig: tuple):
         """The geometry a frame shows — called with its camera applied.
@@ -13171,6 +13193,7 @@ class ComposerWindow(QMainWindow):
         """The model may have changed: drop the collected geometry and
         every frame's snap set (renders are handled by their own caches)."""
         self._geom_cache = None
+        self._geom_cache_sig = None
         self._geom_by_sig = None
         self._circles_cache = None
         self.snap_cache.clear()

@@ -306,6 +306,32 @@ def shown_state(scene) -> tuple:
             getattr(scene, "show_hidden_geometry", None))
 
 
+def visibility_sig(scene) -> tuple:
+    """Layer visibility + hidden objects as a hashable value to compare:
+    what a scene recall can change WITHOUT bumping ``scene.version``.
+
+    The composer applies a frame's scene transiently
+    (:meth:`views.composer.ComposerWindow._with_frame_camera`) and
+    restores the live state after, so the swap never bumps the version —
+    and the caches keyed on it (the viewport's pick index, the composer's
+    shared geometry) go stale across it (#1450: a copied frame came back
+    with the ORIGINAL portal's layers on export). Face-level hides go
+    through history and bump the version, so they need no place here;
+    style, section and shadows do not change which faces exist."""
+    groups_by_uid = getattr(scene, "groups_by_uid", None)
+    hidden = ()
+    if groups_by_uid is not None:
+        hidden = tuple(sorted(
+            uid for uid, g in groups_by_uid().items()
+            if getattr(g, "hidden", False)))
+    return (tuple((ly.name, bool(ly.visible))
+                  for ly in getattr(scene, "layers", []) or []),
+            tuple(bool(getattr(obj, "visible", True))
+                  for _k, obj in georef_objects(scene)
+                  if obj is not None),
+            hidden)
+
+
 def georef_state(scene) -> dict:
     """Visibility of the geographic layers right now — a missing object
     counts as hidden, so a scene made before any base map existed recalls
