@@ -236,11 +236,19 @@ def _stub_catalog(monkeypatch, module, catalog):
 
 
 def _settle(dialog):
+    dialog.resize(1180, 800)
+    dialog.show()
     loop = QEventLoop()
     timer = QTimer()
     timer.setInterval(10)
     timer.timeout.connect(
-        lambda: loop.quit() if dialog._catalog_worker is None else None)
+        lambda: loop.quit()
+        if (dialog._catalog_snapshot is not None
+            and not dialog._initial_load_timer.isActive()
+            and dialog._catalog_worker is None
+            and not dialog._pages["browse"]["dirty"]
+            and not dialog._pages["browse"]["render_timer"].isActive()
+            and not dialog._pages["browse"]["pending_indices"]) else None)
     timer.start()
     QTimer.singleShot(15000, loop.quit)
     loop.exec()

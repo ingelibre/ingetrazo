@@ -78,6 +78,7 @@ def collect_geometry(scene, layers: bool = False):
     ``(tris, hard, soft, hard_layers, soft_layers, tri_layers)``."""
     from core.group import visible_placements, world_mesh
     from core.layers import DEFAULT_LAYER, layer_of
+    from core.profile_edges import edge_normal_sign
 
     tris: list = []
     hard: list = []
@@ -87,6 +88,7 @@ def collect_geometry(scene, layers: bool = False):
     tri_l: list = []
 
     def eat_mesh(mesh, visible=lambda _e: True, owner=DEFAULT_LAYER):
+        windings = {}
         for face in mesh.faces:
             _progress.tick()
             if not visible(face):
@@ -113,6 +115,8 @@ def collect_geometry(scene, layers: bool = False):
                     continue
                 na = fs[0].normal()
                 nb = fs[1].normal() if len(fs) > 1 else None
+                if nb is not None:
+                    nb *= edge_normal_sign(e, windings)
                 soft.append((p0, p1,
                              (na.x(), na.y(), na.z()),
                              None if nb is None

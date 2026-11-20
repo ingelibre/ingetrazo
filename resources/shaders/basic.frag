@@ -8,6 +8,10 @@ uniform int u_use_vcolor;
 // Uniform opacity of the current draw (1.0 = opaque pass). Translucent
 // material runs (.skp trans with useTrans) draw last with this < 1.
 uniform float u_opacity;
+// Styles can display materials as opaque without changing their paint.
+uniform int u_material_opaque;
+// Independent style overlay, applied only around model face passes.
+uniform float u_xray_opacity = 1.0;
 // 1 while drawing face-me billboards: a HARD alpha cut at 0.5 instead of
 // the Bayer dither below. Their mipmapped edge alpha would otherwise
 // render as stipple dots around the figure; the dither stays for scene
@@ -24,6 +28,15 @@ uniform float u_shade;
 // 0 = untouched.
 uniform float u_fade;
 uniform vec3 u_fade_color;
+// Linear distance fog along the camera's viewing axis. Start/end are absolute
+// model distances measured from the eye, so the fog follows the camera and
+// never depends on the scene bounds or the clipping-plane safety margin.
+uniform int u_fog_enable;
+uniform vec3 u_fog_eye;
+uniform vec3 u_fog_forward;
+uniform vec3 u_fog_color;
+uniform float u_fog_start;
+uniform float u_fog_end;
 // Sun shadows: the light's view-projection, its packed-depth map (unit 1),
 // how dark a shadowed fragment goes, and the depth-compare bias. Enabled
 // only around the geometry passes — sky, overlays and previews stay unlit.
@@ -67,6 +80,9 @@ uniform float u_dash_px;
 in vec2 v_uv;
 in vec3 v_color;
 in vec3 v_world;
+// Separate display-ground half-space; zero leaves existing rendering unchanged.
+uniform vec4 u_style_ground_clip;
+uniform int u_screen_image;
 in vec3 v_local;
 // Instanced component pass (#482): face colours and texture shades were
 // baked from the PROTOTYPE's normals against the fixed world light, so a
@@ -229,7 +245,17 @@ float matte(vec3 n) {
     return 0.62 + 0.38 * abs(dot(n, u_light_fixed));
 }
 
+float fog_amount() {
+    float depth = dot(v_world - u_fog_eye, u_fog_forward);
+    return smoothstep(u_fog_start, u_fog_end, depth);
+}
+
 void main() {
+    if (u_screen_image == 1) {
+        fragColor = texture(u_tex, v_uv);
+        return;
+    }
+    if (dot(vec4(v_world, 1.0), u_style_ground_clip) < 0.0) discard;
     // Taken before any discard, while the whole pixel quad is alive.
     vec3 n_local = cross(dFdx(v_local), dFdy(v_local));
     vec3 n_world = cross(dFdx(v_world), dFdy(v_world));
@@ -249,6 +275,7 @@ void main() {
     vec4 c;
     if (u_use_texture == 1) {
         vec4 texel = texture(u_tex, v_uv);
+        if (u_material_opaque == 1) texel.a = 1.0;
         // Cutout transparency (face-me billboards, leaves, chain-link):
         // discard keeps the depth buffer honest behind the holes. Below the
         // 0.5 cut the test is DITHERED, not hard — mipmap minification
@@ -296,9 +323,9 @@ void main() {
     if (u_shadow_enable == 1) {
         if (u_shadow_overlay == 1) {
             // Ground catcher: the shadow and nothing else.
-            fragColor = vec4(0.0, 0.0, 0.0,
-                             (1.0 - u_shadow_dark)
-                             * (1.0 - shadow_light()));
+            float alpha = (1.0 - u_shadow_dark) * (1.0 - shadow_light());
+            if (u_fog_enable == 1) alpha *= 1.0 - fog_amount();
+            fragColor = vec4(0.0, 0.0, 0.0, alpha);
             return;
         }
         // Sun shading + cast shadows, composed the classic way: the sun
@@ -312,5 +339,8 @@ void main() {
         c.rgb *= mix(u_shadow_dark, 1.0,
                      clamp(ndl * 1.5, 0.0, 1.0) * lit);
     }
-    fragColor = vec4(mix(c.rgb, u_fade_color, u_fade), c.a);
+    fragColor = vec4(mix(c.rgb, u_fade_color, u_fade), c.a * u_xray_opacity);
+    if (u_fog_enable == 1) {
+        fragColor.rgb = mix(fragColor.rgb, u_fog_color, fog_amount());
+    }
 }

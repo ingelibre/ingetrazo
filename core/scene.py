@@ -15,11 +15,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from typing import Iterable
+from uuid import uuid4
 
 from PySide6.QtGui import QVector3D
 
 from core import layers as _layers
 from core.mesh import Edge, Face, Mesh
+from core.ifc_identity import new_identity
 
 
 def _make_style():
@@ -62,7 +64,14 @@ _ANNOTATION_KINDS = frozenset({"Dimension", "TextLabel", "Guide", "GeoPoint"})
 
 @dataclass
 class Scene:
+    #: Runtime document lifetime, never persisted or restored by undo.
+    #: New/Open invalidate outstanding AI targets even for an empty model.
+    document_id: str = field(default_factory=lambda: uuid4().hex, init=False,
+                             repr=False, compare=False)
     mesh: Mesh = field(default_factory=Mesh)
+    # Document namespace for stable IFC GlobalIds; saved with the model.
+    ifc_namespace: str = field(default_factory=new_identity, kw_only=True)
+    ifc_project: dict = field(default_factory=dict, kw_only=True)
     selection: set = field(default_factory=set)
     version: int = 0
     #: How many of ``version``'s bumps changed only what is SHOWN -- the
@@ -367,6 +376,10 @@ class Scene:
         # render, pick, snap, bounds, export — whatever its layer says.
         # The hidden-things view does NOT change that: it draws them as a
         # ghost in its own pass and only makes them selectable.
+        if not getattr(self.display_style, "show_guides", True):
+            from core.guide import Guide
+            if isinstance(entity, Guide):
+                return False
         if self.entity_hidden(entity) or self.similar_hidden(entity):
             return False
         if self.outside_section_box(entity):
@@ -446,6 +459,10 @@ class Scene:
         return False
 
     def entity_selectable(self, entity) -> bool:
+        if not getattr(self.display_style, "show_guides", True):
+            from core.guide import Guide
+            if isinstance(entity, Guide):
+                return False
         if self.similar_hidden(entity) or self.outside_section_box(entity):
             return False
         if self._object_hidden(entity) and not self.show_hidden_objects:
@@ -863,6 +880,7 @@ class Scene:
         self.version += 1
 
     def clear(self) -> None:
+        self.document_id = uuid4().hex
         self.end_group_edit()
         if (self.mesh.edges or self.mesh.faces or self.selection
                 or self.groups or self.dimensions or self.georef
@@ -874,6 +892,7 @@ class Scene:
                 or self.kept_components or self.section_planes
                 or self.section_boxes
                 or self.materials or self.animation.to_dict()
+                or self.ifc_project
                 or not self.show_section_planes
                 or not self.show_section_cuts
                 or self.show_hidden_objects or self.show_hidden_geometry
@@ -929,6 +948,8 @@ class Scene:
         # Outside the guard: an empty document has a camera to forget too.
         self.camera_home = None
         self.views_home = None
+        self.ifc_namespace = new_identity()
+        self.ifc_project = {}
         self.units = {"length": "m", "precision": 2}
         self.plugin_data = {}
 

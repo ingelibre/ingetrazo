@@ -13,8 +13,9 @@ is rolled back; the watertightness guard validates its recipes).
 1. In IngeTrazo: the sidebar's **AI** tab ▸ **AI bridge (MCP)** section ▸
    **Start bridge** (or **Extensions ▸ AI bridge (MCP)**, which
    opens that section and starts it) — this launches a local server (only
-   127.0.0.1, port 4763; `INGETRAZO_AI_PORT` changes it). **Stop
-   bridge** shuts it down.
+   127.0.0.1) on a free port assigned automatically. Start it in **each
+   window** you want to share with the agent. **Stop bridge** stops sharing
+   that window only.
 2. Once it is running, the section shows the exact lines for
    your system, with a **Copy** button. You do not need Python installed: the
    package ships the MCP server.
@@ -47,8 +48,64 @@ is rolled back; the watertightness guard validates its recipes).
    bridge running (the AI bridge (MCP) section says "Listening on…"),
    that the command path exists, and, in Claude Desktop, that the server
    shows up under Settings ▸ Developer ▸ MCP without an error.
-3. Ask it for things: *"draw a 6×4 m little house with a gable roof,
+3. Register the MCP server **once**. Ask the agent to start with
+   `list_documents`, identify the file and use its `document_id` in every
+   call: *"in building.igz, draw a 6×4 m little house with a gable roof,
    group it and paint it brick; show me how it turned out"*.
+
+### Several windows and documents
+
+Open another window with **File ▸ New window**, in Flatpak too. That menu
+already starts another process with `--new-window`; a normal launch hands
+the file to the window already open. The bridge does not change that.
+
+One MCP server discovers every window with the bridge running.
+`list_documents` returns `document_id`, `instance_id`, PID, name, full path
+(or `null` when it was never saved), title, `dirty` state and revision. The
+path and the ID tell apart two files with the same name.
+
+```python
+list_documents()
+query_model(document_id=building_id)
+query_model(document_id=site_id)
+run_python(document_id=building_id, code="print(len(groups))")
+screenshot(document_id=building_id)
+undo(document_id=building_id)
+```
+
+Every document tool requires `document_id`: **the agent has no active or
+default window**. New window, New and Open create new identities; even
+reopening the same file invalidates the previous ID (`open_document`
+returns the new one). Save and Save As keep the ID. When the document
+changes, the Python variables of the previous conversation are dropped.
+Each document keeps its own undo history.
+
+If a window closes, stops its bridge or changes document, calls with the
+old ID fail without acting on another window. The agent must go back to
+`list_documents` and choose the target. A request whose reply is lost **is
+not repeated automatically**: it may have run, so check the state before
+editing again.
+
+Discovery uses endpoint records in a private folder of the user, which
+holds no file names or contents:
+
+| System | Default folder |
+|---|---|
+| Linux, Flatpak included | `~/.local/state/ingetrazo/ai-bridges` |
+| Windows | `%LOCALAPPDATA%\\IngeTrazo\\ai-bridges` |
+| macOS | `~/Library/Application Support/IngeTrazo/ai-bridges` |
+
+`INGETRAZO_AI_REGISTRY` lets the application and the MCP server share
+another folder. The copied instructions use the absolute path of the
+published registry, even when the folder was set with a relative path. The
+records go away when the bridge stops or the window closes, even if the
+application's working directory changed; endpoints left behind by a
+crashed process are skipped when queried. PNG pictures travel in the reply,
+with no shared temporary file.
+
+After updating from the single-document bridge, restart or reconnect the
+MCP server to reload the tools. Old calls without `document_id` are
+refused.
 
 ### The agent inside a container (Docker, WSL2)
 
@@ -58,24 +115,33 @@ code inside the application, so opening it to the network would leave the
 model (and the computer) at the mercy of anyone on it.
 
 Listening locally is not enough against a browser on the same machine: a web
-page can send a `POST` to `http://127.0.0.1:4763` without the browser
+page can send a `POST` to the bridge (`http://127.0.0.1:<port>`) without the browser
 asking for permission (`fetch` with `mode: "no-cors"` and a text body). That is
 why the bridge drops the connection on the first line that is not a JSON
 request — the first line of any HTTP request is `POST / HTTP/1.1` — and the
 body is never read. Even so, **stop the bridge when you are not using it**.
 
-- **IngeTrazo inside WSL2** (AppImage or `.tar.gz` with WSLg) and the
-  container with `--network host`: works as is, because they share
-  `127.0.0.1`.
-- **In any other case**, bring the port to the agent through a tunnel
-  you control (`ssh -L 4763:127.0.0.1:4763 user@host`, `socat`…)
-  and tell the MCP client where the other end is:
+- **Same network and a shared folder**: with `--network host` (for
+  example, IngeTrazo in WSL2 with WSLg), also mount the records folder in
+  the container. Point `INGETRAZO_AI_REGISTRY` at that mount in the MCP
+  server; it must see the same records as the application. Sharing
+  `127.0.0.1` alone is not enough to discover the windows.
+- **A forwarded endpoint**: for an explicit tunnel, you can pin one
+  window's port by starting it with `INGETRAZO_AI_PORT=4763`. Forward that
+  port (`ssh -L 4763:127.0.0.1:4763 user@host`, `socat`…) and configure
+  the MCP server:
 
       INGETRAZO_AI_HOST=host.docker.internal INGETRAZO_AI_PORT=4763 \
           python3 /path/to/app/scripts/ingetrazo_mcp.py
 
-  `INGETRAZO_AI_HOST` (default `127.0.0.1`) only changes where the client
-  connects to; the bridge still listens on localhost only.
+  With `INGETRAZO_AI_PORT` set to a non-zero port in the MCP server,
+  `list_documents` asks **only that endpoint**, learns its identity and
+  still requires `document_id`. Without that variable, or with `0`, every
+  local window is discovered; in the application, `0` asks for an
+  automatic free port. `INGETRAZO_AI_HOST` only changes where the explicit
+  tunnel goes; the bridge never stops listening on localhost only. The
+  copied instructions include the published registry and the explicit
+  port, when one is set.
 
 ## Exposed tools
 
@@ -102,10 +168,11 @@ Common rules:
 
 | Tool | What it does | Example arguments |
 |---|---|---|
+| `list_documents` | The shared windows and the metadata of their live documents; needs no ID. The first call (#892). | `{}` |
 | `run_python` | Runs Python against the live document (scope: `scene`, `mesh`, `selection`, `groups`, `bim`, `QVector3D`… and the builders `revolve(profile)` / `extrude(outline, z0, z1)`: one line → one solid, smooth, correctly oriented group). One undo per call; full rollback on failure. | `{"code": "extrude([(0,0),(4,0),(4,3),(0,3)], 0, 2.5, name='Shed')"}` |
 | `query_model` | Counts, group/component names, materials, layers, bounds. | `{}` |
-| `document_info` | The document's path, whether it has unsaved changes (`modified`), the save format, sheets, scenes and what is allowed (`saving_allowed`, `shutdown_allowed`). | `{}` |
-| `get_scene_info` | What `query_model` and `document_info` give, plus the scenes, the sheets (with their title-block number), the layers with their visibility, the georeference and whether it can render. The first call to make. | `{}` |
+| `document_info` | The document's `instance_id` and `document_id` (after `open_document`, the new one's), path, whether it has unsaved changes (`modified`), the save format, sheets, scenes and what is allowed (`saving_allowed`, `shutdown_allowed`). | `{}` |
+| `get_scene_info` | What `query_model` and `document_info` give, plus the scenes, the sheets (with their title-block number), the layers with their visibility, the georeference and whether it can render. The first call after `list_documents`. | `{}` |
 | `get_object_info` | One group or component by name or id: box (min, max, size), layer, material, children and BIM (IFC) tag. | `{"name": "Shed"}` or `{"id": "3f2a9c0d1e4b5a67"}` |
 | `list_layers` | The layers: name, visible, locked, folder; and the active one. | `{}` |
 | `set_layer_visibility` | Shows or hides layers (one undo step). | `{"layers": ["Furniture"], "visible": false}` |
@@ -126,8 +193,10 @@ Common rules:
 | `undo` / `redo` | The usual history. | `{}` |
 | `shutdown` | Ends a window-less IngeTrazo started with `--allow-shutdown`. Refused with unsaved changes unless `discard_changes` is given. | `{}` |
 
-Without the bridge running, the tools reply with a notice explaining how to
-start it. The server accepts one client at a time and never listens outside
+Except `list_documents`, every tool requires `document_id`. With no bridge
+running the list is empty, and the other tools say how to start the bridge
+and discover the documents again. Each window runs the requests on its Qt
+main thread, accepts one connection at a time and listens only on
 localhost.
 
 IFC export uses the current exporter. A lossless IFC round trip comes in
@@ -160,7 +229,7 @@ the same options and exit codes.
 | `--headless` | No window on screen (the view is still drawn in a hidden window). No dialog waits for an answer: all are cancelled. |
 | `--ai-bridge` | Starts the bridge (127.0.0.1 only). |
 | `--open FILE` | Opens the document. **If it cannot be opened, IngeTrazo ends at once** with code 3, before the bridge starts. |
-| `--port N` | The bridge's port (default `INGETRAZO_AI_PORT` or 4763; `0` = a free one). |
+| `--port N` | The bridge's port (default `INGETRAZO_AI_PORT`, else a free one, published for the MCP server's discovery; `0` = a free one). |
 | `--ready-file PATH` | Writes the port there once the document is open and the bridge listens (`INGETRAZO_BRIDGE_PORT=<n>` is printed too, and a line on standard error says whether OpenGL is available). |
 | `--allow-save` | The agent may use `save_document`. |
 | `--save-format auto\|json` | How it saves: `auto` (as always) or `json` (see below). |

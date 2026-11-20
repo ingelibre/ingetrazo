@@ -18,6 +18,7 @@ cost stays proportional to the action, not to the model size.
 """
 from __future__ import annotations
 
+import copy
 import os as _os
 import time as _time_mod
 from abc import ABC, abstractmethod
@@ -448,7 +449,8 @@ class AddEdgeCommand(Command):
     (never the pre-existing one it merged into)."""
 
     def __init__(self, a: QVector3D, b: QVector3D, merge: bool = True,
-                 soft: bool | None = None, curve: int | None = None) -> None:
+                 soft: bool | None = None, curve: int | None = None,
+                 material=None) -> None:
         self.a = QVector3D(a)
         self.b = QVector3D(b)
         self.merge = merge  # kept for API parity; the mesh never duplicates
@@ -456,6 +458,8 @@ class AddEdgeCommand(Command):
         # replaces a curve/soft edge with sub-edges, so the pieces inherit.
         self.soft = soft
         self.curve = curve
+        self.material = copy.deepcopy(material) if material else None
+        self._existing_paint = None
         self.edge: Optional[Edge] = None
         self._owned = False
 
@@ -464,6 +468,10 @@ class AddEdgeCommand(Command):
             edge.soft = self.soft
         if self.curve is not None:
             edge.curve = self.curve
+        if self.material is not None:
+            if not self._owned:
+                self._existing_paint = (edge, copy.deepcopy(edge.material))
+            edge.material = copy.deepcopy(self.material)
 
     def do(self, scene) -> None:
         m = scene.mesh
@@ -488,6 +496,10 @@ class AddEdgeCommand(Command):
 
     def undo(self, scene) -> None:
         if not self._owned or self.edge is None:
+            if self._existing_paint is not None:
+                edge, material = self._existing_paint
+                edge.material = copy.deepcopy(material)
+                scene.version += 1
             return
         scene.mesh.remove_edge(self.edge)
         scene.selection.discard(self.edge)
@@ -1495,6 +1507,30 @@ class HardenEdgesAlongCommand(Command):
             self._inner.undo(scene)
 
 
+class SetEdgeMaterialCommand(Command):
+    """Paint edges independently of their adjacent faces, as one undo step."""
+
+    def __init__(self, edges, material) -> None:
+        import copy
+        self._edges = list(edges)
+        self._material = copy.deepcopy(material) if material else None
+        self._old = None
+
+    def do(self, scene) -> None:
+        import copy
+        if self._old is None:
+            self._old = [copy.deepcopy(edge.material) for edge in self._edges]
+        for edge in self._edges:
+            edge.material = copy.deepcopy(self._material)
+        scene.version += 1
+
+    def undo(self, scene) -> None:
+        import copy
+        for edge, material in zip(self._edges, self._old or []):
+            edge.material = copy.deepcopy(material)
+        scene.version += 1
+
+
 class SetFaceColorCommand(Command):
     """Paint a set of faces with an RGB colour (or clear it with ``None``),
     stored in each face's ``attrs["color"]`` — the first user-facing use of the
@@ -1713,6 +1749,14 @@ class RestampMaterialCommand(Command):
                         and paint.get("mat") == self._name):
                     seen.add(id(pg))
                     yield pg
+        # Independent edge paint shares the same registry and restamp/undo
+        # behavior as a container's paint. Meshes shared by instances are
+        # visited once by iter_meshes.
+        from core.purge import iter_meshes
+        for mesh in iter_meshes(scene):
+            for edge in mesh.edges:
+                if edge.material and edge.material.get("mat") == self._name:
+                    yield edge
 
     def do(self, scene) -> None:
         stamp = self._new.face_attrs()
@@ -3138,6 +3182,8 @@ class AutoTagDrawnFacesCommand(Command):
         from core.bim import next_object_id
         tag = dict(self._tag)
         tag["id"] = next_object_id(scene)
+        from core.ifc_identity import new_identity
+        tag["uid"] = new_identity()
         live = scene.mesh.faces
         for fc in self._face_cmds:
             f = getattr(fc, "face", None)
@@ -5316,10 +5362,7 @@ class MergeGroupsCommand(Command):
                 for e in src.edges:
                     e_flat.append((e.a.x(), e.a.y(), e.a.z()))
                     e_flat.append((e.b.x(), e.b.y(), e.b.z()))
-                    e_flags.append((bool(getattr(e, "soft", False)),
-                                    getattr(e, "curve", None),
-                                    getattr(e, "layer", None),
-                                    bool(getattr(e, "hidden", False))))
+                    e_flags.append(edge_flags(e))
             mesh = Mesh()
             n_edge_pts = len(e_flat)
             if e_flat or flat:

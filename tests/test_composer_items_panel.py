@@ -229,7 +229,7 @@ def test_rows_come_in_list_order_with_folders_or_not(monkeypatch):
 
 
 _RIGHT_CLICK_THEN_EYES = r"""
-import faulthandler, os, sys
+import faulthandler, sys
 faulthandler.enable()
 from PySide6.QtCore import QEventLoop, QSettings, Qt, QTimer
 from PySide6.QtWidgets import QApplication
@@ -265,7 +265,7 @@ for n in range(8):                          # the eye, and its deferred rebuild
     del row, rows
     pump()
 print("survived", flush=True)
-os._exit(0)
+sys.exit(0)
 """
 
 

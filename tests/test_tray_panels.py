@@ -109,8 +109,9 @@ def test_ctrl_shift_a_brings_back_a_hidden_ai_tab(win):
     assert "extension_ai" not in win._hidden_tray_names(QSettings())
 
 
-def test_the_bridge_section_starts_and_stops(win, monkeypatch):
+def test_the_bridge_section_starts_and_stops(win, monkeypatch, tmp_path):
     monkeypatch.setenv("INGETRAZO_AI_PORT", "0")
+    monkeypatch.setenv("INGETRAZO_AI_REGISTRY", str(tmp_path / "bridges"))
     section = win._ai_bridge_section
     assert not section.running
     assert section._text.isHidden()

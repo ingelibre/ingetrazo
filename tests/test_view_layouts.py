@@ -204,7 +204,11 @@ def _cell_of(win, vp):
 
 
 def _mode(vp):
-    return vp._effective_style().face_mode
+    # X-ray is a flag over the face mode since #1218: read it as the
+    # mode it used to be, which is what these views compare.
+    from core.style import base_face_mode, xray_enabled
+    style = vp._effective_style()
+    return "xray" if xray_enabled(style) else base_face_mode(style)
 
 
 def test_a_style_picked_in_one_view_stays_in_that_view(win):

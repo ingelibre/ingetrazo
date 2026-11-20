@@ -29,7 +29,7 @@ from formats import igz  # noqa: E402
 _app = QApplication.instance() or QApplication([])
 
 #: Runtime-only or identity fields: not document state, or compared apart.
-_SKIP = {"mesh", "version", "view_version", "selection"}
+_SKIP = {"mesh", "version", "view_version", "selection", "document_id"}
 
 
 def _square(scene, z=0.0):

@@ -13,8 +13,9 @@ revierte entero; el guard de hermeticidad valida sus recetas).
 1. En IngeTrazo: pestaña **IA** de la barra lateral ▸ sección **Puente IA
    (MCP)** ▸ **Encender puente** (o **Extensiones ▸ Puente IA (MCP)**, que
    abre esa sección y lo enciende) — arranca un servidor local (solo
-   127.0.0.1, puerto 4763; `INGETRAZO_AI_PORT` lo cambia). **Detener
-   puente** lo apaga.
+   127.0.0.1) con un puerto libre asignado automáticamente. Enciéndelo en
+   **cada ventana** que quieras compartir con el agente. **Detener puente**
+   deja de compartir únicamente esa ventana.
 2. Al encenderlo, la sección muestra, con un botón Copiar, las líneas exactas para
    tu sistema (botón **Copiar**). No hace falta tener Python instalado: el
    paquete lleva el servidor MCP.
@@ -47,8 +48,64 @@ revierte entero; el guard de hermeticidad valida sus recetas).
    puente encendido (la sección Puente IA (MCP) dice «Escuchando en…»),
    que la ruta del comando existe, y en Claude Desktop que el servidor
    aparece en Configuración ▸ Desarrollador ▸ MCP sin error.
-3. Pídele cosas: *"dibuja una casita de 6×4 m con techo a dos aguas,
-   agrúpala y píntala de ladrillo; muéstrame cómo quedó"*.
+3. Registra el servidor MCP **una sola vez**. Pídele que empiece con
+   `list_documents`, identifique el archivo y utilice su `document_id` en
+   cada llamada: *"en edificio.igz, dibuja una casita de 6×4 m con techo a
+   dos aguas, agrúpala y píntala de ladrillo; muéstrame cómo quedó"*.
+
+### Varias ventanas y documentos
+
+Abre otra ventana con **Archivo ▸ Nueva ventana**, también en Flatpak.
+Este menú ya inicia otro proceso con `--new-window`; un lanzamiento normal
+entrega el archivo a la ventana existente. El puente no cambia esa conducta.
+
+Un solo servidor MCP descubre todas las ventanas con el puente encendido.
+`list_documents` devuelve `document_id`, `instance_id`, PID, nombre, ruta
+completa (o `null` si no está guardado), título, estado `dirty` y revisión.
+La ruta y el ID distinguen dos archivos que tengan el mismo nombre.
+
+```python
+list_documents()
+query_model(document_id=id_edificio)
+query_model(document_id=id_terreno)
+run_python(document_id=id_edificio, code="print(len(groups))")
+screenshot(document_id=id_edificio)
+undo(document_id=id_edificio)
+```
+
+Todas las herramientas de documento exigen `document_id`: **no existe una
+ventana activa o predeterminada para el agente**. Nueva ventana, Nuevo y
+Abrir crean identidades nuevas; incluso reabrir el mismo archivo invalida
+el ID anterior (`open_document` devuelve el nuevo). Guardar o Guardar como conservan el ID. Al cambiar de
+documento se descartan las variables Python de la conversación anterior.
+Cada documento mantiene su propia historia de undo.
+
+Si una ventana se cierra, detiene el puente o cambia de documento, las
+llamadas al ID anterior fallan sin actuar sobre otra ventana. El agente
+debe volver a `list_documents` y elegir el destino. Una petición cuya
+respuesta se pierde **no se repite automáticamente**: pudo haberse
+ejecutado, así que hay que consultar el estado antes de volver a editar.
+
+La detección usa registros de endpoints en una carpeta privada del usuario,
+sin guardar allí nombres ni contenidos de archivos:
+
+| Sistema | Carpeta predeterminada |
+|---|---|
+| Linux, incluido Flatpak | `~/.local/state/ingetrazo/ai-bridges` |
+| Windows | `%LOCALAPPDATA%\\IngeTrazo\\ai-bridges` |
+| macOS | `~/Library/Application Support/IngeTrazo/ai-bridges` |
+
+`INGETRAZO_AI_REGISTRY` permite compartir otra carpeta entre la aplicación
+y el servidor MCP. Las instrucciones copiadas usan la ruta absoluta del
+registro publicado, aunque la carpeta se configurase con una ruta relativa.
+Los registros desaparecen al detener el puente o cerrar la ventana, incluso
+si cambia el directorio de trabajo de la aplicación; los endpoints que dejó
+un proceso caído se omiten al consultar. Las capturas PNG viajan en la
+respuesta, sin un archivo temporal común.
+
+Después de actualizar desde el puente de un solo documento, reinicia o
+reconecta el servidor MCP para recargar las herramientas. Las llamadas
+antiguas sin `document_id` se rechazan.
 
 ### El agente dentro de un contenedor (Docker, WSL2)
 
@@ -58,24 +115,33 @@ código dentro de la aplicación, de modo que abrirlo a la red dejaría el
 modelo (y el equipo) a merced de cualquiera en ella.
 
 Escuchar en local no basta frente al navegador del mismo equipo: una página
-web puede mandar un `POST` a `http://127.0.0.1:4763` sin que el navegador
+web puede mandar un `POST` al puente (`http://127.0.0.1:<puerto>`) sin que el navegador
 pida permiso (`fetch` con `mode: "no-cors"` y cuerpo de texto). Por eso el
 puente corta la conexión en la primera línea que no es una petición JSON —
 la primera línea de cualquier petición HTTP es `POST / HTTP/1.1` — y el
 cuerpo nunca llega a leerse. Aun así, **detén el puente cuando no lo uses**.
 
-- **IngeTrazo dentro de WSL2** (AppImage o `.tar.gz` con WSLg) y el
-  contenedor con `--network host`: funciona tal cual, porque comparten
-  `127.0.0.1`.
-- **En cualquier otro caso**, lleva el puerto hasta el agente con un túnel
-  que tú controlas (`ssh -L 4763:127.0.0.1:4763 usuario@equipo`, `socat`…)
-  y dile al cliente MCP dónde está el otro extremo:
+- **Misma red y carpeta compartida**: con `--network host` (por ejemplo,
+  IngeTrazo en WSL2 con WSLg), monta también la carpeta de registros en el
+  contenedor. Apunta `INGETRAZO_AI_REGISTRY` a ese montaje en el servidor
+  MCP; debe ver los mismos registros que la aplicación. Compartir solo
+  `127.0.0.1` no basta para descubrir las ventanas.
+- **Un endpoint reenviado**: para un túnel explícito, puedes fijar el puerto
+  de una ventana arrancándola con `INGETRAZO_AI_PORT=4763`. Reenvía ese
+  puerto (`ssh -L 4763:127.0.0.1:4763 usuario@equipo`, `socat`…) y configura
+  el servidor MCP:
 
       INGETRAZO_AI_HOST=host.docker.internal INGETRAZO_AI_PORT=4763 \
           python3 /ruta/a/app/scripts/ingetrazo_mcp.py
 
-  `INGETRAZO_AI_HOST` (por defecto `127.0.0.1`) solo cambia a dónde se
-  conecta el cliente; el puente no deja de escuchar únicamente en local.
+  Con `INGETRAZO_AI_PORT` configurado con un puerto distinto de cero en el
+  servidor MCP, `list_documents` consulta **solo ese endpoint**, aprende su
+  identidad y sigue exigiendo `document_id`. Sin esa variable, o con valor
+  `0`, se descubren todas las ventanas locales; en la aplicación, `0` pide
+  un puerto libre automático. `INGETRAZO_AI_HOST` solo cambia el destino del
+  túnel explícito; el puente nunca deja de escuchar únicamente en local.
+  Las instrucciones copiadas incluyen el registro publicado y el puerto
+  explícito, si se ha configurado.
 
 ## Herramientas expuestas
 
@@ -103,10 +169,11 @@ Reglas comunes:
 
 | Herramienta | Qué hace | Ejemplo de argumentos |
 |---|---|---|
+| `list_documents` | Ventanas compartidas y metadatos de sus documentos vivos; no necesita un ID. Es la primera llamada (#892). | `{}` |
 | `run_python` | Ejecuta Python sobre el documento vivo (scope: `scene`, `mesh`, `selection`, `groups`, `bim`, `QVector3D`… y los constructores `revolve(perfil)` / `extrude(contorno, z0, z1)`: una línea → un grupo sólido, suave y orientado). Un undo por llamada; rollback total si falla. | `{"code": "extrude([(0,0),(4,0),(4,3),(0,3)], 0, 2.5, name='Caseta')"}` |
 | `query_model` | Conteos, nombres de grupos/componentes, materiales, capas, bounds. | `{}` |
-| `document_info` | Ruta del documento, si tiene cambios sin guardar (`modified`), formato de guardado, láminas, escenas y qué está permitido (`saving_allowed`, `shutdown_allowed`). | `{}` |
-| `get_scene_info` | Lo de `query_model` y `document_info` más las escenas, las láminas (con su número del cajetín), las capas con su visibilidad, la georreferencia y si puede renderizar. Es la primera llamada. | `{}` |
+| `document_info` | `instance_id` y `document_id` del documento (tras `open_document`, los del nuevo), ruta, si tiene cambios sin guardar (`modified`), formato de guardado, láminas, escenas y qué está permitido (`saving_allowed`, `shutdown_allowed`). | `{}` |
+| `get_scene_info` | Lo de `query_model` y `document_info` más las escenas, las láminas (con su número del cajetín), las capas con su visibilidad, la georreferencia y si puede renderizar. Es la primera tras `list_documents`. | `{}` |
 | `get_object_info` | Un grupo o componente por nombre o identificador: caja (mín., máx., tamaño), capa, material, hijos y etiqueta BIM (IFC). | `{"name": "Caseta"}` o `{"id": "3f2a9c0d1e4b5a67"}` |
 | `list_layers` | Las capas: nombre, visible, bloqueada, carpeta; y la activa. | `{}` |
 | `set_layer_visibility` | Muestra u oculta capas (un paso de deshacer). | `{"layers": ["Mobiliario"], "visible": false}` |
@@ -114,7 +181,7 @@ Reglas comunes:
 | `show_scene` | Muestra una escena como un clic en su fila: cámara, capas, estilo y objetos ocultos. | `{"name": "Planta"}` |
 | `set_camera` | Vista estándar (`top`, `bottom`, `front`, `back`, `left`, `right`, `iso`) o `eye`/`target` (Z arriba, metros); proyección `perspective`, `parallel` o `two_point`; `fov` en grados; `zoom_extents` encuadra todo. | `{"view": "iso", "zoom_extents": true}` o `{"eye": [20, -15, 8], "target": [0, 0, 1], "projection": "perspective"}` |
 | `select` | Selecciona grupos o componentes por `names` o `ids` (`mode`: `replace`, `add`, `remove` o `toggle`), o vacía la selección con `clear`. | `{"names": ["Banca 1", "Banca 2"]}` o `{"clear": true}` |
-| `screenshot` | Renderiza la vista. El agente la mira e itera; con `path` guarda además el PNG (o JPG) ahí. | `{"width": 1280, "height": 720}` |
+| `screenshot` | Renderiza la vista. El agente la mira e itera; con `path` guarda además el PNG (o JPG) ahí. `view` (una vista estándar) y `fit` (encuadrar todo el modelo) apuntan la cámara solo para esta imagen y dejan la vista del usuario como estaba. | `{"width": 1280, "height": 720}` |
 | `export_view` | Renderiza una escena guardada a PNG y el agente la mira; con `path` la guarda ahí. La vista del usuario (cámara, capas, estilo, ocultos) vuelve a como estaba y un documento guardado sigue guardado. | `{"view": "Vista 3D", "path": "/home/ana/obra/vista.png"}` |
 | `render_sheet` | PNG de una lámina, pintado por el compositor como su exportación de imagen. La lámina se indica por nombre, por número del cajetín (`L-02`) o por posición (1 = la primera); `width` en píxeles o `dpi`. | `{"sheet": "L-02", "width": 1600}` |
 | `export_pdf` | Las láminas (todas, o las de `sheets`: nombre, número del cajetín o posición) a un solo PDF. | `{"path": "/home/ana/obra/plaza.pdf"}` o `{"path": "/home/ana/obra/L-02.pdf", "sheets": ["L-02"]}` |
@@ -127,9 +194,11 @@ Reglas comunes:
 | `undo` / `redo` | La historia de siempre. | `{}` |
 | `shutdown` | Cierra un IngeTrazo sin ventana arrancado con `--allow-shutdown`. Con cambios sin guardar se niega, salvo con `discard_changes`. | `{}` |
 
-Sin el puente encendido, las tools responden con el aviso de cómo
-encenderlo. El servidor acepta un cliente a la vez y nunca escucha fuera
-de localhost.
+Salvo `list_documents`, todas requieren `document_id`. Sin puentes activos,
+la lista está vacía y las operaciones indican cómo encender el puente y
+volver a descubrir los documentos. Cada ventana ejecuta las peticiones en
+su hilo principal de Qt, acepta una conexión a la vez y solo escucha en
+localhost.
 
 La exportación a IFC usa el exportador actual. La ida y vuelta de IFC sin
 pérdidas llegará en la 0.6.4.
@@ -161,7 +230,7 @@ las mismas opciones y códigos de salida.
 | `--headless` | Ninguna ventana en pantalla (la vista se sigue dibujando en una ventana oculta). Ningún diálogo espera respuesta: todos se cancelan. |
 | `--ai-bridge` | Enciende el puente (solo 127.0.0.1). |
 | `--open ARCHIVO` | Abre el documento. **Si no se puede abrir, IngeTrazo termina al instante** con el código 3, antes de encender el puente. |
-| `--port N` | Puerto del puente (por defecto `INGETRAZO_AI_PORT` o 4763; `0` = uno libre). |
+| `--port N` | Puerto del puente (por defecto `INGETRAZO_AI_PORT`, si no uno libre, publicado para que el servidor MCP lo descubra; `0` = uno libre). |
 | `--ready-file RUTA` | Escribe ahí el puerto cuando el documento ya está abierto y el puente escucha (también se imprime `INGETRAZO_BRIDGE_PORT=<n>`, y en la salida de errores una línea que dice si hay OpenGL). |
 | `--allow-save` | El agente puede usar `save_document`. |
 | `--save-format auto\|json` | Cómo se guarda: `auto` (como siempre) o `json` (ver abajo). |

@@ -588,6 +588,7 @@ class MainWindow(QMainWindow):
         # main.py passes True: the plugins' setup runs once the window is up
         # (see load_extensions). Set first — the menu bar is built below.
         self._defer_extensions = bool(defer_extensions)
+        self._extension_manager_dialog = None
         self.resize(1280, 800)
         # Every toolbar — ours, a later one, a plugin's — floats as a
         # small window with its name and a × to close it.
@@ -690,6 +691,13 @@ class MainWindow(QMainWindow):
         #: opens itself (``ExtensionApp.add_file_opener``), from Open Recent,
         #: the command line or a double-click.
         self.file_openers: dict = {}
+
+        # Extension-owned resource types (presets, profiles, libraries, ...).
+        # The core only owns the registry; each extension owns its provider
+        # and the meaning of the resource payload.
+        from core.resource_library import ResourceRegistry
+        self.resource_registry = ResourceRegistry()
+
         self._saved_version: int = 0
 
         self._setup_ui()
@@ -808,6 +816,7 @@ class MainWindow(QMainWindow):
             self.restoreGeometry(geo)
 
         self._setup_autosave()
+        self.workspace_profiles.restore_controls()
         # An untitled recovery slot on disk means the last session died with
         # unsaved work (a clean exit clears it) — offer it back, once the
         # window is up (QTimer 0: not during __init__, the viewport isn't
@@ -1281,14 +1290,14 @@ class MainWindow(QMainWindow):
         self.toolbars["layers"] = layers_tb
         self.layers_toolbar = LayersToolbar(self, layers_tb)
 
-        # Styles, Shadows and Dimension style hang OFF THE TOOLBAR as
-        # dropdown panels (user: the lateral bar was drowning, and floating
-        # windows felt loose — "¿no hay forma de integrarlo en el
-        # toolbar?"). Click the button, the panel drops under it; click
-        # outside, it folds away.
+        # Styles stays open in its own window while the user models.
+        # Fog (#1139), Shadows and Dimension style remain toolbar dropdowns.
         from PySide6.QtWidgets import QToolButton, QWidgetAction
-        from views.tray import DimensionStylePanel, ShadowsPanel, StylesPanel
+        from views.tray import (DimensionStylePanel, FogPanel, ShadowsPanel,
+                                StylesPanel)
         self.styles_panel = StylesPanel(self)
+        self._styles_window = None
+        self.fog_panel = FogPanel(self)
         self.shadows_panel = ShadowsPanel(self)
         self.dimstyle_panel = DimensionStylePanel(self)
         panels_tb = self._new_toolbar(tr("Panels"), "panels_toolbar")
@@ -1296,6 +1305,8 @@ class MainWindow(QMainWindow):
                 (self.styles_panel, "styles", tr("Styles"),
                  tr("How the model looks: faces, edges, background and "
                     "sky.")),
+                (self.fog_panel, "fog", tr("Fog"),
+                 tr("Fade distant geometry into a chosen color.")),
                 (self.shadows_panel, "shadows", tr("Shadows"),
                  tr("The sun's shadows: on or off, the date, the time and "
                     "how dark they are.")),
@@ -1305,14 +1316,18 @@ class MainWindow(QMainWindow):
             btn = QToolButton(panels_tb)
             btn.setIcon(tool_icon(key))
             btn.setToolTip(f"{title}\n{tip}")
-            btn.setPopupMode(QToolButton.InstantPopup)
-            btn.setStyleSheet(
-                "QToolButton::menu-indicator { image: none; }")
-            menu = QMenu(btn)
-            wa = QWidgetAction(menu)
-            wa.setDefaultWidget(panel)
-            menu.addAction(wa)
-            btn.setMenu(menu)
+            if key == "styles":
+                btn.setObjectName("styles_button")
+                btn.clicked.connect(self._on_styles)
+            else:
+                btn.setPopupMode(QToolButton.InstantPopup)
+                btn.setStyleSheet(
+                    "QToolButton::menu-indicator { image: none; }")
+                menu = QMenu(btn)
+                wa = QWidgetAction(menu)
+                wa.setDefaultWidget(panel)
+                menu.addAction(wa)
+                btn.setMenu(menu)
             panels_tb.addWidget(btn)
             self._icon_actions.append((btn, key))
 
@@ -1321,6 +1336,16 @@ class MainWindow(QMainWindow):
         self.profile_dock = ProfileDock(self)
         self.addDockWidget(Qt.BottomDockWidgetArea, self.profile_dock)
         self.profile_dock.hide()
+
+    def _on_styles(self) -> None:
+        """Open or bring back the same modeless Styles window."""
+        if self._styles_window is None:
+            from views.styles_window import StylesWindow
+            self._styles_window = StylesWindow(self, self.styles_panel)
+        self.styles_panel.refresh()
+        self._styles_window.show()
+        self._styles_window.raise_()
+        self._styles_window.activateWindow()
 
     def _new_toolbar(self, title: str, object_name: str) -> QToolBar:
         """A separate, independently draggable/floatable icons-only toolbar
@@ -2172,8 +2197,8 @@ class MainWindow(QMainWindow):
             self._style_actions[preset.name] = act
         # X-ray on and off with one key: a glance at what hides behind a
         # face, then back to the style you were in.
-        self._style_before_xray = (None, None)
         self._act_xray_toggle = QAction(tr("Toggle X-ray"), self)
+        self._act_xray_toggle.setCheckable(True)
         self._act_xray_toggle.setShortcut(QKeySequence("Alt+X"))
         self._act_xray_toggle.setStatusTip(tr(
             "Switch to X-ray, or back to the style you were in."))
@@ -2404,6 +2429,9 @@ class MainWindow(QMainWindow):
 
         # Window menu (panels + app preferences)
         window_menu = menubar.addMenu(tr("Window"))
+        from views.workspace_profiles import WorkspaceProfiles
+        self.workspace_profiles = WorkspaceProfiles(
+            self, window_menu.addMenu(tr("Workspace")))
 
         # Every tray, extension tabs included, has its entry here — and the
         # same list opens on a right-click over the tabs. Only this list
@@ -4516,24 +4544,65 @@ class MainWindow(QMainWindow):
             self.layout().activate()
 
     def _on_manage_extensions(self) -> None:
-        # An exception in a menu slot goes to stderr, and a windowed build
-        # has none: the click did nothing at all (#1152).
-        try:
-            from views.extension_manager_dialog import ExtensionManagerDialog
-            dialog = ExtensionManagerDialog(self)
-        except Exception as exc:  # noqa: BLE001 — say so, whatever it was
-            import logging
-            from core.extensions import note_failure
-            logging.getLogger("ingetrazo.plugins").exception(
-                "the extension manager could not open")
-            note_failure("the extension manager could not open")
-            QMessageBox.warning(
-                self, tr("Extension manager"),
-                tr("Could not load extensions: {error}",
-                   error=f"{type(exc).__name__}: {exc}"))
-            return
+        dialog = self._extension_manager_dialog
+        if dialog is None:
+            # An exception in a menu slot goes to stderr, and a windowed
+            # build has none: the click did nothing at all (#1152).
+            try:
+                from views.extension_manager_dialog import (
+                    ExtensionManagerDialog)
+                dialog = ExtensionManagerDialog(self)
+            except Exception as exc:  # noqa: BLE001 — say so, whatever it was
+                import logging
+                from core.extensions import note_failure
+                logging.getLogger("ingetrazo.plugins").exception(
+                    "the extension manager could not open")
+                note_failure("the extension manager could not open")
+                QMessageBox.warning(
+                    self, tr("Extension manager"),
+                    tr("Could not load extensions: {error}",
+                       error=f"{type(exc).__name__}: {exc}"))
+                return
+            self._extension_manager_dialog = dialog
         dialog.exec()
-        dialog.deleteLater()
+        if dialog._restart_requested:
+            dialog._restart_requested = False
+            if self._prepare_extension_restart():
+                self._launch_extension_restart()
+
+    def _prepare_extension_restart(self) -> bool:
+        if self._workspace is not None:
+            QMessageBox.information(
+                self, tr("Restart IngeTrazo"),
+                tr("Leave the extension workspace before restarting."))
+            return False
+        if self._current_path is None and self._import_name is not None:
+            # Imported files have no native path to reopen. Preserve the
+            # converted document through the normal Save As flow first.
+            self._on_save()
+            return self._current_path is not None and not self._is_dirty()
+        return self._confirm_discard(
+            tr("Restart IngeTrazo to apply extension changes?"))
+
+    def _launch_extension_restart(self) -> bool:
+        from PySide6.QtCore import QProcess
+
+        command = self._new_window_command()
+        arguments = command[1:]
+        if self._current_path is not None:
+            arguments.append(str(self._current_path))
+        # The new process reads the arrangement right away: save it as the
+        # close below will (floating panels docked first, as on main).
+        self._dock_panels_for_saving()
+        self._save_window_settings()
+        if not QProcess.startDetached(command[0], arguments):
+            QMessageBox.warning(
+                self, tr("Restart IngeTrazo"),
+                tr("Could not restart IngeTrazo."))
+            return False
+        self._restart_confirmed = True
+        self.close()
+        return True
 
     PLUGIN_GUIDE_URL = ("https://github.com/ingelibre/ingetrazo"
                         "/blob/main/docs/plugins.md")
@@ -5829,8 +5898,12 @@ class MainWindow(QMainWindow):
 
     # ---- Sections (section planes) -----------------------------------------
     def _set_section_visibility(self, attr: str, on: bool) -> None:
-        setattr(self.viewport.scene, attr, bool(on))
+        from core.modeling_style import set_modeling_visibility
+        set_modeling_visibility(self.viewport.scene, attr, on)
         self.viewport.update()
+        panel = getattr(self, "styles_panel", None)
+        if panel is not None:
+            panel.refresh()
         browser = getattr(self, "project_browser", None)
         if browser is not None:
             browser.outliner.on_scene_changed()
@@ -6010,6 +6083,8 @@ class MainWindow(QMainWindow):
         if bool(getattr(scene, attr, False)) == bool(on):
             return
         setattr(scene, attr, bool(on))
+        if attr == "show_hidden_geometry":
+            scene.display_style.modeling_visibility[attr] = bool(on)
         if not on:
             # What the view no longer shows cannot stay selected: the ghost
             # group's orange outline outlived the switch (Marco,
@@ -6022,11 +6097,19 @@ class MainWindow(QMainWindow):
             self._sync_styles_hidden_geometry()
         self.viewport.update()
 
+        panel = getattr(self, "styles_panel", None)
+        if panel is not None:
+            panel.refresh()
+
     def _set_show_axes(self, on: bool) -> None:
         """Camera ▸ Axes: a scene flag (it travels in the document) and a
         repaint; nothing else depends on the axes being drawn."""
-        self.viewport.scene.show_axes = bool(on)
+        from core.modeling_style import set_modeling_visibility
+        set_modeling_visibility(self.viewport.scene, "show_axes", on)
         self.viewport.update()
+        panel = getattr(self, "styles_panel", None)
+        if panel is not None:
+            panel.refresh()
 
     def prompt_section_name(self, plane) -> None:
         """The post-placement prompt: name + symbol (cancel keeps
@@ -6172,44 +6255,32 @@ class MainWindow(QMainWindow):
         """Activate a built-in style (a COPY — presets stay pristine) in the
         active view."""
         self.set_active_style(preset.copy())
+        if self._active_view() is self.viewport:
+            # The scene's own toggles a style remembers (#1218); a view of
+            # several keeps its style to itself and leaves the scene alone.
+            from core.modeling_style import apply_modeling_visibility
+            apply_modeling_visibility(self.viewport.scene)
         self._sync_style_menu()
         self.statusBar().showMessage(
             tr("Style: {name}", name=tr(preset.name)), 2000)
 
     def _toggle_xray(self) -> None:
-        """Alt+X: into X-ray, remembering the style you leave; out of it,
-        back to that style — or to Default when there is none to go back to
-        (X-ray picked from the menu, or another document since)."""
-        from core.style import style_by_name
-        vp = self._active_view()
-        style = self.active_style()
-        # Each view of several goes in and out on its own: the window's view
-        # remembers in ``_style_before_xray``, the others on themselves.
-        mine = vp is self.viewport
-        if style is not None and style.face_mode == "xray":
-            if mine:
-                prev_scene, prev = self._style_before_xray
-                self._style_before_xray = (None, None)
-            else:
-                prev_scene, prev = getattr(vp, "_style_before_xray",
-                                           (None, None))
-                vp._style_before_xray = (None, None)
-            if prev_scene is not vp.scene or prev is None:
-                prev = style_by_name("Default")
-            self._apply_display_style(prev)
-        else:
-            kept = (vp.scene, style.copy() if style is not None else None)
-            if mine:
-                self._style_before_xray = kept
-            else:
-                vp._style_before_xray = kept
-            self._apply_display_style(style_by_name("X-ray"))
+        """Alt+X: X-ray on or off over the active view's style, keeping
+        everything else of it (#1218: X-ray is a flag of the style now, not
+        a face mode, so leaving it is simply turning it off)."""
+        from core.style import Style, base_face_mode, xray_enabled
+        style = self.active_style() or Style()
+        updated = style.copy()
+        updated.face_mode = base_face_mode(style)
+        updated.xray = not xray_enabled(style)
+        self._apply_display_style(updated)
 
     def _set_style_field(self, name: str, value: bool) -> None:
         style = self.active_style()
         if style is None or getattr(style, name) == bool(value):
             return
         setattr(self.own_style(), name, bool(value))
+        self._sync_style_menu()
         self.repaint_styled()
         browser = getattr(self, "project_browser", None)
         if browser is not None and name == "section_fill":
@@ -6218,7 +6289,12 @@ class MainWindow(QMainWindow):
     def _sync_style_menu(self) -> None:
         """Reflect the active view's style in the menu (loads, scene recall,
         another of several views clicked)."""
+        if getattr(self, "_act_show_splanes", None) is not None:
+            self._sync_section_menu()
+        from core.style import xray_enabled
         style = self.active_style()
+        if getattr(self, "_act_xray_toggle", None) is not None:
+            self._act_xray_toggle.setChecked(xray_enabled(style))
         if style is None:
             return
         for name, act in self._style_actions.items():
@@ -6244,6 +6320,9 @@ class MainWindow(QMainWindow):
             act.setChecked(sh.enabled)
             act.blockSignals(False)
         panel = getattr(self, "styles_panel", None)
+        if panel is not None:
+            panel.refresh()
+        panel = getattr(self, "fog_panel", None)
         if panel is not None:
             panel.refresh()
         panel = getattr(self, "shadows_panel", None)
@@ -12456,16 +12535,26 @@ class MainWindow(QMainWindow):
                 tr("Nothing to export: tag geometry in the BIM panel first "
                    "(only tagged objects go to IFC)."))
             return
-        path_str, _ = file_dialogs.getSaveFileName(
-            self, tr("Export IFC"), "model.ifc",
-            tr("IFC4 (*.ifc);;All files (*)"))
+        # Schema identifiers are technical names in every language. Retain
+        # the existing translated IFC4/All files filters and default.
+        ifc43_filter = "IFC4.3 ADD2 (*.ifc)"
+        filters = tr("IFC4 (*.ifc);;All files (*)").split(";;")
+        filters.insert(1, ifc43_filter)
+        from core.turkiye_delivery import PROFILE, ui as delivery_ui
+        delivery_filter = delivery_ui("Türkiye IFC4.3 profile") + " (*.ifc)"
+        filters.insert(2, delivery_filter)
+        path_str, selected_filter = file_dialogs.getSaveFileName(
+            self, tr("Export IFC"), "model.ifc", ";;".join(filters))
         if not path_str:
             return
         path = Path(path_str)
         self.statusBar().showMessage(tr("Exporting {name}…", name=path.name))
         self.statusBar().repaint()
         try:
-            count = ifc_format.save_ifc(self.viewport.scene, path_str)
+            profile = PROFILE if selected_filter == delivery_filter else None
+            schema = "IFC4X3_ADD2" if selected_filter == ifc43_filter or profile else "IFC4"
+            count = ifc_format.save_ifc(self.viewport.scene, path_str,
+                                       schema=schema, delivery_profile=profile)
         except Exception as exc:  # noqa: BLE001
             self.statusBar().clearMessage()
             QMessageBox.critical(self, tr("Export IFC failed"), str(exc))
@@ -12934,9 +13023,13 @@ class MainWindow(QMainWindow):
         if self._workspace is not None and not self.leave_workspace():
             event.ignore()
             return
-        if not self._confirm_quit():
+        if (not getattr(self, "_restart_confirmed", False)
+                and not self._confirm_quit()):
             event.ignore()
             return
+        bridge = getattr(self, "_ai_bridge", None)
+        if bridge is not None:
+            bridge.stop()
         # A clean goodbye: whatever the user decided (save or discard), this
         # session's recovery slots no longer speak for anyone.
         from core import autosave
@@ -12946,17 +13039,7 @@ class MainWindow(QMainWindow):
         # arrangement, kept for the next session.
         self._show_panels_again()
         self._dock_panels_for_saving()
-        # The window arrangement (toolbars, docks, size) IS a preference.
-        # Closing mid-presentation must remember the WORKSPACE, not the
-        # clean screen's everything-hidden state.
-        act = getattr(self, "_act_clean_screen", None)
-        clean_state = getattr(self, "_clean_screen_state", None)
-        st = QSettings()
-        st.setValue("ui/window_state",
-                    clean_state if (act is not None and act.isChecked()
-                                    and clean_state is not None)
-                    else self.saveState())
-        st.setValue("ui/window_geometry", self.saveGeometry())
+        self._save_window_settings()
         # Free every GL texture while a GL context still exists — the survey
         # atlases (hundreds of MB), the tile and terrain textures, and the
         # general texture cache (faces, reference images). Letting Qt tear
@@ -12978,6 +13061,22 @@ class MainWindow(QMainWindow):
         # into it afterwards (#1269).
         self._closed = True
         super().closeEvent(event)
+
+    def _save_window_settings(self) -> None:
+        # The window arrangement (toolbars, docks, size) IS a preference.
+        # Closing mid-presentation must remember the WORKSPACE, not the
+        # clean screen's everything-hidden state.
+        act = getattr(self, "_act_clean_screen", None)
+        clean_state = getattr(self, "_clean_screen_state", None)
+        st = QSettings()
+        st.setValue("ui/window_state",
+                    clean_state if (act is not None and act.isChecked()
+                                    and clean_state is not None)
+                    else self.saveState())
+        # A clean screen is temporary; preserve the underlying profile.
+        if act is None or not act.isChecked():
+            self.workspace_profiles.save()
+        st.setValue("ui/window_geometry", self.saveGeometry())
 
     def _confirm_quit(self) -> bool:
         """Quitting: one project with unsaved changes gets the usual

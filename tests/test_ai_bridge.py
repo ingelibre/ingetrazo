@@ -24,9 +24,11 @@ if QApplication.instance() is None:
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 
 
-def _rpc(sock, tool, args=None):
+def _rpc(sock, tool, args=None, ids=None):
+    # #892: every request but list_documents names its window and document.
     sock.sendall((json.dumps(
-        {"id": 1, "tool": tool, "args": args or {}}) + "\n").encode())
+        {"id": 1, "tool": tool, "args": args or {}, **(ids or {})})
+        + "\n").encode())
     buf = b""
     while b"\n" not in buf:
         chunk = sock.recv(65536)
@@ -40,13 +42,15 @@ def _ask(bridge, tool, args=None):
     events — the bridge executes on the Qt main thread via a queued signal."""
     app = QApplication.instance()
     out: dict = {}
+    ids = {"instance_id": bridge.instance_id,
+           "document_id": bridge._document_id()}
 
     def worker():
         s = socket.socket()
         s.settimeout(10.0)
         s.connect(("127.0.0.1", bridge.port))
         try:
-            out["reply"] = _rpc(s, tool, args)
+            out["reply"] = _rpc(s, tool, args, ids)
         finally:
             s.close()
 
@@ -201,16 +205,23 @@ def test_a_call_arriving_inside_a_running_one_is_refused():
     win = MainWindow()
     try:
         bridge = _Bridge(win.viewport)
+        bridge.start()
         bridge._busy = True
-        job = {"req": {"id": 7, "tool": "query_model"}, "done": _t.Event(),
-               "reply": None}
+        # #892: a job names its window and document, from a running bridge.
+        req = {"id": 7, "tool": "query_model",
+               "instance_id": bridge.instance_id,
+               "document_id": bridge._document_id()}
+        job = {"req": req, "done": _t.Event(), "reply": None,
+               "stop": bridge._stop}
         bridge._run_on_main(job)
         assert job["done"].is_set() and job["reply"]["ok"] is False
         assert "previous call" in job["reply"]["error"]
         bridge._busy = False
+        job["done"].clear()
         bridge._run_on_main(job)
-        assert job["reply"]["ok"] is True
+        assert job["reply"]["ok"] is True, job["reply"]
     finally:
+        bridge.stop()
         win._saved_version = win.viewport.scene.version
         win.close()
 
@@ -231,8 +242,16 @@ def test_mcp_server_protocol_and_bridge_down_message(monkeypatch):
     assert mcp.handle({"jsonrpc": "2.0",
                        "method": "notifications/initialized"}) is None
 
+    # #892: without a document the client refuses before any socket...
     call = mcp.handle({"jsonrpc": "2.0", "id": 3, "method": "tools/call",
                        "params": {"name": "query_model", "arguments": {}}})
+    result = call["result"]
+    assert result["isError"] is True
+    assert "list_documents" in result["content"][0]["text"]
+    # ...and with one whose bridge is down, it says to enable the bridge.
+    call = mcp.handle({"jsonrpc": "2.0", "id": 4, "method": "tools/call",
+                       "params": {"name": "query_model",
+                                  "arguments": {"document_id": "a:b"}}})
     result = call["result"]
     assert result["isError"] is True
     assert "AI bridge" in result["content"][0]["text"]

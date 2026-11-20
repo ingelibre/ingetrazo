@@ -88,6 +88,60 @@ def _cells_beside_held(keys, reg, offsets) -> list:
     return np.flatnonzero(near).tolist()
 
 
+def _weld_candidates(keys):
+    """Which distinct cells touch another cell in the batch (26 neighbours).
+
+    Compress each axis, keeping a gap of two for every gap larger than one:
+    adjacency is unchanged, but the packed keys fit in int64 for far larger
+    coordinate ranges. Two padding cells prevent carries between axes from
+    looking like neighbours. Each positive offset finds both ends of a pair,
+    so thirteen integer searches replace twenty-six three-axis searches.
+    """
+    import numpy as np
+
+    candidate = np.zeros(len(keys), dtype=bool)
+    if len(keys) < 2:
+        return candidate
+    codes, spans = [], []
+    for axis in keys.T:
+        values, inverse = np.unique(axis, return_inverse=True)
+        steps = np.ones(len(values), dtype=np.int64)
+        steps[0] = 0
+        steps[1:] += np.diff(values) != 1
+        ranks = steps.cumsum()
+        codes.append(ranks[inverse])
+        spans.append(int(ranks[-1]) + 3)
+    nx, ny, nz = spans
+    if nx * ny * nz > np.iinfo(np.int64).max:
+        # An exceptionally large batch: use unbounded integers, never wrap
+        # a packed key and change the set (and thus the vertex order).
+        codes = [c.astype(object) for c in codes]
+    packed = (codes[0] * ny + codes[1]) * nz + codes[2]
+    order = np.argsort(packed)
+    ordered = packed[order]
+    for dx in (0, 1):
+        for dy in (-1, 0, 1):
+            for dz in (-1, 0, 1):
+                offset = (dx * ny + dy) * nz + dz
+                if offset <= 0:
+                    continue
+                indices = np.searchsorted(ordered, ordered + offset)
+                src = np.flatnonzero(indices < len(ordered))
+                dst = indices[src]
+                hit = ordered[dst] == ordered[src] + offset
+                candidate[order[src[hit]]] = True
+                candidate[order[dst[hit]]] = True
+    return candidate
+
+
+def edge_material_key(a, b) -> tuple:
+    """Stable, direction-independent key for sparse serialized edge paint."""
+    def point(value):
+        coords = value.toTuple() if hasattr(value, "toTuple") else value
+        return tuple(round(float(c) * _KEY_SCALE) for c in coords)
+    return tuple(sorted((point(a), point(b))))
+
+
 class Vertex:
     """A shared point in the mesh.
 
@@ -123,7 +177,7 @@ class Edge:
     """
 
     __slots__ = ("v0", "v1", "faces", "soft", "curve", "layer",
-                 "hidden")
+                 "hidden", "material")
 
     def __init__(self, v0: Vertex, v1: Vertex) -> None:
         self.v0 = v0
@@ -136,6 +190,9 @@ class Edge:
         # as a line nor as a profile/silhouette (imported foliage cards —
         # the leaf's outline is its texture mask, not its quad).
         self.hidden: bool = False
+        # Independent edge paint. Unpainted edges keep None and inherit a
+        # container's material only in the By material display mode.
+        self.material: dict | None = None
         # Layer / tag name (None = default layer).
         self.layer = None
         # Segments of one drawn curve (circle/arc) share a ``curve`` id, so
@@ -185,14 +242,17 @@ PAINT_KEYS = ("color", "mat", "texture", "opacity")
 #: Marco hid an edge, grouped the drawing, and the edge came back (2026-09-10)
 #: because ``hidden`` was added to ``Edge`` later and only some of the copies
 #: learned about it. Adding a flag here now teaches every one of them at once.
-EDGE_FLAG_NAMES = ("soft", "curve", "layer", "hidden")
-EDGE_FLAG_DEFAULTS = (False, None, None, False)
+EDGE_FLAG_NAMES = ("soft", "curve", "layer", "hidden", "material")
+EDGE_FLAG_DEFAULTS = (False, None, None, False, None)
 
 
 def edge_flags(edge) -> tuple:
     """The edge's flags as a tuple, ready to travel with its coordinates."""
-    return tuple(getattr(edge, name, default)
-                 for name, default in zip(EDGE_FLAG_NAMES, EDGE_FLAG_DEFAULTS))
+    import copy
+    return tuple(copy.deepcopy(value) if name == "material" and value else value
+                 for name, value in ((name, getattr(edge, name, default))
+                                     for name, default in
+                                     zip(EDGE_FLAG_NAMES, EDGE_FLAG_DEFAULTS)))
 
 
 def edge_is_plain(edge) -> bool:
@@ -203,6 +263,9 @@ def edge_is_plain(edge) -> bool:
 def stamp_edge_flags(edge, flags) -> None:
     """Put back what :func:`edge_flags` took."""
     for name, value in zip(EDGE_FLAG_NAMES, flags):
+        if name == "material" and value:
+            import copy
+            value = copy.deepcopy(value)
         setattr(edge, name, value)
 
 
@@ -727,8 +790,10 @@ class Mesh:
         if not len(pos):
             return [], np.empty(0, dtype=np.int64)
         keys = np.round(pos * _KEY_SCALE).astype(np.int64)
-        view = np.ascontiguousarray(keys).view(
-            [("x", "<i8"), ("y", "<i8"), ("z", "<i8")]).reshape(-1)
+        # Byte records group equal int64 triples without the field-by-field
+        # structured sort. Only equality matters: first occurrence restores
+        # the cell order below, regardless of the byte sort's ordering.
+        view = np.ascontiguousarray(keys).view("V24").reshape(-1)
         uview, first, inverse = np.unique(
             view, return_index=True, return_inverse=True)
         order = np.argsort(first, kind="stable")
@@ -738,39 +803,7 @@ class Mesh:
         first = first[order]
         ukeys = keys[first]                    # unique cells, creation order
         nu = len(first)
-        # Which unique cells have a neighbouring cell in the batch? Dense
-        # per-axis ranks make the 26 membership tests plain int64
-        # searchsorted (structured-dtype searchsorted is far slower).
-        ax = [np.unique(ukeys[:, c]) for c in range(3)]
-        nx, ny, nz = (len(a) + 2 for a in ax)  # +2: room for absent ±1 ranks
-        def _pack(k3):
-            out = np.empty(len(k3), dtype=np.int64)
-            ok = np.ones(len(k3), dtype=bool)
-            acc = np.zeros(len(k3), dtype=np.int64)
-            for c, n in ((0, nx), (1, ny), (2, nz)):
-                i = np.searchsorted(ax[c], k3[:, c])
-                good = (i < len(ax[c]))
-                i_clip = np.minimum(i, len(ax[c]) - 1)
-                good &= ax[c][i_clip] == k3[:, c]
-                ok &= good
-                acc = acc * n + i_clip
-            out[:] = acc
-            return out, ok
-        upacked, _ = _pack(ukeys)
-        usorted = np.sort(upacked)
-        candidate = np.zeros(nu, dtype=bool)
-        offs = [(dx, dy, dz)
-                for dx in (-1, 0, 1) for dy in (-1, 0, 1) for dz in (-1, 0, 1)
-                if (dx, dy, dz) != (0, 0, 0)]
-        shifted = np.empty_like(ukeys)
-        for d in offs:
-            shifted[:, 0] = ukeys[:, 0] + d[0]
-            shifted[:, 1] = ukeys[:, 1] + d[1]
-            shifted[:, 2] = ukeys[:, 2] + d[2]
-            q, ok = _pack(shifted)
-            i = np.searchsorted(usorted, q)
-            i_clip = np.minimum(i, nu - 1)
-            candidate |= ok & (usorted[i_clip] == q)
+        candidate = _weld_candidates(ukeys)
         if self._registry:
             # Pre-existing vertices can also satisfy a probe: any batch cell
             # whose 3×3×3 neighbourhood touches a registered cell is a
@@ -881,6 +914,9 @@ class Mesh:
                     e.soft = True
                 if len(flags[i]) > 3 and flags[i][3]:
                     e.hidden = True
+                if len(flags[i]) > 4 and flags[i][4]:
+                    import copy
+                    e.material = copy.deepcopy(flags[i][4])
                 if curve is not None:
                     e.curve = curve
                 if layer is not None:
@@ -1301,6 +1337,11 @@ class Mesh:
         self.remove_edge(edge)
         e0 = self._link_edge(v0, mid)
         e1 = self._link_edge(mid, v1)
+        if edge.material:
+            import copy
+            for sub in (e0, e1):
+                if sub.material is None:
+                    sub.material = copy.deepcopy(edge.material)
         for face in incident:
             self._insert_at_every_use(face, v0, v1, mid)
             for sub in (e0, e1):
@@ -1559,9 +1600,7 @@ class Mesh:
         # Sub-edges continue the split edge's curve/soft/layer identity.
         for sub, was_new in ((e0, e0_new), (e1, e1_new)):
             if was_new:
-                sub.soft = edge.soft
-                sub.layer = edge.layer
-                sub.curve = edge.curve
+                stamp_edge_flags(sub, edge_flags(edge))
         for face in incident:
             self._insert_into_face_loops(face, v0, v1, mid)
             if face not in e0.faces:
@@ -1579,6 +1618,8 @@ class Mesh:
         if len(v.edges) != 2:
             return False
         e1, e2 = list(v.edges)
+        if e1.material != e2.material:
+            return False
         d1 = v.position - e1.other(v).position
         d2 = e2.other(v).position - v.position
         if d1.length() < _STITCH_TOL or d2.length() < _STITCH_TOL:
@@ -1606,6 +1647,8 @@ class Mesh:
         self.remove_edge(e2)
         new_edge_existed = self.find_edge(n1, n2) is not None
         new_edge = self._link_edge(n1, n2)
+        if not new_edge_existed:
+            stamp_edge_flags(new_edge, edge_flags(e1))
         for face in faces:
             for loop in (face.loop, *face.hole_loops):
                 if v in loop:
@@ -1922,6 +1965,17 @@ def face_count(mesh) -> int:
     if type(mesh) is DeferredMesh:
         return mesh.__dict__["_deferred_nfaces"]
     return len(mesh.faces)
+
+
+def edge_materials(mesh):
+    """Independent edge paints, including those of an unbuilt mesh."""
+    if type(mesh) is DeferredMesh:
+        from formats.igz import _edge_material_map
+        yield from _edge_material_map(mesh.__dict__["_deferred_source"]["meta"]).values()
+    else:
+        for edge in mesh.edges:
+            if edge.material:
+                yield edge.material
 
 
 def face_attrs(mesh):

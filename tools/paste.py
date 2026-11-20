@@ -206,12 +206,14 @@ class PasteTool(Tool):
         # (never entangled with the original's).
         from core.mesh import Mesh
         id_map: dict[int, int] = {}
-        for a, b, soft, curve in self._clip["edges"]:
+        edge_materials = self._clip.get("edge_materials", ())
+        for index, (a, b, soft, curve) in enumerate(self._clip["edges"]):
             if curve is not None and curve not in id_map:
                 id_map[curve] = Mesh.next_curve_id()
             commands.append(AddEdgeCommand(
                 a + off, b + off, soft=soft or None,
-                curve=id_map.get(curve)))
+                curve=id_map.get(curve),
+                material=edge_materials[index] if index < len(edge_materials) else None))
         # Each stamp builds FRESH group copies from the clipboard templates
         # (instances stay siblings of the same prototype).
         pasted_groups = [copy_group(g, off)

@@ -647,8 +647,9 @@ def _parse_headless(argv: list[str]):
     parser.add_argument("--ai-bridge", action="store_true",
                         help="start the AI bridge (127.0.0.1 only)")
     parser.add_argument("--port", type=int, default=None,
-                        help="the bridge's port (default INGETRAZO_AI_PORT "
-                             "or 4763; 0 = any free port)")
+                        help="the bridge's port (default INGETRAZO_AI_PORT, "
+                             "else any free one, published for the MCP "
+                             "server's discovery; 0 = any free port)")
     parser.add_argument("--ready-file", type=Path, metavar="PATH",
                         help="write the bridge's port here once the "
                              "document is open and the bridge listens")
@@ -1004,7 +1005,9 @@ def main() -> int:
         # it: the load lets events through to move its bar, the question
         # came up in the middle of it, and the document stayed frozen at
         # 5 % behind it, the view blank, until it was answered.
-        QTimer.singleShot(0, window.offer_units_at_start)
+        from views.workspace_profiles import offer_intro
+        if arg or not offer_intro(window):
+            QTimer.singleShot(0, window.offer_units_at_start)
         QTimer.singleShot(4000, window.check_updates_quietly)
 
     QTimer.singleShot(0, _after_first_frame)

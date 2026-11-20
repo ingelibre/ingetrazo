@@ -307,6 +307,21 @@ el cierre en Mac al importar un .skp con escenas.**
   transparente sigue ahí.
 - **Motor Rust**: un arranque que no llegó a dibujar no lo apaga.
 
+### Añadido
+- **Fuentes propias en el gestor de extensiones**: añade catálogos HTTPS o
+  carpetas locales con un catálogo, archivos `.py`/`.zip` o paquetes Python.
+  Las extensiones externas conservan el aviso de confianza.
+
+### Mejorado
+- **El gestor de extensiones crea tarjetas al acercarse a ellas**: las
+  entradas fuera de pantalla usan marcadores ligeros; las tarjetas completas
+  se construyen en tandas al desplazarse por la lista.
+- **El gestor puede reiniciar IngeTrazo para aplicar cambios de extensiones**,
+  conservando el documento abierto después de confirmar cómo guardar sus
+  cambios pendientes.
+- **La instalación de extensiones muestra el progreso de descarga**, permite
+  cancelarla de forma segura y ofrece reintento ante errores; las instalaciones
+  correctas se notifican en el gestor sin ventanas emergentes.
 ## [0.6.1] — 2026-11-08
 
 **Vistas en la misma pestaña: una, dos, tres o cuatro, con líneas que se
@@ -1016,7 +1031,6 @@ visión, y unos sesenta arreglos.
   por fase (segundos, memoria residente y pico), en Linux y Windows (#760).
 - Las pruebas que muestran una ventana para GL la cierran antes de
   saltarse.
-
 ## [0.5.9] — 2026-10-19
 
 **Motor Rust experimental, modelos enormes mucho más fluidos y una semana
@@ -2026,6 +2040,14 @@ en el Flatpak, IngeTrazo habla indonesio, y se resolvieron los pedidos
 pequeños que llegaron por correo y por GitHub.
 
 ### Añadido
+- **Componentes en categorías, en un árbol**: la bandeja Componentes ya no
+  es una rejilla interminable. Los componentes se agrupan en categorías
+  propias —crear, renombrar, eliminar, anidar hasta tres niveles y
+  ocultar—, con un buscador, el interruptor «Mostrar todas las categorías»
+  y arrastrar y soltar (con Alt o Ctrl, el componente queda en las dos
+  categorías). Un componente puede estar en varias a la vez. Las
+  categorías se guardan por usuario, en un archivo aparte
+  (`component_categories.sqlite`), no en el documento.
 - **Windowizer, extensión de ejemplo** (Extensiones ▸ Extensiones de
   ejemplo ▸ Windowizer), de Bane Andreev, arquitecto: ventanas paramétricas
   a partir de caras dibujadas en un muro, con filas y columnas (o
