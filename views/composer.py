@@ -6407,7 +6407,8 @@ class _PanelTabs(QTabWidget):
     #: tab shows its icon and name, the others their icon alone (the name
     #: their tooltip) — so all fit on the bar (Marco, 2026-11-12).
     PAGE_ICONS = {"layout": "sheet_layout", "items": "sheet_items",
-                  "props": "panel_properties", "views": "sheet_views"}
+                  "props": "panel_properties", "views": "sheet_views",
+                  "scenes": "scenes_thumbs"}
 
     def __init__(self, composer, side: str) -> None:
         super().__init__()
@@ -6720,6 +6721,10 @@ class ComposerWindow(QMainWindow):
         self.views_panel = SheetsTab(main_window, composer=self)
         self._pages["views"] = self.views_panel
         self._page_titles["views"] = tr("Sheets")
+        # The scenes on a page of their own, beside the sheets (Marco,
+        # 20-11): together, a double-click meant for a sheet placed a scene.
+        self._pages["scenes"] = self.views_panel.scenes_page
+        self._page_titles["scenes"] = tr("Scenes")
         # The sheets as pages (Marco, 19-11: «como un gestor de laminas … que
         # se muestren en miniatura»): the explorer's Thumbnails mode — the
         # same panel as the folders and the Print switch (PR #932), not a
@@ -15612,7 +15617,8 @@ class ComposerWindow(QMainWindow):
     #: left side starts empty and folded, and opens when a tab is dragged
     #: there.
     _DEFAULT_SIDES = {"left": [],
-                      "right": ["layout", "views", "items", "props"]}
+                      "right": ["layout", "views", "scenes", "items",
+                                "props"]}
 
     def _side_tabs(self, side: str):
         return self._left_tabs if side == "left" else self._tabs
@@ -15646,8 +15652,21 @@ class ComposerWindow(QMainWindow):
                         if k in self._pages and k not in seen]
                 seen.update(keys)
                 layout[side] = keys
+            # A page younger than the saved layout goes where its factory
+            # neighbour is: Scenes (20-11) right after the Sheets page,
+            # wherever the user put that.
             for side, keys in self._DEFAULT_SIDES.items():
-                layout[side] += [k for k in keys if k not in seen]
+                for k in keys:
+                    if k in seen:
+                        continue
+                    seen.add(k)
+                    after = "views" if k == "scenes" else None
+                    home = next((sd for sd in ("left", "right")
+                                 if after in layout[sd]), side)
+                    if after is not None and after in layout[home]:
+                        layout[home].insert(layout[home].index(after) + 1, k)
+                    else:
+                        layout[home].append(k)
         for side in ("left", "right"):
             tabs = self._side_tabs(side)
             for i, key in enumerate(layout[side]):

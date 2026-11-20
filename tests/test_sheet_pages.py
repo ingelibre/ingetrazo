@@ -209,7 +209,7 @@ def test_there_is_one_sheets_panel_not_two(composer):
     assert "sheets" not in composer._pages
     tabs = composer._side_tabs("right")
     keys = [composer.page_key(tabs.widget(i)) for i in range(tabs.count())]
-    assert keys == ["layout", "views", "items", "props"]
+    assert keys == ["layout", "views", "scenes", "items", "props"]
     assert composer._page_titles["views"] == "Sheets"
 
 

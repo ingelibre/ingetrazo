@@ -1421,7 +1421,7 @@ def test_side_tabs_move_between_sides_reorder_and_are_remembered():
     comp_win = win._ensure_composer()
     left, right = comp_win._left_tabs, comp_win._tabs
     assert [right.tabText(i) for i in range(right.count())] == [
-        "Layout", "Sheets", "Items", "Item properties"]
+        "Layout", "Sheets", "Scenes", "Items", "Item properties"]
     assert left.count() == 0
     comp_win.move_page("views", "right", 3)           # reordered on the right
     assert right.indexOf(comp_win.views_panel) == 3
@@ -1438,7 +1438,7 @@ def test_side_tabs_move_between_sides_reorder_and_are_remembered():
     from views.composer import ComposerWindow
     again = ComposerWindow(win)
     assert again._left_tabs.widget(0) is again.props
-    assert again._tabs.indexOf(again.views_panel) == 2
+    assert again._tabs.indexOf(again.views_panel) == 3
     QSettings().remove("composer/tab_layout")         # leave it as found
     QSettings().remove("composer/views_visible")
     again.deleteLater()
@@ -1457,7 +1457,7 @@ def test_a_side_left_empty_folds_and_the_tabs_reset_to_the_factory_layout():
     comp_win.move_page("props", "left", 0)
     comp_win.restore_default_tabs()                   # tab menu entry
     assert [right.tabText(i) for i in range(right.count())] == [
-        "Layout", "Sheets", "Items", "Item properties"]
+        "Layout", "Sheets", "Scenes", "Items", "Item properties"]
     assert left.count() == 0 and not comp_win._act_views.isChecked()
     assert comp_win._act_sidebar.isChecked()
     assert not QSettings().contains("composer/tab_layout")

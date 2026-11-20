@@ -176,10 +176,18 @@ def test_the_sheets_live_only_in_the_composer():
     assert isinstance(page, SheetsTab)
     assert isinstance(page.scenes, SceneList)
     assert isinstance(page.sheets, SheetExplorer)
-    split = page.splitter
-    assert split.orientation() == Qt.Vertical
-    assert split.widget(0).isAncestorOf(page.scenes)
-    assert split.widget(1).isAncestorOf(page.sheets)
+    # Scenes and Sheets are two tabs side by side (Marco, 20-11), not one
+    # page with a divider: a double-click meant for a sheet placed a scene.
+    comp = win._composer
+    assert comp._pages["scenes"] is page.scenes_page
+    assert page.scenes_page.isAncestorOf(page.scenes)
+    assert page.isAncestorOf(page.sheets)
+    assert not page.isAncestorOf(page.scenes)
+    side = comp.page_side("views")
+    assert side is not None and comp.page_side("scenes") == side
+    tabs = comp._side_tabs(side)
+    assert tabs.indexOf(page.scenes_page) == tabs.indexOf(page) + 1
+    assert tabs.tabText(tabs.indexOf(page.scenes_page)) == "Scenes"
     assert page.sheets._composer_win is win._composer
     _close(win)
 
@@ -195,7 +203,7 @@ def test_the_scenes_are_just_a_list_with_room_for_seven():
     assert not panel.findChildren(QLabel)
     # The list-or-thumbnails button sits in the «Scenes» heading, on its
     # line: no row of its own above the list.
-    box = page.splitter.widget(0)
+    box = page.scenes_page
     head = next(lb for lb in box.findChildren(QLabel)
                 if lb.text() == "Scenes")
     assert panel.view_btn.parentWidget() is box
@@ -214,7 +222,12 @@ def test_the_scenes_are_just_a_list_with_room_for_seven():
     QTest.keyClick(panel.tree, Qt.Key_Delete)
     assert [v.name for v in scene.saved_views] == ["Plan L1",
                                                    "North elevation"]
-    lst = panel.tree
+    # On its own page the list takes the page's height; a list that shares
+    # its panel keeps room for seven rows before it scrolls.
+    from views.sheet_browser import SceneList
+    assert panel.tree.maximumHeight() > 10000
+    lone = SceneList(win)
+    lst = lone.tree
     row = max(lst.fontMetrics().height(), lst.iconSize().height()) + 6
     assert lst.maximumHeight() == SCENE_ROWS * row + 2 * lst.frameWidth()
     assert SCENE_ROWS == 7
@@ -277,25 +290,25 @@ def test_the_scenes_show_as_a_list_or_with_thumbnails():
         assert panel.thumbnails                       # the default
         assert panel.view_btn.toolTip()
         assert same(panel.view_btn.icon(), tool_icon("scenes_thumbs"))
-        tall = panel.tree.maximumHeight()
+        tall = panel.tree.minimumHeight()
         panel.list_action.trigger()
         assert not panel.thumbnails
         assert panel.list_action.isChecked()
         assert not panel.thumbs_action.isChecked()
         assert same(panel.view_btn.icon(), tool_icon("scenes_list"))
         assert panel.tree.iconSize().height() == 16
-        assert panel.tree.maximumHeight() < tall      # smaller rows
+        assert panel.tree.minimumHeight() < tall      # smaller rows
         assert all(not it.icon(0).isNull() for it in panel.scene_rows())
         assert QSettings().value(SceneList.THUMBS_KEY) in (False, "false")
         win._composer.show()
-        win._composer._show_page("views")
+        win._composer._show_page("scenes")
         for _ in range(20):
             _app.processEvents()
         assert drawn == []                            # a list: no pictures
         again = SceneList(win, icon_for=lambda name: None)
         assert not again.thumbnails                   # the choice is kept
         panel.thumbs_action.trigger()
-        assert panel.thumbnails and panel.tree.maximumHeight() == tall
+        assert panel.thumbnails and panel.tree.minimumHeight() == tall
         import time
         until = time.monotonic() + 5.0                # one per 20 ms tick
         while len(drawn) < 2 and time.monotonic() < until:
@@ -1023,3 +1036,32 @@ def test_nothing_marked_prints_nothing(monkeypatch):
     comp._on_export_all()
     assert not called
     _close(win)
+
+
+def test_a_saved_tab_layout_without_scenes_gets_them_beside_the_sheets():
+    """A layout saved before the Scenes tab (20-11) keeps every page where
+    the user put it, and Scenes goes right after Sheets — on the left too,
+    if that is where Sheets was moved."""
+    import json
+    from PySide6.QtCore import QSettings
+    from views.composer import ComposerWindow
+    from views.main_window import MainWindow
+    win = MainWindow()
+    QSettings().setValue("composer/tab_layout", json.dumps(
+        {"left": ["props", "views"], "right": ["layout", "items"]}))
+    comp = None
+    try:
+        comp = ComposerWindow(win)
+        left = [comp.page_key(comp._left_tabs.widget(i))
+                for i in range(comp._left_tabs.count())]
+        right = [comp.page_key(comp._tabs.widget(i))
+                 for i in range(comp._tabs.count())]
+        assert left == ["props", "views", "scenes"]
+        assert right == ["layout", "items"]
+    finally:
+        QSettings().remove("composer/tab_layout")
+        QSettings().remove("composer/views_visible")
+        if comp is not None:
+            comp.deleteLater()
+        win._saved_version = win.viewport.scene.version
+        win.close()

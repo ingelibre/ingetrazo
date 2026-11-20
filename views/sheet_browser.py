@@ -22,7 +22,7 @@ from PySide6.QtCore import QItemSelectionModel, QMimeData, QSize, Qt, QTimer
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
     QAbstractItemView, QHBoxLayout, QHeaderView, QLabel, QLineEdit,
-    QSplitter, QStyledItemDelegate, QTreeWidget, QTreeWidgetItem,
+    QStyledItemDelegate, QTreeWidget, QTreeWidgetItem,
     QVBoxLayout, QWidget,
 )
 
@@ -1294,7 +1294,10 @@ class SceneList(QWidget):
         tree = self.tree
         row = max(tree.fontMetrics().height(), tree.iconSize().height()) + 6
         frame = 2 * tree.frameWidth()
-        tree.setMaximumHeight(SCENE_ROWS * row + frame)
+        # On a page of its own (the composer's Scenes tab) it takes the
+        # page's whole height.
+        tree.setMaximumHeight(16777215 if getattr(self, "fills_page", False)
+                              else SCENE_ROWS * row + frame)
         tree.setMinimumHeight(2 * row + frame)
 
     # ---- Rows --------------------------------------------------------------------
@@ -1454,9 +1457,13 @@ class SceneList(QWidget):
 
 
 class SheetsTab(QWidget):
-    """Scenes above, sheets below, with a divider between them to drag —
-    the composer's Sheets page. The scenes list shows :data:`SCENE_ROWS`
-    rows and scrolls past them; the sheets take the rest."""
+    """The composer's Sheets page, and beside it its Scenes page
+    (:attr:`scenes_page`). They were one page, scenes above sheets with a
+    divider; apart since 20-11 (Marco: «laminas aparte y escenas aparte»):
+    a double-click on a scene places it on the open sheet, and with the two
+    lists together a click meant for a sheet put a scene on it. A scene
+    still drags onto a sheet's tab or onto the canvas, and a scene and the
+    views that show it still mark each other."""
 
     def __init__(self, window, composer=None) -> None:
         super().__init__()
@@ -1474,17 +1481,15 @@ class SheetsTab(QWidget):
             if composer is not None else None,
             icon_for=composer.scene_thumbnail if composer is not None
             else None)
+        self.scenes.fills_page = True
+        self.scenes.fit_rows()
         self.sheets = SheetExplorer(window, composer=composer)
-        split = QSplitter(Qt.Vertical)
-        split.setChildrenCollapsible(False)
-        split.addWidget(_titled(tr("Scenes"), self.scenes,
-                                tail=self.scenes.view_btn))
-        split.addWidget(_titled(tr("Sheets"), self.sheets,
-                                tail=self.sheets.view_btn))
-        split.setStretchFactor(0, 0)
-        split.setStretchFactor(1, 1)
-        self.splitter = split
-        lay.addWidget(split)
+        #: The Scenes page: the composer puts it in its side panel as a tab
+        #: of its own («scenes»), next to this one.
+        self.scenes_page = _titled(tr("Scenes"), self.scenes,
+                                   tail=self.scenes.view_btn)
+        lay.addWidget(_titled(tr("Sheets"), self.sheets,
+                              tail=self.sheets.view_btn))
         # A scene and the views that show it mark each other (a folder
         # row marks nothing).
         self.scenes.tree.currentItemChanged.connect(
