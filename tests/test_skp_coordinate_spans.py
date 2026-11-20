@@ -83,6 +83,7 @@ def test_mixed_payload_matches_legacy_weld_order_and_archive(count, tmp_path, mo
     skp.apply_payload(actual, payload(False))
     assert bool(calls) == (count == 400)
     assert _signature(actual) == _signature(expected)
+    actual.ifc_namespace = expected.ifc_namespace   # one namespace (#1236)
     before, after = tmp_path/'before.igz', tmp_path/'after.igz'
     igz.save_scene(expected, before)
     igz.save_scene(actual, after)

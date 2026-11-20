@@ -63,6 +63,10 @@ def test_extension_restart_relaunches_the_current_document(
         def _save_window_settings():
             pass
 
+        @staticmethod
+        def _dock_panels_for_saving():
+            pass
+
         def close(self):
             self.closed = True
 
