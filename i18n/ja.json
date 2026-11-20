@@ -4073,7 +4073,7 @@
  "Depth cue": "奥行き表現",
  "Edge settings": "エッジ設定",
  "Emphasize edge ends with a stroke or a marker.": "エッジの端を太い線やマーカーで強調します。",
- "Endpoints": "端点",
+ "Endpoints": "端点強調",
  "Face settings": "面設定",
  "Marker size in screen pixels, independent of zoom.": "画面ピクセル単位のマーカーサイズ。ズームに影響されません。",
  "Mix": "ミックス",
