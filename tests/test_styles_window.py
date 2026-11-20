@@ -266,7 +266,8 @@ def test_toolbar_opens_one_modeless_resizable_styles_window(style_library):
         other_buttons = [widget for action in toolbar.actions()
                          if isinstance(widget := toolbar.widgetForAction(action), QToolButton)
                          and widget is not button]
-        assert len(other_buttons) == 2
+        # Fog, Shadows and Dimension style keep their drop-down panels.
+        assert len(other_buttons) == 3
         assert all(widget.menu() is not None for widget in other_buttons)
 
         button.click()
