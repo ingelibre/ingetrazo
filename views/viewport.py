@@ -10223,10 +10223,14 @@ class Viewport(QOpenGLWidget):
             if getattr(g, "billboard", False):
                 continue          # per-frame quad; picked separately
             gvis = scene.entity_visible(g)
-            # The layer says whether it can be snapped to; the context
-            # says whether it can be picked.
-            gsnap = scene.entity_selectable(g)
-            gsel = gsnap and id(g) in tocables
+            # Snapping is a read-only reference: a visible group offers its
+            # edges as snap targets even when its layer is locked — the lock
+            # bars selecting and editing it, not measuring against it
+            # (#1510). Picking still needs entity_selectable (gsel below),
+            # and the edge fallback filters by gedge_sel, so a locked-layer
+            # edge can be snapped to but never takes the click.
+            gsnap = gvis
+            gsel = scene.entity_selectable(g) and id(g) in tocables
             if not (gvis or gsnap):
                 continue
             chunk = self._group_chunk(g)

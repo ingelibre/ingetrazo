@@ -10,6 +10,7 @@ from __future__ import annotations
 from PySide6.QtGui import QVector3D
 
 from core.history import History, MakeGroupCommand
+from core.layers import Layer, assign_layer
 from core.scene import Scene
 from views.viewport import Viewport
 
@@ -211,3 +212,37 @@ def test_selected_group_offers_its_box_corners_to_the_snap_engine():
     assert (2.0, 2.0, 0.0) in corners and (-2.0, -2.0, 0.0) in corners
     # and they reach the engine even with no cursor position to look near
     assert len(list(vp._snap_scene().edges)) >= 8
+
+
+def test_locked_layer_group_still_offers_snap_edges():
+    """A group on a locked layer cannot be picked, but its hard edges stay in
+    the pick index as snap targets (#1510): locking bars selecting and
+    editing, not measuring against the geometry."""
+    scene = Scene()
+    hist = History(scene)
+    f = scene.mesh.add_face([V(-2, -2), V(2, -2), V(2, 2), V(-2, 2)])
+    hist.execute(MakeGroupCommand([f], []))
+    g = scene.groups[0]
+    scene.layers.append(Layer("Fondo", locked=True))
+    assign_layer(g, "Fondo")
+    assert scene.entity_visible(g)
+    assert not scene.entity_selectable(g)
+    vp = _bind(_VP(scene))
+    idx = vp._pick_index()
+    assert getattr(idx, "gedge_a", None) is not None
+    assert len(idx.gedge_a) == 4                     # the square's edges
+    assert not idx.gedge_sel.any()                   # still not pickable
+    assert idx.gedge_groups[0] is g
+
+
+def test_unlocked_layer_group_edges_are_pickable():
+    """Control for the locked-layer case above: the same group on an
+    unlocked layer offers the same edges, and they are pickable."""
+    scene = Scene()
+    hist = History(scene)
+    f = scene.mesh.add_face([V(-2, -2), V(2, -2), V(2, 2), V(-2, 2)])
+    hist.execute(MakeGroupCommand([f], []))
+    vp = _bind(_VP(scene))
+    idx = vp._pick_index()
+    assert len(idx.gedge_a) == 4
+    assert idx.gedge_sel.all()
