@@ -17,6 +17,7 @@ from core.style import (DEFAULT_BACK_COLOR, MONOCHROME_GLASS_RGB,
                         effective_back_color, base_face_mode, xray_enabled)
 from core.materials import material_sig as _material_sig
 from views.viewport._support import (_PERF, _NO_BACK_TINT, _plog, GL_LINES,
+                                     GL_CLIP_DISTANCE0,
                                      _shifted_mvp, GL_TRIANGLES,
                                      GL_COLOR_BUFFER_BIT, GL_DEPTH_BUFFER_BIT,
                                      GL_DEPTH_TEST, _MAX_CUT_PLANES,
@@ -446,6 +447,7 @@ class RenderMixin:
         def clip(z, offset):
             self._style_ground_clip = QVector4D(0, 0, z, offset)
             self._program.setUniformValue(location, self._style_ground_clip)
+            self._set_ground_clip_hw(z != 0)
 
         try:
             if style.ground_transparency > 0:
@@ -461,6 +463,29 @@ class RenderMixin:
             self._paint_static_half(mvp, w, h, style, mode, _fmark, hover)
         finally:
             clip(0, 0)
+
+    def _set_ground_clip_hw(self, on: bool) -> None:
+        """Turn the display ground's clip plane (``gl_ClipDistance[7]`` of
+        basic.vert) on or off. Only the main program writes that slot: the
+        passes of other programs inside a half (ambient occlusion, styled
+        edges, which clip the ground themselves) run with it off, as GL
+        leaves an enabled distance a shader does not write undefined."""
+        on = bool(on)
+        if bool(getattr(self, "_ground_clip_hw", False)) == on:
+            return
+        (self._gl.glEnable if on else self._gl.glDisable)(GL_CLIP_DISTANCE0 + 7)
+        self._ground_clip_hw = on
+
+    def _without_ground_clip_hw(self, fn, *args, **kwargs):
+        """``fn(...)`` with the ground's clip plane off, then back as it was."""
+        was = bool(getattr(self, "_ground_clip_hw", False))
+        if was:
+            self._set_ground_clip_hw(False)
+        try:
+            return fn(*args, **kwargs)
+        finally:
+            if was:
+                self._set_ground_clip_hw(True)
 
     def _paint_static_half(self, mvp, w, h, style, mode, _fmark, hover) -> None:
         """paintGL's passes of the model and what sits in it — faces,
@@ -764,7 +789,8 @@ class RenderMixin:
         # below, the billboards, highlights and every edge come after it.
         if (not self._style_ground_visible(style)
                 or self._style_ground_clip.w() >= 0):
-            self._apply_ambient_occlusion(w, h, mode, style)
+            self._without_ground_clip_hw(self._apply_ambient_occlusion,
+                                         w, h, mode, style)
 
         # Translucent material runs (.skp trans with useTrans): drawn
         # after everything opaque, blended, depth-tested but not depth-
@@ -1032,8 +1058,9 @@ class RenderMixin:
             renderer = getattr(self, "_edge_renderer", None)
             if renderer is None:
                 renderer = self._edge_renderer = EdgeRenderer(self)
-            renderer.draw(mvp, w, h, style, mode,
-                          fade_color=edit_fade_color(style.background))
+            self._without_ground_clip_hw(
+                renderer.draw, mvp, w, h, style, mode,
+                fade_color=edit_fade_color(style.background))
         _fmark("edges")
 
         # Selected edges (drawn on top, highlighted) — never in an export

@@ -23,7 +23,15 @@ uniform mat4 u_mvp;
 // as GLSL asks of a clip-distance array indexed in a loop.
 uniform vec4 u_clip_planes[7];
 uniform int u_clip_count;
-out float gl_ClipDistance[7];
+// Slot 7: the display ground's half-space (styles, #1218), as (n, d) with
+// the KEPT side >= 0. Zero leaves everything; GL_CLIP_DISTANCE7 is only
+// enabled around the two halves of a frame that draws the ground. It was
+// a discard in basic.frag: on the Radeon 780M that one statement cost
+// ~7 ms of every zoom frame of a plaza of 3 400 groups that never shows
+// the ground (20-11). A plane clips exactly in hardware, so what is kept
+// is the same.
+uniform vec4 u_style_ground_clip;
+out float gl_ClipDistance[8];
 
 out vec2 v_uv;
 out vec3 v_color;
@@ -53,6 +61,7 @@ void main() {
         gl_ClipDistance[i] = (i < u_clip_count)
             ? dot(world, u_clip_planes[i])
             : 1.0;
+    gl_ClipDistance[7] = dot(world, u_style_ground_clip);
     gl_Position = u_mvp * world;
     v_line_clip = gl_Position;
 }
