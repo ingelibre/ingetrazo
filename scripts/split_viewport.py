@@ -899,6 +899,12 @@ def cmd_split(args):
     counts = collections.Counter(m.module for m in members)
     print(f"views/viewport.py -> {PKG}/: {len(members)} members in "
           f"{len(files)} files")
+    how = collections.Counter(m.why.split(":")[0].split(" {")[0]
+                              for m in members)
+    print("  placed by: " + ", ".join(f"{k} {v}" for k, v in how.items()))
+    if how.get("neighbours") or how.get("vote"):
+        print("  (python scripts/split_viewport.py --plan lists the ones "
+              "not placed by #901 — check the neighbours and votes)")
     for mod in ["__init__"] + [s["module"] for s in data["modules"]]:
         print(f"  {mod:14} {counts[mod]:4}")
     for rel, line, what in hazards:
