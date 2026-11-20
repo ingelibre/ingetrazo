@@ -1803,19 +1803,26 @@ class ComponentsPanel(QWidget):
 
     def _thumbs_when_still(self) -> None:
         from views.viewport import wait_for_still_view
-        if wait_for_still_view(self._window.viewport, self._thumbs_timer):
+        # A key too: the Ctrl+Z that follows a Rotate comes without a
+        # mouse move, and the pictures landed inside it (20-11).
+        if wait_for_still_view(self._window.viewport, self._thumbs_timer,
+                               keys=True):
             self._draw_visible_thumbs()
 
     #: Pictures drawn per turn of the event loop. Each is ~25 ms of
     #: QPainter work on the plaza; the twelve rows a selection scrolled
     #: into view were drawn in one go, and that 0.3 s landed inside the
     #: next thing the hand did — the first Ctrl+Z after a Rotate went from
-    #: ~0.25 to ~0.55 s (20-11). Two per turn, the rest on the next turns,
-    #: each one waiting again for the view to be still.
+    #: ~0.25 to ~0.55 s (20-11). Two per turn at most, and no second one
+    #: once the turn has spent ``THUMBS_BUDGET_S``; the rest on the next
+    #: turns, each one waiting again for the view to be still.
     THUMBS_PER_TURN = 2
+    THUMBS_BUDGET_S = 0.012
 
     def _draw_visible_thumbs(self) -> None:
+        import time
         from views.component_thumbs import cached_thumbnail, draw_thumbnail
+        t0 = time.perf_counter()
         drawn = 0
         lst = self._in_model
         area = lst.viewport().rect()
@@ -1839,7 +1846,9 @@ class ComponentsPanel(QWidget):
             # was) is set when it is not the one the row shows already.
             sig, pm = cached_thumbnail(definition)
             if pm is None:
-                if drawn >= self.THUMBS_PER_TURN:
+                if drawn and (drawn >= self.THUMBS_PER_TURN
+                              or time.perf_counter() - t0
+                              >= self.THUMBS_BUDGET_S):
                     self._schedule_thumbs()     # the rest, next turn
                     return
                 pm = draw_thumbnail(definition, sig)

@@ -14,8 +14,9 @@ from __future__ import annotations
 
 import math
 
+import numpy as np
 from PySide6.QtCore import QPointF, Qt
-from PySide6.QtGui import QColor, QPainter, QPen, QPixmap, QPolygonF
+from PySide6.QtGui import QColor, QPainter, QPen, QPixmap
 
 #: Icon side, in pixels.
 SIZE = 40
@@ -137,66 +138,123 @@ def draw_thumbnail(definition, sig, size: int = SIZE) -> QPixmap:
 
 
 def _draw(definition, size: int) -> QPixmap:
+    """The picture, painted far to near.
+
+    The per-face arithmetic runs in numpy over every face at once, in the
+    same order the one-face-at-a-time loop of 0.6.2 did it (``_draw_ref``
+    in the tests): the same doubles, so the same pixels. That loop was
+    ~50 ms a picture on the pergolas of a large plaza, and the twelve rows
+    a selection scrolls into view landed inside the next Ctrl+Z (20-11)."""
     total = sum(len(mesh.faces) for mesh, _m, _p in _placements(definition))
     stride = max(1, math.ceil(total / MAX_FACES))
-    polys = []                              # (depth, points2d, rgb, shade)
+    coords = []                     # x, y, z of every corner, face after face
+    lens = []
+    rgbs = []
     k = 0
     for mesh, m, paint in _placements(definition):
+        rgb_of = {}
         for f in mesh.faces:
             k += 1
             if k % stride:
                 continue
-            pts = [v.position for v in f.loop]
-            if len(pts) < 3:
+            loop = f.loop
+            if len(loop) < 3:
                 continue
-            if m is not None:
-                pts = [m.map(p) for p in pts]
-            n = _normal(pts)
-            if n is None:
-                continue
-            lam = abs(n[0] * _L[0] + n[1] * _L[1] + n[2] * _L[2])
-            xy = [(p.x() * _R[0] + p.y() * _R[1] + p.z() * _R[2],
-                   -(p.x() * _U[0] + p.y() * _U[1] + p.z() * _U[2]))
-                  for p in pts]
-            depth = sum(p.x() * _E[0] + p.y() * _E[1] + p.z() * _E[2]
-                        for p in pts) / len(pts)
-            polys.append((depth, xy, _rgb(f.attrs, paint), lam))
+            if m is None:
+                for v in loop:
+                    coords.extend(v.position.toTuple())
+            else:
+                for v in loop:
+                    coords.extend(m.map(v.position).toTuple())
+            lens.append(len(loop))
+            attrs = f.attrs
+            rgb = rgb_of.get(id(attrs))
+            if rgb is None:
+                rgb = rgb_of[id(attrs)] = _rgb(attrs, paint)
+            rgbs.append(rgb)
     pm = QPixmap(size, size)
     pm.fill(Qt.transparent)
-    if not polys:
+    if not lens:
         return pm
-    xs = [x for _d, xy, _c, _s in polys for x, _y in xy]
-    ys = [y for _d, xy, _c, _s in polys for _x, y in xy]
-    span = max(max(xs) - min(xs), max(ys) - min(ys)) or 1.0
+    P = np.array(coords, dtype=np.float64).reshape(-1, 3)
+    lens = np.array(lens, dtype=np.int64)
+    starts = np.zeros(len(lens), dtype=np.int64)
+    np.cumsum(lens[:-1], out=starts[1:])
+    nf = len(lens)
+    nx = np.zeros(nf)
+    ny = np.zeros(nf)
+    nz = np.zeros(nf)
+    depth = np.zeros(nf)
+    px, py, pz = P[:, 0], P[:, 1], P[:, 2]
+    # Faces of one corner count at a time: their sums run column by
+    # column, corner 0 first, as the loop added them.
+    for n in np.unique(lens).tolist():
+        rows = np.nonzero(lens == n)[0]
+        base = starts[rows]
+        # Newell, from 0.0, corner after corner.
+        sx = np.zeros(len(rows))
+        sy = np.zeros(len(rows))
+        sz = np.zeros(len(rows))
+        # The depth: ``sum()`` of the corners' depths — 0 + the first,
+        # then Neumaier's compensated sum, as CPython's sum() of floats.
+        acc = comp = None
+        for i in range(n):
+            ia = base + i
+            ib = base + (i + 1) % n
+            ax, ay, az = px[ia], py[ia], pz[ia]
+            bx, by, bz = px[ib], py[ib], pz[ib]
+            sx = sx + (ay - by) * (az + bz)
+            sy = sy + (az - bz) * (ax + bx)
+            sz = sz + (ax - bx) * (ay + by)
+            d = ax * _E[0] + ay * _E[1] + az * _E[2]
+            if acc is None:
+                acc = 0.0 + d
+                comp = np.zeros(len(rows))
+            else:
+                t = acc + d
+                comp = comp + np.where(np.abs(acc) >= np.abs(d),
+                                       (acc - t) + d, (d - t) + acc)
+                acc = t
+        fix = (comp != 0.0) & np.isfinite(comp)
+        acc = np.where(fix, acc + comp, acc)
+        nx[rows], ny[rows], nz[rows] = sx, sy, sz
+        depth[rows] = acc / float(n)
+    nn = np.sqrt(nx * nx + ny * ny + nz * nz)
+    keep = ~(nn < 1e-12)
+    if not keep.any():
+        return pm
+    with np.errstate(invalid="ignore", divide="ignore"):
+        ux, uy, uz = nx / nn, ny / nn, nz / nn
+    lam = np.abs(ux * _L[0] + uy * _L[1] + uz * _L[2])
+    X = px * _R[0] + py * _R[1] + pz * _R[2]
+    Y = -(px * _U[0] + py * _U[1] + pz * _U[2])
+    # Only the corners of the faces drawn set the frame.
+    corner_kept = np.repeat(keep, lens)
+    xs, ys = X[corner_kept], Y[corner_kept]
+    x0, x1 = float(xs.min()), float(xs.max())
+    y0, y1 = float(ys.min()), float(ys.max())
+    span = max(x1 - x0, y1 - y0) or 1.0
     margin = 2.0
     scale = (size - 2 * margin) / span
-    ox = margin + (size - 2 * margin - (max(xs) - min(xs)) * scale) / 2
-    oy = margin + (size - 2 * margin - (max(ys) - min(ys)) * scale) / 2
-    x0, y0 = min(xs), min(ys)
-    polys.sort(key=lambda r: r[0])          # far first: nearer ones cover
+    ox = margin + (size - 2 * margin - (x1 - x0) * scale) / 2
+    oy = margin + (size - 2 * margin - (y1 - y0) * scale) / 2
+    SX = (ox + (X - x0) * scale).tolist()
+    SY = (oy + (Y - y0) * scale).tolist()
+    kk = 0.5 + 0.5 * lam
+    rgb = np.array(rgbs, dtype=np.float64)
+    shade = np.minimum(1.0, rgb * kk[:, None]).tolist()
+    drawn = np.nonzero(keep)[0]
+    # Far first: nearer ones cover; equal depths keep the faces' order.
+    order = drawn[np.argsort(depth[drawn], kind="stable")].tolist()
+    starts = starts.tolist()
+    lens = lens.tolist()
     p = QPainter(pm)
     p.setRenderHint(QPainter.Antialiasing, True)
-    for _d, xy, rgb, lam in polys:
-        k = 0.5 + 0.5 * lam
-        col = QColor.fromRgbF(*(min(1.0, c * k) for c in rgb))
+    for j in order:
+        col = QColor.fromRgbF(*shade[j])
         p.setBrush(col)
         p.setPen(QPen(col.darker(150), 0.6))
-        p.drawPolygon(QPolygonF([QPointF(ox + (x - x0) * scale,
-                                         oy + (y - y0) * scale)
-                                 for x, y in xy]))
+        a = starts[j]
+        p.drawPolygon([QPointF(SX[i], SY[i]) for i in range(a, a + lens[j])])
     p.end()
     return pm
-
-
-def _normal(pts):
-    """Newell's normal of a polygon, ``None`` when it has no area."""
-    nx = ny = nz = 0.0
-    for i, a in enumerate(pts):
-        b = pts[(i + 1) % len(pts)]
-        nx += (a.y() - b.y()) * (a.z() + b.z())
-        ny += (a.z() - b.z()) * (a.x() + b.x())
-        nz += (a.x() - b.x()) * (a.y() + b.y())
-    n = math.sqrt(nx * nx + ny * ny + nz * nz)
-    if n < 1e-12:
-        return None
-    return (nx / n, ny / n, nz / n)

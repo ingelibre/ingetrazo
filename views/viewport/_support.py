@@ -18,6 +18,12 @@ import time as _time_mod
 LAST_HAND = [0.0]
 
 
+#: When a key was last pressed over a view, a menu's shortcut included
+#: (Ctrl+Z reaches the view only as a ShortcutOverride): the «In model»
+#: pictures wait for it too, not to land inside the undo just asked for.
+LAST_KEY = [0.0]
+
+
 def hand_rested(seconds: float) -> bool:
     """Whether nothing has been done over a view for ``seconds``."""
     return _time_mod.monotonic() - LAST_HAND[0] >= seconds
@@ -1168,14 +1174,18 @@ def _edge_rows(head, k, tail, edges):
     return np.concatenate([head[k], rest]) if len(rest) else head[k]
 
 
-def wait_for_still_view(vp, timer, ms: int = 120) -> bool:
+def wait_for_still_view(vp, timer, ms: int = 120, keys: bool = False) -> bool:
     """For a panel's deferred refresh: ``True`` when it may run now;
     otherwise ``timer`` is started again (``ms``) and the caller returns —
-    so the refresh lands once the user stops moving the view."""
+    so the refresh lands once the user stops moving the view. With
+    ``keys`` a key pressed over the view in the last moment (``LAST_KEY``)
+    keeps it waiting as well."""
     busy = getattr(vp, "view_busy", None)
     now = _time_mod.monotonic()
     try:
-        if busy is not None and busy():
+        if ((busy is not None and busy())
+                or (keys and now - LAST_KEY[0]
+                    < getattr(vp, "VIEW_STILL_S", 0.3))):
             # Never starved: after WAIT_MAX_S of waiting it runs anyway.
             first = getattr(timer, "_waiting_since", None)
             if first is None:

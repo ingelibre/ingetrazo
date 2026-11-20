@@ -12,8 +12,9 @@ from PySide6.QtGui import QVector3D
 from core.i18n import tr
 from tools.base import Tool
 from tools.select import selection_mode
-from views.viewport._support import (LAST_HAND, _PERF, _plog, _HAND_EVENTS,
-                                     _HoverEvent, _ray_aabb_span, _is_chord)
+from views.viewport._support import (LAST_HAND, LAST_KEY, _PERF, _plog,
+                                     _HAND_EVENTS, _HoverEvent,
+                                     _ray_aabb_span, _is_chord)
 
 #: The Viewport class, set by views/viewport/__init__.py once it exists: a
 #: method here that names ``Viewport.X`` reads (and writes) the class itself.
@@ -1092,9 +1093,10 @@ class InteractionMixin:
                 self.smartZoomRequested.emit()
                 ev.accept()
                 return True
-        if (ev.type() in (QEvent.ShortcutOverride, QEvent.KeyPress)
-                and ev.key() not in self._MODIFIER_KEYS):
-            self._ctrl_alone = False
+        if ev.type() in (QEvent.ShortcutOverride, QEvent.KeyPress):
+            LAST_KEY[0] = _time_mod.monotonic()
+            if ev.key() not in self._MODIFIER_KEYS:
+                self._ctrl_alone = False
         # With a VCB buffer in progress, claim keys that continue it (unit
         # suffixes m/cm/mm, separators, sign) before the window's QAction
         # shortcuts swallow them — otherwise typing "2m" would fire the Move
