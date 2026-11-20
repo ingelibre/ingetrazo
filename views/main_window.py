@@ -49,6 +49,7 @@ from core.history import (
     ExplodeGroupCommand,
     HealOverlapsCommand,
     MakeGroupCommand,
+    MakeImageGroupCommand,
     RebuildPlanarFacesCommand,
     SnapshotImport,
     SnapshotMutation,
@@ -854,8 +855,8 @@ class MainWindow(QMainWindow):
         return slot
 
     def _connect_ndof(self) -> None:
-        """Listen to the 3D mouse, if the machine has one (spacenavd on
-        Linux, Raw Input on Windows). Silent when there is none."""
+        """Listen to the 3D mouse (spacenavd on Linux, Raw Input on Windows,
+        3DconnexionClient on macOS). Silent when there is no driver."""
         self._ndof_connected = True
         try:
             from views.ndof_input import shared_input
@@ -880,7 +881,9 @@ class MainWindow(QMainWindow):
     def _on_ndof_button(self, number: int, down: bool) -> None:
         # The two buttons every model has: both fit the model, the usual
         # default for the right one and the most useful single command.
-        if down and number in (0, 1) and self.isActiveWindow():
+        from views.ndof_input import current_settings
+        if (down and number in (0, 1) and self.isActiveWindow()
+                and current_settings().enabled):
             self._on_zoom_extents()
 
     def _pack_toolbars(self) -> None:
@@ -5236,9 +5239,19 @@ class MainWindow(QMainWindow):
         if not self._can_make_here():
             return
         sel = self.viewport.scene.selection
+        from core.image_plane import ImagePlane
+        images = [image for image in sel if isinstance(image, ImagePlane)]
         faces = [f for f in sel if isinstance(f, Face)]
         edges = [e for e in sel if isinstance(e, Edge)]
         groups = [g for g in sel if isinstance(g, Group)]
+        if images:
+            if faces or edges or groups:
+                self.viewport.flash_status(tr(
+                    "Group photos separately from model geometry"), 4000)
+                return
+            self._execute_make(MakeImageGroupCommand(images))
+            self.viewport.update()
+            return
         if len(groups) == 1 and not (faces or edges):
             # One group (or component) alone: wrapping it in a container of
             # itself is a Russian doll with nothing inside (@pacaeiro,
@@ -5278,6 +5291,8 @@ class MainWindow(QMainWindow):
         if not self._can_make_here():
             return
         sel = self.viewport.scene.selection
+        from core.image_plane import ImagePlane
+        images = [image for image in sel if isinstance(image, ImagePlane)]
         faces = [f for f in sel if isinstance(f, Face)]
         edges = [e for e in sel if isinstance(e, Edge)]
         groups = [g for g in sel if isinstance(g, Group)
@@ -5290,6 +5305,27 @@ class MainWindow(QMainWindow):
         count = 1
         while tr("Component #{n}", n=count) in taken:
             count += 1
+        if images:
+            if faces or edges or groups:
+                self.viewport.flash_status(tr(
+                    "Make a component from photos separately from model "
+                    "geometry"), 4000)
+                return
+            suggested = (images[0].name or Path(images[0].path).stem
+                         if len(images) == 1 else
+                         tr("Component #{n}", n=count))
+            name, ok = _prompts.get_text(
+                self, tr("Make Component"), tr("Component name:"),
+                text=suggested or tr("Component #{n}", n=count))
+            if not ok:
+                return
+            self._execute_make(MakeImageGroupCommand(
+                images, component=True,
+                name=name.strip() or tr("Component #{n}", n=count)))
+            self.viewport.update()
+            self.statusBar().showMessage(tr(
+                "Component created â€” copies will share its definition"), 4000)
+            return
         if len(groups) > 1 or (groups and (faces or edges)):
             # Several groups, or groups and loose geometry: ONE component
             # holding them, each still a group inside (Marco, 24-09, with
@@ -5600,6 +5636,8 @@ class MainWindow(QMainWindow):
             merge_materials(getattr(temp, "materials", {}) or {},
                             scene.materials, t)
             ensure_layers(scene, t)
+            # Loaded from an external file: a model resize keeps its size.
+            t.source = Path(path).name
         self.viewport.history.execute(AddKeptComponentsCommand(templates))
         self.viewport.notify_scene_changed()
         return len(templates)
@@ -6575,6 +6613,11 @@ class MainWindow(QMainWindow):
             act_lock.setCheckable(True)
             act_lock.setChecked(bool(images[0].locked))
             menu.addSeparator()
+            if not (has_mesh or has_group):
+                menu.addAction(tr("Make Group"), self._on_make_group)
+                menu.addAction(tr("Make Component…"),
+                               self._on_make_component)
+                menu.addSeparator()
 
         if has_geopath:
             menu.addAction(tr("Terrain profile"), self._on_terrain_profile)
@@ -10056,6 +10099,8 @@ class MainWindow(QMainWindow):
         recent = [x for x in self._recent_paths() if x != key]
         recent.insert(0, key)
         QSettings().setValue("recent_files", recent[: self._RECENT_MAX])
+        from core.windows_recent import add_recent_document
+        add_recent_document(path)
 
     def _fill_recent_menu(self) -> None:
         menu = self._recent_menu
@@ -10402,25 +10447,32 @@ class MainWindow(QMainWindow):
     def _do_save(self, path: Path, fmt: str | None = None) -> None:
         """Write the active project to ``path``: its OWN scene and camera,
         whatever view an extension has put in front (#1106)."""
+        # A large document takes seconds: say it is being saved (#666).
+        self.statusBar().showMessage(tr("Saving {name}…", name=path.name))
+        self.statusBar().repaint()
         try:
             stats = self.write_document(path, fmt)
         except Exception as exc:  # noqa: BLE001
+            self.statusBar().clearMessage()
             QMessageBox.critical(self, tr("Save failed"), str(exc))
             return
         # Textures travel inside the document — say so, and say it loudly when
         # an image could not be read (that face's texture will NOT travel).
         embedded = int(stats.get("embedded", 0))
         missing = int(stats.get("missing", 0))
+        if embedded:
+            self.statusBar().showMessage(
+                tr("Saved {name} — {n} texture(s) packed into the document.",
+                   name=path.name, n=embedded), 4000)
+        else:
+            self.statusBar().showMessage(
+                tr("Saved {name}.", name=path.name), 4000)
         if missing:
             QMessageBox.warning(
                 self, tr("Saved with missing textures"),
                 tr("{n} texture image(s) could not be read, so they were not "
                    "packed into the document — those faces will lose their "
                    "texture on another computer.", n=missing))
-        elif embedded:
-            self.statusBar().showMessage(
-                tr("Saved — {n} texture(s) packed into the document.",
-                   n=embedded), 4000)
 
     def write_document(self, path: Path, fmt: str | None = None) -> dict:
         """Save the active project to ``path`` with no dialog: the work of
@@ -10719,6 +10771,7 @@ class MainWindow(QMainWindow):
             # A model written as parts keeps them: one component to place,
             # its pieces inside (see formats.obj._pieces_group).
             parts.name = entry.get("nombre", "") or parts.name
+            parts.source = obj.name        # a model resize keeps its size
             return parts
         mesh = temp.mesh
         if not mesh.faces and temp.groups:
@@ -10729,7 +10782,9 @@ class MainWindow(QMainWindow):
                 tr("“{name}” has no geometry.", name=entry.get("nombre", "")))
             return None
         soften_smooth_edges(mesh, cos_threshold=0.55)
-        return Group(mesh, name=entry.get("nombre", ""))
+        piece = Group(mesh, name=entry.get("nombre", ""))
+        piece.source = obj.name            # a model resize keeps its size
+        return piece
 
     def _on_open_library(self) -> None:
         from views.library_dialog import LibraryDialog
@@ -11194,6 +11249,8 @@ class MainWindow(QMainWindow):
                 self.viewport.update()
                 self._import_name = skp.name
                 self._update_title()
+                from core.windows_recent import add_recent_document
+                add_recent_document(skp)
                 if payload.get("empty"):
                     # A template or blank file (#103): say so, or an empty
                     # viewport reads as a failed import.
@@ -11343,6 +11400,8 @@ class MainWindow(QMainWindow):
                                             path.stem)
         if comp is None:
             return None
+        # Loaded from an external file: a model resize keeps its size.
+        comp.source = path.name
         # The file's origin is the handle (the component axes): the
         # arch's footings, drawn below z=0, go below grade in the plaza too.
         origin = QVector3D(0.0, 0.0, 0.0)
@@ -11573,7 +11632,39 @@ class MainWindow(QMainWindow):
                "All files (*)"))
         if not path_str:
             return
-        path = Path(path_str)
+        self._start_image_import(Path(path_str))
+
+    @staticmethod
+    def image_path_from_mime(mime) -> Path | None:
+        """The first supported local image carried by a desktop drag.
+
+        Only actual local files are accepted.  Other URLs and model files
+        keep following their normal drag/drop route instead of being consumed
+        by the viewport.
+        """
+        if mime is None or not mime.hasUrls():
+            return None
+        suffixes = {".png", ".jpg", ".jpeg", ".bmp", ".tif", ".tiff",
+                    ".webp"}
+        for url in mime.urls():
+            local = url.toLocalFile()
+            if not local:
+                continue
+            path = Path(local)
+            if path.suffix.lower() in suffixes and path.is_file():
+                return path
+        return None
+
+    def _start_image_import(self, path: Path,
+                            drop_pixel: tuple[float, float] | None = None) -> bool:
+        """Load ``path`` into the Image tool, optionally from a drop point.
+
+        A File-menu import waits for the first placement click.  A desktop
+        drop places the photo immediately at its native display size; if the
+        projection cannot provide a scale, the drop still becomes the first
+        corner of the ordinary interactive placement.
+        """
+        path = Path(path)
         from core.image_plane import image_aspect
         aspect, pw, ph = image_aspect(path)
         if pw <= 0 or ph <= 0:
@@ -11581,13 +11672,13 @@ class MainWindow(QMainWindow):
                 self, tr("Import image failed"),
                 tr("{name} is not an image this build can read.",
                    name=path.name))
-            return
+            return False
         from core.texture import cache_image
         try:
             cached = cache_image(path.read_bytes(), path.name, "imported")
         except OSError as exc:
             QMessageBox.critical(self, tr("Import image failed"), str(exc))
-            return
+            return False
 
         from tools.image import ImageTool
         tool = ImageTool()
@@ -11597,10 +11688,35 @@ class MainWindow(QMainWindow):
             action.setChecked(False)
         self._tool_label.setText(tr("Tool: {name}", name=tr("Image")))
         self._refresh_vcb()
-        self.viewport.flash_status(
-            tr("Click a corner and drag to size the image, or type a width "
-               "and press Enter (Esc cancels)"), 6000)
+        dropped = False
+        if drop_pixel is not None:
+            x, y = drop_pixel
+            world = self.viewport._world_from_pixel(round(x), round(y))
+            if world is not None:
+                tool.work_plane = getattr(
+                    self.viewport, "_last_work_plane", None)
+                frame = tool.frame_for_native_size(
+                    self.viewport, world, pw, ph)
+                if frame is not None:
+                    tool._commit(self.viewport, world, *frame)
+                    self.viewport.flash_status(tr(
+                        "Image placed at its natural display size — use "
+                        "Image size… for an exact model width"), 5000)
+                    return True
+                tool.start_point = QVector3D(world)
+                tool.hover_point = QVector3D(world)
+                dropped = True
+        if dropped:
+            self.viewport.flash_status(
+                tr("Image corner placed — move the pointer and click to set "
+                   "its size, or type a width and press Enter (Esc cancels)"),
+                7000)
+        else:
+            self.viewport.flash_status(
+                tr("Click a corner and drag to size the image, or type a width "
+                   "and press Enter (Esc cancels)"), 6000)
         self.viewport.update()
+        return True
 
     def _on_image_size(self) -> None:
         """Resize a placed reference image to a real-world width.
@@ -12345,9 +12461,13 @@ class MainWindow(QMainWindow):
             tr("IFC4 (*.ifc);;All files (*)"))
         if not path_str:
             return
+        path = Path(path_str)
+        self.statusBar().showMessage(tr("Exporting {name}…", name=path.name))
+        self.statusBar().repaint()
         try:
             count = ifc_format.save_ifc(self.viewport.scene, path_str)
         except Exception as exc:  # noqa: BLE001
+            self.statusBar().clearMessage()
             QMessageBox.critical(self, tr("Export IFC failed"), str(exc))
             return
         self.statusBar().showMessage(
@@ -12703,14 +12823,17 @@ class MainWindow(QMainWindow):
         """``writer(scene, path)`` with the failure shown — the menus'
         exports once the file is chosen, and the AI bridge's
         ``export_file``. False when it failed."""
+        self.statusBar().showMessage(tr("Exporting {name}…", name=path.name))
+        self.statusBar().repaint()
         try:
             writer(self.viewport.scene, path)
         except Exception as exc:  # noqa: BLE001
+            self.statusBar().clearMessage()
             QMessageBox.critical(
                 self, tr("Export {label} failed", label=label), str(exc))
             return False
         self.statusBar().showMessage(
-            tr("Exported {label} → {name}", label=label, name=path.name), 3000)
+            tr("Exported {label} → {name}", label=label, name=path.name), 4000)
         return True
 
     def _confirm_discard(self, prompt: str) -> bool:

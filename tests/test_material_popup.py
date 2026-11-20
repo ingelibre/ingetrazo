@@ -7,6 +7,7 @@ and «More materials…» — and the choice paints the row, or every selected
 row when it is one of them, as one undo step."""
 from __future__ import annotations
 
+import pytest
 from PySide6.QtGui import QColor, QVector3D as V
 from PySide6.QtWidgets import QApplication, QPushButton
 
@@ -212,6 +213,32 @@ def test_a_new_color_without_a_name_is_a_plain_color(monkeypatch):
         pop = panel.material_popup(_row(panel, mesa))
         _button(pop, tr("New color…")).click()
         assert mesa.material == {"color": [1.0, 0.0, 0.0]}
+    finally:
+        _close(win, panel)
+
+
+def test_a_new_color_can_take_alpha_from_the_picker(monkeypatch):
+    from views import color_dialog, prompts
+    from PySide6.QtWidgets import QColorDialog
+    win, scene, panel, (muro, losa, mesa) = _setup()
+    seen = {}
+
+    def choose(*args, **kwargs):
+        seen.update(kwargs)
+        return QColor(255, 0, 0, 64)
+
+    try:
+        monkeypatch.setattr(color_dialog, "get_color", choose)
+        monkeypatch.setattr(prompts, "get_text",
+                            lambda *a, **k: ("Verre rouge", True))
+        pop = panel.material_popup(_row(panel, mesa))
+        _button(pop, tr("New color…")).click()
+        assert seen["options"] & \
+            QColorDialog.ColorDialogOption.ShowAlphaChannel
+        assert mesa.material["color"] == [1.0, 0.0, 0.0]
+        assert mesa.material["opacity"] == pytest.approx(64 / 255.0)
+        assert scene.materials["Verre rouge"].opacity == \
+            pytest.approx(64 / 255.0)
     finally:
         _close(win, panel)
 

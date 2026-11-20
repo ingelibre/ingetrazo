@@ -205,3 +205,16 @@ def test_the_button_asks_first(settings_file, monkeypatch):
                         lambda *a, **k: QMessageBox.Ok)
     dlg._defaults_btn.click()
     assert dlg._obj_unit.currentData() == "m"
+
+
+def test_every_3d_mouse_action_has_its_own_label(settings_file):
+    """PR #1406 added Orbit Z to ndof.ACTIONS: each entry of a 3D mouse axis
+    list must carry its own name, or "Disabled" lands on Orbit Z."""
+    from core.ndof import ACTIONS
+    dlg = PreferencesDialog(_Win())
+    action, _invert, _speed = next(iter(dlg._ndof_axes.values()))
+    keys = [action.itemData(i) for i in range(action.count())]
+    texts = [action.itemText(i) for i in range(action.count())]
+    assert keys == list(ACTIONS)
+    assert texts[keys.index("disabled")] == "Disabled"
+    assert texts[keys.index("orbit_z")] == "Orbit Z"

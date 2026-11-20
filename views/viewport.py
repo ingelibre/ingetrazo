@@ -12,6 +12,7 @@ calls ``glClear`` first to avoid showing stale GPU memory.
 Navigation:
 - Middle-button drag: orbit
 - Shift + Middle-button drag: pan
+  (the two swap with Preferences ▸ "Middle-button drag pans")
 - Wheel: zoom
 - P: toggle perspective / parallel projection
 
@@ -2085,6 +2086,17 @@ def _load_invert_orbit_y() -> bool:
     return str(QSettings().value("nav/invert_orbit_y", "0")) != "0"
 
 
+def _load_middle_drag_pans() -> bool:
+    """Preferences ▸ middle-button drag pans, Shift + middle-drag orbits.
+
+    Off by default: the bare wheel-drag orbits, the classic way. This is
+    for the hands that learned the other convention in other modelers,
+    where the wheel-drag moves the view and a modifier turns it.
+    """
+    from PySide6.QtCore import QSettings
+    return str(QSettings().value("nav/middle_drag_pans", "0")) != "0"
+
+
 def _load_msaa() -> int:
     """Scene-FBO multisample count (Preferences ▸ General). 4 is the
     historical hardcoded value; the FBO still falls back to 0 on drivers
@@ -3020,6 +3032,7 @@ class Viewport(QOpenGLWidget):
         self.scene.hide_similar_components = _load_hide_similar()
         self._invert_wheel = _load_invert_wheel()
         self._invert_orbit_y = _load_invert_orbit_y()
+        self._middle_drag_pans = _load_middle_drag_pans()
         self._msaa = _load_msaa()
         self._soft_shadows = _load_soft_shadows()
         self._hard_shadow_image_cache = None
@@ -3085,6 +3098,10 @@ class Viewport(QOpenGLWidget):
         self._last_pos = None
         self._pan_mode = False
         self._middle_drag_active = False
+        # The left button pressed during a wheel-drag pans: the drag's
+        # mode before it (True = it was already a Shift pan), else None.
+        # Its release never reaches the tool, even after the wheel's.
+        self._left_pan_restore = None
         #: where the current orbit gesture turns (#164); None = the target
         self._orbit_pivot = None
         # A mouse-look drag for a tool with ``on_look`` (First Person):
@@ -5501,6 +5518,7 @@ class Viewport(QOpenGLWidget):
                 # left its own children on screen.
                 proxy.layer = forced or child.layer or inherited or node.layer
                 proxy.billboard = child.billboard
+                proxy.images = child.images
                 # Hide on an object takes its whole subtree along, and a
                 # hidden child stays hidden inside a visible parent.
                 proxy.hidden = hidden or bool(child.hidden)
@@ -6785,8 +6803,8 @@ class Viewport(QOpenGLWidget):
         Shading is pinned to 1.0: a reference scan has to read at its true
         tones, not dimmed by the face lighting.
         """
-        images = getattr(self.scene, "image_planes", None)
-        if not images:
+        placed = list(self._placed_image_planes())
+        if not placed:
             return
         import struct
         vao = getattr(self, "_img_vao", None)
@@ -6794,20 +6812,15 @@ class Viewport(QOpenGLWidget):
             self._img_vao, self._img_vbo = self._create_dynamic_uv()
             vao = self._img_vao
         drawn = []
-        for im in images:
-            if not self.scene.entity_visible(im):
-                continue
+        for im, matrix, _owner in placed:
             tex = self._get_texture(im.path)
             if tex is None:
                 continue
-            drawn.append((im, tex))
-        # An image is never part of a group: inside one it is always the
-        # surroundings, and greys (or hides) with the rest of the model —
-        # it stayed in full colour on top of a grey model.
-        rest = self._edit_rest_fade(None)
-        if not drawn or rest is None:
+            rest = self._edit_rest_fade(_owner if _owner is not im else None)
+            if rest is not None:
+                drawn.append((im, tex, matrix, rest))
+        if not drawn:
             return
-        self._program.setUniformValue1f(self._loc_fade, rest)
         self._program.setUniformValue(self._loc_use_tex, 1)
         self._program.setUniformValue(self._loc_use_vcolor, 0)
         self._program.setUniformValue1f(self._loc_shade, 1.0)
@@ -6827,8 +6840,11 @@ class Viewport(QOpenGLWidget):
         # every edit (Marco, 2026-09-14: «puse sombras con el tif y orbité»).
         self._gl.glEnable(GL_BLEND)
         _scene_blend(self._gl)
-        for im, tex in drawn:
+        for im, tex, matrix, rest in drawn:
+            self._program.setUniformValue1f(self._loc_fade, rest)
             c = im.corners()
+            if matrix is not None:
+                c = [matrix.map(point) for point in c]
             # Two triangles, UV (0,0) at ``origin``: _get_texture uploads the
             # image mirrored (bottom-up V), so v grows with the plane's "up"
             # axis and the picture stands upright.
@@ -6865,6 +6881,25 @@ class Viewport(QOpenGLWidget):
         self._gl.glDepthMask(GL_TRUE)
         self._program.setUniformValue(self._loc_use_tex, 0)
 
+    def _placed_image_planes(self):
+        """Yield ``(image, matrix, owner)`` for every visible photo.
+
+        Loose reference images have no matrix.  Images held by groups and
+        components remain the same first-class entity, placed through the
+        container just like its local mesh.  This list is deliberately
+        independent of ``Style.face_mode``: a photo is not a face texture.
+        """
+        for image in getattr(self.scene, "image_planes", None) or ():
+            if self.scene.entity_visible(image):
+                yield image, None, image
+        for group in self._placements():
+            images = getattr(group, "images", None) or ()
+            if not images or not self.scene.entity_visible(group):
+                continue
+            for image in images:
+                if self.scene.entity_visible(image):
+                    yield (image, getattr(group, "xform", None),
+                           self._owner_of(group))
     def _edit_rest_fade(self, group):
         """How a reference image (``group=None``) or a face-me figure is
         drawn while a group is open: the fade to apply, or ``None`` to skip
@@ -6891,29 +6926,35 @@ class Viewport(QOpenGLWidget):
         scan is exactly the one you have finished aligning and now want to
         draw on, so it must keep offering its plane while refusing clicks.
         """
-        images = getattr(self.scene, "image_planes", None)
+        images = [(image, None) for image in
+                  (getattr(self.scene, "image_planes", None) or ())]
+        if not selectable_only:
+            images.extend((image, matrix)
+                          for image, matrix, owner in self._placed_image_planes()
+                          if owner is not image)
         if not images:
             return None
         origin, direction = self._pixel_to_ray(screen_x, screen_y)
         if origin is None or direction is None:
             return None
         best, best_t = None, float("inf")
-        for im in images:
+        for im, matrix in images:
             if not self.scene.entity_visible(im):
                 continue
             if selectable_only and (getattr(im, "locked", False)
                                     or not self.scene.entity_selectable(im)):
                 continue
-            n = im.normal()
+            placed = im.transformed(matrix) if matrix is not None else im
+            n = placed.normal()
             denom = QVector3D.dotProduct(n, direction)
             if abs(denom) < 1e-9:
                 continue
-            t = QVector3D.dotProduct(n, im.center() - origin) / denom
+            t = QVector3D.dotProduct(n, placed.center() - origin) / denom
             if t < 0.0 or t > best_t:
                 continue
-            fu, fv = im.project(origin + direction * t)
-            if im.contains_uv(fu, fv):
-                best, best_t = im, t
+            fu, fv = placed.project(origin + direction * t)
+            if placed.contains_uv(fu, fv):
+                best, best_t = placed, t
         return best
 
     def pick_image_plane(self, screen_x: float, screen_y: float):
@@ -7765,7 +7806,8 @@ class Viewport(QOpenGLWidget):
         self._tile_geom = (key, runs)
         return runs
 
-    # Sky (top) and ground (bottom) backdrop colours — subtle two-tone.
+    # Sky and ground backdrop colours — a subtle two-tone by default. A style
+    # can explicitly add the configurable horizon colour.
     _SKY_RGB = (0.925, 0.935, 0.945)
     _GROUND_RGB = (0.815, 0.820, 0.815)
 
@@ -7789,31 +7831,43 @@ class Viewport(QOpenGLWidget):
             return 2.0 if fwd.z() < 0 else -2.0
         return clip.y() / clip.w()
 
-    #: NDC span over which each half of the backdrop completes its ramp.
-    _SKY_GRAD_SPAN = 1.4
+    #: Fixed NDC spans over which the backdrop ramps complete. The historical
+    #: span stays in use until a horizon colour is explicitly picked. The new
+    #: span must NOT shrink with the visible strip of sky: when the camera
+    #: pitches down and the horizon rises, the blue end leaves the screen and
+    #: the remaining strip becomes increasingly horizon-coloured.
+    _LEGACY_SKY_GRAD_SPAN = 1.4
+    _SKY_GRAD_SPAN = 1.0
     _GROUND_GRAD_SPAN = 0.9
 
     @staticmethod
-    def _sky_gradient(sky_rgb, ground_rgb, hy):
-        """Corner colours of the backdrop gradient: the style's sky tone at
-        the zenith and ground tone underfoot, both hazed toward white at the
-        horizon (atmosphere — the one-colour input stays the one the user
-        picked). Computed against the UNCLAMPED horizon ``hy``, so a pitched
-        camera sees the right slice of the ramp (all zenith when looking up,
-        all ground when looking down). Returns ``(sky_bottom, sky_top,
-        ground_top, ground_bottom, horizon_line)``; the ramps are linear in
-        NDC y, so colouring only the quad corners is exact."""
+    def _sky_gradient(sky_rgb, horizon_rgb, ground_rgb, hy):
+        """Corner colours of the backdrop gradient.
+
+        ``horizon_rgb is None`` is the compatibility path: use the exact
+        white-haze formula and span from before configurable horizons. With an
+        explicit colour, the sky starts at that tone and reaches the sky tone
+        one fixed NDC unit above it. The ramp stays anchored there while the
+        camera pitches. Returns ``(sky_bottom, sky_top, ground_top,
+        ground_bottom, horizon_line)``.
+        """
         def mix(a, b, t):
             return (a[0] + (b[0] - a[0]) * t,
                     a[1] + (b[1] - a[1]) * t,
                     a[2] + (b[2] - a[2]) * t)
 
-        white = (1.0, 1.0, 1.0)
-        sky_h = mix(sky_rgb, white, 0.55)
-        gnd_h = mix(ground_rgb, white, 0.30)
+        if horizon_rgb is None:
+            white = (1.0, 1.0, 1.0)
+            sky_h = mix(sky_rgb, white, 0.55)
+            gnd_h = mix(ground_rgb, white, 0.30)
+            sky_span = Viewport._LEGACY_SKY_GRAD_SPAN
+        else:
+            sky_h = horizon_rgb
+            gnd_h = mix(ground_rgb, horizon_rgb, 0.30)
+            sky_span = Viewport._SKY_GRAD_SPAN
 
         def sky_at(y):
-            t = min(1.0, max(0.0, (y - hy) / Viewport._SKY_GRAD_SPAN))
+            t = min(1.0, max(0.0, (y - hy) / sky_span))
             return mix(sky_h, sky_rgb, t)
 
         def gnd_at(y):
@@ -7826,19 +7880,24 @@ class Viewport(QOpenGLWidget):
 
     def _draw_sky(self, mvp) -> None:
         """Sky above the horizon and ground below, each a vertical gradient
-        (style tones hazed toward the horizon — see ``_sky_gradient``), with
-        a subtle horizon line where they meet. Per-vertex colours; GL
-        interpolates per pixel. The class constants ``_SKY_RGB`` /
-        ``_GROUND_RGB`` are the historical defaults, kept as fallbacks."""
+        (style tones hazed toward the chosen horizon colour — see
+        ``_sky_gradient``), with a subtle horizon line where they meet.
+        Per-vertex colours; GL interpolates per pixel. An unset horizon keeps
+        the historical gradient rather than silently configuring white. The
+        class constants ``_SKY_RGB`` / ``_GROUND_RGB`` are the historical
+        defaults, kept as fallbacks."""
         style = getattr(self, "_frame_style", None)
         sky_rgb = tuple(getattr(style, "sky_color", None)
                         or self._SKY_RGB)[:3]
+        picked_horizon = getattr(style, "horizon_color", None)
+        horizon_rgb = (tuple(picked_horizon)[:3]
+                       if picked_horizon is not None else None)
         ground_rgb = tuple(getattr(style, "ground_color", None)
                            or self._GROUND_RGB)[:3]
         hy_raw = self._horizon_ndc_y(mvp)
         hy = max(-1.0, min(1.0, hy_raw))
         c_sky0, c_sky1, c_gnd0, c_gnd1, c_line = self._sky_gradient(
-            sky_rgb, ground_rgb, hy_raw)
+            sky_rgb, horizon_rgb, ground_rgb, hy_raw)
         self._program.setUniformValue(self._loc_mvp, QMatrix4x4())  # identity/NDC
         self._gl.glDisable(GL_DEPTH_TEST)
         self._gl.glDepthMask(GL_FALSE)
@@ -11873,6 +11932,10 @@ class Viewport(QOpenGLWidget):
             return
         r, g, b = snap.color
         color = QColor.fromRgbF(r, g, b, 1.0)
+        square_snap = snap.kind in (
+            "endpoint", "origin", "component_origin", "on_edge", "on_axis",
+            "on_line", "on_circle", "extension", "from_point", "aligned",
+            "tangent", "intersection_edge", "intersection_face")
         # Dashed guide line (the extension inference shows the edge's dashed
         # continuation to the cursor).
         if snap.guide is not None:
@@ -11917,10 +11980,7 @@ class Viewport(QOpenGLWidget):
             painter.setPen(mark)
             painter.setBrush(QColor.fromRgbF(r, g, b, 0.85))
             painter.drawEllipse(QPointF(px, py), 6.5, 6.5)
-        elif snap.kind in ("endpoint", "origin", "component_origin", "on_edge",
-                           "on_axis", "intersection_edge", "intersection_face",
-                           "on_line", "on_circle", "extension", "from_point",
-                           "aligned", "tangent"):
+        elif square_snap:
             rect = QRectF(px - 7, py - 7, 14, 14)
             painter.setPen(halo)
             painter.setBrush(Qt.NoBrush)
@@ -19238,10 +19298,24 @@ class Viewport(QOpenGLWidget):
                 lines.append(_SnapEdge(QVector3D(g.point), QVector3D(g.point)))
         # Reference-image borders snap like guides: aligning a scan against
         # real geometry (or drawing to its edge) is what tracing needs.
-        for im in getattr(self.scene, "image_planes", None) or []:
-            if getattr(im, "locked", False) or not self.scene.entity_selectable(im):
+        placed_images = getattr(self, "_placed_image_planes", None)
+        if callable(placed_images):
+            placed_images = placed_images()
+        else:
+            # A few focused tests borrow this method on a lightweight
+            # viewport double.  It still needs the top-level image borders,
+            # even though it has no group-placement collector.
+            placed_images = ((im, None, im)
+                             for im in getattr(self.scene, "image_planes", ()))
+        for im, matrix, owner in placed_images:
+            target = owner if owner is not im else im
+            if (getattr(im, "locked", False)
+                    or not self.scene.entity_selectable(target)):
                 continue
-            for a, b in im.border_edges():
+            edges = im.border_edges()
+            if matrix is not None:
+                edges = [(matrix.map(a), matrix.map(b)) for a, b in edges]
+            for a, b in edges:
                 seg = self._clip_segment_front(a, b)
                 if seg is not None:
                     lines.append(_SnapEdge(*seg))
@@ -19360,7 +19434,7 @@ class Viewport(QOpenGLWidget):
         change, and ``placement_points`` makes that one matrix multiply
         per placement."""
         kids = getattr(group, "children", None)
-        if kids:
+        if kids or getattr(group, "images", None):
             cache = getattr(self, "_container_obb", None)
             if cache is None:
                 cache = self._container_obb = {}
@@ -20941,6 +21015,23 @@ class Viewport(QOpenGLWidget):
                             None if hits.loose[front].any()
                             else hits.owner(int(front[0])))
             faces_answer = best
+            # A grouped photo has no topology face to enter the pick index.
+            # Hit its real rectangle and return the container, preserving
+            # photo semantics without an invisible helper mesh.
+            for g in self._context_placements():
+                images = getattr(g, "images", None) or ()
+                if not images or not self.scene.entity_selectable(g):
+                    continue
+                matrix = getattr(g, "xform", None)
+                for image in images:
+                    corners = image.corners()
+                    if matrix is not None:
+                        corners = [matrix.map(point) for point in corners]
+                    for tri in ((corners[0], corners[1], corners[2]),
+                                (corners[0], corners[2], corners[3])):
+                        t = _ray_triangle(origin, direction, *tri)
+                        if t is not None and (best is None or t < best[0]):
+                            best = (t, self._owner_of(g))
             for g in self._context_placements():
                 # The figure test first: it is an attribute, the layer test
                 # walks tags — asked of every placement on every hover it
@@ -21284,6 +21375,12 @@ class Viewport(QOpenGLWidget):
         from core.outliner import locked_on_path
         if locked_on_path(self.scene.groups, group):
             self.flash_status(tr("Unlock it first"), 3000)
+            return
+        if (getattr(group, "images", None) and not group.mesh.vertices
+                and not getattr(group, "children", None)):
+            self.flash_status(tr(
+                "This group contains a photo, not editable geometry — "
+                "explode it to edit the image"), 4000)
             return
         parent = self.scene.edit_group
         in_definition = (parent is not None
@@ -21697,11 +21794,19 @@ class Viewport(QOpenGLWidget):
         else:
             self._apply_tool_cursor()
 
-    def _set_middle_drag_pan_mode(self, pan: bool) -> None:
-        """Switch an active MMB drag between orbit and pan."""
+    def _set_middle_drag_pan_mode(self, shift: bool) -> None:
+        """Switch an active MMB drag between orbit and pan.
+
+        ``shift`` is whether Shift is held. Which of the two the bare drag
+        does is a preference (PR #467, Preferences ▸ "Middle-button drag
+        pans"), so Shift flips it from there instead of meaning pan.
+        """
         if not self._middle_drag_active or self.nav_mode is not None:
             return
-        pan = bool(pan)
+        pan = bool(shift) != bool(getattr(self, "_middle_drag_pans", False))
+        # A left button held during the drag pans whatever Shift says
+        # (PR #525); its release puts back the mode from before.
+        pan = pan or self._left_pan_restore is not None
         if self._pan_mode == pan:
             return
         self._pan_mode = pan
@@ -21801,10 +21906,20 @@ class Viewport(QOpenGLWidget):
         if self._dock_drag(ev):
             ev.acceptProposedAction()
             return
+        win = self.window()
+        image_path = getattr(win, "image_path_from_mime", None)
+        if callable(image_path) and image_path(ev.mimeData()) is not None:
+            ev.acceptProposedAction()
+            return
         super().dragEnterEvent(ev)
 
     def dragMoveEvent(self, ev) -> None:
         if self._dock_drag(ev):
+            ev.acceptProposedAction()
+            return
+        win = self.window()
+        image_path = getattr(win, "image_path_from_mime", None)
+        if callable(image_path) and image_path(ev.mimeData()) is not None:
             ev.acceptProposedAction()
             return
         super().dragMoveEvent(ev)
@@ -21812,6 +21927,15 @@ class Viewport(QOpenGLWidget):
     def dropEvent(self, ev) -> None:
         if self._dock_drag(ev):
             self.window().drop_dock_on_viewport(ev)
+            return
+        win = self.window()
+        image_path = getattr(win, "image_path_from_mime", None)
+        path = image_path(ev.mimeData()) if callable(image_path) else None
+        start = getattr(win, "_start_image_import", None)
+        if path is not None and callable(start):
+            pos = ev.position()
+            if start(path, (pos.x(), pos.y())):
+                ev.acceptProposedAction()
             return
         super().dropEvent(ev)
 
@@ -21849,6 +21973,17 @@ class Viewport(QOpenGLWidget):
         self._input_t = _time_mod.monotonic()   # P0: input→paint latency
         self._hand_t = self._input_t            # see view_busy
         self._input_serial = getattr(self, "_input_serial", 0) + 1
+        # Wheel held, then left pressed: the orbit turns into a pan for as
+        # long as both are held (an alternative to Shift+wheel-drag).
+        if (ev.button() == Qt.LeftButton and self._last_pos is not None
+                and ev.buttons() & Qt.MiddleButton):
+            self._left_pan_restore = self._pan_mode
+            self._pan_mode = True
+            from views.icons import tool_cursor
+            cur = tool_cursor("pan")
+            if cur is not None:
+                self.setCursor(cur)
+            return
         if ev.button() == Qt.LeftButton and self._press_on_box_chip(ev):
             return
         if (ev.button() in (Qt.LeftButton, Qt.RightButton)
@@ -21858,7 +21993,10 @@ class Viewport(QOpenGLWidget):
             return
         if ev.button() == Qt.MiddleButton:
             self._last_pos = ev.position().toPoint()
-            self._pan_mode = bool(ev.modifiers() & Qt.ShiftModifier)
+            # Shift swaps the drag between orbit and pan; which one is the
+            # bare drag is a preference (Preferences ▸ General).
+            self._pan_mode = (bool(ev.modifiers() & Qt.ShiftModifier)
+                              != self._middle_drag_pans)
             self._middle_drag_active = True
             self._orbit_pivot = self._orbit_pivot_at(
                 ev.position().x(), ev.position().y())
@@ -22046,8 +22184,8 @@ class Viewport(QOpenGLWidget):
             self._recentre_on(ev.position().x(), ev.position().y())
             return
         if ev.button() != Qt.LeftButton or self.active_tool is None \
-                or self.nav_mode is not None:
-            self.mousePressEvent(ev)
+                or self.nav_mode is not None or self._last_pos is not None:
+            self.mousePressEvent(ev)       # (a wheel+left pan included)
             return
         self._last_double = (ev.timestamp(), ev.position())
         if self.active_tool.box_select:
@@ -22427,6 +22565,17 @@ class Viewport(QOpenGLWidget):
             else:
                 self._apply_tool_cursor()
             return
+        if ev.button() == Qt.LeftButton and self._left_pan_restore is not None:
+            # The left button of a wheel+left pan: still on the wheel, the
+            # drag goes back to what it was; the tool never sees this release.
+            restore, self._left_pan_restore = self._left_pan_restore, None
+            if self._last_pos is not None and ev.buttons() & Qt.MiddleButton:
+                self._pan_mode = restore
+                from views.icons import tool_cursor
+                cur = tool_cursor("pan" if restore else "orbit")
+                if cur is not None:
+                    self.setCursor(cur)
+            return
 
         if ev.button() == Qt.LeftButton and self._zoom_box_active:
             self._zoom_box_active = False
@@ -22800,8 +22949,16 @@ class Viewport(QOpenGLWidget):
         claims = getattr(self.active_tool, "claims_key", None)
         return callable(claims) and bool(claims(ev.key(), ev.modifiers()))
 
+    def _tool_key(self, key: int) -> int:
+        """Option copies on macOS; other tools keep their own Alt behavior."""
+        if (sys.platform == "darwin" and key == Qt.Key_Alt
+                and getattr(self.active_tool, "option_copies", False)):
+            return Qt.Key_Control
+        return key
+
     def keyPressEvent(self, ev) -> None:
-        if ev.key() == Qt.Key_Control and not ev.isAutoRepeat():
+        key = self._tool_key(ev.key())
+        if key == Qt.Key_Control and not ev.isAutoRepeat():
             self._ctrl_alone = True       # until another key says otherwise
         # Held keys (First Person): the press and the release are the
         # tool's; auto-repeat says nothing new.
@@ -22835,7 +22992,7 @@ class Viewport(QOpenGLWidget):
 
         # 2. Active tool gets first shot at the key.
         if self.active_tool is not None:
-            if self.active_tool.on_key(self, ev.key(), ev.modifiers()):
+            if self.active_tool.on_key(self, key, ev.modifiers()):
                 return
 
         # 2b. Delete in any other tool (Paint, Push/Pull, Offset…): with the
@@ -23181,7 +23338,7 @@ class Viewport(QOpenGLWidget):
         if callable(release):
             if ev.isAutoRepeat() and self._tool_claims_key(ev):
                 return
-            if not ev.isAutoRepeat() and release(self, ev.key()):
+            if not ev.isAutoRepeat() and release(self, self._tool_key(ev.key())):
                 return
         if ev.key() == Qt.Key_Alt and not ev.isAutoRepeat():
             self._apply_alt_cursor(False)

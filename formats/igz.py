@@ -650,8 +650,8 @@ def _pack_plan(mesh, plan, sink: dict) -> dict:
     return _write_geometry(arrays, table, layer_table, sink)
 
 
-def save_scene(scene, path: Path, thumbnail: bytes | None = None, *,
-               fmt: str = "auto") -> dict:
+def save_scene(scene, path: Path, thumbnail: bytes | None = None,
+               progress=None, *, fmt: str = "auto") -> dict:
     """Write ``scene`` to ``path``. Returns ``{"embedded", "missing"}``: how
     many texture images were packed into the document, and how many could not
     be read (those keep pointing at their original path).
@@ -664,11 +664,16 @@ def save_scene(scene, path: Path, thumbnail: bytes | None = None, *,
     format 1 / 2 / 3 choice described in the module docstring. ``"json"``
     always writes indented plain JSON — see :func:`_write_plain_json`; it
     carries no picture (a PNG that changes on every save would be noise in
-    every diff, and the plain layout is for version control)."""
+    every diff, and the plain layout is for version control).
+
+    ``progress(fraction, stage)``, when given, is told the milestones of the
+    write (PR #666)."""
     if fmt not in SAVE_FORMATS:
         raise ValueError(f"unknown save format {fmt!r}; "
                          f"one of {', '.join(SAVE_FORMATS)}")
     plain = fmt == "json"
+    if progress:
+        progress(0.1, "Serializing geometry…")
     # Accept a Scene or a bare Mesh (the M1 read-compat path feeds a Mesh).
     mesh = scene.mesh if hasattr(scene, "mesh") else scene
     # Decided BEFORE anything is serialized: a large document writes its
@@ -741,6 +746,10 @@ def save_scene(scene, path: Path, thumbnail: bytes | None = None, *,
                 entry["hidden"] = True
             if getattr(g, "locked", False):
                 entry["locked"] = True          # older readers ignore it
+            if getattr(g, "source", None):
+                # The external file a component was loaded from (a model
+                # resize keeps it at its size); older readers ignore it.
+                entry["source"] = str(g.source)
             if getattr(g, "exploded", None):
                 # An exploded view and each part's share of it, so the
                 # document reopens able to reassemble (core/explode.py).
@@ -749,6 +758,12 @@ def save_scene(scene, path: Path, thumbnail: bytes | None = None, *,
                 entry["exploded"] = dict(g.exploded)
             if getattr(g, "explode_offset", None):
                 entry["explode_offset"] = list(g.explode_offset)
+            images = getattr(g, "images", None)
+            if images:
+                # Photos remain first-class image entities inside a group or
+                # component.  The nested ``texture`` keys also make the
+                # ordinary packer embed their source files in the .igz.
+                entry["images"] = [image.to_dict() for image in images]
             kids = getattr(g, "children", None)
             if kids:
                 entry["children"] = [_entry(c) for c in kids]
@@ -955,6 +970,8 @@ def save_scene(scene, path: Path, thumbnail: bytes | None = None, *,
     # Images ride INSIDE the document (see the module docstring). Only a scene
     # that actually has textures pays for the container; everything else stays
     # plain JSON at format 1, readable by older builds.
+    if progress:
+        progress(0.6, "Packing textures…")
     blobs, missing = _pack_textures(payload)
     # The photogrammetric survey (Track G, G6) rides inside the document too,
     # for the same reason the textures do: a reference mesh that lives in a
@@ -976,6 +993,8 @@ def save_scene(scene, path: Path, thumbnail: bytes | None = None, *,
         "app_version": __version__,
         "scene": payload,
     }
+    if progress:
+        progress(0.8, "Writing file…")
     try:
         if large:
             doc = json.dumps(data, separators=(",", ":"), allow_nan=False)
@@ -990,6 +1009,8 @@ def save_scene(scene, path: Path, thumbnail: bytes | None = None, *,
         _write_container(path, doc, blobs, fast=large, deflated=geom)
     else:
         _write_atomic(path, doc.encode("utf-8"))
+    if progress:
+        progress(1.0, "Saved")
     return {"embedded": embedded, "missing": missing}
 
 
@@ -1787,6 +1808,8 @@ def _load_into_inner(scene, path: Path, progress=None) -> None:
             group.hidden = True
         if raw.get("locked"):
             group.locked = True
+        if raw.get("source"):
+            group.source = str(raw["source"])
         if isinstance(raw.get("material"), dict):
             group.material = dict(raw["material"])
         if isinstance(raw.get("exploded"), dict):
@@ -1794,6 +1817,10 @@ def _load_into_inner(scene, path: Path, progress=None) -> None:
         off = raw.get("explode_offset")
         if isinstance(off, list) and len(off) == 3:
             group.explode_offset = tuple(float(v) for v in off)
+        from core.image_plane import ImagePlane
+        group.images = [ImagePlane.from_dict(image)
+                        for image in raw.get("images", [])
+                        if isinstance(image, dict)]
         if depth < 32:              # a corrupt document must not spin
             group.adopt(_group_from(c, depth + 1)
                         for c in raw.get("children", []) or [])

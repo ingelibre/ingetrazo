@@ -564,11 +564,32 @@ def _loop_has_segment(loop, v0, v1) -> bool:
         for i in range(n))
 
 
+def _on_one_plane(faces) -> bool:
+    """Every vertex of ``faces``, holes included, lies on one plane within the
+    plane rebuild's tolerance."""
+    from core.arrangement import coplanar_plane
+
+    pts = [p for f in faces for loop in (f.vertices, *f.holes) for p in loop]
+    return coplanar_plane(pts, RebuildPlaneFacesCommand._TOL) is not None
+
+
+def _shared_edges(mesh, face_a, face_b) -> list:
+    """The edges bounding both ``face_a`` and ``face_b``."""
+    out = []
+    for lp in (face_a.loop, *face_a.hole_loops):
+        n = len(lp)
+        for i in range(n):
+            e = mesh.find_edge(lp[i], lp[(i + 1) % n])
+            if e is not None and face_b in e.faces:
+                out.append(e)
+    return out
+
+
 class EraseSelectionCommand(Command):
     """Erase selected edges and faces, the usual way.
 
-    An edge that divides two *coplanar* faces is dissolved and the faces merge
-    back into one (rubbing out a face's split line reunites it). Any other erased
+    An edge that divides two *coplanar* faces goes alone and the faces merge
+    into one (rubbing out a face's split line reunites it). Any other erased
     edge takes the faces it bounds with it (a non-planar pair can't become one
     face) — except through a *hole*: an edge that only bounds a face as one of
     its hole's edges takes the hole with it and the face fills in. Undo restores
@@ -623,7 +644,7 @@ class EraseSelectionCommand(Command):
                 for ek in _loop_edges(f.vertices):
                     seg_box[0].setdefault(ek, []).append(f)
         dead_faces: set = set()
-        slit_planes: list = []
+        rebuild_planes: list = []
         across: list = []
         for a, b in self._edge_endpoints:
             v0 = m.vertex_at(a)
@@ -642,17 +663,35 @@ class EraseSelectionCommand(Command):
                 # regions below (the ring comes back as outer + hole; other
                 # fence pieces survive as free edges).
                 f = faces[0]
-                slit_planes.append((QVector3D(f.vertices[0]), f.normal()))
+                rebuild_planes.append((QVector3D(f.vertices[0]), f.normal()))
                 m.remove_edge(edge)
                 scene.selection.discard(edge)
                 continue
             if len(faces) == 2 and QVector3D.dotProduct(
                 faces[0].normal(), faces[1].normal()
             ) > 0.999:
-                merged = m.dissolve_coplanar_region(faces)  # reunite the split
+                # Coplanar pair: it becomes one face. On one true plane only
+                # this edge goes and the other edges the pair shares stay as
+                # free edges — dissolving all of them took the whole outline
+                # of a rectangle drawn on a face (#631). Normals up to ~2.5°
+                # apart pass the test above; such a pair keeps the full
+                # dissolve, as the plane rebuild can't see it as one region
+                # and would drop one of the faces.
+                planar = _on_one_plane(faces)
+                keep = ([e for e in _shared_edges(m, *faces) if e is not edge]
+                        if planar else ())
+                merged = m.dissolve_coplanar_region(faces, keep=keep)
                 if merged is not None:
                     dead_faces.update(id(f) for f in faces)
                     _index_face(merged)
+                elif planar:
+                    # The union isn't simple: drop the edge and let the
+                    # plane rebuild below re-derive the regions.
+                    f = faces[0]
+                    rebuild_planes.append((QVector3D(f.vertices[0]), f.normal()))
+                    m.remove_edge(edge)
+                    scene.selection.discard(edge)
+                    continue
             elif len(faces) > 2:
                 # A wall raised against a taller neighbour leaves its inner
                 # side faces on the line too, so the front's split line had
@@ -697,11 +736,12 @@ class EraseSelectionCommand(Command):
                     scene.selection.discard(f)
                 m.remove_edge(edge)
             scene.selection.discard(edge)
-        # Slit removals re-derive their plane from the arrangement while the
-        # cut-ring face is still present to provide coverage (it re-emits as
-        # outer + hole, attrs intact; uncovered regions stay empty).
+        # Slit and coplanar removals re-derive their plane from the
+        # arrangement while the faces are still present to provide coverage
+        # (a cut ring re-emits as outer + hole, a split face as one, attrs
+        # intact; uncovered regions stay empty).
         done_planes: list = []
-        for origin, normal in slit_planes:
+        for origin, normal in rebuild_planes:
             nn = normal.normalized()
             if any(abs(QVector3D.dotProduct(nn, n)) > 0.999 and
                    abs(QVector3D.dotProduct(origin - o, n)) < 1e-4
@@ -2837,6 +2877,59 @@ class AddImagePlaneCommand(Command):
         scene.version += 1
 
 
+class MakeImageGroupCommand(Command):
+    """Wrap imported photos in a group or component without texturing faces.
+
+    The image entities move from ``scene.image_planes`` into the container's
+    definition.  Keeping them as images is the semantic difference that makes
+    them draw in Shaded, Monochrome, Hidden line and Wireframe too.
+    """
+
+    def __init__(self, images, component: bool = False,
+                 name: str | None = None) -> None:
+        self.images = list(images)
+        self.component = bool(component)
+        self.name = name
+        self.group = None
+        self._indices: list[tuple[int, object]] = []
+
+    def do(self, scene) -> None:
+        from PySide6.QtGui import QMatrix4x4
+        if self.group is None:
+            default = ""
+            if len(self.images) == 1:
+                image = self.images[0]
+                default = image.name or _Path(image.path).stem
+            self.group = Group(Mesh(), name=self.name or default or None)
+            self.group.xform = QMatrix4x4()
+            self.group.component = self.component
+            self.group.images = self.images
+            layers = {getattr(image, "layer", None) for image in self.images}
+            if len(layers) == 1:
+                self.group.layer = next(iter(layers))
+        self._indices = sorted(
+            ((scene.image_planes.index(image), image)
+             for image in self.images if image in scene.image_planes),
+            key=lambda pair: pair[0])
+        for _index, image in self._indices:
+            scene.image_planes.remove(image)
+            scene.selection.discard(image)
+        if self.group not in scene.groups:
+            scene.groups.append(self.group)
+        scene.selection.clear()
+        scene.selection.add(self.group)
+        scene.version += 1
+
+    def undo(self, scene) -> None:
+        if self.group in scene.groups:
+            scene.groups.remove(self.group)
+        scene.selection.discard(self.group)
+        for index, image in self._indices:
+            scene.image_planes.insert(min(index, len(scene.image_planes)), image)
+        scene.selection = set(self.images)
+        scene.version += 1
+
+
 class DeleteImagePlanesCommand(Command):
     """Remove reference images (Delete / the Eraser). Positions are restored
     so undo puts each one back where it sat in the stacking order."""
@@ -4000,23 +4093,47 @@ def run_stitch(mesh, seedkeys: set, new_faces: Optional[set] = None,
     # Phase 3 — coplanar-merge, seeded to the operation. Fuses the whole coplanar
     # component (every shared edge, any number of faces) at once, but only when it
     # includes a face this operation created (so user diagonals survive).
+    # One scan merges every component it meets and carries on, instead of
+    # restarting from the first face after each merge — that restart
+    # re-walked every component already found, quadratic on a big
+    # triangulated import (a 2 000-face stair slab took three minutes).
+    # Faces swallowed by a merge are skipped; scans repeat until one merges
+    # nothing, so a region that only becomes connected after a merge still
+    # fuses.
+    failed: set = set()        # components already found not to merge
     while True:
         merged = False
         ncache: dict = {}
         scache: dict = {}
+        done: set = set()
+        alive = set(mesh.faces)
         for f0 in list(mesh.faces):
+            if f0 in done or f0 not in alive:
+                continue
             comp = _coplanar_component(mesh, f0, seedkeys, ncache, scache)
+            done.add(f0)
             if len(comp) < 2:
                 continue
             if new_faces is not None and not (comp & new_faces):
+                done |= comp             # none of it is ours: leave it all
                 continue
+            key = frozenset(comp)
+            if key in failed:
+                continue                 # found again from another face
             region = mesh.dissolve_coplanar_region(comp)
+            if region is None:
+                failed.add(key)
             if region is not None:
+                alive -= comp
+                alive.add(region)
+                done.add(region)
+                for f in comp:
+                    ncache.pop(f, None)
+                    scache.pop(f, None)
                 if new_faces is not None:
                     new_faces -= comp
                     new_faces.add(region)
                 merged = True
-                break
         if not merged:
             break
 
@@ -4081,7 +4198,7 @@ def _coplanar_component(mesh, f0, seedkeys: set,
                     # Coplanar regardless of winding sign — a push/pull can leave
                     # a fragment wound the opposite way (a prism floor cap +Z vs a
                     # bump strip -Z); same surface, so it belongs to the region.
-                    if abs(QVector3D.dotProduct(n0, g.normal())) > 0.999:
+                    if abs(QVector3D.dotProduct(n0, nrm(g))) > 0.999:
                         comp.add(g)
                         stack.append(g)
     return comp
@@ -4657,6 +4774,7 @@ class MakeUniqueCommand(Command):
         self._proto = None
         self._xform = None
         self._children = None
+        self._images = None
         self._axes = None
         self._component = True
 
@@ -4664,6 +4782,7 @@ class MakeUniqueCommand(Command):
         self._proto = self.group.mesh
         self._xform = self.group.xform
         self._children = self.group.children
+        self._images = self.group.images
         self._axes = self.group.axes
         self._component = self.group.component
         self._name = self.group.name
@@ -4679,6 +4798,7 @@ class MakeUniqueCommand(Command):
         self.group.mesh = self._proto
         self.group.xform = self._xform
         self.group.children = self._children or []
+        self.group.images = self._images or []
         self.group.axes = self._axes
         self.group.component = self._component
         self.group.name = self._name
@@ -4699,8 +4819,8 @@ class ReplaceComponentCommand(Command):
     Targets that already share ``source``'s definition, and anything that is
     not a component instance, are left alone."""
 
-    _SHARED = ("mesh", "children", "name", "axes", "component", "text3d",
-               "ifc", "ext", "billboard", "exploded")
+    _SHARED = ("mesh", "children", "images", "name", "axes", "component",
+               "text3d", "ifc", "ext", "billboard", "exploded")
 
     def __init__(self, targets, source) -> None:
         self.source = source
@@ -4722,6 +4842,7 @@ class ReplaceComponentCommand(Command):
             # inside any instance reaches all of them.
             g.children = [copy_group(c, _in_definition=True)
                           for c in (src.children or ())]
+            g.images = list(getattr(src, "images", None) or ())
             g.name = src.name
             g.axes = QMatrix4x4(src.axes) if src.axes is not None else None
             g.component = True
@@ -5270,6 +5391,7 @@ class ExplodeGroupCommand(Command):
         self.snapshot: Optional[dict] = None
         self.index: Optional[int] = None
         self._lifted: list = []   # (child, xform, mesh, material, axes, offset)
+        self._lifted_images: list = []
         self._selection = None
 
     def do(self, scene) -> None:
@@ -5348,14 +5470,23 @@ class ExplodeGroupCommand(Command):
             if c.material is None and paint:
                 c.material = {k: (dict(v) if isinstance(v, dict) else v)
                               for k, v in paint.items()}
+        self._lifted_images = [
+            image.transformed(P) if P is not None else image.copy()
+            for image in (getattr(g, "images", None) or ())]
+        scene.image_planes.extend(self._lifted_images)
         scene.groups.remove(g)
         scene.groups[self.index:self.index] = kids
         scene.selection.discard(g)
         if kids:
             scene.selection = set(kids)   # select what came out
+        elif self._lifted_images:
+            scene.selection = set(self._lifted_images)
         scene.version += 1
 
     def undo(self, scene) -> None:
+        for image in self._lifted_images:
+            if image in scene.image_planes:
+                scene.image_planes.remove(image)
         for c, xform, mesh, material, axes, offset in self._lifted:
             if c in scene.groups:
                 scene.groups.remove(c)

@@ -110,6 +110,7 @@ class _MergeCopiedFaces(Command):
 class RotateTool(ProtractorBase):
     name = "Rotate"
     shortcut = "Q"
+    option_copies = True
     description = (
         "Turn the selection around a centre with the protractor; Ctrl "
         "leaves a copy behind.")

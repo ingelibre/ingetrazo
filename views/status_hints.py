@@ -11,6 +11,8 @@ the arc knows its bulge step, the fillet its sizing step. Tools not in
 the table fall back to their name."""
 from __future__ import annotations
 
+import sys
+
 from core.i18n import tr
 
 #: Tool key → hint per phase. A plain string is the same hint always.
@@ -78,8 +80,13 @@ HINTS: dict = {
     # and got the line elided (Marco, 2026-09-17). The classic hint is just
     # as terse — «Haz clic en un elemento que desees medir.» — with the
     # modifiers as their own clauses after it.
-    "tape": ("Click a point or an edge to measure. Arrows lock an axis.",
-             "Click the second point, or type the distance and Enter."),
+    # «measured»: the second click is down and the reading stays in the
+    # Measurements box — typing over it resizes (core/resize.py).
+    "tape": {
+        "idle": "Click a point or an edge to measure. Arrows lock an axis.",
+        "started": "Click the second point, or type the distance and Enter.",
+        "measured": "Type the new length and Enter to resize.",
+    },
     "protractor": ("Click the vertex of the angle.",
                    "Click the start of the angle, then the end; or type the degrees."),
     "guide_point": "Click to leave a guide point, or type x;y;z and Enter.",
@@ -143,6 +150,9 @@ def phase_of(key: str, tool) -> str:
         return "ground" if getattr(tool, "footprint", None) else "idle"
     if key == "fillet":
         return "sizing" if getattr(tool, "sizing", False) else "idle"
+    if (key == "tape" and getattr(tool, "start_point", None) is None
+            and getattr(tool, "_measure_ends", None) is not None):
+        return "measured"
     if getattr(tool, "start_point", None) is not None:
         return "started"
     if getattr(tool, "dragging", False) or getattr(tool, "nodes", None):
@@ -210,11 +220,15 @@ def _with_alt(text: str, key, tool, linear_mode) -> str:
     The tool's stays up the whole time it is active (the classic bar keeps
     its modifiers on screen); Alt's only appears mid-operation, because that is
     the only time the key does anything (issue #26)."""
+    if sys.platform == "darwin" and getattr(tool, "option_copies", False):
+        return f"{text} | {tr('Option = copy')}"
     # One modifier at a time, each in the phase where it does something —
     # the classic line carries «Ctrl = …» before the first click and
     # «Alt = …» once a line is under way, never both. Stacking them made
     # the bar elide (Marco, 2026-09-17: «no sale completo el texto»).
-    if phase_of(key, tool) == "idle":
+    # A Tape that has just measured is at rest too: the next click starts
+    # over, so its Ctrl clause still applies.
+    if phase_of(key, tool) in ("idle", "measured"):
         own = getattr(tool, "status_clause", None)
         own = own() if callable(own) else ""
         return f"{text} | {own}" if own else text

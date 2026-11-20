@@ -19,7 +19,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import QRect, QSettings, QSize, Qt
+from PySide6.QtCore import QRect, QSettings, QSize, Qt, Slot
 from PySide6.QtGui import QFontDatabase, QGuiApplication, QIcon, QPixmap
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -49,6 +49,24 @@ from core.i18n import LANGUAGE_NAMES as _LANGUAGE_NAMES
 from core.i18n import SYSTEM as SYSTEM_LANGUAGE
 from core.i18n import (available_languages, current_language,
                        resolve_language, tr)
+
+
+class _NdofStatusLabel(QLabel):
+    """Track connection status until Qt destroys the receiver widget."""
+
+    def __init__(self, device, parent=None):
+        super().__init__(parent)
+        self._device = device
+        self.refresh()
+        device.status_changed.connect(self.refresh)
+
+    @Slot()
+    def refresh(self):
+        name = self._device.backend_name
+        self.setText(tr("Device driver found: {name}", name=name) if name else tr(
+            "No 3D mouse connection. On Linux start spacenavd; "
+            "on Windows and macOS install the 3Dconnexion driver. "
+            "Connection is retried automatically."))
 
 
 #: The import dialogs' unit vocabularies (must match the dialogs in
@@ -294,6 +312,12 @@ class PreferencesDialog(QDialog):
                                       != "0")
         form.addRow("", self._invert_orbit)
 
+        self._middle_pans = QCheckBox(tr(
+            "Middle-button drag pans (Shift + drag orbits)"))
+        self._middle_pans.setChecked(
+            str(st.value("nav/middle_drag_pans", "0")) != "0")
+        form.addRow("", self._middle_pans)
+
         from tools.walkthrough import look_sensitivity
         self._look_sens = QSpinBox()
         self._look_sens.setRange(1, 100)
@@ -443,11 +467,7 @@ class PreferencesDialog(QDialog):
         self._ndof_lock.setChecked(nd.lock_rotation)
         form.addRow("", self._ndof_lock)
         name = shared_input().backend_name
-        status = QLabel(
-            tr("Device driver found: {name}", name=name) if name else tr(
-                "No 3D mouse driver found. On Linux install and start "
-                "«spacenavd»; on Windows the 3Dconnexion driver is enough. "
-                "macOS is not supported yet."))
+        status = _NdofStatusLabel(shared_input(), self)
         status.setWordWrap(True)
         form.addRow("", status)
         # Live reading: nobody on the team has a device, so an owner can say
@@ -489,8 +509,10 @@ class PreferencesDialog(QDialog):
         axis_labels = ("Move left / right", "Move up / down", "Push / pull",
                        "Tilt forward / back", "Twist left / right",
                        "Roll left / right")
+        # One label per entry of ndof.ACTIONS, in its order: zip() stops at
+        # the shorter, and a missing one shifted "Disabled" onto Orbit Z.
         action_labels = ("Pan X", "Pan Y", "Zoom", "Orbit X", "Orbit Y",
-                         "Disabled")
+                         "Orbit Z", "Disabled")
         for axis, axis_label in zip(AXES, axis_labels):
             row = QHBoxLayout()
             action = QComboBox()
@@ -1223,6 +1245,10 @@ class PreferencesDialog(QDialog):
                     "1" if self._invert_orbit.isChecked() else "0")
         for v in viewports:
             v._invert_orbit_y = self._invert_orbit.isChecked()
+
+        st.setValue("nav/middle_drag_pans",
+                    "1" if self._middle_pans.isChecked() else "0")
+        self._window.viewport._middle_drag_pans = self._middle_pans.isChecked()
 
         # First Person reads it on every look move: nothing to push.
         st.setValue("walk/look_sensitivity", int(self._look_sens.value()))

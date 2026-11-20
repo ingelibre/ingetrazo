@@ -8,6 +8,8 @@ read came back every time (Marco, 18-10). The copies share the definition,
 as in SketchUp."""
 from __future__ import annotations
 
+import numpy as np
+import pytest
 from PySide6.QtGui import QVector3D
 from PySide6.QtWidgets import QApplication
 
@@ -125,15 +127,22 @@ def test_editing_inside_one_copy_reaches_the_others(monkeypatch):
         _close(win)
 
 
-def test_library_models_are_shared_too_and_save_once(tmp_path, monkeypatch):
+@pytest.mark.parametrize("multipart", [False, True], ids=["mesh", "parts"])
+def test_library_models_are_shared_too_and_save_once(tmp_path, monkeypatch, multipart):
     from core import library
+    from core.group import placement_points
+    from core.resize import ResizeCommand
     from formats import igz
     from core.scene import Scene
     obj = tmp_path / "caja.obj"
-    obj.write_text(
+    content = (
         "v 0 0 0\nv 1 0 0\nv 1 1 0\nv 0 1 0\n"
         "v 0 0 1\nv 1 0 1\nv 1 1 1\nv 0 1 1\n"
         "f 1 4 3 2\nf 5 6 7 8\nf 1 2 6 5\nf 2 3 7 6\nf 3 4 8 7\nf 4 1 5 8\n")
+    if multipart:
+        content = content.replace("f 1 4 3 2", "g base\nf 1 4 3 2")
+        content = content.replace("f 2 3 7 6", "g sides\nf 2 3 7 6")
+    obj.write_text(content)
     monkeypatch.setattr(library, "model_file", lambda entry: obj)
     monkeypatch.setattr(library, "model_matrix", lambda entry, path: None)
     win = _window()
@@ -144,6 +153,28 @@ def test_library_models_are_shared_too_and_save_once(tmp_path, monkeypatch):
         copies = [_pick_and_place(win, pick, V(3 * i, 0)) for i in range(4)]
         assert len(reads) == 1
         assert all(g.mesh is copies[0].mesh for g in copies)
+        assert all(g.source == obj.name for g in copies)
+        assert bool(copies[0].children) == multipart
+
+        def points():
+            return [np.asarray(placement_points(g), dtype=float).reshape(-1, 3)
+                    for g in copies]
+
+        before = points()
+        win.viewport.history.execute(ResizeCommand(win.viewport.scene, 2.0))
+        after = points()
+        # Library picks still share their definition and keep their real size;
+        # only each placement's origin follows the model's resize.
+        for g, old, new in zip(copies, before, after):
+            np.testing.assert_allclose(np.ptp(new, axis=0), np.ptp(old, axis=0))
+            origin = np.array(g.xform.map(V(0, 0)).toTuple())
+            np.testing.assert_allclose(new - old, np.broadcast_to(origin / 2, old.shape))
+        assert win.viewport.history.undo()
+        for old, restored in zip(before, points()):
+            np.testing.assert_allclose(restored, old)
+        assert win.viewport.history.redo()
+        for new, restored in zip(after, points()):
+            np.testing.assert_allclose(restored, new)
         path = tmp_path / "m.igz"
         igz.save_scene(win.viewport.scene, path)
         back = Scene()
@@ -151,5 +182,6 @@ def test_library_models_are_shared_too_and_save_once(tmp_path, monkeypatch):
         loaded = [g for g in back.groups if g.name == "Caja"]
         assert len(loaded) == 4
         assert len({id(g.mesh) for g in loaded}) == 1   # one definition
+        assert all(g.source == obj.name for g in loaded)
     finally:
         _close(win)

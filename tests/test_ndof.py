@@ -88,11 +88,53 @@ def test_tilting_the_cap_away_shows_more_of_the_top():
     assert cam.pitch > p0               # the eye rises over the model
 
 
-def test_roll_does_nothing_and_rotation_can_be_locked():
+def test_roll_does_nothing_in_the_original_mapping_and_rotation_can_be_locked():
     cam, moved = _push(NdofSample(roll=1.0))
-    assert not moved                    # the camera has no roll
+    assert not moved                    # Original keeps the roll axis off
     cam, moved = _push(NdofSample(spin=1.0, tilt=1.0), lock_rotation=True)
     assert not moved
+
+
+def _roll_mapping():
+    from core.ndof import default_axis_mapping
+    m = default_axis_mapping()
+    m["roll"] = "orbit_z"
+    return dict(mapping_preset="custom", axis_mapping=m)
+
+
+def test_orbit_z_rolls_the_view_about_the_sight_line():
+    """PR #1406: Orbit Z turns the camera's roll, the same one Camera
+    Settings sets, and nothing else: eye, target and the kept up stay."""
+    cam = _cam()
+    eye, target = QVector3D(cam.eye()), QVector3D(cam.target)
+    up_before = cam.up_vector()
+    cam, moved = _push(NdofSample(roll=1.0), cam=cam, **_roll_mapping())
+    assert moved
+    assert cam.roll_deg != 0.0
+    assert cam.up == QVector3D(0, 0, 1)
+    assert (cam.eye() - eye).length() < 1e-6
+    assert (cam.target - target).length() < 1e-6
+    up = cam.up_vector()
+    assert up != up_before
+    f = cam.forward()                   # turned about the sight line
+    assert QVector3D.dotProduct(up, f) == pytest.approx(
+        QVector3D.dotProduct(up_before, f), abs=1e-6)
+
+
+def test_orbit_z_is_locked_with_the_rotation_and_reset_with_the_lens():
+    cam, moved = _push(NdofSample(roll=1.0), lock_rotation=True,
+                       **_roll_mapping())
+    assert not moved and cam.roll_deg == 0.0
+    cam, _ = _push(NdofSample(roll=1.0), **_roll_mapping())
+    cam.reset_lens()
+    assert cam.roll_deg == 0.0
+
+
+def test_orbit_z_keeps_two_point_verticals_upright():
+    cam = _cam()
+    cam.two_point = True
+    cam, _ = _push(NdofSample(roll=1.0), cam=cam, **_roll_mapping())
+    assert cam.roll_deg == 0.0
 
 
 def test_speed_follows_time_and_sensitivity_and_a_stall_is_capped():

@@ -26,6 +26,12 @@ click chooses the source. The result depends on what the source is:
 
 Guides are scaffolding (``Scene.guides``): dashed overlay lines the snap engine
 locks onto, erasable with the Eraser or Edit ▸ Delete Guides. Esc cancels.
+
+- **After a measurement, a typed length resizes** (the classic rescale):
+  the distance just measured becomes that length, the whole open context
+  scaling with it — the group or component being edited, or the whole
+  model at the top level — once a dialog has confirmed it. See
+  :mod:`core.resize`.
 """
 from __future__ import annotations
 
@@ -68,6 +74,10 @@ class TapeMeasureTool(Tool):
         self._edge = None            # source edge → guide-line mode
         self._from_point = False     # started on a named point → guide point
         self._measured: float | None = None
+        #: The two ends of the last measurement, kept after the second
+        #: click: typing a length then resizes so that they end up that
+        #: far apart. Cleared by the next first click, Esc or a tool change.
+        self._measure_ends: tuple | None = None
         #: Ctrl on the Tape cycles THREE ways, as the usual status
         #: bar spells out: «Ctrl = Líneas guía del ciclo / Puntos guía /
         #: Medida» (Marco's screenshot, 2026-09-17).
@@ -121,10 +131,12 @@ class TapeMeasureTool(Tool):
         # 2026-09-17: «solo funciona con ctrl»).
         self._mode = "line"
         self._reset()
+        self._measure_ends = None
 
     def on_deactivate(self, viewport) -> None:
         self._reset()
         self.hover_point = None
+        self._measure_ends = None
 
     def start_from_hover(self, viewport) -> bool:
         """Picking T over a line starts its guide without a first click."""
@@ -195,6 +207,7 @@ class TapeMeasureTool(Tool):
         viewport = ctx.viewport
         if self.start_point is None:
             self.start_point = ctx.world
+            self._measure_ends = None        # a new measurement begins
             # Clicking an edge's BODY starts guide mode; an endpoint measures.
             kind = ctx.snap.kind if ctx.snap is not None else "none"
             # pick_edge_ANY, not pick_edge: the plain one only ever sees
@@ -272,6 +285,9 @@ class TapeMeasureTool(Tool):
         else:
             dist = (ctx.world - self.start_point).length()
             self._measured = dist
+            if dist > 1e-9:
+                self._measure_ends = (QVector3D(self.start_point),
+                                      QVector3D(ctx.world))
             viewport.flash_status(
                 tr("Distance: {d}").format(d=fmt_len_fine(dist)), 4000)
         self._reset()
@@ -283,7 +299,12 @@ class TapeMeasureTool(Tool):
 
     def on_value(self, viewport, value) -> bool:
         """Typing a distance places the guide — line or point — exactly
-        there, instead of wherever the second click landed."""
+        there, instead of wherever the second click landed. Typed after a
+        measurement, it is the length that measurement should have: a
+        resize."""
+        if (self.start_point is None and self._measure_ends is not None
+                and not isinstance(value, tuple)):
+            return self._resize_to(viewport, value)
         if (self.start_point is None or isinstance(value, tuple)
                 or self.hover_point is None):
             return False
@@ -319,6 +340,7 @@ class TapeMeasureTool(Tool):
 
     def on_cancel(self, viewport) -> None:
         self._reset()
+        self._measure_ends = None
         viewport.update()
 
     # ---- Preview ------------------------------------------------------------
@@ -342,6 +364,11 @@ class TapeMeasureTool(Tool):
         return [Guide(self.start_point + offset, self._edge_dir()).segment()]
 
     def value_label(self):
+        if self.start_point is None and self._measure_ends is not None:
+            # The measurement stays in the Measurements box (not in the
+            # view), ready to be typed over to resize.
+            a, b = self._measure_ends
+            return (fmt_len((b - a).length()), None)
         if self.start_point is None or self.hover_point is None:
             return None
         if self._edge is not None:
@@ -352,6 +379,60 @@ class TapeMeasureTool(Tool):
             d = (self.hover_point - self.start_point).length()
             mid = (self.start_point + self.hover_point) * 0.5
         return (fmt_len(d), mid)
+
+    # ---- Resize ---------------------------------------------------------------
+    def _resize_to(self, viewport, wanted) -> bool:
+        """Scale the open context so the last measurement becomes
+        ``wanted`` long, once the user has confirmed it."""
+        from core.resize import ResizeCommand, resize_factor
+        a, b = self._measure_ends
+        factor = resize_factor((b - a).length(), wanted)
+        if factor is None:
+            viewport.flash_status(
+                tr("Type a length greater than zero to resize"), 3000)
+            return True
+        if abs(factor - 1.0) < 1e-9:
+            return True                      # already that long
+        scene = viewport.scene
+        if not self._confirm_resize(viewport, self._resize_question(scene)):
+            return True
+        cmd = ResizeCommand(scene, factor)
+        viewport.history.execute(cmd)
+        stack = viewport.history.undo_stack
+        if not stack or stack[-1] is not cmd:
+            return True                      # rolled back: nothing changed
+        m = cmd.matrix
+        self._measure_ends = (m.map(a), m.map(b))
+        self._measured = float(wanted)
+        viewport.flash_status(
+            tr("Resized: the distance is now {d}").format(
+                d=fmt_len_fine(float(wanted))), 4000)
+        viewport.update()
+        return True
+
+    @staticmethod
+    def _resize_question(scene) -> str:
+        """What the confirmation asks, for the context being resized."""
+        if scene.edit_group is None:
+            return (tr("Do you want to resize the model?") + "\n\n"
+                    + tr("Note that components loaded from external files "
+                         "will not be resized."))
+        # Inside a component instance the open group is a world copy
+        # with no matrix; the definition it came from says what it is.
+        if scene.edit_definition() is not None:
+            return tr("Do you want to resize the active component?")
+        return tr("Do you want to resize the active group?")
+
+    @staticmethod
+    def _confirm_resize(viewport, question: str) -> bool:
+        from PySide6.QtWidgets import QMessageBox
+        window = getattr(viewport, "window", None)
+        parent = window() if callable(window) else None
+        yes = QMessageBox.StandardButton.Yes
+        answer = QMessageBox.question(
+            parent, tr("Resize"), question,
+            yes | QMessageBox.StandardButton.No, yes)
+        return answer == yes
 
     def draw_overlay(self, viewport, painter):
         """Keep the first measurement point visible while pulling a guide."""

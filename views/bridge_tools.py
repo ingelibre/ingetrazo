@@ -209,6 +209,42 @@ class BridgeTools:
     def _has_gl(self) -> bool:
         return can_render(self._viewport)
 
+    def _render_aimed(self, width: int, height: int, view, fit: bool):
+        """The view rendered ``width`` × ``height``, the camera aimed at
+        ``view``/``fit`` for it and given back after, even when the render
+        fails (PR #463). render_image leaves the aspect of an explicit
+        height to the caller, so it is set to the picture's: a 1024×768
+        shot of a wide window came out squashed. The overlay painters
+        follow the live widget, so they join in only when the shot has the
+        widget's shape."""
+        from PySide6.QtGui import QVector3D
+        if not self._has_gl():
+            raise RuntimeError(NO_GL)
+        vp = self._viewport
+        cam = vp.camera
+        saved = (QVector3D(cam.target), cam.distance, cam.yaw, cam.pitch,
+                 cam.perspective, cam.two_point, cam.aspect)
+        live = max(vp.width(), 1) / max(vp.height(), 1)
+        overlays = view is None and not fit \
+            and abs(width / height - live) < 0.01
+        try:
+            cam.aspect = width / height
+            if view is not None:
+                cam.set_view(view)
+                if view != "iso":           # elevations read best parallel
+                    cam.perspective, cam.two_point = False, False
+            if fit:
+                lo, hi = vp.scene.bounds()
+                if lo is not None:
+                    cam.fit_box(lo, hi)
+            image = vp.render_image(width, height, overlays=overlays)
+        finally:
+            (cam.target, cam.distance, cam.yaw, cam.pitch,
+             cam.perspective, cam.two_point, cam.aspect) = saved
+        if image is None or image.isNull():
+            raise RuntimeError("the view did not render (" + NO_GL + ")")
+        return image
+
     def _render_view(self, width: int, height: int | None):
         if not self._has_gl():
             raise RuntimeError(NO_GL)
@@ -340,14 +376,22 @@ class BridgeTools:
                 "fov": float(cam.fov_deg)}
 
     def _tool_screenshot(self, width: int = 1024, height: int = 768,
-                         path: str | None = None) -> dict:
+                         path: str | None = None,
+                         view: str | None = None, fit: bool = False) -> dict:
         """The view as a PNG (or JPG, by ``path``'s suffix). A saved scene
-        is ``export_view`` (PR #1494) — one tool for that, not two."""
+        is ``export_view`` (PR #1494) — one tool for that, not two.
+
+        ``view`` (a standard view: top, front, iso…) and ``fit`` (zoom
+        extents) aim the camera for this one picture only (PR #463): the
+        agent looks from anywhere without moving the user's view."""
         width = max(64, min(int(width), 4096))
         height = max(64, min(int(height), 4096))
+        if view is not None and view not in STANDARD_VIEWS:
+            raise ValueError(f"unknown view {view!r}; one of "
+                             + ", ".join(STANDARD_VIEWS))
         out = (_writable(absolute(path)) if path
                else out_dir() / "viewport.png")
-        image = self._render_view(width, height)
+        image = self._render_aimed(width, height, view, bool(fit))
         if not image.save(str(out)):
             raise OSError(f"could not write {out}")
         return {"path": str(out), "width": image.width(),
