@@ -82,8 +82,10 @@ def test_consumed_and_reusable_models_have_identical_payload_and_bytes(
     # outside this adapter ownership test.
     if variant == "cycle":
         return
+    namespace = Scene().ifc_namespace   # one IFC namespace for both (#1236)
     for label, payload in (("before", before), ("after", after)):
         scene = Scene()
+        scene.ifc_namespace = namespace
         skp.apply_payload(scene, payload)
         _uids(scene.groups)
         igz.save_scene(scene, tmp_path / f"{label}.igz")

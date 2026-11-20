@@ -105,6 +105,7 @@ def test_bulk_flags_match_original_lookup_and_resave(tmp_path, monkeypatch):
     for edge in actual.groups[0].mesh.edges[:4]:
         assert not edge.hidden and edge.curve is None
     assert [e.soft for e in actual.groups[0].mesh.edges[:4]] == [True, True, True, False]
+    actual.ifc_namespace = expected.ifc_namespace   # one namespace (#1236)
     before, after = tmp_path / "before.igz", tmp_path / "after.igz"
     igz.save_scene(expected, before)
     igz.save_scene(actual, after)
