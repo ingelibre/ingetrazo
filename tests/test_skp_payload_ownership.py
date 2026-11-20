@@ -61,6 +61,9 @@ def test_consumption_matches_retained_payload_and_redo(tmp_path):
     assert calls == [1]
     _ids(expected.groups)
     _ids(actual.groups)
+    # Each new document gets its own IFC namespace (#1236); the comparison
+    # is about the geometry, so both carry the same one.
+    actual.ifc_namespace = expected.ifc_namespace
     before, after = tmp_path / "before.igz", tmp_path / "after.igz"
     igz.save_scene(expected, before)
     igz.save_scene(actual, after)
