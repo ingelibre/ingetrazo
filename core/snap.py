@@ -1243,6 +1243,7 @@ def _from_point_snap(
     hovered_refs: bool = False, line_dir: Optional[QVector3D] = None,
     project_onto_line: Optional[ProjectOntoLine] = None,
     edge_body: bool = True,
+    midpoints: bool = True,
 ) -> Optional[SnapResult]:
     """'From point' inference ("Desde el punto"), the single clean version.
 
@@ -1291,7 +1292,8 @@ def _from_point_snap(
             continue
         refs.append((edge.a, "from_point", COLOR_ENDPOINT))
         refs.append((edge.b, "from_point", COLOR_ENDPOINT))
-        refs.append(((edge.a + edge.b) * 0.5, "midpoint", COLOR_MIDPOINT))
+        if midpoints:
+            refs.append(((edge.a + edge.b) * 0.5, "midpoint", COLOR_MIDPOINT))
     # The world origin is a reference like any corner. It is a named snap of
     # its own (rule 6) but lives in no edge, so under an axis lock — which
     # returns from this function and never reaches rule 6 — it existed only
@@ -3042,6 +3044,14 @@ def compute_snap(
     #    magnet lost the origin: drawing back along green from a far
     #    corner, the end could not be put on the red axis (#1418,
     #    @PedroE200), while the same line under the arrow lock could.
+    #    Corners and the origin only (and a point the cursor acquired): the
+    #    foot of SOME edge's midpoint on the axis line is no midpoint, yet it
+    #    came back as one — a line drawn along green from the ground read
+    #    «Midpoint» 13 cm off the cursor, lined up with the middle of an
+    #    edge 5.5 m away, where 0.6.2.1 showed the green axis (0.6.3
+    #    modelling test, 20-11). The axis being dragged along wins over that;
+    #    the midpoint itself, under the cursor, is a point snap and still
+    #    wins over the axis.
     if (axis_engaged is not None and line_inferences
             and line_start is not None and start_point is not None):
         adir = QVector3D(_AXIS_VECTORS[axis_engaged])
@@ -3050,6 +3060,7 @@ def compute_snap(
         fp = _from_point_snap(
             scene, line_start, adir, cx, cy, world_to_pixel, threshold_px,
             is_occluded, extra_point=acquired_point, line_dir=adir,
+            midpoints=False,
         )
         if fp is not None:
             fp.lock_color = AXIS_COLORS[axis_engaged]   # the line keeps its axis colour
