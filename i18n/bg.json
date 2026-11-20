@@ -97,9 +97,9 @@
  "Made {n} line(s) visible": "Видими линии: {n}",
  "No invisible lines in the selection — turn on Camera ▸ Hidden Geometry to see and select them.": "В избраното няма невидими линии — включете Камера ▸ Скрита геометрия, за да ги видите и изберете.",
  "Drag over edges to erase them. Shift = hide, Ctrl = soften, Ctrl+Shift = make visible.": "Плъзнете по ръбовете, за да ги изтриете. Shift = скрий, Ctrl = заглади, Ctrl+Shift = направи видими.",
- "Paint with a material saved in a file: .igmat, or SketchUp's .skm": "Оцветяване с материал, записан във файл: .igmat или .skm на SketchUp",
+ "Paint with a material saved in a file: .igmat or .skm": "Оцветяване с материал, записан във файл: .igmat или .skm",
  "Material files (*.igmat *.skm)": "Файлове с материали (*.igmat *.skm)",
- "SketchUp material (*.skm)": "Материал на SketchUp (*.skm)",
+ "SKM material (*.skm)": "Материал SKM (*.skm)",
  "Export material…": "Експортиране на материал…",
  "Add to My materials": "Добавяне към Моите материали",
  "My materials": "Моите материали",
@@ -1971,7 +1971,7 @@
  "Remove the colour (back to the original image)": "Премахване на оцветяването (връщане към оригиналното изображение)",
  "Shift": "Изместване",
  "Tint": "Тониране",
- "Shift: move every pixel's hue toward the colour, keeping the texture's variation. Tint: replace hue and saturation, keeping only the lightness.": "Изместване: доближава цветовия тон на всеки пиксел до избрания цвят, като запазва цветовите вариации на текстурата. Тониране: заменя цветовия тон и наситеността, като запазва само светлотата.",
+ "Shift: move every pixel's hue toward the colour, keeping the texture's variation. Tint: give every pixel the colour's hue, keeping the texture's variation in lightness and saturation.": "Изместване: доближава цветовия тон на всеки пиксел до избрания цвят, като запазва цветовите вариации на текстурата. Тониране: придава на всеки пиксел цветовия тон на избрания цвят, като запазва вариациите в светлотата и наситеността на текстурата.",
  "Tint the texture": "Тониране на текстурата",
  "Resize/rotate/tint the active texture; with textured faces selected, re-stamps them (undoable)": "Промяна на размера, завъртане или тониране на активната текстура; при избрани текстурирани повърхнини текстурата се нанася отново (операцията може да се отмени)",
  "inward": "навътре",
@@ -4054,5 +4054,9 @@
  "Every layer is in the legend": "Всички слоеве са в легендата",
  "Free entry": "Свободен запис",
  "New entry": "Нов запис",
- "Every sheet as a page. Click: open it. Drag: change the order. Double-click or F2: rename. Delete: remove it. Right-click: more.": "Всеки чертожен лист като страница. Щракване: отваря го. Плъзгане: променя реда. Двойно щракване или F2: преименуване. Delete: изтрива го. Десен бутон: още."
+ "Every sheet as a page. Click: open it. Drag: change the order. Double-click or F2: rename. Delete: remove it. Right-click: more.": "Всеки чертожен лист като страница. Щракване: отваря го. Плъзгане: променя реда. Двойно щракване или F2: преименуване. Delete: изтрива го. Десен бутон: още.",
+ "Location": "Местоположение",
+ "This model has no location yet.": "Този модел все още няма местоположение.",
+ "Clear location": "Изчистване на местоположението",
+ "This model has survey points, traced paths or a drone survey placed by its location: change it in the Terrain panel.": "Този модел съдържа геодезически точки, геореферирани трасета или заснемане с дрон, разположени според местоположението му: променете го в панела „Терен“."
 }

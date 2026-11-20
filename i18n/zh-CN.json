@@ -97,9 +97,9 @@
  "Made {n} line(s) visible": "已显示 {n} 条线",
  "No invisible lines in the selection — turn on Camera ▸ Hidden Geometry to see and select them.": "所选内容中没有不可见的线——打开 相机 ▸ 隐藏几何体 即可看到并选择它们。",
  "Drag over edges to erase them. Shift = hide, Ctrl = soften, Ctrl+Shift = make visible.": "在边线上拖动以擦除。Shift = 隐藏，Ctrl = 柔化，Ctrl+Shift = 设为可见。",
- "Paint with a material saved in a file: .igmat, or SketchUp's .skm": "用保存在文件中的材质涂色：.igmat，或 SketchUp 的 .skm",
+ "Paint with a material saved in a file: .igmat or .skm": "用保存在文件中的材质涂色：.igmat 或 .skm",
  "Material files (*.igmat *.skm)": "材质文件 (*.igmat *.skm)",
- "SketchUp material (*.skm)": "SketchUp 材质 (*.skm)",
+ "SKM material (*.skm)": "SKM 材质 (*.skm)",
  "Export material…": "导出材质…",
  "Add to My materials": "添加到我的材质",
  "My materials": "我的材质",
@@ -1971,7 +1971,7 @@
  "Remove the colour (back to the original image)": "移除颜色 (恢复到原始图像)",
  "Shift": "平移",
  "Tint": "着色",
- "Shift: move every pixel's hue toward the colour, keeping the texture's variation. Tint: replace hue and saturation, keeping only the lightness.": "平移：将每个像素的色调向颜色移动，保留纹理变化。着色：替换色调和饱和度，只保留亮度。",
+ "Shift: move every pixel's hue toward the colour, keeping the texture's variation. Tint: give every pixel the colour's hue, keeping the texture's variation in lightness and saturation.": "平移：将每个像素的色调向颜色移动，保留纹理变化。着色：为每个像素赋予该颜色的色调，保留纹理的亮度和饱和度变化。",
  "Tint the texture": "着色纹理",
  "Resize/rotate/tint the active texture; with textured faces selected, re-stamps them (undoable)": "调整/旋转/着色活动纹理；选择有纹理的面后，重新盖章（可撤销）",
  "inward": "向内",
@@ -4054,5 +4054,9 @@
  "Every layer is in the legend": "所有图层都已在图例中",
  "Free entry": "自由条目",
  "New entry": "新条目",
- "Every sheet as a page. Click: open it. Drag: change the order. Double-click or F2: rename. Delete: remove it. Right-click: more.": "每张图纸显示为一页。单击：打开。拖动：更改顺序。双击或 F2：重命名。Delete：删除。右键：更多。"
+ "Every sheet as a page. Click: open it. Drag: change the order. Double-click or F2: rename. Delete: remove it. Right-click: more.": "每张图纸显示为一页。单击：打开。拖动：更改顺序。双击或 F2：重命名。Delete：删除。右键：更多。",
+ "Location": "位置",
+ "This model has no location yet.": "此模型尚无位置。",
+ "Clear location": "清除位置",
+ "This model has survey points, traced paths or a drone survey placed by its location: change it in the Terrain panel.": "此模型包含按其位置放置的测量点、地理路径或无人机测量：请在地形面板中更改。"
 }

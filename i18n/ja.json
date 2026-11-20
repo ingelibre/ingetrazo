@@ -97,9 +97,9 @@
  "Made {n} line(s) visible": "{n} 本の線を表示しました",
  "No invisible lines in the selection — turn on Camera ▸ Hidden Geometry to see and select them.": "選択に見えない線はありません。カメラ ▸ 非表示の形状 をオンにすると、見て選択できます。",
  "Drag over edges to erase them. Shift = hide, Ctrl = soften, Ctrl+Shift = make visible.": "エッジをなぞって消去。Shift で非表示、Ctrl でソフト、Ctrl+Shift で表示します。",
- "Paint with a material saved in a file: .igmat, or SketchUp's .skm": "ファイルに保存したマテリアルで塗ります: .igmat、または SketchUp の .skm",
+ "Paint with a material saved in a file: .igmat or .skm": "ファイルに保存したマテリアルで塗ります: .igmat または .skm",
  "Material files (*.igmat *.skm)": "マテリアルファイル (*.igmat *.skm)",
- "SketchUp material (*.skm)": "SketchUp マテリアル (*.skm)",
+ "SKM material (*.skm)": "SKM マテリアル (*.skm)",
  "Export material…": "マテリアルを書き出し…",
  "Add to My materials": "マイマテリアルに追加",
  "My materials": "マイマテリアル",
@@ -1956,7 +1956,7 @@
  "Remove the colour (back to the original image)": "色の変更を解除（元の画像に戻す）",
  "Shift": "色相を寄せる",
  "Tint": "着色",
- "Shift: move every pixel's hue toward the colour, keeping the texture's variation. Tint: replace hue and saturation, keeping only the lightness.": "色相を寄せる: テクスチャの変化を保ち、各ピクセルの色相を指定色に近づけます。着色: 明度だけを保ち、色相と彩度を置き換えます。",
+ "Shift: move every pixel's hue toward the colour, keeping the texture's variation. Tint: give every pixel the colour's hue, keeping the texture's variation in lightness and saturation.": "色相を寄せる: テクスチャの変化を保ち、各ピクセルの色相を指定色に近づけます。着色: 各ピクセルを指定色の色相にし、テクスチャの明度と彩度の変化は保ちます。",
  "Tint the texture": "テクスチャに着色",
  "Resize/rotate/tint the active texture; with textured faces selected, re-stamps them (undoable)": "現在のテクスチャを拡大縮小 / 回転 / 着色。テクスチャ付きの面を選択すると再適用します（元に戻せます）。",
  "inward": "内側へ",
@@ -4053,5 +4053,9 @@
  "Every layer is in the legend": "すべてのレイヤーが凡例にあります",
  "Free entry": "自由項目",
  "New entry": "新しい項目",
- "Every sheet as a page. Click: open it. Drag: change the order. Double-click or F2: rename. Delete: remove it. Right-click: more.": "各シートをページとして表示。クリック: 開く。ドラッグ: 順序を変更。ダブルクリックまたは F2: 名前を変更。Delete: 削除。右クリック: その他。"
+ "Every sheet as a page. Click: open it. Drag: change the order. Double-click or F2: rename. Delete: remove it. Right-click: more.": "各シートをページとして表示。クリック: 開く。ドラッグ: 順序を変更。ダブルクリックまたは F2: 名前を変更。Delete: 削除。右クリック: その他。",
+ "Location": "位置情報",
+ "This model has no location yet.": "このモデルにはまだ位置情報がありません。",
+ "Clear location": "位置情報をクリア",
+ "This model has survey points, traced paths or a drone survey placed by its location: change it in the Terrain panel.": "このモデルには、位置情報に基づいて配置された測量点、地理経路、またはドローン測量があります。地形パネルで変更してください。"
 }

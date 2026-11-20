@@ -97,9 +97,9 @@
  "Made {n} line(s) visible": "Видимих ліній: {n}",
  "No invisible lines in the selection — turn on Camera ▸ Hidden Geometry to see and select them.": "У виділенні немає невидимих ліній — увімкніть Камера ▸ Прихована геометрія, щоб побачити й вибрати їх.",
  "Drag over edges to erase them. Shift = hide, Ctrl = soften, Ctrl+Shift = make visible.": "Проведіть по ребрах, щоб стерти їх. Shift = сховати, Ctrl = згладити, Ctrl+Shift = зробити видимими.",
- "Paint with a material saved in a file: .igmat, or SketchUp's .skm": "Фарбувати матеріалом, збереженим у файлі: .igmat або .skm зі SketchUp",
+ "Paint with a material saved in a file: .igmat or .skm": "Фарбувати матеріалом, збереженим у файлі: .igmat або .skm",
  "Material files (*.igmat *.skm)": "Файли матеріалів (*.igmat *.skm)",
- "SketchUp material (*.skm)": "Матеріал SketchUp (*.skm)",
+ "SKM material (*.skm)": "Матеріал SKM (*.skm)",
  "Export material…": "Експорт матеріалу…",
  "Add to My materials": "Додати до Моїх матеріалів",
  "My materials": "Мої матеріали",
@@ -1973,7 +1973,7 @@
  "Remove the colour (back to the original image)": "Прибрати колір (повернути вихідне зображення)",
  "Shift": "Зсув",
  "Tint": "Відтінок",
- "Shift: move every pixel's hue toward the colour, keeping the texture's variation. Tint: replace hue and saturation, keeping only the lightness.": "Зсув: зміщує відтінок кожного пікселя до вибраного кольору, зберігаючи переходи текстури. Відтінок: замінює відтінок і насиченість, зберігаючи лише яскравість.",
+ "Shift: move every pixel's hue toward the colour, keeping the texture's variation. Tint: give every pixel the colour's hue, keeping the texture's variation in lightness and saturation.": "Зсув: зміщує відтінок кожного пікселя до вибраного кольору, зберігаючи переходи текстури. Відтінок: надає кожному пікселю відтінок вибраного кольору, зберігаючи перепади яскравості й насиченості текстури.",
  "Tint the texture": "Підфарбувати текстуру",
  "Resize/rotate/tint the active texture; with textured faces selected, re-stamps them (undoable)": "Змінити розмір / повернути / підфарбувати активну текстуру; якщо вибрано грані з текстурою, текстура накладається на них заново (можна скасувати)",
  "inward": "всередину",
@@ -4060,5 +4060,9 @@
  "Every layer is in the legend": "Усі шари вже в легенді",
  "Free entry": "Вільний запис",
  "New entry": "Новий запис",
- "Every sheet as a page. Click: open it. Drag: change the order. Double-click or F2: rename. Delete: remove it. Right-click: more.": "Кожен аркуш як сторінка. Клацання: відкрити. Перетягування: змінити порядок. Подвійне клацання або F2: перейменувати. Delete: видалити. Правий клік: більше."
+ "Every sheet as a page. Click: open it. Drag: change the order. Double-click or F2: rename. Delete: remove it. Right-click: more.": "Кожен аркуш як сторінка. Клацання: відкрити. Перетягування: змінити порядок. Подвійне клацання або F2: перейменувати. Delete: видалити. Правий клік: більше.",
+ "Location": "Розташування",
+ "This model has no location yet.": "Ця модель ще не має розташування.",
+ "Clear location": "Очистити розташування",
+ "This model has survey points, traced paths or a drone survey placed by its location: change it in the Terrain panel.": "Модель містить топографічні точки, геошляхи або зйомку з дрона, розміщені за її розташуванням: змініть його на панелі «Рельєф»."
 }

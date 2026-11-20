@@ -97,9 +97,9 @@
  "Made {n} line(s) visible": "{n} linea/e resa/e visibile/i",
  "No invisible lines in the selection — turn on Camera ▸ Hidden Geometry to see and select them.": "Nessuna linea invisibile nella selezione: attiva Camera ▸ Geometria nascosta per vederle e selezionarle.",
  "Drag over edges to erase them. Shift = hide, Ctrl = soften, Ctrl+Shift = make visible.": "Trascina sugli spigoli per cancellarli. Maiusc = nascondi, Ctrl = ammorbidisci, Ctrl+Maiusc = rendi visibile.",
- "Paint with a material saved in a file: .igmat, or SketchUp's .skm": "Dipingi con un materiale salvato in un file: .igmat, o il .skm di SketchUp",
+ "Paint with a material saved in a file: .igmat or .skm": "Dipingi con un materiale salvato in un file: .igmat o .skm",
  "Material files (*.igmat *.skm)": "File di materiale (*.igmat *.skm)",
- "SketchUp material (*.skm)": "Materiale SketchUp (*.skm)",
+ "SKM material (*.skm)": "Materiale SKM (*.skm)",
  "Export material…": "Esporta materiale…",
  "Add to My materials": "Aggiungi a I miei materiali",
  "My materials": "I miei materiali",
@@ -1950,7 +1950,7 @@
  "Remove the colour (back to the original image)": "Rimuovi il colore (torna all'immagine originale)",
  "Shift": "Sposta tonalità",
  "Tint": "Tinta",
- "Shift: move every pixel's hue toward the colour, keeping the texture's variation. Tint: replace hue and saturation, keeping only the lightness.": "Sposta tonalità: sposta la tonalità di ogni pixel verso il colore, mantenendo la variazione della texture. Tinta: sostituisce tonalità e saturazione, mantenendo solo la luminosità.",
+ "Shift: move every pixel's hue toward the colour, keeping the texture's variation. Tint: give every pixel the colour's hue, keeping the texture's variation in lightness and saturation.": "Sposta tonalità: sposta la tonalità di ogni pixel verso il colore, mantenendo la variazione della texture. Tinta: dà a ogni pixel la tonalità del colore, mantenendo la variazione di luminosità e saturazione della texture.",
  "Tint the texture": "Colora la texture",
  "Resize/rotate/tint the active texture; with textured faces selected, re-stamps them (undoable)": "Ridimensiona/ruota/colora la texture attiva; con facce con texture selezionate, le riapplica (annullabile)",
  "inward": "verso l'interno",
@@ -4054,5 +4054,9 @@
  "Every layer is in the legend": "Tutti i livelli sono nella legenda",
  "Free entry": "Voce libera",
  "New entry": "Nuova voce",
- "Every sheet as a page. Click: open it. Drag: change the order. Double-click or F2: rename. Delete: remove it. Right-click: more.": "Ogni tavola come una pagina. Clic: aprirla. Trascinare: cambiare l'ordine. Doppio clic o F2: rinominare. Canc: eliminarla. Clic destro: altro."
+ "Every sheet as a page. Click: open it. Drag: change the order. Double-click or F2: rename. Delete: remove it. Right-click: more.": "Ogni tavola come una pagina. Clic: aprirla. Trascinare: cambiare l'ordine. Doppio clic o F2: rinominare. Canc: eliminarla. Clic destro: altro.",
+ "Location": "Posizione",
+ "This model has no location yet.": "Questo modello non ha ancora una posizione.",
+ "Clear location": "Cancella posizione",
+ "This model has survey points, traced paths or a drone survey placed by its location: change it in the Terrain panel.": "Questo modello contiene punti di rilievo, percorsi geo o un rilievo con drone collocati in base alla sua posizione: modificala nel pannello Terreno."
 }

@@ -218,3 +218,20 @@ def test_a_workspace_entered_from_the_empty_area_is_on_show(win):
     assert not win.is_empty()
     assert win._doc_stack.isVisibleTo(win)
     assert win.leave_workspace()
+
+
+def test_inserting_a_component_from_it_places_it_in_the_blank_project(win):
+    """The empty area refuses every tool; a component inserted there (PR
+    #1243 made placing obey the tool filter) goes to the blank project
+    behind it, which comes on show, instead of being refused."""
+    from PySide6.QtGui import QVector3D as V
+    from core.group import Group
+    from core.mesh import Mesh
+    from tools.place_group import PlaceGroupTool
+    win.close_document()
+    assert win.is_empty()
+    group = Group(Mesh(), name="Caja")
+    group.mesh.add_face([V(0, 0, 0), V(1, 0, 0), V(1, 1, 0), V(0, 1, 0)])
+    win._start_place(group)
+    assert not win.is_empty()
+    assert isinstance(win.viewport.active_tool, PlaceGroupTool)

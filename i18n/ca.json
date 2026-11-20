@@ -97,9 +97,9 @@
  "Made {n} line(s) visible": "{n} línia(es) visible(s)",
  "No invisible lines in the selection — turn on Camera ▸ Hidden Geometry to see and select them.": "No hi ha línies invisibles a la selecció. Activa Càmera ▸ Geometria amagada per veure-les i seleccionar-les.",
  "Drag over edges to erase them. Shift = hide, Ctrl = soften, Ctrl+Shift = make visible.": "Arrossega sobre les arestes per esborrar-les. Maj = amaga, Ctrl = suavitza, Ctrl+Maj = fes visible.",
- "Paint with a material saved in a file: .igmat, or SketchUp's .skm": "Pinta amb un material desat en un fitxer: .igmat, o el .skm de SketchUp",
+ "Paint with a material saved in a file: .igmat or .skm": "Pinta amb un material desat en un fitxer: .igmat o .skm",
  "Material files (*.igmat *.skm)": "Fitxers de material (*.igmat *.skm)",
- "SketchUp material (*.skm)": "Material de SketchUp (*.skm)",
+ "SKM material (*.skm)": "Material SKM (*.skm)",
  "Export material…": "Exporta el material…",
  "Add to My materials": "Afegeix a Els meus materials",
  "My materials": "Els meus materials",
@@ -2108,7 +2108,7 @@
  "Remove the colour (back to the original image)": "Treu el color (torna a la imatge original)",
  "Shift": "Desplaça",
  "Tint": "Tenyeix",
- "Shift: move every pixel's hue toward the colour, keeping the texture's variation. Tint: replace hue and saturation, keeping only the lightness.": "Desplaça: mou el to de cada píxel cap al color, conservant la variació de la textura. Tenyeix: substitueix el to i la saturació i conserva només la lluminositat.",
+ "Shift: move every pixel's hue toward the colour, keeping the texture's variation. Tint: give every pixel the colour's hue, keeping the texture's variation in lightness and saturation.": "Desplaça: mou el to de cada píxel cap al color, conservant la variació de la textura. Tenyeix: dona a cada píxel el to del color i conserva la variació de lluminositat i saturació de la textura.",
  "Tint the texture": "Tenyeix la textura",
  "Resize/rotate/tint the active texture; with textured faces selected, re-stamps them (undoable)": "Canvia la mida, el gir o el tint de la textura activa; amb cares amb textura seleccionades, les torna a estampar (es pot desfer)",
  "inward": "cap a dins",
@@ -4059,5 +4059,9 @@
  "Every layer is in the legend": "Totes les capes són a la llegenda",
  "Free entry": "Entrada lliure",
  "New entry": "Entrada nova",
- "Every sheet as a page. Click: open it. Drag: change the order. Double-click or F2: rename. Delete: remove it. Right-click: more.": "Cada làmina com una pàgina. Clic: obrir-la. Arrossegar: canviar l'ordre. Doble clic o F2: canviar el nom. Supr: eliminar-la. Clic dret: més."
+ "Every sheet as a page. Click: open it. Drag: change the order. Double-click or F2: rename. Delete: remove it. Right-click: more.": "Cada làmina com una pàgina. Clic: obrir-la. Arrossegar: canviar l'ordre. Doble clic o F2: canviar el nom. Supr: eliminar-la. Clic dret: més.",
+ "Location": "Ubicació",
+ "This model has no location yet.": "Aquest model encara no té ubicació.",
+ "Clear location": "Esborra la ubicació",
+ "This model has survey points, traced paths or a drone survey placed by its location: change it in the Terrain panel.": "Aquest model té punts topogràfics, traçats georef o un aixecament amb dron col·locats segons la seva ubicació: canvia-la al tauler Terreny."
 }

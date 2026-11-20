@@ -97,9 +97,9 @@
  "Made {n} line(s) visible": "Đã hiện {n} đường",
  "No invisible lines in the selection — turn on Camera ▸ Hidden Geometry to see and select them.": "Không có đường ẩn nào trong vùng chọn — bật Camera ▸ Hình học ẩn để xem và chọn chúng.",
  "Drag over edges to erase them. Shift = hide, Ctrl = soften, Ctrl+Shift = make visible.": "Kéo qua các cạnh để xóa. Shift = ẩn, Ctrl = làm mềm, Ctrl+Shift = hiện.",
- "Paint with a material saved in a file: .igmat, or SketchUp's .skm": "Tô bằng vật liệu đã lưu trong tệp: .igmat, hoặc .skm của SketchUp",
+ "Paint with a material saved in a file: .igmat or .skm": "Tô bằng vật liệu đã lưu trong tệp: .igmat hoặc .skm",
  "Material files (*.igmat *.skm)": "Tệp vật liệu (*.igmat *.skm)",
- "SketchUp material (*.skm)": "Vật liệu SketchUp (*.skm)",
+ "SKM material (*.skm)": "Vật liệu SKM (*.skm)",
  "Export material…": "Xuất vật liệu…",
  "Add to My materials": "Thêm vào Vật liệu của tôi",
  "My materials": "Vật liệu của tôi",
@@ -1969,7 +1969,7 @@
  "Remove the colour (back to the original image)": "Xóa màu (trở lại ảnh gốc)",
  "Shift": "Sự thay đổi",
  "Tint": "Pha màu",
- "Shift: move every pixel's hue toward the colour, keeping the texture's variation. Tint: replace hue and saturation, keeping only the lightness.": "Shift: chuyển tông màu của từng pixel về phía màu đã chọn nhưng vẫn giữ nguyên độ tương phản vân họa tiết. Tint: thay thế toàn bộ tông màu và độ bão hòa, chỉ giữ lại độ sáng.",
+ "Shift: move every pixel's hue toward the colour, keeping the texture's variation. Tint: give every pixel the colour's hue, keeping the texture's variation in lightness and saturation.": "Shift: chuyển tông màu của từng pixel về phía màu đã chọn nhưng vẫn giữ nguyên độ tương phản vân họa tiết. Tint: gán tông màu đã chọn cho từng pixel, vẫn giữ sự biến đổi về độ sáng và độ bão hòa của họa tiết.",
  "Tint the texture": "Pha màu họa tiết",
  "Resize/rotate/tint the active texture; with textured faces selected, re-stamps them (undoable)": "Thay đổi kích thước/xoay/pha màu họa tiết hiện hành; khi các bề mặt có họa tiết được chọn, sẽ áp lại họa tiết (có thể hoàn tác)",
  "inward": "hướng nội",
@@ -4080,5 +4080,9 @@
  "Every layer is in the legend": "Mọi lớp đều đã có trong chú giải",
  "Free entry": "Mục tự do",
  "New entry": "Mục mới",
- "Every sheet as a page. Click: open it. Drag: change the order. Double-click or F2: rename. Delete: remove it. Right-click: more.": "Mỗi trang bản vẽ là một trang. Nhấp: mở. Kéo: đổi thứ tự. Nhấp đúp hoặc F2: đổi tên. Delete: xóa. Nhấp chuột phải: thêm."
+ "Every sheet as a page. Click: open it. Drag: change the order. Double-click or F2: rename. Delete: remove it. Right-click: more.": "Mỗi trang bản vẽ là một trang. Nhấp: mở. Kéo: đổi thứ tự. Nhấp đúp hoặc F2: đổi tên. Delete: xóa. Nhấp chuột phải: thêm.",
+ "Location": "Vị trí",
+ "This model has no location yet.": "Mô hình này chưa có vị trí.",
+ "Clear location": "Xóa vị trí",
+ "This model has survey points, traced paths or a drone survey placed by its location: change it in the Terrain panel.": "Mô hình này có điểm đo trắc địa, đường dẫn địa lý hoặc khảo sát bằng drone được đặt theo vị trí của nó: hãy thay đổi trong bảng Địa hình."
 }

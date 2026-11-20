@@ -97,9 +97,9 @@
  "Made {n} line(s) visible": "{n} linha(s) visível(is)",
  "No invisible lines in the selection — turn on Camera ▸ Hidden Geometry to see and select them.": "Nenhuma linha invisível na seleção — ative Câmera ▸ Geometria Oculta para vê-las e selecioná-las.",
  "Drag over edges to erase them. Shift = hide, Ctrl = soften, Ctrl+Shift = make visible.": "Arraste sobre as arestas para apagá-las. Shift = ocultar, Ctrl = suavizar, Ctrl+Shift = tornar visível.",
- "Paint with a material saved in a file: .igmat, or SketchUp's .skm": "Pintar com um material salvo em um arquivo: .igmat, ou o .skm do SketchUp",
+ "Paint with a material saved in a file: .igmat or .skm": "Pintar com um material salvo em um arquivo: .igmat ou .skm",
  "Material files (*.igmat *.skm)": "Arquivos de material (*.igmat *.skm)",
- "SketchUp material (*.skm)": "Material do SketchUp (*.skm)",
+ "SKM material (*.skm)": "Material SKM (*.skm)",
  "Export material…": "Exportar material…",
  "Add to My materials": "Adicionar a Meus materiais",
  "My materials": "Meus materiais",
@@ -1973,7 +1973,7 @@
  "Remove the colour (back to the original image)": "Remover a cor (de volta à imagem original)",
  "Shift": "Shift",
  "Tint": "Tingir",
- "Shift: move every pixel's hue toward the colour, keeping the texture's variation. Tint: replace hue and saturation, keeping only the lightness.": "Shift: move o matiz de cada pixel em direção à cor, mantendo a variação da textura. Tingir: substitui matiz e saturação, mantendo apenas a luminosidade.",
+ "Shift: move every pixel's hue toward the colour, keeping the texture's variation. Tint: give every pixel the colour's hue, keeping the texture's variation in lightness and saturation.": "Shift: move o matiz de cada pixel em direção à cor, mantendo a variação da textura. Tingir: dá a cada pixel o matiz da cor, mantendo a variação de luminosidade e saturação da textura.",
  "Tint the texture": "Tingir a textura",
  "Resize/rotate/tint the active texture; with textured faces selected, re-stamps them (undoable)": "Redimensionar/rotacionar/tingir a textura ativa; com faces texturizadas selecionadas, re-estampa-as (desfazível)",
  "inward": "para dentro",
@@ -4060,5 +4060,9 @@
  "Every layer is in the legend": "Todas as camadas estão na legenda",
  "Free entry": "Entrada livre",
  "New entry": "Nova entrada",
- "Every sheet as a page. Click: open it. Drag: change the order. Double-click or F2: rename. Delete: remove it. Right-click: more.": "Cada folha como uma página. Clique: abri-la. Arrastar: mudar a ordem. Clique duplo ou F2: renomear. Delete: excluí-la. Clique direito: mais."
+ "Every sheet as a page. Click: open it. Drag: change the order. Double-click or F2: rename. Delete: remove it. Right-click: more.": "Cada folha como uma página. Clique: abri-la. Arrastar: mudar a ordem. Clique duplo ou F2: renomear. Delete: excluí-la. Clique direito: mais.",
+ "Location": "Localização",
+ "This model has no location yet.": "Este modelo ainda não tem localização.",
+ "Clear location": "Limpar localização",
+ "This model has survey points, traced paths or a drone survey placed by its location: change it in the Terrain panel.": "Este modelo tem pontos de levantamento, caminhos georreferenciados ou um levantamento com drone posicionados pela sua localização: altere-a no painel Terreno."
 }

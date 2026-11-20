@@ -97,9 +97,9 @@
  "Made {n} line(s) visible": "Widoczne linie: {n}",
  "No invisible lines in the selection — turn on Camera ▸ Hidden Geometry to see and select them.": "Brak niewidocznych linii w zaznaczeniu — włącz Kamera ▸ Ukryta geometria, aby je zobaczyć i zaznaczyć.",
  "Drag over edges to erase them. Shift = hide, Ctrl = soften, Ctrl+Shift = make visible.": "Przeciągnij po krawędziach, aby je usunąć. Shift = ukryj, Ctrl = wygładź, Ctrl+Shift = pokaż.",
- "Paint with a material saved in a file: .igmat, or SketchUp's .skm": "Maluj materiałem zapisanym w pliku: .igmat lub .skm ze SketchUpa",
+ "Paint with a material saved in a file: .igmat or .skm": "Maluj materiałem zapisanym w pliku: .igmat lub .skm",
  "Material files (*.igmat *.skm)": "Pliki materiałów (*.igmat *.skm)",
- "SketchUp material (*.skm)": "Materiał SketchUp (*.skm)",
+ "SKM material (*.skm)": "Materiał SKM (*.skm)",
  "Export material…": "Eksportuj materiał…",
  "Add to My materials": "Dodaj do Moich materiałów",
  "My materials": "Moje materiały",
@@ -1969,7 +1969,7 @@
  "Remove the colour (back to the original image)": "Usuń kolor (powrót do oryginalnego obrazu)",
  "Shift": "Przesunięcie",
  "Tint": "Zabarwienie",
- "Shift: move every pixel's hue toward the colour, keeping the texture's variation. Tint: replace hue and saturation, keeping only the lightness.": "Przesunięcie: zbliż odcień każdego piksela do wybranego koloru, zachowując zróżnicowanie tekstury. Zabarwienie: zastąp odcień i nasycenie, zachowując tylko jasność.",
+ "Shift: move every pixel's hue toward the colour, keeping the texture's variation. Tint: give every pixel the colour's hue, keeping the texture's variation in lightness and saturation.": "Przesunięcie: zbliż odcień każdego piksela do wybranego koloru, zachowując zróżnicowanie tekstury. Zabarwienie: nadaj każdemu pikselowi odcień wybranego koloru, zachowując zróżnicowanie jasności i nasycenia tekstury.",
  "Tint the texture": "Zabarw teksturę",
  "Resize/rotate/tint the active texture; with textured faces selected, re-stamps them (undoable)": "Zmień rozmiar, obrót lub zabarwienie aktywnej tekstury; jeśli zaznaczono ściany z teksturami, zastosuj do nich zmiany (można cofnąć)",
  "inward": "do wewnątrz",
@@ -4061,5 +4061,9 @@
  "Every layer is in the legend": "Wszystkie warstwy są w legendzie",
  "Free entry": "Wpis dowolny",
  "New entry": "Nowy wpis",
- "Every sheet as a page. Click: open it. Drag: change the order. Double-click or F2: rename. Delete: remove it. Right-click: more.": "Każdy arkusz jako strona. Kliknięcie: otwiera go. Przeciągnięcie: zmienia kolejność. Dwuklik lub F2: zmiana nazwy. Delete: usuwa go. Prawy przycisk: więcej."
+ "Every sheet as a page. Click: open it. Drag: change the order. Double-click or F2: rename. Delete: remove it. Right-click: more.": "Każdy arkusz jako strona. Kliknięcie: otwiera go. Przeciągnięcie: zmienia kolejność. Dwuklik lub F2: zmiana nazwy. Delete: usuwa go. Prawy przycisk: więcej.",
+ "Location": "Lokalizacja",
+ "This model has no location yet.": "Ten model nie ma jeszcze lokalizacji.",
+ "Clear location": "Wyczyść lokalizację",
+ "This model has survey points, traced paths or a drone survey placed by its location: change it in the Terrain panel.": "Ten model zawiera punkty pomiarowe, ścieżki geograficzne lub pomiar z drona umieszczone według jego lokalizacji: zmień ją w panelu Teren."
 }

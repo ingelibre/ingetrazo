@@ -97,9 +97,9 @@
  "Made {n} line(s) visible": "Видимых линий: {n}",
  "No invisible lines in the selection — turn on Camera ▸ Hidden Geometry to see and select them.": "В выделении нет невидимых линий — включите Камера ▸ Скрытая геометрия, чтобы увидеть и выбрать их.",
  "Drag over edges to erase them. Shift = hide, Ctrl = soften, Ctrl+Shift = make visible.": "Проведите по рёбрам для стирания. Shift = скрыть, Ctrl = сгладить, Ctrl+Shift = сделать видимыми.",
- "Paint with a material saved in a file: .igmat, or SketchUp's .skm": "Красить материалом, сохранённым в файле: .igmat или .skm из SketchUp",
+ "Paint with a material saved in a file: .igmat or .skm": "Красить материалом, сохранённым в файле: .igmat или .skm",
  "Material files (*.igmat *.skm)": "Файлы материалов (*.igmat *.skm)",
- "SketchUp material (*.skm)": "Материал SketchUp (*.skm)",
+ "SKM material (*.skm)": "Материал SKM (*.skm)",
  "Export material…": "Экспорт материала…",
  "Add to My materials": "Добавить в Мои материалы",
  "My materials": "Мои материалы",
@@ -1973,7 +1973,7 @@
  "Remove the colour (back to the original image)": "Удалить цвет (вернуть исходное изображение)",
  "Shift": "Сдвиг (Shift)",
  "Tint": "Оттенок (Tint)",
- "Shift: move every pixel's hue toward the colour, keeping the texture's variation. Tint: replace hue and saturation, keeping only the lightness.": "Сдвиг: сдвигает оттенок каждого пикселя к выбранному цвету, сохраняя переходы текстуры. Оттенок: заменяет оттенок и насыщенность, сохраняя только яркость.",
+ "Shift: move every pixel's hue toward the colour, keeping the texture's variation. Tint: give every pixel the colour's hue, keeping the texture's variation in lightness and saturation.": "Сдвиг: сдвигает оттенок каждого пикселя к выбранному цвету, сохраняя переходы текстуры. Оттенок: придаёт каждому пикселю оттенок выбранного цвета, сохраняя перепады яркости и насыщенности текстуры.",
  "Tint the texture": "Подкрасить текстуру",
  "Resize/rotate/tint the active texture; with textured faces selected, re-stamps them (undoable)": "Изменить размер/вращать/подкрасить активную текстуру; с выбранными гранями — накладывает заново (можно отменить)",
  "inward": "внутрь",
@@ -4053,5 +4053,9 @@
  "Every layer is in the legend": "Все слои уже в легенде",
  "Free entry": "Свободная запись",
  "New entry": "Новая запись",
- "Every sheet as a page. Click: open it. Drag: change the order. Double-click or F2: rename. Delete: remove it. Right-click: more.": "Каждый лист как страница. Щелчок: открыть. Перетаскивание: изменить порядок. Двойной щелчок или F2: переименовать. Delete: удалить. Правый щелчок: ещё."
+ "Every sheet as a page. Click: open it. Drag: change the order. Double-click or F2: rename. Delete: remove it. Right-click: more.": "Каждый лист как страница. Щелчок: открыть. Перетаскивание: изменить порядок. Двойной щелчок или F2: переименовать. Delete: удалить. Правый щелчок: ещё.",
+ "Location": "Местоположение",
+ "This model has no location yet.": "У этой модели ещё нет местоположения.",
+ "Clear location": "Очистить местоположение",
+ "This model has survey points, traced paths or a drone survey placed by its location: change it in the Terrain panel.": "В модели есть точки съемки, гео-пути или съемка с дрона, размещённые по её местоположению: измените его в панели Рельеф."
 }

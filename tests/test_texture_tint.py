@@ -70,6 +70,26 @@ def test_shift_moves_the_hue_without_flattening(stone):
     assert b > r
 
 
+def test_tint_keeps_a_coloured_texture_s_vivid_and_dull_parts(tmp_path):
+    """TINT re-hues a coloured texture without washing it out: a vivid
+    pixel stays more saturated than a dull one of about the same
+    lightness. One saturation for every pixel flattened them to the same
+    pale colour."""
+    import colorsys
+    rows = [[(200, 60, 60, 255), (140, 120, 120, 255)]]
+    p = tmp_path / "acrilico.png"
+    p.write_bytes(_png(rows))
+    out = colorize_image(p.read_bytes(), (166, 135, 175), COLORIZE_TINT)
+    px = _read(out)
+    vivo, apagado = (colorsys.rgb_to_hls(*(c / 255 for c in px[0][x][:3]))
+                     for x in (0, 1))
+    assert vivo[2] > apagado[2] + 0.2, "the saturation variation was lost"
+    # And the vivid one now carries the colour's hue (purple: red and
+    # blue over green).
+    r, g, b = px[0][0][:3]
+    assert r > g and b > g
+
+
 def test_alpha_survives_so_a_cutout_stays_a_cutout(tmp_path):
     rows = [[(120, 118, 116, 255), (150, 148, 145, 0)]]
     p = tmp_path / "reja.png"

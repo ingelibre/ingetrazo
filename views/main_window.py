@@ -5116,10 +5116,17 @@ class MainWindow(QMainWindow):
             self._vcb_value.setStyleSheet(style)
 
     # ---- Tool routing -------------------------------------------------------
+    def _tool_allowed(self, key: str, name: str) -> bool:
+        """False (with a status message) when the workspace's tool filter
+        refuses ``key``."""
+        if self._tool_filter is None or key in self._tool_filter:
+            return True
+        self.statusBar().showMessage(
+            tr("{name} is not available here.", name=tr(name)), 3000)
+        return False
+
     def _activate_tool(self, key: str) -> None:
-        if self._tool_filter is not None and key not in self._tool_filter:
-            self.statusBar().showMessage(
-                tr("{name} is not available here.", name=tr(self._tools[key].name)), 3000)
+        if not self._tool_allowed(key, self._tools[key].name):
             return
         tool = self._tools[key]
         self.viewport.set_active_tool(tool)
@@ -5735,12 +5742,15 @@ class MainWindow(QMainWindow):
         if not ok:
             return
 
-        self.viewport.history.execute(SimplifyMeshCommand(angle))
-        error = self.viewport.history.last_error
-        if error:
-            QMessageBox.warning(self, tr("Simplify Mesh failed"), error)
+        history = self.viewport.history
+        command = SimplifyMeshCommand(angle)
+        if not history.execute(command):
+            if history.last_error:
+                QMessageBox.warning(self, tr("Simplify Mesh failed"),
+                                    history.last_error)
+            elif history.last_rejected:
+                self.viewport.flash_status(history.last_rejected)
             return
-        command = self.viewport.history.undo_stack[-1]
         removed = getattr(command, "faces_removed", 0)
         if removed:
             self.viewport.flash_status(
@@ -6606,6 +6616,10 @@ class MainWindow(QMainWindow):
                 texm = menu.addMenu(tr("Texture"))
                 texm.addAction(tr("Position"), self._on_texture_position)
                 texm.addAction(tr("Reset Position"), self._on_texture_reset)
+            # Area ▸ Selection: the selected faces' total area, the classic
+            # way to read a floor or a facade made of several faces.
+            area = menu.addMenu(tr("Area"))
+            area.addAction(tr("Selection"), self._on_area_selection)
         if self._bridgeable(sel):
             menu.addAction(tr("Bridge"), self._on_bridge)
         if self._makes_faces(sel):
@@ -7433,6 +7447,19 @@ class MainWindow(QMainWindow):
         from tools.flip import FlipTool
         FlipTool().flip(self.viewport, axis)
 
+    def _on_area_selection(self) -> None:
+        """Right-click ▸ Area ▸ Selection: the total area of the selected
+        faces, in a modal box closed with OK. Only the faces count —
+        edges, groups or anything else selected beside them do not, nor
+        the faces inside a selected group (that is its volume)."""
+        from core.units import fmt_area
+        area = sum(entity.area() for entity in self.viewport.scene.selection
+                   if isinstance(entity, Face))
+        box = QMessageBox(QMessageBox.NoIcon, tr("Area"),
+                          fmt_area(area),
+                          QMessageBox.Ok, self)
+        box.exec()
+
     @_repeatable("Reverse Faces")
     def _on_reverse_faces(self) -> None:
         """Reverse Faces: flip the winding (and thus the front/back
@@ -7644,6 +7671,28 @@ class MainWindow(QMainWindow):
             if bounds[0] is None:
                 return None
         return bounds
+
+    def _camera_pose(self) -> tuple:
+        cam = self.viewport.camera
+        t = cam.target
+        return (t.x(), t.y(), t.z(), cam.distance, cam.yaw, cam.pitch)
+
+    def _on_smart_zoom(self) -> None:
+        """A trackpad's smart zoom (two-finger double tap): Zoom Extents;
+        another one with the view untouched since goes back to where it
+        was, the way a double tap zooms in and back out on macOS (#248)."""
+        back = getattr(self, "_smart_zoom_back", None)
+        if back is not None and back[1] == self._camera_pose():
+            cam = self.viewport.camera
+            x, y, z, cam.distance, cam.yaw, cam.pitch = back[0]
+            cam.target = QVector3D(x, y, z)
+            self._smart_zoom_back = None
+            self.viewport.update()
+            return
+        before = self._camera_pose()
+        self._on_zoom_extents()
+        after = self._camera_pose()
+        self._smart_zoom_back = (before, after) if after != before else None
 
     def _on_zoom_selection(self) -> None:
         """Zoom Extents over the selection. Nothing selected: nothing."""
@@ -8729,6 +8778,8 @@ class MainWindow(QMainWindow):
         def live(fn):
             return lambda *a: fn(*a) if vp is self.viewport else None
         vp.projectionChanged.connect(live(self._sync_projection_buttons))
+        # A trackpad's smart zoom (PR #788), on every project's view.
+        vp.smartZoomRequested.connect(live(lambda: self._on_smart_zoom()))
         for name in ("tray", "bim_tray", "georef_tray", "project_browser",
                      "layers_dock", "scenes_dock", "layers_toolbar",
                      "profile_dock"):
@@ -10794,6 +10845,14 @@ class MainWindow(QMainWindow):
         (3D text) re-orients the group onto the face under the cursor;
         ``anchor`` is the point the cursor holds (default: base centre)."""
         from tools.place_group import PlaceGroupTool
+        if self.__dict__.get("_empty_on"):
+            # Inserting from the empty area (its filter refuses every tool)
+            # goes into the blank project behind it, like an import does:
+            # bring it on show instead of refusing, or placing in a hidden
+            # viewport.
+            self._leave_empty_area()
+        if not self._tool_allowed("place_group", PlaceGroupTool.name):
+            return
         self.viewport.set_active_tool(PlaceGroupTool(
             group, align_to_face=align_to_face, anchor=anchor))
         for action in self._tool_actions.values():

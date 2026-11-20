@@ -247,7 +247,10 @@ class History:
             if self.groups_cv.get(k) == before:
                 self.groups_cv[k] = cv
 
-    def execute(self, cmd: Command) -> None:
+    def execute(self, cmd: Command) -> bool:
+        """Run *cmd* and push it on the undo stack. Returns ``True`` when it
+        ran, ``False`` when it was refused (``last_rejected``) or failed and
+        was rolled back (``last_error``) — nothing then reached the stack."""
         _t0 = _time_mod.perf_counter() if _PERF else 0.0
         snapshot = self.scene.mesh.capture_state()
         if _PERF:
@@ -267,14 +270,14 @@ class History:
             self.scene.version += 1
             self.last_error = None
             self.last_rejected = str(exc)
-            return
+            return False
         except Exception as exc:
             self.scene.mesh.restore_state(snapshot)
             self.scene.selection.clear()
             self.scene.version += 1
             self.last_error = f"{type(cmd).__name__}: {exc}"
             self._log_failure(cmd, exc)
-            return
+            return False
         self.last_error = None
         if _PERF:
             _plog("command", (_time_mod.perf_counter() - _t0) * 1000.0,
@@ -297,6 +300,7 @@ class History:
             del self.undo_stack[:len(self.undo_stack) - cap]
         self.redo_stack.clear()
         self._rebind_dimensions()
+        return True
 
     def _follow_openings(self, cmd, openings_before) -> None:
         from core import openings
@@ -6250,4 +6254,55 @@ class SetNorthCommand(Command):
             scene.georef = self._old_datum
             if self._terrain is not None:
                 scene.terrain = self._terrain
+        scene.version += 1
+
+
+class SetLocationCommand(Command):
+    """Model Info ▸ Location: set, move or clear the model's geographic
+    location (``scene.georef``) — one undo step.
+
+    ``lat``/``lon`` None clears it. A new location keeps the north angle
+    (:func:`core.sun.scene_north_deg`, so Tools ▸ North set before carries
+    over) and the old altitude. The terrain is display only and was built
+    for the old location: it is dropped, as :class:`SetNorthCommand` does,
+    and the window builds it again (``tools.north.refresh_north_display``
+    redraws the base map too). Clearing also drops the base map, which
+    needs a location. Both come back on undo. Survey points, traced paths
+    and a drone survey are placed by the location, so the dialog only
+    offers this when there are none."""
+
+    keeps_paint = True
+    keeps_groups = True
+
+    def __init__(self, lat=None, lon=None) -> None:
+        self.lat = None if lat is None else float(lat)
+        self.lon = None if lon is None else float(lon)
+        self._old = None
+
+    def do(self, scene) -> None:
+        old = getattr(scene, "georef", None)
+        self._old = (old, getattr(scene, "tile_layer", None),
+                     getattr(scene, "terrain", None), getattr(scene, "north_deg", 0.0))
+        if self.lat is None or self.lon is None:
+            if old is not None:
+                # Tools ▸ North keeps working without a location.
+                scene.north_deg = float(getattr(old, "north", 0.0) or 0.0)
+            scene.georef = None
+            scene.tile_layer = None
+        else:
+            from core.sun import scene_north_deg
+            from georef.datum import SceneDatum
+            scene.georef = SceneDatum(
+                self.lat, self.lon,
+                alt=float(getattr(old, "alt", 0.0) or 0.0),
+                north=scene_north_deg(scene))
+        scene.terrain = None
+        scene.version += 1
+
+    def undo(self, scene) -> None:
+        old, tiles, terrain, north_deg = self._old
+        scene.georef = old
+        scene.north_deg = north_deg
+        scene.tile_layer = tiles
+        scene.terrain = terrain
         scene.version += 1

@@ -1,9 +1,9 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2026 Marco Sumari Tellez and IngeTrazo contributors.
-"""SketchUp material files, ``.skm`` (#1482): read into a Material, and
+"""``.skm`` material files (#1482): read into a Material, and
 taken by the Materials palette's *Import…* like an ``.igmat`` (#1427).
 
-The fixtures are built here in the shape SketchUp writes (a ZIP with
+The fixtures are built here in the shape real files have (a ZIP with
 ``document.xml`` and the image under ``ref/``): colour only, textured with
 its tile size, translucent, colourized, and the ways a file can be broken.
 """
@@ -45,7 +45,7 @@ def _png(path, rgb, size=8):
 
 
 def _skm(path, material_xml, files=None, ns=_NS):
-    """An .skm as SketchUp lays it out: document.xml, the two other XML
+    """An .skm as real files lay it out: document.xml, the two other XML
     files, a thumbnail and the images (``files``: member → bytes)."""
     doc = ('<?xml version="1.0" encoding="UTF-8" standalone="no" ?>\n'
            f'<materialDocument {ns}>\n{material_xml}\n</materialDocument>\n')
@@ -147,7 +147,7 @@ def test_a_colourized_texture_is_tinted_from_its_original(tmp_path, ctype):
     assert tex["sw"] == pytest.approx(1.0, abs=1e-4)
 
 
-def test_files_as_sketchup_writes_them(tmp_path):
+def test_the_sample_files_shared_on_the_issue(tmp_path):
     """The three samples @pacaeiro shared on #1427, attribute for attribute:
     the whole document on one line with the xsi schema location; a yellow
     with ``trans="1"`` left opaque by ``useTrans="0"``; a texture whose

@@ -1,13 +1,14 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2026 Marco Sumari Tellez and IngeTrazo contributors.
-"""``.skm`` — SketchUp material files, read only (#1482).
+"""``.skm`` material files, read only (#1482).
 
 Many people keep folders of ``.skm`` materials, their own or downloaded;
 this turns one into a :class:`core.materials.Material`, so the Materials
 palette's *Import…* takes it like an ``.igmat`` (#1427).
 
-SketchUp does not document the format. What this reads is what files
-written by SketchUp and by third-party tools show:
+The format is not documented. What this reads is what real ``.skm``
+files, saved by the program that defines it and by third-party tools,
+show:
 
 - a ZIP holding ``document.xml`` (the material), ``documentProperties.xml``,
   ``references.xml``, ``doc_thumbnail.png`` and, for a textured material,
@@ -166,7 +167,7 @@ def load_skm(path) -> list[Material]:
                                "rot": 0.0}
                     if kind == 2:
                         # A colourized texture: the stored image is the
-                        # original; SketchUp re-tints it toward the colour.
+                        # original, to be re-tinted toward the colour.
                         ctype = int(_number(mat, "colorizeType", 0) or 0)
                         texture = tinted_texture(texture, rgb,
                                                  1 if ctype == 1 else 0)

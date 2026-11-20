@@ -97,9 +97,9 @@
  "Made {n} line(s) visible": "มองเห็นแล้ว {n} เส้น",
  "No invisible lines in the selection — turn on Camera ▸ Hidden Geometry to see and select them.": "ไม่มีเส้นที่มองไม่เห็นในส่วนที่เลือก — เปิด กล้อง ▸ รูปทรงที่ซ่อนอยู่ เพื่อดูและเลือก",
  "Drag over edges to erase them. Shift = hide, Ctrl = soften, Ctrl+Shift = make visible.": "ลากผ่านขอบเพื่อลบ Shift = ซ่อน, Ctrl = ทำให้นุ่มนวล, Ctrl+Shift = ทำให้มองเห็น",
- "Paint with a material saved in a file: .igmat, or SketchUp's .skm": "ระบายด้วยวัสดุที่บันทึกไว้ในไฟล์: .igmat หรือ .skm ของ SketchUp",
+ "Paint with a material saved in a file: .igmat or .skm": "ระบายด้วยวัสดุที่บันทึกไว้ในไฟล์: .igmat หรือ .skm",
  "Material files (*.igmat *.skm)": "ไฟล์วัสดุ (*.igmat *.skm)",
- "SketchUp material (*.skm)": "วัสดุ SketchUp (*.skm)",
+ "SKM material (*.skm)": "วัสดุ SKM (*.skm)",
  "Export material…": "ส่งออกวัสดุ…",
  "Add to My materials": "เพิ่มไปยังวัสดุของฉัน",
  "My materials": "วัสดุของฉัน",
@@ -1968,7 +1968,7 @@
  "Remove the colour (back to the original image)": "ลบโทนสีออก (กลับสู่ภาพต้นฉบับ)",
  "Shift": "เลื่อนโทนสี (Shift)",
  "Tint": "ย้อมสี (Tint)",
- "Shift: move every pixel's hue toward the colour, keeping the texture's variation. Tint: replace hue and saturation, keeping only the lightness.": "เลื่อนโทนสี (Shift): ปรับค่าเฉดสี (Hue) ของทุกพิกเซลไปทางสีที่เลือก โดยรักษาความหลากหลายของพื้นผิวไว้; ย้อมสี (Tint): แทนที่เฉดสีและความอิ่มตัวของสี โดยรักษาไว้เฉพาะความสว่าง",
+ "Shift: move every pixel's hue toward the colour, keeping the texture's variation. Tint: give every pixel the colour's hue, keeping the texture's variation in lightness and saturation.": "เลื่อนโทนสี (Shift): ปรับค่าเฉดสี (Hue) ของทุกพิกเซลไปทางสีที่เลือก โดยรักษาความหลากหลายของพื้นผิวไว้; ย้อมสี (Tint): ให้ทุกพิกเซลมีเฉดสีของสีที่เลือก โดยรักษาความแตกต่างของความสว่างและความอิ่มตัวของสีในพื้นผิวไว้",
  "Tint the texture": "ย้อมสีพื้นผิวสัมผัส",
  "Resize/rotate/tint the active texture; with textured faces selected, re-stamps them (undoable)": "ปรับขนาด/หมุน/ย้อมสีพื้นผิวสัมผัสที่ใช้งาน; เมื่อเลือกพื้นผิวที่มีลวดลาย จะประทับลายใหม่ (สามารถยกเลิกได้)",
  "inward": "เข้าด้านใน",
@@ -4056,5 +4056,9 @@
  "Every layer is in the legend": "ทุกเลเยอร์อยู่ในคำอธิบายสัญลักษณ์แล้ว",
  "Free entry": "รายการอิสระ",
  "New entry": "รายการใหม่",
- "Every sheet as a page. Click: open it. Drag: change the order. Double-click or F2: rename. Delete: remove it. Right-click: more.": "แผ่นแบบแต่ละแผ่นเป็นหนึ่งหน้า คลิก: เปิด ลาก: เปลี่ยนลำดับ ดับเบิลคลิกหรือ F2: เปลี่ยนชื่อ Delete: ลบ คลิกขวา: เพิ่มเติม"
+ "Every sheet as a page. Click: open it. Drag: change the order. Double-click or F2: rename. Delete: remove it. Right-click: more.": "แผ่นแบบแต่ละแผ่นเป็นหนึ่งหน้า คลิก: เปิด ลาก: เปลี่ยนลำดับ ดับเบิลคลิกหรือ F2: เปลี่ยนชื่อ Delete: ลบ คลิกขวา: เพิ่มเติม",
+ "Location": "ตำแหน่งที่ตั้ง",
+ "This model has no location yet.": "โมเดลนี้ยังไม่มีตำแหน่งที่ตั้ง",
+ "Clear location": "ล้างตำแหน่งที่ตั้ง",
+ "This model has survey points, traced paths or a drone survey placed by its location: change it in the Terrain panel.": "โมเดลนี้มีจุดสำรวจ เส้นทางภูมิศาสตร์ หรือการสำรวจด้วยโดรนที่วางตามตำแหน่งที่ตั้ง: เปลี่ยนได้ในแผงภูมิประเทศ"
 }
