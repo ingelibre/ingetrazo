@@ -352,8 +352,9 @@ def test_the_target_header_ends_the_isolation():
 def test_an_inherited_mark_is_as_big_as_the_others_only_fainter():
     ink = node_icon("eye_off")
     faded = mark_icon("eye_off", inherited=True)
-    assert faded.availableSizes() == [QSize(MARK_SIZE, MARK_SIZE)]
-    assert ink.availableSizes() == [QSize(MARK_SIZE, MARK_SIZE)]
+    # One size, kept at 1x and at 3x (18 and 54 pixels), faded or not.
+    assert faded.availableSizes() == ink.availableSizes()
+    assert min(s.width() for s in ink.availableSizes()) == MARK_SIZE
 
     def top_alpha(icon):
         img = icon.pixmap(MARK_SIZE, MARK_SIZE).toImage()
@@ -361,6 +362,17 @@ def test_an_inherited_mark_is_as_big_as_the_others_only_fainter():
                    for x in range(img.width()) for y in range(img.height()))
 
     assert 0 < top_alpha(faded) < top_alpha(ink)
+
+
+def test_a_mark_is_drawn_sharp_on_a_screen_at_125_percent():
+    """Drawn for the screen, not an 18 px drawing scaled up (blurred on a
+    125 % screen), faded or not."""
+    for icon in (node_icon("lock_open"), mark_icon("eye", inherited=True)):
+        pm = icon.pixmap(QSize(MARK_SIZE, MARK_SIZE), 1.25)
+        assert pm.width() in (22, 23)            # 18 × 1.25, rounded by Qt
+        best = max(icon.pixmap(QSize(MARK_SIZE, MARK_SIZE), r).width()
+                   for r in (1, 3))
+        assert best == MARK_SIZE * 3
 
 
 # ---- The Layers tab keeps its keyboard -------------------------------------

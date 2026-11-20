@@ -149,9 +149,23 @@ def _cube(p, ink, fill=None) -> None:
     p.drawLine(QPointF(11.5, 6.5), QPointF(15.5, 2.5))
 
 
-def _draw(key: str):
+#: The pixel ratios the drawn icons are kept at: the 1× one for a screen at
+#: 100 %, and a 3× one Qt scales down for 125 %, 150 %, 200 %… — an 18 px
+#: drawing scaled UP to a 125 % screen came out blurred.
+_DRAW_RATIOS = (1, 3)
+
+
+def _draw(key: str) -> QIcon:
+    icon = QIcon()
+    for ratio in _DRAW_RATIOS:
+        icon.addPixmap(_draw_pixmap(key, ratio))
+    return icon
+
+
+def _draw_pixmap(key: str, ratio: float = 1):
     ink = _ink()
-    pm = QPixmap(18, 18)
+    pm = QPixmap(round(18 * ratio), round(18 * ratio))
+    pm.setDevicePixelRatio(ratio)
     pm.fill(Qt.transparent)
     p = QPainter(pm)
     p.setRenderHint(QPainter.Antialiasing)
@@ -302,7 +316,7 @@ def _draw(key: str):
             p.setPen(QPen(ink, 1.4))
             p.drawLine(QPointF(3, 15), QPointF(15, 3))
     p.end()
-    return QIcon(pm)
+    return pm
 
 
 #: The size every mark of a row is drawn at (eye, padlock, target): the
@@ -314,15 +328,18 @@ def _faded(icon: QIcon, size: int = MARK_SIZE) -> QIcon:
     """``icon`` at 40 %: the eye or padlock a row inherits from a group
     around it — closed, but not its own — at the row's own size, only
     fainter (16 px made an inherited mark smaller than its neighbours)."""
-    src = icon.pixmap(size, size)
-    pm = QPixmap(src.size())
-    pm.setDevicePixelRatio(src.devicePixelRatio())
-    pm.fill(Qt.transparent)
-    p = QPainter(pm)
-    p.setOpacity(0.4)
-    p.drawPixmap(0, 0, src)
-    p.end()
-    return QIcon(pm)
+    out = QIcon()
+    for ratio in _DRAW_RATIOS:
+        src = icon.pixmap(QSize(size, size), ratio)
+        pm = QPixmap(src.size())
+        pm.setDevicePixelRatio(src.devicePixelRatio())
+        pm.fill(Qt.transparent)
+        p = QPainter(pm)
+        p.setOpacity(0.4)
+        p.drawPixmap(0, 0, src)
+        p.end()
+        out.addPixmap(pm)
+    return out
 
 
 def mark_icon(key: str, inherited: bool = False) -> QIcon:
