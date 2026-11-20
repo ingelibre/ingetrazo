@@ -1,5 +1,10 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""The Rectangle badge leaves the actual source point visible."""
+"""The Rectangle shows the same inference markers as every other tool.
+
+#1131 drew Rectangle's square markers as a small accent-coloured badge
+beside the pencil. The familiar convention (checked 19-11) keeps each
+inference in its own colour, on the point, whatever the drawing tool:
+green endpoint, red on edge, and so on."""
 from types import SimpleNamespace
 
 import pytest
@@ -45,42 +50,29 @@ def _near_color(image, x0, y0, x1, y1, color):
                for x in range(x0, x1) for y in range(y0, y1))
 
 
-@pytest.mark.parametrize('accent,mode', [('blue', theme.LIGHT), ('purple', theme.DARK)])
-def test_origin_badge_is_offset_and_uses_the_live_accent(accent, mode):
-    from PySide6.QtWidgets import QApplication
-    previous_accent, previous_theme = theme.saved_accent(), theme.saved_theme()
+SQUARE_KINDS = ['endpoint', 'origin', 'component_origin', 'on_edge',
+                'on_axis', 'on_line', 'extension', 'from_point', 'aligned',
+                'tangent', 'intersection_edge', 'intersection_face']
+
+
+@pytest.mark.parametrize('kind', SQUARE_KINDS)
+def test_rectangle_markers_are_the_line_markers(kind):
+    snap = SnapResult(V(80, 80, 0), kind, COLOR_ENDPOINT)
+    assert render(RectangleTool(), snap) == render(LineTool(), snap)
+
+
+@pytest.mark.parametrize('accent', ['blue', 'purple'])
+def test_an_endpoint_keeps_its_own_colour_with_any_accent(accent):
+    previous = theme.saved_accent()
     try:
         theme.save_accent(accent)
-        theme.apply_theme(QApplication.instance(), mode)
-        image = render(RectangleTool(), SnapResult(V(80, 80, 0), 'origin', COLOR_ORIGIN))
-        color = theme.accent_color()
-        assert color == theme.accent_color(accent)
-        assert _near_color(image, 79, 55, 90, 66, color) > 15
-        assert _near_color(image, 78, 78, 83, 83, color) > 0  # exact source dot
-        # No large square remains around the pencil tip.
-        assert image.pixelColor(73, 73) == QColor(204, 204, 201)
+        image = render(RectangleTool(),
+                       SnapResult(V(80, 80, 0), 'endpoint', COLOR_ENDPOINT))
+        green = QColor.fromRgbF(*COLOR_ENDPOINT)
+        assert _near_color(image, 72, 72, 89, 89, green) > 15
+        assert image.pixelColor(80, 52) == QColor(204, 204, 201)  # no badge
     finally:
-        theme.save_accent(previous_accent)
-        theme.apply_theme(QApplication.instance(), previous_theme)
-
-
-@pytest.mark.parametrize('kind', ['endpoint', 'component_origin', 'on_edge', 'on_axis',
-                                  'on_line', 'extension', 'from_point', 'aligned', 'tangent',
-                                  'intersection_edge', 'intersection_face'])
-def test_every_rectangle_square_marker_leaves_the_pencil_tip_clear(kind):
-    theme.save_accent('blue')
-    image = render(RectangleTool(), SnapResult(V(80, 80, 0), kind, COLOR_ENDPOINT))
-    assert _near_color(image, 79, 55, 90, 66, theme.accent_color()) > 15
-    assert image.pixelColor(73, 73) == QColor(204, 204, 201)
-
-
-def test_other_tools_and_non_square_snap_shapes_keep_their_markers():
-    image = render(LineTool(), SnapResult(V(80, 80, 0), 'origin', COLOR_ORIGIN))
-    assert image.pixelColor(73, 73) != QColor(204, 204, 201)
-    assert image.pixelColor(64, 56) == QColor(204, 204, 201)
-    image = render(RectangleTool(), SnapResult(V(80, 80, 0), 'midpoint', COLOR_MIDPOINT))
-    assert image.pixelColor(80, 71) != QColor(204, 204, 201)
-    assert image.pixelColor(64, 56) == QColor(204, 204, 201)
+        theme.save_accent(previous)
 
 
 def test_origin_guide_stays_on_its_actual_geometry():
@@ -93,10 +85,6 @@ def test_origin_guide_stays_on_its_actual_geometry():
     assert image.pixelColor(30, 60) == QColor(204, 204, 201)
 
 
-def test_badge_aligns_with_actual_pencil_when_pointer_is_offset_from_snap():
-    theme.save_accent('blue')
-    image = render(RectangleTool(), SnapResult(V(80, 80, 0), 'origin', COLOR_ORIGIN),
-                   cursor=QPointF(92, 72))
-    assert _near_color(image, 91, 47, 102, 58, theme.accent_color()) > 15
-    assert _near_color(image, 78, 78, 83, 83, theme.accent_color()) > 0
-    assert image.pixelColor(73, 61) == QColor(204, 204, 201)
+def test_a_midpoint_keeps_its_own_marker():
+    image = render(RectangleTool(), SnapResult(V(80, 80, 0), 'midpoint', COLOR_MIDPOINT))
+    assert image.pixelColor(80, 71) != QColor(204, 204, 201)

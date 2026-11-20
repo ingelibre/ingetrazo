@@ -11933,15 +11933,6 @@ class Viewport(QOpenGLWidget):
             "endpoint", "origin", "component_origin", "on_edge", "on_axis",
             "on_line", "on_circle", "extension", "from_point", "aligned",
             "tangent", "intersection_edge", "intersection_face")
-        # Every Rectangle square badge must leave the pencil tip visible.
-        # Its accent follows the toolbar theme; the exact snap stays marked
-        # at the original pixel, independent of the badge's screen offset.
-        from tools.rectangle import RectangleTool
-        rectangle_badge = (square_snap
-                           and isinstance(self.active_tool, RectangleTool))
-        if rectangle_badge:
-            from views.theme import accent_color
-            color = accent_color()
         # Dashed guide line (the extension inference shows the edge's dashed
         # continuation to the cursor).
         if snap.guide is not None:
@@ -11972,28 +11963,7 @@ class Viewport(QOpenGLWidget):
         mark = QPen(color, 2.6)
         painter.setBrush(QColor.fromRgbF(r, g, b, 0.30))
         px, py = pixel
-        if rectangle_badge:
-            # Put the square above-right of the tip, with its left outline
-            # on the pencil's vertical tip line. Follow the pointer; the dot
-            # remains on the exact geometry. All sizes are logical pixels.
-            painter.setPen(Qt.NoPen)
-            painter.setBrush(QColor(255, 255, 255, 230))
-            painter.drawEllipse(QPointF(px, py), 3.25, 3.25)
-            painter.setBrush(color)
-            painter.drawEllipse(QPointF(px, py), 2.0, 2.0)
-            cursor_pos = getattr(self, "_last_mouse_pos", None)
-            bx, by = ((cursor_pos.x(), cursor_pos.y())
-                      if cursor_pos is not None else (px, py))
-            rect = QRectF(bx, by - 24, 8, 8)
-            painter.setPen(QPen(QColor(255, 255, 255, 230), 1.6))
-            painter.setBrush(Qt.NoBrush)
-            painter.drawRect(rect)
-            painter.setPen(QPen(color, 1.0))
-            fill = QColor(color)
-            fill.setAlphaF(0.20)
-            painter.setBrush(fill)
-            painter.drawRect(rect)
-        elif snap.kind == "intersection":
+        if snap.kind == "intersection":
             # X marker at the crossing (drawn line × projected guide).
             for pen in (halo, mark):
                 painter.setPen(pen)

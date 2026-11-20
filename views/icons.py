@@ -3063,11 +3063,10 @@ def clear_cursor_cache() -> None:
     _cursor_cache.clear()
 
 # Drawing tools: pencil cursor + a mini badge of the shape at bottom-right
-# (None = bare pencil; Rectangle's plane preview supplies its shape).
-# Hotspot = the pencil tip.
+# (None = bare pencil, for Line). Hotspot = the pencil tip.
 _PENCIL_TOOLS = {
     "line": None, "freehand": "freehand",
-    "rectangle": None, "rectangle_center": "rectangle_center",
+    "rectangle": "rectangle", "rectangle_center": "rectangle_center",
     "rotated_rect": "rotated_rect",
     "circle": "circle", "polygon": "polygon", "arc": "arc", "arc3": "arc3",
     "center_arc": "center_arc", "pie": "pie", "geopath": "geopath",
