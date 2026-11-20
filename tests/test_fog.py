@@ -178,7 +178,7 @@ def test_effective_fog_color_uses_custom_or_background_and_falls_back():
         Style().background)
 
 
-def test_environment_fogs_like_sketchup_and_clears_at_farthest_stop():
+def test_environment_fogs_like_the_reference_and_clears_at_farthest_stop():
     from views.viewport import (fog_backdrop, fog_backdrop_strength,
                                 fog_sky_colors)
 

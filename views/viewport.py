@@ -2052,7 +2052,7 @@ def effective_fog_color(style) -> tuple[float, float, float]:
 def fog_backdrop_strength(style) -> float:
     """Fog strength for the environment at the back of the scene.
 
-    Like SketchUp, the environment represents zero visibility beyond the
+    As is usual in modellers, the environment represents zero visibility beyond the
     right handle, so normal fog ranges make it the fog colour. The final ten
     percent of the logarithmic range progressively restores the styled sky;
     with the right handle at its farthest stop the environment is untouched.
@@ -2091,7 +2091,7 @@ def fog_backdrop(style) -> tuple[tuple[float, float, float], bool]:
 
 
 def fog_sky_colors(style) -> tuple[tuple[float, float, float], ...]:
-    """SketchUp-like fogged ``(sky, horizon, ground)`` colours.
+    """Conventionally fogged ``(sky, horizon, ground)`` colours.
 
     Sky and horizon reach the fog colour at zero visibility. The ground keeps
     most of its foreground tone; :meth:`Viewport._sky_gradient` then fades it
