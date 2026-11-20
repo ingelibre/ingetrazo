@@ -3026,7 +3026,7 @@
   "Name and number": "Ad ve numara",
   "Find and replace": "Bul ve değiştir",
   "Prefix and suffix": "Ön ek ve son ek",
-  "Start at:": "Başlangıç:",
+  "Start at:": "Başlangıç değeri:",
   "Digits:": "Basamak sayısı:",
   "Match case": "Büyük/küçük harfe duyarlı",
   "Find:": "Bul:",
@@ -4328,6 +4328,6 @@
   "Do you want to resize the active component?": "Etkin bileşeni yeniden boyutlandırmak istiyor musunuz?",
   "Do you want to resize the active group?": "Etkin grubu yeniden boyutlandırmak istiyor musunuz?",
   "Resize": "Yeniden boyutlandır",
-  "Type the new length and Enter to resize.": "Yeniden boyutlandırmak için yeni uzunluğu yazıp Enter'a basın.",
+  "Type the new length and Enter to resize.": "Yeni uzunluğu yazıp Enter'a basarak boyutlandırın.",
   "No 3D mouse connection. On Linux start spacenavd; on Windows and macOS install the 3Dconnexion driver. Connection is retried automatically.": "3B fare bağlantısı yok. Linux'ta spacenavd'yi başlatın; Windows ve macOS'ta 3Dconnexion sürücüsünü kurun. Bağlantı otomatik olarak yeniden denenir."
 }
