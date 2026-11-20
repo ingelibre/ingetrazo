@@ -477,24 +477,56 @@ class Cajetin:
                    "label_mm", "border_mm", "line_mm")
 
     #: (label, field-name) legacy rows — the pre-editable schema, kept to
-    #: migrate old documents into ``campos``.
+    #: migrate old documents into ``campos``; the labels are the Spanish
+    #: ones those documents were written with.
     FIELDS = (("PROYECTO", "proyecto"), ("AUTOR", "autor"),
               ("FECHA", "fecha"), ("ESCALA", "escala"),
               ("LÁMINA", "lamina"))
+    #: Each field's label as a NEW title block shows it — the English
+    #: source, translated into the interface's language when the title
+    #: block is made. A label the user typed, or one a document was saved
+    #: with, stays as it is: the rows are the sheet's own text.
+    FIELD_LABELS = {"proyecto": "PROJECT", "autor": "AUTHOR",
+                    "fecha": "DATE", "escala": "SCALE", "lamina": "SHEET"}
 
     def __post_init__(self) -> None:
         if not self.campos:
-            self.campos = [[label, getattr(self, attr)]
-                           for label, attr in self.FIELDS]
+            self.campos = self.default_rows()
+
+    def default_rows(self) -> list:
+        """The rows a new title block starts with, labelled in the
+        interface's language."""
+        return [[_tr(self.FIELD_LABELS[attr]), getattr(self, attr)]
+                for _label, attr in self.FIELDS]
+
+    @classmethod
+    def field_labels(cls, key: str) -> set:
+        """Every spelling a row of field ``key`` (``fecha``, ``escala``,
+        ``lamina``…) may carry, upper-cased: the Spanish one of older
+        documents, the English source and the interface's translation."""
+        legacy = next((label for label, attr in cls.FIELDS if attr == key),
+                      key)
+        source = cls.FIELD_LABELS.get(key, key)
+        return {s.strip().upper() for s in (legacy, source, _tr(source))}
 
     def set_field(self, label: str, value: str) -> None:
-        """Set the first row whose label matches (case-insensitive); add
-        the row if the title block does not have it yet."""
+        """Set the first row of field ``label`` — a field key (``fecha``,
+        ``escala``, ``lamina``…) matches that field's label in Spanish, in
+        English or in the interface's language; anything else matches a
+        row's label as written (case-insensitive). The row is added, with
+        the label in the interface's language, if the title block does not
+        have it yet."""
+        key = label if label in self.FIELD_LABELS else next(
+            (attr for legacy, attr in self.FIELDS
+             if legacy == label.strip().upper()), None)
+        wanted = (self.field_labels(key) if key is not None
+                  else {label.strip().upper()})
         for row in self.campos:
-            if str(row[0]).strip().upper() == label.strip().upper():
+            if str(row[0]).strip().upper() in wanted:
                 row[1] = value
                 return
-        self.campos.append([label, value])
+        self.campos.append([_tr(self.FIELD_LABELS[key]) if key is not None
+                            else label, value])
 
     def look(self) -> dict:
         return {k: getattr(self, k) for k in self.LOOK_FIELDS}
@@ -694,7 +726,9 @@ class Leyenda:
     x_mm: float = 20.0
     y_mm: float = 20.0
     w_mm: float = 55.0
-    title: str = "LEYENDA"
+    # In the interface's language when the item is made; a saved sheet
+    # keeps the text it was written with.
+    title: str = field(default_factory=lambda: _tr("LEGEND"))
     rows: list = field(default_factory=list)
     #: Each row's swatch, snapshotted with the rows: ``{name: {"color":
     #: [r, g, b], "linetype": str}}`` (core.layers). A row without one
@@ -795,6 +829,167 @@ def refreshed_legend_entries(entries: list, rows: list,
 
 
 @dataclass
+class IndiceLaminas:
+    """A table of contents of the document's sheets (issue #1409): one row
+    per sheet — its name, a leader and its sheet number — read LIVE from
+    the document every time it is drawn, so renaming, adding or reordering
+    sheets never leaves a stale index on paper.
+
+    A long index is split over several sheets the way a drawing set does
+    it: ``per_page`` rows on each element (0 = all of them) and ``page``
+    says which slice this element shows — put one element on sheet 1 with
+    page 1, another on sheet 2 with page 2, and so on.
+
+    ``layout`` = ``"tree"`` lists the sheets under their folders, indented
+    by depth: the sheet browser's folders (PR #932), read through
+    :func:`sheet_folder`; a document without folders lists flat."""
+
+    x_mm: float = 20.0
+    y_mm: float = 20.0
+    w_mm: float = 90.0
+    title: str = ""
+    show_title: bool = True
+    size_pt: float = 9.0
+    #: What fills the gap between a sheet's name and its number.
+    leader: str = "dots"          # dots | line | none
+    show_numbers: bool = True
+    layout: str = "flat"          # flat | tree (by sheet folder)
+    #: Rows on this element; 0 = every sheet on one element.
+    per_page: int = 0
+    #: Which slice of ``per_page`` rows this element shows, from 1.
+    page: int = 1
+    #: List the sheet the index itself sits on.
+    include_self: bool = True
+    border: bool = True
+    z: float = 0.0            # stacking order on the page (higher = on top)
+    locked: bool = False         # locked: shown but not movable/resizable
+    group_id: str = ""            # sheet group (Ctrl+G); "" = ungrouped
+    #: The name the user gave it in the Items list (issue #93); "" =
+    #: the automatic one (its kind and what it shows).
+    list_name: str = ""
+    #: Hidden from the sheet — not drawn, not printed, not picked;
+    #: shown again from the Items list's eye (QGIS; Marco, 26-09).
+    hidden: bool = False
+
+    # Row geometry, in multiples of the text height.
+    PAD_MM = 2.0
+    ROW_FACTOR = 1.6
+    TITLE_FACTOR = 1.15 * 1.6
+
+    def text_mm(self) -> float:
+        return max(0.5, float(self.size_pt)) * PT_TO_MM
+
+    def row_mm(self) -> float:
+        return self.text_mm() * self.ROW_FACTOR
+
+    def title_mm(self) -> float:
+        return self.text_mm() * self.TITLE_FACTOR if self.show_title else 0.0
+
+    def height_mm(self, n_rows: int) -> float:
+        """The box for ``n_rows`` rows: it grows with the index, like the
+        layer legend does. A paged element keeps the height of a FULL page
+        so the slices on every sheet line up."""
+        if self.per_page > 0:
+            n_rows = max(n_rows, self.per_page)
+        return (2 * self.PAD_MM + self.title_mm()
+                + self.row_mm() * max(n_rows, 1))
+
+
+@dataclass(frozen=True)
+class TocEntry:
+    """One row of a sheet index: a sheet, or (tree layout) a folder."""
+
+    label: str
+    number: str = ""              # the sheet number; "" for a folder
+    level: int = 0                # indentation depth
+    folder: bool = False
+    current: bool = False         # the sheet the index sits on
+
+
+def sheet_folder(comp, folders=None) -> tuple:
+    """The folder path of a sheet as a tuple of names, ``()`` at the top.
+
+    The one place the index reads folders from. Since the sheet browser
+    (PR #932, merged with this one on 19-11) a sheet names its folder by
+    ``folder_id`` among the document's ``sheet_folders`` — pass those as
+    ``folders`` and the path is read up their parents. Without them, a
+    ``folder`` attribute (a ``"A/B"`` path or a list of names) still
+    works, as this PR first proposed."""
+    fid = getattr(comp, "folder_id", None)
+    if fid is not None and folders:
+        by_id = {getattr(f, "id", None): f for f in folders}
+        names: list = []
+        seen: set = set()
+        while fid is not None and fid in by_id and fid not in seen:
+            seen.add(fid)
+            f = by_id[fid]
+            names.append(str(f.name))
+            fid = getattr(f, "parent_id", None)
+        return tuple(n.strip() for n in reversed(names) if n.strip())
+    raw = getattr(comp, "folder", None) or ()
+    parts = (raw if isinstance(raw, (list, tuple))
+             else str(raw).replace("\\", "/").split("/"))
+    return tuple(str(p).strip() for p in parts if str(p).strip())
+
+
+def toc_entries(comps, toc: IndiceLaminas, here=None, folders=None) -> list:
+    """Every row of index *toc* over the sheets *comps* (the document's
+    order), *here* being the sheet the index sits on. Sheet numbers are
+    the sheets' positions — what ``{hoja}`` prints on each of them.
+    ``folders``: the document's ``sheet_folders``, for the By folder
+    layout (:func:`sheet_folder`)."""
+    comps = list(comps or [])
+
+    def path_of(c):
+        return sheet_folder(c, folders)
+    rows = [(i, c) for i, c in enumerate(comps)
+            if toc.include_self or c is not here]
+    if toc.layout != "tree":
+        return [TocEntry(c.name, str(i + 1), 0, False, c is here)
+                for i, c in rows]
+    # By folder: sheets at the top first, then each folder in the order
+    # its first sheet appears, sub-folders inside it; the document's order
+    # within a folder. A folder heading is written when its branch opens.
+    first: dict = {}
+    for _i, c in rows:
+        path = path_of(c)
+        for k in range(1, len(path) + 1):
+            first.setdefault(path[:k], len(first))
+    rows.sort(key=lambda r: tuple(first[path_of(r[1])[:k]]
+                                  for k in range(1, len(path_of(r[1])) + 1)))
+    out: list = []
+    open_path: tuple = ()
+    for i, c in rows:
+        path = path_of(c)
+        same = 0
+        while (same < min(len(path), len(open_path))
+               and path[same] == open_path[same]):
+            same += 1
+        for depth in range(same, len(path)):
+            out.append(TocEntry(path[depth], "", depth, True))
+        open_path = path
+        out.append(TocEntry(c.name, str(i + 1), len(path), False, c is here))
+    return out
+
+
+def toc_page_count(n_entries: int, per_page: int) -> int:
+    if per_page <= 0:
+        return 1
+    return max(1, math.ceil(n_entries / per_page))
+
+
+def toc_slice(entries: list, toc: IndiceLaminas) -> tuple:
+    """``(rows, page, pages)``: the rows element *toc* shows, the page it
+    shows (clamped into range) and how many pages the index takes."""
+    pages = toc_page_count(len(entries), toc.per_page)
+    page = min(max(1, int(toc.page or 1)), pages)
+    if toc.per_page <= 0:
+        return list(entries), page, pages
+    start = (page - 1) * toc.per_page
+    return list(entries[start:start + toc.per_page]), page, pages
+
+
+@dataclass
 class FormaItem:
     """A drawing shape: line, arrow, rectangle or ellipse. Lines/arrows run
     corner to corner of the box (``invert`` flips which diagonal)."""
@@ -844,7 +1039,7 @@ class EtiquetaItem:
     w_mm: float = 50.0
     ax_mm: float = -20.0         # the pointed-at spot, relative to the block
     ay_mm: float = 15.0
-    text: str = "Texto"
+    text: str = field(default_factory=lambda: _tr("Text"))
     size_pt: float = 11.0
     bold: bool = False
     italic: bool = False
@@ -916,7 +1111,9 @@ class NivelItem:
     ax_mm: float = 0.0           # the model point, relative to the apex
     ay_mm: float = 0.0           # (a thin leader joins them when apart)
     symbol: str = "triangle"     # triangle | circle
-    text: str = "N.P.T. {z}"     # {z} = the signed level
+    # {z} = the signed level; «FFL» (finished floor level) is «N.P.T.»
+    # in Spanish — in the interface's language when the item is made.
+    text: str = field(default_factory=lambda: _tr("FFL {z}"))
     z_m: float = 0.0             # the level when free (metres)
     datum_m: float = 0.0         # the project's ±0.00, in model metres
     units: str = "m"             # how {z} reads; "" / missing stays metres
@@ -1446,7 +1643,7 @@ class CotaRadialItem:
 class Composicion:
     """One sheet: a page plus its items."""
 
-    name: str = "Lámina 1"
+    name: str = field(default_factory=lambda: _tr("Sheet {n}", n=1))
     paper: str = "A4"
     landscape: bool = True
     margin_mm: float = 10.0
@@ -1464,6 +1661,8 @@ class Composicion:
     perfiles: list = field(default_factory=list)
     niveles: list = field(default_factory=list)
     llamadas: list = field(default_factory=list)
+    #: Tables of contents of the document's sheets (issue #1409).
+    indices: list = field(default_factory=list)
     cajetin: Optional[Cajetin] = None
     #: Sheet border drawn on the margin rectangle: width, colour, rounded
     #: corners and line type (single | double | dashed).
@@ -1478,6 +1677,11 @@ class Composicion:
     # implementar eso en composición»).
     guides_v: list = field(default_factory=list)
     guides_h: list = field(default_factory=list)
+    #: The sheet explorer's folder this sheet sits in (``None``: the top;
+    #: see :mod:`core.sheet_folders`).
+    folder_id: Optional[str] = None
+    #: Whether Print all and Export all take this sheet.
+    print_in_all: bool = True
 
     def page_size_mm(self) -> tuple[float, float]:
         w, h = PAPER_SIZES_MM[self.paper]
@@ -1506,7 +1710,7 @@ class Composicion:
                + list(self.cotas_ang) + list(self.cotas_rad)
                + list(self.etiquetas)
                + list(self.perfiles) + list(self.niveles)
-               + list(self.llamadas))
+               + list(self.llamadas) + list(self.indices))
         if self.cajetin is not None:
             out.append(self.cajetin)
         return out
@@ -1535,7 +1739,8 @@ class Composicion:
                          ("etiquetas", self.etiquetas),
                          ("perfiles", self.perfiles),
                          ("niveles", self.niveles),
-                         ("llamadas", self.llamadas)):
+                         ("llamadas", self.llamadas),
+                         ("indices", self.indices)):
             if lst:
                 d[key] = [asdict(it) for it in lst]
         if self.cajetin is not None:
@@ -1543,6 +1748,12 @@ class Composicion:
         if self.guides_v or self.guides_h:
             d["guides"] = {"v": [float(x) for x in self.guides_v],
                            "h": [float(y) for y in self.guides_h]}
+        # Only when not the default, so a sheet outside any folder and in
+        # Print all saves exactly as before.
+        if self.folder_id is not None:
+            d["folder_id"] = self.folder_id
+        if not self.print_in_all:
+            d["print_in_all"] = False
         return d
 
     @classmethod
@@ -1550,7 +1761,7 @@ class Composicion:
         """Rebuild a sheet from its .igz record. Keys this version does not
         know (a sheet saved by a newer IngeTrazo) are dropped, not fatal:
         the model must open whatever the sheets carry."""
-        c = cls(name=d.get("name", "Lámina 1"),
+        c = cls(name=d.get("name") or _tr("Sheet {n}", n=1),
                 paper=d.get("paper", "A4"),
                 landscape=bool(d.get("landscape", True)),
                 margin_mm=float(d.get("margin_mm", 10.0)))
@@ -1574,6 +1785,7 @@ class Composicion:
         c.perfiles = _items(PerfilTerreno, d.get("perfiles"))
         c.niveles = _items(NivelItem, d.get("niveles"))
         c.llamadas = _items(LlamadaItem, d.get("llamadas"))
+        c.indices = _items(IndiceLaminas, d.get("indices"))
         c.cotas = _items(CotaItem, d.get("cotas"))
         if isinstance(d.get("cajetin"), dict):
             c.cajetin = _build(Cajetin, d["cajetin"])
@@ -1581,6 +1793,9 @@ class Composicion:
         if isinstance(g, dict):
             c.guides_v = [float(x) for x in (g.get("v") or [])]
             c.guides_h = [float(y) for y in (g.get("h") or [])]
+        fid = d.get("folder_id")
+        c.folder_id = str(fid) if fid is not None else None
+        c.print_in_all = bool(d.get("print_in_all", True))
         _migrate_fixed_scale_labels(c)
         return c
 
@@ -1829,6 +2044,8 @@ class AddItemCommand(ComposerCommand):
             return self.comp.niveles
         if isinstance(self.item, LlamadaItem):
             return self.comp.llamadas
+        if isinstance(self.item, IndiceLaminas):
+            return self.comp.indices
         return None
 
     def do(self) -> None:
@@ -1881,6 +2098,8 @@ class RemoveItemCommand(ComposerCommand):
             return self.comp.niveles
         if isinstance(self.item, LlamadaItem):
             return self.comp.llamadas
+        if isinstance(self.item, IndiceLaminas):
+            return self.comp.indices
         return None
 
     def do(self) -> None:

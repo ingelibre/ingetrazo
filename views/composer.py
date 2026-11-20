@@ -29,7 +29,7 @@ from PySide6.QtWidgets import (QCheckBox, QComboBox, QDoubleSpinBox,
                                QGraphicsScene, QGraphicsView, QHBoxLayout,
                                QLabel, QLineEdit, QMainWindow,
                                QMessageBox, QPlainTextEdit, QPushButton,
-                               QStackedWidget, QTabBar, QTableWidget,
+                               QSpinBox, QStackedWidget, QTabBar, QTableWidget,
                                QTableWidgetItem, QTabWidget, QVBoxLayout,
                                QWidget)
 
@@ -38,7 +38,7 @@ from core.composition import (COMMON_SCALES, NEW_FRAME_STYLE, PAPER_SIZES_MM, RE
                               ComposerHistory, Composicion, CompoundCommand, CotaAngularItem, CotaItem,
                               CotaRadialItem,
                               EditItemCommand, EtiquetaItem, expand_fields, local_field_names, set_field_context, FlechaNorte, FormaItem, LlamadaItem, NivelItem,
-                              ImagenItem, Leyenda, MarcoVista,
+                              ImagenItem, IndiceLaminas, Leyenda, MarcoVista,
                               PerfilTerreno, RemoveItemCommand, TextoItem,
                               apply_frame_camera, cota_line_deg,
                               format_scale, parse_scale,
@@ -283,7 +283,8 @@ def view_title_texts(frame: MarcoVista) -> dict:
         "subtitle": ex(getattr(frame, "title_subtitle", "")),
         "scale": ("" if not getattr(frame, "title_scale", True)
                   else tr("NO SCALE") if persp
-                  else "ESC. " + format_scale(frame.scale_n)),
+                  else tr("SCALE {escala}").replace(
+                      "{escala}", format_scale(frame.scale_n))),
         "number": ex(getattr(frame, "title_number", "")),
         "sheet": ex(getattr(frame, "title_sheet", "")),
     }
@@ -1623,6 +1624,74 @@ def paint_leyenda_mm(painter: QPainter, le: Leyenda) -> None:
         y += 5.5
 
 
+def paint_indice_mm(painter: QPainter, ix: IndiceLaminas, rows,
+                    page: int = 1, pages: int = 1) -> None:
+    """A sheet index (issue #1409): the title, then one row per sheet —
+    its name, a dotted (or plain) leader and its number at the right
+    edge. Folder rows (tree layout) are bold, without a number."""
+    from PySide6.QtGui import QFontMetricsF
+    w = ix.w_mm
+    h = ix.height_mm(len(rows))
+    ink = QColor(30, 36, 44)
+    if ix.border:
+        r = QRectF(0, 0, w, h)
+        painter.fillRect(r, QColor(255, 255, 255))
+        pen = QPen(ink)
+        pen.setWidthF(0.3)
+        painter.setPen(pen)
+        painter.setBrush(Qt.NoBrush)
+        painter.drawRect(r)
+    pad = ix.PAD_MM
+    size = ix.text_mm()
+    y = pad
+    if ix.show_title:
+        title = ix.title or tr("SHEET INDEX")
+        if pages > 1:
+            title += f"  ({page}/{pages})"
+        _draw_text_mm(painter, QRectF(pad, y, w - 2 * pad, ix.title_mm()),
+                      title, size * 1.15, bold=True)
+        y += ix.title_mm()
+    # Measured the way _draw_text_mm draws: a 100 px font scaled by s.
+    s = size / 100.0 * 0.75
+    row_h = ix.row_mm()
+    right = w - pad
+    gap = size * 0.4
+    for e in rows:
+        font = QFont("Sans Serif")
+        font.setPixelSize(100)
+        font.setBold(e.folder)
+        fm = QFontMetricsF(font)
+        x0 = pad + e.level * size * 1.5
+        num_w = 0.0
+        if ix.show_numbers and e.number:
+            num_w = fm.horizontalAdvance(e.number) * s
+            _draw_text_mm(painter, QRectF(right - num_w - size, y,
+                                          num_w + size, row_h),
+                          e.number, size, align=Qt.AlignRight | Qt.AlignTop)
+        avail = max(0.0, right - x0 - (num_w + gap if num_w else 0.0))
+        label = fm.elidedText(e.label, Qt.ElideRight, avail / s)
+        _draw_text_mm(painter, QRectF(x0, y, avail + size, row_h), label,
+                      size, bold=e.folder)
+        lead_x0 = x0 + fm.horizontalAdvance(label) * s + gap
+        lead_x1 = right - num_w - gap
+        if (ix.leader != "none" and num_w and not e.folder
+                and lead_x1 - lead_x0 > size):
+            base = y + fm.ascent() * s
+            if ix.leader == "line":
+                lpen = QPen(ink, max(0.08, size * 0.05))
+                base -= size * 0.05
+            else:
+                dot = max(0.12, size * 0.1)
+                lpen = QPen(ink, dot)
+                lpen.setCapStyle(Qt.RoundCap)
+                # dashes of next to nothing with round caps: a row of dots
+                lpen.setDashPattern([0.001, size * 0.45 / dot])
+                base -= dot / 2
+            painter.setPen(lpen)
+            painter.drawLine(QPointF(lead_x0, base), QPointF(lead_x1, base))
+        y += row_h
+
+
 def paint_forma_mm(painter: QPainter, f: FormaItem) -> None:
     pen = QPen(QColor(f.color))
     pen.setWidthF(f.stroke_mm)
@@ -2724,14 +2793,15 @@ def paint_cajetin_mm(painter: QPainter, c: Cajetin) -> None:
     heavy.setWidthF(c.border_mm)
     light = QPen(line_color)
     light.setWidthF(c.line_mm)
-    campos = c.campos or [[label, getattr(c, attr)]
-                          for label, attr in Cajetin.FIELDS]
-    # Dynamic fields in the values; an empty ESCALA row reads the sheet's
-    # main frame by itself (the title block that never lies about scale).
+    campos = c.campos or c.default_rows()
+    # Dynamic fields in the values; an empty scale row (in whichever
+    # language it is labelled) reads the sheet's main frame by itself —
+    # the title block that never lies about scale.
+    scale_labels = Cajetin.field_labels("escala")
     expanded = []
     for label, value in campos:
         v = expand_fields(str(value or ""))
-        if not v and str(label).strip().lower() in ("escala", "scale"):
+        if not v and str(label).strip().upper() in scale_labels:
             v = expand_fields("{escala}")
         expanded.append([label, v])
     campos = expanded
@@ -3727,6 +3797,30 @@ class LeyendaItem(_SheetItem):
 
     def paint(self, painter, option, widget=None) -> None:
         paint_leyenda_mm(painter, self.model)
+        self._paint_selection(painter)
+
+
+class IndiceCanvasItem(_SheetItem):
+    """A sheet index on the canvas: its height follows the rows it shows,
+    only the width is dragged (like the legend)."""
+
+    def _rows(self):
+        return self.composer.toc_rows(self.model)
+
+    def size_mm(self):
+        rows, _p, _n = self._rows()
+        return self.model.w_mm, self.model.height_mm(len(rows))
+
+    def mouseMoveEvent(self, event) -> None:
+        if self._resizing:
+            self.prepareGeometryChange()
+            self.model.w_mm = max(30.0, event.pos().x())
+            self.update()
+            return
+        super(_SheetItem, self).mouseMoveEvent(event)
+
+    def paint(self, painter, option, widget=None) -> None:
+        paint_indice_mm(painter, self.model, *self._rows())
         self._paint_selection(painter)
 
 
@@ -6313,8 +6407,7 @@ class _PanelTabs(QTabWidget):
     #: tab shows its icon and name, the others their icon alone (the name
     #: their tooltip) — so all fit on the bar (Marco, 2026-11-12).
     PAGE_ICONS = {"layout": "sheet_layout", "items": "sheet_items",
-                  "props": "panel_properties", "views": "sheet_views",
-                  "sheets": "sheet_pages"}
+                  "props": "panel_properties", "views": "sheet_views"}
 
     def __init__(self, composer, side: str) -> None:
         super().__init__()
@@ -6620,21 +6713,19 @@ class ComposerWindow(QMainWindow):
         # «Views and sheets» on the left, the page in the middle, the
         # properties on the right: the two side panels fold away the same
         # way, each with its handle on the splitter line and its key.
-        from views.outliner import SheetsPanel
-        self.views_panel = SheetsPanel(main_window, composer=self)
+        # The same Scenes-above-Sheets page as the main window's Sheets tab
+        # (views/sheet_browser.py). Its key stays «views», so a side and
+        # place the user gave it are kept.
+        from views.sheet_browser import SheetsTab
+        self.views_panel = SheetsTab(main_window, composer=self)
         self._pages["views"] = self.views_panel
-        self._page_titles["views"] = tr("Views and sheets")
-        # Every sheet as a page, as a PDF reader lists its pages (Marco,
-        # 19-11: «como un gestor de laminas … que se muestren en miniatura»):
-        # a tab of its own at the end of the right side, the others where
-        # they were.
-        from views.sheet_pages import SheetPagesPanel
-        self._sheet_pages = SheetPagesPanel(self)
-        self._pages["sheets"] = self._sheet_pages
-        self._page_titles["sheets"] = tr("Sheets")
-        # A sheet's picture follows what the canvas shows: any change on
-        # it (an edit, a render that landed, a new paper) paints it again,
-        # 300 ms after the last one.
+        self._page_titles["views"] = tr("Sheets")
+        # The sheets as pages (Marco, 19-11: «como un gestor de laminas … que
+        # se muestren en miniatura»): the explorer's Thumbnails mode — the
+        # same panel as the folders and the Print switch (PR #932), not a
+        # second «Sheets» tab. A sheet's picture follows what the canvas
+        # shows: any change on it (an edit, a render that landed, a new
+        # paper) paints it again, 300 ms after the last one.
         self.canvas.changed.connect(
             lambda *_a: self._touch_sheet_page(self.comp))
         self._left_tabs = _PanelTabs(self, "left")
@@ -6785,6 +6876,9 @@ class ComposerWindow(QMainWindow):
         ("escala", "comp_escala", "Add a graphic scale bar", False),
         ("norte", "comp_norte", "Add a north arrow", False),
         ("leyenda", "comp_leyenda", "Add the layer legend", False),
+        ("indice", "comp_indice",
+         "Add a sheet index: the table of contents of the document's "
+         "sheets, kept up to date", False),
         ("perfil", "comp_perfil",
          "Add a terrain profile along a traced path (two clicks or drag)", True),
         ("linea", "line", "Draw a line (two clicks or drag; Shift locks it horizontal or vertical)", True),
@@ -6835,6 +6929,7 @@ class ComposerWindow(QMainWindow):
         "nivel": "Level mark", "llamada": "Detail callout", "imagen": "Image",
         "cajetin": "Title block", "escala": "Scale bar",
         "norte": "North arrow", "leyenda": "Layer legend",
+        "indice": "Sheet index",
         "perfil": "Terrain profile", "linea": "Line", "flecha": "Arrow",
         "terreno": "Ground line", "rect": "Rectangle", "elipse": "Ellipse",
         "poligono": "Polygon", "cota": "Dimension",
@@ -7053,6 +7148,8 @@ class ComposerWindow(QMainWindow):
             from core.layers import legend_rows
             rows, swatches = legend_rows(self._scene())
             item = Leyenda(x_mm=x0, y_mm=y0, rows=rows, swatches=swatches)
+        elif mode == "indice":
+            item = IndiceLaminas(x_mm=x0, y_mm=y0, title=tr("SHEET INDEX"))
         elif mode == "perfil":
             paths = getattr(self._scene(), "geo_paths", None) or []
             item = PerfilTerreno(x_mm=x, y_mm=y, w_mm=max(w, 80.0),
@@ -7512,6 +7609,7 @@ class ComposerWindow(QMainWindow):
         self.props.addWidget(_top_aligned(self._page_nivel()))     # 13
         self.props.addWidget(_top_aligned(self._page_llamada()))   # 14
         self.props.addWidget(_top_aligned(self._page_cota_rad()))  # 15
+        self.props.addWidget(_top_aligned(self._page_indice()))    # 16
         self._tabs.addTab(self.props, tr("Item properties"))
         #: Every side-panel page by key, and its tab title — the tabs can
         #: be reordered and moved to the other side (see ``move_page``).
@@ -8194,6 +8292,61 @@ class ComposerWindow(QMainWindow):
         btn.clicked.connect(self._on_leyenda_refresh)
         form.addRow(btn)
         self._add_bg_rows(form, "ley")
+        return w
+
+    def _page_indice(self) -> QWidget:
+        """The sheet index's properties (issue #1409)."""
+        w = QWidget()
+        form = QFormLayout(w)
+        self.ix_title = QLineEdit()
+        self.ix_title.editingFinished.connect(self._on_indice_props)
+        form.addRow(tr("Title"), self.ix_title)
+        self.ix_show_title = QCheckBox(tr("Show the title"))
+        self.ix_show_title.toggled.connect(self._on_indice_props)
+        form.addRow(self.ix_show_title)
+        self.ix_size = QDoubleSpinBox()
+        self.ix_size.setRange(4.0, 36.0)
+        self.ix_size.setSingleStep(0.5)
+        self.ix_size.setSuffix(" pt")
+        self.ix_size.valueChanged.connect(self._on_indice_props)
+        form.addRow(tr("Text size"), self.ix_size)
+        self.ix_leader = QComboBox()
+        for key, label in (("dots", "Dotted"), ("line", "Line"),
+                           ("none", "None")):
+            self.ix_leader.addItem(tr(label), key)
+        self.ix_leader.currentIndexChanged.connect(self._on_indice_props)
+        form.addRow(tr("Leader"), self.ix_leader)
+        self.ix_numbers = QCheckBox(tr("Show sheet numbers"))
+        self.ix_numbers.toggled.connect(self._on_indice_props)
+        form.addRow(self.ix_numbers)
+        self.ix_layout = QComboBox()
+        self.ix_layout.addItem(tr("Flat list"), "flat")
+        self.ix_layout.addItem(tr("By folder"), "tree")
+        self.ix_layout.setToolTip(tr(
+            "By folder lists the sheets under their folders, indented. "
+            "Sheets outside any folder are listed flat."))
+        self.ix_layout.currentIndexChanged.connect(self._on_indice_props)
+        form.addRow(tr("Layout"), self.ix_layout)
+        self.ix_self = QCheckBox(tr("List this sheet too"))
+        self.ix_self.toggled.connect(self._on_indice_props)
+        form.addRow(self.ix_self)
+        self.ix_border = QCheckBox(tr("Border"))
+        self.ix_border.toggled.connect(self._on_indice_props)
+        form.addRow(self.ix_border)
+        self.ix_per_page = QSpinBox()
+        self.ix_per_page.setRange(0, 999)
+        self.ix_per_page.setSpecialValueText(tr("All"))
+        self.ix_per_page.setToolTip(tr(
+            "Split a long index over several sheets: put one index on "
+            "each and pick the page each one shows."))
+        self.ix_per_page.valueChanged.connect(self._on_indice_props)
+        form.addRow(tr("Entries per page"), self.ix_per_page)
+        self.ix_page = QSpinBox()
+        self.ix_page.setRange(1, 999)
+        self.ix_page.valueChanged.connect(self._on_indice_props)
+        form.addRow(tr("Index page"), self.ix_page)
+        self.ix_info = QLabel()
+        form.addRow(self.ix_info)
         return w
 
     def _page_forma(self) -> QWidget:
@@ -9075,6 +9228,7 @@ class ComposerWindow(QMainWindow):
             if self.comp in self._scene().compositions else 0)
         self._updating = False
         self._refresh_sheet_tabs()      # added / renamed / deleted sheets
+        self._refresh_toc_items()       # ...and every sheet index with them
 
     def _on_comp_switched(self, idx: int) -> None:
         QTimer.singleShot(0, self._auto_render_stale)
@@ -9274,9 +9428,10 @@ class ComposerWindow(QMainWindow):
         self._reload_comp_combo()
 
     def _touch_sheet_page(self, comp) -> None:
-        pages = getattr(self, "_sheet_pages", None)
-        if pages is not None and comp is not None:
-            pages.touch(comp)
+        panel = getattr(self, "views_panel", None)
+        sheets = getattr(panel, "sheets", None)
+        if sheets is not None and comp is not None:
+            sheets.touch_picture(comp)
 
     def sheet_thumbnail(self, comp, w_px: int, h_px: int):
         """``comp`` as a ``w_px``×``h_px`` picture, painted from what this
@@ -9384,6 +9539,8 @@ class ComposerWindow(QMainWindow):
             self.canvas.addItem(NorteItem(self, n))
         for le in self.comp.leyendas:
             self.canvas.addItem(LeyendaItem(self, le))
+        for ix in getattr(self.comp, "indices", []) or []:
+            self.canvas.addItem(IndiceCanvasItem(self, ix))
         for fo in self.comp.shapes:
             self.canvas.addItem(FormaCanvasItem(self, fo))
         for ct in self.comp.cotas:
@@ -9642,6 +9799,22 @@ class ComposerWindow(QMainWindow):
                 self._sync_bg_rows("ley", item.model)
                 self._ley_reload(item.model)
                 self.props.setCurrentIndex(7)
+            elif isinstance(item, IndiceCanvasItem):
+                ix = item.model
+                self.ix_title.setText(ix.title)
+                self.ix_show_title.setChecked(bool(ix.show_title))
+                self.ix_size.setValue(float(ix.size_pt))
+                self.ix_leader.setCurrentIndex(
+                    max(0, self.ix_leader.findData(ix.leader)))
+                self.ix_numbers.setChecked(bool(ix.show_numbers))
+                self.ix_layout.setCurrentIndex(
+                    max(0, self.ix_layout.findData(ix.layout)))
+                self.ix_self.setChecked(bool(ix.include_self))
+                self.ix_border.setChecked(bool(ix.border))
+                self.ix_per_page.setValue(int(ix.per_page))
+                self.ix_page.setValue(int(ix.page))
+                self._sync_indice_info(item)
+                self.props.setCurrentIndex(16)
             elif isinstance(item, FormaCanvasItem):
                 fm = item.model
                 fillable = fm.kind in ("rect", "elipse", "poligono")
@@ -9993,13 +10166,14 @@ class ComposerWindow(QMainWindow):
 
     def add_scale_label(self, frame) -> TextoItem:
         """A movable scale label for *frame*: a bound text block under its
-        bottom-right corner, "ESC. {escala}", bold."""
+        bottom-right corner, «SCALE {escala}» in the interface's language,
+        bold."""
         import uuid
         if not frame.uid:
             frame.uid = uuid.uuid4().hex
         item = TextoItem(x_mm=frame.x_mm + frame.w_mm - 40.0,
                          y_mm=frame.y_mm + frame.h_mm + 1.5, w_mm=40.0,
-                         text="ESC. {escala}", size_pt=10.0, bold=True,
+                         text=tr("SCALE {escala}"), size_pt=10.0, bold=True,
                          align="right", frame_uid=frame.uid, follow=True)
         item.z = self._next_z()
         self._pending_sel = item
@@ -11775,10 +11949,10 @@ class ComposerWindow(QMainWindow):
             pw, ph = self.comp.page_size_mm()      # keep it docked
             m = self.comp.margin_mm
             c.x_mm, c.y_mm = pw - m - c.w_mm, ph - m - c.h_mm
-        c.set_field("FECHA", datetime.date.today().strftime("%d/%m/%Y"))
+        c.set_field("fecha", datetime.date.today().strftime("%d/%m/%Y"))
         if self.comp.frames:
             f = self.comp.frames[0]
-            c.set_field("ESCALA", f"1:{f.scale_n:g}")
+            c.set_field("escala", f"1:{f.scale_n:g}")
         c.z = self._next_z()
         self.history.execute(AddItemCommand(self.comp, c))
 
@@ -12775,6 +12949,56 @@ class ComposerWindow(QMainWindow):
         entries[row], entries[to] = entries[to], entries[row]
         self._ley_set_entries(item, entries, to)
 
+    def _on_indice_props(self, *_a) -> None:
+        item = self._selected_item()
+        if self._updating or not isinstance(item, IndiceCanvasItem):
+            return
+        self._panel_edit(item, {
+            "title": self.ix_title.text(),
+            "show_title": self.ix_show_title.isChecked(),
+            "size_pt": self.ix_size.value(),
+            "leader": self.ix_leader.currentData() or "dots",
+            "show_numbers": self.ix_numbers.isChecked(),
+            "layout": self.ix_layout.currentData() or "flat",
+            "include_self": self.ix_self.isChecked(),
+            "border": self.ix_border.isChecked(),
+            "per_page": int(self.ix_per_page.value()),
+            "page": int(self.ix_page.value())})
+        self._sync_indice_info(item)
+
+    def _sync_indice_info(self, item) -> None:
+        """The page spin only means something on a split index; the line
+        under it says how many rows and pages the index has."""
+        from core.composition import toc_entries, toc_page_count
+        ix = item.model
+        n = len(toc_entries(self._scene().compositions, ix, self.comp,
+                            getattr(self._scene(), "sheet_folders", None)))
+        pages = toc_page_count(n, ix.per_page)
+        self.ix_page.setEnabled(ix.per_page > 0)
+        self.ix_info.setText(tr("{n} entries on {pages} page(s)").format(
+            n=n, pages=pages))
+
+    def toc_rows(self, ix: IndiceLaminas, comp=None) -> tuple:
+        """``(rows, page, pages)`` of sheet index *ix* sitting on *comp*
+        (the open sheet by default), read from the document now."""
+        from core.composition import toc_entries, toc_slice
+        comps = getattr(self._scene(), "compositions", None) or []
+        here = comp if comp is not None else self.comp
+        return toc_slice(toc_entries(
+            comps, ix, here, getattr(self._scene(), "sheet_folders", None)),
+            ix)
+
+    def _refresh_toc_items(self) -> None:
+        """A sheet added, renamed, moved or deleted: every index on the
+        canvas re-reads the sheets (its height may change too)."""
+        canvas = getattr(self, "canvas", None)
+        if canvas is None:
+            return
+        for it in canvas.items():
+            if isinstance(it, IndiceCanvasItem):
+                it.prepareGeometryChange()
+                it.update()
+
     def _on_forma_props(self, *_a) -> None:
         item = self._selected_item()
         if self._updating or not isinstance(item, FormaCanvasItem):
@@ -13160,6 +13384,8 @@ class ComposerWindow(QMainWindow):
             return tr("Terrain profile") + (": " + model.title if model.title else "")
         if isinstance(model, Leyenda):
             return model.title or tr("Legend")
+        if isinstance(model, IndiceLaminas):
+            return model.title or tr("Sheet index")
         if isinstance(model, FormaItem):
             return {"linea": tr("Line"), "flecha": tr("Arrow"),
                     "terreno": tr("Ground line"),
@@ -14777,17 +15003,26 @@ class ComposerWindow(QMainWindow):
     def _on_renumber(self) -> None:
         for i, comp in enumerate(self._scene().compositions):
             if comp.cajetin is not None:
-                comp.cajetin.set_field("LÁMINA", f"L-{i + 1:02d}")
+                comp.cajetin.set_field("lamina", f"L-{i + 1:02d}")
         self._mark_dirty()
         self._rebuild_canvas()
 
     def _on_export_all(self) -> None:
+        """Export all: the sheets marked for printing in the sheet
+        explorer, in its order — the same set its Export all and Print all
+        take."""
+        from core.sheet_folders import printed_sheets
+        sheets = printed_sheets(self._scene())
+        if not sheets:
+            self.statusBar().showMessage(
+                tr("No sheet is marked for printing"), 4000)
+            return
         path, _ = file_dialogs.getSaveFileName(
-            self, tr("Export all sheets (PDF)…"), "laminas.pdf",
+            self, tr("Export all sheets (PDF)…"), self.default_pdf_path(),
             "PDF (*.pdf)")
         if not path:
             return
-        troubled = self.export_all_pdf(path)
+        troubled = self.export_all_pdf(path, sheets)
         if troubled:
             self.statusBar().showMessage(
                 tr("Exported {name} — but a view would not render on {sheets}",
@@ -14967,10 +15202,20 @@ class ComposerWindow(QMainWindow):
         return n
 
     # ---- export --------------------------------------------------------------
+    def default_pdf_path(self) -> str:
+        """Where a PDF export is offered to go: named after the project,
+        beside it («Casa.igz» → «Casa.pdf»); ``sheets.pdf`` for a document
+        never saved."""
+        current = getattr(self._window, "_current_path", None)
+        if current:
+            from pathlib import Path
+            return str(Path(current).with_suffix(".pdf"))
+        return "sheets.pdf"
+
     def _on_export_pdf(self) -> None:
         self.refresh_all_frames()
         path, _ = file_dialogs.getSaveFileName(
-            self, tr("Export PDF…"), "lamina.pdf", "PDF (*.pdf)")
+            self, tr("Export PDF…"), self.default_pdf_path(), "PDF (*.pdf)")
         if not path:
             return
         self.export_pdf(path)
@@ -15122,6 +15367,12 @@ class ComposerWindow(QMainWindow):
             comps = [c for c in comps if id(c) in wanted]
         writer = QPdfWriter(path)
         writer.setResolution(RENDER_DPI)
+        return self._paint_atlas(writer, comps, RENDER_DPI)
+
+    def _paint_atlas(self, device, comps, dpi) -> list:
+        """Paint ``comps`` on ``device`` (a PDF writer or a printer), one
+        page each at its own paper size and orientation. Returns the names
+        of the sheets where a frame would not render."""
         painter = None
         troubled: list = []
         try:
@@ -15139,21 +15390,61 @@ class ComposerWindow(QMainWindow):
                             troubled.append(comp.name)
                     finally:
                         self.comp = saved
-                writer.setPageSize(QPageSize(getattr(QPageSize, comp.paper)))
-                writer.setPageOrientation(
+                device.setPageSize(QPageSize(getattr(QPageSize, comp.paper)))
+                device.setPageOrientation(
                     QPageLayout.Landscape if comp.landscape
                     else QPageLayout.Portrait)
                 if painter is None:
-                    painter = QPainter(writer)
+                    painter = QPainter(device)
                 else:
-                    writer.newPage()
+                    device.newPage()
                 painter.resetTransform()
-                painter.scale(RENDER_DPI / 25.4, RENDER_DPI / 25.4)
+                painter.scale(dpi / 25.4, dpi / 25.4)
                 self._paint_sheet(painter, comp)
         finally:
             if painter is not None:
                 painter.end()
         return troubled
+
+    def print_sheets(self, sheets, parent=None, printer=None) -> bool:
+        """Print ``sheets`` — the printer dialog once, then one page per
+        sheet at its own paper size and orientation, as the PDF atlas lays
+        them out. ``printer`` skips the dialog (tests print to a PDF file).
+        Without Qt's print module it says so and points at Export all,
+        which gives the same pages. True if anything went to print."""
+        sheets = [c for c in sheets if c in self._scene().compositions]
+        if not sheets:
+            return False
+        mod = self.print_support()
+        if mod is None and printer is None:
+            QMessageBox.information(
+                parent or self, tr("Print all…"),
+                tr("This build of IngeTrazo has no printing support "
+                   "(Qt's print module is missing), so the sheets cannot "
+                   "be printed from here.\n\nExport all (PDF) gives you "
+                   "the same sheets, each at its exact paper size, ready "
+                   "to print."))
+            return False
+        if printer is None:
+            from PySide6.QtGui import QPageLayout, QPageSize
+            printer = mod.QPrinter(mod.QPrinter.HighResolution)
+            printer.setFullPage(True)     # the sheets carry their margins
+            first = sheets[0]
+            printer.setPageSize(QPageSize(getattr(QPageSize, first.paper)))
+            printer.setPageOrientation(
+                QPageLayout.Landscape if first.landscape
+                else QPageLayout.Portrait)
+            dlg = mod.QPrintDialog(printer, parent or self)
+            dlg.setWindowTitle(tr("Print all…"))
+            if not dlg.exec():                   # cancelled
+                return False
+        dpi = float(printer.resolution() or RENDER_DPI)
+        troubled = self._paint_atlas(printer, sheets, dpi)
+        if troubled:
+            self.statusBar().showMessage(
+                tr("Printed — but a view would not render on {sheets}",
+                   sheets=", ".join(troubled)), 10000)
+        return True
 
     def _set_field_context(self, comp) -> None:
         comps = list(getattr(self._scene(), "compositions", []) or [])
@@ -15188,6 +15479,8 @@ class ComposerWindow(QMainWindow):
                 paint_norte_mm(painter, m)
             elif isinstance(m, Leyenda):
                 paint_leyenda_mm(painter, m)
+            elif isinstance(m, IndiceLaminas):
+                paint_indice_mm(painter, m, *self.toc_rows(m, comp))
             elif isinstance(m, FormaItem):
                 paint_forma_mm(painter, m)
             elif isinstance(m, CotaItem):
@@ -15293,8 +15586,7 @@ class ComposerWindow(QMainWindow):
     #: left side starts empty and folded, and opens when a tab is dragged
     #: there.
     _DEFAULT_SIDES = {"left": [],
-                      "right": ["layout", "views", "items", "props",
-                                "sheets"]}
+                      "right": ["layout", "views", "items", "props"]}
 
     def _side_tabs(self, side: str):
         return self._left_tabs if side == "left" else self._tabs

@@ -27,10 +27,11 @@ The rules every tool keeps:
 """
 from __future__ import annotations
 
-import contextlib
-import os
 import tempfile
 from pathlib import Path
+
+# ``quiet`` lives with the window-less bootstrap since PR #1494: one copy.
+from views.headless import quiet  # noqa: F401 — re-exported
 
 #: The standard views ``set_camera`` takes (``OrbitCamera.set_view``).
 STANDARD_VIEWS = ("top", "bottom", "front", "back", "left", "right", "iso")
@@ -42,8 +43,7 @@ UNITS = {"m": 1.0, "cm": 0.01, "mm": 0.001, "in": 0.0254, "ft": 0.3048}
 IMPORT_SUFFIXES = (".igz", ".dae", ".glb", ".gltf", ".skp", ".obj", ".stl",
                    ".dxf", ".dwg")
 #: What ``export_file`` writes, by suffix.
-EXPORT_SUFFIXES = (".ifc", ".glb", ".dae", ".stl", ".obj", ".dxf", ".pdf",
-                   ".png", ".jpg")
+EXPORT_SUFFIXES = (".ifc", ".glb", ".dae", ".stl", ".obj", ".dxf")
 
 NO_GL = ("no OpenGL context: this IngeTrazo has nothing to render with "
          "(a server started on the offscreen platform, or a machine without "
@@ -84,44 +84,6 @@ def _writable(path: Path) -> Path:
     if not path.parent.is_dir():
         raise FileNotFoundError(f"the folder does not exist: {path.parent}")
     return path
-
-
-@contextlib.contextmanager
-def quiet(window):
-    """Opening and importing without anyone at the screen: no progress bar
-    (one the bridge cancelled would abort the open — the bar's close is the
-    user's close, #1269) and no «recover the auto-saved copy?» question,
-    whose cancel deletes that copy. The file on disk is what is opened,
-    and the auto-saved copy stays for the user — what ``ingetrazo -p``
-    does too."""
-    from PySide6.QtWidgets import QProgressDialog
-    from core import autosave
-
-    def silent(title):
-        # A real dialog (the DWG import sets its range and its Cancel), but
-        # one that never shows itself: its minimum duration never passes.
-        dlg = QProgressDialog(title, "", 0, 100, window)
-        dlg.setMinimumDuration(2 ** 31 - 1)
-        dlg.setAutoClose(False)
-        dlg.reset()
-        return dlg, lambda frac, text: None
-
-    had = "_import_progress" in window.__dict__
-    before = window.__dict__.get("_import_progress")
-    pending = autosave.pending
-    window._import_progress = silent
-    # Only a FILE's recovery question: a new tab still asks which
-    # untitled numbers are taken, or it would write over their slots.
-    autosave.pending = (lambda path, untitled=1:
-                        pending(path, untitled) if path is None else None)
-    try:
-        yield
-    finally:
-        autosave.pending = pending
-        if had:
-            window._import_progress = before
-        else:
-            window.__dict__.pop("_import_progress", None)
 
 
 def _vec(p) -> list:
@@ -287,13 +249,18 @@ class BridgeTools:
         win = self._window()
         scene = self._viewport.scene
         info = self._tool_query_model()
+        # What is open and what is allowed, under document_info's keys.
+        doc = (self._tool_document_info()
+               if hasattr(self, "_tool_document_info") else {})
+        info.update({k: v for k, v in doc.items() if k not in ("sheets",
+                                                                "views")})
         path = getattr(win, "_current_path", None)
         shown = getattr(getattr(getattr(win, "tray", None), "scenes", None),
                         "shown", None)
         georef = getattr(scene, "georef", None)
         info.update({
-            "file": str(path) if path else None,
-            "unsaved_changes": bool(win._is_dirty()),
+            "path": str(path) if path else None,
+            "modified": bool(win._is_dirty()),
             "scenes": [v.name for v in scene.saved_views],
             "scene_shown": getattr(shown, "name", None),
             "sheets": [{"index": i + 1, "name": c.name,
@@ -373,37 +340,14 @@ class BridgeTools:
                 "fov": float(cam.fov_deg)}
 
     def _tool_screenshot(self, width: int = 1024, height: int = 768,
-                         scene: str | None = None,
                          path: str | None = None) -> dict:
-        """The view as a PNG — or, with ``scene``, that scene as it would
-        show, the user's view put back right after (camera, layers, style,
-        hidden objects; the document as clean as it was)."""
+        """The view as a PNG (or JPG, by ``path``'s suffix). A saved scene
+        is ``export_view`` (PR #1494) — one tool for that, not two."""
         width = max(64, min(int(width), 4096))
         height = max(64, min(int(height), 4096))
         out = (_writable(absolute(path)) if path
                else out_dir() / "viewport.png")
-        if scene is None:
-            image = self._render_view(width, height)
-        else:
-            from core.saved_views import SavedView
-            view = self._scene_view(scene)
-            if not self._has_gl():
-                raise RuntimeError(NO_GL)
-            win = self._window()
-            sc = self._viewport.scene
-            cam = self._viewport.camera
-            clean = not win._is_dirty()
-            back = SavedView.capture("", sc, cam)
-            try:
-                view.apply(sc, cam)
-                sc.version += 1
-                image = self._render_view(width, height)
-            finally:
-                back.apply(sc, cam)
-                sc.version += 1
-                if clean:
-                    win._saved_version = sc.version
-                self._viewport.notify_scene_changed()
+        image = self._render_view(width, height)
         if not image.save(str(out)):
             raise OSError(f"could not write {out}")
         return {"path": str(out), "width": image.width(),
@@ -621,71 +565,13 @@ class BridgeTools:
                 "model": self._tool_query_model()}
 
     # ---- Files ------------------------------------------------------------------
-    def _tool_open_file(self, path: str,
-                        discard_changes: bool = False) -> dict:
-        """Open a document in place of the one in front. Unsaved changes
-        there are never dropped in silence: an error, unless
-        ``discard_changes=true`` — no «save changes?» box nobody would
-        answer."""
-        src = absolute(path, must_exist=True)
-        win = self._window()
-        suffix = src.suffix.lower()
-        known = (".igz", ".dae", ".skp", ".dxf", ".dwg",
-                 *getattr(win, "file_openers", {}))
-        if suffix not in known:
-            raise ValueError(f"IngeTrazo does not open {suffix!r} files; "
-                             "one of " + ", ".join(known)
-                             + " (import_file takes more)")
-        if win._is_dirty() and not discard_changes:
-            current = getattr(win, "_current_path", None)
-            raise RuntimeError(
-                "the document in front has unsaved changes ("
-                + (current.name if current else "untitled")
-                + "): save it with save_file first, or pass "
-                "discard_changes=true to drop them")
-        previous = win._doc
-        mark = self._mark()
-        win.viewport.end_group_edit()
-        with quiet(win):
-            ok = win.open_path(src)
-        if not ok:
-            raise self._failed(f"could not open {src}", mark)
-        if previous is not win._doc and previous in win._documents:
-            # In place of the one in front, not beside it: an agent that
-            # opens ten files must not leave ten tabs behind.
-            win.close_document(previous, ask=False)
-        return self._tool_get_scene_info()
-
-    def _tool_save_file(self, path: str | None = None) -> dict:
-        """File ▸ Save — or, with ``path``, Save As (``.igz``)."""
-        win = self._window()
-        if path is None:
-            target = getattr(win, "_current_path", None)
-            if target is None:
-                raise ValueError("the document has no file yet: give path "
-                                 "(an absolute .igz path) to save it as")
-        else:
-            target = _writable(absolute(path))
-            if target.suffix.lower() != ".igz":
-                raise ValueError("a document is saved as .igz; export_file "
-                                 "writes the other formats")
-        mark = self._mark()
-        win._end_group_edits()
-        win._do_save(Path(target))
-        if win._is_dirty() or not Path(target).is_file():
-            raise self._failed(f"could not save {target}", mark)
-        reply = {"saved": str(target)}
-        warned = self._cancelled(mark)
-        if warned:
-            reply["warnings"] = warned
-        return reply
-
-    def _tool_export_file(self, path: str, sheet=None, unit: str = "mm",
-                          selection_only: bool = False,
-                          width: int = 1920) -> dict:
+    def _tool_export_file(self, path: str, unit: str = "mm",
+                          selection_only: bool = False) -> dict:
         """File ▸ Export, by the suffix: IFC (the BIM-tagged objects),
-        glTF binary, COLLADA, STL, OBJ, DXF (the view's lines), PDF (one
-        sheet, or all of them) and PNG/JPG (the view)."""
+        glTF binary, COLLADA, STL, OBJ and DXF (the view's lines). The
+        sheets are ``export_pdf`` and the pictures ``screenshot`` /
+        ``export_view`` / ``render_sheet`` (PR #1494's names): one tool for
+        each job."""
         from formats import dae as dae_format
         from formats import gltf as gltf_format
         from formats import ifc as ifc_format
@@ -700,6 +586,10 @@ class BridgeTools:
         reply: dict = {"exported": str(out)}
         if suffix == ".gltf":
             raise ValueError("glTF is written as one binary file: use .glb")
+        if suffix in (".pdf", ".png", ".jpg"):
+            raise ValueError(f"{suffix} is not a model format: export_pdf "
+                             "writes the sheets, screenshot the view, "
+                             "export_view a saved scene")
         if suffix not in EXPORT_SUFFIXES:
             raise ValueError(f"unknown export format {suffix!r}; one of "
                              + ", ".join(EXPORT_SUFFIXES))
@@ -738,30 +628,6 @@ class BridgeTools:
                                    tr("Export DXF failed"))
             ok = (out.is_file() and not self._cancelled(mark)
                   and out.stat().st_mtime_ns != before)
-        elif suffix == ".pdf":
-            if sheet is not None:
-                comp = self._sheet(sheet)
-                _, blank = self._composer_on(
-                    comp, lambda c: c.export_pdf(str(out)))
-                reply["sheets"] = [comp.name]
-            else:
-                comps = list(scene.compositions)
-                if not comps:
-                    raise ValueError("the document has no sheets")
-                composer = win._ensure_composer()
-                if not self._has_gl() and any(
-                        not (f.style == "vectorial"
-                             and not composer.frame_is_perspective(f))
-                        for c in comps for f in c.frames):
-                    raise RuntimeError(NO_GL)
-                blank = composer.export_all_pdf(str(out))
-                reply["sheets"] = [c.name for c in comps]
-            if blank:
-                reply["views_not_rendered"] = blank
-            ok = out.is_file()
-        else:                                   # .png / .jpg: the view
-            image = self._render_view(max(64, min(int(width), 8192)), None)
-            ok = image.save(str(out))
         if not ok:
             raise self._failed(f"could not export {out}", mark)
         return reply

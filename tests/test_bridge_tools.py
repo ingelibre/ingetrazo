@@ -148,6 +148,7 @@ def env():
     scene.version += 1
     win._saved_version = scene.version
     bridge = _Bridge(vp)
+    bridge.allow_save = True          # save_document is gated (PR #1494)
     bridge.start(0)
     try:
         yield win, vp, bridge
@@ -161,8 +162,13 @@ def env():
 
 NAMED = ("get_scene_info", "get_object_info", "list_layers",
          "set_layer_visibility", "list_scenes", "show_scene", "set_camera",
-         "select", "screenshot", "render_sheet", "open_file", "save_file",
-         "import_file", "export_file", "list_materials", "apply_material")
+         "select", "screenshot", "export_view", "render_sheet",
+         "export_pdf", "document_info", "open_document", "save_document",
+         "shutdown", "import_file", "export_file", "list_materials",
+         "apply_material")
+#: One tool per job (PR #1494 reconciled with n63-mcp, 19-11): the names
+#: the PR gave to the same job are the ones left.
+RETIRED = ("open_file", "save_file")
 
 
 def test_tools_list_gives_every_tool_with_its_schema_and_a_bridge_order():
@@ -172,6 +178,10 @@ def test_tools_list_gives_every_tool_with_its_schema_and_a_bridge_order():
     tools = {t["name"]: t for t in reply["result"]["tools"]}
     for name in NAMED + ("run_python", "query_model", "undo", "redo"):
         assert name in tools, name
+    for name in RETIRED:
+        assert name not in tools, name
+    assert len(tools) == len({t["name"] for t in reply["result"]["tools"]})
+    assert "scene" not in tools["screenshot"]["inputSchema"]["properties"]
     for name, tool in tools.items():
         assert callable(getattr(_Bridge, f"_tool_{name}", None)), name
         schema = tool["inputSchema"]
@@ -185,8 +195,9 @@ def test_tools_list_gives_every_tool_with_its_schema_and_a_bridge_order():
         params = inspect.signature(getattr(_Bridge, f"_tool_{name}")).parameters
         for prop in tool["inputSchema"].get("properties", {}):
             assert prop in params, (name, prop)
-    assert tools["open_file"]["inputSchema"]["required"] == ["path"]
-    assert "discard_changes" in tools["open_file"]["inputSchema"]["properties"]
+    assert tools["open_document"]["inputSchema"]["required"] == ["path"]
+    assert "discard_changes" in \
+        tools["open_document"]["inputSchema"]["properties"]
 
 
 # ---- Looking -------------------------------------------------------------------
@@ -199,7 +210,9 @@ def test_the_agent_reads_the_document_without_code(env):
     assert [s["number"] for s in info["sheets"]] == ["L-01", "L-02"]
     assert {"name": "Muros", "visible": True, "locked": False,
             "folder": None} in info["layers"]
-    assert info["unsaved_changes"] is False and info["file"] is None
+    assert info["modified"] is False and info["path"] is None
+    assert info["saving_allowed"] is True             # the fixture's
+    assert info["shutdown_allowed"] is False
     assert "georef" in info and "can_render" in info
 
     caja = next(g for g in vp.scene.groups if g.name == "Caja")
@@ -308,8 +321,8 @@ def test_without_opengl_the_renders_say_why_and_the_rest_works(env,
     win, vp, bridge = env
     monkeypatch.setattr(vp, "_gl", None)
     assert "no OpenGL context" in _err(bridge, "screenshot")
-    assert "no OpenGL context" in _err(bridge, "screenshot",
-                                       {"scene": "Planta"})
+    assert "no OpenGL context" in _err(bridge, "export_view",
+                                       {"view": "Planta"})
     assert "no OpenGL context" in _err(bridge, "render_sheet",
                                        {"sheet": "L-02"})     # a GL view
     assert _ok(bridge, "get_scene_info")["can_render"] is False
@@ -319,7 +332,7 @@ def test_without_opengl_the_renders_say_why_and_the_rest_works(env,
 
 def test_a_screenshot_of_a_scene_leaves_the_users_view_as_it_was(
         env, monkeypatch, tmp_path):
-    """``screenshot`` with ``scene``: the picture is the scene's (its
+    """``export_view``: the picture is the scene's (its
     layers, its camera), and the user gets back the view he had — and a
     clean document stays clean."""
     from PySide6.QtGui import QImage
@@ -339,15 +352,21 @@ def test_a_screenshot_of_a_scene_leaves_the_users_view_as_it_was(
     vp.camera.perspective = True
     yaw = vp.camera.yaw
     out = tmp_path / "planta.png"
-    got = _ok(bridge, "screenshot", {"scene": "Planta", "width": 200,
-                                     "height": 100, "path": str(out)})
+    got = _ok(bridge, "export_view", {"view": "Planta", "width": 200,
+                                      "height": 100, "path": str(out)})
     assert out.is_file() and (got["width"], got["height"]) == (200, 100)
     assert seen == {"muros": False, "perspective": False}   # the scene's
     assert vp.scene.layer("Muros").visible is True          # the user's
     assert vp.camera.perspective is True and vp.camera.yaw == yaw
     assert not win._is_dirty()
-    assert "no scene called 'Alzado'" in _err(bridge, "screenshot",
-                                              {"scene": "Alzado"})
+    assert "no scene called 'Alzado'" in _err(bridge, "export_view",
+                                              {"view": "Alzado"})
+    # Without a path it goes to the bridge's folder, and the client is
+    # SHOWN the picture.
+    result = _mcp_call(bridge, "export_view", {"view": "Planta",
+                                               "width": 120, "height": 80})
+    assert result["content"][0]["type"] == "image"
+    assert not win._is_dirty()
 
 
 def test_a_sheet_of_lines_renders_without_opengl(env, monkeypatch, tmp_path):
@@ -388,13 +407,13 @@ def test_a_sheet_of_lines_renders_without_opengl(env, monkeypatch, tmp_path):
 
 def test_saving_and_opening_never_lose_unsaved_work(env, tmp_path):
     win, vp, bridge = env
-    assert "no file yet" in _err(bridge, "save_file")
-    assert "must be absolute" in _err(bridge, "save_file",
+    assert "never been saved" in _err(bridge, "save_document")
+    assert "must be absolute" in _err(bridge, "save_document",
                                       {"path": "casa.igz"})
-    assert "saved as .igz" in _err(bridge, "save_file",
+    assert "saved as .igz" in _err(bridge, "save_document",
                                    {"path": str(tmp_path / "casa.obj")})
     first = tmp_path / "primera.igz"
-    assert _ok(bridge, "save_file", {"path": str(first)})["saved"] == \
+    assert _ok(bridge, "save_document", {"path": str(first)})["path"] == \
         str(first)
     assert first.is_file() and not win._is_dirty()
 
@@ -404,26 +423,26 @@ def test_saving_and_opening_never_lose_unsaved_work(env, tmp_path):
     assert win._is_dirty()
     second = tmp_path / "segunda.igz"
     second.write_bytes(first.read_bytes())
-    msg = _err(bridge, "open_file", {"path": str(second)})
+    msg = _err(bridge, "open_document", {"path": str(second)})
     assert "unsaved changes" in msg and "discard_changes" in msg
     assert win._is_dirty() and win._current_path == first   # untouched
 
-    assert "no such file" in _err(bridge, "open_file",
+    assert "no such file" in _err(bridge, "open_document",
                                   {"path": str(tmp_path / "nada.igz")})
     bad = tmp_path / "nota.txt"
     bad.write_text("x")
-    assert "does not open '.txt'" in _err(bridge, "open_file",
+    assert "does not open '.txt'" in _err(bridge, "open_document",
                                           {"path": str(bad),
                                            "discard_changes": True})
     tabs = len(win._documents)
-    info = _ok(bridge, "open_file", {"path": str(second),
-                                     "discard_changes": True})
-    assert info["file"] == str(second) and info["unsaved_changes"] is False
+    info = _ok(bridge, "open_document", {"path": str(second),
+                                         "discard_changes": True})
+    assert info["path"] == str(second) and info["modified"] is False
     assert len(win._documents) == tabs          # in place, not a new tab
     assert win._current_path == second
 
     # A save that fails says so (a folder that is not there).
-    assert "folder does not exist" in _err(bridge, "save_file", {
+    assert "folder does not exist" in _err(bridge, "save_document", {
         "path": str(tmp_path / "no" / "x.igz")})
 
 
@@ -446,7 +465,7 @@ def test_an_import_is_one_undo_step(env, tmp_path):
     assert len(vp.history.undo_stack) == depth
 
     igz = tmp_path / "pieza.igz"
-    _ok(bridge, "save_file", {"path": str(igz)})
+    _ok(bridge, "save_document", {"path": str(igz)})
     got = _ok(bridge, "import_file", {"path": str(igz)})
     assert got["undo_steps"] == 1 and len(vp.scene.groups) == groups + 1
     assert _ok(bridge, "undo")["ok"]
@@ -486,9 +505,18 @@ def test_export_writes_each_format_by_its_extension(env, tmp_path):
     assert got["elements"] == 1
     assert "IFCWALL" in (tmp_path / "m.ifc").read_text().upper()
     pdf = tmp_path / "l01.pdf"
-    got = _ok(bridge, "export_file", {"path": str(pdf), "sheet": "L-01"})
-    assert got["sheets"] == ["Planta general"]
+    got = _ok(bridge, "export_pdf", {"path": str(pdf), "sheets": ["L-01"]})
+    assert got["sheet_names"] == ["Planta general"] and got["sheets"] == 1
     assert pdf.read_bytes().startswith(b"%PDF")
+    # The sheet by its place, as the tabs count; an unknown one is named.
+    assert _ok(bridge, "export_pdf", {"path": str(pdf),
+                                      "sheets": [1]})["sheets"] == 1
+    assert "no sheet 'L-09'" in _err(bridge, "export_pdf",
+                                     {"path": str(pdf), "sheets": ["L-09"]})
+    # One tool per job: the sheets and the pictures are not export_file's.
+    for suffix in (".pdf", ".png", ".jpg"):
+        assert "not a model format" in _err(
+            bridge, "export_file", {"path": str(tmp_path / f"m{suffix}")})
     assert "unknown export format '.xyz'" in _err(
         bridge, "export_file", {"path": str(tmp_path / "m.xyz")})
     assert "use .glb" in _err(bridge, "export_file",
@@ -503,7 +531,7 @@ def test_a_web_page_cannot_reach_the_named_tools_either(env, tmp_path):
     POST is cut at its first line, its body never read."""
     win, vp, bridge = env
     target = tmp_path / "robado.igz"
-    body = json.dumps({"id": 1, "tool": "save_file",
+    body = json.dumps({"id": 1, "tool": "save_document",
                        "args": {"path": str(target)}})
     raw = (f"POST / HTTP/1.1\r\nHost: 127.0.0.1\r\nContent-Type: text/plain"
            f"\r\nContent-Length: {len(body)}\r\n\r\n{body}\n").encode()
@@ -559,7 +587,7 @@ def test_the_server_mode_answers_and_ends_on_sigterm(tmp_path):
             if not line:
                 break
             seen.append(line)
-            if "server ready on 127.0.0.1:" in line:
+            if "AI bridge on 127.0.0.1:" in line:
                 port = int(line.split("127.0.0.1:")[1].split()[0])
         assert port, "".join(seen)
         assert "pequeno.igz" in seen[-1]
@@ -571,7 +599,7 @@ def test_the_server_mode_answers_and_ends_on_sigterm(tmp_path):
             reply = _rpc(s, "get_scene_info")
             assert reply["ok"], reply
             assert reply["result"]["group_names"] == ["Mesa"]
-            assert reply["result"]["file"] == str(doc)
+            assert reply["result"]["path"] == str(doc)
             png = tmp_path / "vista.png"
             shot = _rpc(s, "screenshot", {"width": 320, "height": 200,
                                           "path": str(png)})
@@ -581,8 +609,10 @@ def test_the_server_mode_answers_and_ends_on_sigterm(tmp_path):
                 assert shot["ok"] is False and "no OpenGL" in shot["error"]
             assert _rpc(s, "list_layers")["ok"]       # still alive
         proc.send_signal(signal.SIGTERM)
-        assert proc.wait(timeout=30) == 0
-        assert "server stopped" in proc.stderr.read()
+        # ``--server`` is ``--headless --ai-bridge``: a signal is the
+        # «ended any other way» code, 5; only the agent's shutdown is 0.
+        assert proc.wait(timeout=30) == 5
+        assert "ended (signal" in proc.stderr.read()
     finally:
         if proc.poll() is None:
             proc.kill()

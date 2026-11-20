@@ -37,5 +37,11 @@
  "Strong": "Strong",
  "Shadow edges that soften away from what casts them, as in daylight. They cost the graphics card more while the sun casts shadows.": "Shadow edges that soften away from what casts them, as in daylight. They cost the graphics card more while the sun casts shadows.",
  "Export materials CSV": "Export materials CSV",
- "Export materials CSV…": "Export materials CSV…"
+ "Export materials CSV…": "Export materials CSV…",
+ "Automatic (compact)": "Automatic (compact)",
+ "Plain JSON (for version control)": "Plain JSON (for version control)",
+ "Automatic packs textures and big models into a compact archive. Plain JSON always writes readable text, so Git and other version control can show what changed; its images go to a folder beside the document (Name.assets) that travels with it.": "Automatic packs textures and big models into a compact archive. Plain JSON always writes readable text, so Git and other version control can show what changed; its images go to a folder beside the document (Name.assets) that travels with it.",
+ "Save format": "Save format",
+ "Allow the agent to save the document": "Allow the agent to save the document",
+ "Lets the agent write the open document to disk with its save_document tool (File ▸ Save, in the format chosen in Preferences). Off: it can change the model, never the file.": "Lets the agent write the open document to disk with its save_document tool (File ▸ Save, in the format chosen in Preferences). Off: it can change the model, never the file."
 }

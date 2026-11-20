@@ -142,6 +142,9 @@ class Scene:
     scene_folder_parents: dict = field(default_factory=dict)
     # Sheet compositions (core.composition.Composicion) — the print layouts.
     compositions: list = field(default_factory=list)
+    # The folders the sheet explorer orders them in
+    # (core.sheet_folders.SheetFolder); each sheet names its own.
+    sheet_folders: list = field(default_factory=list)
     # Scales (1:N) typed by the user in the composer beyond the common
     # presets — kept with the document so every frame of the file offers
     # them again (Marco, 2026-09-02).
@@ -187,6 +190,10 @@ class Scene:
     #: .igz; the core never reads it. Changed through
     #: ``core.history.SetPluginDataCommand`` so each edit is undoable.
     plugin_data: dict = field(default_factory=dict)
+    #: The layout the document was opened from, when it was the plain-JSON
+    #: one (``"json"``, formats.igz): an Automatic save keeps it, so a
+    #: document kept in Git stays diffable. None for everything else.
+    saved_layout: str | None = None
     dimension_style: dict = field(default_factory=lambda: {
         "decimals": 2, "units": "m", "font_size": 9, "color": [45, 55, 75],
         "norma": "iso", "base_step_mm": 8.0, "ends": "arrow",
@@ -859,7 +866,7 @@ class Scene:
                 or self.tile_layer or self.geo_paths or self.terrain
                 or self.guides or self.geo_points or self.text_labels
                 or self.saved_views or self.compositions
-                or self.scene_folders
+                or self.scene_folders or self.sheet_folders
                 or self.image_planes or self.plugin_data
                 or self.kept_components or self.section_planes
                 or self.section_boxes
@@ -884,6 +891,7 @@ class Scene:
             self.scene_folders = []
             self.scene_folder_parents = {}
             self.compositions.clear()
+            self.sheet_folders.clear()
             self.custom_scales.clear()
             self.kept_components.clear()
             self.materials.clear()

@@ -33,8 +33,8 @@ def _close(comp, win):
 def test_three_tabs_and_a_pick_in_the_list_stays_in_the_list(monkeypatch):
     comp, win = _composer(monkeypatch)
     try:
-        # Layout, Views and sheets, Items, Properties, Sheets
-        assert comp._tabs.count() == 5
+        # Layout, Sheets, Items, Properties
+        assert comp._tabs.count() == 4
         items = comp._tabs.indexOf(comp._pages["items"])
         comp._tabs.setCurrentIndex(items)
         comp._refresh_items_list()
