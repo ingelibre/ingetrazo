@@ -4330,5 +4330,14 @@
  "hidden": "非表示",
  "their parent category": "親カテゴリ",
  "«Uncategorized»": "«未分類»",
- "«{name}» already exists here.": "«{name}» はここに既に存在します。"
+ "«{name}» already exists here.": "«{name}» はここに既に存在します。",
+ "Filter sheets and folders…": "シートとフォルダーを絞り込み…",
+ "Click a page to open its sheet; drag pages to order them. Ctrl+C and Ctrl+V copy and paste sheets, Ctrl+D duplicates, Delete deletes, F2 renames. Right-click for more.": "ページをクリックするとそのシートを開きます。ページをドラッグして並べ替えます。Ctrl+C と Ctrl+V でシートをコピー・貼り付け、Ctrl+D で複製、Delete で削除、F2 で名前変更。右クリックでその他。",
+ "Show the sheets as pages, or as a list with their folders and what Print all takes": "シートをページとして表示、またはフォルダーと「すべて印刷」の対象付きの一覧で表示",
+ "Pages": "ページ",
+ "Sheets copied: {n}": "コピーしたシート: {n}",
+ "New sheet, after the selected one": "選択したシートの後に新しいシート",
+ "Delete the selected sheets (Delete)": "選択したシートを削除（Delete）",
+ "A view on this sheet shows the scene «{name}», which the model no longer has: pick another view for it in the composer.": "このシートのビューは、モデルから削除されたシーン「{name}」を表示しています。シートレイアウトで別のビューを選んでください。",
+ "Delete these {n} sheets?": "これら {n} 枚のシートを削除しますか？"
 }

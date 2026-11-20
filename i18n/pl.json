@@ -4338,5 +4338,14 @@
  "hidden": "ukryta",
  "their parent category": "kategorii nadrzędnej",
  "«Uncategorized»": "«Bez kategorii»",
- "«{name}» already exists here.": "«{name}» już tu istnieje."
+ "«{name}» already exists here.": "«{name}» już tu istnieje.",
+ "Filter sheets and folders…": "Filtruj arkusze i foldery…",
+ "Click a page to open its sheet; drag pages to order them. Ctrl+C and Ctrl+V copy and paste sheets, Ctrl+D duplicates, Delete deletes, F2 renames. Right-click for more.": "Kliknij stronę, aby otworzyć jej arkusz; przeciągaj strony, aby zmienić kolejność. Ctrl+C i Ctrl+V kopiują i wklejają arkusze, Ctrl+D duplikuje, Delete usuwa, F2 zmienia nazwę. Prawy przycisk – więcej.",
+ "Show the sheets as pages, or as a list with their folders and what Print all takes": "Pokaż arkusze jako strony lub jako listę z folderami i tym, co bierze „Drukuj wszystko”",
+ "Pages": "Strony",
+ "Sheets copied: {n}": "Skopiowane arkusze: {n}",
+ "New sheet, after the selected one": "Nowy arkusz, po zaznaczonym",
+ "Delete the selected sheets (Delete)": "Usuń zaznaczone arkusze (Delete)",
+ "A view on this sheet shows the scene «{name}», which the model no longer has: pick another view for it in the composer.": "Widok na tym arkuszu pokazuje scenę „{name}”, której model już nie zawiera: wybierz dla niego inny widok w edytorze arkuszy.",
+ "Delete these {n} sheets?": "Usunąć te arkusze ({n})?"
 }

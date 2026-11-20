@@ -4333,5 +4333,14 @@
  "hidden": "ซ่อนอยู่",
  "their parent category": "หมวดหมู่หลัก",
  "«Uncategorized»": "«ไม่มีหมวดหมู่»",
- "«{name}» already exists here.": "มี «{name}» อยู่ที่นี่แล้ว"
+ "«{name}» already exists here.": "มี «{name}» อยู่ที่นี่แล้ว",
+ "Filter sheets and folders…": "กรองแผ่นแบบและโฟลเดอร์…",
+ "Click a page to open its sheet; drag pages to order them. Ctrl+C and Ctrl+V copy and paste sheets, Ctrl+D duplicates, Delete deletes, F2 renames. Right-click for more.": "คลิกหน้าเพื่อเปิดแผ่นแบบของหน้านั้น ลากหน้าเพื่อจัดลำดับ Ctrl+C และ Ctrl+V คัดลอกและวางแผ่นแบบ Ctrl+D ทำซ้ำ Delete ลบ F2 เปลี่ยนชื่อ คลิกขวาเพื่อดูเพิ่มเติม",
+ "Show the sheets as pages, or as a list with their folders and what Print all takes": "แสดงแผ่นแบบเป็นหน้า หรือเป็นรายการพร้อมโฟลเดอร์และสิ่งที่ «พิมพ์ทั้งหมด» จะพิมพ์",
+ "Pages": "หน้า",
+ "Sheets copied: {n}": "คัดลอกแผ่นแบบแล้ว: {n}",
+ "New sheet, after the selected one": "แผ่นแบบใหม่ ต่อจากแผ่นที่เลือก",
+ "Delete the selected sheets (Delete)": "ลบแผ่นแบบที่เลือก (Delete)",
+ "A view on this sheet shows the scene «{name}», which the model no longer has: pick another view for it in the composer.": "มุมมองบนแผ่นแบบนี้แสดงฉาก «{name}» ซึ่งไม่มีในโมเดลอีกต่อไป โปรดเลือกมุมมองอื่นในตัวจัดแผ่นแบบ",
+ "Delete these {n} sheets?": "ลบแผ่นแบบ {n} แผ่นนี้หรือไม่?"
 }

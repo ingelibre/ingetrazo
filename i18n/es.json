@@ -4329,5 +4329,14 @@
  "A category needs a name.": "Una categoría necesita un nombre.",
  "Categories nest at most {MAX_DEPTH} levels deep.": "Las categorías se anidan como máximo en {MAX_DEPTH} niveles.",
  "That category no longer exists.": "Esa categoría ya no existe.",
- "«{name}» already exists here.": "«{name}» ya existe aquí."
+ "«{name}» already exists here.": "«{name}» ya existe aquí.",
+ "Filter sheets and folders…": "Filtrar láminas y carpetas…",
+ "Click a page to open its sheet; drag pages to order them. Ctrl+C and Ctrl+V copy and paste sheets, Ctrl+D duplicates, Delete deletes, F2 renames. Right-click for more.": "Clic en una página para abrir su lámina; arrastra las páginas para ordenarlas. Ctrl+C y Ctrl+V copian y pegan láminas, Ctrl+D duplica, Supr elimina, F2 renombra. Clic derecho para más.",
+ "Show the sheets as pages, or as a list with their folders and what Print all takes": "Ver las láminas como páginas, o en lista con sus carpetas y lo que toma Imprimir todo",
+ "Pages": "Páginas",
+ "Sheets copied: {n}": "Láminas copiadas: {n}",
+ "New sheet, after the selected one": "Lámina nueva, tras la seleccionada",
+ "Delete the selected sheets (Delete)": "Eliminar las láminas seleccionadas (Supr)",
+ "A view on this sheet shows the scene «{name}», which the model no longer has: pick another view for it in the composer.": "Una vista de esta lámina muestra la escena «{name}», que el modelo ya no tiene: elige otra vista para ella en el compositor.",
+ "Delete these {n} sheets?": "¿Eliminar estas {n} láminas?"
 }

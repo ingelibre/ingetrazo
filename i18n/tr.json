@@ -4329,5 +4329,14 @@
   "Do you want to resize the active group?": "Etkin grubu yeniden boyutlandırmak istiyor musunuz?",
   "Resize": "Yeniden boyutlandır",
   "Type the new length and Enter to resize.": "Yeni uzunluğu yazıp Enter'a basarak boyutlandırın.",
-  "No 3D mouse connection. On Linux start spacenavd; on Windows and macOS install the 3Dconnexion driver. Connection is retried automatically.": "3B fare bağlantısı yok. Linux'ta spacenavd'yi başlatın; Windows ve macOS'ta 3Dconnexion sürücüsünü kurun. Bağlantı otomatik olarak yeniden denenir."
+  "No 3D mouse connection. On Linux start spacenavd; on Windows and macOS install the 3Dconnexion driver. Connection is retried automatically.": "3B fare bağlantısı yok. Linux'ta spacenavd'yi başlatın; Windows ve macOS'ta 3Dconnexion sürücüsünü kurun. Bağlantı otomatik olarak yeniden denenir.",
+  "Filter sheets and folders…": "Paftaları ve klasörleri süz…",
+  "Click a page to open its sheet; drag pages to order them. Ctrl+C and Ctrl+V copy and paste sheets, Ctrl+D duplicates, Delete deletes, F2 renames. Right-click for more.": "Paftasını açmak için bir sayfaya tıklayın; sıralamak için sayfaları sürükleyin. Ctrl+C ve Ctrl+V paftaları kopyalar ve yapıştırır, Ctrl+D çoğaltır, Delete siler, F2 yeniden adlandırır. Daha fazlası için sağ tıklayın.",
+  "Show the sheets as pages, or as a list with their folders and what Print all takes": "Paftaları sayfa olarak ya da klasörleri ve Tümünü yazdır'ın aldıklarıyla liste olarak göster",
+  "Pages": "Sayfalar",
+  "Sheets copied: {n}": "Kopyalanan pafta: {n}",
+  "New sheet, after the selected one": "Seçilenden sonra yeni pafta",
+  "Delete the selected sheets (Delete)": "Seçili paftaları sil (Delete)",
+  "A view on this sheet shows the scene «{name}», which the model no longer has: pick another view for it in the composer.": "Bu paftadaki bir görünüm, modelde artık bulunmayan «{name}» sahnesini gösteriyor: pafta düzenleyicisinden onun için başka bir görünüm seçin.",
+  "Delete these {n} sheets?": "Bu {n} pafta silinsin mi?"
 }

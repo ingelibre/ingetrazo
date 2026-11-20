@@ -4357,5 +4357,14 @@
  "hidden": "đã ẩn",
  "their parent category": "danh mục cha",
  "«Uncategorized»": "«Chưa phân loại»",
- "«{name}» already exists here.": "«{name}» đã có ở đây."
+ "«{name}» already exists here.": "«{name}» đã có ở đây.",
+ "Filter sheets and folders…": "Lọc trang bản vẽ và thư mục…",
+ "Click a page to open its sheet; drag pages to order them. Ctrl+C and Ctrl+V copy and paste sheets, Ctrl+D duplicates, Delete deletes, F2 renames. Right-click for more.": "Bấm vào một trang để mở bản vẽ của nó; kéo các trang để sắp xếp. Ctrl+C và Ctrl+V sao chép và dán bản vẽ, Ctrl+D nhân đôi, Delete xóa, F2 đổi tên. Bấm chuột phải để xem thêm.",
+ "Show the sheets as pages, or as a list with their folders and what Print all takes": "Xem các bản vẽ dạng trang, hoặc dạng danh sách kèm thư mục và những gì In tất cả sẽ in",
+ "Pages": "Trang",
+ "Sheets copied: {n}": "Đã sao chép bản vẽ: {n}",
+ "New sheet, after the selected one": "Trang bản vẽ mới, sau trang đã chọn",
+ "Delete the selected sheets (Delete)": "Xóa các trang bản vẽ đã chọn (Delete)",
+ "A view on this sheet shows the scene «{name}», which the model no longer has: pick another view for it in the composer.": "Một khung nhìn trên trang này hiển thị cảnh «{name}» mà mô hình không còn có nữa: chọn một chế độ xem khác cho nó trong trình soạn thảo.",
+ "Delete these {n} sheets?": "Xóa {n} trang bản vẽ này?"
 }

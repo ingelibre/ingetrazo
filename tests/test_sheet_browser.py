@@ -1,10 +1,11 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2026 Marco Sumari Tellez and IngeTrazo contributors.
-"""The sheet composer's Sheets page (views/sheet_browser.py): the scenes as
-a plain list above, the sheet explorer below.
+"""The sheet composer's Sheets and Scenes tabs (views/sheet_browser.py),
+and the Sheets tab's List view (its Pages view: tests/test_sheet_pages.py).
 
-The explorer lists the sheets in their folders, each with the scenes placed
-on it and a printer that says whether Print all takes it (a folder's
+The List shows the sheets in their folders — only the sheets, never the
+scenes placed on them (Marco, 20-11) — each with a printer that says
+whether Print all takes it (a folder's
 printer switches every sheet inside). A filter field and small icon buttons
 sit above the tree; the right-click menu offers the same actions plus
 rename and delete. Sheets and folders drag to reorder and re-file, Alt+↑/↓
@@ -57,6 +58,7 @@ def _window():
     sf.sync_order(scene)
     scene.version += 1
     explorer = win._ensure_composer().views_panel.sheets
+    explorer.set_thumbnails(False)              # these are the List's
     explorer.refresh(force=True)
     return win, scene, explorer, plans, details
 
@@ -86,12 +88,15 @@ def _model_window():
     a101, a102 = _sheets_model(win)
     comp = win._ensure_composer()
     page = comp.views_panel
+    page.sheets.set_thumbnails(False)           # the List view
     page.on_scene_changed()
     page.sheets.refresh(force=True)
     return win, win.viewport.scene, page, a101, a102
 
 
 def _close(win):
+    from PySide6.QtCore import QSettings
+    QSettings().setValue(SheetExplorer.THUMBS_KEY, True)   # back to Pages
     win._saved_version = win.viewport.scene.version
     composer = getattr(win, "_composer", None)
     if composer is not None:
@@ -347,47 +352,63 @@ def test_the_tree_shows_folders_sheets_and_their_printers():
     _close(win)
 
 
-def test_each_sheet_lists_its_scenes_and_flags_a_lost_one():
+def test_a_sheet_lists_no_scenes_but_flags_a_lost_one():
+    """Only the sheets, clean (Marco, 20-11: «solo aparezcan las hojas
+    limpias … si ya está en Escenas no debería estar en Láminas»): no row
+    of a scene under a sheet — not in the List, not in the Pages, not
+    after filtering by a scene's name. A sheet whose frame shows a scene
+    the model lost says so on its own row."""
     win, scene, page, a101, a102 = _model_window()
     explorer = page.sheets
+    for query in ("", "Plan L1", "1:100", "A10"):
+        explorer.search.setText(query)
+        rows = _rows(explorer)
+        assert all(depth == 0 for depth, _n, _p in rows), rows
+        assert all("·" not in name and "Plan L1" not in name
+                   for _d, name, _p in rows), rows
+    explorer.search.setText("")
     item = explorer.items[id(a101)]
-    assert item.isExpanded()
-    assert [item.child(i).text(COL_NAME) for i in range(item.childCount())] \
-        == ["Plan L1 · 1:100", "Section A · 1:50"]
-    lost = item.child(1)
-    assert "Section A" in lost.toolTip(COL_NAME)
-    assert lost.icon(COL_NAME).cacheKey() == node_icon("warning").cacheKey()
-    assert item.child(0).icon(COL_PRINT).isNull()      # no printer of its own
+    assert item.childCount() == 0
+    assert set(explorer.items) == {id(a101), id(a102)}
+    assert "Section A" in item.toolTip(COL_NAME)
+    assert item.icon(COL_NAME).cacheKey() == node_icon("warning").cacheKey()
+    other = explorer.items[id(a102)]
+    assert other.icon(COL_NAME).cacheKey() == node_icon("sheet").cacheKey()
+    # …and the Pages: one page per sheet, nothing else.
+    explorer.set_thumbnails(True)
+    assert [explorer.pages.item(i).text()
+            for i in range(explorer.pages.count())] == [
+        "A101 Plans", "A102 Elevations"]
     _close(win)
 
 
-def test_deleting_a_scene_flags_its_frames_instead_of_breaking():
-    win, scene, page, a101, _a102 = _model_window()
+def test_deleting_a_scene_flags_its_sheet_instead_of_breaking():
+    win, scene, page, a101, a102 = _model_window()
     explorer = page.sheets
-    first = explorer.items[id(a101.frames[0])]
-    assert first.icon(COL_NAME).cacheKey() == node_icon("scene").cacheKey()
+    row = explorer.items[id(a102)]
+    assert row.icon(COL_NAME).cacheKey() == node_icon("sheet").cacheKey()
     del scene.saved_views[0]                           # «Plan L1» goes
     explorer.refresh(force=True)
-    first = explorer.items[id(a101.frames[0])]
-    assert first.icon(COL_NAME).cacheKey() == node_icon("warning").cacheKey()
-    assert a101.frames[0].view_key == "scene:Plan L1"  # untouched
+    row = explorer.items[id(a102)]
+    assert row.icon(COL_NAME).cacheKey() == node_icon("warning").cacheKey()
+    assert "Plan L1" in row.toolTip(COL_NAME)
+    assert a102.frames[0].view_key == "scene:Plan L1"  # untouched
     _close(win)
 
 
-def test_a_scene_marks_its_views_and_a_view_marks_its_scene():
+def test_a_scene_marks_the_sheets_that_show_it():
     win, scene, page, a101, a102 = _model_window()
     explorer = page.sheets
     rows = page.scenes.scene_rows()
     page.scenes.tree.setCurrentItem(rows[0])           # «Plan L1»
     marked = explorer.related()
     assert sorted(it.text(COL_NAME) for it in marked) == [
-        "Plan L1 · 1:100", "Plan L1 · 1:200"]
+        "A101 Plans", "A102 Elevations"]
     assert all(it.data(COL_NAME, Qt.UserRole + 1) for it in marked)
-    explorer.tree.setCurrentItem(explorer.items[id(a102.frames[0])])
-    assert rows[0].data(0, Qt.UserRole + 1)
-    assert not rows[1].data(0, Qt.UserRole + 1)
-    explorer.tree.setCurrentItem(explorer.items[id(a101.frames[1])])
-    assert not rows[0].data(0, Qt.UserRole + 1)       # lost: none
+    assert explorer._marked == {id(a101), id(a102)}    # their pages too
+    # A sheet row marks no scene: a sheet shows many.
+    explorer.tree.setCurrentItem(explorer.items[id(a102)])
+    assert not any(r.data(0, Qt.UserRole + 1) for r in rows)
     page.scenes.tree.setCurrentItem(rows[1])           # on no sheet
     assert explorer.related() == []
     assert not marked[0].data(COL_NAME, Qt.UserRole + 1)       # cleared
@@ -521,13 +542,16 @@ def test_renaming_a_sheet_and_a_rename_to_the_same_name_does_nothing():
     win, scene, page, a101, _a102 = _model_window()
     explorer = page.sheets
     explorer.items[id(a101)].setText(COL_NAME, "A-101")
+    QTest.qWait(20)                  # after the row's edit has closed
     assert a101.name == "A-101"
-    QTest.qWait(20)
     assert explorer.items[id(a101)].text(COL_NAME) == "A-101"
     assert win._composer.comp_combo.findText("A-101") >= 0
     version = scene.version
     explorer.items[id(a101)].setText(COL_NAME, "A-101")  # to itself
+    QTest.qWait(20)
     assert scene.version == version
+    win._composer.history.undo()     # one step of the composer's undo
+    assert a101.name == "A101 Plans"
     _close(win)
 
 
@@ -543,10 +567,10 @@ def test_a_double_click_opens_the_sheet_and_marks_it():
     _close(win)
 
 
-def test_a_scene_row_opens_its_sheet_and_a_folder_opens_nothing():
+def test_a_sheet_row_opens_its_sheet_and_a_folder_opens_nothing():
     win, scene, page, a101, a102 = _model_window()
     explorer = page.sheets
-    explorer.activate(explorer.items[id(a102.frames[1])])
+    explorer.activate(explorer.items[id(a102)])
     assert win._composer.comp is a102
     plans = SheetFolder("Plans")
     scene.sheet_folders.append(plans)
@@ -718,17 +742,6 @@ def test_pdfs_are_offered_under_the_project_s_name(tmp_path, monkeypatch):
     _close(win)
 
 
-def test_a_scene_row_dropped_on_means_its_sheet():
-    win, scene, page, a101, a102 = _model_window()
-    explorer = page.sheets
-    folder = SheetFolder("Elevations")
-    scene.sheet_folders.append(folder)
-    explorer.refresh(force=True)
-    _drag(explorer, folder, onto=a101.frames[0])      # beside A101
-    assert folder.parent_id is None
-    _close(win)
-
-
 def test_alt_arrows_move_a_sheet_among_its_neighbours():
     win, scene, page, a101, a102 = _model_window()
     explorer = page.sheets
@@ -770,13 +783,6 @@ def test_a_scene_dropped_on_a_sheet_is_placed_in_a_free_spot():
     assert outliner.unplaced_scenes(scene) == []
     win._composer.history.undo()                      # the composer's undo
     assert new[0] not in a102.frames
-    _close(win)
-
-
-def test_a_scene_dropped_on_a_scene_row_goes_onto_its_sheet():
-    win, scene, page, a101, a102 = _model_window()
-    _drop_scenes(page.sheets, ["North elevation"], onto=a101.frames[0])
-    assert any(f.view_key == "scene:North elevation" for f in a101.frames)
     _close(win)
 
 
@@ -926,7 +932,8 @@ def test_the_sheet_menu_has_the_bar_s_actions_rename_and_delete():
     g = _sheet(scene, "G")
     _pick(explorer, g)
     texts = _texts(explorer.build_menu(("sheet", g)))
-    for want in ("Open sheet", "Rename… (F2)", "Duplicate sheet", "Delete",
+    for want in ("Open sheet", "Rename… (F2)", "Duplicate (Ctrl+D)",
+                 "Copy (Ctrl+C)", "Paste (Ctrl+V)", "Delete",
                  "Exclude from Print all", "Print…", "Export PDF…",
                  "Move up (Alt+↑)", "Move down (Alt+↓)",
                  "New sheet here", "New folder here"):

@@ -4333,5 +4333,14 @@
  "hidden": "tersembunyi",
  "their parent category": "kategori induknya",
  "«Uncategorized»": "«Tanpa kategori»",
- "«{name}» already exists here.": "«{name}» sudah ada di sini."
+ "«{name}» already exists here.": "«{name}» sudah ada di sini.",
+ "Filter sheets and folders…": "Saring lembar dan folder…",
+ "Click a page to open its sheet; drag pages to order them. Ctrl+C and Ctrl+V copy and paste sheets, Ctrl+D duplicates, Delete deletes, F2 renames. Right-click for more.": "Klik halaman untuk membuka lembarnya; seret halaman untuk mengurutkannya. Ctrl+C dan Ctrl+V menyalin dan menempel lembar, Ctrl+D menduplikat, Delete menghapus, F2 mengganti nama. Klik kanan untuk lainnya.",
+ "Show the sheets as pages, or as a list with their folders and what Print all takes": "Tampilkan lembar sebagai halaman, atau sebagai daftar dengan foldernya dan yang diambil Cetak semua",
+ "Pages": "Halaman",
+ "Sheets copied: {n}": "Lembar disalin: {n}",
+ "New sheet, after the selected one": "Lembar baru, setelah yang dipilih",
+ "Delete the selected sheets (Delete)": "Hapus lembar yang dipilih (Delete)",
+ "A view on this sheet shows the scene «{name}», which the model no longer has: pick another view for it in the composer.": "Sebuah tampilan di lembar ini menampilkan scene «{name}», yang sudah tidak ada di model: pilih tampilan lain untuknya di penyusun lembar.",
+ "Delete these {n} sheets?": "Hapus {n} lembar ini?"
 }

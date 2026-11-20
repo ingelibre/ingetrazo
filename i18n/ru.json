@@ -4330,5 +4330,14 @@
  "hidden": "скрыта",
  "their parent category": "родительскую категорию",
  "«Uncategorized»": "«Без категории»",
- "«{name}» already exists here.": "«{name}» здесь уже есть."
+ "«{name}» already exists here.": "«{name}» здесь уже есть.",
+ "Filter sheets and folders…": "Фильтр листов и папок…",
+ "Click a page to open its sheet; drag pages to order them. Ctrl+C and Ctrl+V copy and paste sheets, Ctrl+D duplicates, Delete deletes, F2 renames. Right-click for more.": "Щёлкните страницу, чтобы открыть её лист; перетаскивайте страницы, чтобы упорядочить их. Ctrl+C и Ctrl+V копируют и вставляют листы, Ctrl+D дублирует, Delete удаляет, F2 переименовывает. Правый щелчок — ещё.",
+ "Show the sheets as pages, or as a list with their folders and what Print all takes": "Показывать листы страницами или списком с папками и тем, что берёт «Печатать все»",
+ "Pages": "Страницы",
+ "Sheets copied: {n}": "Скопировано листов: {n}",
+ "New sheet, after the selected one": "Новый лист после выбранного",
+ "Delete the selected sheets (Delete)": "Удалить выбранные листы (Delete)",
+ "A view on this sheet shows the scene «{name}», which the model no longer has: pick another view for it in the composer.": "Вид на этом листе показывает сцену «{name}», которой больше нет в модели: выберите для него другой вид в компоновщике.",
+ "Delete these {n} sheets?": "Удалить эти листы ({n})?"
 }

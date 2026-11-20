@@ -4333,5 +4333,14 @@
  "hidden": "已隱藏",
  "their parent category": "上層類別",
  "«Uncategorized»": "«未分類»",
- "«{name}» already exists here.": "«{name}»已存在於此處。"
+ "«{name}» already exists here.": "«{name}»已存在於此處。",
+ "Filter sheets and folders…": "篩選圖紙與資料夾…",
+ "Click a page to open its sheet; drag pages to order them. Ctrl+C and Ctrl+V copy and paste sheets, Ctrl+D duplicates, Delete deletes, F2 renames. Right-click for more.": "按一下頁面開啟其圖紙；拖曳頁面調整順序。Ctrl+C 與 Ctrl+V 複製和貼上圖紙，Ctrl+D 建立複本，Delete 刪除，F2 重新命名。按右鍵檢視更多。",
+ "Show the sheets as pages, or as a list with their folders and what Print all takes": "以頁面顯示圖紙，或以清單顯示其資料夾及「全部列印」所含的內容",
+ "Pages": "頁面",
+ "Sheets copied: {n}": "已複製圖紙：{n}",
+ "New sheet, after the selected one": "新增圖紙，位於選取的圖紙之後",
+ "Delete the selected sheets (Delete)": "刪除選取的圖紙（Delete）",
+ "A view on this sheet shows the scene «{name}», which the model no longer has: pick another view for it in the composer.": "此圖紙上的一個檢視顯示場景「{name}」，但模型已不再有該場景：請在編排器中為它挑選其他檢視。",
+ "Delete these {n} sheets?": "要刪除這 {n} 張圖紙嗎？"
 }

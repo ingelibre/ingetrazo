@@ -1163,7 +1163,8 @@ def paint_frame_mm(painter: QPainter, frame: MarcoVista,
                    image: Optional[QImage], hlr=None, annots=None,
                    screen: bool = False, kinds=None, fills=None,
                    budget=None, missing: Optional[str] = None,
-                   styles=None, fill_styles=None) -> None:
+                   styles=None, fill_styles=None,
+                   dpi: float = RENDER_DPI) -> None:
     r = QRectF(0, 0, frame.w_mm, frame.h_mm)
     if missing is not None:
         # The frame names a scene the model no longer has. It used to
@@ -1201,8 +1202,8 @@ def paint_frame_mm(painter: QPainter, frame: MarcoVista,
         # keeps an undistorted drawing (#80). What no longer fits is
         # hidden and the new area is paper; when the frame has not
         # changed since the render the two rects coincide (a 1:1 blit).
-        img_r = QRectF(0, 0, image.width() * 25.4 / RENDER_DPI,
-                       image.height() * 25.4 / RENDER_DPI)
+        img_r = QRectF(0, 0, image.width() * 25.4 / dpi,
+                       image.height() * 25.4 / dpi)
         if (abs(img_r.width() - r.width()) < 0.1
                 and abs(img_r.height() - r.height()) < 0.1):
             painter.drawImage(r, image)
@@ -9242,9 +9243,24 @@ class ComposerWindow(QMainWindow):
         comps = self._scene().compositions
         if 0 <= idx < len(comps):
             self.comp = comps[idx]
-            self.history = ComposerHistory(on_change=self._on_history_change)
+            self.history = self._history_for_another_sheet()
             self._rebuild_canvas()
             self._refresh_sheet_tabs()
+
+    def _history_for_another_sheet(self):
+        """A fresh undo for the sheet just opened — what was done on the
+        last one stays with it — that still holds the steps made to the SET
+        of sheets (added, copied, deleted, renamed, moved — the Sheets tab
+        and the strip): opening another page in the Sheets tab, as one does
+        all the time, must not lose the undo of the paste just made."""
+        from views.sheet_pages import SheetOrderCommand, SheetSetCommand
+        new = ComposerHistory(on_change=self._on_history_change)
+        old = getattr(self, "history", None)
+        if old is not None:
+            new._undo = [c for c in old._undo
+                         if isinstance(c, (SheetSetCommand,
+                                           SheetOrderCommand))]
+        return new
 
     # ---- Model / sheet tabs (the strip at the bottom) -----------------------
     def _refresh_sheet_tabs(self) -> None:
@@ -9352,30 +9368,144 @@ class ComposerWindow(QMainWindow):
         self.delete_sheet(comps.index(self.comp), self)
 
     # ---- sheet management, shared with the Model | sheets strips -------------
+    # Each of these is ONE step of this window's undo (SheetSetCommand),
+    # however many sheets it touches (Marco, 20-11: the Sheets tab as the
+    # pages of a PDF reader — move, copy, paste, delete).
+    def _sheet_set_step(self, change) -> bool:
+        """Run ``change()`` on the set of sheets as one undo step; whether
+        it changed anything (nothing changed: no step)."""
+        from views.sheet_pages import SheetSetCommand
+        cmd = SheetSetCommand(self._scene(), change, composer=self,
+                              after=self._after_sheet_set)
+        cmd.do()
+        if not cmd.changed:
+            return False
+        self.history._undo.append(cmd)
+        self.history._redo.clear()
+        self._on_history_change()
+        return True
+
+    def _after_sheet_set(self, cmd, opened) -> None:
+        """The set of sheets changed (a step done, undone or redone): the
+        sheet shown, the strips, the sheet numbers and the pages follow."""
+        scene = self._scene()
+        comps = scene.compositions
+        if opened is not None and opened is not self.comp:
+            self.comp = opened
+        elif self.comp not in comps and comps:
+            self.comp = comps[0]
+        self._mark_dirty()
+        self._reload_comp_combo()
+        self._rebuild_canvas()
+        # Numbers ({hoja}) may have changed on every page after the first
+        # one that moved: those pages are painted again.
+        before = cmd._before[0] if cmd._before else []
+        for i, c in enumerate(comps):
+            if i >= len(before) or before[i] is not c:
+                self._touch_sheet_page(c)
+        panel = getattr(getattr(self, "views_panel", None), "sheets", None)
+        if panel is not None:
+            panel.refresh(force=True)
+
     def rename_sheet(self, index: int, name: str) -> None:
         comps = self._scene().compositions
         name = (name or "").strip()
         if not (0 <= index < len(comps)) or not name or comps[index].name == name:
             return
-        comps[index].name = name
-        self._mark_dirty()
-        self._reload_comp_combo()
+        sheet = comps[index]
+
+        def change():
+            sheet.name = name
+        self._sheet_set_step(change)
+
+    def _copy_of(self, data: dict, name: str):
+        dup = Composicion.from_dict(data)
+        dup.name = name + tr(" (copy)")
+        return dup
 
     def duplicate_sheet(self, index: int, show: bool = False) -> None:
         """A copy of sheet *index*, right after it; ``show`` opens it here."""
         comps = self._scene().compositions
         if not (0 <= index < len(comps)):
             return
-        src = comps[index]
-        dup = Composicion.from_dict(src.to_dict())
-        dup.name = src.name + tr(" (copy)")
-        comps.insert(index + 1, dup)
-        if show:
-            self.comp = dup
-        self._mark_dirty()
-        self._reload_comp_combo()
-        if show:
+        made = self.duplicate_sheets([comps[index]])
+        if show and made:
+            self.comp = made[0]
+            self._reload_comp_combo()
             self._rebuild_canvas()
+
+    def duplicate_sheets(self, sheets) -> list:
+        """A copy of each of ``sheets`` right after it, in its folder — one
+        undo step. Returns the copies."""
+        from views.sheet_pages import place_block
+        scene = self._scene()
+        sheets = [c for c in scene.compositions if c in sheets]
+        made: list = []
+
+        def change():
+            for src in sheets:
+                dup = self._copy_of(src.to_dict(), src.name)
+                comps = list(scene.compositions)
+                at = comps.index(src) + 1
+                place_block(scene, comps[:at] + [dup] + comps[at:], [dup])
+                made.append(dup)
+        self._sheet_set_step(change)
+        return made
+
+    def paste_sheets(self, data: list, after=None) -> list:
+        """Copies of the sheets in ``data`` (``to_dict()`` of each) right
+        after sheet ``after`` (``None``: the open one), in its folder —
+        one undo step. Returns the new sheets."""
+        from views.sheet_pages import place_block
+        scene = self._scene()
+        if not data:
+            return []
+        anchor = after if after in scene.compositions else self.comp
+        made = [self._copy_of(d, d.get("name") or tr("Sheet"))
+                for d in data]
+
+        def change():
+            comps = list(scene.compositions)
+            at = comps.index(anchor) + 1 if anchor in comps else len(comps)
+            for c in made:
+                c.folder_id = getattr(anchor, "folder_id", None)
+            place_block(scene, comps[:at] + made + comps[at:], made)
+        self._sheet_set_step(change)
+        return made
+
+    def move_sheets(self, sheets, gap: int) -> bool:
+        """``sheets`` (in the order of the set) to place ``gap`` between
+        two sheets (0: the front, ``len``: the end) — a drag in the Sheets
+        tab — as one undo step. The sheet open here stays open."""
+        from views.sheet_pages import moved_order, place_block
+        scene = self._scene()
+        comps = list(scene.compositions)
+        block = [c for c in comps if c in sheets]
+        if not block:
+            return False
+        order = moved_order(comps, block, gap)
+        if [id(c) for c in order] == [id(c) for c in comps]:
+            return False
+        return self._sheet_set_step(lambda: place_block(scene, order, block))
+
+    def new_sheet_after(self, after=None):
+        """A new sheet — as the «+» tab makes it — right after sheet
+        ``after`` (``None``: at the end), opened here; one undo step."""
+        from views.sheet_pages import place_block
+        scene = self._scene()
+        made: list = []
+
+        def change():
+            self._on_comp_add()             # appends it and opens it
+            new = scene.compositions[-1]
+            made.append(new)
+            comps = [c for c in scene.compositions if c is not new]
+            at = comps.index(after) + 1 if after in comps else len(comps)
+            new.folder_id = getattr(after, "folder_id", None) \
+                if after in comps else None
+            place_block(scene, comps[:at] + [new] + comps[at:], [new])
+        self._sheet_set_step(change)
+        return made[0] if made else None
 
     def delete_sheet(self, index: int, parent=None) -> bool:
         """Delete sheet *index* after asking; a document keeps at least
@@ -9383,28 +9513,39 @@ class ComposerWindow(QMainWindow):
         comps = self._scene().compositions
         if not (0 <= index < len(comps)):
             return False
-        if len(comps) <= 1:
+        return self.delete_sheets([comps[index]], parent)
+
+    def delete_sheets(self, sheets, parent=None) -> bool:
+        """Delete ``sheets`` after asking once — one undo step; a document
+        keeps at least one sheet. If this window showed one of them, the
+        sheet after it (or before) takes over."""
+        scene = self._scene()
+        comps = scene.compositions
+        victims = [c for c in comps if c in sheets]
+        if not victims:
+            return False
+        if len(victims) >= len(comps):
             QMessageBox.information(
                 parent or self, tr("Delete sheet"),
                 tr("A document keeps at least one sheet."))
             return False
-        victim = comps[index]
-        if QMessageBox.question(
-                parent or self, tr("Delete sheet"),
-                tr("Delete '{name}'?", name=victim.name)) \
-                != QMessageBox.Yes:
+        question = (tr("Delete '{name}'?", name=victims[0].name)
+                    if len(victims) == 1 else
+                    tr("Delete these {n} sheets?", n=len(victims)))
+        if QMessageBox.question(parent or self, tr("Delete sheet"),
+                                question) != QMessageBox.Yes:
             return False
-        comps.remove(victim)
-        if self.comp is victim:
-            self.comp = comps[min(index, len(comps) - 1)]
-            self.history = ComposerHistory(on_change=self._on_history_change)
-            self._mark_dirty()
-            self._reload_comp_combo()
-            self._rebuild_canvas()
-        else:
-            self._mark_dirty()
-            self._reload_comp_combo()
-        return True
+        gone = {id(c) for c in victims}
+
+        def change():
+            if id(self.comp) in gone:
+                at = comps.index(self.comp)
+                rest = ([c for c in comps[at:] if id(c) not in gone]
+                        + [c for c in reversed(comps[:at])
+                           if id(c) not in gone])
+                self.comp = rest[0]
+            comps[:] = [c for c in comps if id(c) not in gone]
+        return self._sheet_set_step(change)
 
     def move_sheet(self, index: int, to: int) -> None:
         """Sheet ``index`` to place ``to`` — a tab dragged along the strip
@@ -9438,14 +9579,94 @@ class ComposerWindow(QMainWindow):
         if sheets is not None and comp is not None:
             sheets.touch_picture(comp)
 
+    def _touch_frame_sheet(self, frame) -> None:
+        """The sheet holding ``frame`` changed its picture (a render of it
+        landed) — that sheet, not merely the open one; a frame of no sheet
+        (a scene's or a page's own small render) touches nothing."""
+        if any(f is frame for f in getattr(self.comp, "frames", ()) or ()):
+            self._touch_sheet_page(self.comp)
+            return
+        for comp in getattr(self._scene(), "compositions", None) or ():
+            if any(f is frame for f in comp.frames):
+                self._touch_sheet_page(comp)
+                return
+
+    #: The dpi of a frame's small render for its page's picture: a page
+    #: in the Sheets tab is ~300 px wide on a 420 mm sheet (18 dpi); 50
+    #: leaves room for a wide panel and a sharp screen.
+    THUMB_RENDER_DPI = 50
+
+    def thumbnail_missing(self, comp):
+        """The first frame of ``comp`` whose page picture still has nothing
+        to show — no render or drawing of its own in this window and no
+        small render either (or an old one: the model changed since) — or
+        ``None``. A frame whose scene is missing shows that already."""
+        small = self.__dict__.setdefault("_thumb_renders", {})
+        old = self.__dict__.setdefault("_thumb_old", set())
+        for f in comp.frames:
+            key = id(f)
+            if key in self.render_cache:
+                continue                # even an old one: the canvas shows it
+            if f.style == "vectorial" and self.hlr_cache.get(key) is not None:
+                continue
+            if key in small and key not in old:
+                continue
+            if self.missing_scene(f) is not None:
+                continue
+            return f
+        return None
+
+    def thumbnail_render(self, frame):
+        """A small render of ``frame`` for its page's picture alone, kept
+        apart from the frame's own render (the canvas and the export never
+        see it). A vector frame renders as technical lines: its exact
+        hidden-line pass costs seconds. Returns the picture (``None``:
+        it would not render — not tried again until the model changes)."""
+        import copy
+        small = self.__dict__.setdefault("_thumb_renders", {})
+        self.__dict__.setdefault("_thumb_old", set()).discard(id(frame))
+        tmp = copy.copy(frame)
+        if tmp.style == "vectorial":
+            tmp.style = "lineas"
+        self.__dict__["_render_dpi"] = self.THUMB_RENDER_DPI
+        image = annots = None
+        try:
+            image = self.render_frame(tmp)
+        except Exception:                            # noqa: BLE001
+            image = None
+        finally:
+            self.__dict__["_render_dpi"] = None
+            annots = self.annot_cache.pop(id(tmp), None)
+            for cache in (self.render_cache, self.hlr_cache):
+                cache.pop(id(tmp), None)
+            self._stale.discard(id(tmp))
+        if image is not None and image.isNull():
+            image = None
+        small[id(frame)] = (image, annots)
+        return image
+
+    def _forget_thumbnail_renders(self) -> None:
+        """The model changed: every small render is old (kept on show until
+        its new one lands)."""
+        small = self.__dict__.get("_thumb_renders") or {}
+        self.__dict__.setdefault("_thumb_old", set()).update(small)
+        panel = getattr(getattr(self, "views_panel", None), "sheets", None)
+        if panel is not None and panel.pictures is not None:
+            panel.pictures.kick_later()
+
     def sheet_thumbnail(self, comp, w_px: int, h_px: int):
         """``comp`` as a ``w_px``×``h_px`` picture, painted from what this
         window already holds — the frames' cached renders and drawings, as
-        the export prints them. NEVER a render: the Sheets panel calls this
-        for every sheet, and one frame of a big model costs seconds."""
+        the export prints them, and the small renders made for the pages
+        (:meth:`thumbnail_render`) where a frame has none. Never a render
+        of its own: the Sheets tab calls this for every sheet."""
         from views.sheet_pages import paint_thumbnail
+        small = self.__dict__.get("_thumb_renders") or {}
         try:
-            return paint_thumbnail(self._paint_sheet, comp, w_px, h_px)
+            return paint_thumbnail(
+                lambda painter, c: self._paint_sheet(painter, c,
+                                                     small=small),
+                comp, w_px, h_px)
         finally:
             # _paint_sheet points the sheet fields ({hoja}, {lamina}…) at
             # the sheet it paints; the canvas reads them for the open one.
@@ -11774,6 +11995,7 @@ class ComposerWindow(QMainWindow):
         for comp in getattr(self._scene(), "compositions", []) or []:
             for f in comp.frames:
                 self._stale.add(id(f))
+        self._forget_thumbnail_renders()
         self.refresh_items()          # the stale badges are painted BY the items
         if self._auto_render and self.isVisible():
             self._auto_timer.start()
@@ -14943,7 +15165,7 @@ class ComposerWindow(QMainWindow):
         self.annot_cache[id(frame)] = self.compute_annotations(frame)
         if frame.style == "vectorial" and not self.frame_is_perspective(frame):
             self.compute_hlr(frame)
-            self._touch_sheet_page(self.comp)   # its picture in Sheets
+            self._touch_frame_sheet(frame)      # its picture in Sheets
             return None
 
         def run():
@@ -14968,15 +15190,17 @@ class ComposerWindow(QMainWindow):
                     vp.style_override = replace(
                         vp._effective_style(), background=(1.0, 1.0, 1.0),
                         sky=False)
-                w_px, h_px = frame.render_px(RENDER_DPI)
+                # A page picture's small render asks for its own dpi.
+                dpi = self.__dict__.get("_render_dpi") or RENDER_DPI
+                w_px, h_px = frame.render_px(dpi)
                 screen = getattr(frame, "screen", False)
                 # The edge / profile pens, in pixels at the render dpi:
                 # the GL pass thickens its one-pixel lines to match. A
                 # picture of the screen keeps the screen's hairlines.
                 vp._export_edge_px = 1 if screen else pen_px(
-                    getattr(frame, "pen_edge_mm", 0.18), RENDER_DPI)
+                    getattr(frame, "pen_edge_mm", 0.18), dpi)
                 vp._export_profile_px = 1 if screen else pen_px(
-                    getattr(frame, "pen_profile_mm", 0.35), RENDER_DPI)
+                    getattr(frame, "pen_profile_mm", 0.35), dpi)
                 return vp.render_image(w_px, h_px, overlays=False,
                                        sharp_shadows=not screen)
             finally:
@@ -15006,7 +15230,7 @@ class ComposerWindow(QMainWindow):
         if image is not None:
             self.render_cache[id(frame)] = image
         self._stale.discard(id(frame))
-        self._touch_sheet_page(self.comp)       # its picture in Sheets
+        self._touch_frame_sheet(frame)          # its picture in Sheets
         return image
 
     def _on_renumber(self) -> None:
@@ -15484,15 +15708,32 @@ class ComposerWindow(QMainWindow):
                           path=getattr(self._window, "_current_path", None),
                           index=idx, total=len(comps))
 
-    def _paint_sheet(self, painter: QPainter, comp: Composicion) -> None:
+    def _paint_sheet(self, painter: QPainter, comp: Composicion,
+                     small=None) -> None:
         """Draw one sheet's items in mm space (painter already scaled), in
-        STACKING order (z) — the print must layer exactly like the canvas."""
+        STACKING order (z) — the print must layer exactly like the canvas.
+        ``small``: the pages' own small renders, for a frame that has no
+        render or drawing here (a page's picture only)."""
         self._set_field_context(comp)
         def paint(m) -> None:
             if isinstance(m, MarcoVista):
-                paint_frame_mm(painter, m, self.render_cache.get(id(m)),
-                               hlr=self.hlr_cache.get(id(m)),
-                               annots=self.annot_cache.get(id(m)),
+                image = self.render_cache.get(id(m))
+                hlr = self.hlr_cache.get(id(m))
+                annots = self.annot_cache.get(id(m))
+                if (small and id(m) in small and image is None
+                        and not (m.style == "vectorial" and hlr is not None)):
+                    shot, shot_annots = small[id(m)]
+                    if shot is not None:
+                        if m.style == "vectorial":
+                            import copy
+                            m = copy.copy(m)
+                            m.style = "lineas"
+                        paint_frame_mm(painter, m, shot, annots=shot_annots,
+                                       dpi=self.THUMB_RENDER_DPI)
+                        return
+                paint_frame_mm(painter, m, image,
+                               hlr=hlr,
+                               annots=annots,
                                kinds=self.hlr_kinds.get(id(m)),
                                fills=self.hlr_fills.get(id(m)),
                                missing=self.missing_scene(m),
@@ -16046,6 +16287,9 @@ class SceneThumbnailer:
 
     def compute_annotations(self, frame):
         return []                     # a list picture carries no paper text
+
+    def _touch_frame_sheet(self, frame) -> None:
+        """No Sheets panel here either (see :meth:`_touch_sheet_page`)."""
 
     def _touch_sheet_page(self, comp) -> None:
         """No Sheets panel here: the borrowed ``render_frame`` tells the

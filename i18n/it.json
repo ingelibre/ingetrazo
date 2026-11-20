@@ -4330,5 +4330,14 @@
  "hidden": "nascosta",
  "their parent category": "categoria superiore",
  "«Uncategorized»": "«Senza categoria»",
- "«{name}» already exists here.": "«{name}» esiste già qui."
+ "«{name}» already exists here.": "«{name}» esiste già qui.",
+ "Filter sheets and folders…": "Filtra tavole e cartelle…",
+ "Click a page to open its sheet; drag pages to order them. Ctrl+C and Ctrl+V copy and paste sheets, Ctrl+D duplicates, Delete deletes, F2 renames. Right-click for more.": "Clic su una pagina per aprirne la tavola; trascina le pagine per ordinarle. Ctrl+C e Ctrl+V copiano e incollano tavole, Ctrl+D duplica, Canc elimina, F2 rinomina. Clic destro per altro.",
+ "Show the sheets as pages, or as a list with their folders and what Print all takes": "Mostra le tavole come pagine, o in elenco con le loro cartelle e ciò che prende Stampa tutto",
+ "Pages": "Pagine",
+ "Sheets copied: {n}": "Tavole copiate: {n}",
+ "New sheet, after the selected one": "Nuova tavola, dopo quella selezionata",
+ "Delete the selected sheets (Delete)": "Elimina le tavole selezionate (Canc)",
+ "A view on this sheet shows the scene «{name}», which the model no longer has: pick another view for it in the composer.": "Una vista di questa tavola mostra la scena «{name}», che il modello non ha più: scegli un'altra vista nel compositore.",
+ "Delete these {n} sheets?": "Eliminare queste {n} tavole?"
 }

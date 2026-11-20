@@ -4330,5 +4330,14 @@
  "hidden": "숨김",
  "their parent category": "상위 카테고리",
  "«Uncategorized»": "«미분류»",
- "«{name}» already exists here.": "«{name}»이(가) 이미 여기에 있습니다."
+ "«{name}» already exists here.": "«{name}»이(가) 이미 여기에 있습니다.",
+ "Filter sheets and folders…": "시트와 폴더 필터…",
+ "Click a page to open its sheet; drag pages to order them. Ctrl+C and Ctrl+V copy and paste sheets, Ctrl+D duplicates, Delete deletes, F2 renames. Right-click for more.": "페이지를 클릭하면 그 시트가 열립니다. 페이지를 끌어 순서를 바꿉니다. Ctrl+C와 Ctrl+V로 시트를 복사·붙여넣기, Ctrl+D로 복제, Delete로 삭제, F2로 이름 바꾸기. 더 보려면 오른쪽 클릭.",
+ "Show the sheets as pages, or as a list with their folders and what Print all takes": "시트를 페이지로, 또는 폴더와 '모두 인쇄' 대상이 있는 목록으로 표시",
+ "Pages": "페이지",
+ "Sheets copied: {n}": "복사한 시트: {n}",
+ "New sheet, after the selected one": "선택한 시트 뒤에 새 시트",
+ "Delete the selected sheets (Delete)": "선택한 시트 삭제 (Delete)",
+ "A view on this sheet shows the scene «{name}», which the model no longer has: pick another view for it in the composer.": "이 시트의 뷰가 모델에 더 이상 없는 장면 «{name}»을(를) 보여 줍니다. 레이아웃에서 다른 뷰를 고르세요.",
+ "Delete these {n} sheets?": "이 시트 {n}개를 삭제할까요?"
 }
