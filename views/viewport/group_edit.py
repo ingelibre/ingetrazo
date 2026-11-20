@@ -110,16 +110,20 @@ class GroupEditMixin:
         save/export paths call."""
         self._leave_group_edit(todos=True)
 
-    def _leave_group_edit(self, todos: bool) -> None:
+    def _leave_group_edit(self, todos: bool, notify: bool = True) -> None:
         if self.scene.edit_group is None:
             return
         # Level by level (from #1148, @mle-gall): leaving every level at once
         # handed only the innermost share to a command, and the levels around
         # it shared back headless, outside the history. A part shares back
         # before the component around it takes its matrix back up.
+        # The trays hear it once, at the end: told at every level, the
+        # Parts tray measured the parts of each container passed on the way
+        # out (60 parts of «Group 333», ~2 s of the 3 s it took to leave
+        # the flag of Marco's plaza, 20-11) for a list shown for no frame.
         while todos and len(getattr(self.scene, "_edit_stack", None)
                             or ()) > 1:
-            self._leave_group_edit(todos=False)
+            self._leave_group_edit(todos=False, notify=False)
         stack = getattr(self.scene, "_edit_stack", None) or ()
         mark = stack[-1].get("undo_mark") if stack else None
         if mark is None:
@@ -184,7 +188,10 @@ class GroupEditMixin:
         # model» list, Entity Info) must hear it now, not at the next edit —
         # the list read «no components yet» with the house on screen
         # (Rafael, revision 4, 06:18).
-        self.notify_scene_changed()
+        if notify:
+            self.notify_scene_changed()
+        else:
+            self.update()
 
     # ---- Rest-of-model context while editing a group -------------------------
     @property
