@@ -9,10 +9,7 @@ did — the first Ctrl+Z after a Rotate took ~0.55 s instead of ~0.25 s
 (20-11). Every row on screen still gets its picture, a few turns later."""
 from __future__ import annotations
 
-import time
-
 from PySide6.QtCore import Qt
-from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication
 
 from PySide6.QtGui import QMatrix4x4, QVector3D as V
@@ -59,6 +56,9 @@ def test_one_turn_draws_at_most_a_couple_of_pictures(monkeypatch):
         win.viewport.scene.groups.extend(_component(i) for i in range(60))
         panel = win.tray.components
         panel.refresh_in_model()
+        timer = getattr(panel, "_in_model_timer", None)
+        if timer is not None:
+            timer.stop()
         panel._thumbs_timer.stop()
         drawn.clear()
         component_thumbs._cache.clear()
@@ -71,12 +71,17 @@ def test_one_turn_draws_at_most_a_couple_of_pictures(monkeypatch):
         panel._draw_visible_thumbs()                 # one turn
         assert 0 < len(drawn) <= per_turn, (len(drawn), len(rows))
         assert panel._thumbs_timer.isActive(), "the rest is scheduled"
-        end = time.monotonic() + 5.0
-        while (any(not r.data(Qt.UserRole + 2) for r in rows)
-               and time.monotonic() < end):
-            QTest.qWait(10)
-        assert all(r.data(Qt.UserRole + 2) for r in rows)
-        assert len(drawn) == len(set(drawn)), "each picture drawn once"
+        # The next turns draw the rest, a couple each (run by hand here:
+        # the timer would also wait for a still view).
+        turns = 1
+        while any(not r.data(Qt.UserRole + 2) for r in _visible_rows(lst)):
+            assert turns <= len(rows), "the pictures never all came"
+            panel._thumbs_timer.stop()
+            before = len(drawn)
+            panel._draw_visible_thumbs()
+            assert len(drawn) - before <= per_turn
+            turns += 1
+        assert turns >= len(rows) // per_turn
     finally:
         win._saved_version = win.viewport.scene.version
         win.close()

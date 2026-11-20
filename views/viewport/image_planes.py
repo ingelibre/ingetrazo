@@ -274,7 +274,7 @@ class ImagePlaneMixin:
                 yield image, None, image
         # The matrix is read live: a groups preview moves the proxies
         # without a version bump.
-        for group, image, owner in self._grouped_image_rows():
+        for group, image, owner in ImagePlaneMixin._grouped_image_rows(self):
             yield image, getattr(group, "xform", None), owner
 
     def _grouped_image_rows(self):
