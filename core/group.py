@@ -397,6 +397,10 @@ def _remap_uvws(mesh, m, faces=None) -> None:
     minv, ok = m.inverted()
     if not ok:
         return
+    # The two matrices read once for the whole mesh, not twice per face:
+    # each ``np_affine`` builds numpy arrays, and the 480 textured faces of
+    # an undo on Marco's plaza spent ~14 ms there alone (20-11).
+    affine = None
     for f in (mesh.faces if faces is None else faces):
         t = f.attrs.get("texture") if f.attrs else None
         uvw = t.get("uvw") if t else None
@@ -404,17 +408,23 @@ def _remap_uvws(mesh, m, faces=None) -> None:
             uvw = _implicit_uvw(f, t, minv) if t else None
             if uvw is None:
                 continue
-        f.attrs["texture"] = {**t, "uvw": _remapped_uvw(uvw, m, minv)}
+        if affine is None:
+            affine = (np_affine(minv)[0], np_affine(m)[1])
+        f.attrs["texture"] = {**t, "uvw": _remapped_uvw(uvw, m, minv,
+                                                         affine)}
 
 
-def _remapped_uvw(uvw, m, minv) -> list:
+def _remapped_uvw(uvw, m, minv, affine=None) -> list:
     """The 8-number ``uvw`` map re-fitted for geometry mapped through ``m``
     (``minv`` its inverse): g' = L⁻ᵀ·g, c' = c − g'·t for the U and the V
     rows. The matrices are read through ``data()`` (:func:`np_affine`),
     never as ``m(row, col)``: that call is gone from some PySide6 builds
-    (Qt 6.10 raises "object is not callable", #1405)."""
-    lin, _ = np_affine(minv)
-    _, (tx, ty, tz) = np_affine(m)
+    (Qt 6.10 raises "object is not callable", #1405). ``affine`` is
+    ``(linear part of minv, translation of m)`` when the caller already
+    read them for a whole mesh."""
+    if affine is None:
+        affine = (np_affine(minv)[0], np_affine(m)[1])
+    lin, (tx, ty, tz) = affine
     new = list(uvw)
     for base in (0, 4):
         gx, gy, gz, c = uvw[base:base + 4]

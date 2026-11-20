@@ -272,14 +272,40 @@ class ImagePlaneMixin:
         for image in getattr(self.scene, "image_planes", None) or ():
             if self.scene.entity_visible(image):
                 yield image, None, image
-        for group in self._placements():
+        # The matrix is read live: a groups preview moves the proxies
+        # without a version bump.
+        for group, image, owner in self._grouped_image_rows():
+            yield image, getattr(group, "xform", None), owner
+
+    def _grouped_image_rows(self):
+        """``(placement, image, owner)`` for every visible photo held by a
+        group, memoised per scene version and placements epoch.
+
+        Walking every placement for its ``images`` ran three times a frame
+        (draw, outlines, snap): ~2 ms of each orbit or zoom frame on a
+        model of 3 400 groups without a single grouped photo, and ~40 ms
+        on the first frame after an undo (Marco's plaza, 20-11). What the
+        walk reads — the placements, their ``hidden`` and layer, the
+        images a group holds and their own visibility — only changes
+        through a command (a version bump) or a switch the epoch carries."""
+        placements = self._placements()
+        epoch_of = getattr(self, "_placements_epoch", None)
+        key = (getattr(self.scene, "version", None),
+               epoch_of() if callable(epoch_of) else None,
+               len(placements))
+        memo = getattr(self, "_grouped_images_memo", None)
+        if memo is not None and memo[0] is placements and memo[1] == key:
+            return memo[2]
+        rows = []
+        for group in placements:
             images = getattr(group, "images", None) or ()
             if not images or not self.scene.entity_visible(group):
                 continue
             for image in images:
                 if self.scene.entity_visible(image):
-                    yield (image, getattr(group, "xform", None),
-                           self._owner_of(group))
+                    rows.append((group, image, self._owner_of(group)))
+        self._grouped_images_memo = (placements, key, rows)
+        return rows
     def _edit_rest_fade(self, group):
         """How a reference image (``group=None``) or a face-me figure is
         drawn while a group is open: the fade to apply, or ``None`` to skip
