@@ -70,7 +70,7 @@ index, separate); it also requires choosing a **non-manifold policy**.
 `core/topology.py` (most `_key` matching simplifies/disappears),
 `core/edits.py` (planner stops simulating by position), `core/history.py`
 (commands by reference), `core/triangulate.py` (minor input adaptation),
-`tools/pushpull.py` (push/pull rewritten over incidence), `views/viewport.py`
+`tools/pushpull.py` (push/pull rewritten over incidence), `views/viewport/`
 (render reads `Vertex.position`), `formats/igz.py` (indexed schema + `.igz`
 migration), `tests/` (many rewritten). Roughly half the core plus tests.
 

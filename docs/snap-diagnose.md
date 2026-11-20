@@ -49,7 +49,7 @@ immediately. The **screen** detector `_detect_axis_on_screen`
 second-guessed by the pixels that would contradict it.
 
 **C2 - the work plane is chosen by the camera and the hovered face, never by the
-drag.** `Viewport._current_work_plane` (`views/viewport.py`) hands the candidate
+drag.** `Viewport._current_work_plane` (`views/viewport/projection.py`) hands the candidate
 pipeline a plane it picks from, in order: the tool's `drag_plane`, a captured
 `work_plane`, the plane through the active start point
 `_start_point_plane` (`:7598`), the near-horizon vertical
