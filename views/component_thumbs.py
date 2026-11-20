@@ -107,11 +107,26 @@ def _rgb(attrs, inherited):
 def thumbnail(definition, size: int = SIZE) -> QPixmap:
     """The icon for ``definition`` (a component instance or a kept
     template), from the cache when nothing it shows has changed."""
+    sig, pm = cached_thumbnail(definition, size)
+    if pm is not None:
+        return pm
+    return draw_thumbnail(definition, sig, size)
+
+
+def cached_thumbnail(definition, size: int = SIZE):
+    """``(signature, icon)``: the icon from the cache, or ``None`` when it
+    has to be drawn (:func:`draw_thumbnail`, with the same signature) —
+    so a caller can spread the drawing over several turns of the loop."""
     sig = _signature(definition)
-    key = (sig[0][0], size)
-    hit = _cache.get(key)
+    hit = _cache.get((sig[0][0], size))
     if hit is not None and hit[0] == sig:
-        return hit[1]
+        return sig, hit[1]
+    return sig, None
+
+
+def draw_thumbnail(definition, sig, size: int = SIZE) -> QPixmap:
+    """Draw ``definition``'s icon and keep it under ``sig``."""
+    key = (sig[0][0], size)
     pm = _draw(definition, size)
     # Past this, definitions long gone. (256 was below the 1 815 of a big
     # plant, and scrolling its list drew every picture again, #158.)

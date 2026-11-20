@@ -1806,8 +1806,17 @@ class ComponentsPanel(QWidget):
         if wait_for_still_view(self._window.viewport, self._thumbs_timer):
             self._draw_visible_thumbs()
 
+    #: Pictures drawn per turn of the event loop. Each is ~25 ms of
+    #: QPainter work on the plaza; the twelve rows a selection scrolled
+    #: into view were drawn in one go, and that 0.3 s landed inside the
+    #: next thing the hand did — the first Ctrl+Z after a Rotate went from
+    #: ~0.25 to ~0.55 s (20-11). Two per turn, the rest on the next turns,
+    #: each one waiting again for the view to be still.
+    THUMBS_PER_TURN = 2
+
     def _draw_visible_thumbs(self) -> None:
-        from views.component_thumbs import thumbnail
+        from views.component_thumbs import cached_thumbnail, draw_thumbnail
+        drawn = 0
         lst = self._in_model
         area = lst.viewport().rect()
         # From the first row on screen down to the last: asking every row
@@ -1828,7 +1837,13 @@ class ComponentsPanel(QWidget):
                 continue
             # The picture (from the cache while the definition is as it
             # was) is set when it is not the one the row shows already.
-            pm = thumbnail(definition)
+            sig, pm = cached_thumbnail(definition)
+            if pm is None:
+                if drawn >= self.THUMBS_PER_TURN:
+                    self._schedule_thumbs()     # the rest, next turn
+                    return
+                pm = draw_thumbnail(definition, sig)
+                drawn += 1
             if item.data(Qt.UserRole + 2) != pm.cacheKey():
                 item.setIcon(QIcon(pm))
                 item.setData(Qt.UserRole + 2, pm.cacheKey())
