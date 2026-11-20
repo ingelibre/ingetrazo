@@ -210,7 +210,8 @@ def test_a_curve_is_described_by_its_shape(window):
     cid = _curve_edge(mesh).curve
     text = panel._describe([e for e in mesh.edges if e.curve == cid])
     assert text.startswith("<b>Circle</b>")
-    assert "Radius" in text and "Diameter" in text and "Perimeter" in text
+    assert "Radius" not in text          # it is the editable field, not text
+    assert "Diameter" in text and "Perimeter" in text
     vp.history.execute(ResegmentCurveCommand(_curve_edge(mesh), 6))
     text = panel._describe([e for e in mesh.edges if e.curve == cid])
     assert text.startswith("<b>Polygon</b>") and "Side" in text

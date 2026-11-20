@@ -155,6 +155,31 @@ def _changed(before, after) -> int:
     return int((np.abs(after - before).sum(axis=2) > 8).sum())
 
 
+def test_guide_circle_radius_edit_redraws_cached_rim():
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+    from core.guide import GuideCircle
+
+    win, vp = _viewport()
+    try:
+        circle = GuideCircle(V(0, 0, 0), V(0, 0, 1), 2.0)
+        vp.scene.guides.append(circle)
+        vp.scene.select([circle])
+        panel = win.tray.entity_info
+        panel.refresh()
+        before = _pixels(vp.render_image(300, 300, overlays=False))
+        panel._radius_box.lineEdit().setText("3 m")
+        QTest.keyClick(panel._radius_box.lineEdit(), Qt.Key_Return)
+        after = _pixels(vp.render_image(300, 300, overlays=False))
+        assert _changed(before, after) > 10
+        win._on_undo()
+        restored = _pixels(vp.render_image(300, 300, overlays=False))
+        assert _changed(before, restored) == 0
+    finally:
+        win._saved_version = vp.scene.version
+        win.close()
+
+
 def _scene_looking_down_minus_y():
     """A wall in the XZ plane at y = 0, seen from the eye at y = +20. So
     y > 0 is IN FRONT of the wall and y < 0 is behind it.

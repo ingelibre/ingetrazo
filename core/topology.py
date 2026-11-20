@@ -1913,7 +1913,7 @@ def _strip_triangles(face, moved: set):
 
 
 def fold_nonplanar_faces(mesh, tolerance: float = _PLANAR_TOLERANCE,
-                         moved: set | None = None) -> list:
+                         moved: set | None = None, faces=None) -> list:
     """*Autofold*: split every face a move has warped out of its
     plane into planar pieces along fold edges.
 
@@ -1931,9 +1931,9 @@ def fold_nonplanar_faces(mesh, tolerance: float = _PLANAR_TOLERANCE,
     moved corners run along a curve (an arc's segments), the fold edges of
     its fan are soft, so the cone reads as one smooth surface, as the
     curve's own wall did; the fold between the flat piece and the cone
-    stays a line."""
+    stays a line. ``faces``, when supplied, limits folding to those faces."""
     folded = []
-    for face in list(mesh.faces):
+    for face in list(mesh.faces if faces is None else faces):
         pts = list(face.vertices)
         for hole in face.holes:
             pts += list(hole)
@@ -1962,6 +1962,7 @@ def fold_nonplanar_faces(mesh, tolerance: float = _PLANAR_TOLERANCE,
         }
         for piece in pieces:  # every planar piece continues the warped mother
             piece.attrs = dict(face.attrs)
+            piece.interior = face.interior
         merged = True
         while merged:
             merged = False
@@ -1998,6 +1999,7 @@ def fold_nonplanar_faces(mesh, tolerance: float = _PLANAR_TOLERANCE,
                         region = mesh.dissolve_edge(e)
                         if region is not None:
                             region.attrs = dict(face.attrs)
+                            region.interior = face.interior
                             pieces.discard(f)
                             pieces.discard(g)
                             pieces.add(region)

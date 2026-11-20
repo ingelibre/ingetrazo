@@ -10,9 +10,8 @@ radius, so both are fitted from the vertices) and rebuilt in place.
 The rebuild is surgery, not erase-and-redraw: every face the curve bounds
 keeps its loop, its holes and its paint, with the curve's run of vertices
 swapped for the new ones. An arc keeps its two ends, so whatever it is
-joined to stays joined. Only a flat curve qualifies — one whose faces all
-lie in its own plane; the rim of a pushed cylinder also drives its side
-faces, which this does not rebuild.
+joined to stays joined. Resegmenting requires a flat curve. Radius changes
+on a non-flat closed curve move its shared vertices and adjacent faces.
 """
 from __future__ import annotations
 
@@ -68,6 +67,44 @@ class CurveShape:
         pts[0] = QVector3D(self.verts[0].position)
         if not self.closed:
             pts[-1] = QVector3D(self.verts[-1].position)
+        return pts
+
+    def points_at_radius(self, new_radius: float) -> list[QVector3D] | None:
+        """``points(self.segments)`` scaled to ``new_radius``: the centre stays
+        put for a closed curve; for an arc the two ends stay put and the
+        centre moves along the perpendicular bisector (the bulge changes).
+        ``None`` when the new radius cannot hold the arc's chord."""
+        new_radius = float(new_radius)
+        if new_radius <= 0:
+            return None
+        if self.closed:
+            return [self.center + (self.u * math.cos(a) + self.v * math.sin(a))
+                    * new_radius
+                    for a in (self.sweep * k / self.segments
+                              for k in range(self.segments))]
+        p0 = QVector3D(self.verts[0].position)
+        p1 = QVector3D(self.verts[-1].position)
+        half = (p1 - p0).length() / 2.0
+        if half > new_radius:
+            return None
+        mid = (p0 + p1) / 2.0
+        to_center = self.center - mid
+        if to_center.length() < 1e-9:
+            return None
+        perp = to_center.normalized()
+        dist = math.sqrt(max(0.0, new_radius * new_radius - half * half))
+        center = mid + perp * dist
+        half_angle = math.asin(half / new_radius)
+        sweep = (2.0 * half_angle if self.sweep <= math.pi
+                 else 2.0 * math.pi - 2.0 * half_angle)
+        u = (p0 - center).normalized()
+        v = QVector3D.crossProduct(self.normal, u)
+        n = self.segments
+        pts = [center + (u * math.cos(sweep * k / n)
+                         + v * math.sin(sweep * k / n)) * new_radius
+               for k in range(n + 1)]
+        pts[0] = p0
+        pts[-1] = p1
         return pts
 
 
@@ -202,14 +239,11 @@ def _splice(loop, shape: CurveShape, new_pts):
     return None
 
 
-def resegment(mesh, shape: CurveShape, n: int) -> bool:
-    """Rebuild the curve with ``n`` segments in ``mesh``. Returns ``False``
-    (and leaves the mesh alone) when it cannot."""
+def _rebuild(mesh, shape: CurveShape, new_pts) -> bool:
+    """Swap the curve's run for ``new_pts`` in every face it bounds, then
+    rebuild its edges — the surgery :func:`resegment` and the radius edit
+    share. Returns ``False`` (mesh untouched) when no face takes the run."""
     from core.mesh import edge_flags, stamp_edge_flags
-    n = int(n)
-    if n < shape.minimum or n == shape.segments or not shape.flat:
-        return False
-    new_pts = shape.points(n)
     faces = []
     for e in shape.edges:
         for f in e.faces:
@@ -253,6 +287,81 @@ def resegment(mesh, shape: CurveShape, n: int) -> bool:
     return True
 
 
+def resegment(mesh, shape: CurveShape, n: int) -> bool:
+    """Rebuild the curve with ``n`` segments in ``mesh``. Returns ``False``
+    (and leaves the mesh alone) when it cannot."""
+    n = int(n)
+    if n < shape.minimum or n == shape.segments or not shape.flat:
+        return False
+    return _rebuild(mesh, shape, shape.points(n))
+
+
+def _rescale_nonflat_circle(mesh, shape: CurveShape, new_pts) -> bool:
+    """Move the rim and its connected geometry without changing edge counts."""
+    from core.mesh import Face
+    from core.topology import (defects_near, fold_nonplanar_faces,
+                               is_planar, loop_inside_face, new_defects, _key,
+                               _loops_cross_2d)
+    from core.triangulate import plane_axes
+
+    vertices = shape.verts
+    moving = set(vertices)
+    target_keys = {_key(p) for p in new_pts}
+    if (len(target_keys) != len(new_pts)
+            or any(_key(v.position) in target_keys
+                   for v in mesh.vertices if v not in moving)):
+        return False
+    affected = {f for v in vertices for f in v.faces()}
+    before_defects = defects_near(vertices)
+    before = mesh.capture_state()
+    for vertex, point in zip(vertices, new_pts):
+        mesh.place_vertex(vertex, point)
+
+    for face in affected:
+        if not face.hole_loops:
+            continue
+        u, v = plane_axes(face.normal())
+        origin = face.vertices[0]
+
+        def project(p):
+            p = p - origin
+            return (QVector3D.dotProduct(p, u), QVector3D.dotProduct(p, v))
+
+        outer = [project(p) for p in face.vertices]
+        for hole in face.hole_loops:
+            other_holes = [h for h in face.hole_loops if h is not hole]
+            boundary = Face(face.loop, other_holes)
+            points = [v.position for v in hole]
+            if (not loop_inside_face(boundary, points, outside_holes=True)
+                    or _loops_cross_2d(outer, [project(p) for p in points])):
+                mesh.restore_state(before)
+                return False
+
+    fold_nonplanar_faces(mesh, moved=target_keys, faces=affected)
+    if (new_defects(before_defects, defects_near(vertices))
+            or any(not is_planar(f.vertices + [p for h in f.holes for p in h])
+                   for f in affected if f in mesh.faces)):
+        mesh.restore_state(before)
+        return False
+    return True
+
+
+def rescale_radius(mesh, shape: CurveShape, new_radius: float) -> bool:
+    """Rebuild the curve at ``new_radius`` (metres) in ``mesh``. Returns
+    ``False`` (and leaves the mesh alone) when the operation is invalid."""
+    new_radius = float(new_radius)
+    if (not math.isfinite(new_radius) or new_radius <= 0
+            or new_radius == shape.radius):
+        return False
+    new_pts = shape.points_at_radius(new_radius)
+    if new_pts is None:
+        return False
+    if not shape.flat:
+        return (shape.closed
+                and _rescale_nonflat_circle(mesh, shape, new_pts))
+    return _rebuild(mesh, shape, new_pts)
+
+
 class ResegmentCurveCommand(Command):
     """Entity Info's segment count: rebuild one curve, one undo step. The
     curve stays selected either way, so the field keeps showing it."""
@@ -266,6 +375,37 @@ class ResegmentCurveCommand(Command):
             shape = read_curve(scene.mesh, self.edge)
             if shape is None or not resegment(scene.mesh, shape, self.n):
                 raise CommandRejected("curve cannot be rebuilt")
+        self._inner = SnapshotMutation(mutate)
+
+    def _select(self, scene) -> None:
+        scene.selection.clear()
+        for e in scene.mesh.edges:
+            if e.curve == self.cid:
+                scene.selection.add(e)
+
+    def do(self, scene) -> None:
+        self._inner.do(scene)
+        self._select(scene)
+
+    def undo(self, scene) -> None:
+        self._inner.undo(scene)
+        self._select(scene)
+
+
+class RescaleCurveRadiusCommand(Command):
+    """Entity Info's radius field: rebuild one circle, arc or polygon at a new
+    radius, one undo step. The curve stays selected either way."""
+
+    def __init__(self, edge, radius: float) -> None:
+        self.edge = edge
+        self.radius = float(radius)
+        self.cid = getattr(edge, "curve", None)
+
+        def mutate(scene) -> None:
+            shape = read_curve(scene.mesh, self.edge)
+            if shape is None or not rescale_radius(scene.mesh, shape,
+                                                   self.radius):
+                raise CommandRejected("curve cannot be rescaled")
         self._inner = SnapshotMutation(mutate)
 
     def _select(self, scene) -> None:

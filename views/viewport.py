@@ -1730,6 +1730,16 @@ def shown_guides(scene) -> list:
     return [g for g in guides if visible(g)]
 
 
+def _guide_cache_key(guides, selection, dist, target, eye):
+    v3 = lambda v: (None if v is None
+                    else (v.x(), v.y(), v.z()))  # noqa: E731
+    return (dist, v3(target), v3(eye),
+            tuple((id(g), v3(g.point), v3(getattr(g, "direction", None)),
+                   v3(getattr(g, "origin", None)), getattr(g, "radius", None))
+                  for g in guides),
+            tuple(g in selection for g in guides))
+
+
 def _point_in_screen_hull(x: float, y: float, points,
                           tolerance_px: float = 1.5) -> bool:
     """Whether a screen point lies in the convex hull of ``points``.
@@ -3861,15 +3871,8 @@ class Viewport(QOpenGLWidget):
             eye = self.camera.eye() if self.camera.perspective else None
             # The dashes only change with the camera, the guides or the
             # selection; a hover repaint reuses them and their upload (#816).
-            v3 = lambda v: (None if v is None
-                            else (v.x(), v.y(), v.z()))  # noqa: E731
-            key = (dist, v3(self.camera.target), v3(eye),
-                   tuple((id(g), v3(g.point), v3(getattr(g, "direction",
-                                                         None)),
-                          v3(getattr(g, "origin", None)))
-                         for g in on_screen),
-                   tuple(g in self.scene.selection
-                         for g in on_screen))
+            key = _guide_cache_key(on_screen, self.scene.selection, dist,
+                                   self.camera.target, eye)
             cached = getattr(self, "_guides_cache", None)
             if cached is not None and cached[0] == key:
                 g_spans = cached[1]
