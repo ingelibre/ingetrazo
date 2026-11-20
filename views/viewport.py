@@ -15073,10 +15073,12 @@ class Viewport(QOpenGLWidget):
             ent_area.append(area_of(f))
             ent_vis.append(vis)
             ent_sel.append(sel)
-            # What the snap engine may INFER FROM: selectable, except that
-            # the rest of the model outside the open context is a reference
-            # even though it cannot be picked (see _face_hits "infer").
-            ent_infer.append(sel if infer is None else infer)
+            # What the snap engine may INFER FROM: visible, not merely
+            # selectable — a locked layer protects its objects from
+            # editing, not from being snapped to (#1510), and the rest
+            # of the model outside the open context is a reference even
+            # though it cannot be picked (see _face_hits "infer").
+            ent_infer.append(vis if infer is None else infer)
             ent_loose.append((grp is None) if loose is None else loose)
             for t0, t1, t2 in tris_of(f):
                 tris.append((t0.x(), t0.y(), t0.z(),
@@ -15105,7 +15107,7 @@ class Viewport(QOpenGLWidget):
                 wrap = self._loose_mesh_wrapper(om)
                 for f in om.faces:
                     add_face(f, wrap, scene.entity_visible(f),
-                             False, infer=scene.entity_selectable(f),
+                             False, infer=scene.entity_visible(f),
                              loose=True)
             # Loose part → arrays; groups append their cached chunk arrays.
             if tris:

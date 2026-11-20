@@ -379,14 +379,11 @@ class Scene:
                 or bool(getattr(self, "show_hidden_geometry", False)))
 
     def group_snappable(self, group) -> bool:
-        """A visible group's edges remain references when the object is locked.
-
-        Layer locks keep their existing inference policy; the object's own
-        padlock only protects it from editing (#1210).
-        """
-        return (self.entity_selectable(group)
-                or (self.entity_locked(group) and self.entity_visible(group)
-                    and not self._layer_state(group)[1]))
+        """A visible group is a snap reference, whatever locks it: the
+        object's own padlock and a locked layer both protect it from
+        EDITING, not from snapping to it (#1510; the object's lock alone
+        was #1210). A hidden group is no reference at all."""
+        return self.entity_visible(group)
 
     def edit_definition(self):
         """The shared prototype mesh of the component instance open at the
