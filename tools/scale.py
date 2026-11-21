@@ -500,14 +500,19 @@ class ScaleTool(Tool):
             if begin is not None:
                 begin(self._groups)
                 self._vp_preview = True
-        elif self._verts and not self._groups:
+        elif self._verts:
             # Vertices of a big open group or of the big loose model:
             # Move's vertex-drag preview, scaled — nothing mutated until
             # the commit, what rides drawn through the scale, the faces it
             # bends drawn scaled here (preview_faces). Each frame re-walked
-            # the whole loose model before (21-11).
+            # the whole loose model before (21-11). Objects grabbed with
+            # them scale through the same matrix (a mixed scale): both
+            # preview, or the live scale stays for the whole.
             begin = getattr(viewport, "begin_verts_preview", None)
-            got = begin(self._verts) if begin is not None else None
+            from tools.move import begin_verts_preview_for
+            got = (begin_verts_preview_for(begin, self._verts,
+                                           self._groups)
+                   if begin is not None else None)
             if got is not None:
                 self._bent_faces, _e, self._bent_paint = got
                 self._vp_preview = True

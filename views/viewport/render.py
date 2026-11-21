@@ -1825,7 +1825,7 @@ class RenderMixin:
     #: rebuild stays — the bent faces are drawn again on every frame.
     VERTS_PREVIEW_BENT_MAX = 1500
 
-    def begin_verts_preview(self, verts):
+    def begin_verts_preview(self, verts, groups=()):
         """Preview a drag of ``verts`` (the open mesh's own vertices) the
         way a group drag is previewed: nothing is mutated until the
         commit. The open mesh is baked ONCE in two parts — what stays,
@@ -1841,7 +1841,16 @@ class RenderMixin:
         None when the preview does not apply (a small mesh, copies
         sharing it, too many bent faces; for the loose model with no group
         open, a soft edge riding or bending, or hidden geometry shown), and
-        the tool keeps the live rebuild."""
+        the tool keeps the live rebuild.
+
+        ``groups``: a MIXED drag — objects grabbed with the vertices. They
+        ride the same transform, so they join the groups preview's state
+        (left out of the consolidated buffers, their arrays uploaded with
+        what rides to the same scratch VBOs) and nothing at all is mutated
+        until the commit. Each frame of a mixed Move re-walked the whole
+        loose model and re-placed the objects before (21-11). None when
+        either part does not apply: the tool then keeps the live drag for
+        the whole selection, never half of it."""
         sc = self.scene
         E = sc.edit_group
         mesh = sc.mesh
@@ -1911,13 +1920,6 @@ class RenderMixin:
             return None
         paint = _paint_of(self, None if loose else holders[0])
         msig = _material_sig(paint)
-        # The pick index answers for the drag from the frozen version:
-        # made now, from the whole open group's chunk — made later, the
-        # chunk would be the static part, and the walk is ~1 s.
-        try:
-            self._pick_index()
-        except Exception:  # noqa: BLE001 — a pick index made later is slower, not wrong
-            pass
         stay = (None if loose else
                 array_bake.bake_built(self, mesh, paint, msig, None,
                                       stay_f, stay_e))
@@ -1925,6 +1927,28 @@ class RenderMixin:
                                       ride_f, ride_e)
         if (stay is None and not loose) or rider is None:
             return None
+        movers: list = []
+        if groups:
+            # The objects of a mixed drag, as begin_groups_preview takes
+            # them: a component's placements inside it, in the open
+            # group's paint (#1101).
+            open_paint = sc.open_group_paint()
+            self._placements()             # the proxies _preview_chunk bakes
+            for g in groups:
+                self._expand_placements(g, movers, above=open_paint)
+            if not movers:
+                return None
+            self._preview_external = False
+            self._preview_groups = set(map(id, movers))
+            self._preview_epoch = getattr(self, "_preview_epoch", 0) + 1
+        # The pick index answers for the drag from the frozen version:
+        # made now, from the whole open group's chunk — made later, the
+        # chunk would be the static part, and the walk is ~1 s. (Made
+        # once the movers are known, as a groups preview makes its own.)
+        try:
+            self._pick_index()
+        except Exception:  # noqa: BLE001 — a pick index made later is slower, not wrong
+            pass
         if stay is not None:
             stay["vkey"] = (sc.version, id(mesh))
             stay["uid"] = next(_chunk_uid)
@@ -1968,7 +1992,11 @@ class RenderMixin:
                 self._pv_vcol_vao, self._pv_vcol_vbo = \
                     self._create_dynamic_vcol()
                 self._pv_tex_vao, self._pv_tex_vbo = self._create_dynamic_uv()
-            self._upload_preview_chunks([rider])
+            # Face-me figures preview through their own pass (see
+            # begin_groups_preview).
+            self._upload_preview_chunks(
+                [rider] + [self._preview_chunk(g) for g in movers
+                           if not getattr(g, "billboard", False)])
         finally:
             self.doneCurrent()
         self.update()
@@ -2022,6 +2050,10 @@ class RenderMixin:
         if getattr(self, "_verts_preview", None) is None:
             return
         self._verts_preview = None
+        if getattr(self, "_preview_groups", None):
+            # A mixed drag's objects come back into the buffers too.
+            self._preview_groups = set()
+            self._preview_epoch = getattr(self, "_preview_epoch", 0) + 1
         self._frozen_cache_version = None
         self._edges_version = -1
         self._sel_runs_memo = None

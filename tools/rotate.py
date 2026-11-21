@@ -51,7 +51,8 @@ from core.axes import plane_axes  # drawing axes (#44)
 from core.guide import is_guide
 from tools.base import ToolContext
 from tools.move import (
-    copied_guide, gather_targets, groups_ghost_segments, guide_ghost_segments)
+    begin_verts_preview_for, copied_guide, gather_targets,
+    groups_ghost_segments, guide_ghost_segments)
 from tools.protractor import ProtractorBase
 
 
@@ -237,15 +238,19 @@ class RotateTool(ProtractorBase):
                 if begin is not None:
                     begin(groups)
                     self._vp_preview = True
-            elif self._verts and not groups:
+            elif self._verts:
                 # Vertices of a big open group or of the big loose model:
                 # Move's vertex-drag preview, turned — nothing mutated
                 # until the commit, what rides drawn through the rotation,
                 # the faces it bends drawn turned here (preview_faces).
                 # Each frame re-walked the whole loose model before
-                # (~0.35 s for 6 400 faces, 21-11).
+                # (~0.35 s for 6 400 faces, 21-11). Objects grabbed with
+                # them turn through the same matrix (a mixed turn): both
+                # preview, or the live turn stays for the whole.
                 begin = getattr(viewport, "begin_verts_preview", None)
-                got = begin(self._verts) if begin is not None else None
+                got = (begin_verts_preview_for(begin, self._verts,
+                                               self._groups)
+                       if begin is not None else None)
                 if got is not None:
                     self._bent_faces, _e, self._bent_paint = got
                     self._vp_preview = True

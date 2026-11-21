@@ -408,6 +408,16 @@ class _MoveCopiesCommand(CompoundCommand):
 
 
 
+def begin_verts_preview_for(begin, verts, groups):
+    """``begin`` (a viewport's ``begin_verts_preview``) for ``verts``, and
+    for the objects ``groups`` grabbed with them when there are any — a
+    mixed drag previews both or neither (None: the live drag stays).
+    Move, Rotate and Scale share it."""
+    if groups:
+        return begin(verts, list(groups))
+    return begin(verts)
+
+
 class _MovedFaces:
     """The faces a vertex drag stretches (``shown``, mesh faces), each
     corner in ``moving`` (vertex ids) moved by ``d`` — or, given ``m`` (a
@@ -676,16 +686,21 @@ class MoveTool(Tool):
                 if begin is not None:
                     begin(self._groups)
                     self._vp_preview = True
-            elif self._verts and not self._groups:
-                # Vertices of a big open group, or of the big loose model:
-                # the same viewport-side preview — the rest of the mesh
+            elif self._verts:
+                # Vertices of a big open group, or of the big loose model —
+                # with objects grabbed too, or not (a mixed drag: the
+                # objects ride the same offset, ~0.3 s a frame re-walking
+                # the loose model before, 21-11). Either all of it previews
+                # or none of it does: the live drag stays for the whole.
+                # The same viewport-side preview — the rest of the mesh
                 # baked once, what rides the drag drawn at the offset, the
                 # faces it stretches drawn moved here (preview_faces). A
                 # frame re-baked the whole open group before (~0.4 s, night
                 # of 18-11), or re-walked the whole loose model (~0.33 s
                 # for 6 400 faces, 21-11).
                 begin = getattr(viewport, "begin_verts_preview", None)
-                got = begin(self._verts) if begin is not None else None
+                got = (begin_verts_preview_for(begin, self._verts, self._groups)
+                       if begin is not None else None)
                 if got is not None:
                     self._bent_faces, _e, self._bent_paint = got
                     self._vp_preview = True
