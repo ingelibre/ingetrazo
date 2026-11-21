@@ -1804,27 +1804,40 @@ class RenderMixin:
         Returns ``(bent faces, bent edges, the open group's paint)`` — the
         ones with corners on both sides: the tool draws the faces itself,
         moved, each frame, the viewport the edges — or
-        None when the preview does not apply (no group open, a small
-        mesh, copies sharing it, too many bent faces), and the tool keeps
-        the live rebuild."""
+        None when the preview does not apply (a small mesh, copies
+        sharing it, too many bent faces; for the loose model with no group
+        open, a soft edge riding or bending, or hidden geometry shown), and
+        the tool keeps the live rebuild."""
         sc = self.scene
         E = sc.edit_group
         mesh = sc.mesh
-        if (E is None or not verts or self._program is None
+        if (not verts or self._program is None
                 or getattr(self, "_verts_preview", None) is not None
                 or getattr(self, "_preview_groups", None)):
+            return None
+        # No group open: the model's own loose geometry. It is not a
+        # chunk — _sync_edges walks it face by face on every sync — so
+        # nothing stands in for it: the sync that starts the drag leaves
+        # out what rides and what bends (``hide``), and no frame after it
+        # syncs again. Each frame of a Move of a block of a 6 400-face
+        # loose floor re-walked the whole floor, ~0.33 s (21-11).
+        loose = E is None
+        if loose and (mesh is not sc.loose_mesh
+                      or getattr(sc, "show_hidden_geometry", False)):
             return None
         array_bake = _array_bake()
         if not array_bake.can_bake_built(mesh):
             return None
-        # A mesh drawn twice (a component's copies, an instance) would
-        # show the hole the static part leaves.
-        holders = [g for g in self._placements()
-                   if getattr(g, "mesh", None) is mesh]
-        if len(holders) != 1 or getattr(holders[0], "xform", None) is not None:
-            return None
-        if sc.loose_mesh is mesh:
-            return None
+        if not loose:
+            # A mesh drawn twice (a component's copies, an instance) would
+            # show the hole the static part leaves.
+            holders = [g for g in self._placements()
+                       if getattr(g, "mesh", None) is mesh]
+            if (len(holders) != 1
+                    or getattr(holders[0], "xform", None) is not None):
+                return None
+            if sc.loose_mesh is mesh:
+                return None
         moving = {id(v) for v in verts}
         touched: dict = {}
         for v in verts:
@@ -1856,7 +1869,13 @@ class RenderMixin:
                 bent_e.append(e)
             else:
                 stay_e.append(e)
-        paint = _paint_of(self, holders[0])    # the paint above it too
+        if loose and any(getattr(e, "soft", False)
+                         for e in (*ride_e, *bent_e)):
+            # The loose soft edges and the smooth shading around them are
+            # kept per content version (frozen here): the curve would stay
+            # behind where it was. The live drag stays.
+            return None
+        paint = _paint_of(self, None if loose else holders[0])
         msig = _material_sig(paint)
         # The pick index answers for the drag from the frozen version:
         # made now, from the whole open group's chunk — made later, the
@@ -1865,15 +1884,17 @@ class RenderMixin:
             self._pick_index()
         except Exception:  # noqa: BLE001 — a pick index made later is slower, not wrong
             pass
-        stay = array_bake.bake_built(self, mesh, paint, msig, None,
-                                     stay_f, stay_e)
+        stay = (None if loose else
+                array_bake.bake_built(self, mesh, paint, msig, None,
+                                      stay_f, stay_e))
         rider = array_bake.bake_built(self, mesh, paint, msig, None,
                                       ride_f, ride_e)
-        if stay is None or rider is None:
+        if (stay is None and not loose) or rider is None:
             return None
-        stay["vkey"] = (sc.version, id(mesh))
-        stay["uid"] = next(_chunk_uid)
-        stay["mesh"] = mesh
+        if stay is not None:
+            stay["vkey"] = (sc.version, id(mesh))
+            stay["uid"] = next(_chunk_uid)
+            stay["mesh"] = mesh
         hide = ride | bent_ids
         hide_e = {id(e) for e in ride_e} | {id(e) for e in bent_e}
         import numpy as np
@@ -1892,7 +1913,7 @@ class RenderMixin:
             ends = rides = None
         self._verts_preview = {"mesh": mesh, "stay": stay, "hide": hide,
                                "hide_e": hide_e, "bent_ends": ends,
-                               "bent_rides": rides,
+                               "bent_rides": rides, "loose": loose,
                                "token": object()}
         self._frozen_cache_version = sc.version
         self._edges_version = -1          # one resync with the static part

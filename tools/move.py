@@ -669,13 +669,14 @@ class MoveTool(Tool):
                 if begin is not None:
                     begin(self._groups)
                     self._vp_preview = True
-            elif (self._verts and not self._groups
-                  and getattr(viewport.scene, "edit_group", None) is not None):
-                # Vertices of a big open group: the same viewport-side
-                # preview — the rest of the mesh baked once, what rides
-                # the drag drawn at the offset, the faces it stretches
-                # drawn moved here (preview_faces). A frame re-baked the
-                # whole open group before (~0.4 s, night of 18-11).
+            elif self._verts and not self._groups:
+                # Vertices of a big open group, or of the big loose model:
+                # the same viewport-side preview — the rest of the mesh
+                # baked once, what rides the drag drawn at the offset, the
+                # faces it stretches drawn moved here (preview_faces). A
+                # frame re-baked the whole open group before (~0.4 s, night
+                # of 18-11), or re-walked the whole loose model (~0.33 s
+                # for 6 400 faces, 21-11).
                 begin = getattr(viewport, "begin_verts_preview", None)
                 got = begin(self._verts) if begin is not None else None
                 if got is not None:

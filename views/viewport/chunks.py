@@ -318,8 +318,17 @@ class ChunkCacheMixin:
         # Hard edges: loose ones rebuilt fresh, group ones from cached chunks
         # (composition mirrors scene.render_edges()).
         all_loose = array("f")
+        # A vertex drag of the loose geometry (``begin_verts_preview``, no
+        # group open): what rides and what bends draw from the preview.
+        vpv = getattr(self, "_verts_preview", None)
+        loose_hide = (vpv["hide"] if vpv is not None and vpv.get("loose")
+                      else ())
+        loose_hide_e = (vpv["hide_e"] if vpv is not None and vpv.get("loose")
+                        else ())
         if not hide_rest:
             for e in self.scene.loose_mesh.edges:
+                if loose_hide_e and id(e) in loose_hide_e:
+                    continue
                 if (not self.scene.entity_visible(e)
                         or getattr(e, "soft", False)
                         or getattr(e, "hidden", False)):
@@ -583,6 +592,8 @@ class ChunkCacheMixin:
 
         if not hide_rest:
             for face in self.scene.loose_mesh.faces:
+                if loose_hide and id(face) in loose_hide:
+                    continue
                 if self.scene.entity_visible(face):
                     bucket_face(face)
         group_face_spans: list = []   # (bbox, start-within-groups, count)
@@ -1717,7 +1728,8 @@ class ChunkCacheMixin:
         if getattr(group, "xform", None) is not None:
             return self._instance_chunk(group)
         vpv = getattr(self, "_verts_preview", None)
-        if vpv is not None and getattr(group, "mesh", None) is vpv["mesh"]:
+        if (vpv is not None and vpv["stay"] is not None
+                and getattr(group, "mesh", None) is vpv["mesh"]):
             return vpv["stay"]           # a vertex drag: what stays
         cache = getattr(self, "_group_chunks", None)
         if cache is None:
