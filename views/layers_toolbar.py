@@ -31,6 +31,7 @@ from PySide6.QtWidgets import (QApplication, QComboBox, QStyle,
 
 from core import layers as L
 from core.i18n import tr
+from views.icons import mark_pixmap
 
 #: Where the eye, the padlock, the isolate mark and the swatch sit in a
 #: drop-down row, from its left edge (px) — the delegate paints there and the
@@ -68,8 +69,7 @@ def isolate_icon(on: bool) -> QIcon:
     icon = _ISOLATE_ICONS.get(key)
     if icon is not None:
         return icon
-    pm = QPixmap(18, 18)
-    pm.fill(Qt.transparent)
+    pm = mark_pixmap(18)
     p = QPainter(pm)
     p.setRenderHint(QPainter.Antialiasing)
     if on:
