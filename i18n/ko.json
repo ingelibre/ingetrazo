@@ -3841,5 +3841,8 @@
  "Print the plan set «{name}»: {n} sheets": "도면 세트 «{name}» 인쇄: 시트 {n}장",
  "Export the plan set «{name}»: {n} sheets": "도면 세트 «{name}» 내보내기: 시트 {n}장",
  "{name} — not in the plan set «{set}»": "{name} — 도면 세트 «{set}»에 없음",
- "Dynamic fields for texts and the title block: {proyecto} {autor} {lamina} {escala} {escena} {fecha} {archivo} {hoja} {total} {juego}": "텍스트와 표제란의 동적 필드: {proyecto} {autor} {lamina} {escala} {escena} {fecha} {archivo} {hoja} {total} {juego}"
+ "Dynamic fields for texts and the title block: {proyecto} {autor} {lamina} {escala} {escena} {fecha} {archivo} {hoja} {total} {juego}": "텍스트와 표제란의 동적 필드: {proyecto} {autor} {lamina} {escala} {escena} {fecha} {archivo} {hoja} {total} {juego}",
+ "The sheets of this plan set, in the order it prints them. Double-click a sheet to open it. A greyed sheet is not printed: its printer, or a folder's, is off.": "이 도면 세트의 시트를 인쇄 순서대로 보여 줍니다. 시트를 두 번 클릭하면 열립니다. 회색 시트는 인쇄되지 않습니다: 해당 프린터 또는 폴더의 프린터가 꺼져 있습니다.",
+ "Sheets in «{name}»:": "«{name}»의 시트:",
+ "{name} (cover)": "{name} (표지)"
 }

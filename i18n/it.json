@@ -3842,5 +3842,8 @@
  "Print the plan set «{name}»: {n} sheets": "Stampa il set «{name}»: {n} tavole",
  "Export the plan set «{name}»: {n} sheets": "Esporta il set «{name}»: {n} tavole",
  "{name} — not in the plan set «{set}»": "{name} — non è nel set «{set}»",
- "Dynamic fields for texts and the title block: {proyecto} {autor} {lamina} {escala} {escena} {fecha} {archivo} {hoja} {total} {juego}": "Campi dinamici per testi e cartiglio: {proyecto} {autor} {lamina} {escala} {escena} {fecha} {archivo} {hoja} {total} {juego}"
+ "Dynamic fields for texts and the title block: {proyecto} {autor} {lamina} {escala} {escena} {fecha} {archivo} {hoja} {total} {juego}": "Campi dinamici per testi e cartiglio: {proyecto} {autor} {lamina} {escala} {escena} {fecha} {archivo} {hoja} {total} {juego}",
+ "The sheets of this plan set, in the order it prints them. Double-click a sheet to open it. A greyed sheet is not printed: its printer, or a folder's, is off.": "Le tavole di questo set, nell'ordine in cui le stampa. Doppio clic su una tavola per aprirla. Una tavola in grigio non viene stampata: la sua stampante, o quella di una cartella, è spenta.",
+ "Sheets in «{name}»:": "Tavole in «{name}»:",
+ "{name} (cover)": "{name} (copertina)"
 }

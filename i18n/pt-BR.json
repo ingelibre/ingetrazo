@@ -3848,5 +3848,8 @@
  "Print the plan set «{name}»: {n} sheets": "Imprimir o conjunto «{name}»: {n} folhas",
  "Export the plan set «{name}»: {n} sheets": "Exportar o conjunto «{name}»: {n} folhas",
  "{name} — not in the plan set «{set}»": "{name} — fora do conjunto «{set}»",
- "Dynamic fields for texts and the title block: {proyecto} {autor} {lamina} {escala} {escena} {fecha} {archivo} {hoja} {total} {juego}": "Campos dinâmicos para textos e bloco de título: {proyecto} {autor} {lamina} {escala} {escena} {fecha} {archivo} {hoja} {total} {juego}"
+ "Dynamic fields for texts and the title block: {proyecto} {autor} {lamina} {escala} {escena} {fecha} {archivo} {hoja} {total} {juego}": "Campos dinâmicos para textos e bloco de título: {proyecto} {autor} {lamina} {escala} {escena} {fecha} {archivo} {hoja} {total} {juego}",
+ "The sheets of this plan set, in the order it prints them. Double-click a sheet to open it. A greyed sheet is not printed: its printer, or a folder's, is off.": "As folhas deste conjunto, na ordem em que ele as imprime. Clique duas vezes numa folha para abri-la. Uma folha em cinza não é impressa: a impressora dela, ou a de uma pasta, está desligada.",
+ "Sheets in «{name}»:": "Folhas em «{name}»:",
+ "{name} (cover)": "{name} (capa)"
 }

@@ -96,6 +96,48 @@ def test_a_taken_name_is_refused(doc):
     assert [r[0] for r in _rows(box)] == ["A", "B"]
 
 
+def test_the_selected_sets_sheets_are_listed_below(doc):
+    from PySide6.QtGui import QPalette
+    win, scene, explorer, comp = doc
+    hist = win.viewport.history
+    a, g, d = (_sheet(scene, n) for n in "AGD")
+    roofer, client = SheetSet("Roofer"), SheetSet("Client")
+    hist.execute(AddSheetSetCommand(roofer, [d, a]))
+    hist.execute(AddSheetSetCommand(client, [g]))
+    box = comp.plan_sets
+    box.set_sheet(g)
+    # Shown at once: the first set this sheet is in.
+    assert box.current_set() is client
+    assert not box.members.isHidden()
+    assert box.member_names() == ["G"]
+    assert "Client" in box.members_caption.text()
+    assert box.members.item(0).font().bold()            # the open sheet
+    box.list.setCurrentRow(0)                           # pick Roofer
+    assert box.member_names() == ["D", "A"]             # the explorer's order
+    assert "Roofer" in box.members_caption.text()
+    # Ticking the open sheet into the set adds it to the list.
+    box.list.item(0).setCheckState(Qt.Checked)
+    assert box.current_set() is roofer
+    assert box.member_names() == ["D", "G", "A"]       # Details/D before G
+    # A sheet that does not print is greyed.
+    d.print_in_all = False
+    box.refresh()
+    muted = box.members.palette().color(QPalette.Disabled, QPalette.Text)
+    assert box.members.item(0).foreground().color() == muted
+    assert box.members.item(2).foreground().color() != muted
+    # A double-click opens the sheet.
+    box.members.itemActivated.emit(box.members.item(2))
+    assert comp.comp is a
+
+
+def test_the_sheet_list_hides_without_sets(doc):
+    win, scene, explorer, comp = doc
+    box = comp.plan_sets
+    box.set_sheet(_sheet(scene, "A"))
+    assert box.current_set() is None
+    assert box.members.isHidden() and box.members_caption.isHidden()
+
+
 # ---- the explorer's Set box -----------------------------------------------------
 
 def test_the_set_box_shows_once_there_are_sets_and_greys_the_others(doc):

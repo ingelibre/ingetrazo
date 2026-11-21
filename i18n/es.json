@@ -3841,5 +3841,8 @@
  "Print the plan set «{name}»: {n} sheets": "Imprimir el juego de planos «{name}»: {n} láminas",
  "Export the plan set «{name}»: {n} sheets": "Exportar el juego de planos «{name}»: {n} láminas",
  "{name} — not in the plan set «{set}»": "{name} — no está en el juego de planos «{set}»",
- "Dynamic fields for texts and the title block: {proyecto} {autor} {lamina} {escala} {escena} {fecha} {archivo} {hoja} {total} {juego}": "Campos dinámicos para textos y cajetín: {proyecto} {autor} {lamina} {escala} {escena} {fecha} {archivo} {hoja} {total} {juego}"
+ "Dynamic fields for texts and the title block: {proyecto} {autor} {lamina} {escala} {escena} {fecha} {archivo} {hoja} {total} {juego}": "Campos dinámicos para textos y cajetín: {proyecto} {autor} {lamina} {escala} {escena} {fecha} {archivo} {hoja} {total} {juego}",
+ "The sheets of this plan set, in the order it prints them. Double-click a sheet to open it. A greyed sheet is not printed: its printer, or a folder's, is off.": "Las láminas de este juego de planos, en el orden en que las imprime. Doble clic en una lámina para abrirla. Una lámina en gris no se imprime: su impresora, o la de una carpeta, está apagada.",
+ "Sheets in «{name}»:": "Láminas en «{name}»:",
+ "{name} (cover)": "{name} (portada)"
 }

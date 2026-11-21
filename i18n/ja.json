@@ -3841,5 +3841,8 @@
  "Print the plan set «{name}»: {n} sheets": "図面セット「{name}」を印刷: {n} 枚",
  "Export the plan set «{name}»: {n} sheets": "図面セット「{name}」を書き出し: {n} 枚",
  "{name} — not in the plan set «{set}»": "{name} — 図面セット「{set}」に含まれていません",
- "Dynamic fields for texts and the title block: {proyecto} {autor} {lamina} {escala} {escena} {fecha} {archivo} {hoja} {total} {juego}": "テキストと表題欄の動的フィールド: {proyecto} {autor} {lamina} {escala} {escena} {fecha} {archivo} {hoja} {total} {juego}"
+ "Dynamic fields for texts and the title block: {proyecto} {autor} {lamina} {escala} {escena} {fecha} {archivo} {hoja} {total} {juego}": "テキストと表題欄の動的フィールド: {proyecto} {autor} {lamina} {escala} {escena} {fecha} {archivo} {hoja} {total} {juego}",
+ "The sheets of this plan set, in the order it prints them. Double-click a sheet to open it. A greyed sheet is not printed: its printer, or a folder's, is off.": "このセットのシートを、印刷される順に表示します。シートをダブルクリックすると開きます。灰色のシートは印刷されません:そのプリンター、またはフォルダーのプリンターがオフです。",
+ "Sheets in «{name}»:": "「{name}」のシート:",
+ "{name} (cover)": "{name}(表紙)"
 }
