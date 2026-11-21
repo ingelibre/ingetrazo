@@ -27,6 +27,25 @@ follow [SemVer](https://semver.org).
   guardado así se sigue guardando así. El formato automático de siempre no
   cambia y sigue siendo el predeterminado. Ejemplo:
   `python examples/headless-mcp-demo.py`.
+- **Explorador de láminas** (#932): en la página Láminas del compositor, las
+  láminas en carpetas anidadas, con su interruptor de impresión (Imprimir
+  todo / Exportar todo toman solo las marcadas), arrastrar y soltar para
+  ordenarlas y escenas que se sueltan sobre una lámina para colocarlas.
+- **Índice de láminas** (#1409): un elemento nuevo del compositor que lista
+  las láminas del documento con su número, plano o por carpetas, y se reparte
+  en varias láminas si es largo.
+- **Láminas por MCP** (#1505): una API estable de láminas y escenas
+  (`core/sheets_api.py`) y sus herramientas para el agente — crear y editar
+  láminas, marcos, cajetines, textos, carpetas y juegos; `render_sheet` y
+  `export_sheets` sin abrir el compositor, también sin ventana. Cada cambio es
+  un paso de deshacer.
+- **Juegos de planos** (#1519): selecciones con nombre de las láminas para
+  cada destinatario (permiso, tejador, cliente…). Se crean y se marcan en
+  las propiedades de la lámina (sección «Juegos de planos»); el cuadro
+  «Juego» del explorador elige qué imprimen Imprimir todo y Exportar todo.
+  Un juego sigue el orden del explorador; `{hoja}`, `{total}` y el índice de
+  láminas cuentan dentro del juego y `{juego}` / `{set}` imprime su nombre.
+  Exportar todo escribe PDF, o PNG / SVG por lámina según el tipo de archivo.
 
 ### Corregido
 
