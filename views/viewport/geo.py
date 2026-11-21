@@ -12,11 +12,15 @@ from PySide6.QtOpenGL import QOpenGLTexture
 from core.i18n import tr
 from views.viewport._support import (GL_LINES, GL_TRIANGLES, GL_DEPTH_TEST,
                                      GL_POLYGON_OFFSET_FILL, GL_FALSE, GL_TRUE,
-                                     GL_MAX_TEXTURE_SIZE)
+                                     GL_MAX_TEXTURE_SIZE,
+                                     fog_backdrop_strength, fog_sky_colors)
 
 #: The Viewport class, set by views/viewport/__init__.py once it exists: a
 #: method here that names ``Viewport.X`` reads (and writes) the class itself.
 Viewport = None
+
+#: ``_draw_sky``'s default: take the fogged colours from the style.
+_STYLE_FOG = object()
 
 
 class GeoMixin:
@@ -478,7 +482,7 @@ class GeoMixin:
         line = mix(line, sky_h, min(1.0, max(0.0, fog_strength)))
         return sky_at(y0), sky_at(1.0), gnd_at(y0), gnd_at(-1.0), line
 
-    def _draw_sky(self, mvp, colors=None, fog_strength=0.0) -> None:
+    def _draw_sky(self, mvp, colors=_STYLE_FOG, fog_strength=0.0) -> None:
         """Sky above the horizon and ground below, each a vertical gradient
         (style tones hazed toward the chosen horizon colour — see
         ``_sky_gradient``), with a subtle horizon line where they meet.
@@ -488,6 +492,12 @@ class GeoMixin:
         # Read before the colours: the sky / ground switches below need it
         # also when the fogged colours (#1139) come in as ``colors``.
         style = getattr(self, "_frame_style", None) or self._effective_style()
+        if colors is _STYLE_FOG:
+            # The frame calls ``_draw_sky(mvp)`` alone, as 0.6.2 did: an
+            # extension that sets its own ``_draw_sky(mvp)`` on the viewport
+            # (a sky photo) keeps working. The fog comes from the style here.
+            colors = fog_sky_colors(style)
+            fog_strength = fog_backdrop_strength(style)
         if colors is None:
             sky_rgb = tuple(getattr(style, "sky_color", None)
                             or self._SKY_RGB)[:3]

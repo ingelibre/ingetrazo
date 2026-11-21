@@ -213,8 +213,7 @@ class RenderMixin:
                 and not self._terrain_showing()
                 and not self._photo_showing()
                 and getattr(self, "photo_view", None) is None):
-            self._draw_sky(mvp, fog_sky_colors(style),
-                           fog_backdrop_strength(style))
+            self._draw_sky(mvp)
             self._program.setUniformValue(self._loc_mvp, mvp)
         # Camera from Photo: the photo is the backdrop.
         if (getattr(self, "photo_view", None) is not None
