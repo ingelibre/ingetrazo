@@ -34,6 +34,8 @@ def win(monkeypatch):
     monkeypatch.setattr(_native, "native", _native.available())
     from views import array_bake
     monkeypatch.setattr(array_bake, "BUILT_MIN_FACES", 0)
+    from views.viewport import Viewport
+    monkeypatch.setattr(Viewport, "_preview_native_state", True)
     from views.main_window import MainWindow
     w = MainWindow()
     w.show()
