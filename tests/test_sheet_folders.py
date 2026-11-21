@@ -343,6 +343,24 @@ def test_folders_flags_and_order_survive_save_and_open(tmp_path):
         True, True, False, True]
 
 
+def test_folders_survive_the_plain_json_layout(tmp_path):
+    """The plain-JSON layout (#1494) writes the same payload: folders,
+    each sheet's folder and Print flag come back from it too."""
+    scene, plans, roof, details = _doc()
+    _sheet(scene, "D").print_in_all = False
+    path = tmp_path / "m.igz"
+    igz.save_scene(scene, path, fmt="json")
+    doc = json.loads(path.read_text(encoding="utf-8"))
+    assert doc["layout"] == "plain-json" and doc["scene"]["sheet_folders"]
+    back = Scene()
+    igz.load_into(back, path)
+    assert [f.id for f in back.sheet_folders] == [
+        plans.id, roof.id, details.id]
+    assert _names(back.compositions) == ["R", "G", "D", "A"]
+    assert [c.print_in_all for c in back.compositions] == [
+        True, True, False, True]
+
+
 def test_a_document_without_folders_saves_as_before(tmp_path):
     scene = Scene()
     scene.compositions.append(Composicion(name="L-01"))
