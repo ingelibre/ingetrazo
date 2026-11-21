@@ -157,6 +157,7 @@ class GLSetupMixin:
         self._guides_vao, self._guides_vbo = self._create_dynamic()
         self._guides_cache = None
         self._axes_spans: dict = {}
+        self._axes_key = None        # a new buffer holds no axes yet
 
         self._sky_vao, self._sky_vbo = self._create_dynamic()
         self._sky_grad_vao, self._sky_grad_vbo = self._create_dynamic_color()

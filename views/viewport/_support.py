@@ -809,9 +809,10 @@ class _InstanceBatch(list):
     """One frame's placements of an instanced pool (a plain list of them)
     with their indices in the pool and the pool's matrix rows, so the
     matrix buffer is filled by one NumPy take instead of sixteen floats
-    read per placement."""
+    read per placement. ``split``: which of them are the surroundings of
+    the open group (``InstancingMixin._instanced_batches``)."""
 
-    __slots__ = ("idx", "mats")
+    __slots__ = ("idx", "mats", "split")
 
 
 #: The CPU side of a document's bakes — the render/pick chunks of its
@@ -2347,6 +2348,14 @@ def _axes_vertices(spacing: float, pos_len: float = 1.0e5):
     from core import axes as _axes
     o = _axes.ORIGIN
     ox, oy, oz = o.x(), o.y(), o.z()
+    # The dashes of an axis at once in numpy (~1 ms a frame of a zoom as a
+    # Python loop): the same double operations in the same order, k*spacing,
+    # then + dash, then o - d*t, rounded to float32 once as array("f") did,
+    # so the bytes are the ones the loop wrote.
+    import numpy as np
+    t0 = np.arange(n, dtype=np.float64) * spacing
+    t1 = t0 + dash
+    dashes = np.empty((n, 6), dtype=np.float64)
     for name in ("x", "y", "z"):
         if _axes.is_world():
             dx, dy, dz = _AXIS_DIRS[name]
@@ -2355,13 +2364,25 @@ def _axes_vertices(spacing: float, pos_len: float = 1.0e5):
         start = len(coords) // 3
         coords.extend([ox, oy, oz, ox + dx * pos_len, oy + dy * pos_len,
                        oz + dz * pos_len])
-        for k in range(n):
-            t0 = k * spacing
-            t1 = t0 + dash
-            coords.extend([ox - dx * t0, oy - dy * t0, oz - dz * t0,
-                           ox - dx * t1, oy - dy * t1, oz - dz * t1])
+        dashes[:, 0] = ox - dx * t0
+        dashes[:, 1] = oy - dy * t0
+        dashes[:, 2] = oz - dz * t0
+        dashes[:, 3] = ox - dx * t1
+        dashes[:, 4] = oy - dy * t1
+        dashes[:, 5] = oz - dz * t1
+        coords.frombytes(dashes.astype(np.float32).tobytes())
         spans[name] = (start, len(coords) // 3 - start)
     return coords, spans
+
+
+def _axes_vertices_key(spacing: float) -> tuple:
+    """What :func:`_axes_vertices` draws from: the dash spacing and the
+    drawing axes (origin and directions) — equal keys, equal vertices."""
+    from core import axes as _axes
+    o = _axes.ORIGIN
+    dirs = (None if _axes.is_world()
+            else tuple(_axes.as_tuple(n) for n in ("x", "y", "z")))
+    return (max(spacing, 1e-4), o.x(), o.y(), o.z(), dirs)
 
 
 def _box_edge_vertices(corners):

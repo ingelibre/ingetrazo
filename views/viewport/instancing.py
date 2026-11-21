@@ -3,6 +3,8 @@
 """Instanced component drawing: placements, prototype draw entries, recorded GL passes."""
 from __future__ import annotations
 
+from itertools import compress as _compress
+
 from PySide6.QtGui import QVector2D, QVector3D, QVector4D
 from PySide6.QtOpenGL import QOpenGLBuffer, QOpenGLVertexArrayObject
 from core.group import Group
@@ -19,6 +21,9 @@ from views.viewport._support import (_NO_INSTANCING, _NO_BACK_TINT, GL_FLOAT,
                                      _InstanceBatch, _proto_wrapper,
                                      _layer_look_sig, _paint_of, _cache_ver,
                                      EDIT_REST_FADE)
+
+#: Swaps the 0/1 bytes of a placement split (surroundings <-> subject).
+_FLIP_FLAGS = bytes.maketrans(b"\x00\x01", b"\x01\x00")
 
 
 class InstancingMixin:
@@ -1288,8 +1293,29 @@ class InstancingMixin:
         """
         if self.scene.edit_group is None:
             return [(groups, 0.0)]
-        fuera = [g for g in groups if self._draws_in_edit_context(g)]
-        dentro = [g for g in groups if not self._draws_in_edit_context(g)]
+        # A frame's pool batch is kept while the view keeps its placements
+        # (_gather_instanced), and the faces, edges and outline passes each
+        # split it again: four tests per placement per pass, ~6-9 ms of
+        # every camera frame inside a group of the plaza (3 800
+        # placements). A kept batch keeps which of its placements are the
+        # surroundings, as bytes, while the placements, the context and
+        # the scene are the same; the lists are made from them each time,
+        # as before (lists kept alive with the batches handed the garbage
+        # collector the whole model to walk on leaving the group).
+        if isinstance(groups, _InstanceBatch):
+            sc = self.scene
+            key = (self._placements_epoch(), id(sc.edit_group), sc.version)
+            memo = getattr(groups, "split", None)
+            if memo is None or memo[0] != key:
+                flags = bytes(bool(self._draws_in_edit_context(g))
+                              for g in groups)
+                memo = groups.split = (key, flags,
+                                       flags.translate(_FLIP_FLAGS))
+            fuera = list(_compress(groups, memo[1]))
+            dentro = list(_compress(groups, memo[2]))
+        else:
+            fuera = [g for g in groups if self._draws_in_edit_context(g)]
+            dentro = [g for g in groups if not self._draws_in_edit_context(g)]
         if self._edit_rest_mode == "hide":
             return [(dentro, 0.0)]
         if self._edit_rest_mode != "fade":
