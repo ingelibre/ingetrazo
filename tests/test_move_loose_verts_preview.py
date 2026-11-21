@@ -39,6 +39,10 @@ def win(monkeypatch):
     from views.main_window import MainWindow
     w = MainWindow()
     w.show()
+    # Exposed before the first frame: after another test's window, the
+    # offscreen platform may otherwise never paint this one.
+    from PySide6.QtTest import QTest
+    QTest.qWaitForWindowExposed(w)
     _app.processEvents()
     yield w
     w._saved_version = w.viewport.scene.version
