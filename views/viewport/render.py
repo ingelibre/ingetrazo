@@ -1970,6 +1970,7 @@ class RenderMixin:
         self._frozen_cache_version = None
         self._edges_version = -1
         self._sel_runs_memo = None
+        self._moved_pack_memo = None      # the drag's faces, let go
         self._preview_offset = QVector3D(0.0, 0.0, 0.0)
         self._preview_matrix = None
         self._pv_edges_count = 0
@@ -2738,17 +2739,22 @@ class RenderMixin:
             self._preview_faces_vbo.allocate(raw, len(raw))
             self._preview_faces_vbo.release()
             self._preview_faces_vao.bind()
-            for (r, g, b), start, count in runs:
-                self._set_color(r, g, b, 1.0)
-                # A preview has no back: it is an overlay, not a solid with an
-                # inside. Its walls are wound however the sweep produced them
-                # and nothing surrounds them to hide the ones turned away, so
-                # the real back-face tint painted the pocket of a push-in blue
-                # over the shape being formed (Marco, 2026-08-27). Both sides
-                # take the face's own colour.
-                self._program.setUniformValue(self._loc_back_color,
-                                              QVector4D(r, g, b, 1.0))
-                self._gl.glDrawArrays(GL_TRIANGLES, start, count)
+            last = None
+            draw = self._gl.glDrawArrays
+            for rgb, start, count in runs:
+                if rgb != last:
+                    # A preview has no back: it is an overlay, not a solid
+                    # with an inside. Its walls are wound however the sweep
+                    # produced them and nothing surrounds them to hide the
+                    # ones turned away, so the real back-face tint painted
+                    # the pocket of a push-in blue over the shape being
+                    # formed (Marco, 2026-08-27). Both sides take the face's
+                    # own colour — _set_color sets both. A run of the colour
+                    # just set draws on it (a vertex drag stretching a
+                    # thousand faces set the colour a thousand times).
+                    self._set_color(rgb[0], rgb[1], rgb[2], 1.0)
+                    last = rgb
+                draw(GL_TRIANGLES, start, count)
             self._preview_faces_vao.release()
             self._set_back_face_color()          # leave the real tint behind
         if by_texture:
@@ -2790,8 +2796,12 @@ class RenderMixin:
         if self._preview_native_ok():
             sweeps = getattr(tool, "preview_sweeps", None)
             spec = sweeps() if callable(sweeps) else None
+            moved = getattr(faces, "moved_parts", None)
             if spec is not None and spec[0] is faces:
                 out = self._bake_preview_sweeps_native(spec[1])
+            elif (moved is not None
+                  and len(faces) >= self.MOVED_NATIVE_MIN_FACES):
+                out = self._bake_preview_moved_native(moved)
             else:
                 out = self._bake_preview_faces_native(faces)
         if out is None:
@@ -2912,6 +2922,69 @@ class RenderMixin:
             return self._preview_native_out(out, table)
         except Exception:  # noqa: BLE001 — Python bakes it (and says why)
             return None
+
+    #: Fewest faces a Move's vertex drag stretches for the engine to bake
+    #: them from the arrays packed at the grab (``MovePreview``); below
+    #: it the faces are walked as any preview's — a few faces take as long
+    #: either way, and the packing is a frame's walk.
+    MOVED_NATIVE_MIN_FACES = 24
+
+    def _bake_preview_moved_native(self, moved):
+        """The bake of a Move's stretched faces (``tools.move._MovedFaces``
+        ``moved_parts``: ``(shown, moving, paint, d)``) made by the
+        engine's ``MovePreview`` — packed once per drag, from the faces'
+        rings and which corners ride — at the offset ``d``: the bytes
+        :meth:`_bake_preview_faces_py` makes of the moved faces, its runs
+        of neighbouring faces of one colour and shade joined (the same
+        triangles drawn the same). ``None``: Python bakes the frame."""
+        import core._native as _native
+        nat = _native.native
+        if nat is None or not hasattr(nat, "MovePreview"):
+            return None
+        shown, moving, paint, d = moved
+        try:
+            memo = getattr(self, "_moved_pack_memo", None)
+            key = (self.scene.version, id(moving), id(paint))
+            if memo is None or memo[0] != key or memo[1] is not shown:
+                memo = self._moved_pack_memo = (
+                    key, shown, self._pack_moved(nat, shown, moving, paint))
+            pack, table = memo[2]
+            lt = self._LIGHT
+            out = pack.bake((d.x(), d.y(), d.z()), (lt.x(), lt.y(), lt.z()),
+                            _native.qt_hypot())
+            return self._preview_native_out(out, table)
+        except Exception:  # noqa: BLE001 — Python bakes it
+            return None
+
+    def _pack_moved(self, nat, shown, moving, paint):
+        """``(MovePreview, material table)`` of the faces ``shown`` (mesh
+        faces) with the corners in ``moving`` riding: their rings as
+        ``preview_faces`` builds them, their look ``effective_attrs`` of
+        their own under ``paint``."""
+        import numpy as np
+        from core.materials import effective_attrs
+        xyz = array("f")
+        ride = []
+        sizes, counts, fmat = [], [], []
+        table = ([], [], [], {}, {})
+        for f in shown:
+            fmat.append(self._preview_mat(
+                effective_attrs(f.attrs, paint) or {}, table))
+            rings = [f.loop, *f.hole_loops]
+            counts.append(len(rings))
+            for ring in rings:
+                sizes.append(len(ring))
+                for v in ring:
+                    p = v.position
+                    xyz.extend((p.x(), p.y(), p.z()))
+                    ride.append(id(v) in moving)
+        pos = np.frombuffer(xyz, dtype=np.float32).reshape(-1, 3)
+        mats = np.array(table[0], dtype=np.float64).reshape(-1, 14)
+        pack = nat.MovePreview(pos, np.array(ride, dtype=bool),
+                               np.array(sizes, dtype=np.int64),
+                               np.array(counts, dtype=np.int64),
+                               np.array(fmat, dtype=np.int64), mats)
+        return pack, table
 
     def _bake_preview_sweeps_native(self, sweeps):
         """The bake of a push's overlay (``tools.pushpull._build_light_faces``)

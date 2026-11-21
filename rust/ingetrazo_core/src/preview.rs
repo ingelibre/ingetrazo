@@ -222,3 +222,60 @@ pub fn sweep(pos: &[V3], rings: &[Vec<u32>], off: V3, cap: usize, wall: usize, o
         }
     }
 }
+
+// ---- Move's vertex drag (Bloque 6d) ----------------------------------------
+
+/// `tools.move.MoveTool.preview_faces` mid vertex drag: each face the drag
+/// stretches, its corners that ride the drag (`ride`, one flag per corner
+/// in `pos` order) moved by `d` — QVector3D's float32 add, `v.position + d`
+/// — and the others left as they are (not `+ 0`, which would turn a -0.0
+/// into a +0.0).
+pub fn moved(faces: &[PFace], ride: &[Vec<bool>], d: V3) -> Vec<PFace> {
+    faces.iter().zip(ride).map(|(f, r)| PFace {
+        pos: f.pos.iter().zip(r).map(|(&p, &on)| if on { add(p, d) } else { p }).collect(),
+        rings: f.rings.clone(),
+        mat: f.mat,
+    }).collect()
+}
+
+/// One draw per run of neighbouring colour faces of the same material and
+/// shade: the same triangles in the same order, drawn with the same
+/// colour, in a fraction of the draw calls (a drag stretching a thousand
+/// faces of a floor made a thousand `glDrawArrays` a frame).
+pub fn merge_runs(runs: &[(u32, u32, u32, f64)]) -> Vec<(u32, u32, u32, f64)> {
+    let mut out: Vec<(u32, u32, u32, f64)> = Vec::with_capacity(runs.len());
+    for &r in runs {
+        if let Some(last) = out.last_mut() {
+            if last.0 == r.0 && last.3.to_bits() == r.3.to_bits() && last.1 + last.2 == r.1 {
+                last.2 += r.2;
+                continue;
+            }
+        }
+        out.push(r);
+    }
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn merge_joins_only_neighbours_alike() {
+        let runs = [(0, 0, 6, 0.5), (0, 6, 3, 0.5), (1, 9, 3, 0.5),
+                    (0, 12, 3, 0.5), (0, 15, 3, 0.75), (0, 18, 0, 0.75)];
+        assert_eq!(merge_runs(&runs), vec![(0, 0, 9, 0.5), (1, 9, 3, 0.5),
+                                            (0, 12, 3, 0.5), (0, 15, 3, 0.75)]);
+        assert!(merge_runs(&[]).is_empty());
+    }
+
+    #[test]
+    fn moved_keeps_resting_corners_bit_exact() {
+        let f = PFace { pos: vec![V3(-0.0, 1.0, 2.0), V3(3.0, -0.0, 0.1)],
+                        rings: vec![vec![0, 1]], mat: 0 };
+        let out = moved(&[f], &[vec![false, true]], V3(0.0, 0.0, 0.2));
+        assert_eq!(out[0].pos[0].0.to_bits(), (-0.0f32).to_bits());
+        assert_eq!(out[0].pos[1].1.to_bits(), 0.0f32.to_bits());
+        assert_eq!(out[0].pos[1].2, 0.1f32 + 0.2f32);
+    }
+}
