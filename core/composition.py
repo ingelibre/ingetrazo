@@ -744,9 +744,7 @@ class IndiceLaminas:
     page 1, another on sheet 2 with page 2, and so on.
 
     ``layout`` = ``"tree"`` lists the sheets under their folders, indented
-    by depth. Sheets carry no folder yet; the layout reads one from a
-    ``folder`` attribute of a sheet (``"Plans/Ground floor"``) when there
-    is one (see :func:`sheet_folder`), and until then it lists flat."""
+    by depth: the sheet explorer's folders (see :func:`sheet_folder`)."""
 
     x_mm: float = 20.0
     y_mm: float = 20.0
@@ -810,42 +808,59 @@ class TocEntry:
     current: bool = False         # the sheet the index sits on
 
 
-def sheet_folder(comp) -> tuple:
+def sheet_folder(comp, scene=None) -> tuple:
     """The folder path of a sheet as a tuple of names, ``()`` at the top.
 
-    Sheets have no folders yet. This is the one place the index reads
-    them from, so that when they arrive the tree layout only needs the
-    sheet to carry ``folder`` — a ``"A/B"`` path or a list of names."""
+    With *scene*, the sheet explorer's folders (``folder_id``, see
+    :mod:`core.sheet_folders`) give the path. Without one — or for a sheet
+    outside any folder — a ``folder`` attribute is read instead: a
+    ``"A/B"`` path or a list of names."""
+    fid = getattr(comp, "folder_id", None)
+    if scene is not None and fid:
+        from core.sheet_folders import folder_path
+        path = folder_path(scene, fid)
+        if path:
+            return path
     raw = getattr(comp, "folder", None) or ()
     parts = (raw if isinstance(raw, (list, tuple))
              else str(raw).replace("\\", "/").split("/"))
     return tuple(str(p).strip() for p in parts if str(p).strip())
 
 
-def toc_entries(comps, toc: IndiceLaminas, here=None) -> list:
+def toc_entries(comps, toc: IndiceLaminas, here=None, scene=None) -> list:
     """Every row of index *toc* over the sheets *comps* (the document's
     order), *here* being the sheet the index sits on. Sheet numbers are
-    the sheets' positions — what ``{hoja}`` prints on each of them."""
+    the sheets' positions — what ``{hoja}`` prints on each of them.
+    *scene* lends the "By folder" layout the sheet explorer's folders."""
     comps = list(comps or [])
-    rows = [(i, c) for i, c in enumerate(comps)
+
+    def folder_of(c):
+        return sheet_folder(c, scene)
+
+    rows =[(i, c) for i, c in enumerate(comps)
             if toc.include_self or c is not here]
     if toc.layout != "tree":
         return [TocEntry(c.name, str(i + 1), 0, False, c is here)
                 for i, c in rows]
-    # By folder: sheets at the top first, then each folder in the order
-    # its first sheet appears, sub-folders inside it; the document's order
-    # within a folder. A folder heading is written when its branch opens.
-    first: dict = {}
-    for _i, c in rows:
-        path = sheet_folder(c)
-        for k in range(1, len(path) + 1):
-            first.setdefault(path[:k], len(first))
-    rows.sort(key=lambda r: tuple(first[sheet_folder(r[1])[:k]]
-                                  for k in range(1, len(sheet_folder(r[1])) + 1)))
+    # By folder. With the sheet explorer's folders (*scene*), the
+    # document's order already is the explorer's tree, top to bottom: the
+    # index lists it as it stands. Otherwise: sheets at the top first, then
+    # each folder in the order its first sheet appears, sub-folders inside
+    # it; the document's order within a folder. A folder heading is
+    # written when its branch opens.
+    if scene is None:
+        first: dict = {}
+        for _i, c in rows:
+            path = folder_of(c)
+            for k in range(1, len(path) + 1):
+                first.setdefault(path[:k], len(first))
+        rows.sort(key=lambda r: tuple(
+            first[folder_of(r[1])[:k]]
+            for k in range(1, len(folder_of(r[1])) + 1)))
     out: list = []
     open_path: tuple = ()
     for i, c in rows:
-        path = sheet_folder(c)
+        path = folder_of(c)
         same = 0
         while (same < min(len(path), len(open_path))
                and path[same] == open_path[same]):

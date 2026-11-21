@@ -12367,7 +12367,8 @@ class ComposerWindow(QMainWindow):
         under it says how many rows and pages the index has."""
         from core.composition import toc_entries, toc_page_count
         ix = item.model
-        n = len(toc_entries(self._scene().compositions, ix, self.comp))
+        scene = self._scene()
+        n = len(toc_entries(scene.compositions, ix, self.comp, scene))
         pages = toc_page_count(n, ix.per_page)
         self.ix_page.setEnabled(ix.per_page > 0)
         self.ix_info.setText(tr("{n} entries on {pages} page(s)").format(
@@ -12377,9 +12378,10 @@ class ComposerWindow(QMainWindow):
         """``(rows, page, pages)`` of sheet index *ix* sitting on *comp*
         (the open sheet by default), read from the document now."""
         from core.composition import toc_entries, toc_slice
-        comps = getattr(self._scene(), "compositions", None) or []
+        scene = self._scene()
+        comps = getattr(scene, "compositions", None) or []
         here = comp if comp is not None else self.comp
-        return toc_slice(toc_entries(comps, ix, here), ix)
+        return toc_slice(toc_entries(comps, ix, here, scene), ix)
 
     def _refresh_toc_items(self) -> None:
         """A sheet added, renamed, moved or deleted: every index on the
@@ -14781,15 +14783,18 @@ class ComposerWindow(QMainWindow):
 
     def export_sheets(self, path: str, sheets=None, fmt: str = "pdf",
                       dpi: float = 150.0) -> dict:
-        """Export ``sheets`` (default: all, in document order) without the
+        """Export ``sheets`` (default: what Export all takes — the sheets
+        marked for printing in the sheet explorer, in its order) without the
         window being shown. ``pdf`` writes ONE file (the atlas); ``png``
         writes one file per sheet, ``<path stem>-<nn>-<sheet>.png``.
         Returns ``{"files": [...], "errors": {sheet: [messages]}}`` — a
         frame that failed to render, a frame on a missing scene."""
         import re
         from pathlib import Path
-        comps = list(self._scene().compositions)
+        from core.sheet_folders import printed_sheets
+        comps = printed_sheets(self._scene())
         if sheets is not None:
+            comps = list(self._scene().compositions)
             wanted = {id(c) for c in sheets}
             comps = [c for c in comps if id(c) in wanted]
         errors: dict = {}

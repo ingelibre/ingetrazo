@@ -81,6 +81,40 @@ def test_open_save_shutdown_ends_with_0(tmp_path):
     assert doc.read_bytes().startswith(b"{\n")
 
 
+def test_the_sheet_tools_work_headless(tmp_path):
+    """#1505's sheet tools in a window-less IngeTrazo (#1494): a sheet is
+    made, looked at and exported with no window anywhere, and saved."""
+    doc = tmp_path / "Casa.igz"
+    shutil.copy(EXAMPLE, doc)
+    proc = _server("--open", str(doc), "--allow-save", "--save-format",
+                   "json", "--allow-shutdown")
+    try:
+        _rpc(proc, 1, "initialize", {})
+        r = _rpc(proc, 2, "tools/call", {"name": "create_sheet", "arguments": {
+            "name": "Headless", "frame": False, "title_block": True}})["result"]
+        assert not r.get("isError"), _text(r)
+        r = _tool(proc, 3, "render_sheet", sheet="Headless", dpi=20)
+        assert not r.get("isError"), _text(r)
+        assert r["content"][0]["type"] == "image"
+        pdf = tmp_path / "sheets.pdf"
+        r = _tool(proc, 4, "export_sheets", path=str(pdf),
+                  sheets=["Headless"])
+        assert not r.get("isError"), _text(r)
+        assert pdf.stat().st_size > 0
+        r = _tool(proc, 5, "list_sheet_folders")
+        assert not r.get("isError"), _text(r)
+        assert not _tool(proc, 6, "save_document").get("isError")
+        assert not _tool(proc, 7, "shutdown").get("isError")
+        proc.stdin.close()
+        proc.wait(timeout=60)
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+    assert proc.returncode == 0, proc.stderr.read()
+    saved = json.loads(doc.read_text(encoding="utf-8"))
+    assert "Headless" in [c["name"] for c in saved["scene"]["compositions"]]
+
+
 def test_the_client_going_away_ends_both_with_5(tmp_path):
     doc = tmp_path / "Casa.igz"
     shutil.copy(EXAMPLE, doc)

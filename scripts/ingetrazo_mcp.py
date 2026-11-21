@@ -282,18 +282,27 @@ TOOLS += [
     _tool("create_sheet", (
         "New sheet: empty with one frame filling the page, or a copy of "
         "the sheet 'template' names; placed after the sheet 'after' names "
-        "(else last)."),
+        "(in its folder; else last), or at the end of 'folder' (a sheet "
+        "folder's path 'A/B' or id; '' = the top)."),
         {"name": {"type": "string"}, "template": _S, "after": _S,
          "paper": {"type": "string", "enum": ["A4", "A3", "A2", "A1", "A0"]},
          "landscape": {"type": "boolean"}, "frame": {"type": "boolean"},
-         "title_block": {"type": "boolean"}}, ["name"], write=True),
-    _tool("update_sheet", "Rename a sheet, change its paper, or move it "
-          "to 'index'.",
+         "title_block": {"type": "boolean"},
+         "folder": {"type": "string"}}, ["name"], write=True),
+    _tool("update_sheet", "Rename a sheet, change its paper, move it to "
+          "'index' (sheets stay with their folders), into 'folder' (path "
+          "'A/B' or id; '' = the top), or switch 'print_in_all' (whether "
+          "Print all / Export all take it).",
           {"sheet": _S, "name": {"type": "string"},
            "paper": {"type": "string", "enum": ["A4", "A3", "A2", "A1",
                                                 "A0"]},
            "landscape": {"type": "boolean"}, "index": {"type": "integer"},
-           "margin_mm": _NUM}, ["sheet"], write=True),
+           "margin_mm": _NUM, "folder": {"type": "string"},
+           "print_in_all": {"type": "boolean"}}, ["sheet"], write=True),
+    _tool("list_sheet_folders", "The sheet explorer's folders, top to "
+          "bottom: id, path, Print flag, whether it prints (it and every "
+          "folder around it on) and its own sheets. list_sheets gives each "
+          "sheet's folder, print_in_all and printed."),
     _tool("delete_sheet", "Delete a sheet (needs confirm=true; a document "
           "keeps at least one).",
           {"sheet": _S, "confirm": {"type": "boolean"}}, ["sheet"],
@@ -356,7 +365,8 @@ TOOLS += [
     _tool("export_sheets", (
         "Export sheets without the Composer window: format 'pdf' writes "
         "one file with every sheet a page; 'png' one file per sheet next "
-        "to path. Returns the files and the errors of each sheet (missing "
+        "to path. Without 'sheets': the sheets Print all takes (printed in "
+        "list_sheets), in the explorer's order. Returns the files and the errors of each sheet (missing "
         "views, frames that did not render)."),
         {"path": {"type": "string", "description": "Absolute file path."},
          "sheets": {"type": "array", "items": _S},

@@ -486,7 +486,8 @@ class _Bridge(QObject):
     # take an optional ``expected_revision`` and refresh the composer when
     # it exists — open or not; none of them needs the window shown.
     _SHEET_READS = {"list_sheets": "list", "get_sheet": "get",
-                    "list_views": "list_views"}
+                    "list_views": "list_views",
+                    "list_sheet_folders": "list_folders"}
     _SHEET_WRITES = {
         "create_sheet": "create", "update_sheet": "update",
         "delete_sheet": "delete", "add_frame": "add_frame",

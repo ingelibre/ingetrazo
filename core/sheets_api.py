@@ -205,9 +205,65 @@ class SheetsAPI:
                 "index": i, "name": c.name, "paper": c.paper,
                 "landscape": c.landscape, "frames": len(c.frames),
                 "texts": len(c.texts), "title_block": c.cajetin is not None,
+                **self._tree_info(c),
                 "warnings": self.warnings(c),
             })
         return out
+
+    # ---- the sheet explorer's folders and Print flag ---------------------------
+    def _tree_info(self, c: Composicion) -> dict:
+        """Where ``c`` sits in the sheet explorer: its folder path ("" at
+        the top), its own Print flag, and whether Print all takes it (its
+        flag and every folder around it on)."""
+        from core import sheet_folders as sf
+        return {"folder": "/".join(sf.folder_path(
+                    self.scene, getattr(c, "folder_id", None))),
+                "print_in_all": bool(getattr(c, "print_in_all", True)),
+                "printed": sf.sheet_printed(self.scene, c)}
+
+    def folder(self, ref):
+        """The sheet folder ``ref`` names: its id or its path ("A/B");
+        ``None`` or "" is the top (returns ``None``)."""
+        from core import sheet_folders as sf
+        if ref is None or str(ref).strip("/ ") == "":
+            return None
+        f = sf.folder_by_id(self.scene, ref)
+        if f is not None:
+            return f
+        want = tuple(_norm(p) for p in str(ref).replace("\\", "/").split("/")
+                     if p.strip())
+        for f in sf.folders_of(self.scene):
+            if tuple(_norm(n) for n in sf.folder_path(self.scene, f.id)) == want:
+                return f
+        raise SheetError(f"no sheet folder {ref!r}; folders: " + (", ".join(
+            repr("/".join(sf.folder_path(self.scene, f.id)))
+            for f in sf.folders_of(self.scene)) or "none"))
+
+    def list_folders(self) -> list:
+        """Every sheet folder, top to bottom: id, path, Print flag, whether
+        it prints (it and every folder around it on), and its own sheets."""
+        from core import sheet_folders as sf
+        out = []
+
+        def walk(parent_id) -> None:
+            for f in sf.subfolders(self.scene, parent_id):
+                out.append({
+                    "id": f.id, "name": f.name,
+                    "path": "/".join(sf.folder_path(self.scene, f.id)),
+                    "print_in_all": bool(f.print_in_all),
+                    "printed": sf.folder_printed(self.scene, f.id),
+                    "sheets": [c.name for c in sf.sheets_in(self.scene, f.id)]})
+                walk(f.id)
+        walk(None)
+        return out
+
+    def _place(self, c: Composicion, folder) -> None:
+        """Put ``c`` at the end of ``folder`` (id or path; "" the top); the
+        sheet order follows the tree, as the explorer keeps it."""
+        from core import sheet_folders as sf
+        target = self.folder(folder)
+        sf.move_items(self.scene, [c], [],
+                      None if target is None else target.id)
 
     def get(self, ref, cotas: bool = False) -> dict:
         """One sheet as JSON. Dimensions only as a count unless ``cotas``."""
@@ -216,7 +272,7 @@ class SheetsAPI:
         d = {
             "index": comps.index(c), "name": c.name, "paper": c.paper,
             "landscape": c.landscape, "page_mm": list(c.page_size_mm()),
-            "margin_mm": c.margin_mm,
+            "margin_mm": c.margin_mm, **self._tree_info(c),
             "frames": [self.frame_info(c, f, i)
                        for i, f in enumerate(c.frames)],
             "texts": [dict(index=i, **{k: getattr(t, k) for k in _TEXT_KEYS})
@@ -413,10 +469,12 @@ class SheetsAPI:
     # ---- sheets -------------------------------------------------------------------
     def create(self, name: str, template=None, after=None, paper: str = "A3",
                landscape: bool = True, frame: bool = True,
-               title_block: bool = False) -> dict:
+               title_block: bool = False, folder=None) -> dict:
         """A new sheet: empty (one frame filling the page unless
         ``frame=False``), or a copy of the sheet ``template`` names. It goes
-        after the sheet ``after`` names, else last."""
+        after the sheet ``after`` names (into that sheet's folder), else
+        last; ``folder`` (id or path, "" the top) puts it at that folder's
+        end instead."""
         import uuid
         comps = self._comps
         name = str(name or "").strip()
@@ -439,10 +497,20 @@ class SheetsAPI:
             if title_block:
                 c.cajetin = c.default_cajetin()
         c.name = name
+        if folder is not None:
+            self.folder(folder)                   # an unknown one: refused
         if after is None:
+            c.folder_id = None
             comps.append(c)
         else:
-            comps.insert(comps.index(self.sheet(after)) + 1, c)
+            prev = self.sheet(after)
+            c.folder_id = getattr(prev, "folder_id", None)
+            comps.insert(comps.index(prev) + 1, c)
+        if folder is not None:
+            self._place(c, folder)
+        else:
+            from core.sheet_folders import sync_order
+            sync_order(self.scene)
         return self.get(c)
 
     @staticmethod
@@ -452,8 +520,11 @@ class SheetsAPI:
                              f"{', '.join(PAPER_SIZES_MM)}, not {paper!r}")
 
     def update(self, ref, name=None, paper=None, landscape=None,
-               index=None, margin_mm=None) -> dict:
-        """Rename, change the paper, or move the sheet to ``index``."""
+               index=None, margin_mm=None, folder=None,
+               print_in_all=None) -> dict:
+        """Rename, change the paper, move the sheet to ``index`` (within
+        the tree: sheets stay with their folders), into ``folder`` (id or
+        path, "" the top), or switch its Print flag."""
         c = self.sheet(ref)
         comps = self._comps
         if name is not None:
@@ -477,6 +548,13 @@ class SheetsAPI:
                 raise SheetError(f"index must be 0…{len(comps) - 1}")
             comps.remove(c)
             comps.insert(i, c)
+        if folder is not None:
+            self._place(c, folder)
+        elif index is not None:
+            from core.sheet_folders import sync_order
+            sync_order(self.scene)
+        if print_in_all is not None:
+            c.print_in_all = bool(print_in_all)
         return self.get(c)
 
     def delete(self, ref, confirm: bool = False) -> dict:

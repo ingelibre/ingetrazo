@@ -101,15 +101,16 @@ rechaza: dos clientes no construyen sobre lo que el otro borró).
 
 | Tool | Qué hace |
 |---|---|
-| `list_sheets` | Láminas en orden: papel, orientación, marcos, cajetín y **avisos**: marco con escena inexistente, dibujo recortado a su escala, escala no normalizada (con la sugerida), marcadores `{…}` que se imprimirían tal cual. |
-| `get_sheet` | Una lámina en JSON: marcos (vista, escala, x/y/w/h mm, estilo, `cam_target`, `content_mm` = extensión del dibujo en papel), textos, cajetín. Cotas solo como número salvo `cotas=true`. |
-| `create_sheet` / `update_sheet` / `delete_sheet` | Nueva (vacía o copia de otra, en la posición pedida), renombrar/reordenar/papel, borrar (con `confirm`). |
+| `list_sheets` | Láminas en orden: papel, orientación, marcos, cajetín, carpeta (`folder`, ruta `"Planos/Cubierta"`), interruptor de impresión (`print_in_all`), si Imprimir todo la toma (`printed`) y **avisos**: marco con escena inexistente, dibujo recortado a su escala, escala no normalizada (con la sugerida), marcadores `{…}` que se imprimirían tal cual. |
+| `get_sheet` | Una lámina en JSON: marcos (vista, escala, x/y/w/h mm, estilo, `cam_target`, `content_mm` = extensión del dibujo en papel), textos, cajetín, carpeta e impresión. Cotas solo como número salvo `cotas=true`. |
+| `create_sheet` / `update_sheet` / `delete_sheet` | Nueva (vacía o copia de otra; tras `after`, en su carpeta, o al final de `folder`), renombrar/reordenar/papel, mover a otra carpeta (`folder`: ruta o id, `""` = raíz), encender o apagar su impresión (`print_in_all`), borrar (con `confirm`). El orden de las láminas sigue siempre el árbol del explorador. |
+| `list_sheet_folders` | Las carpetas del explorador de láminas, de arriba abajo: id, ruta, interruptor de impresión, si imprime y sus láminas. |
 | `add_frame` / `update_frame` / `remove_frame` / `fit_frame` | Marcos de vista; `fit: "content"` centra en la geometría visible de la escena (respeta sus capas ocultas), `fit: "view"` toma el objetivo de la escena guardada. |
 | `set_title_block` | Cajetín de una lámina o de todas (`"all"`); los valores admiten marcadores (`{proyecto}`/`{project}`/`{projekt}`, `{fecha}`/`{date}`/`{datum}`, `{hoja}`/`{blatt}`, `{total}`/`{gesamt}`… — la lista completa va en la descripción de la tool). |
 | `add_text` / `update_text` | Textos de la lámina. |
 | `list_views` / `create_view` / `update_view` / `delete_view` | Escenas guardadas, con las láminas que usan cada una. Renombrar una escena renombra los marcos que la muestran. |
 | `render_sheet` | PNG de una lámina devuelto al cliente — el `screenshot` de las láminas. |
-| `export_sheets` | PDF (un archivo, una página por lámina) o PNG (uno por lámina) sin abrir el compositor, con los errores de cada lámina. |
+| `export_sheets` | PDF (un archivo, una página por lámina) o PNG (uno por lámina) sin abrir el compositor, con los errores de cada lámina. Sin `sheets`, las que toma Imprimir todo, en el orden del explorador. Funciona también sin ventana (`--headless`). |
 
 En `run_python` la misma API está en el scope como `sheets`
 (`sheets.list()`, `sheets.get("Planta")`, `sheets.update_frame(...)`…).
