@@ -1200,11 +1200,18 @@ class PickingMixin:
         # arch inside never opened (Marco, 2026-09-14).
         # The content version: a click (a view-only bump) changes nothing
         # in it — on the plant of #158 it rebuilt it on every click.
-        key = (_content_ver(self), id(self.scene.mesh), oculto,
+        key = (Viewport._pick_geometry_ver(self), id(self.scene.mesh), oculto,
                id(self.scene.edit_group), getattr(self, "_pick_gen", 0))
         cached = getattr(self, "_pick_index_cache", None)
         if cached is not None and cached[0] == key:
             return cached[1]
+        prev = getattr(self, "_pick_index_prev", None)
+        if (prev is not None and prev[0] == key
+                and prev[2] is getattr(self, "_pick_block", None)):
+            # The rest state of a prism push again (see note_same_geometry):
+            # the index made for it, not a rebuild of the very same one.
+            self._pick_index_prev, self._pick_index_cache = cached, prev
+            return prev[1]
         if (cached is not None and len(cached) > 2
                 and cached[0][:4] == key[:4]
                 and getattr(self, "_frozen_cache_version", None) is not None
@@ -1581,8 +1588,36 @@ class PickingMixin:
         idx.own_spans = own_spans
         if _PERF:
             _plog("pick_index", (_time_mod.perf_counter() - _p0) * 1000.0)
+        # The rest state's index stays beside the new one while a drag goes
+        # back to it each pointer move (see note_same_geometry); otherwise
+        # one index at a time, as ever (they are big on a big model).
+        rest = getattr(self, "_pick_rest", None)
+        self._pick_index_prev = (
+            cached if cached is not None and rest is not None
+            and cached[0][0] == rest[0]
+            and _content_ver(self) - rest[1] <= 2 else None)
         self._pick_index_cache = (key, idx, getattr(self, "_pick_block", None))
         return idx
+
+    def note_same_geometry(self, same_as) -> None:
+        """The model is now, to the last bit, what it was at content version
+        ``same_as`` — a prism push slid its cap back to where the drag took
+        it, and only its own moves bumped the version since: the pick index
+        made at ``same_as`` answers for this version too (it is the index a
+        rebuild would make), and is kept while the drag returns to it. The
+        caller vouches for it; the next version bump ends it."""
+        now = _content_ver(self)
+        if not isinstance(now, int) or not isinstance(same_as, int):
+            return                       # a frozen preview: not this case
+        self._pick_geom_alias = (now, same_as)
+        self._pick_rest = (same_as, now)
+
+    def _pick_geometry_ver(self):
+        """``_content_ver``, read through :meth:`note_same_geometry`'s
+        alias while it stands."""
+        now = _content_ver(self)
+        alias = getattr(self, "_pick_geom_alias", None)
+        return alias[1] if alias is not None and alias[0] == now else now
 
     def _pick_static_tris(self, key, v0, e1, e2, te) -> dict:
         """The static chunks' triangles joined, kept while the same chunks
