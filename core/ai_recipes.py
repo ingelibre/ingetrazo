@@ -82,7 +82,10 @@ láminas usa la API estable sheets: sheets.list(), sheets.get("Planta"), \
 sheets.add_frame("Planta", view="Corte A", scale=50, fit="content"), \
 sheets.update_frame(...), sheets.set_title_block("all", fields=[["PROYECTO", \
 "{proyecto}"]]), sheets.list_views(), sheets.update_view(v, name=...) (los \
-marcos siguen el nombre nuevo) — nunca métodos _privados del compositor.
+marcos siguen el nombre nuevo), sheets.update("Planta", folder="Planos") \
+(carpetas), sheets.create_set("Tejado", sheets=["Planta", "Cubierta"]) \
+(juegos de láminas por destinatario) — nunca métodos _privados del \
+compositor.
 - CAPA / ETIQUETA: ly = Layer("Muros"); layers.append(ly); g.layer = \
 "Muros". En layers solo van objetos Layer, nunca textos.
 - print(...) para reportar datos (breve: el resultado viaja cada turno)."""

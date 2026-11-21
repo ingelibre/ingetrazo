@@ -12383,7 +12383,7 @@ class ComposerWindow(QMainWindow):
         (the open sheet by default), read from the document now."""
         from core.composition import toc_entries, toc_slice
         scene = self._scene()
-        comps = getattr(scene, "compositions", None) or []
+        comps, _set_name = self._counted_sheets()
         here = comp if comp is not None else self.comp
         return toc_slice(toc_entries(comps, ix, here, scene), ix)
 
@@ -14628,7 +14628,8 @@ class ComposerWindow(QMainWindow):
         finally:
             painter.end()
 
-    def export_all_pdf(self, path: str, sheets=None) -> list:
+    def export_all_pdf(self, path: str, sheets=None,
+                       sheet_set=None) -> list:
         """The atlas: every sheet of the document into ONE PDF, each on
         its own page at its own paper size. Returns the names of the sheets
         where a frame would not render.
@@ -14641,14 +14642,51 @@ class ComposerWindow(QMainWindow):
         vista» and the caller says which sheets to look at.
 
         ``sheets`` limits it to those (in the document's order) — the
-        Browser exports the ones selected there."""
-        comps = self._scene().compositions
+        Browser exports the ones selected there. ``sheet_set`` (a set, its
+        name or id; #1519) exports that set instead, in its own order, its
+        pages numbered within it (see :meth:`export_scope`)."""
+        comps, name = self._sheets_to_export(sheets, sheet_set)
+        writer = QPdfWriter(path)
+        writer.setResolution(RENDER_DPI)
+        with self.export_scope(comps if sheet_set is not None else None,
+                               name):
+            return self._paint_atlas(writer, comps, RENDER_DPI)
+
+    def _sheets_to_export(self, sheets=None, sheet_set=None) -> tuple:
+        """``(sheets, set name)``: ``sheet_set`` given, what printing that
+        set takes (its members with Print on, in its order) and its name —
+        an unknown set raises ``ValueError``; else ``sheets`` in the
+        document's order, or every sheet."""
+        scene = self._scene()
+        if sheet_set is not None:
+            from core import sheet_sets as ss
+            found = ss.find_set(scene, sheet_set)
+            return ss.export_list(scene, found), (found.name if found
+                                                  else "")
+        comps = list(scene.compositions)
         if sheets is not None:
             wanted = {id(c) for c in sheets}
             comps = [c for c in comps if id(c) in wanted]
-        writer = QPdfWriter(path)
-        writer.setResolution(RENDER_DPI)
-        return self._paint_atlas(writer, comps, RENDER_DPI)
+        return comps, ""
+
+    def export_scope(self, sheets=None, set_name: str = ""):
+        """A context in which the sheets painted count within ``sheets``
+        (a sheet set being printed or exported, #1519): ``{hoja}`` /
+        ``{total}`` say the place and count in it, ``{juego}`` / ``{set}``
+        its name, and every sheet index lists only those sheets, numbered
+        alike. ``None``: the document, as on the canvas."""
+        import contextlib
+
+        @contextlib.contextmanager
+        def scope():
+            saved = getattr(self, "_export_scope", None)
+            self._export_scope = (None if sheets is None
+                                  else (list(sheets), set_name or ""))
+            try:
+                yield
+            finally:
+                self._export_scope = saved
+        return scope()
 
     def _paint_atlas(self, device, comps, dpi) -> list:
         """Paint ``comps`` on ``device`` (a PDF writer or a printer), one
@@ -14687,12 +14725,18 @@ class ComposerWindow(QMainWindow):
                 painter.end()
         return troubled
 
-    def print_sheets(self, sheets, parent=None, printer=None) -> bool:
+    def print_sheets(self, sheets, parent=None, printer=None,
+                     sheet_set=None) -> bool:
         """Print ``sheets`` — the printer dialog once, then one page per
         sheet at its own paper size and orientation, as the PDF atlas lays
         them out. ``printer`` skips the dialog (tests print to a PDF file).
         Without Qt's print module it says so and points at Export all,
-        which gives the same pages. True if anything went to print."""
+        which gives the same pages. True if anything went to print.
+        ``sheet_set`` prints that set instead (#1519), its pages numbered
+        within it."""
+        set_name = ""
+        if sheet_set is not None:
+            sheets, set_name = self._sheets_to_export(None, sheet_set)
         sheets = [c for c in sheets if c in self._scene().compositions]
         if not sheets:
             return False
@@ -14720,7 +14764,9 @@ class ComposerWindow(QMainWindow):
             if not dlg.exec():                   # cancelled
                 return False
         dpi = float(printer.resolution() or RENDER_DPI)
-        troubled = self._paint_atlas(printer, sheets, dpi)
+        with self.export_scope(sheets if sheet_set is not None else None,
+                               set_name):
+            troubled = self._paint_atlas(printer, sheets, dpi)
         if troubled:
             self.statusBar().showMessage(
                 tr("Printed — but a view would not render on {sheets}",
@@ -14767,6 +14813,34 @@ class ComposerWindow(QMainWindow):
             painter.end()
         return img
 
+    def render_sheet_svg(self, comp: Composicion, path: str,
+                         render: bool = True) -> bool:
+        """``comp`` as an SVG file at ``path``, page size in millimetres —
+        drawn by the same painter as the PDF. True when written."""
+        from PySide6.QtCore import QRectF, QSize
+        from PySide6.QtSvg import QSvgGenerator
+        if render:
+            self._render_frames_of(comp)
+        pw, ph = comp.page_size_mm()
+        gen = QSvgGenerator()
+        gen.setFileName(str(path))
+        gen.setResolution(int(RENDER_DPI))
+        scale = RENDER_DPI / 25.4
+        gen.setSize(QSize(int(round(pw * scale)), int(round(ph * scale))))
+        gen.setViewBox(QRectF(0, 0, pw * scale, ph * scale))
+        gen.setTitle(comp.name)
+        painter = QPainter()
+        if not painter.begin(gen):
+            return False
+        try:
+            painter.fillRect(QRectF(0, 0, pw * scale, ph * scale), Qt.white)
+            painter.scale(scale, scale)
+            self._paint_sheet(painter, comp)
+        finally:
+            painter.end()
+        from pathlib import Path
+        return Path(path).is_file()
+
     def _render_frames_of(self, comp: Composicion) -> list:
         """Render every frame of ``comp``; the indices that failed."""
         failed = []
@@ -14786,21 +14860,27 @@ class ComposerWindow(QMainWindow):
         return failed
 
     def export_sheets(self, path: str, sheets=None, fmt: str = "pdf",
-                      dpi: float = 150.0) -> dict:
+                      dpi: float = 150.0, sheet_set=None) -> dict:
         """Export ``sheets`` (default: what Export all takes — the sheets
         marked for printing in the sheet explorer, in its order) without the
         window being shown. ``pdf`` writes ONE file (the atlas); ``png``
-        writes one file per sheet, ``<path stem>-<nn>-<sheet>.png``.
+        writes one file per sheet, ``<path stem>-<nn>-<sheet>.png``, and
+        ``svg`` likewise. ``sheet_set`` (#1519) exports that set, in its
+        order, numbered within it.
         Returns ``{"files": [...], "errors": {sheet: [messages]}}`` — a
         frame that failed to render, a frame on a missing scene."""
+        from core.sheet_folders import printed_sheets
+        if sheet_set is not None or sheets is not None:
+            comps, set_name = self._sheets_to_export(sheets, sheet_set)
+        else:
+            comps, set_name = printed_sheets(self._scene()), ""
+        with self.export_scope(comps if sheet_set is not None else None,
+                               set_name):
+            return self._export_sheets(path, comps, fmt, dpi)
+
+    def _export_sheets(self, path: str, comps, fmt: str, dpi: float) -> dict:
         import re
         from pathlib import Path
-        from core.sheet_folders import printed_sheets
-        comps = printed_sheets(self._scene())
-        if sheets is not None:
-            comps = list(self._scene().compositions)
-            wanted = {id(c) for c in sheets}
-            comps = [c for c in comps if id(c) in wanted]
         errors: dict = {}
         for c in comps:
             for k, f in enumerate(c.frames):
@@ -14810,11 +14890,14 @@ class ComposerWindow(QMainWindow):
                         f"frame {k}: the scene «{gone}» is missing")
         fmt = (fmt or "pdf").lower()
         if fmt == "pdf":
-            for name in self.export_all_pdf(path, sheets=comps):
+            writer = QPdfWriter(path)
+            writer.setResolution(RENDER_DPI)
+            for name in self._paint_atlas(writer, comps, RENDER_DPI):
                 errors.setdefault(name, []).append("a frame did not render")
             return {"files": [str(path)], "errors": errors}
-        if fmt != "png":
-            raise ValueError(f"format must be 'pdf' or 'png', not {fmt!r}")
+        if fmt not in ("png", "svg"):
+            raise ValueError(f"format must be 'pdf', 'png' or 'svg', "
+                             f"not {fmt!r}")
         out = Path(path)
         files = []
         for i, c in enumerate(comps):
@@ -14822,19 +14905,32 @@ class ComposerWindow(QMainWindow):
                 errors.setdefault(c.name, []).append(
                     f"frame {k} did not render")
             safe = re.sub(r"[^\w\-]+", "_", c.name)
-            target = out.with_name(f"{out.stem}-{i + 1:02d}-{safe}.png")
-            if not self.render_sheet_image(c, dpi, render=False).save(str(target)):
+            target = out.with_name(f"{out.stem}-{i + 1:02d}-{safe}.{fmt}")
+            ok = (self.render_sheet_svg(c, str(target), render=False)
+                  if fmt == "svg" else
+                  self.render_sheet_image(c, dpi, render=False).save(
+                      str(target)))
+            if not ok:
                 errors.setdefault(c.name, []).append(
                     f"could not write {target}")
             files.append(str(target))
         return {"files": files, "errors": errors}
 
     def _set_field_context(self, comp) -> None:
-        comps = list(getattr(self._scene(), "compositions", []) or [])
-        idx = comps.index(comp) if comp in comps else None
+        comps, set_name = self._counted_sheets()
+        idx = next((i for i, c in enumerate(comps) if c is comp), None)
         set_field_context(comp=comp, scene=self._scene(),
                           path=getattr(self._window, "_current_path", None),
-                          index=idx, total=len(comps))
+                          index=idx, total=len(comps), set_name=set_name)
+
+    def _counted_sheets(self) -> tuple:
+        """``(sheets, set name)`` that {hoja}, {total} and the sheet index
+        count in: the sheet set being printed (see :meth:`export_scope`),
+        else the document."""
+        scope = getattr(self, "_export_scope", None)
+        if scope is not None:
+            return scope
+        return list(getattr(self._scene(), "compositions", []) or []), ""
 
     def _paint_sheet(self, painter: QPainter, comp: Composicion) -> None:
         """Draw one sheet's items in mm space (painter already scaled), in

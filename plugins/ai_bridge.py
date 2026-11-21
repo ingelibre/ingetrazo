@@ -487,7 +487,9 @@ class _Bridge(QObject):
     # it exists — open or not; none of them needs the window shown.
     _SHEET_READS = {"list_sheets": "list", "get_sheet": "get",
                     "list_views": "list_views",
-                    "list_sheet_folders": "list_folders"}
+                    "list_sheet_folders": "list_folders",
+                    "list_sheet_sets": "list_sets",
+                    "get_sheet_set": "get_set"}
     _SHEET_WRITES = {
         "create_sheet": "create", "update_sheet": "update",
         "delete_sheet": "delete", "add_frame": "add_frame",
@@ -496,6 +498,8 @@ class _Bridge(QObject):
         "add_text": "add_text", "update_text": "update_text",
         "create_view": "create_view", "update_view": "update_view",
         "delete_view": "delete_view",
+        "create_sheet_set": "create_set", "update_sheet_set": "update_set",
+        "delete_sheet_set": "delete_set",
     }
 
     def _sheets_api(self):
@@ -539,7 +543,10 @@ class _Bridge(QObject):
                     "update_sheet": {"sheet": "ref"},
                     "delete_sheet": {"sheet": "ref"},
                     "update_view": {"view": "ref"},
-                    "delete_view": {"view": "ref"}}
+                    "delete_view": {"view": "ref"},
+                    "get_sheet_set": {"set": "ref"},
+                    "update_sheet_set": {"set": "ref"},
+                    "delete_sheet_set": {"set": "ref"}}
 
     def _sheet_handler(self, tool: str):
         renames = self._ARG_RENAMES.get(tool, {})
@@ -595,12 +602,21 @@ class _Bridge(QObject):
             raise RuntimeError("this window has no sheet composer")
         return ensure()
 
-    def _tool_render_sheet(self, sheet=0, dpi: int = 80) -> dict:
-        """One sheet as a PNG the client can look at (like screenshot)."""
+    def _tool_render_sheet(self, sheet=0, dpi: int = 80,
+                           sheet_set=None) -> dict:
+        """One sheet as a PNG the client can look at (like screenshot);
+        with ``sheet_set``, as that set prints it (#1519): its page number,
+        count and index within the set."""
         api = self._sheets_api()
         comp = api.sheet(sheet)
         dpi = max(20, min(int(dpi), 300))
-        image = self._ensure_composer().render_sheet_image(comp, dpi)
+        composer = self._ensure_composer()
+        if sheet_set:
+            comps, name = composer._sheets_to_export(None, sheet_set)
+            with composer.export_scope(comps, name):
+                image = composer.render_sheet_image(comp, dpi)
+        else:
+            image = composer.render_sheet_image(comp, dpi)
         out_dir = Path(tempfile.gettempdir()) / "ingetrazo-ai"
         out_dir.mkdir(parents=True, exist_ok=True)
         out = out_dir / "sheet.png"
@@ -610,12 +626,17 @@ class _Bridge(QObject):
                 "warnings": api.warnings(comp)}
 
     def _tool_export_sheets(self, path: str = "", sheets=None,
-                            format: str = "pdf", dpi: int = 150) -> dict:  # noqa: A002
+                            format: str = "pdf", dpi: int = 150,  # noqa: A002
+                            sheet_set=None) -> dict:
         """PDF (one file, every sheet a page) or PNG (one per sheet), with
         the errors of each sheet — the window need not be open."""
         if not path:
             raise ValueError("path is required (an absolute file path)")
         api = self._sheets_api()
+        if sheet_set:
+            api.sheet_set(sheet_set)          # an unknown set: a clear error
+            return self._ensure_composer().export_sheets(
+                str(path), None, format, float(dpi), sheet_set=sheet_set)
         comps = None if sheets is None else [api.sheet(s) for s in sheets]
         return self._ensure_composer().export_sheets(str(path), comps, format,
                                               float(dpi))

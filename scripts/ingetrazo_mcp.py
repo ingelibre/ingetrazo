@@ -360,18 +360,52 @@ TOOLS += [
     _tool("render_sheet", "Render one sheet to a PNG and LOOK at it — the "
           "screenshot of a sheet. Works with the Composer window closed.",
           {"sheet": _S, "dpi": {"type": "integer",
-                                "description": "20-300, default 80"}},
+                                "description": "20-300, default 80"},
+           "sheet_set": {"type": "string", "description": (
+               "Render it as this sheet set prints it: page number, count "
+               "and sheet index within the set, {set} = its name.")}},
           ["sheet"]),
     _tool("export_sheets", (
         "Export sheets without the Composer window: format 'pdf' writes "
-        "one file with every sheet a page; 'png' one file per sheet next "
+        "one file with every sheet a page; 'png' and 'svg' one file per "
+        "sheet next "
         "to path. Without 'sheets': the sheets Print all takes (printed in "
         "list_sheets), in the explorer's order. Returns the files and the errors of each sheet (missing "
         "views, frames that did not render)."),
         {"path": {"type": "string", "description": "Absolute file path."},
          "sheets": {"type": "array", "items": _S},
-         "format": {"type": "string", "enum": ["pdf", "png"]},
-         "dpi": {"type": "integer"}}, ["path"]),
+         "format": {"type": "string", "enum": ["pdf", "png", "svg"]},
+         "dpi": {"type": "integer"},
+         "sheet_set": {"type": "string", "description": (
+             "Export this sheet set instead (name or id): its sheets with "
+             "Print on, in the set's order; {hoja}/{page}, {total} and the "
+             "sheet index count within the set, {set} prints its name.")}},
+        ["path"]),
+    _tool("list_sheet_sets", "Sheet sets (plan sets): named, ordered "
+          "selections of sheets for one audience (permit, roofer, client…). "
+          "Each with its sheets in its order (cover first) and those Print "
+          "takes. 'All sheets' is implicit: what Print all takes."),
+    _tool("get_sheet_set", "One sheet set by name or id.",
+          {"set": {"type": "string"}}, ["set"]),
+    _tool("create_sheet_set", "New sheet set with 'sheets' (names) in that "
+          "order; optional cover sheet (printed first) and description.",
+          {"name": {"type": "string"},
+           "sheets": {"type": "array", "items": _S}, "cover": _S,
+           "description": {"type": "string"}}, ["name"], write=True),
+    _tool("update_sheet_set", "Rename a set, replace its sheets ('sheets', "
+          "in that order), or add / remove some (added ones take their place "
+          "in the explorer's order); set its cover ('' clears) or "
+          "description. Sets follow renamed and moved sheets.",
+          {"set": {"type": "string"}, "name": {"type": "string"},
+           "sheets": {"type": "array", "items": _S},
+           "add": {"type": "array", "items": _S},
+           "remove": {"type": "array", "items": _S},
+           "cover": _S, "description": {"type": "string"}}, ["set"],
+          write=True),
+    _tool("delete_sheet_set", "Delete a sheet set (needs confirm=true); its "
+          "sheets stay.",
+          {"set": {"type": "string"}, "confirm": {"type": "boolean"}},
+          ["set"], write=True),
 ]
 
 _sock: socket.socket | None = None

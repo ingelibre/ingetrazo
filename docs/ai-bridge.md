@@ -109,8 +109,9 @@ rechaza: dos clientes no construyen sobre lo que el otro borró).
 | `set_title_block` | Cajetín de una lámina o de todas (`"all"`); los valores admiten marcadores (`{proyecto}`/`{project}`/`{projekt}`, `{fecha}`/`{date}`/`{datum}`, `{hoja}`/`{blatt}`, `{total}`/`{gesamt}`… — la lista completa va en la descripción de la tool). |
 | `add_text` / `update_text` | Textos de la lámina. |
 | `list_views` / `create_view` / `update_view` / `delete_view` | Escenas guardadas, con las láminas que usan cada una. Renombrar una escena renombra los marcos que la muestran. |
-| `render_sheet` | PNG de una lámina devuelto al cliente — el `screenshot` de las láminas. |
-| `export_sheets` | PDF (un archivo, una página por lámina) o PNG (uno por lámina) sin abrir el compositor, con los errores de cada lámina. Sin `sheets`, las que toma Imprimir todo, en el orden del explorador. Funciona también sin ventana (`--headless`). |
+| `list_sheet_sets` / `get_sheet_set` / `create_sheet_set` / `update_sheet_set` / `delete_sheet_set` | **Juegos de láminas** (#1519): selecciones con nombre y orden propio para cada destinatario (permiso, tejador, cliente…). Una lámina puede estar en varios; el juego la sigue aunque se renombre o se mueva. Portada opcional (va primero) y descripción. «Todas las láminas» es implícito: lo que toma Imprimir todo. Borrar un juego nunca borra láminas. |
+| `render_sheet` | PNG de una lámina devuelto al cliente — el `screenshot` de las láminas. Con `sheet_set`, tal como la imprime ese juego. |
+| `export_sheets` | PDF (un archivo, una página por lámina), PNG o SVG (uno por lámina) sin abrir el compositor, con los errores de cada lámina. Sin `sheets`, las que toma Imprimir todo, en el orden del explorador; con `sheet_set`, las de ese juego con la impresión encendida, en su orden: `{hoja}`/`{page}`, `{total}` y el índice de láminas cuentan dentro del juego y `{juego}`/`{set}`/`{plansatz}` imprime su nombre. Funciona también sin ventana (`--headless`). |
 
 En `run_python` la misma API está en el scope como `sheets`
 (`sheets.list()`, `sheets.get("Planta")`, `sheets.update_frame(...)`…).
