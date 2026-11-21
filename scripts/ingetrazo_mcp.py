@@ -387,21 +387,25 @@ TOOLS += [
           "takes. 'All sheets' is implicit: what Print all takes."),
     _tool("get_sheet_set", "One sheet set by name or id.",
           {"set": {"type": "string"}}, ["set"]),
-    _tool("create_sheet_set", "New sheet set with 'sheets' (names) in that "
-          "order; optional cover sheet (printed first) and description.",
+    _tool("create_sheet_set", "New sheet set with 'sheets' (names); they "
+          "print in the sheet explorer's order, or with ordered=true in the "
+          "order given. Optional cover sheet (printed first) and "
+          "description.",
           {"name": {"type": "string"},
            "sheets": {"type": "array", "items": _S}, "cover": _S,
-           "description": {"type": "string"}}, ["name"], write=True),
-    _tool("update_sheet_set", "Rename a set, replace its sheets ('sheets', "
-          "in that order), or add / remove some (added ones take their place "
-          "in the explorer's order); set its cover ('' clears) or "
-          "description. Sets follow renamed and moved sheets.",
+           "description": {"type": "string"},
+           "ordered": {"type": "boolean"}}, ["name"], write=True),
+    _tool("update_sheet_set", "Rename a set, replace its sheets ('sheets') "
+          "or add / remove some; set its cover ('' clears) or description; "
+          "ordered=true keeps an explicit order (the order of 'sheets'), "
+          "false follows the explorer's order. Sets follow renamed and "
+          "moved sheets.",
           {"set": {"type": "string"}, "name": {"type": "string"},
            "sheets": {"type": "array", "items": _S},
            "add": {"type": "array", "items": _S},
            "remove": {"type": "array", "items": _S},
-           "cover": _S, "description": {"type": "string"}}, ["set"],
-          write=True),
+           "cover": _S, "description": {"type": "string"},
+           "ordered": {"type": "boolean"}}, ["set"], write=True),
     _tool("delete_sheet_set", "Delete a sheet set (needs confirm=true); its "
           "sheets stay.",
           {"set": {"type": "string"}, "confirm": {"type": "boolean"}},

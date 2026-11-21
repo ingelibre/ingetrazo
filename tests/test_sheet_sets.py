@@ -81,6 +81,17 @@ def test_a_set_keeps_its_own_order_and_the_cover_comes_first():
     assert _names(ss.members(scene, st)) == ["S1", "S5", "S2", "S3"]
 
 
+def test_by_default_a_set_follows_the_explorer_s_order():
+    scene = _doc()
+    st = SheetSet("Tree")
+    scene.sheet_sets.append(st)
+    ss.set_members(scene, st, [_sheet(scene, n) for n in ("S5", "S2")],
+                   ordered=False)
+    assert _names(ss.members(scene, st)) == ["S2", "S5"]
+    scene.compositions.reverse()             # reordered in the explorer...
+    assert _names(ss.members(scene, st)) == ["S5", "S2"]   # ...the set too
+
+
 def test_a_sheet_in_several_sets_and_a_renamed_one_stays():
     scene = _doc()
     a, b = SheetSet("A"), SheetSet("B")
@@ -161,6 +172,7 @@ def test_sets_survive_save_and_open(tmp_path, fmt):
     st.cover_uid = ss.sheet_uid(_sheet(scene, "S1"))
     back, _ = _round_trip(scene, tmp_path, fmt)
     (b,) = back.sheet_sets
+    assert b.ordered is True
     assert (b.id, b.name, b.description) == (st.id, "Roofer",
                                              "Roof plan and details")
     assert _names(ss.members(back, b)) == ["S1", "S4", "S2"]
