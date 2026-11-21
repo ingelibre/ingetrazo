@@ -111,13 +111,21 @@ def test_api_creates_updates_and_deletes_sets(win):
     api = SheetsAPI(scene)
     info = api.create_set("Client", sheets=["C", "A"], cover="B",
                           description="for the client")
-    assert info["sheets"] == ["B", "C", "A"] and info["cover"] == "B"
+    # The explorer's order (the cover first) unless an order is asked for.
+    assert info["sheets"] == ["B", "A", "C"] and info["cover"] == "B"
+    assert info["ordered"] is False
     with pytest.raises(SheetError, match="already"):
         api.create_set("client")
     api.update("A", name="A-renamed")
+    assert api.get_set("Client")["sheets"] == ["B", "A-renamed", "C"]
+    info = api.update_set("Client", sheets=["C", "A-renamed"], ordered=True)
+    assert info["sheets"] == ["B", "C", "A-renamed"] and info["ordered"]
+    scene.compositions.reverse()                 # an explicit order holds
     assert api.get_set("Client")["sheets"] == ["B", "C", "A-renamed"]
+    scene.compositions.reverse()
     assert api.get("C")["sets"] == ["Client"]
-    info = api.update_set("Client", name="Owner", remove=["C"], cover="")
+    info = api.update_set("Client", name="Owner", remove=["C"], cover="",
+                          ordered=False)
     assert info["sheets"] == ["A-renamed"] and info["name"] == "Owner"
     info = api.update_set("Owner", add=["C"])
     assert info["sheets"] == ["A-renamed", "C"]

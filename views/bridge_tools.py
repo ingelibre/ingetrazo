@@ -806,20 +806,20 @@ class BridgeTools:
         return out
 
     def _tool_create_sheet_set(self, name, sheets=None, cover=None,
-                               description: str = "",
+                               description: str = "", ordered: bool = False,
                                expected_revision=None) -> dict:
         return self._sheet_step(expected_revision, "create_set", name=name,
                                 sheets=sheets, cover=cover,
-                                description=description)
+                                description=description, ordered=ordered)
 
     def _tool_update_sheet_set(self, set, name=None, sheets=None,  # noqa: A002
                                add=None, remove=None, cover=None,
-                               description=None,
+                               description=None, ordered=None,
                                expected_revision=None) -> dict:
         return self._sheet_step(expected_revision, "update_set", ref=set,
                                 name=name, sheets=sheets, add=add,
                                 remove=remove, cover=cover,
-                                description=description)
+                                description=description, ordered=ordered)
 
     def _tool_delete_sheet_set(self, set, confirm: bool = False,  # noqa: A002
                                expected_revision=None) -> dict:

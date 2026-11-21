@@ -831,6 +831,7 @@ class SheetsAPI:
         members = ss.members(self.doc, st)
         return {"id": st.id, "name": st.name, "description": st.description,
                 "cover": cover.name if cover is not None else None,
+                "ordered": bool(st.ordered),
                 "sheets": [c.name for c in members],
                 "printed": [c.name for c in members
                             if sheet_printed(self.doc, c)]}
@@ -855,9 +856,10 @@ class SheetsAPI:
         return out
 
     def create_set(self, name: str, sheets=None, cover=None,
-                   description: str = "") -> dict:
-        """A new sheet set ``name`` with ``sheets`` (names or indices) in
-        the order given; without them, empty."""
+                   description: str = "", ordered: bool = False) -> dict:
+        """A new sheet set ``name`` with ``sheets`` (names or indices).
+        They print in the explorer's order, or — ``ordered`` — in the
+        order given."""
         from core import sheet_sets as ss
         name = str(name or "").strip()
         if not name:
@@ -868,17 +870,18 @@ class SheetsAPI:
         members = self._sheets_named(sheets)
         cover_sheet = None if cover in (None, "") else self.sheet(cover)
         self.doc.sheet_sets.append(st)
-        ss.set_members(self.doc, st, members)
+        ss.set_members(self.doc, st, members, ordered=bool(ordered))
         if cover_sheet is not None:
             st.cover_uid = ss.sheet_uid(cover_sheet)
         return self._set_info(st)
 
     def update_set(self, ref, name=None, sheets=None, add=None, remove=None,
-                   cover=None, description=None) -> dict:
-        """Rename a set; replace its sheets (``sheets``, in that order) or
-        ``add`` / ``remove`` some (added ones take their place in the
-        explorer's order); set its ``cover`` ("" clears it) or
-        ``description``."""
+                   cover=None, description=None, ordered=None) -> dict:
+        """Rename a set; replace its sheets (``sheets``) or ``add`` /
+        ``remove`` some; set its ``cover`` ("" clears it) or
+        ``description``. ``ordered=True`` keeps the order of ``sheets``
+        (or the members' present order); ``False`` goes back to the
+        explorer's order."""
         from core import sheet_sets as ss
         st = self.sheet_set(ref)
         if name is not None:
@@ -890,7 +893,15 @@ class SheetsAPI:
                                  f"{name!r}")
             st.name = name
         if sheets is not None:
-            ss.set_members(self.doc, st, self._sheets_named(sheets))
+            ss.set_members(self.doc, st, self._sheets_named(sheets),
+                           ordered=bool(ordered) if ordered is not None
+                           else st.ordered)
+        elif ordered is not None:
+            if ordered and not st.ordered:        # freeze what it shows now
+                ss.set_members(self.doc, st, [
+                    c for c in ss.members(self.doc, st)
+                    if getattr(c, "uid", "") != st.cover_uid], ordered=True)
+            st.ordered = bool(ordered)
         for c in self._sheets_named(add):
             ss.add_to_set(self.doc, st, c)
         for c in self._sheets_named(remove):

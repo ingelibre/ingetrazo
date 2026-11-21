@@ -287,6 +287,11 @@ _SHEET = {"type": ["string", "integer"],
           "description": "the sheet's name, its number in the title block "
                          "(L-02) or its place (1 = first)"}
 _UNIT = {"type": "string", "enum": ["m", "cm", "mm", "in", "ft"]}
+#: Sheets for a sheet set (#1519), and whether it keeps the order given.
+_SHEETS = {"type": "array", "items": _SHEET}
+_ORDERED = {"type": "boolean",
+            "description": ("true: the set prints in the order given; "
+                            "false: in the sheet explorer's order")}
 
 #: Tools with a name and a schema — no code: a client that does not allow
 #: run_python works with these (Marco, 19-11). Each one is an order of the
@@ -601,12 +606,15 @@ TOOLS += [
     },
     {
         "name": "create_sheet_set",
-        "description": ("A new sheet set with `sheets` in that order; an "
-                        "optional cover sheet (printed first) and a "
-                        "description. One undo step."),
+        "description": ("A new sheet set with `sheets`. They print in the "
+                        "sheet explorer's order, or in the order given "
+                        "with ordered=true; an optional cover sheet "
+                        "(printed first) and a description. One undo "
+                        "step."),
         "inputSchema": {"type": "object", "properties": {
-            "name": _STR, "sheets": {"type": "array", "items": _SHEET}, "cover": _SHEET,
-            "description": _STR, "expected_revision": EXPECTED},
+            "name": _STR, "sheets": _SHEETS, "cover": _SHEET,
+            "description": _STR, "ordered": _ORDERED,
+            "expected_revision": EXPECTED},
             "required": ["name"]},
     },
     {
@@ -617,9 +625,9 @@ TOOLS += [
                         "`cover` ('' clears it) or description. Sets follow "
                         "renamed and moved sheets."),
         "inputSchema": {"type": "object", "properties": {
-            "set": _STR, "name": _STR, "sheets": {"type": "array", "items": _SHEET}, "add": {"type": "array", "items": _SHEET},
-            "remove": {"type": "array", "items": _SHEET}, "cover": _SHEET, "description": _STR,
-            "expected_revision": EXPECTED},
+            "set": _STR, "name": _STR, "sheets": _SHEETS, "add": _SHEETS,
+            "remove": _SHEETS, "cover": _SHEET, "description": _STR,
+            "ordered": _ORDERED, "expected_revision": EXPECTED},
             "required": ["set"]},
     },
     {

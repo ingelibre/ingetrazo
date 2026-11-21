@@ -17,6 +17,10 @@ sheet may be in no set, one, or several. Sets live in ``scene.sheet_sets``.
 * The explorer's Print flag filters every set too: a set prints those of
   its members whose own switch and every folder around them are on
   (:func:`export_list`).
+* A set prints its sheets in the explorer's order (the document's), so
+  reordering the explorer reorders every set — no order to keep by hand.
+  Only an explicit order (``ordered``, set through the sheets API / MCP)
+  keeps the set's own.
 * A sheet deleted leaves every set (:func:`prune`); a set deleted never
   deletes a sheet.
 
@@ -55,10 +59,15 @@ class SheetSet:
     #: is also in ``sheet_uids``. "" = none.
     cover_uid: str = ""
     description: str = ""
+    #: True: the set prints in the order of ``sheet_uids`` (an explicit
+    #: order, given through the API); False: in the explorer's order.
+    ordered: bool = False
 
     def to_dict(self) -> dict:
         d = {"id": self.id, "name": self.name,
              "sheets": list(self.sheet_uids)}
+        if self.ordered:
+            d["ordered"] = True
         if self.cover_uid:
             d["cover"] = self.cover_uid
         if self.description:
@@ -74,7 +83,8 @@ class SheetSet:
                    sheet_uids=[str(u) for u in uids if u],
                    id=str(d.get("id") or new_set_id()),
                    cover_uid=str(d.get("cover") or ""),
-                   description=str(d.get("description") or ""))
+                   description=str(d.get("description") or ""),
+                   ordered=bool(d.get("ordered", False)))
 
 
 # ---- Reading -------------------------------------------------------------------
@@ -131,11 +141,17 @@ def find_set(scene, ref) -> Optional[SheetSet]:
 
 
 def members(scene, s: SheetSet) -> list:
-    """The sheets of ``s`` that exist, in the set's order — its cover
-    first. Each sheet once."""
+    """The sheets of ``s`` that exist — its cover first, then the others
+    in the explorer's order (or the set's own, when it is ``ordered``).
+    Each sheet once."""
     out: list = []
     seen: set = set()
-    for uid in ([s.cover_uid] if s.cover_uid else []) + list(s.sheet_uids):
+    uids = list(s.sheet_uids)
+    if not s.ordered:
+        place = {getattr(c, "uid", ""): i
+                 for i, c in enumerate(_comps(scene))}
+        uids.sort(key=lambda u: place.get(u, len(place)))
+    for uid in ([s.cover_uid] if s.cover_uid else []) + uids:
         c = sheet_by_uid(scene, uid)
         if c is not None and id(c) not in seen:
             seen.add(id(c))
@@ -209,14 +225,16 @@ def set_sheet_sets(scene, sheet, wanted) -> None:
             remove_from_set(s, sheet)
 
 
-def set_members(scene, s: SheetSet, sheets) -> None:
-    """Replace ``s``'s members with ``sheets``, in that order."""
+def set_members(scene, s: SheetSet, sheets, ordered: bool = True) -> None:
+    """Replace ``s``'s members with ``sheets``; ``ordered``: they print in
+    that order from now on, else in the explorer's."""
     uids: list = []
     for c in sheets:
         u = sheet_uid(c)
         if u not in uids:
             uids.append(u)
     s.sheet_uids[:] = uids
+    s.ordered = bool(ordered)
 
 
 def prune(scene) -> int:
@@ -282,7 +300,7 @@ def capture(scene) -> dict:
     sets = list(sets_of(scene))
     return {"sets": sets,
             "state": [(s.name, list(s.sheet_uids), s.cover_uid,
-                       s.description) for s in sets],
+                       s.description, s.ordered) for s in sets],
             "uids": [(c, getattr(c, "uid", "")) for c in _comps(scene)]}
 
 
@@ -290,8 +308,10 @@ def restore(scene, snap: dict) -> None:
     """Put the sets back as :func:`capture` saw them. Sheets are never
     added or removed here; a sheet deleted since simply drops out."""
     scene.sheet_sets[:] = snap["sets"]
-    for s, (name, uids, cover, desc) in zip(snap["sets"], snap["state"]):
+    for s, (name, uids, cover, desc, ordered) in zip(snap["sets"],
+                                                      snap["state"]):
         s.name, s.cover_uid, s.description = name, cover, desc
+        s.ordered = ordered
         s.sheet_uids[:] = uids
     present = {id(c) for c in _comps(scene)}
     for c, uid in snap["uids"]:
