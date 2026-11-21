@@ -537,7 +537,8 @@ class SheetsAPI:
         if template is not None:
             src = self.sheet(template)
             c = Composicion.from_dict(src.to_dict())
-            for f in c.frames:                    # fresh identities
+            c.uid = ""                            # fresh identities
+            for f in c.frames:
                 f.uid = uuid.uuid4().hex if f.uid else ""
             for ct in c.cotas:
                 ct.anchor_uid, ct.a_world, ct.b_world = "", None, None
@@ -619,6 +620,8 @@ class SheetsAPI:
         if len(comps) <= 1:
             raise SheetError("a document keeps at least one sheet")
         comps.remove(c)
+        from core.sheet_sets import prune
+        prune(self.doc)                   # it leaves every sheet set
         return {"deleted": c.name, "sheets": len(comps)}
 
     # ---- frames -------------------------------------------------------------------

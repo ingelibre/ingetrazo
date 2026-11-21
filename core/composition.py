@@ -1687,6 +1687,11 @@ class Composicion:
     folder_id: Optional[str] = None
     #: Whether Print all and Export all take this sheet.
     print_in_all: bool = True
+    #: A stable identity for the sheet sets (#1519, see
+    #: :mod:`core.sheet_sets`), which name their sheets by it so a rename
+    #: or a move keeps them. "" until the sheet first joins a set — a
+    #: document without sets saves as before. A copy of a sheet gets none.
+    uid: str = ""
 
     def page_size_mm(self) -> tuple[float, float]:
         w, h = PAPER_SIZES_MM[self.paper]
@@ -1759,6 +1764,8 @@ class Composicion:
             d["folder_id"] = self.folder_id
         if not self.print_in_all:
             d["print_in_all"] = False
+        if self.uid:
+            d["uid"] = self.uid
         return d
 
     @classmethod
@@ -1801,6 +1808,7 @@ class Composicion:
         fid = d.get("folder_id")
         c.folder_id = str(fid) if fid is not None else None
         c.print_in_all = bool(d.get("print_in_all", True))
+        c.uid = str(d.get("uid") or "")
         _migrate_fixed_scale_labels(c)
         return c
 

@@ -2621,6 +2621,123 @@ class SetSheetPrintCommand(_SheetTreeCommand):
             c.print_in_all = self.printed
 
 
+class _SheetSetCommand(Command):
+    """A change to the sheet sets (core.sheet_sets, #1519), undone by
+    putting every set back as it was — names, members, order, cover — and
+    taking back a sheet uid the change handed out. Sheets themselves are
+    never added or removed."""
+
+    def __init__(self) -> None:
+        self._before: Optional[dict] = None
+        self._after: Optional[dict] = None
+
+    def _apply(self, scene) -> None:  # pragma: no cover - interface
+        raise NotImplementedError
+
+    def do(self, scene) -> None:
+        from core import sheet_sets as ss
+        if self._after is not None:             # redo: the same result
+            ss.restore(scene, self._after)
+        else:
+            self._before = ss.capture(scene)
+            try:
+                self._apply(scene)
+            except BaseException:
+                ss.restore(scene, self._before)
+                raise
+            self._after = ss.capture(scene)
+        scene.version += 1
+
+    def undo(self, scene) -> None:
+        from core import sheet_sets as ss
+        if self._before is not None:
+            ss.restore(scene, self._before)
+        scene.version += 1
+
+
+class AddSheetSetCommand(_SheetSetCommand):
+    """A new sheet set (its name made unique), with ``sheets`` as its
+    first members, in the explorer's order."""
+
+    def __init__(self, sheet_set, sheets=()) -> None:
+        super().__init__()
+        self.sheet_set = sheet_set
+        self.sheets = list(sheets)
+
+    def _apply(self, scene) -> None:
+        from core import sheet_sets as ss
+        self.sheet_set.name = ss.unique_name(scene, self.sheet_set.name)
+        scene.sheet_sets.append(self.sheet_set)
+        for c in self.sheets:
+            ss.add_to_set(scene, self.sheet_set, c)
+
+
+class RenameSheetSetCommand(_SheetSetCommand):
+    def __init__(self, sheet_set, name: str) -> None:
+        super().__init__()
+        self.sheet_set = sheet_set
+        self.name = name
+
+    def _apply(self, scene) -> None:
+        from core import sheet_sets as ss
+        name = str(self.name or "").strip()
+        if not name:
+            raise ss.SheetSetError("a sheet set needs a name")
+        if ss.unique_name(scene, name, ignore=self.sheet_set) != name:
+            raise ss.SheetSetError(f"there is already a sheet set named "
+                                   f"{name!r}")
+        self.sheet_set.name = name
+
+
+class DeleteSheetSetCommand(_SheetSetCommand):
+    """Remove a set. Its sheets stay where they are."""
+
+    def __init__(self, sheet_set) -> None:
+        super().__init__()
+        self.sheet_set = sheet_set
+
+    def _apply(self, scene) -> None:
+        scene.sheet_sets[:] = [s for s in scene.sheet_sets
+                               if s is not self.sheet_set]
+
+
+class EditSheetSetCommand(_SheetSetCommand):
+    """A set's members and their order, its cover and its description —
+    each only when given (``None`` leaves it)."""
+
+    def __init__(self, sheet_set, sheets=None, cover=None,
+                 description=None) -> None:
+        super().__init__()
+        self.sheet_set = sheet_set
+        self.sheets = None if sheets is None else list(sheets)
+        self.cover = cover            # a sheet, False to clear, None: keep
+        self.description = description
+
+    def _apply(self, scene) -> None:
+        from core import sheet_sets as ss
+        if self.sheets is not None:
+            ss.set_members(scene, self.sheet_set, self.sheets)
+        if self.cover is False:
+            self.sheet_set.cover_uid = ""
+        elif self.cover is not None:
+            self.sheet_set.cover_uid = ss.sheet_uid(self.cover)
+        if self.description is not None:
+            self.sheet_set.description = str(self.description)
+
+
+class SetSheetSetsOfSheetCommand(_SheetSetCommand):
+    """The sets one sheet is in — the sheet's own «Plan sets» list."""
+
+    def __init__(self, sheet, sheet_sets) -> None:
+        super().__init__()
+        self.sheet = sheet
+        self.sheet_sets = list(sheet_sets)
+
+    def _apply(self, scene) -> None:
+        from core import sheet_sets as ss
+        ss.set_sheet_sets(scene, self.sheet, self.sheet_sets)
+
+
 class CreatePlanCommand(Command):
     """A floor plan from a group, in one undo step: a horizontal section
     plane at the cut height (made the active cut), a scene looking down on
@@ -4556,6 +4673,8 @@ class SnapshotImport(Command):
         ("guides", "added_guides", "removed_guides"),
         # the sheet browser's folders (core.sheet_folders)
         ("sheet_folders", "added_sheet_folders", "removed_sheet_folders"),
+        # the sheet sets (core.sheet_sets, #1519)
+        ("sheet_sets", "added_sheet_sets", "removed_sheet_sets"),
     )
 
     def __init__(self, mutate) -> None:
@@ -4572,7 +4691,11 @@ class SnapshotImport(Command):
 
     #: Scene lists whose members' content is tracked, and what each is.
     _CONTENT = (("compositions", "sheet"), ("saved_views", "scene"),
-                ("layers", "layer"))
+                ("layers", "layer"),
+                # a folder's name and Print flag; a set's name, members
+                # and order (#1519)
+                ("sheet_folders", "sheet_folder"),
+                ("sheet_sets", "sheet_set"))
 
     @property
     def changed(self) -> bool:

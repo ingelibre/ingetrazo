@@ -9464,6 +9464,7 @@ class ComposerWindow(QMainWindow):
     def _copy_of(self, data: dict, name: str):
         dup = Composicion.from_dict(data)
         dup.name = name + tr(" (copy)")
+        dup.uid = ""              # a new sheet: in none of the original's sets
         return dup
 
     def duplicate_sheet(self, index: int, show: bool = False) -> None:
@@ -10584,7 +10585,8 @@ class ComposerWindow(QMainWindow):
                 path.read_text(encoding="utf-8")))
         except Exception:  # noqa: BLE001 — a broken template is skipped
             return None
-        for f in comp.frames:               # fresh identities per sheet
+        comp.uid = ""                       # fresh identities per sheet
+        for f in comp.frames:
             f.uid = uuid.uuid4().hex
         for ct in comp.cotas:
             ct.anchor_uid, ct.a_world, ct.b_world = "", None, None

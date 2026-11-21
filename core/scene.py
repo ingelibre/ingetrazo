@@ -161,6 +161,9 @@ class Scene:
     # The folders the sheet explorer orders them in
     # (core.sheet_folders.SheetFolder); each sheet names its own.
     sheet_folders: list = field(default_factory=list)
+    # Named, ordered selections of the sheets to print or export on their
+    # own (core.sheet_sets.SheetSet, #1519).
+    sheet_sets: list = field(default_factory=list)
     # Scales (1:N) typed by the user in the composer beyond the common
     # presets — kept with the document so every frame of the file offers
     # them again (Marco, 2026-09-02).
@@ -902,6 +905,7 @@ class Scene:
                 or self.guides or self.geo_points or self.text_labels
                 or self.saved_views or self.compositions
                 or self.scene_folders or self.sheet_folders
+                or self.sheet_sets
                 or self.image_planes or self.plugin_data
                 or self.kept_components or self.section_planes
                 or self.section_boxes
@@ -928,6 +932,7 @@ class Scene:
             self.scene_folder_parents = {}
             self.compositions.clear()
             self.sheet_folders.clear()
+            self.sheet_sets.clear()
             self.custom_scales.clear()
             self.kept_components.clear()
             self.materials.clear()
