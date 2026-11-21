@@ -521,9 +521,14 @@ class ProjectionMixin:
         sel = self.scene.selection
         owner = self._owner_of(grp) if grp is not None else None
         from tools.base import PlaneLock
+        try:
+            owned = owner is not None and owner in sel
+        except TypeError:
+            # The faded rest of the model, picked from inside an open group,
+            # comes wrapped in an unhashable namespace: never selected.
+            owned = False
         if (not isinstance(self.active_tool, PlaneLock)
-                and ((owner is not None and owner in sel)
-                     or (grp is None and face in sel))):
+                and (owned or (grp is None and face in sel))):
             return None
         if grp is None:
             # A face the drag is bending (one corner on a grabbed vertex)
