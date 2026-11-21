@@ -11,6 +11,7 @@ from views.viewport._support import (_PERF, _NO_SPAN_GRID, _SPAN_GRID_MIN,
                                      _inst_proto_of, _PickWarm,
                                      _pick_warm_take, _entity_owner,
                                      _split_chunk_spans, _ray_aabb,
+                                     _boxes_meet_native, _boxes_meet_numpy,
                                      _occlusion_native, _INSTANCE_FILTER,
                                      _LAZY_NATIVE, _PICK_WARM, _paint_of,
                                      _cache_ver, _content_ver,
@@ -1747,17 +1748,10 @@ class PickingMixin:
                                 for sp in spans], dtype=np.float64)
                 boxes = idx._span_boxes = (len(spans), blo, bhi)
             _n, blo, bhi = boxes
-            with np.errstate(divide="ignore", invalid="ignore"):
-                inv_d = 1.0 / np.where(np.abs(d) > 1e-12, d, 1e-12)
-                t1 = (blo - o) * inv_d
-                t2 = (bhi - o) * inv_d
-            tmin = _slab_far(np.minimum(t1, t2))
-            tmax = _slab_near(np.maximum(t1, t2))
-            meet = tmax >= np.maximum(tmin, 0.0)
-            if reach is not None:
-                meet &= tmin <= reach
-            spans = [(None,) + tuple(spans[i][1:])
-                     for i in np.flatnonzero(meet)]
+            met = _boxes_meet_native(o, d, blo, bhi, reach)
+            if met is None:
+                met = _boxes_meet_numpy(o, d, blo, bhi, reach)
+            spans = [(None,) + tuple(spans[i][1:]) for i in met.tolist()]
         o3 = (float(o[0]), float(o[1]), float(o[2]))
         d3 = (float(d[0]), float(d[1]), float(d[2]))
         lim = float("inf") if reach is None else float(reach)

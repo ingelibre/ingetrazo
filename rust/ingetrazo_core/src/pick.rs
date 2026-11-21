@@ -116,3 +116,173 @@ pub fn grid_bins(ax: &[f64], ay: &[f64], bx: &[f64], by: &[f64], ok: &[bool], w:
     }
     Bins { cx0, cy0, ncx, ncy, long_ids, keys, ids }
 }
+
+/// ``np.minimum`` / ``np.maximum`` of two floats: a NaN on either side
+/// gives NaN.
+#[inline]
+fn np_min(a: f64, b: f64) -> f64 {
+    if a.is_nan() || b.is_nan() { f64::NAN } else if b < a { b } else { a }
+}
+
+#[inline]
+fn np_max(a: f64, b: f64) -> f64 {
+    if a.is_nan() || b.is_nan() { f64::NAN } else if b > a { b } else { a }
+}
+
+/// ``np.fmax`` / ``np.fmin``: a NaN on one side gives the other side.
+#[inline]
+fn np_fmax(a: f64, b: f64) -> f64 {
+    if a.is_nan() { b } else if b.is_nan() { a } else if b > a { b } else { a }
+}
+
+#[inline]
+fn np_fmin(a: f64, b: f64) -> f64 {
+    if a.is_nan() { b } else if b.is_nan() { a } else if b < a { b } else { a }
+}
+
+/// ``Viewport._ray_hits_np``'s slab test over every span box at once:
+/// whether the forward ray from ``o`` along ``d`` meets box ``i``
+/// (``lo[i]``–``hi[i]``), and not past ``reach`` when there is one. The
+/// NumPy pass, value by value: ``inv_d`` from ``d`` with its tiny
+/// components replaced by 1e-12, ``t1``/``t2`` per axis, ``np.minimum`` /
+/// ``np.maximum`` of them, ``_slab_far`` / ``_slab_near`` (``fmax`` /
+/// ``fmin`` over x, y, z in that order), then ``tmax >= max(tmin, 0)``.
+pub fn boxes_meet(o: [f64; 3], d: [f64; 3], lo: &[f64], hi: &[f64],
+                  reach: Option<f64>) -> Vec<i64> {
+    let mut inv = [0.0f64; 3];
+    for k in 0..3 {
+        // np.where(np.abs(d) > 1e-12, d, 1e-12): a NaN fails the test.
+        let dk = if d[k].abs() > 1e-12 { d[k] } else { 1e-12 };
+        inv[k] = 1.0 / dk;
+    }
+    let n = lo.len() / 3;
+    let mut out = Vec::new();
+    for i in 0..n {
+        let mut mn = [0.0f64; 3];
+        let mut mx = [0.0f64; 3];
+        for k in 0..3 {
+            let t1 = (lo[3 * i + k] - o[k]) * inv[k];
+            let t2 = (hi[3 * i + k] - o[k]) * inv[k];
+            mn[k] = np_min(t1, t2);
+            mx[k] = np_max(t1, t2);
+        }
+        let tmin = np_fmax(np_fmax(mn[0], mn[1]), mn[2]);
+        let tmax = np_fmin(np_fmin(mx[0], mx[1]), mx[2]);
+        // tmax >= np.maximum(tmin, 0.0): any NaN is no meeting.
+        let mut meet = tmax >= np_max(tmin, 0.0);
+        if let Some(r) = reach {
+            meet = meet && tmin <= r;
+        }
+        if meet {
+            out.push(i as i64);
+        }
+    }
+    out
+}
+
+/// ``EdgeGrid.near``'s gather: the long segments and the ids of every cell
+/// of rows ``y0..=y1``, columns ``x0..=x1`` (keys sorted, each row one
+/// slice of them, as ``np.searchsorted`` finds it), sorted and without
+/// repeats — what ``np.unique`` or the mask over all ``n`` gives.
+#[allow(clippy::too_many_arguments)]
+pub fn grid_near(keys: &[i64], ids: &[i64], long_ids: &[i64], ncx: i64, x0: i64, x1: i64,
+                 y0: i64, y1: i64, n: usize) -> Vec<i64> {
+    let mut cand: Vec<i64> = long_ids.to_vec();
+    for row in y0..=y1 {
+        let a = row * ncx + x0;
+        let b = row * ncx + x1;
+        // searchsorted(keys, a, "left") and (keys, b, "right").
+        let lo = keys.partition_point(|&k| k < a);
+        let hi = keys.partition_point(|&k| k <= b);
+        if hi > lo {
+            cand.extend_from_slice(&ids[lo..hi]);
+        }
+    }
+    if cand.len() * 16 < n {
+        cand.sort_unstable();
+        cand.dedup();
+        return cand;
+    }
+    let mut mark = vec![false; n];
+    for &i in &cand {
+        mark[i as usize] = true;
+    }
+    mark.iter().enumerate().filter(|(_, &m)| m).map(|(i, _)| i as i64).collect()
+}
+
+use numpy::{PyArray1, PyReadonlyArray1, PyReadonlyArray2};
+use pyo3::prelude::*;
+
+/// ``Viewport._ray_hits_np``'s box test over the span boxes ``lo``/``hi``
+/// (B,3) float64 (pick::boxes_meet): the indices of the boxes the ray
+/// meets, in order — ``np.flatnonzero(meet)``. Over the ~11 000 spans of a
+/// model of 1 400 placements the NumPy pass and the gathers were ~0.4 ms of
+/// every ray a hover casts.
+#[pyfunction]
+#[pyo3(signature = (o, d, lo, hi, reach=None))]
+pub fn ray_boxes_meet<'py>(py: Python<'py>, o: (f64, f64, f64), d: (f64, f64, f64),
+                           lo: PyReadonlyArray2<'py, f64>, hi: PyReadonlyArray2<'py, f64>,
+                           reach: Option<f64>) -> PyResult<Bound<'py, PyArray1<i64>>> {
+    let (lo, hi) = (lo.as_array(), hi.as_array());
+    if lo.shape() != hi.shape() || lo.shape()[1] != 3 {
+        return Err(pyo3::exceptions::PyValueError::new_err("shape"));
+    }
+    let (lo, hi) = match (lo.as_slice(), hi.as_slice()) {
+        (Some(a), Some(b)) => (a, b),
+        _ => return Err(pyo3::exceptions::PyTypeError::new_err("contiguous")),
+    };
+    let out = boxes_meet([o.0, o.1, o.2], [d.0, d.1, d.2], lo, hi, reach);
+    Ok(PyArray1::from_vec(py, out))
+}
+
+/// ``EdgeGrid.near``'s candidates (pick::grid_near): the sorted, repeat-free
+/// indices of the segments in the cells around the cursor plus the long
+/// ones. ``np.unique`` of them was ~0.2 ms of each edge query of a hover.
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+pub fn edge_grid_near<'py>(py: Python<'py>, keys: PyReadonlyArray1<'py, i64>,
+                           ids: PyReadonlyArray1<'py, i64>,
+                           long_ids: PyReadonlyArray1<'py, i64>, ncx: i64, x0: i64,
+                           x1: i64, y0: i64, y1: i64, n: usize)
+    -> PyResult<Bound<'py, PyArray1<i64>>> {
+    let (keys, ids, long_ids) = (keys.as_array(), ids.as_array(), long_ids.as_array());
+    let (keys, ids, long_ids) = match (keys.as_slice(), ids.as_slice(), long_ids.as_slice()) {
+        (Some(a), Some(b), Some(c)) => (a, b, c),
+        _ => return Err(pyo3::exceptions::PyTypeError::new_err("contiguous")),
+    };
+    if keys.len() != ids.len() || ids.iter().chain(long_ids).any(|&i| i < 0 || i as usize >= n) {
+        return Err(pyo3::exceptions::PyValueError::new_err("ids"));
+    }
+    let out = grid_near(keys, ids, long_ids, ncx, x0, x1, y0, y1, n);
+    Ok(PyArray1::from_vec(py, out))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_ray_meets_the_boxes_it_crosses() {
+        let lo = [0.0, 0.0, 0.0, 5.0, 5.0, 5.0, f64::NEG_INFINITY, f64::NEG_INFINITY,
+                  f64::NEG_INFINITY];
+        let hi = [1.0, 1.0, 1.0, 6.0, 6.0, 6.0, f64::INFINITY, f64::INFINITY, f64::INFINITY];
+        let got = boxes_meet([0.5, 0.5, -1.0], [0.0, 0.0, 1.0], &lo, &hi, None);
+        assert_eq!(got, vec![0, 2]);
+        let got = boxes_meet([0.5, 0.5, -1.0], [0.0, 0.0, 1.0], &lo, &hi, Some(0.5));
+        assert_eq!(got, vec![2]);
+        // Behind the eye: no meeting.
+        let got = boxes_meet([0.5, 0.5, 3.0], [0.0, 0.0, 1.0], &lo[..3], &hi[..3], None);
+        assert!(got.is_empty());
+    }
+
+    #[test]
+    fn the_grid_gathers_each_segment_once_sorted() {
+        // Cells 0..4 in one row of 4; segment 3 sits in two cells.
+        let keys = [0, 1, 1, 2, 3];
+        let ids = [5, 3, 1, 3, 0];
+        let got = grid_near(&keys, &ids, &[4], 4, 1, 2, 0, 0, 100);
+        assert_eq!(got, vec![1, 3, 4]);
+        let got = grid_near(&keys, &ids, &[4], 4, 1, 2, 0, 0, 6);
+        assert_eq!(got, vec![1, 3, 4]);
+    }
+}

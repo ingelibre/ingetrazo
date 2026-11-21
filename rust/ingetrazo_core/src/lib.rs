@@ -52,6 +52,9 @@ fn ingetrazo_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(nearest_within, m)?)?;
     m.add_function(wrap_pyfunction!(project_px, m)?)?;
     m.add_function(wrap_pyfunction!(edge_grid_bins, m)?)?;
+    // Bloque 6a: the hover's picks under the cursor (pick.rs).
+    m.add_function(wrap_pyfunction!(pick::ray_boxes_meet, m)?)?;
+    m.add_function(wrap_pyfunction!(pick::edge_grid_near, m)?)?;
     m.add_function(wrap_pyfunction!(visible_parts, m)?)?;
     m.add_function(wrap_pyfunction!(earcut_indices, m)?)?;
     m.add_function(wrap_pyfunction!(faces_view, m)?)?;

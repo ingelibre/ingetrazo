@@ -498,6 +498,64 @@ def _ray_aabb(o, d, lo, hi, reach=float("inf")) -> bool:
     return True
 
 
+#: The hover picks' own kernels in the native engine (pick.rs, Bloque 6a):
+#: a ray's test of every span box and the edge grid's gather. Both answer
+#: with NumPy's very indices; INGETRAZO_PICK_NATIVE=0 keeps NumPy (for
+#: measuring and for the tests that compare both).
+_PICK_NATIVE = os.environ.get("INGETRAZO_PICK_NATIVE", "1") != "0"
+
+
+def _pick_native(name):
+    """core._native when the pick kernels are on and it has ``name``."""
+    if not _PICK_NATIVE:
+        return None
+    from core import _native
+    mod = _native.native
+    return mod if mod is not None and hasattr(mod, name) else None
+
+
+def _boxes_meet_numpy(o, d, blo, bhi, reach=None):
+    """The indices of the boxes ``blo``/``bhi`` (B, 3) the forward ray from
+    ``o`` along ``d`` (NumPy (3,) arrays) meets, not past ``reach``: the
+    vectorised slab test of ``Viewport._ray_hits_np`` over thousands of
+    span boxes at once (its tiny direction components read as 1e-12)."""
+    import numpy as np
+    with np.errstate(divide="ignore", invalid="ignore"):
+        inv_d = 1.0 / np.where(np.abs(d) > 1e-12, d, 1e-12)
+        t1 = (blo - o) * inv_d
+        t2 = (bhi - o) * inv_d
+    tmin = _slab_far(np.minimum(t1, t2))
+    tmax = _slab_near(np.maximum(t1, t2))
+    meet = tmax >= np.maximum(tmin, 0.0)
+    if reach is not None:
+        meet &= tmin <= reach
+    return np.flatnonzero(meet)
+
+
+def _boxes_meet_native(o, d, blo, bhi, reach=None):
+    """The indices of the boxes ``blo``/``bhi`` (B, 3) the forward ray from
+    ``o`` along ``d`` meets (not past ``reach``), from the native engine —
+    ``Viewport._ray_hits_np``'s slab test value by value — or None without
+    it (the caller runs :func:`_boxes_meet_numpy`)."""
+    import numpy as np
+    mod = _pick_native("ray_boxes_meet")
+    if mod is None or not (isinstance(blo, np.ndarray)
+                           and isinstance(bhi, np.ndarray)
+                           and blo.dtype == np.float64
+                           and bhi.dtype == np.float64
+                           and blo.ndim == 2 and blo.shape == bhi.shape
+                           and blo.shape[1] == 3):
+        return None
+    try:
+        return mod.ray_boxes_meet(
+            (float(o[0]), float(o[1]), float(o[2])),
+            (float(d[0]), float(d[1]), float(d[2])),
+            np.ascontiguousarray(blo), np.ascontiguousarray(bhi),
+            None if reach is None else float(reach))
+    except (TypeError, ValueError):
+        return None
+
+
 #: Every chunk entry built (or loaded from disk) takes the next number.
 #: Keys that told entries apart by ``id(entry)`` could not: the dict a
 #: rebuild replaces is freed at once, and the new one may land at the same

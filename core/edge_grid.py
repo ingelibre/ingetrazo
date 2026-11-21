@@ -19,6 +19,8 @@ a long distance pass may go to the native engine, bit for bit.
 """
 from __future__ import annotations
 
+import os
+
 import numpy as np
 
 #: Cell side in pixels.
@@ -128,6 +130,9 @@ class EdgeGrid:
         y1 = int(np.floor((py + r) / c)) - self.cy0
         x0, x1 = max(x0, 0), min(x1, self.ncx - 1)
         y0, y1 = max(y0, 0), min(y1, self.ncy - 1)
+        got = self._near_native(x0, x1, y0, y1)
+        if got is not None:
+            return got
         parts = [self.long_ids]
         # Cells of one row are consecutive keys: one slice per row.
         for row in range(y0, y1 + 1):
@@ -145,9 +150,36 @@ class EdgeGrid:
         mark[cand] = True
         return np.flatnonzero(mark)
 
+    def _near_native(self, x0, x1, y0, y1):
+        """:meth:`near`'s gather of the cells ``x0..x1`` × ``y0..y1`` in the
+        native engine — the same sorted, repeat-free indices (``np.unique``
+        of them was ~0.2 ms of each edge query of a hover over 1 400
+        placements, 21-11) — or ``None`` without it."""
+        if not _GRID_NATIVE:
+            return None
+        from core import _native
+        mod = _native.native
+        if mod is None or not hasattr(mod, "edge_grid_near"):
+            return None
+        f = np.ascontiguousarray
+        try:
+            return mod.edge_grid_near(
+                f(self.keys, np.int64), f(self.ids, np.int64),
+                f(self.long_ids, np.int64), int(self.ncx), int(x0), int(x1),
+                int(y0), int(y1), int(self.n))
+        except (TypeError, ValueError):
+            return None
 
-#: Below this many segments NumPy's pass is as quick as a native call.
-NATIVE_MIN = 20_000
+
+#: The grid's gather in the native engine (``EdgeGrid._near_native``);
+#: INGETRAZO_PICK_NATIVE=0 keeps NumPy, for measuring and for the tests.
+_GRID_NATIVE = os.environ.get("INGETRAZO_PICK_NATIVE", "1") != "0"
+
+
+#: Below this many segments NumPy's pass is as quick as a native call: the
+#: native pass was faster from 200 segments up (4x there, 3.6x at 10 000,
+#: 21-11), so only a handful stay in NumPy.
+NATIVE_MIN = 256
 
 #: Whether the native pass gives NumPy's very bits here (None: not checked).
 _NATIVE_SAME = None
