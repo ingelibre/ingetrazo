@@ -1895,14 +1895,19 @@ FIELD_NAMES = {
     "nombre": ("name", "planname", "sheet_name"),   # {sheet} is the LÁMINA row
     "hoja": ("page", "blatt"),
     "total": ("total", "gesamt"),
+    # The sheet set being printed or exported (#1519); "" otherwise.
+    "juego": ("set", "plansatz"),
 }
 
 
 def set_field_context(comp=None, scene=None, path=None, index=None,
-                      total=None) -> None:
+                      total=None, set_name: str = "") -> None:
+    """What the next sheet drawn knows about itself. ``index`` / ``total``
+    are its place and the count in what is being drawn — the document, or
+    the sheet set being printed (``set_name``, #1519)."""
     _FIELD_CTX.clear()
     _FIELD_CTX.update(comp=comp, scene=scene, path=path, index=index,
-                      total=total)
+                      total=total, set_name=set_name or "")
 
 
 def field_values(frame_uid: str = "") -> dict:
@@ -1953,6 +1958,7 @@ def field_values(frame_uid: str = "") -> dict:
         "archivo": Path(str(path)).stem if path else "",
         "hoja": str(idx + 1) if idx is not None else "",
         "total": str(total) if total else "",
+        "juego": str(_FIELD_CTX.get("set_name") or ""),
     }
     for es, names in FIELD_NAMES.items():
         for name in names:
@@ -1979,8 +1985,9 @@ _FIELD_RE = None
 
 def expand_fields(text, frame_uid: str = "") -> str:
     """Replace ``{proyecto}``, ``{lamina}``, ``{escala}``, ``{escena}``,
-    ``{fecha}``, ``{archivo}``, ``{autor}``, ``{nombre}``, ``{hoja}`` and
-    ``{total}`` — or their English and German names, see ``FIELD_NAMES`` —
+    ``{fecha}``, ``{archivo}``, ``{autor}``, ``{nombre}``, ``{hoja}``,
+    ``{total}`` and ``{juego}`` (the sheet set printed) — or their English
+    and German names, see ``FIELD_NAMES`` —
     with the sheet's live values (QGIS-style dynamic text).
     Unknown fields — the scale label's ``{n}`` included — stay as typed."""
     global _FIELD_RE

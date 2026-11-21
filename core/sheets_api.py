@@ -266,10 +266,12 @@ class SheetsAPI:
         the top), its own Print flag, and whether Print all takes it (its
         flag and every folder around it on)."""
         from core import sheet_folders as sf
+        from core import sheet_sets as ss
         return {"folder": "/".join(sf.folder_path(
                     self.doc, getattr(c, "folder_id", None))),
                 "print_in_all": bool(getattr(c, "print_in_all", True)),
-                "printed": sf.sheet_printed(self.doc, c)}
+                "printed": sf.sheet_printed(self.doc, c),
+                "sets": [st.name for st in ss.sets_of_sheet(self.doc, c)]}
 
     def folder(self, ref):
         """The sheet folder ``ref`` names: its id or its path ("A/B");
@@ -808,6 +810,106 @@ class SheetsAPI:
                 + (f"; it is shown on: {', '.join(users)}" if users else ""))
         self.doc.saved_views.remove(v)
         return {"deleted": v.name, "orphaned_on": users}
+
+    # ---- sheet sets (#1519) --------------------------------------------------------
+    def sheet_set(self, ref):
+        """The sheet set ``ref`` names: its name (any case) or id."""
+        from core import sheet_sets as ss
+        try:
+            found = ss.find_set(self.doc, ref)
+        except ss.SheetSetError as exc:
+            raise SheetError(str(exc)) from None
+        if found is None:
+            raise SheetError("'All sheets' is no set of its own: it is what "
+                             "Print all takes")
+        return found
+
+    def _set_info(self, st) -> dict:
+        from core import sheet_sets as ss
+        from core.sheet_folders import sheet_printed
+        cover = ss.sheet_by_uid(self.doc, st.cover_uid)
+        members = ss.members(self.doc, st)
+        return {"id": st.id, "name": st.name, "description": st.description,
+                "cover": cover.name if cover is not None else None,
+                "sheets": [c.name for c in members],
+                "printed": [c.name for c in members
+                            if sheet_printed(self.doc, c)]}
+
+    def list_sets(self) -> list:
+        """Every sheet set: its sheets in its order (cover first) and those
+        of them Print takes (Print flag and folders on)."""
+        from core import sheet_sets as ss
+        return [self._set_info(st) for st in ss.sets_of(self.doc)]
+
+    def get_set(self, ref) -> dict:
+        return self._set_info(self.sheet_set(ref))
+
+    def _sheets_named(self, refs) -> list:
+        if isinstance(refs, (str, int)):
+            refs = [refs]
+        out = []
+        for r in refs or []:
+            c = self.sheet(r)
+            if c not in out:
+                out.append(c)
+        return out
+
+    def create_set(self, name: str, sheets=None, cover=None,
+                   description: str = "") -> dict:
+        """A new sheet set ``name`` with ``sheets`` (names or indices) in
+        the order given; without them, empty."""
+        from core import sheet_sets as ss
+        name = str(name or "").strip()
+        if not name:
+            raise SheetError("a sheet set needs a name")
+        if ss.unique_name(self.doc, name) != name:
+            raise SheetError(f"there is already a sheet set named {name!r}")
+        st = ss.SheetSet(name, description=str(description or ""))
+        members = self._sheets_named(sheets)
+        cover_sheet = None if cover in (None, "") else self.sheet(cover)
+        self.doc.sheet_sets.append(st)
+        ss.set_members(self.doc, st, members)
+        if cover_sheet is not None:
+            st.cover_uid = ss.sheet_uid(cover_sheet)
+        return self._set_info(st)
+
+    def update_set(self, ref, name=None, sheets=None, add=None, remove=None,
+                   cover=None, description=None) -> dict:
+        """Rename a set; replace its sheets (``sheets``, in that order) or
+        ``add`` / ``remove`` some (added ones take their place in the
+        explorer's order); set its ``cover`` ("" clears it) or
+        ``description``."""
+        from core import sheet_sets as ss
+        st = self.sheet_set(ref)
+        if name is not None:
+            name = str(name).strip()
+            if not name:
+                raise SheetError("a sheet set needs a name")
+            if ss.unique_name(self.doc, name, ignore=st) != name:
+                raise SheetError(f"there is already a sheet set named "
+                                 f"{name!r}")
+            st.name = name
+        if sheets is not None:
+            ss.set_members(self.doc, st, self._sheets_named(sheets))
+        for c in self._sheets_named(add):
+            ss.add_to_set(self.doc, st, c)
+        for c in self._sheets_named(remove):
+            ss.remove_from_set(st, c)
+        if cover is not None:
+            st.cover_uid = ("" if cover == "" else
+                            ss.sheet_uid(self.sheet(cover)))
+        if description is not None:
+            st.description = str(description)
+        return self._set_info(st)
+
+    def delete_set(self, ref, confirm: bool = False) -> dict:
+        """Delete a set (needs ``confirm=True``). Its sheets stay."""
+        st = self.sheet_set(ref)
+        if not confirm:
+            raise SheetError(f"deleting the set {st.name!r} needs "
+                             f"confirm=true (its sheets stay)")
+        self.doc.sheet_sets.remove(st)
+        return {"deleted": st.name, "sets": len(self.doc.sheet_sets)}
 
     # ---- documentation ------------------------------------------------------------
     @staticmethod

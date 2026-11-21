@@ -13266,7 +13266,7 @@ class ComposerWindow(QMainWindow):
         """``(rows, page, pages)`` of sheet index *ix* sitting on *comp*
         (the open sheet by default), read from the document now."""
         from core.composition import toc_entries, toc_slice
-        comps = getattr(self._scene(), "compositions", None) or []
+        comps, _set_name = self._counted_sheets()   # a set prints its own
         here = comp if comp is not None else self.comp
         return toc_slice(toc_entries(
             comps, ix, here, getattr(self._scene(), "sheet_folders", None)),
@@ -15712,7 +15712,8 @@ class ComposerWindow(QMainWindow):
             from formats.pdfa import normalize_qt_metadata
             normalize_qt_metadata(path)
 
-    def export_all_pdf(self, path: str, sheets=None) -> list:
+    def export_all_pdf(self, path: str, sheets=None,
+                       sheet_set=None) -> list:
         """The atlas: every sheet of the document into ONE PDF, each on
         its own page at its own paper size. Returns the names of the sheets
         where a frame would not render.
@@ -15725,14 +15726,56 @@ class ComposerWindow(QMainWindow):
         vista» and the caller says which sheets to look at.
 
         ``sheets`` limits it to those (in the document's order) — the
-        Browser exports the ones selected there."""
-        comps = self._scene().compositions
-        if sheets is not None:
-            wanted = {id(c) for c in sheets}
-            comps = [c for c in comps if id(c) in wanted]
+        Browser exports the ones selected there. ``sheet_set`` (a set, its
+        name or id; #1519) exports that set instead, in its own order, its
+        pages numbered within it (see :meth:`export_scope`)."""
+        comps, name = self._sheets_to_export(sheets, sheet_set)
+        with self.export_scope(comps if sheet_set is not None else None,
+                               name):
+            return self._paint_atlas_pdf(path, comps)
+
+    def _paint_atlas_pdf(self, path: str, comps) -> list:
+        """``comps`` as they are given into one PDF (in whatever export
+        scope is current): the sheets where a frame would not render."""
         writer = QPdfWriter(path)
         writer.setResolution(RENDER_DPI)
         return self._paint_atlas(writer, comps, RENDER_DPI)
+
+    def _sheets_to_export(self, sheets=None, sheet_set=None) -> tuple:
+        """``(sheets, set name)``: ``sheet_set`` given, what printing that
+        set takes (its members with Print on, in its order) and its name —
+        an unknown set raises ``ValueError``; else ``sheets`` in the
+        document's order, or every sheet."""
+        scene = self._scene()
+        if sheet_set is not None:
+            from core import sheet_sets as ss
+            found = ss.find_set(scene, sheet_set)
+            return ss.export_list(scene, found), (found.name if found
+                                                  else "")
+        comps = list(scene.compositions)
+        if sheets is not None:
+            wanted = {id(c) for c in sheets}
+            comps = [c for c in comps if id(c) in wanted]
+        return comps, ""
+
+    def export_scope(self, sheets=None, set_name: str = ""):
+        """A context in which the sheets painted count within ``sheets``
+        (a sheet set being printed or exported, #1519): ``{hoja}`` /
+        ``{total}`` say the place and count in it, ``{juego}`` / ``{set}``
+        its name, and every sheet index lists only those sheets, numbered
+        alike. ``None``: the document, as on the canvas."""
+        import contextlib
+
+        @contextlib.contextmanager
+        def scope():
+            saved = getattr(self, "_export_scope", None)
+            self._export_scope = (None if sheets is None
+                                  else (list(sheets), set_name or ""))
+            try:
+                yield
+            finally:
+                self._export_scope = saved
+        return scope()
 
     def _paint_atlas(self, device, comps, dpi) -> list:
         """Paint ``comps`` on ``device`` (a PDF writer or a printer), one
@@ -15771,12 +15814,18 @@ class ComposerWindow(QMainWindow):
                 painter.end()
         return troubled
 
-    def print_sheets(self, sheets, parent=None, printer=None) -> bool:
+    def print_sheets(self, sheets, parent=None, printer=None,
+                     sheet_set=None) -> bool:
         """Print ``sheets`` — the printer dialog once, then one page per
         sheet at its own paper size and orientation, as the PDF atlas lays
         them out. ``printer`` skips the dialog (tests print to a PDF file).
         Without Qt's print module it says so and points at Export all,
-        which gives the same pages. True if anything went to print."""
+        which gives the same pages. True if anything went to print.
+        ``sheet_set`` prints that set instead (#1519), its pages numbered
+        within it."""
+        set_name = ""
+        if sheet_set is not None:
+            sheets, set_name = self._sheets_to_export(None, sheet_set)
         sheets = [c for c in sheets if c in self._scene().compositions]
         if not sheets:
             return False
@@ -15804,7 +15853,9 @@ class ComposerWindow(QMainWindow):
             if not dlg.exec():                   # cancelled
                 return False
         dpi = float(printer.resolution() or RENDER_DPI)
-        troubled = self._paint_atlas(printer, sheets, dpi)
+        with self.export_scope(sheets if sheet_set is not None else None,
+                               set_name):
+            troubled = self._paint_atlas(printer, sheets, dpi)
         if troubled:
             self.statusBar().showMessage(
                 tr("Printed — but a view would not render on {sheets}",
@@ -15812,11 +15863,20 @@ class ComposerWindow(QMainWindow):
         return True
 
     def _set_field_context(self, comp) -> None:
-        comps = list(getattr(self._scene(), "compositions", []) or [])
-        idx = comps.index(comp) if comp in comps else None
+        comps, set_name = self._counted_sheets()
+        idx = next((i for i, c in enumerate(comps) if c is comp), None)
         set_field_context(comp=comp, scene=self._scene(),
                           path=getattr(self._window, "_current_path", None),
-                          index=idx, total=len(comps))
+                          index=idx, total=len(comps), set_name=set_name)
+
+    def _counted_sheets(self) -> tuple:
+        """``(sheets, set name)`` that {hoja}, {total} and the sheet index
+        count in: the sheet set being printed (see :meth:`export_scope`),
+        else the document."""
+        scope = getattr(self, "_export_scope", None)
+        if scope is not None:
+            return scope
+        return list(getattr(self._scene(), "compositions", []) or []), ""
 
     def _paint_sheet(self, painter: QPainter, comp: Composicion,
                      small=None) -> None:

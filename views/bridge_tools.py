@@ -353,19 +353,29 @@ class BridgeTools:
 
     def _tool_render_sheet(self, sheet, width: int = 1600,
                            dpi: float | None = None,
-                           path: str | None = None) -> dict:
+                           path: str | None = None,
+                           sheet_set: str | None = None) -> dict:
         """A sheet as a PNG, painted by the composer as its PDF and image
         exports do (``ComposerWindow.render_sheet_image``): the window is
-        never shown, and it stays on the sheet it was on."""
+        never shown, and it stays on the sheet it was on. ``sheet_set``
+        (#1519): as that set prints it, its page number, count and sheet
+        index within the set."""
         comp = self._sheet(sheet)
+        if sheet_set:
+            self._sheets_api().sheet_set(sheet_set)   # unknown: a clear error
         out = (_writable(absolute(path)) if path
                else out_dir() / "sheet.png")
         if dpi is None:
             page_w = comp.page_size_mm()[0]
             dpi = max(20.0, min(600.0, int(width) * 25.4 / page_w))
         dpi = max(20.0, min(600.0, float(dpi)))
-        image, blank = self._composer_for([comp]).render_sheet_image(
-            comp, dpi)
+        composer = self._composer_for([comp])
+        if sheet_set:
+            comps, name = composer._sheets_to_export(None, sheet_set)
+            with composer.export_scope(comps, name):
+                image, blank = composer.render_sheet_image(comp, dpi)
+        else:
+            image, blank = composer.render_sheet_image(comp, dpi)
         if not image.save(str(out)):
             raise OSError(f"could not write {out}")
         from core.sheets_api import SheetsAPI
@@ -785,4 +795,34 @@ class BridgeTools:
                            expected_revision=None) -> dict:
         return self._sheet_step(expected_revision, "delete_scene",
                                 ref=scene, confirm=confirm)
+
+    # ---- Sheet sets (plan sets, #1519) ----------------------------------------
+    def _tool_list_sheet_sets(self) -> dict:
+        return self._sheet_read("sets", self._sheets_api().list_sets())
+
+    def _tool_get_sheet_set(self, set) -> dict:  # noqa: A002 — the tool's name
+        out = self._sheets_api().get_set(set)
+        out["document_revision"] = self._revision()
+        return out
+
+    def _tool_create_sheet_set(self, name, sheets=None, cover=None,
+                               description: str = "",
+                               expected_revision=None) -> dict:
+        return self._sheet_step(expected_revision, "create_set", name=name,
+                                sheets=sheets, cover=cover,
+                                description=description)
+
+    def _tool_update_sheet_set(self, set, name=None, sheets=None,  # noqa: A002
+                               add=None, remove=None, cover=None,
+                               description=None,
+                               expected_revision=None) -> dict:
+        return self._sheet_step(expected_revision, "update_set", ref=set,
+                                name=name, sheets=sheets, add=add,
+                                remove=remove, cover=cover,
+                                description=description)
+
+    def _tool_delete_sheet_set(self, set, confirm: bool = False,  # noqa: A002
+                               expected_revision=None) -> dict:
+        return self._sheet_step(expected_revision, "delete_set", ref=set,
+                                confirm=confirm)
 

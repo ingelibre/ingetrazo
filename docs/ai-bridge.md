@@ -224,6 +224,11 @@ Composer on screen (it is created hidden when a render needs its painters).
 | `set_title_block` | Title-block rows `[[label, value], …]` on one sheet or on `"all"`; values may use `{placeholders}`. | `{"sheet": "all", "fields": [["PROJECT", "{project}"]]}` |
 | `add_text` / `update_text` | A text block, and changes to one (`fields`). | `{"sheet": "EG", "text": "North", "x_mm": 20, "y_mm": 20}` |
 | `create_scene` / `update_scene` / `delete_scene` | A scene (a copy of `from_scene`, or the camera now); a rename renames every frame that shows it; delete needs `confirm` and names the sheets that showed it. | `{"scene": "Plan", "name": "Plan EG"}` |
+| `list_sheet_sets` / `get_sheet_set` / `create_sheet_set` / `update_sheet_set` / `delete_sheet_set` | **Sheet sets** (plan sets, #1519): named selections of sheets in an order of their own, one per audience (permit, roofer, client…). A sheet can be in several, and a set follows it when it is renamed or moved. Optional cover (printed first) and description. "All sheets" is implicit: what Print all takes. Deleting a set never deletes sheets. | `{"name": "Roofer", "sheets": ["L-03", "L-07"]}` |
+
+`export_pdf` and `render_sheet` take `sheet_set`: the set's sheets with
+Print on, in its order. `{hoja}`/`{page}`, `{total}` and the sheet index
+count within the set, and `{juego}`/`{set}`/`{plansatz}` prints its name.
 
 **Undo with the composer open.** A step made by `run_python` or a sheet
 tool belongs to the document's history: the bridge's `undo` and the model
