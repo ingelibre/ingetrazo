@@ -270,3 +270,346 @@ pub fn segment_hits<'py>(py: Python<'py>, ends: numpy::PyReadonlyArray3<'py, f32
     use numpy::PyArrayMethods;
     Ok((PyArray1::from_vec(py, status), pts.reshape([pairs.len(), 3])?))
 }
+
+/// ``QMatrix4x4::map(QVector4D(x, y, z, 1))`` row ``r`` for the column-major
+/// ``m`` (``QMatrix4x4.data()``): Qt's float32 sum, left to right, of
+/// ``v[c] * m[c][r]`` — or, with ``fma``, each term after the first fused
+/// into the running sum (a compiler contracting Qt's expression). The
+/// ``1 * m[3][r]`` term is ``m[3][r]`` exactly either way.
+#[inline]
+fn qt_map_row(p: [f32; 3], m: &[f32; 16], r: usize, fma: bool) -> f32 {
+    if fma {
+        let s = p[1].mul_add(m[4 + r], p[0] * m[r]);
+        let s = p[2].mul_add(m[8 + r], s);
+        return 1.0f32.mul_add(m[12 + r], s);
+    }
+    p[0] * m[r] + p[1] * m[4 + r] + p[2] * m[8 + r] + 1.0f32 * m[12 + r]
+}
+
+/// ``Viewport._pixel_projector``'s ``world_to_pixel`` for one point: Qt's
+/// float32 map, then Python's float arithmetic on the four components.
+/// None where Python returns None (``clip.w() <= 0``).
+#[inline]
+fn qt_pixel(p: [f32; 3], m: &[f32; 16], fma: bool, w: f64, h: f64) -> Option<(f64, f64)> {
+    let cw = qt_map_row(p, m, 3, fma) as f64;
+    if cw <= 0.0 {
+        return None;
+    }
+    let ndc_x = qt_map_row(p, m, 0, fma) as f64 / cw;
+    let ndc_y = qt_map_row(p, m, 1, fma) as f64 / cw;
+    Some(((ndc_x * 0.5 + 0.5) * w, (1.0 - (ndc_y * 0.5 + 0.5)) * h))
+}
+
+/// The snap search's projection (``core.inference._projector`` around
+/// ``Viewport._pixel_projector``) of the points ``pts`` (N, 3) float32 at
+/// once: ``(px, py, front, near)`` — each point's pixel as Python makes it
+/// (``front`` false where it returns None, ``px``/``py`` then 0), and the
+/// rows in front whose squared pixel distance to ``(cx, cy)`` is not
+/// above ``r2``, in row order. ``r2`` is a radius the caller widened a
+/// little: it asks ``math.hypot`` of the rows found, as before. The
+/// endpoint pass of a Line hover projects ~800 edge ends (19-11: ~1 ms
+/// of Python a move over a city of boxes).
+#[pyfunction]
+#[pyo3(signature = (pts, mvp, w, h, cx, cy, r2, fma))]
+#[allow(clippy::too_many_arguments, clippy::type_complexity)]
+pub fn qt_px_near<'py>(py: Python<'py>, pts: PyReadonlyArray2<'py, f32>, mvp: Vec<f32>,
+                       w: f64, h: f64, cx: f64, cy: f64, r2: f64, fma: bool)
+    -> PyResult<(Bound<'py, PyArray1<f64>>, Bound<'py, PyArray1<f64>>,
+                 Bound<'py, PyArray1<bool>>, Bound<'py, PyArray1<i64>>)> {
+    let v = pts.as_array();
+    if v.shape()[1] != 3 || mvp.len() != 16 {
+        return Err(pyo3::exceptions::PyValueError::new_err("shape"));
+    }
+    let mut m = [0.0f32; 16];
+    m.copy_from_slice(&mvp);
+    let n = v.shape()[0];
+    let rows: Vec<[f32; 3]> = (0..n).map(|i| [v[[i, 0]], v[[i, 1]], v[[i, 2]]]).collect();
+    let (xs, ys, ok, near) = py.detach(|| {
+        let (mut xs, mut ys) = (Vec::with_capacity(n), Vec::with_capacity(n));
+        let mut ok = Vec::with_capacity(n);
+        let mut near = Vec::new();
+        for (i, &p) in rows.iter().enumerate() {
+            match qt_pixel(p, &m, fma, w, h) {
+                Some((x, y)) => {
+                    xs.push(x);
+                    ys.push(y);
+                    ok.push(true);
+                    let (dx, dy) = (x - cx, y - cy);
+                    // NaN is not above the radius: Python's ``d > thr``
+                    // keeps it too.
+                    if !(dx * dx + dy * dy > r2) {
+                        near.push(i as i64);
+                    }
+                }
+                None => {
+                    xs.push(0.0);
+                    ys.push(0.0);
+                    ok.push(false);
+                }
+            }
+        }
+        (xs, ys, ok, near)
+    });
+    Ok((PyArray1::from_vec(py, xs), PyArray1::from_vec(py, ys), PyArray1::from_vec(py, ok),
+        PyArray1::from_vec(py, near)))
+}
+
+// ---- The snap search's per-edge passes (Bloque 6b) --------------------------
+//
+// Each kernel below is a PREFILTER: it repeats, operation for operation, the
+// tests a pass of ``core.snap.compute_snap`` makes on an edge before it
+// ``continue``s — QVector3D's float32 arithmetic (``facegeom``, its length
+// the probed ``hypot``) and Python's float arithmetic after it — and returns
+// the edges it could not rule out, in order. Python then runs the pass's own
+// body on those, so the answer is the one it always gave; a radius on screen
+// is widened by the caller (``math.hypot`` is CPython's own).
+
+use crate::facegeom::{length, normalized, Hypot, V3};
+
+fn ends_of(ends: &numpy::PyReadonlyArray3<'_, f32>) -> PyResult<Vec<[V3; 2]>> {
+    let ev = ends.as_array();
+    let sh = ev.shape();
+    if sh[1] != 2 || sh[2] != 3 {
+        return Err(pyo3::exceptions::PyValueError::new_err("ends"));
+    }
+    Ok((0..sh[0]).map(|i| [V3(ev[[i, 0, 0]], ev[[i, 0, 1]], ev[[i, 0, 2]]),
+                           V3(ev[[i, 1, 0]], ev[[i, 1, 1]], ev[[i, 1, 2]])]).collect())
+}
+
+fn mat16(mvp: &[f32]) -> PyResult<[f32; 16]> {
+    if mvp.len() != 16 {
+        return Err(pyo3::exceptions::PyValueError::new_err("mvp"));
+    }
+    let mut m = [0.0f32; 16];
+    m.copy_from_slice(mvp);
+    Ok(m)
+}
+
+#[inline]
+fn add(a: V3, b: V3) -> V3 {
+    V3(a.0 + b.0, a.1 + b.1, a.2 + b.2)
+}
+
+#[inline]
+fn arr(v: V3) -> [f32; 3] {
+    [v.0, v.1, v.2]
+}
+
+/// Whether the pixel of ``p`` is within ``r2`` (squared, widened) of the
+/// cursor, as ``qt_px_near`` decides it.
+#[inline]
+fn px_within(p: V3, m: &[f32; 16], fma: bool, w: f64, h: f64, cx: f64, cy: f64,
+             r2: f64) -> bool {
+    match qt_pixel(arr(p), m, fma, w, h) {
+        Some((x, y)) => {
+            let (dx, dy) = (x - cx, y - cy);
+            !(dx * dx + dy * dy > r2)
+        }
+        None => false,
+    }
+}
+
+/// ``core.snap._point_on_segment_world(p, a, b, tol)``.
+fn on_segment(p: V3, a: V3, b: V3, tol: f64, h: Hypot) -> bool {
+    let ab = b.sub(a);
+    let length_sq = ab.dot(ab, h) as f64;
+    if length_sq < 1e-12 {
+        return (length(p.sub(a), h) as f64) < tol;
+    }
+    let t = p.sub(a).dot(ab, h) as f64 / length_sq;
+    if t < -1e-6 || t > 1.0 + 1e-6 {
+        return false;
+    }
+    (length(p.sub(add(a, ab.mul(t as f32))), h) as f64) < tol
+}
+
+/// ``core.snap._line_segment_intersection(p, u, a, b, tol)``.
+fn line_segment_hit(p: V3, u: V3, a: V3, b: V3, tol: f64, h: Hypot) -> Option<V3> {
+    let v = b.sub(a);
+    if (length(v, h) as f64) < 1e-9 {
+        return None;
+    }
+    let w0 = p.sub(a);
+    let bb = u.dot(v, h) as f64;
+    let cc = v.dot(v, h) as f64;
+    let dd = u.dot(w0, h) as f64;
+    let ee = v.dot(w0, h) as f64;
+    let denom = cc - bb * bb;
+    if denom.abs() < 1e-12 {
+        return None;
+    }
+    let sc = (bb * ee - cc * dd) / denom;
+    let tc = (ee - bb * dd) / denom;
+    if tc < -1e-6 || tc > 1.0 + 1e-6 {
+        return None;
+    }
+    let on_line = add(p, u.mul(sc as f32));
+    let on_seg = add(a, v.mul(tc as f32));
+    if length(on_line.sub(on_seg), h) as f64 > tol {
+        return None;
+    }
+    Some(on_seg)
+}
+
+fn v3(t: (f32, f32, f32)) -> V3 {
+    V3(t.0, t.1, t.2)
+}
+
+/// The edges of ``ends`` (N, 2, 3) that ``p`` lies on
+/// (``_point_on_segment_world``), as a mask.
+#[pyfunction]
+pub fn snap_on_segment<'py>(py: Python<'py>, ends: numpy::PyReadonlyArray3<'py, f32>,
+                            p: (f32, f32, f32), tol: f64, hypot: &str)
+    -> PyResult<Bound<'py, PyArray1<bool>>> {
+    let h = crate::hypot_of(hypot)?;
+    let segs = ends_of(&ends)?;
+    let p = v3(p);
+    let out = py.detach(|| segs.iter().map(|s| on_segment(p, s[0], s[1], tol, h)).collect());
+    Ok(PyArray1::from_vec(py, out))
+}
+
+/// Rule 5 (``_extension_snap``): the edges whose line the draw may extend.
+/// Not of zero length, and either along ``draw`` (``|draw·u| >= 0.966``),
+/// the cursor's point ``cand`` taken onto the edge's line — or cut by the
+/// face's plane ``plane`` (unit normal) — past either end and its pixel
+/// within ``r2`` of the cursor; or, when the screen reading is on
+/// (``screen``: the start 4 px or more from the cursor), through ``start``
+/// (within 1 mm of its line), which Python reads on screen itself.
+#[pyfunction]
+#[pyo3(signature = (ends, draw, start, screen, cand, plane, mvp, w, h, cx, cy, r2, fma,
+                    hypot))]
+#[allow(clippy::too_many_arguments)]
+pub fn snap_ext_maybe<'py>(py: Python<'py>, ends: numpy::PyReadonlyArray3<'py, f32>,
+                           draw: (f32, f32, f32), start: (f32, f32, f32), screen: bool,
+                           cand: (f32, f32, f32), plane: Option<(f32, f32, f32)>,
+                           mvp: Vec<f32>, w: f64, h: f64, cx: f64, cy: f64, r2: f64,
+                           fma: bool, hypot: &str) -> PyResult<Bound<'py, PyArray1<i64>>> {
+    let hy = crate::hypot_of(hypot)?;
+    let segs = ends_of(&ends)?;
+    let m = mat16(&mvp)?;
+    let (draw, start, cand) = (v3(draw), v3(start), v3(cand));
+    let plane = plane.map(v3);
+    let out = py.detach(|| {
+        let mut out = Vec::new();
+        for (i, s) in segs.iter().enumerate() {
+            let a = s[0];
+            let ab = s[1].sub(a);
+            let len = length(ab, hy);
+            if (len as f64) < 1e-9 {
+                continue;
+            }
+            let u = normalized(ab, hy);
+            if ((draw.dot(u, hy) as f64).abs()) < 0.966 {
+                if !screen {
+                    continue;
+                }
+                let off = start.sub(a);
+                let k = off.dot(u, hy);
+                if length(off.sub(u.mul(k)), hy) as f64 > 1e-3 {
+                    continue;
+                }
+                out.push(i as i64);            // read on screen by Python
+                continue;
+            }
+            let mut t = cand.sub(a).dot(u, hy) as f64;
+            if let Some(n) = plane {
+                let denom = n.dot(u, hy) as f64;
+                if denom.abs() > 1e-6 {
+                    t = n.dot(cand.sub(a), hy) as f64 / denom;
+                }
+            }
+            if -1e-6 <= t && t <= len as f64 + 1e-6 {
+                continue;                      // on the segment itself
+            }
+            let proj = add(a, u.mul(t as f32));
+            if px_within(proj, &m, fma, w, h, cx, cy, r2) {
+                out.push(i as i64);
+            }
+        }
+        out
+    });
+    Ok(PyArray1::from_vec(py, out))
+}
+
+/// The edges a line from ``start`` along ``u`` may cross within ``r2`` of
+/// the cursor on screen (``_line_segment_intersection``, tolerance 1 mm):
+/// rule 4b's perpendicular from a wall — ``on_start``: not the edges the
+/// start lies on, and ``draw``: the crossing ahead along it — and rule 5's
+/// extension meeting another edge (neither).
+#[pyfunction]
+#[pyo3(signature = (ends, start, u, draw, on_start, mvp, w, h, cx, cy, r2, fma, hypot))]
+#[allow(clippy::too_many_arguments)]
+pub fn snap_line_hits<'py>(py: Python<'py>, ends: numpy::PyReadonlyArray3<'py, f32>,
+                           start: (f32, f32, f32), u: (f32, f32, f32),
+                           draw: Option<(f32, f32, f32)>, on_start: bool, mvp: Vec<f32>,
+                           w: f64, h: f64, cx: f64, cy: f64, r2: f64, fma: bool,
+                           hypot: &str) -> PyResult<Bound<'py, PyArray1<i64>>> {
+    let hy = crate::hypot_of(hypot)?;
+    let segs = ends_of(&ends)?;
+    let m = mat16(&mvp)?;
+    let (start, u) = (v3(start), v3(u));
+    let draw = draw.map(v3);
+    let out = py.detach(|| {
+        let mut out = Vec::new();
+        for (i, s) in segs.iter().enumerate() {
+            if on_start && on_segment(start, s[0], s[1], 1e-3, hy) {
+                continue;
+            }
+            let Some(hit) = line_segment_hit(start, u, s[0], s[1], 1e-3, hy) else {
+                continue;
+            };
+            if let Some(d) = draw {
+                if hit.sub(start).dot(d, hy) as f64 <= 0.0 {
+                    continue;
+                }
+            }
+            if px_within(hit, &m, fma, w, h, cx, cy, r2) {
+                out.push(i as i64);
+            }
+        }
+        out
+    });
+    Ok(PyArray1::from_vec(py, out))
+}
+
+/// ``_from_point_snap``'s references ``refs`` (M, 3): those whose foot
+/// on the line ``start`` + ``adir``·s may be the snap — ahead of the start
+/// unless ``both`` (a lock: the line runs both ways), off the line by
+/// 0.1 mm or more, and the foot within ``r2`` of the cursor on screen, or
+/// (``both``) the reference itself.
+#[pyfunction]
+#[pyo3(signature = (refs, start, adir, mvp, w, h, cx, cy, r2, fma, both, hypot))]
+#[allow(clippy::too_many_arguments)]
+pub fn snap_feet_near<'py>(py: Python<'py>, refs: PyReadonlyArray2<'py, f32>,
+                           start: (f32, f32, f32), adir: (f32, f32, f32), mvp: Vec<f32>,
+                           w: f64, h: f64, cx: f64, cy: f64, r2: f64, fma: bool, both: bool,
+                           hypot: &str) -> PyResult<Bound<'py, PyArray1<i64>>> {
+    let hy = crate::hypot_of(hypot)?;
+    let rv = refs.as_array();
+    if rv.shape()[1] != 3 {
+        return Err(pyo3::exceptions::PyValueError::new_err("refs"));
+    }
+    let pts: Vec<V3> = (0..rv.shape()[0]).map(|i| V3(rv[[i, 0]], rv[[i, 1]], rv[[i, 2]]))
+        .collect();
+    let m = mat16(&mvp)?;
+    let (start, adir) = (v3(start), v3(adir));
+    let out = py.detach(|| {
+        let mut out = Vec::new();
+        for (i, &r) in pts.iter().enumerate() {
+            let s = r.sub(start).dot(adir, hy);
+            if !both && (s as f64) <= 1e-6 {
+                continue;
+            }
+            let foot = add(start, adir.mul(s));
+            if (length(foot.sub(r), hy) as f64) < 1e-4 {
+                continue;
+            }
+            if px_within(foot, &m, fma, w, h, cx, cy, r2)
+                || (both && px_within(r, &m, fma, w, h, cx, cy, r2)) {
+                out.push(i as i64);
+            }
+        }
+        out
+    });
+    Ok(PyArray1::from_vec(py, out))
+}

@@ -753,18 +753,9 @@ class ProjectionMixin:
         camera cannot move under (one snap search)."""
         if "_world_to_pixel" in vars(self):
             return self._world_to_pixel     # a test's stand-in wins
+        from core.snap_batch import pixel_projector
         mvp = self.camera.projection_matrix() * self.camera.view_matrix()
-        w, h = self.width(), self.height()
-        vec4 = QVector4D
-
-        def world_to_pixel(world):
-            clip = mvp.map(vec4(world.x(), world.y(), world.z(), 1.0))
-            if clip.w() <= 0:
-                return None
-            ndc_x = clip.x() / clip.w()
-            ndc_y = clip.y() / clip.w()
-            return ((ndc_x * 0.5 + 0.5) * w, (1.0 - (ndc_y * 0.5 + 0.5)) * h)
-        return world_to_pixel
+        return pixel_projector(mvp, self.width(), self.height())
 
     def _world_to_pixel(self, world: QVector3D,
                         mvp: Optional[QMatrix4x4] = None

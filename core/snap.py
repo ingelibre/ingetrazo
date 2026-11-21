@@ -1112,7 +1112,7 @@ def _in_plane_with_point_snap(
 
 def _extension_snap(
     candidate_world, cx, cy, scene, world_to_pixel, et, start_point, is_occluded,
-    project_onto_line=None, plane_normal=None,
+    project_onto_line=None, plane_normal=None, batch=None,
 ) -> Optional[SnapResult]:
     """Extension / intersection inference: when the draw direction is collinear
     with an edge and the cursor is on that edge's *continuation* (beyond its
@@ -1126,7 +1126,10 @@ def _extension_snap(
     it) and keeps the plain projection, which is in the plane too.
 
     ``None`` unless the draw is collinear with an edge near the cursor, which is
-    what keeps every edge's infinite line from becoming snap noise."""
+    what keeps every edge's infinite line from becoming snap noise.
+
+    ``batch`` (:class:`core.snap_batch.EdgeBatch` of ``scene.edges``) hands
+    the walk only the edges the engine could not rule out."""
     if start_point is None:
         return None
     if plane_normal is not None:
@@ -1150,7 +1153,13 @@ def _extension_snap(
         sdx, sdy = cx - sp[0], cy - sp[1]
     sdl = math.hypot(sdx, sdy)
     best_ext = None  # (dist, proj, from_end, edge, dir)
-    for edge in scene.edges:
+    edges = scene.edges
+    maybe = (batch.extension_maybe(draw, start_point, not sdl < 4.0,
+                                   candidate_world, plane_normal, cx, cy, et)
+             if batch is not None else None)
+    if maybe is not None:
+        edges = [edges[i] for i in maybe]
+    for edge in edges:
         # One chord of a circle, arc or smoothed surface has no line worth
         # extending — a sphere's soft edges and the next circle's segments
         # threw dashed guides across the model (issue #140) — and a hidden
@@ -1211,7 +1220,12 @@ def _extension_snap(
         return None
     _, proj, from_end, src, u = best_ext
     best_hit = None
-    for other in scene.edges:
+    others = scene.edges
+    meets = (batch.line_hits(proj, u, None, cx, cy, et)
+             if batch is not None else None)
+    if meets is not None:
+        others = [others[i] for i in meets]
+    for other in others:
         if other is src:
             continue
         hit = _line_segment_intersection(proj, u, other.a, other.b)
@@ -1244,6 +1258,7 @@ def _from_point_snap(
     project_onto_line: Optional[ProjectOntoLine] = None,
     edge_body: bool = True,
     midpoints: bool = True,
+    batch=None,
 ) -> Optional[SnapResult]:
     """'From point' inference ("Desde el punto"), the single clean version.
 
@@ -1260,7 +1275,10 @@ def _from_point_snap(
     from the draw line, and the snap lands on that reference's foot. That is
     how the lock is used: Tape from the wall's bottom edge, ↑, hover
     the window's corner, and the guide takes the window's height (Rafael,
-    04:20: «cuando pulso la flechita para subir no me hace el snap»)."""
+    04:20: «cuando pulso la flechita para subir no me hace el snap»).
+
+    ``batch`` (:class:`core.snap_batch.EdgeBatch` of ``scene.edges``) keeps
+    out the references and edges the engine rules out."""
     if start_point is None or draw_dir.length() < 1e-6:
         return None
     if line_dir is not None:
@@ -1283,7 +1301,26 @@ def _from_point_snap(
     refs = []
     if extra_point is not None:
         refs.append((extra_point, "from_point", COLOR_ENDPOINT))
-    for edge in scene.edges:
+    kept = (batch.feet_near(batch.refs(midpoints), start_point, adir, cx, cy,
+                            threshold_px, hovered_refs)
+            if batch is not None else None)
+    if kept is not None:
+        # Only the references whose foot (or, under a lock, themselves) may
+        # be in reach, in the order the walk below lists them.
+        per = 3 if midpoints else 2
+        for j in kept:
+            i, slot = divmod(j, per)
+            edge = batch.edges[i]
+            if getattr(edge, "figure", False):
+                continue
+            if slot == 0:
+                refs.append((edge.a, "from_point", COLOR_ENDPOINT))
+            elif slot == 1:
+                refs.append((edge.b, "from_point", COLOR_ENDPOINT))
+            else:
+                refs.append(((edge.a + edge.b) * 0.5, "midpoint",
+                             COLOR_MIDPOINT))
+    for edge in (scene.edges if kept is None else ()):
         if getattr(edge, "figure", False):
             # A face-me figure is scenery, not drawing: its feet snap when you
             # point at them, but no line of the drawing lines up with it
@@ -1317,7 +1354,7 @@ def _from_point_snap(
         # rays and ~110 ms on a Move frame in a group of the Plaza (19-11)
         # for the same answer.
         near = []
-        for edge in scene.edges:
+        for edge in _edges_near(scene, batch, cx, cy, threshold_px):
             pa, pb = world_to_pixel(edge.a), world_to_pixel(edge.b)
             if pa is None or pb is None:
                 continue
@@ -1606,6 +1643,17 @@ def _hits_match(mod, hypot, sample) -> bool:
     return True
 
 
+def _edges_near(scene, batch, cx, cy, r):
+    """``scene.edges``, or — with ``batch`` (its
+    :class:`core.snap_batch.EdgeBatch`) — those of them whose segment on
+    screen may pass within ``r`` of ``(cx, cy)``, in order: the walks that
+    turn down every other edge through ``_closest_on_segment_2d``."""
+    if batch is None:
+        return scene.edges
+    edges = batch.edges
+    return [edges[i] for i in batch.segments_near(cx, cy, r)]
+
+
 def _pairs_that_may_meet(edges):
     """The pairs (i < j, in order) of ``edges`` whose boxes come close
     enough for ``segment_intersection`` to find a meeting: it accepts a
@@ -1633,7 +1681,7 @@ def _pairs_that_may_meet(edges):
 
 def _intersection_snap(
     cx, cy, scene, world_to_pixel, et, is_occluded, are_occluded=None,
-    candidate_world=None,
+    candidate_world=None, batch=None,
 ) -> Optional[SnapResult]:
     """Green intersection point where two edges, guide lines or guide circles
     actually cross.
@@ -1658,7 +1706,7 @@ def _intersection_snap(
     # pixel happens to land near the cursor by coincidence of depth) from
     # firing.
     near_edges = []
-    for edge in scene.edges:
+    for edge in _edges_near(scene, batch, cx, cy, et):
         if getattr(edge, "center", False):
             continue  # the degenerate pseudo-edge that carries a circle centre
         ab = edge.b - edge.a
@@ -2447,6 +2495,17 @@ def compute_snap(
     # measured 2026-09-14) for the same answer the nearest visible gives.
     pending: list = []
 
+    # The scene's edges as the engine reads them (core.snap_batch), made on
+    # the first pass that walks them: each such pass then walks only the
+    # edges it could keep. None without the engine.
+    batch_box: list = []
+
+    def edge_batch():
+        if not batch_box:
+            from core.snap_batch import EdgeBatch
+            batch_box.append(EdgeBatch.of(scene.edges, world_to_pixel))
+        return batch_box[0]
+
     def _consider(
         world: QVector3D,
         kind: str,
@@ -2529,7 +2588,8 @@ def compute_snap(
         # arc's midpoint that happens to fall on one of its facet vertices
         # reads "Arc midpoint", the usual name, not "Endpoint".
         plain = []
-        for edge in scene.edges:
+        plain_at = []
+        for at, edge in enumerate(scene.edges):
             if getattr(edge, "center", False):
                 # The centre of a circle or arc the cursor visited (the
                 # viewport hands it in as a degenerate pseudo-edge).
@@ -2547,6 +2607,7 @@ def compute_snap(
                 continue
             else:
                 plain.append(edge)
+                plain_at.append(at)
         # A guide circle's four quadrants are named points too — the cardinal
         # N/E/S/W of the circle, exact.
         for circ in getattr(scene, "circles", ()):
@@ -2559,13 +2620,27 @@ def compute_snap(
         # millimetres beside it, leaving stubs along the axis (Marco,
         # 2026-09-15: «me quiero poner en el origen y no se pone»).
         _consider(QVector3D(0.0, 0.0, 0.0), "origin", COLOR_ORIGIN)
-        for edge in plain:
-            # The usual convention paints every point inference magenta when
-            # the geometry is inside a group or component; Marco found the
-            # magenta everywhere on a model made of components tiring —
-            # 2026-09-14 — so the colours stay, the tip says "in component".)
-            _consider(edge.a, "endpoint", COLOR_ENDPOINT, context=getattr(edge, "context", None))
-            _consider(edge.b, "endpoint", COLOR_ENDPOINT, context=getattr(edge, "context", None))
+        batch = edge_batch() if plain and "endpoint" not in off else None
+        if batch is None:
+            for edge in plain:
+                # The usual convention paints every point inference magenta when
+                # the geometry is inside a group or component; Marco found the
+                # magenta everywhere on a model made of components tiring —
+                # 2026-09-14 — so the colours stay, the tip says "in component".)
+                _consider(edge.a, "endpoint", COLOR_ENDPOINT, context=getattr(edge, "context", None))
+                _consider(edge.b, "endpoint", COLOR_ENDPOINT, context=getattr(edge, "context", None))
+        else:
+            # Only the ends that may be in reach, in the same order.
+            is_plain = bytearray(len(batch.edges))
+            for at in plain_at:
+                is_plain[at] = 1
+            edges = batch.edges
+            for k in batch.ends_near(cx, cy, threshold_px):
+                if not is_plain[k >> 1]:
+                    continue
+                edge = edges[k >> 1]
+                _consider(edge.b if k & 1 else edge.a, "endpoint",
+                          COLOR_ENDPOINT, context=getattr(edge, "context", None))
         for point, context in face_centers or ():
             # The centres of the face under the cursor and of the selected
             # faces, ``(point, context)``. Handed in on their own, not as
@@ -2592,7 +2667,7 @@ def compute_snap(
     def _edge_under_cursor(exclude_at: QVector3D) -> bool:
         """Whether a visible edge not passing through ``exclude_at`` lies within
         the on-edge reach of the cursor (rule 7's target)."""
-        for edge in scene.edges:
+        for edge in _edges_near(scene, edge_batch(), cx, cy, et):
             if (edge.b - edge.a).length() < 1e-9:
                 continue                      # a pseudo-edge: centre, origin…
             if _point_on_segment_world(exclude_at, edge.a, edge.b):
@@ -2627,7 +2702,12 @@ def compute_snap(
         if draw.length() > 1e-6:
             draw_u = draw.normalized()
             cos_tol = math.cos(math.radians(8.0))  # forgiving: it snaps to exact
-            for edge in scene.edges:
+            batch = edge_batch()
+            on_start = (batch.on_segment(line_start) if batch is not None
+                        else None)
+            for at, edge in enumerate(scene.edges):
+                if on_start is not None and not on_start[at]:
+                    continue                  # the engine's own answer below
                 if not _point_on_segment_world(line_start, edge.a, edge.b):
                     continue
                 perp = _direction_from_edge(edge, "perpendicular",
@@ -2637,7 +2717,12 @@ def compute_snap(
                 if abs(QVector3D.dotProduct(draw_u, perp)) < cos_tol:
                     continue
                 best_hit = None
-                for other in scene.edges:
+                others = scene.edges
+                ahead = (batch.line_hits(line_start, perp, draw_u, cx, cy, et)
+                         if batch is not None else None)
+                if ahead is not None:
+                    others = [others[i] for i in ahead]
+                for other in others:
                     if _point_on_segment_world(line_start, other.a, other.b):
                         continue
                     hit = _line_segment_intersection(
@@ -2669,7 +2754,7 @@ def compute_snap(
                     fp = _from_point_snap(
                         scene, line_start, candidate_world - line_start,
                         cx, cy, world_to_pixel, threshold_px, is_occluded,
-                        extra_point=acquired_point,
+                        extra_point=acquired_point, batch=batch,
                     )
                     if fp is not None:
                         return fp
@@ -2730,7 +2815,7 @@ def compute_snap(
         ext = _extension_snap(
             candidate_world, cx, cy, scene, world_to_pixel, et, line_start,
             is_occluded, project_onto_line=project_onto_line,
-            plane_normal=on_plane,
+            plane_normal=on_plane, batch=edge_batch(),
         )
         if ext is not None and ext.kind not in off:
             return ext
@@ -2743,7 +2828,7 @@ def compute_snap(
         fp = _from_point_snap(
             scene, line_start, candidate_world - line_start,
             cx, cy, world_to_pixel, threshold_px, is_occluded,
-            extra_point=acquired_point,
+            extra_point=acquired_point, batch=edge_batch(),
         )
         if fp is not None:
             return fp
@@ -2754,7 +2839,8 @@ def compute_snap(
     #     the cursor slid along the nearest guide. Runs before midpoint/on-edge
     #     so the exact crossing wins, but below every endpoint and lock.
     inter = _intersection_snap(cx, cy, scene, world_to_pixel, et, is_occluded,
-                               are_occluded, candidate_world)
+                               are_occluded, candidate_world,
+                               batch=edge_batch())
     if inter is not None and inter.kind in off:
         inter = None
     if inter is not None:
@@ -2784,7 +2870,12 @@ def compute_snap(
 
     # 6. Midpoint + origin.
     best = None
-    for edge in scene.edges:
+    edges = scene.edges
+    batch = edge_batch() if "midpoint" not in off else None
+    if batch is not None:
+        # Only the edges whose midpoint may be in reach, in order.
+        edges = [edges[i] for i in batch.mids_near(cx, cy, threshold_px)]
+    for edge in edges:
         if getattr(edge, "guide", False) or (edge.a - edge.b).length() < 1e-9:
             continue
         _consider((edge.a + edge.b) * 0.5, "midpoint", COLOR_MIDPOINT,
@@ -2812,7 +2903,7 @@ def compute_snap(
     #    radius than the point snaps — landing a corner on it (a door on the
     #    floor line) should be forgiving.
     on_targets = []
-    for edge in scene.edges:
+    for edge in _edges_near(scene, edge_batch(), cx, cy, et):
         pa = world_to_pixel(edge.a)
         pb = world_to_pixel(edge.b)
         if pa is None or pb is None:
@@ -3060,7 +3151,7 @@ def compute_snap(
         fp = _from_point_snap(
             scene, line_start, adir, cx, cy, world_to_pixel, threshold_px,
             is_occluded, extra_point=acquired_point, line_dir=adir,
-            midpoints=False,
+            midpoints=False, batch=edge_batch(),
         )
         if fp is not None:
             fp.lock_color = AXIS_COLORS[axis_engaged]   # the line keeps its axis colour

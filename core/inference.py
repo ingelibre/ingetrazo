@@ -98,6 +98,11 @@ def _projector(vp):
         if hit is known:
             hit = known[key] = fn(world)
         return hit
+    # The view it projects through: the search's passes ask the engine for
+    # their edges at once with it (core.snap_batch).
+    view = getattr(fn, "qt_view", None)
+    if view is not None:
+        world_to_pixel.qt_view = view
     return world_to_pixel
 
 class InferenceEngine:

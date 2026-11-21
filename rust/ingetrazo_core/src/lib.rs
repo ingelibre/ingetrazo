@@ -46,6 +46,12 @@ fn ingetrazo_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(segment_distances, m)?)?;
     m.add_function(wrap_pyfunction!(snap::px_near_sorted, m)?)?;
     m.add_function(wrap_pyfunction!(snap::segment_hits, m)?)?;
+    // Bloque 6b: the snap search's per-edge passes, batched.
+    m.add_function(wrap_pyfunction!(snap::qt_px_near, m)?)?;
+    m.add_function(wrap_pyfunction!(snap::snap_on_segment, m)?)?;
+    m.add_function(wrap_pyfunction!(snap::snap_ext_maybe, m)?)?;
+    m.add_function(wrap_pyfunction!(snap::snap_line_hits, m)?)?;
+    m.add_function(wrap_pyfunction!(snap::snap_feet_near, m)?)?;
     m.add_function(wrap_pyfunction!(rays::ray_dot3_probe, m)?)?;
     m.add_function(wrap_pyfunction!(rays::ray_tris, m)?)?;
     m.add_function(wrap_pyfunction!(rays::ray_face_min, m)?)?;
