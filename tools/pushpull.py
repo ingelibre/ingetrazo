@@ -603,7 +603,7 @@ class PushPullTool(Tool):
         self._group = None
         self._hover_group = None
         # The preselection arm: activated with EXACTLY one loose-mesh Face
-        # selected, the tool locks onto it (the SketchUp workflow) — the
+        # selected, the tool locks onto it — the
         # hover shade goes up at once, idle hovers do not steal it, and the
         # first click ANYWHERE starts the drag on it. Disarms when a drag
         # starts, on _reset (Esc, deactivate, commit), and when the armed
@@ -737,7 +737,7 @@ class PushPullTool(Tool):
         self._reset()
         self._keep_mode = False      # the modifier arms ONE operation
         self._ctrl_used = False
-        # The SketchUp preselection workflow: activated with EXACTLY one
+        # The preselection workflow: activated with EXACTLY one
         # Face of the loose mesh selected, the tool arms on it — the first
         # click anywhere starts the drag there, not on whatever sits under
         # the cursor. Anything else (nothing, several items, an edge, a
