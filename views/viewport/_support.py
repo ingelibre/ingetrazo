@@ -2023,7 +2023,10 @@ def fog_backdrop(style) -> tuple[tuple[float, float, float], bool]:
     base = _safe_rgb(getattr(style, "background", (0.9, 0.91, 0.92)),
                      (0.9, 0.91, 0.92))
     strength = fog_backdrop_strength(style)
-    color = _toward_fog(base, effective_fog_color(style), strength)
+    # No fog: nothing moves toward it (a + (b - a) * 0 is a), and the fog
+    # colour is not worked out on every frame of a style without fog.
+    color = (base if strength == 0.0
+             else _toward_fog(base, effective_fog_color(style), strength))
     return color, bool(getattr(style, "sky", False))
 
 
@@ -2043,9 +2046,13 @@ def fog_sky_colors(style) -> tuple[tuple[float, float, float], ...]:
                   (0.815, 0.820, 0.815)),
     )
     strength = fog_backdrop_strength(style)
+    picked_horizon = getattr(style, "horizon_color", None) is not None
+    if strength == 0.0:
+        # No fog: the colours as they are (see fog_backdrop).
+        return (colors[0], colors[1] if picked_horizon else None, colors[2])
     fog = effective_fog_color(style)
     horizon = (_toward_fog(colors[1], fog, strength)
-               if strength > 0.0 or getattr(style, "horizon_color", None) is not None
+               if strength > 0.0 or picked_horizon
                else None)
     return (_toward_fog(colors[0], fog, strength), horizon,
             _toward_fog(colors[2], fog, strength * 0.15))

@@ -288,6 +288,16 @@ class ImagePlaneMixin:
         walk reads — the placements, their ``hidden`` and layer, the
         images a group holds and their own visibility — only changes
         through a command (a version bump) or a switch the epoch carries."""
+        # Most models hold no photo in any group: once a walk has found
+        # none, nothing is asked of the placements (their expansion, their
+        # epoch: ~0.1 ms, three times a frame) until the scene's version or
+        # the open group changes — a photo only comes into a group through
+        # a command. Their visibility does not matter to "none at all".
+        sc = self.scene
+        none_key = (getattr(sc, "version", None), id(sc.groups),
+                    len(sc.groups), id(getattr(sc, "edit_group", None)))
+        if getattr(self, "_grouped_images_none", None) == none_key:
+            return ()
         placements = self._placements()
         epoch_of = getattr(self, "_placements_epoch", None)
         key = (getattr(self.scene, "version", None),
@@ -297,14 +307,19 @@ class ImagePlaneMixin:
         if memo is not None and memo[0] is placements and memo[1] == key:
             return memo[2]
         rows = []
+        held = False
         for group in placements:
             images = getattr(group, "images", None) or ()
-            if not images or not self.scene.entity_visible(group):
+            if not images:
+                continue
+            held = True
+            if not self.scene.entity_visible(group):
                 continue
             for image in images:
                 if self.scene.entity_visible(image):
                     rows.append((group, image, self._owner_of(group)))
         self._grouped_images_memo = (placements, key, rows)
+        self._grouped_images_none = None if held else none_key
         return rows
     def _edit_rest_fade(self, group):
         """How a reference image (``group=None``) or a face-me figure is
