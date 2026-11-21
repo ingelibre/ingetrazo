@@ -56,6 +56,12 @@ def build_scope(viewport, scope: dict | None = None) -> dict:
         QVector3D=QVector3D, Mesh=Mesh, Group=Group, Vertex=Vertex,
         Edge=Edge, Face=Face, Layer=Layer)
     scope.update(_recipe_helpers(viewport.scene))
+    # The public sheets API (#1505): sheets.list(), sheets.get(name),
+    # sheets.create(...), sheets.add_frame(...)… — stable names over the
+    # model, no composer window needed (core/sheets_api.py).
+    from core.sheets_api import SheetsAPI
+    scope["sheets"] = SheetsAPI(viewport.scene,
+                                getattr(viewport, "camera", None))
     return scope
 
 

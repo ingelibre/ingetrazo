@@ -4,6 +4,54 @@ All notable changes to IngeTrazo are documented here.
 Format inspired by [Keep a Changelog](https://keepachangelog.com); versions
 follow [SemVer](https://semver.org).
 
+## [Unreleased]
+
+### Añadido
+
+- **IngeTrazo sin ventana para automatizar con IA**: `ingetrazo --headless
+  --ai-bridge --open Casa.igz` abre el documento sin nada en pantalla y
+  enciende el puente IA (MCP), para que un agente (p. ej. Claude en un runner
+  de CI) trabaje el documento de principio a fin. Si el documento no abre,
+  termina al instante con el código 3; con `--allow-shutdown` el agente lo
+  cierra con `shutdown` y el código de salida es 0 (cualquier otro final, no).
+  `ingetrazo --mcp --headless --open …` lo hace todo con un solo comando para
+  el cliente MCP. *Cómo probarlo:* docs/ai-bridge.md ▸ «Sin ventana».
+- **Herramientas nuevas del puente IA**: `document_info`, `open_document`,
+  `save_document` (solo con `--allow-save` o la casilla «Permitir que el
+  agente guarde el documento» de la sección Puente IA), `export_view` (una
+  escena a PNG), `export_pdf` (las láminas a PDF) y `shutdown`.
+- **Guardar como JSON plano para control de versiones**: Preferencias ▸
+  General ▸ Formato de guardado ▸ JSON plano (o `--save-format json`) escribe
+  el `.igz` siempre como texto legible, para que Git muestre qué cambió; las
+  imágenes van a una carpeta `Nombre.assets` junto al documento. Un documento
+  guardado así se sigue guardando así. El formato automático de siempre no
+  cambia y sigue siendo el predeterminado. Ejemplo:
+  `python examples/headless-mcp-demo.py`.
+- **Explorador de láminas** (#932): en la página Láminas del compositor, las
+  láminas en carpetas anidadas, con su interruptor de impresión (Imprimir
+  todo / Exportar todo toman solo las marcadas), arrastrar y soltar para
+  ordenarlas y escenas que se sueltan sobre una lámina para colocarlas.
+- **Índice de láminas** (#1409): un elemento nuevo del compositor que lista
+  las láminas del documento con su número, plano o por carpetas, y se reparte
+  en varias láminas si es largo.
+- **Láminas por MCP** (#1505): una API estable de láminas y escenas
+  (`core/sheets_api.py`) y sus herramientas para el agente — crear y editar
+  láminas, marcos, cajetines, textos, carpetas y juegos; `render_sheet` y
+  `export_sheets` sin abrir el compositor, también sin ventana. Cada cambio es
+  un paso de deshacer.
+- **Juegos de planos** (#1519): selecciones con nombre de las láminas para
+  cada destinatario (permiso, tejador, cliente…). Se crean y se marcan en
+  las propiedades de la lámina (sección «Juegos de planos»); el cuadro
+  «Juego» del explorador elige qué imprimen Imprimir todo y Exportar todo.
+  Un juego sigue el orden del explorador; `{hoja}`, `{total}` y el índice de
+  láminas cuentan dentro del juego y `{juego}` / `{set}` imprime su nombre.
+  Exportar todo escribe PDF, o PNG / SVG por lámina según el tipo de archivo.
+
+### Corregido
+
+- `ingetrazo -i Casa.igz -p` (exportar las láminas a PDF sin ventana) se
+  cerraba con un error al abrir el documento desde 0.6.2.
+
 ## [0.6.2.1] — 2026-11-14
 
 **Mejoramos las láminas y el acotar: las cotas de lámina enganchan a lo

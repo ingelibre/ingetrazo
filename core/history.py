@@ -2073,6 +2073,236 @@ class MoveSheetCommand(Command):
         scene.version += 1
 
 
+class _SheetTreeCommand(Command):
+    """A change to the sheet explorer's tree (core.sheet_folders), undone by
+    putting the whole tree back as it was: folders, their names and
+    parents, each sheet's folder and Print flag, the sheet order. The tree
+    is small, so the snapshot is cheap — and it is exact, however the
+    change moved things around."""
+
+    def __init__(self) -> None:
+        self._before: Optional[dict] = None
+        self._after: Optional[dict] = None
+
+    def _apply(self, scene) -> None:  # pragma: no cover - interface
+        raise NotImplementedError
+
+    def do(self, scene) -> None:
+        from core import sheet_folders as sf
+        if self._after is not None:             # redo: the same result
+            sf.restore(scene, self._after)
+        else:
+            self._before = sf.capture(scene)
+            try:
+                self._apply(scene)
+            except BaseException:
+                # History restores the mesh only: the tree goes back here.
+                sf.restore(scene, self._before)
+                raise
+            self._after = sf.capture(scene)
+        scene.version += 1
+
+    def undo(self, scene) -> None:
+        from core import sheet_folders as sf
+        if self._before is not None:
+            sf.restore(scene, self._before)
+        scene.version += 1
+
+
+class AddSheetFolderCommand(_SheetTreeCommand):
+    """A new folder in the sheet explorer, inside ``folder.parent_id``
+    (``None``: the top), after the folders already there."""
+
+    def __init__(self, folder) -> None:
+        super().__init__()
+        self.folder = folder
+
+    def _apply(self, scene) -> None:
+        from core import sheet_folders as sf
+        scene.sheet_folders.append(self.folder)
+        sf.sync_order(scene)
+
+
+class RenameSheetFolderCommand(_SheetTreeCommand):
+    def __init__(self, folder, name: str) -> None:
+        super().__init__()
+        self.folder = folder
+        self.name = name
+
+    def _apply(self, scene) -> None:
+        self.folder.name = self.name
+
+
+class DeleteSheetFoldersCommand(_SheetTreeCommand):
+    """Remove folders; the sheets and folders they hold move one level up.
+    No sheet is ever deleted with its folder."""
+
+    def __init__(self, folders) -> None:
+        super().__init__()
+        self.folders = list(folders)
+
+    def _apply(self, scene) -> None:
+        from core import sheet_folders as sf
+        sf.delete_folders(scene, self.folders)
+
+
+class MoveSheetItemsCommand(_SheetTreeCommand):
+    """Sheets and/or folders into folder ``target_id`` (``None``: the top),
+    in front of ``before`` (a sheet or folder) or at the end — what a drag
+    and drop in the sheet explorer does. A folder is never put inside
+    itself."""
+
+    def __init__(self, sheets, folders, target_id, before=None) -> None:
+        super().__init__()
+        self.sheets = list(sheets)
+        self.folders = list(folders)
+        self.target_id = target_id
+        self.before = before
+
+    def _apply(self, scene) -> None:
+        from core import sheet_folders as sf
+        sf.move_items(scene, self.sheets, self.folders, self.target_id,
+                      self.before)
+
+
+class SetSheetPrintCommand(_SheetTreeCommand):
+    """The Print switch of these sheets and folders — whether Print all and
+    Export all take them (a folder switched off leaves out what it holds,
+    whatever their own switches say)."""
+
+    def __init__(self, sheets, printed: bool, folders=()) -> None:
+        super().__init__()
+        self.sheets = list(sheets)
+        self.folders = list(folders)
+        self.printed = bool(printed)
+
+    def _apply(self, scene) -> None:
+        for c in self.sheets + self.folders:
+            c.print_in_all = self.printed
+
+
+class _SheetSetCommand(Command):
+    """A change to the sheet sets (core.sheet_sets, #1519), undone by
+    putting every set back as it was — names, members, order, cover — and
+    taking back a sheet uid the change handed out. Sheets themselves are
+    never added or removed."""
+
+    def __init__(self) -> None:
+        self._before: Optional[dict] = None
+        self._after: Optional[dict] = None
+
+    def _apply(self, scene) -> None:  # pragma: no cover - interface
+        raise NotImplementedError
+
+    def do(self, scene) -> None:
+        from core import sheet_sets as ss
+        if self._after is not None:             # redo: the same result
+            ss.restore(scene, self._after)
+        else:
+            self._before = ss.capture(scene)
+            try:
+                self._apply(scene)
+            except BaseException:
+                ss.restore(scene, self._before)
+                raise
+            self._after = ss.capture(scene)
+        scene.version += 1
+
+    def undo(self, scene) -> None:
+        from core import sheet_sets as ss
+        if self._before is not None:
+            ss.restore(scene, self._before)
+        scene.version += 1
+
+
+class AddSheetSetCommand(_SheetSetCommand):
+    """A new sheet set (its name made unique), with ``sheets`` as its
+    first members, in the explorer's order."""
+
+    def __init__(self, sheet_set, sheets=()) -> None:
+        super().__init__()
+        self.sheet_set = sheet_set
+        self.sheets = list(sheets)
+
+    def _apply(self, scene) -> None:
+        from core import sheet_sets as ss
+        self.sheet_set.name = ss.unique_name(scene, self.sheet_set.name)
+        scene.sheet_sets.append(self.sheet_set)
+        for c in self.sheets:
+            ss.add_to_set(scene, self.sheet_set, c)
+
+
+class RenameSheetSetCommand(_SheetSetCommand):
+    def __init__(self, sheet_set, name: str) -> None:
+        super().__init__()
+        self.sheet_set = sheet_set
+        self.name = name
+
+    def _apply(self, scene) -> None:
+        from core import sheet_sets as ss
+        name = str(self.name or "").strip()
+        if not name:
+            raise ss.SheetSetError("a sheet set needs a name")
+        if ss.unique_name(scene, name, ignore=self.sheet_set) != name:
+            raise ss.SheetSetError(f"there is already a sheet set named "
+                                   f"{name!r}")
+        self.sheet_set.name = name
+
+
+class DeleteSheetSetCommand(_SheetSetCommand):
+    """Remove a set. Its sheets stay where they are."""
+
+    def __init__(self, sheet_set) -> None:
+        super().__init__()
+        self.sheet_set = sheet_set
+
+    def _apply(self, scene) -> None:
+        scene.sheet_sets[:] = [s for s in scene.sheet_sets
+                               if s is not self.sheet_set]
+
+
+class EditSheetSetCommand(_SheetSetCommand):
+    """A set's members and their order, its cover and its description —
+    each only when given (``None`` leaves it)."""
+
+    def __init__(self, sheet_set, sheets=None, cover=None,
+                 description=None, ordered=True) -> None:
+        super().__init__()
+        self.sheet_set = sheet_set
+        self.sheets = None if sheets is None else list(sheets)
+        self.cover = cover            # a sheet, False to clear, None: keep
+        self.description = description
+        #: With ``sheets``: they print in that order from now on (True), or
+        #: in the explorer's (False). The Plan sets box only moves sheets
+        #: in and out, so it passes the set's own ``ordered``.
+        self.ordered = ordered
+
+    def _apply(self, scene) -> None:
+        from core import sheet_sets as ss
+        if self.sheets is not None:
+            ss.set_members(scene, self.sheet_set, self.sheets,
+                           ordered=self.ordered)
+        if self.cover is False:
+            self.sheet_set.cover_uid = ""
+        elif self.cover is not None:
+            self.sheet_set.cover_uid = ss.sheet_uid(self.cover)
+        if self.description is not None:
+            self.sheet_set.description = str(self.description)
+
+
+class SetSheetSetsOfSheetCommand(_SheetSetCommand):
+    """The sets one sheet is in — the sheet's own «Plan sets» list."""
+
+    def __init__(self, sheet, sheet_sets) -> None:
+        super().__init__()
+        self.sheet = sheet
+        self.sheet_sets = list(sheet_sets)
+
+    def _apply(self, scene) -> None:
+        from core import sheet_sets as ss
+        ss.set_sheet_sets(scene, self.sheet, self.sheet_sets)
+
+
 class CreatePlanCommand(Command):
     """A floor plan from a group, in one undo step: a horizontal section
     plane at the cut height (made the active cut), a scene looking down on
@@ -3698,6 +3928,10 @@ class SnapshotImport(Command):
         ("dimensions", "added_dims", "removed_dims"),
         ("text_labels", "added_texts", "removed_texts"),
         ("compositions", "added_sheets", "removed_sheets"),
+        # the sheet browser's folders (core.sheet_folders)
+        ("sheet_folders", "added_sheet_folders", "removed_sheet_folders"),
+        # the sheet sets (core.sheet_sets, #1519)
+        ("sheet_sets", "added_sheet_sets", "removed_sheet_sets"),
     )
 
     def __init__(self, mutate) -> None:
@@ -3707,19 +3941,77 @@ class SnapshotImport(Command):
         for _, added, removed in self._TRACKED:
             setattr(self, added, [])
             setattr(self, removed, [])
+        #: ``[(kind, obj, before, after)]`` — sheets, saved views and layers
+        #: that were there before AND after but whose CONTENT changed.
+        self.content_edits: list = []
 
     @property
     def changed(self) -> bool:
         """Whether the run did anything undo would have to revert."""
         return (self.before != self.after
+                or bool(self.content_edits)
                 or any(getattr(self, added) or getattr(self, removed)
                        for _, added, removed in self._TRACKED))
+
+    # ---- content of sheets, views and layers (#1505) -------------------------
+    # Membership alone missed every EDIT: a frame's scale set, a scene
+    # renamed, a title block filled in through ``run_python`` reported
+    # «changed: False», left no undo step and no dirty flag — and a script
+    # that raised after hiding a layer left it hidden. Each object is
+    # snapshotted by value (its .igz record; a layer's attributes) and put
+    # back IN PLACE, so the composer and the agent's scope keep their
+    # references.
+    @staticmethod
+    def _content_state(scene) -> dict:
+        state: dict = {}
+        for c in getattr(scene, "compositions", None) or ():
+            if hasattr(c, "to_dict"):
+                state[id(c)] = ("sheet", c, c.to_dict())
+        for v in getattr(scene, "saved_views", None) or ():
+            if hasattr(v, "to_dict"):
+                state[id(v)] = ("view", v, v.to_dict())
+        for ly in getattr(scene, "layers", None) or ():
+            if hasattr(ly, "__dict__"):
+                state[id(ly)] = ("layer", ly, dict(vars(ly)))
+        # A folder's name and Print flag; a set's name, members and order.
+        for f in getattr(scene, "sheet_folders", None) or ():
+            if hasattr(f, "to_dict"):
+                state[id(f)] = ("sheet_folder", f, f.to_dict())
+        for st in getattr(scene, "sheet_sets", None) or ():
+            if hasattr(st, "to_dict"):
+                state[id(st)] = ("sheet_set", st, st.to_dict())
+        return state
+
+    @staticmethod
+    def _content_edits(before: dict, after: dict) -> list:
+        return [(kind, obj, old, after[key][2])
+                for key, (kind, obj, old) in before.items()
+                if key in after and after[key][1] is obj
+                and after[key][2] != old]
+
+    @staticmethod
+    def _put_content(kind: str, obj, state) -> None:
+        if kind == "sheet":
+            from core.composition import Composicion
+            obj.__dict__.update(Composicion.from_dict(state).__dict__)
+        elif kind == "view":
+            from core.saved_views import SavedView
+            obj.__dict__.update(SavedView.from_dict(state).__dict__)
+        elif kind == "sheet_folder":
+            from core.sheet_folders import SheetFolder
+            obj.__dict__.update(SheetFolder.from_dict(state).__dict__)
+        elif kind == "sheet_set":
+            from core.sheet_sets import SheetSet
+            obj.__dict__.update(SheetSet.from_dict(state).__dict__)
+        else:
+            obj.__dict__.update(state)
 
     def do(self, scene) -> None:
         m = scene.mesh
         if self.after is None:
             lists_before = {name: list(getattr(scene, name))
                             for name, _, _ in self._TRACKED}
+            content_before = self._content_state(scene)
             self.before = m.capture_state()
             try:
                 self.mutate(scene)
@@ -3729,8 +4021,16 @@ class SnapshotImport(Command):
                 # Slice assignment preserves references held by scripting scopes.
                 for name, items in lists_before.items():
                     getattr(scene, name)[:] = items
+                # …and what the recipe changed INSIDE them: a layer it hid,
+                # a frame it rescaled before raising.
+                edits = self._content_edits(content_before,
+                                            self._content_state(scene))
+                for kind, obj, old, _new in edits:
+                    self._put_content(kind, obj, old)
                 raise
             self.after = m.capture_state()
+            self.content_edits = self._content_edits(
+                content_before, self._content_state(scene))
             for name, added, removed in self._TRACKED:
                 before, now = lists_before[name], getattr(scene, name)
                 setattr(self, added, [x for x in now if x not in before])
@@ -3748,11 +4048,15 @@ class SnapshotImport(Command):
                 for x in getattr(self, added):
                     if x not in items:
                         items.append(x)
+            for kind, obj, _old, new in self.content_edits:
+                self._put_content(kind, obj, new)
         scene.version += 1
 
     def undo(self, scene) -> None:
         if self.before is not None:
             scene.mesh.restore_state(self.before)
+        for kind, obj, old, _new in self.content_edits:
+            self._put_content(kind, obj, old)
         for name, added, removed in self._TRACKED:
             items = getattr(scene, name)
             for x in getattr(self, added):
