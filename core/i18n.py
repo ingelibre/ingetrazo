@@ -33,7 +33,9 @@ LANGUAGE_NAMES = {"en": "English", "es": "Español",
                   "pl": "Polski", "ru": "Русский", "vi": "Tiếng Việt",
                   "lo": "ລາວ", "th": "ไทย",
                   "ja": "日本語", "ko": "한국어", "uk": "Українська",
-                  "ar": "العربية", "bg": "Български"}
+                  "ar": "العربية", "bg": "Български",
+                  "el": "Ελληνικά", "mk": "Македонски", "ro": "Română",
+                  "sr": "Српски", "tr": "Türkçe"}
 
 #: Languages written from right to left: the whole interface is mirrored
 #: for them (see views/rtl.py). Arabic ships; the rest are ready for when
