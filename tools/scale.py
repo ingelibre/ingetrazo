@@ -490,7 +490,17 @@ class ScaleTool(Tool):
         self._factors = (1.0, 1.0, 1.0)
         self._vp_preview = False
         self._bent_faces = []
-        if self._verts and not self._groups:
+        if self._groups and not self._verts and not self._positions:
+            # Groups only: the groups preview Move and Rotate use — the
+            # movers' arrays drawn through the scale, nothing mutated until
+            # the commit. Each frame of a scale of a group without its own
+            # placement matrix set every one of its vertices again and
+            # re-baked it (21-11).
+            begin = getattr(viewport, "begin_groups_preview", None)
+            if begin is not None:
+                begin(self._groups)
+                self._vp_preview = True
+        elif self._verts and not self._groups:
             # Vertices of a big open group or of the big loose model:
             # Move's vertex-drag preview, scaled — nothing mutated until
             # the commit, what rides drawn through the scale, the faces it
@@ -681,7 +691,8 @@ class ScaleTool(Tool):
         from PySide6.QtGui import QMatrix4x4
         orig_v: list = []
         orig_x: list = []
-        for group in self._groups:
+        vp_only = getattr(self, "_vp_preview", False)
+        for group in ([] if vp_only else self._groups):
             if getattr(group, "xform", None) is not None:
                 orig_x.append((group, QMatrix4x4(group.xform)))
             else:
