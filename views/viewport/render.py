@@ -1869,7 +1869,11 @@ class RenderMixin:
                       or getattr(sc, "show_hidden_geometry", False)):
             return None
         array_bake = _array_bake()
-        if not array_bake.can_bake_built(mesh):
+        # A mixed drag previews whatever the loose part's size: what the
+        # live drag pays for there is the objects, re-placed and re-synced
+        # each frame — ~75-100 ms a frame beside a few loose faces of the
+        # Plaza (21-11), where the walk the threshold spares is nothing.
+        if not array_bake.can_bake_built(mesh, 0 if groups else None):
             return None
         if not loose:
             # A mesh drawn twice (a component's copies, an instance) would

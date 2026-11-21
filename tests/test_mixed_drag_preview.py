@@ -613,3 +613,35 @@ def test_a_mixed_move_frame_looks_as_the_live_one(monkeypatch):
         return int(((r > 200) & (g > 70) & (g < 160) & (bb < 90)).sum())
     oa, ob = orange(a), orange(b)
     assert ob > 0 and abs(oa - ob) <= 0.15 * ob
+
+
+# ---- a few loose faces beside the objects ---------------------------------
+
+@pytest.mark.parametrize("tool_name", ["move", "rotate", "scale"])
+def test_a_few_loose_faces_with_objects_preview_too(monkeypatch, tool_name):
+    """Below the size a vertex drag alone previews from (BUILT_MIN_FACES),
+    a mixed one still does: the live drag's cost is the objects. It lands
+    where the typed operation lands. Vertices alone keep the live drag."""
+    from views import array_bake
+    monkeypatch.setattr(array_bake, "BUILT_MIN_FACES", 500)
+    out = []
+    for hover in (True, False):
+        w = _window()
+        try:
+            out.append(_operate(w, "loose", tool_name, True, hover))
+        finally:
+            _close_window(w)
+    assert out[0][:4] == out[1][:4]
+    assert out[0][3] == 1
+    w = _window()
+    try:
+        vp, objs = _scene(w, "loose")
+        vp.scene.select(_block(vp.scene.mesh))
+        w._tool_actions["move"].trigger()
+        tool = vp.active_tool
+        tool.on_click(_ctx(vp, CENTRE))
+        assert not tool._vp_preview
+        _no_preview_state(vp)
+        tool.on_cancel(vp)
+    finally:
+        _close_window(w)
