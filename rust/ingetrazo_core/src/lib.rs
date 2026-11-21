@@ -66,6 +66,8 @@ fn ingetrazo_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<GlReplay>()?;
     m.add_class::<InstanceProto>()?;
     m.add_class::<InstanceSet>()?;
+    // Bloque 6d: Move's vertex drag preview
+    m.add_class::<MovePreview>()?;
     Ok(())
 }
 
@@ -1819,4 +1821,117 @@ fn preview_sweep_lines<'py>(
         Some(out)
     });
     Ok(out.map(|v| PyBytes::new(py, &f32_bytes(&v))))
+}
+
+
+// ---- Bloque 6d: Move's vertex drag preview (preview.rs) -------------------
+
+/// The faces a Move of vertices stretches (``tools.move``'s bent faces),
+/// packed once at the grab: ``pos`` (N,3) float32 corners and ``ride``
+/// (N,) whether each rides the drag, ring by ring (``ring_sizes``), face by
+/// face (``ring_counts``, outer ring first), ``face_mat`` each face's row
+/// of ``mats`` (as preview_faces_bake takes them). Each frame
+/// :meth:`bake` makes, for the drag's offset, what preview_faces_bake
+/// makes of the moved faces — no face object made or walked.
+#[pyclass(frozen)]
+struct MovePreview {
+    faces: Vec<preview::PFace>,
+    ride: Vec<Vec<bool>>,
+    mats: Vec<preview::Mat>,
+}
+
+#[pymethods]
+impl MovePreview {
+    #[new]
+    fn new(
+        pos: PyReadonlyArray2<'_, f32>,
+        ride: PyReadonlyArray1<'_, bool>,
+        ring_sizes: PyReadonlyArray1<'_, i64>,
+        ring_counts: PyReadonlyArray1<'_, i64>,
+        face_mat: PyReadonlyArray1<'_, i64>,
+        mats: PyReadonlyArray2<'_, f64>,
+    ) -> PyResult<Self> {
+        let err = pyo3::exceptions::PyValueError::new_err;
+        let p = pos.as_array();
+        if p.shape()[0] > 0 && p.shape()[1] != 3 {
+            return Err(err("corners (N,3)"));
+        }
+        let r = ride.as_array();
+        if r.len() != p.shape()[0] {
+            return Err(err("ride flags"));
+        }
+        let mats = preview_mats(&mats.as_array()).map_err(err)?;
+        let sizes = ring_sizes.as_array().to_vec();
+        let counts = ring_counts.as_array().to_vec();
+        let fmat = face_mat.as_array().to_vec();
+        let rings = preview_rings(&p, &sizes, &counts).map_err(err)?;
+        if fmat.len() != rings.len() || fmat.iter().any(|&k| k < 0 || k as usize >= mats.len()) {
+            return Err(err("face materials"));
+        }
+        let mut at = 0usize;
+        let mut flags = Vec::with_capacity(rings.len());
+        let mut faces = Vec::with_capacity(rings.len());
+        for ((fp, fr), &k) in rings.into_iter().zip(&fmat) {
+            flags.push((at..at + fp.len()).map(|i| r[i]).collect());
+            at += fp.len();
+            faces.push(preview::PFace { pos: fp, rings: fr, mat: k as usize });
+        }
+        Ok(Self { faces, ride: flags, mats })
+    }
+
+    fn __len__(&self) -> usize {
+        self.faces.len()
+    }
+
+    /// The bake of the faces moved by ``d``: preview_faces_bake's
+    /// ``(colour bytes, runs, texture runs)`` — the runs of neighbouring
+    /// faces of one material and shade joined into one (same triangles,
+    /// same order, same colour) — or ``None`` (Python bakes the frame).
+    fn bake<'py>(
+        &self,
+        py: Python<'py>,
+        d: (f32, f32, f32),
+        light: (f32, f32, f32),
+        hypot: &str,
+    ) -> PyResult<PreviewOut<'py>> {
+        let h = hypot_of(hypot)?;
+        let d = facegeom::V3(d.0, d.1, d.2);
+        let l = facegeom::V3(light.0, light.1, light.2);
+        let b = py.detach(|| {
+            let faces = preview::moved(&self.faces, &self.ride, d);
+            preview::bake(&faces, &self.mats, l, h).map(|mut b| {
+                b.runs = preview::merge_runs(&b.runs);
+                b
+            })
+        });
+        preview_out(py, b)
+    }
+
+    /// :meth:`bake` with the riding corners at ``placed`` (R,3) float32,
+    /// one row per riding corner in pack order (a Rotate's ``m.map`` of
+    /// each, as the tool's faces hold them). ``None`` too for too few rows.
+    fn bake_placed<'py>(
+        &self,
+        py: Python<'py>,
+        placed: PyReadonlyArray2<'_, f32>,
+        light: (f32, f32, f32),
+        hypot: &str,
+    ) -> PyResult<PreviewOut<'py>> {
+        let h = hypot_of(hypot)?;
+        let p = placed.as_array();
+        if p.shape()[0] > 0 && p.shape()[1] != 3 {
+            return Err(pyo3::exceptions::PyValueError::new_err("places (R,3)"));
+        }
+        let at: Vec<facegeom::V3> = (0..p.shape()[0])
+            .map(|i| facegeom::V3(p[[i, 0]], p[[i, 1]], p[[i, 2]])).collect();
+        let l = facegeom::V3(light.0, light.1, light.2);
+        let b = py.detach(|| {
+            let faces = preview::placed(&self.faces, &self.ride, &at)?;
+            preview::bake(&faces, &self.mats, l, h).map(|mut b| {
+                b.runs = preview::merge_runs(&b.runs);
+                b
+            })
+        });
+        preview_out(py, b)
+    }
 }

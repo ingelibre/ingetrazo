@@ -228,6 +228,7 @@ class RotateTool(ProtractorBase):
             self._verts = [v for v in (mesh.vertex_at(p) for p in positions)
                            if v is not None]
             self._vp_preview = False
+            self._bent_faces = []
             if groups and not self._verts and not positions:
                 # Groups-only rotate: viewport-side preview (see MoveTool) —
                 # the classic-group live rotate walked 190k vertices in
@@ -235,6 +236,18 @@ class RotateTool(ProtractorBase):
                 begin = getattr(viewport, "begin_groups_preview", None)
                 if begin is not None:
                     begin(groups)
+                    self._vp_preview = True
+            elif self._verts and not groups:
+                # Vertices of a big open group or of the big loose model:
+                # Move's vertex-drag preview, turned — nothing mutated
+                # until the commit, what rides drawn through the rotation,
+                # the faces it bends drawn turned here (preview_faces).
+                # Each frame re-walked the whole loose model before
+                # (~0.35 s for 6 400 faces, 21-11).
+                begin = getattr(viewport, "begin_verts_preview", None)
+                got = begin(self._verts) if begin is not None else None
+                if got is not None:
+                    self._bent_faces, _e, self._bent_paint = got
                     self._vp_preview = True
             self._gather_copy_entities(ctx)
             self.start_point = ctx.world
@@ -415,6 +428,35 @@ class RotateTool(ProtractorBase):
                     segments.extend(
                         (m.map(a), m.map(b)) for a, b in self._base_segments)
         return segments
+
+    def preview_faces(self):
+        """Mid vertex rotation (see begin_verts_preview): the faces it
+        bends, drawn turned — Move's :class:`tools.move._MovedFaces`, made
+        once per angle."""
+        bent = getattr(self, "_bent_faces", None)
+        if (not bent or not getattr(self, "_vp_preview", False)
+                or self._copy or self.start_point is None):
+            return []
+        from tools.move import _MovedFaces
+        # Not turned yet (no reference arm, or put back): the faces where
+        # they are, exactly — a turn by 0° maps them through the centre.
+        m = (rotation_matrix(self.start_point, self._axis(),
+                             self._preview_deg)
+             if self._preview_deg else None)
+        key = (id(bent), tuple(m.data()) if m is not None else None)
+        memo = getattr(self, "_moved_memo", None)
+        if memo is not None and memo[0] == key and memo[1] is bent:
+            return memo[2]
+        parts = getattr(self, "_moved_parts", None)
+        if parts is None or parts[0] is not bent:
+            shown = [f for f in bent if not f.attrs.get("hidden")]
+            parts = self._moved_parts = (
+                bent, shown, frozenset(id(v) for v in self._verts))
+        out = _MovedFaces(parts[1], parts[2],
+                          getattr(self, "_bent_paint", None),
+                          QVector3D(0.0, 0.0, 0.0), m)
+        self._moved_memo = (key, bent, out)
+        return out
 
     def _arc_segments(self, deg: float):
         """Protractor arc between the two arms, at the reference radius."""
@@ -668,4 +710,7 @@ class RotateTool(ProtractorBase):
         self._groups_ghost_due = False
         self._preview_deg = 0.0
         self._orig = None       # the preview's snapshot (see _snapshot)
+        self._bent_faces = []
+        self._moved_parts = None
+        self._moved_memo = None
         self._copy = False      # the Ctrl modifier arms ONE operation

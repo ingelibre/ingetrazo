@@ -323,3 +323,94 @@ pub fn sweep_lines(pos: &[V3], rings: &[Vec<u32>], off: V3, curve_cos: f64, h: H
     }
     true
 }
+
+// ---- Move's vertex drag (Bloque 6d) ----------------------------------------
+
+/// `tools.move.MoveTool.preview_faces` mid vertex drag: each face the drag
+/// stretches, its corners that ride the drag (`ride`, one flag per corner
+/// in `pos` order) moved by `d` — QVector3D's float32 add, `v.position + d`
+/// — and the others left as they are (not `+ 0`, which would turn a -0.0
+/// into a +0.0).
+pub fn moved(faces: &[PFace], ride: &[Vec<bool>], d: V3) -> Vec<PFace> {
+    faces.iter().zip(ride).map(|(f, r)| PFace {
+        pos: f.pos.iter().zip(r).map(|(&p, &on)| if on { add(p, d) } else { p }).collect(),
+        rings: f.rings.clone(),
+        mat: f.mat,
+    }).collect()
+}
+
+/// `tools.rotate.RotateTool.preview_faces` mid vertex drag: the corners
+/// that ride take, in order, the places `placed` holds for them (the
+/// tool's `QMatrix4x4.map` of each, made in Python so they are Qt's very
+/// floats); the others stay as they are. `None`: fewer places than riding
+/// corners.
+pub fn placed(faces: &[PFace], ride: &[Vec<bool>], placed: &[V3]) -> Option<Vec<PFace>> {
+    let mut at = placed.iter();
+    let mut out = Vec::with_capacity(faces.len());
+    for (f, r) in faces.iter().zip(ride) {
+        let mut pos = Vec::with_capacity(f.pos.len());
+        for (&p, &on) in f.pos.iter().zip(r) {
+            pos.push(if on { *at.next()? } else { p });
+        }
+        out.push(PFace { pos, rings: f.rings.clone(), mat: f.mat });
+    }
+    Some(out)
+}
+
+/// One draw per run of neighbouring colour faces of the same material and
+/// shade: the same triangles in the same order, drawn with the same
+/// colour, in a fraction of the draw calls (a drag stretching a thousand
+/// faces of a floor made a thousand `glDrawArrays` a frame).
+pub fn merge_runs(runs: &[(u32, u32, u32, f64)]) -> Vec<(u32, u32, u32, f64)> {
+    let mut out: Vec<(u32, u32, u32, f64)> = Vec::with_capacity(runs.len());
+    for &r in runs {
+        if let Some(last) = out.last_mut() {
+            if last.0 == r.0 && last.3.to_bits() == r.3.to_bits() && last.1 + last.2 == r.1 {
+                last.2 += r.2;
+                continue;
+            }
+        }
+        out.push(r);
+    }
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn merge_joins_only_neighbours_alike() {
+        let runs = [(0, 0, 6, 0.5), (0, 6, 3, 0.5), (1, 9, 3, 0.5),
+                    (0, 12, 3, 0.5), (0, 15, 3, 0.75), (0, 18, 0, 0.75)];
+        assert_eq!(merge_runs(&runs), vec![(0, 0, 9, 0.5), (1, 9, 3, 0.5),
+                                            (0, 12, 3, 0.5), (0, 15, 3, 0.75)]);
+        assert!(merge_runs(&[]).is_empty());
+    }
+
+    #[test]
+    fn placed_takes_the_places_in_order() {
+        let f = PFace { pos: vec![V3(1.0, 0.0, 0.0), V3(2.0, 0.0, 0.0), V3(3.0, 0.0, 0.0)],
+                        rings: vec![vec![0, 1, 2]], mat: 0 };
+        let g = PFace { pos: vec![V3(4.0, 0.0, 0.0)], rings: vec![vec![0]], mat: 0 };
+        let ride = [vec![true, false, true], vec![true]];
+        let at = [V3(9.0, 0.0, 0.0), V3(8.0, 0.0, 0.0), V3(7.0, 0.0, 0.0)];
+        let out = placed(&[f, g], &ride, &at).unwrap();
+        assert_eq!(out[0].pos[0].0, 9.0);
+        assert_eq!(out[0].pos[1].0, 2.0);
+        assert_eq!(out[0].pos[2].0, 8.0);
+        assert_eq!(out[1].pos[0].0, 7.0);
+        let f = PFace { pos: vec![V3(1.0, 0.0, 0.0)], rings: vec![vec![0]], mat: 0 };
+        assert!(placed(&[f], &[vec![true]], &[]).is_none());
+    }
+
+    #[test]
+    fn moved_keeps_resting_corners_bit_exact() {
+        let f = PFace { pos: vec![V3(-0.0, 1.0, 2.0), V3(3.0, -0.0, 0.1)],
+                        rings: vec![vec![0, 1]], mat: 0 };
+        let out = moved(&[f], &[vec![false, true]], V3(0.0, 0.0, 0.2));
+        assert_eq!(out[0].pos[0].0.to_bits(), (-0.0f32).to_bits());
+        assert_eq!(out[0].pos[1].1.to_bits(), 0.0f32.to_bits());
+        assert_eq!(out[0].pos[1].2, 0.1f32 + 0.2f32);
+    }
+}

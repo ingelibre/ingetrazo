@@ -407,6 +407,59 @@ class _MoveCopiesCommand(CompoundCommand):
         scene.bump_view()
 
 
+
+class _MovedFaces:
+    """The faces a vertex drag stretches (``shown``, mesh faces), each
+    corner in ``moving`` (vertex ids) moved by ``d`` — or, given ``m`` (a
+    Rotate's ``QMatrix4x4``), placed at ``m.map`` of where it is: what
+    :meth:`MoveTool.preview_faces` (and Rotate's) draws. A sequence of
+    ``core.geometry.Face`` built on first walk — as the tools always built
+    them — while ``moved_parts`` hands the viewport what its engine bakes
+    them from without (``Viewport._bake_preview_moved_native``)."""
+
+    __slots__ = ("shown", "moving", "paint", "d", "m", "_faces")
+
+    def __init__(self, shown, moving, paint, d, m=None) -> None:
+        self.shown = shown
+        self.moving = moving
+        self.paint = paint
+        self.d = d
+        self.m = m
+        self._faces = None
+
+    @property
+    def moved_parts(self):
+        return self.shown, self.moving, self.paint, self.d, self.m
+
+    def faces(self) -> list:
+        out = self._faces
+        if out is None:
+            from core.geometry import Face as GeomFace
+            from core.materials import effective_attrs
+            d, m, moving, paint = self.d, self.m, self.moving, self.paint
+            if m is not None:
+                def at(v):
+                    return m.map(v.position) if id(v) in moving else v.position
+            else:
+                def at(v):
+                    return v.position + d if id(v) in moving else v.position
+            out = self._faces = [GeomFace(
+                [at(v) for v in f.loop],
+                [[at(v) for v in h] for h in f.hole_loops],
+                attrs=effective_attrs(f.attrs, paint) or None)
+                for f in self.shown]
+        return out
+
+    def __len__(self) -> int:
+        return len(self.shown)
+
+    def __iter__(self):
+        return iter(self.faces())
+
+    def __getitem__(self, i):
+        return self.faces()[i]
+
+
 class MoveTool(Tool):
     name = "Move"
     shortcut = "M"
@@ -623,13 +676,14 @@ class MoveTool(Tool):
                 if begin is not None:
                     begin(self._groups)
                     self._vp_preview = True
-            elif (self._verts and not self._groups
-                  and getattr(viewport.scene, "edit_group", None) is not None):
-                # Vertices of a big open group: the same viewport-side
-                # preview — the rest of the mesh baked once, what rides
-                # the drag drawn at the offset, the faces it stretches
-                # drawn moved here (preview_faces). A frame re-baked the
-                # whole open group before (~0.4 s, night of 18-11).
+            elif self._verts and not self._groups:
+                # Vertices of a big open group, or of the big loose model:
+                # the same viewport-side preview — the rest of the mesh
+                # baked once, what rides the drag drawn at the offset, the
+                # faces it stretches drawn moved here (preview_faces). A
+                # frame re-baked the whole open group before (~0.4 s, night
+                # of 18-11), or re-walked the whole loose model (~0.33 s
+                # for 6 400 faces, 21-11).
                 begin = getattr(viewport, "begin_verts_preview", None)
                 got = begin(self._verts) if begin is not None else None
                 if got is not None:
@@ -833,25 +887,27 @@ class MoveTool(Tool):
 
     def preview_faces(self):
         """Mid vertex drag (see begin_verts_preview): the faces it
-        stretches, drawn where they are going — with their own look."""
+        stretches, drawn where they are going — with their own look. A
+        :class:`_MovedFaces`, made once per offset: the viewport's engine
+        bakes it from arrays packed at the grab, and only Python's bake
+        walks the faces it builds."""
         bent = getattr(self, "_bent_faces", None)
         if (not bent or not getattr(self, "_vp_preview", False)
                 or self._copy):
             return []
-        from core.geometry import Face as GeomFace
-        from core.materials import effective_attrs
         d = self._preview_delta
-        moving = {id(v) for v in self._verts}
-        paint = getattr(self, "_bent_paint", None)
-        out = []
-        for f in bent:
-            if not f.attrs.get("hidden"):
-                out.append(GeomFace(
-                    [v.position + d if id(v) in moving else v.position
-                     for v in f.loop],
-                    [[v.position + d if id(v) in moving else v.position
-                      for v in h] for h in f.hole_loops],
-                    attrs=effective_attrs(f.attrs, paint) or None))
+        key = (id(bent), d.x(), d.y(), d.z())
+        memo = getattr(self, "_moved_memo", None)
+        if memo is not None and memo[0] == key and memo[1] is bent:
+            return memo[2]
+        parts = getattr(self, "_moved_parts", None)
+        if parts is None or parts[0] is not bent:
+            shown = [f for f in bent if not f.attrs.get("hidden")]
+            parts = self._moved_parts = (
+                bent, shown, frozenset(id(v) for v in self._verts))
+        out = _MovedFaces(parts[1], parts[2],
+                          getattr(self, "_bent_paint", None), QVector3D(d))
+        self._moved_memo = (key, bent, out)
         return out
 
     def value_label(self):
@@ -1367,4 +1423,6 @@ class MoveTool(Tool):
         self._groups_ghost_due = False
         self._vp_preview = False
         self._bent_faces = []
+        self._moved_parts = None
+        self._moved_memo = None
         self._copy = False      # the Ctrl modifier arms ONE operation

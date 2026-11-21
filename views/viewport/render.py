@@ -1831,27 +1831,40 @@ class RenderMixin:
         Returns ``(bent faces, bent edges, the open group's paint)`` — the
         ones with corners on both sides: the tool draws the faces itself,
         moved, each frame, the viewport the edges — or
-        None when the preview does not apply (no group open, a small
-        mesh, copies sharing it, too many bent faces), and the tool keeps
-        the live rebuild."""
+        None when the preview does not apply (a small mesh, copies
+        sharing it, too many bent faces; for the loose model with no group
+        open, a soft edge riding or bending, or hidden geometry shown), and
+        the tool keeps the live rebuild."""
         sc = self.scene
         E = sc.edit_group
         mesh = sc.mesh
-        if (E is None or not verts or self._program is None
+        if (not verts or self._program is None
                 or getattr(self, "_verts_preview", None) is not None
                 or getattr(self, "_preview_groups", None)):
+            return None
+        # No group open: the model's own loose geometry. It is not a
+        # chunk — _sync_edges walks it face by face on every sync — so
+        # nothing stands in for it: the sync that starts the drag leaves
+        # out what rides and what bends (``hide``), and no frame after it
+        # syncs again. Each frame of a Move of a block of a 6 400-face
+        # loose floor re-walked the whole floor, ~0.33 s (21-11).
+        loose = E is None
+        if loose and (mesh is not sc.loose_mesh
+                      or getattr(sc, "show_hidden_geometry", False)):
             return None
         array_bake = _array_bake()
         if not array_bake.can_bake_built(mesh):
             return None
-        # A mesh drawn twice (a component's copies, an instance) would
-        # show the hole the static part leaves.
-        holders = [g for g in self._placements()
-                   if getattr(g, "mesh", None) is mesh]
-        if len(holders) != 1 or getattr(holders[0], "xform", None) is not None:
-            return None
-        if sc.loose_mesh is mesh:
-            return None
+        if not loose:
+            # A mesh drawn twice (a component's copies, an instance) would
+            # show the hole the static part leaves.
+            holders = [g for g in self._placements()
+                       if getattr(g, "mesh", None) is mesh]
+            if (len(holders) != 1
+                    or getattr(holders[0], "xform", None) is not None):
+                return None
+            if sc.loose_mesh is mesh:
+                return None
         moving = {id(v) for v in verts}
         touched: dict = {}
         for v in verts:
@@ -1883,7 +1896,13 @@ class RenderMixin:
                 bent_e.append(e)
             else:
                 stay_e.append(e)
-        paint = _paint_of(self, holders[0])    # the paint above it too
+        if loose and any(getattr(e, "soft", False)
+                         for e in (*ride_e, *bent_e)):
+            # The loose soft edges and the smooth shading around them are
+            # kept per content version (frozen here): the curve would stay
+            # behind where it was. The live drag stays.
+            return None
+        paint = _paint_of(self, None if loose else holders[0])
         msig = _material_sig(paint)
         # The pick index answers for the drag from the frozen version:
         # made now, from the whole open group's chunk — made later, the
@@ -1892,15 +1911,17 @@ class RenderMixin:
             self._pick_index()
         except Exception:  # noqa: BLE001 — a pick index made later is slower, not wrong
             pass
-        stay = array_bake.bake_built(self, mesh, paint, msig, None,
-                                     stay_f, stay_e)
+        stay = (None if loose else
+                array_bake.bake_built(self, mesh, paint, msig, None,
+                                      stay_f, stay_e))
         rider = array_bake.bake_built(self, mesh, paint, msig, None,
                                       ride_f, ride_e)
-        if stay is None or rider is None:
+        if (stay is None and not loose) or rider is None:
             return None
-        stay["vkey"] = (sc.version, id(mesh))
-        stay["uid"] = next(_chunk_uid)
-        stay["mesh"] = mesh
+        if stay is not None:
+            stay["vkey"] = (sc.version, id(mesh))
+            stay["uid"] = next(_chunk_uid)
+            stay["mesh"] = mesh
         hide = ride | bent_ids
         hide_e = {id(e) for e in ride_e} | {id(e) for e in bent_e}
         import numpy as np
@@ -1919,7 +1940,7 @@ class RenderMixin:
             ends = rides = None
         self._verts_preview = {"mesh": mesh, "stay": stay, "hide": hide,
                                "hide_e": hide_e, "bent_ends": ends,
-                               "bent_rides": rides,
+                               "bent_rides": rides, "loose": loose,
                                "token": object()}
         self._frozen_cache_version = sc.version
         self._edges_version = -1          # one resync with the static part
@@ -1997,6 +2018,7 @@ class RenderMixin:
         self._frozen_cache_version = None
         self._edges_version = -1
         self._sel_runs_memo = None
+        self._moved_pack_memo = None      # the drag's faces, let go
         self._preview_offset = QVector3D(0.0, 0.0, 0.0)
         self._preview_matrix = None
         self._pv_edges_count = 0
@@ -2076,9 +2098,18 @@ class RenderMixin:
                 and len(vpv["bent_ends"]):
             # The edges a vertex drag stretches: one end rides, one stays.
             import numpy as np
-            off = getattr(self, "_preview_offset", None) or QVector3D()
-            d = np.array([off.x(), off.y(), off.z()], dtype=np.float32)
-            pts = vpv["bent_ends"] + vpv["bent_rides"][:, None] * d
+            pm = getattr(self, "_preview_matrix", None)
+            if pm is not None:
+                # A Rotate's vertex drag: the riding ends turned.
+                a = np.array(pm.data(), dtype=np.float64).reshape(4, 4)
+                ends = vpv["bent_ends"]
+                turned = (ends.astype(np.float64) @ a[:3, :3]
+                          + a[3, :3]).astype(np.float32)
+                pts = np.where(vpv["bent_rides"][:, None] > 0, turned, ends)
+            else:
+                off = getattr(self, "_preview_offset", None) or QVector3D()
+                d = np.array([off.x(), off.y(), off.z()], dtype=np.float32)
+                pts = vpv["bent_ends"] + vpv["bent_rides"][:, None] * d
             raw = pts.astype(np.float32).tobytes()
             if getattr(self, "_pv_bent_vao", None) is None:
                 self._pv_bent_vao, self._pv_bent_vbo = self._create_dynamic()
@@ -2765,17 +2796,22 @@ class RenderMixin:
             self._preview_faces_vbo.allocate(raw, len(raw))
             self._preview_faces_vbo.release()
             self._preview_faces_vao.bind()
-            for (r, g, b), start, count in runs:
-                self._set_color(r, g, b, 1.0)
-                # A preview has no back: it is an overlay, not a solid with an
-                # inside. Its walls are wound however the sweep produced them
-                # and nothing surrounds them to hide the ones turned away, so
-                # the real back-face tint painted the pocket of a push-in blue
-                # over the shape being formed (Marco, 2026-08-27). Both sides
-                # take the face's own colour.
-                self._program.setUniformValue(self._loc_back_color,
-                                              QVector4D(r, g, b, 1.0))
-                self._gl.glDrawArrays(GL_TRIANGLES, start, count)
+            last = None
+            draw = self._gl.glDrawArrays
+            for rgb, start, count in runs:
+                if rgb != last:
+                    # A preview has no back: it is an overlay, not a solid
+                    # with an inside. Its walls are wound however the sweep
+                    # produced them and nothing surrounds them to hide the
+                    # ones turned away, so the real back-face tint painted
+                    # the pocket of a push-in blue over the shape being
+                    # formed (Marco, 2026-08-27). Both sides take the face's
+                    # own colour — _set_color sets both. A run of the colour
+                    # just set draws on it (a vertex drag stretching a
+                    # thousand faces set the colour a thousand times).
+                    self._set_color(rgb[0], rgb[1], rgb[2], 1.0)
+                    last = rgb
+                draw(GL_TRIANGLES, start, count)
             self._preview_faces_vao.release()
             self._set_back_face_color()          # leave the real tint behind
         if by_texture:
@@ -2817,8 +2853,12 @@ class RenderMixin:
         if self._preview_native_ok():
             arrays = getattr(tool, "preview_sweep_arrays", None)
             spec = arrays() if callable(arrays) else None
+            moved = getattr(faces, "moved_parts", None)
             if spec is not None and spec[0] is faces:
                 out = self._bake_preview_sweep_arrays_native(spec[1])
+            elif (moved is not None
+                  and len(faces) >= self.MOVED_NATIVE_MIN_FACES):
+                out = self._bake_preview_moved_native(moved)
             else:
                 sweeps = getattr(tool, "preview_sweeps", None)
                 spec = sweeps() if callable(sweeps) else None
@@ -2944,6 +2984,96 @@ class RenderMixin:
             return self._preview_native_out(out, table)
         except Exception:  # noqa: BLE001 — Python bakes it (and says why)
             return None
+
+    #: Fewest faces a Move's vertex drag stretches for the engine to bake
+    #: them from the arrays packed at the grab (``MovePreview``); below
+    #: it the faces are walked as any preview's — a few faces take as long
+    #: either way, and the packing is a frame's walk.
+    MOVED_NATIVE_MIN_FACES = 24
+
+    def _bake_preview_moved_native(self, moved):
+        """The bake of a Move's stretched faces (``tools.move._MovedFaces``
+        ``moved_parts``: ``(shown, moving, paint, d)``) made by the
+        engine's ``MovePreview`` — packed once per drag, from the faces'
+        rings and which corners ride — at the offset ``d``: the bytes
+        :meth:`_bake_preview_faces_py` makes of the moved faces, its runs
+        of neighbouring faces of one colour and shade joined (the same
+        triangles drawn the same). ``None``: Python bakes the frame."""
+        import core._native as _native
+        nat = _native.native
+        if nat is None or not hasattr(nat, "MovePreview"):
+            return None
+        if (len(moved) > 4 and moved[4] is not None
+                and not hasattr(nat.MovePreview, "bake_placed")):
+            return None
+        shown, moving, paint, d = moved[:4]
+        m = moved[4] if len(moved) > 4 else None
+        try:
+            import numpy as np
+            memo = getattr(self, "_moved_pack_memo", None)
+            key = (self.scene.version, id(moving), id(paint))
+            if memo is None or memo[0] != key or memo[1] is not shown:
+                memo = self._moved_pack_memo = (
+                    key, shown, self._pack_moved(nat, shown, moving, paint))
+            pack, table, rverts, rinv = memo[2]
+            lt = self._LIGHT
+            light = (lt.x(), lt.y(), lt.z())
+            if m is None:
+                out = pack.bake((d.x(), d.y(), d.z()), light,
+                                _native.qt_hypot())
+            else:
+                # A Rotate: each riding vertex placed once, by Qt's map —
+                # the very floats the tool's faces hold.
+                xyz = array("f")
+                for v in rverts:
+                    xyz.extend(m.map(v.position).toTuple())
+                at = np.frombuffer(xyz, dtype=np.float32).reshape(-1, 3)
+                out = pack.bake_placed(np.ascontiguousarray(at[rinv]),
+                                       light, _native.qt_hypot())
+            return self._preview_native_out(out, table)
+        except Exception:  # noqa: BLE001 — Python bakes it
+            return None
+
+    def _pack_moved(self, nat, shown, moving, paint):
+        """``(MovePreview, material table, riding vertices, each riding
+        corner's index into them)`` of the faces ``shown`` (mesh faces)
+        with the corners in ``moving`` riding: their rings as
+        ``preview_faces`` builds them, their look ``effective_attrs`` of
+        their own under ``paint``."""
+        import numpy as np
+        from core.materials import effective_attrs
+        xyz = array("f")
+        ride = []
+        sizes, counts, fmat = [], [], []
+        table = ([], [], [], {}, {})
+        rverts: list = []                 # the riding vertices, once each
+        rat: dict = {}
+        rinv: list = []                   # each riding corner's of them
+        for f in shown:
+            fmat.append(self._preview_mat(
+                effective_attrs(f.attrs, paint) or {}, table))
+            rings = [f.loop, *f.hole_loops]
+            counts.append(len(rings))
+            for ring in rings:
+                sizes.append(len(ring))
+                for v in ring:
+                    p = v.position
+                    xyz.extend((p.x(), p.y(), p.z()))
+                    on = id(v) in moving
+                    ride.append(on)
+                    if on:
+                        k = rat.get(id(v))
+                        if k is None:
+                            k = rat[id(v)] = len(rverts)
+                            rverts.append(v)
+                        rinv.append(k)
+        pos = np.frombuffer(xyz, dtype=np.float32).reshape(-1, 3)
+        mats = np.array(table[0], dtype=np.float64).reshape(-1, 14)
+        pack = nat.MovePreview(pos, np.array(ride, dtype=bool),
+                               np.array(sizes, dtype=np.int64),
+                               np.array(counts, dtype=np.int64),
+                               np.array(fmat, dtype=np.int64), mats)
+        return pack, table, rverts, np.array(rinv, dtype=np.int64)
 
     def _bake_preview_sweeps_native(self, sweeps):
         """The bake of a push's overlay (``tools.pushpull._build_light_faces``)
