@@ -49,6 +49,33 @@ from views.viewport._support import (_PERF, _NO_BACK_TINT, _plog, GL_LINES,
 Viewport = None
 
 
+def _segment_bytes(segments) -> bytes:
+    """``[(a, b), …]`` world segments as the float32 ``a.xyz, b.xyz`` bytes
+    a line VBO takes."""
+    data = array("f")
+    for a, b in segments:
+        data.extend([a.x(), a.y(), a.z(), b.x(), b.y(), b.z()])
+    return data.tobytes()
+
+
+def _sweep_lines_match(nat, sweeps) -> bool:
+    """Whether the engine's wireframe of ``sweeps`` (``(rings, off, …)``
+    each, see tools.pushpull._sweep_spec) is the very bytes Python draws,
+    at the push's own curve threshold and at others."""
+    from tools.pushpull import _sweep_arrays, sweep_segments
+    import core._native as _native
+    for cos in (0.85, -1.0, 0.99999):
+        pairs = [(list(r), [p + off for p in r])
+                 for rings, off, _c, _w in sweeps for r in rings]
+        want = _segment_bytes(sweep_segments(pairs, cos))
+        pos, sizes, counts, off3, _c, _w, _k = _sweep_arrays(sweeps, cos)
+        got = nat.preview_sweep_lines(pos, sizes, counts, off3, cos,
+                                      _native.qt_hypot())
+        if got != want:
+            return False
+    return True
+
+
 class RenderMixin:
     """Frame rendering: the paintGL passes, shading, previews, hidden ghosts, hover and silhouettes."""
 
@@ -2788,12 +2815,17 @@ class RenderMixin:
         1 ms in Rust (19-11)."""
         out = None
         if self._preview_native_ok():
-            sweeps = getattr(tool, "preview_sweeps", None)
-            spec = sweeps() if callable(sweeps) else None
+            arrays = getattr(tool, "preview_sweep_arrays", None)
+            spec = arrays() if callable(arrays) else None
             if spec is not None and spec[0] is faces:
-                out = self._bake_preview_sweeps_native(spec[1])
+                out = self._bake_preview_sweep_arrays_native(spec[1])
             else:
-                out = self._bake_preview_faces_native(faces)
+                sweeps = getattr(tool, "preview_sweeps", None)
+                spec = sweeps() if callable(sweeps) else None
+                if spec is not None and spec[0] is faces:
+                    out = self._bake_preview_sweeps_native(spec[1])
+                else:
+                    out = self._bake_preview_faces_native(faces)
         if out is None:
             out = self._bake_preview_faces_py(faces)
         return out
@@ -2945,6 +2977,50 @@ class RenderMixin:
         except Exception:  # noqa: BLE001 — Python bakes it
             return None
 
+    def _bake_preview_sweep_arrays_native(self, arrays):
+        """:meth:`_bake_preview_sweeps_native` from the arrays a tool
+        already holds (``preview_sweep_arrays``: the sweep read once a
+        frame, for this bake and the wireframe alike; Bloque 6c)."""
+        import core._native as _native
+        nat = _native.native
+        try:
+            pos, sizes, counts, off3, caps, walls, _cos = arrays
+            table = ([], [], [], {}, {})
+            cap_m = [self._preview_mat(a or {}, table) for a in caps]
+            wall_m = [self._preview_mat(a or {}, table) for a in walls]
+            import numpy as np
+            mats = np.array(table[0], dtype=np.float64).reshape(-1, 14)
+            lt = self._LIGHT
+            out = nat.preview_sweep_bake(pos, sizes, counts, off3, cap_m,
+                                         wall_m, mats,
+                                         (lt.x(), lt.y(), lt.z()),
+                                         _native.qt_hypot())
+            return self._preview_native_out(out, table)
+        except Exception:  # noqa: BLE001 — Python bakes it
+            return None
+
+    def _preview_lines_native(self, tool):
+        """The float32 bytes :meth:`_draw_rubber_band` uploads for a tool
+        whose wireframe is a sweep's (``preview_sweep_arrays``), made by the
+        engine (``preview_sweep_lines``) once its preview bake passed its
+        check — else ``None`` (the tool's ``rubber_band_lines``)."""
+        arrays = getattr(tool, "preview_sweep_arrays", None)
+        if not callable(arrays) or not self._preview_native_ok():
+            return None
+        spec = arrays()
+        if spec is None:
+            return None
+        import core._native as _native
+        nat = _native.native
+        if not hasattr(nat, "preview_sweep_lines"):
+            return None
+        try:
+            pos, sizes, counts, off3, _caps, _walls, cos = spec[1]
+            return nat.preview_sweep_lines(pos, sizes, counts, off3, cos,
+                                           _native.qt_hypot())
+        except Exception:  # noqa: BLE001 — Python draws it
+            return None
+
     #: Whether the engine's preview bake matched the Python one on the
     #: fixed sample (None: not tried yet). Once per session.
     _preview_native_state = None
@@ -3009,6 +3085,10 @@ class RenderMixin:
                 built, sweeps = probe_sweeps()
                 ok = (_baked_bytes(self._bake_preview_sweeps_native(sweeps))
                       == _baked_bytes(self._bake_preview_faces_py(built)))
+            if ok and hasattr(nat, "preview_sweep_lines"):
+                ok = _sweep_lines_match(nat, sweeps)
+            if ok and hasattr(nat, "textured_faces_bake"):
+                ok = self._textured_seed_matches(faces)
         except Exception as exc:  # noqa: BLE001 — then Python
             import logging
             logging.getLogger(__name__).warning(
@@ -3026,9 +3106,16 @@ class RenderMixin:
         tool = self.active_tool
         if tool is None:
             return
-        segments = tool.rubber_band_lines()
-        if not segments:
-            return
+        raw = (self._preview_lines_native(tool)
+               if getattr(tool, "wireframe_depth_tested", False) else None)
+        if raw is not None:
+            if not raw:
+                return
+            segments = None
+        else:
+            segments = tool.rubber_band_lines()
+            if not segments:
+                return
 
         # A tool can force its preview-line colour (Push/Pull uses the normal
         # edge colour so its forming box reads like real geometry, not a loose
@@ -3069,17 +3156,15 @@ class RenderMixin:
         # QPainter overlay instead, where a thick pen is reliable (Core-profile
         # glLineWidth often clamps to 1px on Mesa, so GL can't thicken them).
         if getattr(tool, "wireframe_depth_tested", False):
-            data = array("f")
-            for a, b in segments:
-                data.extend([a.x(), a.y(), a.z(), b.x(), b.y(), b.z()])
-            raw = data.tobytes()
+            if raw is None:
+                raw = _segment_bytes(segments)
             self._rubber_vbo.bind()
             self._rubber_vbo.allocate(raw, len(raw))
             self._rubber_vbo.release()
 
             self._set_color(*color)
             self._rubber_vao.bind()
-            self._gl.glDrawArrays(GL_LINES, 0, len(data) // 3)
+            self._gl.glDrawArrays(GL_LINES, 0, len(raw) // 12)
             self._rubber_vao.release()
         else:
             self._overlay_rubber = (segments, color, 2.5 if inference else 2.0)

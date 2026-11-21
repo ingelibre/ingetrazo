@@ -47,7 +47,7 @@ impl V3 {
         self.0 * o.0 + self.1 * o.1 + self.2 * o.2
     }
     #[inline]
-    fn cross(self, o: V3, h: Hypot) -> V3 {
+    pub(crate) fn cross(self, o: V3, h: Hypot) -> V3 {
         if h == Hypot::LibCxx {
             return V3(
                 self.1.mul_add(o.2, -(self.2 * o.1)),

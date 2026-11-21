@@ -406,6 +406,146 @@ class _MergedRows:
         start = int(self._ends[j - 1]) if j else 0
         return verts[int(cand[k - start])]
 
+
+def _sweep_spec(face, off) -> tuple:
+    """``(rings, off, cap_attrs, wall_attrs)``: what the drag overlay sweeps
+    of ``face`` — its rings (outer first) and its paint. The walls take
+    the base's PAINT, re-anchored to their own planes — the same thing
+    the commit stamps on them, so the drag shows the material the push is
+    about to produce instead of bare cream."""
+    attrs = dict(face.attrs) if face.attrs else None
+    wall_attrs = _paint_of(face) or None
+    rings = [list(face.vertices)] + [list(h) for h in face.holes]
+    return rings, off, attrs, wall_attrs
+
+
+def _swept_faces(spec, ring_pairs: list) -> list:
+    """The overlay's faces of one :func:`_sweep_spec`: the moved cap (holes
+    carried) and one quad per edge of every ring; its ``(base_ring,
+    moved_ring)`` pairs join ``ring_pairs``, which the wireframe reads."""
+    rings, off, attrs, wall_attrs = spec
+    pairs = [(low, [p + off for p in low]) for low in rings]
+    ring_pairs += pairs
+    out = [Face(pairs[0][1], [r[1] for r in pairs[1:]], attrs=attrs)]
+    for low, high in pairs:
+        count = len(low)
+        for i in range(count):
+            j = (i + 1) % count
+            out.append(Face([low[i], low[j], high[j], high[i]],
+                            attrs=wall_attrs))
+    return out
+
+
+def sweep_segments(ring_pairs, curve_cos: float) -> list:
+    """The wireframe of a sweep (:meth:`PushPullTool.rubber_band_lines`):
+    for each ``(low, high)`` ring pair, the moved edges and the risers
+    that will stay hard."""
+    segs = []
+    for low, high in ring_pairs:
+        n = len(low)
+        if n < 2:
+            continue
+        # Wall i spans low[i]→low[i+1]; its normal is that edge crossed
+        # with the sweep. The riser at corner i divides walls i-1 and i.
+        off = high[0] - low[0]
+        normals = []
+        for i in range(n):
+            nv = QVector3D.crossProduct(low[(i + 1) % n] - low[i], off)
+            normals.append(nv.normalized() if nv.length() > 1e-12 else None)
+        for i in range(n):
+            j = (i + 1) % n
+            segs.append((high[i], high[j]))
+            a, b = normals[i - 1], normals[i]
+            if a is not None and b is not None:
+                d = QVector3D.dotProduct(a, b)
+                if curve_cos < d < 0.99995:
+                    continue          # curve facet: soft once committed
+            segs.append((low[i], high[i]))
+    return segs
+
+
+def _sweep_arrays(sweeps, curve_cos: float) -> tuple:
+    """``sweeps`` (:func:`_sweep_spec` each) as the engine reads them (see
+    :meth:`PushPullTool.preview_sweep_arrays`)."""
+    from array import array
+    import numpy as np
+    xyz, offs = array("f"), array("f")
+    sizes, counts, caps, walls = [], [], [], []
+    for rings, off, cap_attrs, wall_attrs in sweeps:
+        caps.append(cap_attrs)
+        walls.append(wall_attrs)
+        offs.extend((off.x(), off.y(), off.z()))
+        counts.append(len(rings))
+        for ring in rings:
+            sizes.append(len(ring))
+            for p in ring:
+                xyz.extend((p.x(), p.y(), p.z()))
+    pos = np.frombuffer(xyz, dtype=np.float32).reshape(-1, 3)
+    off3 = np.frombuffer(offs, dtype=np.float32).reshape(-1, 3)
+    return pos, sizes, counts, off3, caps, walls, float(curve_cos)
+
+
+class _SweepFaces:
+    """The faces of a push's drag overlay, made the first time anything
+    reads them (``len``, iteration, indexing, comparison) from the sweeps
+    they come from — and with them the tool's wireframe rings, while they
+    are still the tool's current overlay. A sweep always has its cap, so
+    it is true without being made. ``arrays``: the sweep as the engine
+    reads it, once read (:meth:`PushPullTool.preview_sweep_arrays`)."""
+
+    __slots__ = ("_tool", "_sweeps", "_faces", "arrays")
+
+    def __init__(self, tool, sweeps):
+        self._tool = tool
+        self._sweeps = sweeps
+        self._faces = None
+        self.arrays = None
+
+    def _made(self) -> list:
+        faces = self._faces
+        if faces is None:
+            pairs: list = []
+            faces = []
+            for spec in self._sweeps:
+                faces += _swept_faces(spec, pairs)
+            self._faces = faces
+            tool = self._tool
+            if tool._light_faces is self and tool._light_rings is None:
+                tool._light_rings = pairs
+        return faces
+
+    def __bool__(self):
+        return bool(self._sweeps)
+
+    def __len__(self):
+        return len(self._made())
+
+    def __iter__(self):
+        return iter(self._made())
+
+    def __getitem__(self, k):
+        return self._made()[k]
+
+    def __contains__(self, x):
+        return x in self._made()
+
+    def __eq__(self, other):
+        if isinstance(other, _SweepFaces):
+            other = other._made()
+        return self._made() == other
+
+    def __add__(self, other):
+        return self._made() + list(other)
+
+    def __radd__(self, other):
+        return list(other) + self._made()
+
+    __hash__ = None
+
+    def __repr__(self):
+        return f"_SweepFaces({self._made()!r})"
+
+
 class PushPullTool(Tool):
     name = "Push / Pull"
     #: P is the usual key for this tool (Marco, 2026-09-10). U, the one
@@ -1083,28 +1223,9 @@ class PushPullTool(Tool):
         loops, already built for the sweep. Drawn in ``wireframe_color`` and
         depth-tested (class attributes above), so the box hides its own back
         edges and reads like real geometry rather than a loose rubber band."""
-        segs = []
-        for low, high in self._light_rings:
-            n = len(low)
-            if n < 2:
-                continue
-            # Wall i spans low[i]→low[i+1]; its normal is that edge crossed
-            # with the sweep. The riser at corner i divides walls i-1 and i.
-            off = high[0] - low[0]
-            normals = []
-            for i in range(n):
-                nv = QVector3D.crossProduct(low[(i + 1) % n] - low[i], off)
-                normals.append(nv.normalized() if nv.length() > 1e-12 else None)
-            for i in range(n):
-                j = (i + 1) % n
-                segs.append((high[i], high[j]))
-                a, b = normals[i - 1], normals[i]
-                if a is not None and b is not None:
-                    d = QVector3D.dotProduct(a, b)
-                    if self._CURVE_FACET_COS < d < 0.99995:
-                        continue          # curve facet: soft once committed
-                segs.append((low[i], high[i]))
-        return segs
+        if self._light_rings is None:          # still only the sweep
+            len(self._light_faces)              # (made with the faces)
+        return sweep_segments(self._light_rings or [], self._CURVE_FACET_COS)
 
     def preview_faces(self):
         return self._light_faces
@@ -1119,16 +1240,39 @@ class PushPullTool(Tool):
             return spec
         return None
 
+    def preview_sweep_arrays(self):
+        """``(faces, (pos, ring_sizes, ring_counts, offs, cap_attrs,
+        wall_attrs, curve_cos))`` — :meth:`preview_sweeps` as the arrays
+        the engine bakes the overlay and draws its wireframe from (``pos``
+        (N,3) and ``offs`` (S,3) float32, rings outer first, face by face),
+        read once per frame — else ``None``."""
+        spec = self.preview_sweeps()
+        if spec is None:
+            return None
+        faces = spec[0]
+        arrays = getattr(faces, "arrays", None)
+        if arrays is None:
+            arrays = _sweep_arrays(spec[1], self._CURVE_FACET_COS)
+            if isinstance(faces, _SweepFaces):
+                faces.arrays = arrays
+        return faces, arrays
+
     # ---- Drag preview ------------------------------------------------------
 
-    def _build_light_faces(self):
+    def _build_light_faces(self, lazy: bool = False):
         """The naive sweep of the base face as plain preview polygons: the
         moved cap (holes carried) and one quad per boundary and hole edge.
 
         This is the *shape* the push makes, without any of the work that makes
         it a valid solid — no stitch, no per-plane rebuild, no guard. Those
         decide how the new geometry MERGES with what is already there, which
-        is exactly what you cannot see while the shape is still moving."""
+        is exactly what you cannot see while the shape is still moving.
+
+        ``lazy``: a :class:`_SweepFaces` instead of the list — the faces
+        are made only if something reads them; the viewport's engine bakes
+        the overlay and its wireframe from the sweep itself (Bloque 6c: the
+        ~400 faces of a holed slab were made each frame to be read by
+        nobody)."""
         d = self.extrusion
         self._light_rings = []
         self._light_sweeps = []
@@ -1141,6 +1285,16 @@ class PushPullTool(Tool):
                 return [Face(list(f.vertices), [list(h) for h in f.holes],
                              attrs=dict(f.attrs) if f.attrs else None)]
             return []
+        if lazy:
+            self._light_sweeps = [_sweep_spec(self.base_face,
+                                              self._normal * d)]
+            self._light_sweeps += [
+                _sweep_spec(face, n * d)
+                for face, n in zip(self._extra_faces, self._extra_normals)]
+            self._light_rings = None            # made with the faces
+            out = _SweepFaces(self, self._light_sweeps)
+            self._light_spec = (out, self._light_sweeps)
+            return out
         out = self._sweep_faces(self.base_face, self._normal * d)
         for face, n in zip(self._extra_faces, self._extra_normals):
             out += self._sweep_faces(face, n * d)
@@ -1150,26 +1304,13 @@ class PushPullTool(Tool):
     def _sweep_faces(self, face, off: QVector3D) -> list:
         """One face's naive sweep by ``off``; its rings join
         ``_light_rings``, which the wireframe reads back."""
-        attrs = dict(face.attrs) if face.attrs else None
-        # The walls take the base's PAINT, re-anchored to their own planes —
-        # the same thing the commit stamps on them, so the drag shows the
-        # material the push is about to produce instead of bare cream.
-        wall_attrs = _paint_of(face) or None
-        rings = [(list(face.vertices), [p + off for p in face.vertices])]
-        rings += [(list(h), [p + off for p in h]) for h in face.holes]
-        self._light_rings += rings
+        spec = _sweep_spec(face, off)
         sweeps = getattr(self, "_light_sweeps", None)
         if sweeps is not None:
-            sweeps.append(([r[0] for r in rings], off, attrs, wall_attrs))
-        cap = Face(rings[0][1], [r[1] for r in rings[1:]], attrs=attrs)
-        out = [cap]
-        for low, high in rings:
-            count = len(low)
-            for i in range(count):
-                j = (i + 1) % count
-                out.append(Face([low[i], low[j], high[j], high[i]],
-                                attrs=wall_attrs))
-        return out
+            sweeps.append(spec)
+        if self._light_rings is None:
+            self._light_rings = []
+        return _swept_faces(spec, self._light_rings)
 
     def _show_light_preview(self, viewport) -> None:
         """Drop any applied preview and show the sweep as an overlay instead.
@@ -1179,7 +1320,7 @@ class PushPullTool(Tool):
         a Ctrl tap mid-drag must find it again, not pay for a new one."""
         self._park_stage(viewport)
         self._revert_preview(viewport)
-        self._light_faces = self._build_light_faces()
+        self._light_faces = self._build_light_faces(lazy=True)
         # Hiding the base face is what lets a drag AWAY FROM THE EYE read as
         # a recess opening instead of a cap buried behind the base. Toward
         # the eye, the sweep covers the base anyway and the frame is

@@ -222,3 +222,104 @@ pub fn sweep(pos: &[V3], rings: &[Vec<u32>], off: V3, cap: usize, wall: usize, o
         }
     }
 }
+
+/// What `bake_textured` made of each textured mesh face (Bloque 6c).
+pub struct TexBaked {
+    /// pos+uv floats, face after face; face `k` owns `ends[k]..ends[k+1]`.
+    pub floats: Vec<f32>,
+    pub ends: Vec<u64>,
+    /// `Viewport._shade_factor(_normal_of(face))`, or NaN where Python must
+    /// bake the face itself (a NaN or infinite corner, or no texture row).
+    pub shades: Vec<f64>,
+    /// `_tris_of(face)` as corner indices into the face's own corners
+    /// (rings in order, outer first); face `k` owns `tri_ends[k]..`.
+    pub tris: Vec<u32>,
+    pub tri_ends: Vec<u64>,
+}
+
+/// `views.viewport.chunks.ChunkCacheMixin._append_textured_face` for MESH
+/// faces (a `core.mesh.Face`, its corners `f.pos`): the triangles
+/// `_tris_of` gives (`core.triangulate` with the face's `_normal_of`, Qt's
+/// `normalized()` of the Newell vector), the shade of that unit normal and
+/// the UVs `core.texture.face_uv_axes` maps from `face.normal()` (the
+/// Newell vector divided by its length) — the floats the Python walk
+/// stores, face by face.
+pub fn bake_textured(faces: &[PFace], mats: &[Mat], light: V3, h: Hypot) -> TexBaked {
+    let mut out = TexBaked { floats: Vec::new(), ends: vec![0], shades: Vec::new(),
+                             tris: Vec::new(), tri_ends: vec![0] };
+    for f in faces {
+        let finite = f.pos.iter().all(|p| p.0.is_finite() && p.1.is_finite() && p.2.is_finite());
+        let tex = match mats.get(f.mat) {
+            Some(Mat::Tex { uvw, rot, sw, sh, .. }) if finite => Some((*uvw, *rot, *sw, *sh)),
+            _ => None,
+        };
+        let mut shade = f64::NAN;
+        if let Some((uvw, rot, sw, sh)) = tex {
+            let rings: Vec<&[u32]> = f.rings.iter().map(|r| r.as_slice()).collect();
+            let g = crate::facegeom::face_geometry(&f.pos, &rings, h, false);
+            if let Some(s) = shade_factor(g.unit, light, h) {
+                shade = s;
+                let tris = g.tris_unit.as_ref().unwrap_or(&g.tris);
+                let (gu, cu, gv, cv) = uv_axes(&uvw, rot, sw, sh, g.normal);
+                for t in tris {
+                    for &i in t {
+                        let p = f.pos[i as usize];
+                        out.floats.extend_from_slice(&[
+                            p.0, p.1, p.2,
+                            (gu.dot(p, h) as f64 + cu) as f32,
+                            (gv.dot(p, h) as f64 + cv) as f32,
+                        ]);
+                        out.tris.push(i);
+                    }
+                }
+            }
+        }
+        out.shades.push(shade);
+        out.ends.push(out.floats.len() as u64);
+        out.tri_ends.push(out.tris.len() as u64);
+    }
+    out
+}
+
+/// `tools.pushpull.PushPullTool.rubber_band_lines` of one swept face
+/// (`rings` over `pos`, outer first) moved by `off`, appended to `out` as
+/// `a.xyz, b.xyz` per segment: each ring's moved edge and, at each corner,
+/// the riser — left out where the two walls it divides meet as a curve
+/// facet (`curve_cos < cos < 0.99995`). `false`: a NaN or infinite
+/// number, which Python draws instead.
+pub fn sweep_lines(pos: &[V3], rings: &[Vec<u32>], off: V3, curve_cos: f64, h: Hypot,
+                   out: &mut Vec<f32>) -> bool {
+    let fin = |p: &V3| p.0.is_finite() && p.1.is_finite() && p.2.is_finite();
+    if !fin(&off) || !pos.iter().all(fin) {
+        return false;
+    }
+    for r in rings {
+        let n = r.len();
+        if n < 2 {
+            continue;
+        }
+        let low: Vec<V3> = r.iter().map(|&i| pos[i as usize]).collect();
+        let high: Vec<V3> = low.iter().map(|&p| add(p, off)).collect();
+        // Wall i spans low[i]→low[i+1]; its normal is that edge crossed
+        // with the sweep (as the moved ring gives it back).
+        let o = high[0].sub(low[0]);
+        let normals: Vec<Option<V3>> = (0..n).map(|i| {
+            let nv = low[(i + 1) % n].sub(low[i]).cross(o, h);
+            if (length(nv, h) as f64) > 1e-12 { Some(normalized(nv, h)) } else { None }
+        }).collect();
+        for i in 0..n {
+            let j = (i + 1) % n;
+            let (a, b) = (high[i], high[j]);
+            out.extend_from_slice(&[a.0, a.1, a.2, b.0, b.1, b.2]);
+            if let (Some(p), Some(q)) = (normals[(i + n - 1) % n], normals[i]) {
+                let d = p.dot(q, h) as f64;
+                if curve_cos < d && d < 0.99995 {
+                    continue;
+                }
+            }
+            let (a, b) = (low[i], high[i]);
+            out.extend_from_slice(&[a.0, a.1, a.2, b.0, b.1, b.2]);
+        }
+    }
+    true
+}
