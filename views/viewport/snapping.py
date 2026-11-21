@@ -18,7 +18,8 @@ from views.viewport._support import (_NO_SNAP_FAST, _active_cut, _SnapEdge,
                                      _paint_of, _content_ver,
                                      _plan_curved_edges,
                                      _lazy_edge_may_be_curve,
-                                     _snap_dropped_loose, _nearest_within,
+                                     _snap_dropped_loose, _edges_snappable,
+                                     _nearest_within,
                                      _EDGES_SHARED, shown_guides,
                                      _finite_point)
 
@@ -1083,7 +1084,9 @@ class SnappingMixin:
         outer_of = getattr(self, "_outer_loose_meshes", None)
         outer = []
         for om in (outer_of() if outer_of is not None else ()):
-            outer += [e for e in om.edges if self.scene.edge_snappable(e)]
+            edges = om.edges
+            outer += [e for e, ok in zip(
+                edges, _edges_snappable(self.scene, edges)) if ok]
         big = (px is not None
                and (len(self.scene.edges) + len(outer)) > _LOOSE_SNAP_CAP)
         if not lines and not near and not circles and sp is None \
@@ -1095,8 +1098,9 @@ class SnappingMixin:
             # (dozens) rather than walking a mesh of 160k to build the drop
             # set above. The index holds the rest of the model's loose
             # edges too, so this reaches them.
-            loose = [e for e in self._nearby_loose_edges(px, py)
-                     if self.scene.edge_snappable(e)]
+            loose = self._nearby_loose_edges(px, py)
+            loose = [e for e, ok in zip(
+                loose, _edges_snappable(self.scene, loose)) if ok]
         else:
             loose = list(self.scene.edges) + outer
             drops = _snap_dropped_loose(self)
