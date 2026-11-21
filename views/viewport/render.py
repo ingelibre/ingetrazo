@@ -2061,35 +2061,39 @@ class RenderMixin:
     def _draw_rider_looks(self, vpv) -> None:
         """The riding part's dots and edges, through the transform the
         scratch copy is drawn with (the MVP set by the caller), as the
-        static passes draw them at rest."""
-        if self._export_size is None and vpv["dots"]:
+        static passes draw them at rest. (A context made again mid-drag
+        dropped their buffers: then they are not drawn.)"""
+        dots_vao = getattr(self, "_pv_dots_vao", None)
+        plain_vao = getattr(self, "_pv_plain_e_vao", None)
+        sel_vao = getattr(self, "_pv_sel_e_vao", None)
+        if self._export_size is None and vpv["dots"] and dots_vao:
             # As the face highlights pass: at the depth of the faces under
             # them (the scratch copy draws its faces with no offset, the
             # static passes offset both), no depth written, the dot
             # pattern.
             self._gl.glDepthMask(GL_FALSE)
             self._program.setUniformValue(self._loc_stipple, 3)
-            self._pv_dots_vao.bind()
+            dots_vao.bind()
             for front, back, start, count in vpv["dot_spans"]:
                 self._set_color(*front, 1.0)
                 self._program.setUniformValue(
                     self._loc_back_color, QVector4D(*back, 1.0))
                 self._gl.glDrawArrays(GL_TRIANGLES, start, count)
-            self._pv_dots_vao.release()
+            dots_vao.release()
             self._program.setUniformValue(self._loc_stipple, 0)
             self._gl.glDepthMask(GL_TRUE)
             self._set_back_face_color()
-        if vpv["plain_edges"]:
+        if vpv["plain_edges"] and plain_vao:
             ec = self._effective_style().edge_color
             self._set_color(ec[0], ec[1], ec[2], 1.0)
-            self._pv_plain_e_vao.bind()
+            plain_vao.bind()
             self._gl.glDrawArrays(GL_LINES, 0, len(vpv["plain_edges"]) // 12)
-            self._pv_plain_e_vao.release()
-        if self._export_size is None and vpv["sel_edges"]:
+            plain_vao.release()
+        if self._export_size is None and vpv["sel_edges"] and sel_vao:
             self._set_color(*self._modeling_color("selected"), 1.0)
-            self._pv_sel_e_vao.bind()
+            sel_vao.bind()
             self._gl.glDrawArrays(GL_LINES, 0, len(vpv["sel_edges"]) // 12)
-            self._pv_sel_e_vao.release()
+            sel_vao.release()
 
     def _chunk_without(self, group, hidden):
         """The open group's chunk without the faces in ``hidden`` (a
