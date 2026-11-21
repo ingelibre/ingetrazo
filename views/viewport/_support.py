@@ -1191,9 +1191,50 @@ def _snap_dropped_loose(vp):
     memo = getattr(vp, "_loose_snap_drops_cache", None)
     if memo is not None and memo[0] == key:
         return memo[1]
-    drops = {id(e) for e in scene.edges if not scene.edge_snappable(e)}
+    edges = scene.edges
+    drops = {id(e) for e, ok in zip(edges, _edges_snappable(scene, edges))
+             if not ok}
     vp._loose_snap_drops_cache = (key, drops)
     return drops
+
+
+def _edges_snappable(scene, edges):
+    """``[scene.edge_snappable(e) for e in edges]``, a plain
+    ``core.mesh.Edge`` read by its layer: where the scene keeps its own
+    rules (:func:`_plain_edge_rules`), such an edge has no children, no
+    attrs, no owner and is no annotation, so ``edge_snappable`` comes down
+    to «its layer is visible, and it is not hidden unless the hidden view
+    is on» — the layer being its own, or, on the default layer inside an
+    open group, the one ``Scene._open_group_layer`` gives it. Each layer
+    is looked up once. Asked edge by edge, the rest of the model's 3 700
+    loose edges were most of a hover inside an open group (21-11)."""
+    if not _plain_edge_rules(scene):
+        return [scene.edge_snappable(e) for e in edges]
+    from core.mesh import Edge as _Edge
+    default = _layers.DEFAULT_LAYER
+    show_hidden = bool(getattr(scene, "show_hidden_geometry", False))
+    # What _open_group_layer walks the stack for: None for every edge
+    # when no open level carries a layer.
+    group_layer = None
+    for level in reversed(scene._edit_stack or ()):
+        group_layer = getattr(level["group"], "layer", None)
+        if group_layer:
+            break
+    visible: dict = {}
+    out = []
+    for e in edges:
+        if type(e) is not _Edge:
+            out.append(scene.edge_snappable(e))
+            continue
+        name = getattr(e, "layer", None) or default
+        if name == default and group_layer:
+            name = scene._open_group_layer(e) or name
+        vis = visible.get(name)
+        if vis is None:
+            ly = scene.layer(name)
+            vis = visible[name] = True if ly is None else bool(ly.visible)
+        out.append(vis and (not getattr(e, "hidden", False) or show_hidden))
+    return out
 
 
 def _plain_edge_rules(scene):
