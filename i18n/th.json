@@ -4379,5 +4379,8 @@
  "Print the plan set «{name}»: {n} sheets": "พิมพ์ชุดแบบ «{name}»: {n} แผ่น",
  "Export the plan set «{name}»: {n} sheets": "ส่งออกชุดแบบ «{name}»: {n} แผ่น",
  "{name} — not in the plan set «{set}»": "{name} — ไม่อยู่ในชุดแบบ «{set}»",
- "Dynamic fields for texts and the title block: {proyecto} {autor} {lamina} {escala} {escena} {fecha} {archivo} {hoja} {total} {juego}": "ฟิลด์ไดนามิกสำหรับข้อความและกรอบชื่อแบบ: {proyecto} {autor} {lamina} {escala} {escena} {fecha} {archivo} {hoja} {total} {juego}"
+ "Dynamic fields for texts and the title block: {proyecto} {autor} {lamina} {escala} {escena} {fecha} {archivo} {hoja} {total} {juego}": "ฟิลด์ไดนามิกสำหรับข้อความและกรอบชื่อแบบ: {proyecto} {autor} {lamina} {escala} {escena} {fecha} {archivo} {hoja} {total} {juego}",
+ "The sheets of this plan set, in the order it prints them. Double-click a sheet to open it. A greyed sheet is not printed: its printer, or a folder's, is off.": "แผ่นงานของชุดแบบนี้ ตามลำดับที่ชุดพิมพ์ ดับเบิลคลิกที่แผ่นงานเพื่อเปิด แผ่นงานสีเทาจะไม่ถูกพิมพ์: เครื่องพิมพ์ของแผ่นนั้นหรือของโฟลเดอร์ปิดอยู่",
+ "Sheets in «{name}»:": "แผ่นงานใน «{name}»:",
+ "{name} (cover)": "{name} (ปก)"
 }

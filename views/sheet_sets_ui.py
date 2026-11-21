@@ -6,7 +6,8 @@ little new UI as possible:
 * :class:`PlanSetsBox` — the «Plan sets» section of a sheet's properties
   in the composer: the sets, ticked where this sheet is in them, and the
   only place sets are made (+), renamed (F2 / double-click) and deleted
-  (−). No dialog of its own.
+  (−). No dialog of its own. Below it, the sheets of the set selected
+  there, in the order the set prints them; a double-click opens one.
 * :func:`export_sheets_interactive` — Export all takes the set the sheet
   explorer's Set box shows; the file type picked is the format (PDF, PNG
   or SVG). No dialog of its own either.
@@ -19,6 +20,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QPalette
 from PySide6.QtWidgets import (QComboBox, QHBoxLayout, QLabel,
                                QListWidget, QListWidgetItem, QMessageBox,
                                QToolButton, QVBoxLayout, QWidget)
@@ -57,12 +59,15 @@ class PlanSetsBox(QWidget):
 
     ``window`` is the main window (its viewport's history keeps the undo);
     ``on_changed`` is called after every change (the composer refreshes
-    the sheet explorer with it)."""
+    the sheet explorer with it); ``on_open(sheet)`` opens a sheet picked
+    in the list of the selected set's sheets."""
 
-    def __init__(self, window, on_changed=None, parent=None) -> None:
+    def __init__(self, window, on_changed=None, on_open=None,
+                 parent=None) -> None:
         super().__init__(parent)
         self._window = window
         self._on_changed = on_changed
+        self._on_open = on_open
         self._sheet = None
         self._updating = False
         lay = QVBoxLayout(self)
@@ -112,6 +117,20 @@ class PlanSetsBox(QWidget):
         self.list.itemChanged.connect(self._on_item_changed)
         self.list.currentRowChanged.connect(lambda _r: self._sync_buttons())
         lay.addWidget(self.list)
+        # The sheets of the set selected above, as the set prints them.
+        self.members_caption = QLabel()
+        _theme_muted(self.members_caption)
+        lay.addWidget(self.members_caption)
+        self.members = QListWidget()
+        self.members.setMinimumHeight(90)
+        self.members.setMaximumHeight(180)
+        self.members.setEditTriggers(QListWidget.NoEditTriggers)
+        self.members.setToolTip(tr(
+            "The sheets of this plan set, in the order it prints them. "
+            "Double-click a sheet to open it. A greyed sheet is not "
+            "printed: its printer, or a folder's, is off."))
+        self.members.itemActivated.connect(self._open_member)
+        lay.addWidget(self.members)
         self._sync_buttons()
 
     # ---- model ----------------------------------------------------------------
@@ -159,6 +178,11 @@ class PlanSetsBox(QWidget):
             self.list.addItem(item)
             if st is current:
                 self.list.setCurrentItem(item)
+        if self.list.currentItem() is None and self.list.count():
+            # A set to show the sheets of: the first this sheet is in.
+            rows = [i for i in range(self.list.count())
+                    if self.list.item(i).checkState() == Qt.Checked]
+            self.list.setCurrentRow(rows[0] if rows else 0)
         self._updating = False
         self.setEnabled(self._sheet is not None)
         self._sync_buttons()
@@ -171,6 +195,46 @@ class PlanSetsBox(QWidget):
         has = self.current_set() is not None
         self.rename_btn.setEnabled(has)
         self.delete_btn.setEnabled(has)
+        self._show_members()
+
+    def _show_members(self) -> None:
+        """The selected set's sheets as the set prints them, cover first;
+        the open sheet in bold, the unprinted ones greyed."""
+        from core.sheet_folders import sheet_printed
+        st = self.current_set()
+        self.members.clear()
+        self.members_caption.setVisible(st is not None)
+        self.members.setVisible(st is not None)
+        if st is None:
+            return
+        scene = self._scene()
+        self.members_caption.setText(tr("Sheets in «{name}»:",
+                                        name=st.name))
+        pal = self.members.palette()
+        muted = pal.color(QPalette.Disabled, QPalette.Text)
+        for sheet in ss.members(scene, st):
+            text = sheet.name
+            if st.cover_uid and getattr(sheet, "uid", "") == st.cover_uid:
+                text = tr("{name} (cover)", name=sheet.name)
+            item = QListWidgetItem(text)
+            item.setData(Qt.UserRole, sheet)
+            if sheet is self._sheet:
+                f = item.font()
+                f.setBold(True)
+                item.setFont(f)
+            if not sheet_printed(scene, sheet):
+                item.setForeground(muted)
+            self.members.addItem(item)
+
+    def member_names(self) -> list:
+        """The sheets the list of the selected set's sheets shows."""
+        return [self.members.item(i).data(Qt.UserRole).name
+                for i in range(self.members.count())]
+
+    def _open_member(self, item) -> None:
+        sheet = item.data(Qt.UserRole) if item is not None else None
+        if sheet is not None and self._on_open is not None:
+            self._on_open(sheet)
 
     # ---- actions -------------------------------------------------------------
     def _on_item_changed(self, item) -> None:

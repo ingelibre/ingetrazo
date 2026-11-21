@@ -4379,5 +4379,8 @@
  "Print the plan set «{name}»: {n} sheets": "ພິມຊຸດແບບ «{name}»: {n} ໜ້າ",
  "Export the plan set «{name}»: {n} sheets": "ສົ່ງອອກຊຸດແບບ «{name}»: {n} ໜ້າ",
  "{name} — not in the plan set «{set}»": "{name} — ບໍ່ຢູ່ໃນຊຸດແບບ «{set}»",
- "Dynamic fields for texts and the title block: {proyecto} {autor} {lamina} {escala} {escena} {fecha} {archivo} {hoja} {total} {juego}": "ຊ່ອງຂໍ້ມູນອັດຕະໂນມັດສຳລັບຂໍ້ຄວາມ ແລະ ຕາຕະລາງຫົວເຈ້ຍ: {proyecto} {autor} {lamina} {escala} {escena} {fecha} {archivo} {hoja} {total} {juego}"
+ "Dynamic fields for texts and the title block: {proyecto} {autor} {lamina} {escala} {escena} {fecha} {archivo} {hoja} {total} {juego}": "ຊ່ອງຂໍ້ມູນອັດຕະໂນມັດສຳລັບຂໍ້ຄວາມ ແລະ ຕາຕະລາງຫົວເຈ້ຍ: {proyecto} {autor} {lamina} {escala} {escena} {fecha} {archivo} {hoja} {total} {juego}",
+ "The sheets of this plan set, in the order it prints them. Double-click a sheet to open it. A greyed sheet is not printed: its printer, or a folder's, is off.": "ແຜ່ນຂອງຊຸດແບບນີ້ ຕາມລຳດັບທີ່ຊຸດພິມ. ຄລິກສອງເທື່ອໃສ່ແຜ່ນເພື່ອເປີດ. ແຜ່ນສີເທົາຈະບໍ່ຖືກພິມ: ເຄື່ອງພິມຂອງມັນ ຫຼື ຂອງໂຟນເດີປິດຢູ່.",
+ "Sheets in «{name}»:": "ແຜ່ນໃນ «{name}»:",
+ "{name} (cover)": "{name} (ໜ້າປົກ)"
 }

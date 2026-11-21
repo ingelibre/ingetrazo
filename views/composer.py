@@ -7513,7 +7513,8 @@ class ComposerWindow(QMainWindow):
         # are made, renamed and deleted.
         from views.sheet_sets_ui import PlanSetsBox
         self.plan_sets = PlanSetsBox(self._window,
-                                     on_changed=self._after_sets_changed)
+                                     on_changed=self._after_sets_changed,
+                                     on_open=self._open_sheet_of_set)
         dis_lay.addWidget(self.plan_sets)
         renum_btn = QPushButton(tr("Renumber sheets"))
         renum_btn.setToolTip(tr(
@@ -15335,6 +15336,13 @@ class ComposerWindow(QMainWindow):
                            None)
         if explorer is not None:
             explorer.refresh(force=True)
+
+    def _open_sheet_of_set(self, sheet) -> None:
+        """A sheet double-clicked in the Plan sets box's list of a set's
+        sheets: the composer goes to it."""
+        comps = self._scene().compositions
+        if sheet in comps:
+            self.show_sheet(comps.index(sheet))
 
     def frame_line_groups(self, frame: MarcoVista) -> list:
         """The frame's hidden-line view as the line groups the DXF and SVG

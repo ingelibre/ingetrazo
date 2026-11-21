@@ -4412,5 +4412,8 @@
  "Print the plan set «{name}»: {n} sheets": "طباعة المجموعة «{name}»: {n} أوراق",
  "Export the plan set «{name}»: {n} sheets": "تصدير المجموعة «{name}»: {n} أوراق",
  "{name} — not in the plan set «{set}»": "{name} — ليست في المجموعة «{set}»",
- "Dynamic fields for texts and the title block: {proyecto} {autor} {lamina} {escala} {escena} {fecha} {archivo} {hoja} {total} {juego}": "الحقول الديناميكية للنصوص وجدول الرسم: {proyecto} {autor} {lamina} {escala} {escena} {fecha} {archivo} {hoja} {total} {juego}"
+ "Dynamic fields for texts and the title block: {proyecto} {autor} {lamina} {escala} {escena} {fecha} {archivo} {hoja} {total} {juego}": "الحقول الديناميكية للنصوص وجدول الرسم: {proyecto} {autor} {lamina} {escala} {escena} {fecha} {archivo} {hoja} {total} {juego}",
+ "The sheets of this plan set, in the order it prints them. Double-click a sheet to open it. A greyed sheet is not printed: its printer, or a folder's, is off.": "أوراق هذه المجموعة بالترتيب الذي تطبعها به. انقر نقرًا مزدوجًا على ورقة لفتحها. الورقة الرمادية لا تُطبع: طابعتها، أو طابعة مجلد، مطفأة.",
+ "Sheets in «{name}»:": "الأوراق في «{name}»:",
+ "{name} (cover)": "{name} (الغلاف)"
 }

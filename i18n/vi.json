@@ -4403,5 +4403,8 @@
  "Print the plan set «{name}»: {n} sheets": "In bộ bản vẽ «{name}»: {n} trang",
  "Export the plan set «{name}»: {n} sheets": "Xuất bộ bản vẽ «{name}»: {n} trang",
  "{name} — not in the plan set «{set}»": "{name} — không thuộc bộ bản vẽ «{set}»",
- "Dynamic fields for texts and the title block: {proyecto} {autor} {lamina} {escala} {escena} {fecha} {archivo} {hoja} {total} {juego}": "Trường thông tin động cho văn bản và khung tên: {proyecto} {autor} {lamina} {escala} {escena} {fecha} {archivo} {hoja} {total} {juego}"
+ "Dynamic fields for texts and the title block: {proyecto} {autor} {lamina} {escala} {escena} {fecha} {archivo} {hoja} {total} {juego}": "Trường thông tin động cho văn bản và khung tên: {proyecto} {autor} {lamina} {escala} {escena} {fecha} {archivo} {hoja} {total} {juego}",
+ "The sheets of this plan set, in the order it prints them. Double-click a sheet to open it. A greyed sheet is not printed: its printer, or a folder's, is off.": "Các tờ của bộ bản vẽ này, theo thứ tự bộ in chúng. Nhấp đúp vào một tờ để mở. Tờ màu xám không được in: máy in của nó, hoặc của một thư mục, đang tắt.",
+ "Sheets in «{name}»:": "Các tờ trong «{name}»:",
+ "{name} (cover)": "{name} (bìa)"
 }

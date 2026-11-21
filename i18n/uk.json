@@ -4384,5 +4384,8 @@
  "Print the plan set «{name}»: {n} sheets": "Друкувати комплект «{name}»: аркушів — {n}",
  "Export the plan set «{name}»: {n} sheets": "Експортувати комплект «{name}»: аркушів — {n}",
  "{name} — not in the plan set «{set}»": "{name} — не входить до комплекту «{set}»",
- "Dynamic fields for texts and the title block: {proyecto} {autor} {lamina} {escala} {escena} {fecha} {archivo} {hoja} {total} {juego}": "Динамічні поля для текстів і основного напису: {proyecto} {autor} {lamina} {escala} {escena} {fecha} {archivo} {hoja} {total} {juego}"
+ "Dynamic fields for texts and the title block: {proyecto} {autor} {lamina} {escala} {escena} {fecha} {archivo} {hoja} {total} {juego}": "Динамічні поля для текстів і основного напису: {proyecto} {autor} {lamina} {escala} {escena} {fecha} {archivo} {hoja} {total} {juego}",
+ "The sheets of this plan set, in the order it prints them. Double-click a sheet to open it. A greyed sheet is not printed: its printer, or a folder's, is off.": "Аркуші цього комплекту в тому порядку, у якому він їх друкує. Двічі клацніть аркуш, щоб відкрити його. Сірий аркуш не друкується: його принтер або принтер теки вимкнено.",
+ "Sheets in «{name}»:": "Аркуші в «{name}»:",
+ "{name} (cover)": "{name} (обкладинка)"
 }

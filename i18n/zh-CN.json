@@ -4376,5 +4376,8 @@
  "Print the plan set «{name}»: {n} sheets": "打印图纸集“{name}”：{n} 张图纸",
  "Export the plan set «{name}»: {n} sheets": "导出图纸集“{name}”：{n} 张图纸",
  "{name} — not in the plan set «{set}»": "{name} — 不在图纸集“{set}”中",
- "Dynamic fields for texts and the title block: {proyecto} {autor} {lamina} {escala} {escena} {fecha} {archivo} {hoja} {total} {juego}": "文本和标题栏的动态字段: {proyecto} {autor} {lamina} {escala} {escena} {fecha} {archivo} {hoja} {total} {juego}"
+ "Dynamic fields for texts and the title block: {proyecto} {autor} {lamina} {escala} {escena} {fecha} {archivo} {hoja} {total} {juego}": "文本和标题栏的动态字段: {proyecto} {autor} {lamina} {escala} {escena} {fecha} {archivo} {hoja} {total} {juego}",
+ "The sheets of this plan set, in the order it prints them. Double-click a sheet to open it. A greyed sheet is not printed: its printer, or a folder's, is off.": "此图纸集中的图纸,按打印顺序排列。双击图纸即可打开。灰色图纸不会打印:它的打印开关或所在文件夹的打印开关已关闭。",
+ "Sheets in «{name}»:": "「{name}」中的图纸:",
+ "{name} (cover)": "{name}(封面)"
 }
