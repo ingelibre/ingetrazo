@@ -809,9 +809,10 @@ class _InstanceBatch(list):
     """One frame's placements of an instanced pool (a plain list of them)
     with their indices in the pool and the pool's matrix rows, so the
     matrix buffer is filled by one NumPy take instead of sixteen floats
-    read per placement."""
+    read per placement. ``split``: which of them are the surroundings of
+    the open group (``InstancingMixin._instanced_batches``)."""
 
-    __slots__ = ("idx", "mats")
+    __slots__ = ("idx", "mats", "split")
 
 
 #: The CPU side of a document's bakes — the render/pick chunks of its
