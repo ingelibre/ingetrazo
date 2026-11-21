@@ -20,14 +20,16 @@ data: a layout rework can later move them anywhere
 from __future__ import annotations
 
 from PySide6.QtCore import QItemSelectionModel, QMimeData, QSize, Qt, QTimer
-from PySide6.QtGui import QFont
+from PySide6.QtGui import QFont, QPalette
 from PySide6.QtWidgets import (
-    QAbstractItemView, QHBoxLayout, QHeaderView, QLabel, QLineEdit,
-    QListWidget, QListWidgetItem, QStyledItemDelegate, QTreeWidget,
-    QTreeWidgetItem, QVBoxLayout, QWidget,
+    QAbstractItemView, QComboBox, QHBoxLayout, QHeaderView, QLabel,
+    QLineEdit, QListWidget, QListWidgetItem, QSplitter,
+    QStyledItemDelegate, QTreeWidget, QTreeWidgetItem, QVBoxLayout,
+    QWidget,
 )
 
 from core import sheet_folders as sf
+from core import sheet_sets as ss
 from core.i18n import tr
 from views.sheet_pages import holds, index_of
 
@@ -567,6 +569,27 @@ class SheetExplorer(QWidget):
             setattr(self, attr, btn)
             bar.addWidget(btn)
         lay.addLayout(bar)
+        # The sheet set Print all and Export all take (#1519): shown only
+        # once the document has sets — a document without stays as it was.
+        # A set prints in this tree's order; the sheets outside it grey.
+        self._set_id = None
+        self.set_row = QWidget()
+        set_lay = QHBoxLayout(self.set_row)
+        set_lay.setContentsMargins(0, 0, 0, 0)
+        set_lay.setSpacing(6)
+        set_label = QLabel(tr("Set:"))
+        set_lay.addWidget(set_label)
+        self.set_combo = QComboBox()
+        self.set_combo.setToolTip(tr(
+            "Which sheets Print all and Export all take: all the sheets "
+            "marked for printing, or one plan set — its marked sheets, in "
+            "this order, their pages numbered within the set. Plan sets "
+            "are made in a sheet's properties."))
+        set_label.setBuddy(self.set_combo)
+        self.set_combo.currentIndexChanged.connect(self._on_set_picked)
+        set_lay.addWidget(self.set_combo, 1)
+        self.set_row.setVisible(False)
+        lay.addWidget(self.set_row)
 
         from PySide6.QtWidgets import QStackedWidget
         self.stack = QStackedWidget()
@@ -775,7 +798,10 @@ class SheetExplorer(QWidget):
                    tuple((id(f), f.view_key) for f in c.frames))
                   for c in scene.compositions),
             tuple(v.name for v in getattr(scene, "saved_views", None) or ()),
-            id(current))
+            tuple((st.id, st.name, tuple(st.sheet_uids), st.ordered,
+                   st.cover_uid) for st in ss.sets_of(scene)),
+            tuple(c.uid for c in scene.compositions),
+            self._set_id, id(current))
 
     def on_scene_changed(self) -> None:
         if self.isVisible():
@@ -912,6 +938,7 @@ class SheetExplorer(QWidget):
                 self.items[id(c)] = item
 
         add(self.tree.invisibleRootItem(), None, frozenset())
+        self._show_set(scene)
         for key, item in self.items.items():
             if key in picked:
                 item.setSelected(True)
@@ -961,6 +988,58 @@ class SheetExplorer(QWidget):
         self.pages.viewport().update()
         if self.pictures is not None and self.thumbnails:
             self.pictures.wanted(comps)
+
+    # ---- The sheet set Print all and Export all take (#1519) -----------------
+    def current_set_id(self):
+        """The id of the set the Set box shows; ``None``: All sheets."""
+        return self._set_id
+
+    def _on_set_picked(self, _index: int) -> None:
+        if self._updating:
+            return
+        self._set_id = self.set_combo.currentData()
+        self.refresh(force=True)
+
+    def _show_set(self, scene) -> None:
+        """The Set box follows the document's sets; the sheets outside the
+        chosen set grey, and the print and export buttons say what they
+        take."""
+        from views.sheet_sets_ui import fill_set_combo
+        if self._set_id is not None and ss.set_by_id(scene, self._set_id) \
+                is None:
+            self._set_id = None                   # the set was deleted
+        fill_set_combo(self.set_combo, scene, self._set_id)
+        self.set_row.setVisible(bool(ss.sets_of(scene)))
+        # The open sheet's «Plan sets» box follows too (an undo, the AI).
+        box = getattr(self._composer_win, "plan_sets", None)
+        if box is not None:
+            box.refresh()
+        st = ss.set_by_id(scene, self._set_id) \
+            if self._set_id is not None else None
+        if st is None:
+            self.print_btn.setToolTip(tr(
+                "Print all: the sheets marked for printing, each on its "
+                "own paper"))
+            self.export_btn.setToolTip(tr(
+                "Export all: the sheets marked for printing — one PDF, or "
+                "PNG / SVG files"))
+            return
+        inside = {id(c) for c in ss.members(scene, st)}
+        n = len(ss.export_list(scene, st))
+        self.print_btn.setToolTip(tr(
+            "Print the plan set «{name}»: {n} sheets", name=st.name, n=n))
+        self.export_btn.setToolTip(tr(
+            "Export the plan set «{name}»: {n} sheets", name=st.name, n=n))
+        from PySide6.QtGui import QBrush
+        grey = QBrush(self.palette().color(QPalette.Disabled,
+                                           QPalette.Text))
+        for c in scene.compositions:
+            item = self.items.get(id(c))
+            if item is not None and id(c) not in inside:
+                item.setForeground(COL_NAME, grey)
+                item.setToolTip(COL_NAME, tr(
+                    "{name} — not in the plan set «{set}»", name=c.name,
+                    set=st.name))
 
     @staticmethod
     def _key(item):
@@ -1768,29 +1847,41 @@ class SheetExplorer(QWidget):
                name=path, sheets=", ".join(troubled)), 6000)
 
     def print_all(self) -> None:
-        """Print the sheets marked for printing, in the order shown."""
-        sheets = sf.printed_sheets(self._scene())
+        """Print the sheets marked for printing — or those of the set the
+        Set box shows, numbered within it — in the order shown."""
+        sheets = ss.export_list(self._scene(), self._set_id)
         if not sheets:
             self._window.viewport.flash_status(
                 tr("No sheet is marked for printing"), 4000)
+            return
+        if self._set_id is not None:
+            self._window._ensure_composer().print_sheets(
+                sheets, self, sheet_set=self._set_id)
             return
         self.print_sheets(sheets)
 
     def export_all(self, path=None) -> None:
-        """The sheets marked for printing into one PDF, in the order
-        shown."""
-        sheets = sf.printed_sheets(self._scene())
-        if not sheets:
-            self._window.viewport.flash_status(
-                tr("No sheet is marked for printing"), 4000)
-            return
+        """The sheets marked for printing — or the set the Set box shows —
+        in the order shown: one PDF, or PNG / SVG files (the file type
+        picked)."""
+        composer = self._window._ensure_composer()
+        status = self._window.viewport.flash_status
         if path is None:
-            from views.filedialogs import file_dialogs
-            path, _ = file_dialogs.getSaveFileName(
-                self, tr("Export all (PDF)…"),
-                self._window._ensure_composer().default_pdf_path(),
-                "PDF (*.pdf)")
-        self.export_sheets(sheets, path)
+            from views.sheet_sets_ui import export_sheets_interactive
+            export_sheets_interactive(composer, self, self._set_id,
+                                      status=status)
+            return
+        sheets = ss.export_list(self._scene(), self._set_id)
+        if not sheets:
+            status(tr("No sheet is marked for printing"), 4000)
+            return
+        if self._set_id is None:
+            self.export_sheets(sheets, path)
+            return
+        from pathlib import Path
+        fmt = Path(path).suffix.lower().lstrip(".") or "pdf"
+        composer.export_sheets(str(path), None, fmt,
+                               sheet_set=self._set_id)
 
 
 def mark_row(item, on: bool, column: int = 0) -> None:

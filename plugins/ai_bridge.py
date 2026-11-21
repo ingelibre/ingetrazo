@@ -600,26 +600,13 @@ class _Bridge(BridgeTools, QObject):
 
     @staticmethod
     def _export_pngs(composer, comps, out: Path, dpi) -> dict:
-        import re
         dpi = max(20.0, min(600.0, float(dpi)))
-        if out.suffix.lower() == ".png":
-            folder, stem = out.parent, out.stem + "-"
-        else:
-            folder, stem = out, ""
-        folder.mkdir(parents=True, exist_ok=True)
-        files, troubled = [], {}
-        for i, c in enumerate(comps, 1):
-            image, blank = composer.render_sheet_image(c, dpi)
-            safe = re.sub(r"[^\w\-]+", "_", c.name).strip("_") or "sheet"
-            target = folder / f"{stem}{i:02d}-{safe}.png"
-            if not image.save(str(target)):
-                raise RuntimeError(f"could not write {target}")
-            files.append(str(target))
-            if blank:
-                troubled[c.name] = blank
-        return {"files": files, "sheets": len(comps),
+        if out.suffix and out.suffix.lower() != ".png":
+            raise ValueError("a PNG export goes to a .png name or a folder")
+        done = composer.export_sheet_files(comps, out, "png", dpi)
+        return {"files": done["files"], "sheets": len(comps),
                 "sheet_names": [c.name for c in comps], "dpi": dpi,
-                "views_not_rendered": troubled}
+                "views_not_rendered": done["errors"]}
 
     def _tool_export_view(self, view: str = "", path: str | None = None,
                           width: int = 1920, height: int = 1080) -> dict:
