@@ -857,6 +857,7 @@ class PickingMixin:
         triangles and hard edges of ``candidatos``, numbered after ``base``
         (the part before it, or None). Lists, joined by _pick_join_parts."""
         import numpy as np
+        from core.layers import inherited_layer
         scene = self.scene
         chunks = []
         for g in candidatos:
@@ -918,6 +919,7 @@ class PickingMixin:
         b_gbase: list = []    # each chunk's (n, 2, 3) edge array, kept
         b_gsel: list = []     # per edge: may pick_group land on it
         b_ggroups: list = []
+        b_gilayer: list = []  # per group: the nearest container's layer
         b_gctx: list = []     # per group: the tip's context word
         # Lazy placements (#158) keep their triangles in their own
         # arrays — spans the ray walks as they are — and go after
@@ -995,6 +997,10 @@ class PickingMixin:
                 b_gel.append(gel)
                 b_gsel.append(np.full(len(ge), gsel, dtype=bool))
                 b_ggroups.append(owner)
+                # The placement's own layer — the nearest container's, not
+                # the top-level object's — is what its hard edges are inked
+                # with on a sheet (#1503).
+                b_gilayer.append(inherited_layer(g))
                 # "outside" while a group/component is open and this
                 # placement is not part of it (see _snap_context_of).
                 b_gctx.append(_snap_context_of(self, g))
@@ -1006,6 +1012,7 @@ class PickingMixin:
                 "spans": b_spans, "gea": b_gea, "geb": b_geb, "ggi": b_ggi,
                 "gel": b_gel,
                 "gsel": b_gsel, "ggroups": b_ggroups, "gctx": b_gctx,
+                "gilayer": b_gilayer,
                 "gbase": b_gbase,
                 "n_ent": n_ent + count, "n_plist": n_plist + len(b_plist),
                 "n_tri": b_tri_off,
@@ -1061,6 +1068,7 @@ class PickingMixin:
             "gedge_layer": cat("gel", None) if gea else None,
             "gedge_sel": cat("gsel", None) if gea else None,
             "gedge_groups": fixed["ggroups"] + lazy["ggroups"],
+            "gedge_ilayer": fixed.get("gilayer", []) + lazy.get("gilayer", []),
             "gedge_ctx": fixed.get("gctx", []) + lazy.get("gctx", []),
             # The fixed part's edges lead, and that part outlives many lazy
             # rebuilds: their screen projection is kept across them.
@@ -1459,6 +1467,7 @@ class PickingMixin:
         gedge_a = gedge_b = gedge_gi = gedge_sel = gedge_fixed = None
         gedge_layer = None
         gedge_groups: list = []
+        gedge_ilayer: list = []
         gedge_ctx: list = []
         if candidatos:
             block = self._pick_block[1] if getattr(self, "_pick_block", None) \
@@ -1469,6 +1478,7 @@ class PickingMixin:
             gedge_layer = block.get("gedge_layer")
             gedge_sel = block.get("gedge_sel")
             gedge_groups = block.get("gedge_groups", [])
+            gedge_ilayer = block.get("gedge_ilayer", [])
             gedge_ctx = block.get("gedge_ctx", [])
             gedge_fixed = block.get("gedge_fixed")
 
@@ -1576,6 +1586,7 @@ class PickingMixin:
             gedge_layer=gedge_layer,
             gedge_sel=gedge_sel,
             gedge_groups=gedge_groups,
+            gedge_ilayer=gedge_ilayer,
             gedge_ctx=gedge_ctx,
             gedge_fixed=gedge_fixed,
             tri_spans=None,
