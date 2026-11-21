@@ -24,4 +24,4 @@ Any alternative solutions or workarounds you've considered.
 ## Additional context
 
 Add any other context, screenshots, or references to how other tools
-(SketchUp, FreeCAD, AutoCAD, etc.) handle this.
+handle this.

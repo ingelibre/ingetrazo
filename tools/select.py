@@ -623,7 +623,7 @@ class SelectTool(Tool):
     def on_hover(self, ctx: ToolContext) -> None:
         viewport = ctx.viewport
         entity = self._pick(viewport, ctx.screen.x(), ctx.screen.y())
-        # A face under the cursor is not marked, as in SketchUp (#832:
+        # A face under the cursor is not marked (#832:
         # «very visually distracting»); edges still light up, thin lines
         # being hard to hit. Unmarked, a face is also never what Delete
         # erases with nothing selected.

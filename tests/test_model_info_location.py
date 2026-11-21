@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2026 Marco Sumari Tellez and IngeTrazo contributors.
 """Model Info ▸ Location: the model's geographic location (``scene.georef``),
-shown and set or cleared in one undo step — SketchUp's Model Info ▸
+shown and set or cleared in one undo step — the usual Model Info ▸
 Geo-location, on the datum the sun, the base map and the terrain read."""
 from __future__ import annotations
 

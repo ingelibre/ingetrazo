@@ -3,7 +3,7 @@
 """Painting a component whose faces all carry their own material (#807).
 
 The .skp of the report has cabinet parts as components with every face
-painted: painting one as a whole keeps those materials (the SketchUp rule,
+painted: painting one as a whole keeps those materials (the usual rule,
 as in #408), so the click changed nothing on screen and read as «it won't
 let me paint components». The status bar now says why and what to do."""
 from __future__ import annotations

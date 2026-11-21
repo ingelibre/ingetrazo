@@ -4,8 +4,7 @@
 
 Each pick read the file again and added a new, independent piece: four of
 the same 12 600-face cabinet were 50 400 faces in the model and its 2 s
-read came back every time (Marco, 18-10). The copies share the definition,
-as in SketchUp."""
+read came back every time (Marco, 18-10). The copies share the definition."""
 from __future__ import annotations
 
 import numpy as np

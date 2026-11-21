@@ -51,7 +51,7 @@ interfaces for cells which remain in the model. The tests reproduce the
 original crash without the shim and the remaining ownership failure with
 the earlier partial fix. CI runs them on Apple Silicon and Intel runners.
 Offscreen tests alone cannot verify this crash. Also replay the
-reported model workflow in the built application: import SketchUp, save
+reported model workflow in the built application: import a `.skp`, save
 an `.igz`, reopen it, inspect the Browser and navigate the viewport.
 
 ## Local validation — 2026-10-15
@@ -63,7 +63,7 @@ an `.igz`, reopen it, inspect the Browser and navigate the viewport.
   in `test_extension_manager.py::test_long_author_tags_and_license_wrap_within_preview_width`.
   It fails identically on an unmodified export of `d8ee8c0` with the same
   interpreter (`heightForWidth(256)` and maximum item height are both 40).
-- Built app: SketchUp import, `.igz` save, three reopenings and 60 camera
+- Built app: `.skp` import, `.igz` save, three reopenings and 60 camera
   navigation updates completed with accessibility active. The final installed
   app also opened the original `.igz` through the native file dialog and
   survived orbit, zoom and external accessibility inspection.

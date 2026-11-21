@@ -142,7 +142,7 @@ def initialize(app_id: str = APP_ID) -> bool:
 
 
 def _launch_command(path: Path) -> tuple[str, str]:
-    # A Jump List opens a model in its own window, like SketchUp. In
+    # A Jump List opens a model in its own window, as users expect. In
     # particular, importing a pinned SKP must not append it to the model
     # currently being edited or replace an unsaved document via IPC.
     args = ["--new-window", str(path)]

@@ -10772,7 +10772,7 @@ class MainWindow(QMainWindow):
         Each pick read the file again and added a new, independent piece:
         four of the same 12 600-face cabinet were 50 400 faces in the model,
         and its 2 s read came back every time (Marco, 18-10). A copy now
-        shares the definition, as in SketchUp — an edit inside one reaches
+        shares the definition — an edit inside one reaches
         them all, Make Unique parts one off — so the next pick is instant
         and the model does not swell. ``build`` reads the file; it is called
         only when no copy of ``source`` is left in the model."""

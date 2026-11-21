@@ -187,7 +187,7 @@ class Group:
         # Imported photos remain ImagePlane entities when wrapped in a group
         # or component.  They are deliberately not converted to textured
         # faces: display styles may suppress face textures, while a photo is
-        # visible in every style (including Wireframe), like SketchUp images.
+        # visible in every style (including Wireframe), as images in a model should.
         # Coordinates are local to ``xform`` exactly like this group's mesh.
         self.images: list = []
 

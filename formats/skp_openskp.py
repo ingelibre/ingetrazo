@@ -1885,7 +1885,7 @@ def _adapt_inner(model, name: str, skp_path=None, *, consume=False):
                         if a and "texture" in a), None)
             # A cut-out turns to face the camera — unless it is stuck on a
             # face, like a logo on a device (#429): the file has no face-me
-            # flag for images, SketchUp never turns one.
+            # flag for images, and they are never turned.
             if image_flags is not None:
                 billboard = image_flags[_image_use_key(child, placed, inh)]
             else:

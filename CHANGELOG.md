@@ -1137,7 +1137,7 @@ extensiones ya no se cae con un OpenSSL ajeno (#564).
   mueble de 12 600 caras eran 50 400 caras en el modelo y la lectura de
   2 s se repetía cada vez. Ahora la primera vez se coloca un componente y
   las siguientes son copias que comparten su definición, como en
-  SketchUp (editar una cambia todas; «Hacer único» separa una). Vale para
+  otros modeladores (editar una cambia todas; «Hacer único» separa una). Vale para
   la biblioteca en línea y para los componentes incluidos. Medido con 40
   inserciones de 10 modelos: cargar el modelo pasa de 440 a 30 ms
   (mediana; el peor, de 2,2 a 0,13 s) y colocarlo de 286 a 118 ms. La
@@ -1151,7 +1151,7 @@ extensiones ya no se cae con un OpenSSL ajeno (#564).
   IngeTrazo está abierto y las demás se preparan en segundo plano; no se
   descarga nada que antes no se descargara.
 - **El plano de Rectángulo, Círculo y Arco en espacio vacío lo elige la
-  cámara, por el origen de los ejes** (#719, @pacaeiro), como en SketchUp:
+  cámara, por el origen de los ejes** (#719, @pacaeiro), como en otros modeladores:
   el suelo al mirar hacia abajo y los planos verticales rojo o verde según
   hacia dónde mira la vista; antes iban al plano por el centro del modelo.
   En vistas casi a ras, donde antes el clic no daba punto, ahora sí lo da.

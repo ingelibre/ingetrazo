@@ -2076,7 +2076,7 @@ def _load_dae_inner(scene, path, progress=None):
         tick(1.0, "Done")
         return offset
 
-    # A top-level node is the model itself (SketchUp's "SketchUp" root, a
+    # A top-level node is the model itself (a .skp exporter's named root, a
     # bare exporter's only node): its own geometry is the loose mesh. The
     # nodes nested in it are the model's groups and import as Groups,
     # nested as the file nests them (_node_group).

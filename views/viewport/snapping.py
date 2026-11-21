@@ -40,7 +40,7 @@ class SnappingMixin:
         """Where the face under the cursor meets another face that crosses
         it with no edge between them — a box sunk into the floor, a beam
         through a wall: ``(world point, context)`` or ``None`` (#819,
-        SketchUp's «Intersection»). A face that goes THROUGH the one in
+        the «Intersection» snap). A face that goes THROUGH the one in
         front is met by the cursor's own ray a little behind it, so the
         candidates come free from that ray's hits (already cast for this
         hover); a crossing counts only if, either side of it on screen,

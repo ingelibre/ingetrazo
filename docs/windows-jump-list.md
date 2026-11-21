@@ -6,8 +6,8 @@ Hover over an entry and click its pin to keep it under **Pinned**. Windows owns
 the list, pins, removals and history settings; IngeTrazo reports successful file
 operations and does not rebuild or clear that list at startup.
 
-Each entry opens the file in a new IngeTrazo window, including when SketchUp
-is the default `.skp` application. The current window's model stays open.
+Each entry opens the file in a new IngeTrazo window, including when another
+program is the default `.skp` application. The current window's model stays open.
 **File > Open Recent** retains its existing native-document-only behavior.
 
 The implementation uses `SHAddToRecentDocs(SHARD_APPIDINFOLINK)` with a Unicode

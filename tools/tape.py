@@ -267,8 +267,8 @@ class TapeMeasureTool(Tool):
         if self._mode == "point":
             # A guide POINT at the measured spot — no source edge needed,
             # which is the whole use: marking a place on a face. It keeps
-            # its dashed segment back to the first click, as SketchUp's
-            # does: from the red axis to a circle's centre (issue #693).
+            # its dashed segment back to the first click, as users
+            # expect: from the red axis to a circle's centre (issue #693).
             self._place_guide_point(viewport, ctx.world,
                                     self._segment_origin(ctx.world))
         elif self._edge is not None:

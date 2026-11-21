@@ -455,7 +455,7 @@ def test_instance_edit_flows_make_unique():
 
 def _lines_dae(tmp_path, with_face=True):
     """A floor square (optional) plus a node of loose ``<lines>`` and a
-    ``<linestrips>``, as SketchUp writes a drawing's 2D lines (#633)."""
+    ``<linestrips>``, as .skp exporters write a drawing's 2D lines (#633)."""
     face_geom = """
     <geometry id="sq"><mesh>
       <source id="sq-pos">
@@ -526,7 +526,7 @@ def _tree(g):
 
 
 def test_nested_groups_keep_their_structure(tmp_path):
-    """A small model exported as groups of groups (SketchUp: «geometries»
+    """A small model exported as groups of groups (an exporter's «geometries»
     holding «closed» — a circle and a rectangle — and «lines») comes back
     as the same tree with the same names, each piece of geometry in its own
     group, instead of melting into the loose mesh."""

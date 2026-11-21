@@ -240,7 +240,7 @@ def _keep_layer_table() -> bool:
     return True
 
 
-#: Spellings of SketchUp's default tag: a face on it is on no layer.
+#: Spellings of a .skp file's default tag: a face on it is on no layer.
 _DEFAULT_TAGS = ("Layer0", "Layer 0", "Untagged")
 
 
@@ -437,7 +437,7 @@ def _scan_vff_texts(model_dat, id2pos, inst_world):
 
 def _vff_label_point(point, label_raw, bbox):
     """Settle the space of a text's stored ``55F5`` triple. Writer-made
-    files store the label's absolute position; SketchUp itself stores it
+    files store the label's absolute position; the original application stores it
     relative to the anchor (the reporter's staircase: the absolute
     reading puts both labels outside the model, the relative one lands
     each beside its anchor). Prefer whichever lands inside the owner's

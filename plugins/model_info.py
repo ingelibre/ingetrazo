@@ -6,7 +6,7 @@
 A tabbed breakdown of the open document: geometry counts, bounding box,
 materials in use, layers, BIM objects, and its geographic location — the
 one place in it that changes the document (set or clear the location, one
-undo step, as SketchUp's Model Info ▸ Geo-location). The numbers agree
+undo step, as Model Info ▸ Geo-location in other modellers). The numbers agree
 with the rest of the application because they come from the same sources:
 
 - geometry reads ``scene.loose_mesh`` (NOT ``scene.mesh``, which is swapped
@@ -597,7 +597,7 @@ class ModelInfoDialog(QDialog):
         self._apply_location(lat, lon)
 
     def _clear_location(self) -> None:
-        """Clear Location (SketchUp's words): the model keeps its geometry
+        """Clear Location (the usual words): the model keeps its geometry
         and its north angle; the sun goes back to the default site. Undo
         brings the location back."""
         if self._stats.get("location") is not None:

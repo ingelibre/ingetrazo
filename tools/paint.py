@@ -398,7 +398,7 @@ class PaintTool(Tool):
                 if self._every_face_painted(obj):
                     # Nothing on screen changes: say why, and how (#807,
                     # components from a .skp whose faces carry their own
-                    # material — the SketchUp rule, as in #408).
+                    # material — the usual rule, as in #408).
                     flash(tr("{name}: every face has its own material, so "
                              "nothing changed — open it and paint the "
                              "faces", name=name), 10000)

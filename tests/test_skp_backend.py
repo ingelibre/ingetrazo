@@ -1298,8 +1298,7 @@ def test_openskp_adapter_extracted_parts_keep_the_tag_of_their_group(
     muro_kids = [payload["protos"][k["proto"]]["name"]
                  for k in protos["Muro"]["children"]]
     assert muro_kids == ["Poste", "Poste"]
-    # The container's own untagged face is NOT put on the tag: as in
-    # SketchUp, it stays untagged inside the tagged group.
+    # The container's own untagged face is NOT put on the tag: it stays untagged inside the tagged group.
     assert not (protos["Muro"]["faces"][0][2] or {}).get("layer")
 
 
