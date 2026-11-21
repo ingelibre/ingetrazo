@@ -2071,9 +2071,18 @@ class RenderMixin:
                 and len(vpv["bent_ends"]):
             # The edges a vertex drag stretches: one end rides, one stays.
             import numpy as np
-            off = getattr(self, "_preview_offset", None) or QVector3D()
-            d = np.array([off.x(), off.y(), off.z()], dtype=np.float32)
-            pts = vpv["bent_ends"] + vpv["bent_rides"][:, None] * d
+            pm = getattr(self, "_preview_matrix", None)
+            if pm is not None:
+                # A Rotate's vertex drag: the riding ends turned.
+                a = np.array(pm.data(), dtype=np.float64).reshape(4, 4)
+                ends = vpv["bent_ends"]
+                turned = (ends.astype(np.float64) @ a[:3, :3]
+                          + a[3, :3]).astype(np.float32)
+                pts = np.where(vpv["bent_rides"][:, None] > 0, turned, ends)
+            else:
+                off = getattr(self, "_preview_offset", None) or QVector3D()
+                d = np.array([off.x(), off.y(), off.z()], dtype=np.float32)
+                pts = vpv["bent_ends"] + vpv["bent_rides"][:, None] * d
             raw = pts.astype(np.float32).tobytes()
             if getattr(self, "_pv_bent_vao", None) is None:
                 self._pv_bent_vao, self._pv_bent_vbo = self._create_dynamic()
@@ -2962,24 +2971,41 @@ class RenderMixin:
         nat = _native.native
         if nat is None or not hasattr(nat, "MovePreview"):
             return None
-        shown, moving, paint, d = moved
+        if (len(moved) > 4 and moved[4] is not None
+                and not hasattr(nat.MovePreview, "bake_placed")):
+            return None
+        shown, moving, paint, d = moved[:4]
+        m = moved[4] if len(moved) > 4 else None
         try:
+            import numpy as np
             memo = getattr(self, "_moved_pack_memo", None)
             key = (self.scene.version, id(moving), id(paint))
             if memo is None or memo[0] != key or memo[1] is not shown:
                 memo = self._moved_pack_memo = (
                     key, shown, self._pack_moved(nat, shown, moving, paint))
-            pack, table = memo[2]
+            pack, table, rverts, rinv = memo[2]
             lt = self._LIGHT
-            out = pack.bake((d.x(), d.y(), d.z()), (lt.x(), lt.y(), lt.z()),
-                            _native.qt_hypot())
+            light = (lt.x(), lt.y(), lt.z())
+            if m is None:
+                out = pack.bake((d.x(), d.y(), d.z()), light,
+                                _native.qt_hypot())
+            else:
+                # A Rotate: each riding vertex placed once, by Qt's map —
+                # the very floats the tool's faces hold.
+                xyz = array("f")
+                for v in rverts:
+                    xyz.extend(m.map(v.position).toTuple())
+                at = np.frombuffer(xyz, dtype=np.float32).reshape(-1, 3)
+                out = pack.bake_placed(np.ascontiguousarray(at[rinv]),
+                                       light, _native.qt_hypot())
             return self._preview_native_out(out, table)
         except Exception:  # noqa: BLE001 — Python bakes it
             return None
 
     def _pack_moved(self, nat, shown, moving, paint):
-        """``(MovePreview, material table)`` of the faces ``shown`` (mesh
-        faces) with the corners in ``moving`` riding: their rings as
+        """``(MovePreview, material table, riding vertices, each riding
+        corner's index into them)`` of the faces ``shown`` (mesh faces)
+        with the corners in ``moving`` riding: their rings as
         ``preview_faces`` builds them, their look ``effective_attrs`` of
         their own under ``paint``."""
         import numpy as np
@@ -2988,6 +3014,9 @@ class RenderMixin:
         ride = []
         sizes, counts, fmat = [], [], []
         table = ([], [], [], {}, {})
+        rverts: list = []                 # the riding vertices, once each
+        rat: dict = {}
+        rinv: list = []                   # each riding corner's of them
         for f in shown:
             fmat.append(self._preview_mat(
                 effective_attrs(f.attrs, paint) or {}, table))
@@ -2998,14 +3027,21 @@ class RenderMixin:
                 for v in ring:
                     p = v.position
                     xyz.extend((p.x(), p.y(), p.z()))
-                    ride.append(id(v) in moving)
+                    on = id(v) in moving
+                    ride.append(on)
+                    if on:
+                        k = rat.get(id(v))
+                        if k is None:
+                            k = rat[id(v)] = len(rverts)
+                            rverts.append(v)
+                        rinv.append(k)
         pos = np.frombuffer(xyz, dtype=np.float32).reshape(-1, 3)
         mats = np.array(table[0], dtype=np.float64).reshape(-1, 14)
         pack = nat.MovePreview(pos, np.array(ride, dtype=bool),
                                np.array(sizes, dtype=np.int64),
                                np.array(counts, dtype=np.int64),
                                np.array(fmat, dtype=np.int64), mats)
-        return pack, table
+        return pack, table, rverts, np.array(rinv, dtype=np.int64)
 
     def _bake_preview_sweeps_native(self, sweeps):
         """The bake of a push's overlay (``tools.pushpull._build_light_faces``)

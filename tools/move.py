@@ -410,36 +410,42 @@ class _MoveCopiesCommand(CompoundCommand):
 
 class _MovedFaces:
     """The faces a vertex drag stretches (``shown``, mesh faces), each
-    corner in ``moving`` (vertex ids) moved by ``d``: what
-    :meth:`MoveTool.preview_faces` draws. A sequence of
-    ``core.geometry.Face`` built on first walk — as the tool always built
+    corner in ``moving`` (vertex ids) moved by ``d`` — or, given ``m`` (a
+    Rotate's ``QMatrix4x4``), placed at ``m.map`` of where it is: what
+    :meth:`MoveTool.preview_faces` (and Rotate's) draws. A sequence of
+    ``core.geometry.Face`` built on first walk — as the tools always built
     them — while ``moved_parts`` hands the viewport what its engine bakes
     them from without (``Viewport._bake_preview_moved_native``)."""
 
-    __slots__ = ("shown", "moving", "paint", "d", "_faces")
+    __slots__ = ("shown", "moving", "paint", "d", "m", "_faces")
 
-    def __init__(self, shown, moving, paint, d) -> None:
+    def __init__(self, shown, moving, paint, d, m=None) -> None:
         self.shown = shown
         self.moving = moving
         self.paint = paint
         self.d = d
+        self.m = m
         self._faces = None
 
     @property
     def moved_parts(self):
-        return self.shown, self.moving, self.paint, self.d
+        return self.shown, self.moving, self.paint, self.d, self.m
 
     def faces(self) -> list:
         out = self._faces
         if out is None:
             from core.geometry import Face as GeomFace
             from core.materials import effective_attrs
-            d, moving, paint = self.d, self.moving, self.paint
+            d, m, moving, paint = self.d, self.m, self.moving, self.paint
+            if m is not None:
+                def at(v):
+                    return m.map(v.position) if id(v) in moving else v.position
+            else:
+                def at(v):
+                    return v.position + d if id(v) in moving else v.position
             out = self._faces = [GeomFace(
-                [v.position + d if id(v) in moving else v.position
-                 for v in f.loop],
-                [[v.position + d if id(v) in moving else v.position
-                  for v in h] for h in f.hole_loops],
+                [at(v) for v in f.loop],
+                [[at(v) for v in h] for h in f.hole_loops],
                 attrs=effective_attrs(f.attrs, paint) or None)
                 for f in self.shown]
         return out
@@ -452,6 +458,7 @@ class _MovedFaces:
 
     def __getitem__(self, i):
         return self.faces()[i]
+
 
 class MoveTool(Tool):
     name = "Move"

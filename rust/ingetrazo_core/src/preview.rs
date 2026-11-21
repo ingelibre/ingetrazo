@@ -238,6 +238,24 @@ pub fn moved(faces: &[PFace], ride: &[Vec<bool>], d: V3) -> Vec<PFace> {
     }).collect()
 }
 
+/// `tools.rotate.RotateTool.preview_faces` mid vertex drag: the corners
+/// that ride take, in order, the places `placed` holds for them (the
+/// tool's `QMatrix4x4.map` of each, made in Python so they are Qt's very
+/// floats); the others stay as they are. `None`: fewer places than riding
+/// corners.
+pub fn placed(faces: &[PFace], ride: &[Vec<bool>], placed: &[V3]) -> Option<Vec<PFace>> {
+    let mut at = placed.iter();
+    let mut out = Vec::with_capacity(faces.len());
+    for (f, r) in faces.iter().zip(ride) {
+        let mut pos = Vec::with_capacity(f.pos.len());
+        for (&p, &on) in f.pos.iter().zip(r) {
+            pos.push(if on { *at.next()? } else { p });
+        }
+        out.push(PFace { pos, rings: f.rings.clone(), mat: f.mat });
+    }
+    Some(out)
+}
+
 /// One draw per run of neighbouring colour faces of the same material and
 /// shade: the same triangles in the same order, drawn with the same
 /// colour, in a fraction of the draw calls (a drag stretching a thousand
@@ -267,6 +285,22 @@ mod tests {
         assert_eq!(merge_runs(&runs), vec![(0, 0, 9, 0.5), (1, 9, 3, 0.5),
                                             (0, 12, 3, 0.5), (0, 15, 3, 0.75)]);
         assert!(merge_runs(&[]).is_empty());
+    }
+
+    #[test]
+    fn placed_takes_the_places_in_order() {
+        let f = PFace { pos: vec![V3(1.0, 0.0, 0.0), V3(2.0, 0.0, 0.0), V3(3.0, 0.0, 0.0)],
+                        rings: vec![vec![0, 1, 2]], mat: 0 };
+        let g = PFace { pos: vec![V3(4.0, 0.0, 0.0)], rings: vec![vec![0]], mat: 0 };
+        let ride = [vec![true, false, true], vec![true]];
+        let at = [V3(9.0, 0.0, 0.0), V3(8.0, 0.0, 0.0), V3(7.0, 0.0, 0.0)];
+        let out = placed(&[f, g], &ride, &at).unwrap();
+        assert_eq!(out[0].pos[0].0, 9.0);
+        assert_eq!(out[0].pos[1].0, 2.0);
+        assert_eq!(out[0].pos[2].0, 8.0);
+        assert_eq!(out[1].pos[0].0, 7.0);
+        let f = PFace { pos: vec![V3(1.0, 0.0, 0.0)], rings: vec![vec![0]], mat: 0 };
+        assert!(placed(&[f], &[vec![true]], &[]).is_none());
     }
 
     #[test]

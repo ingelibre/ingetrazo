@@ -1822,4 +1822,32 @@ impl MovePreview {
         });
         preview_out(py, b)
     }
+
+    /// :meth:`bake` with the riding corners at ``placed`` (R,3) float32,
+    /// one row per riding corner in pack order (a Rotate's ``m.map`` of
+    /// each, as the tool's faces hold them). ``None`` too for too few rows.
+    fn bake_placed<'py>(
+        &self,
+        py: Python<'py>,
+        placed: PyReadonlyArray2<'_, f32>,
+        light: (f32, f32, f32),
+        hypot: &str,
+    ) -> PyResult<PreviewOut<'py>> {
+        let h = hypot_of(hypot)?;
+        let p = placed.as_array();
+        if p.shape()[0] > 0 && p.shape()[1] != 3 {
+            return Err(pyo3::exceptions::PyValueError::new_err("places (R,3)"));
+        }
+        let at: Vec<facegeom::V3> = (0..p.shape()[0])
+            .map(|i| facegeom::V3(p[[i, 0]], p[[i, 1]], p[[i, 2]])).collect();
+        let l = facegeom::V3(light.0, light.1, light.2);
+        let b = py.detach(|| {
+            let faces = preview::placed(&self.faces, &self.ride, &at)?;
+            preview::bake(&faces, &self.mats, l, h).map(|mut b| {
+                b.runs = preview::merge_runs(&b.runs);
+                b
+            })
+        });
+        preview_out(py, b)
+    }
 }
