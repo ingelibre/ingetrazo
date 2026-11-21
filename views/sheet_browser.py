@@ -588,6 +588,10 @@ class SheetExplorer(QWidget):
         set_label.setBuddy(self.set_combo)
         self.set_combo.currentIndexChanged.connect(self._on_set_picked)
         set_lay.addWidget(self.set_combo, 1)
+        # The explorer sits in the composer's scrolling side panel: the
+        # wheel scrolls the panel unless the box has the focus (#1163).
+        from views.wheel_guard import guard_wheel
+        guard_wheel(self.set_row)
         self.set_row.setVisible(False)
         lay.addWidget(self.set_row)
 
