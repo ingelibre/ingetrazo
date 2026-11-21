@@ -95,7 +95,9 @@ def test_hidden_locked_group_does_not_offer_edges(box):
     assert vp._nearby_group_edges(*px) == []
 
 
-def test_a_locked_layer_keeps_its_existing_snap_policy(box):
+def test_locked_layer_offers_snap_edges(box):
+    """A locked layer protects from editing, not from snapping (#1510):
+    the #1210-era policy kept locked layers out of the snap entirely."""
     from core.layers import Layer
     vp, group, transform = box
     vp.scene.layers.append(Layer("reference", locked=True))
@@ -103,7 +105,9 @@ def test_a_locked_layer_keeps_its_existing_snap_policy(box):
     group.locked = True
     vp.scene.version += 1
     px = vp._world_to_pixel(transform.map(V(1, 0, 1)))
-    assert vp._nearby_group_edges(*px) == []
+    assert vp._nearby_group_edges(*px)
+    assert vp.pick_group(*px) is None
+    assert not vp.scene.entity_selectable(group)
 
 
 def test_native_candidates_keep_locked_references_out_of_editable_picks(monkeypatch):
@@ -132,7 +136,10 @@ def test_native_candidates_keep_locked_references_out_of_editable_picks(monkeypa
     )
     monkeypatch.setattr(viewport_module, "_LAZY_NATIVE", True)
     native = Viewport._lazy_native(stub)
-    assert native[1].tolist() == [0, 1, 4]
+    # Snap set: editable, object-locked, locked-layer and outside-context
+    # groups are all references (#1510: a locked layer no longer keeps
+    # its group out of the snap); hidden stays out.
+    assert native[1].tolist() == [0, 1, 3, 4]
     assert native[2].tolist() == [0, 1, 3, 4]
     assert Viewport._lazy_sel_rows(stub, native).tolist() == [0]
 

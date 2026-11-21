@@ -112,6 +112,9 @@ def test_the_open_mesh_part_is_the_walk(win, monkeypatch):
     _same(fast, walk)
     assert fast.ent_vis.sum() < len(fast.entities)        # a hidden layer
     assert fast.ent_sel.sum() < fast.ent_vis.sum()        # a locked one
+    # A locked layer is still a reference to snap to (#1510): every face
+    # seen is inferred from, on the chunk's road as on the walk's.
+    assert np.array_equal(fast.ent_infer, fast.ent_vis)
 
 
 def test_after_an_edit_it_is_still_the_walk(win, monkeypatch):
