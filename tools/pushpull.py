@@ -91,6 +91,19 @@ from tools.base import Tool, ToolContext, ctrl_clause
 from core.units import fmt_len
 
 
+def _geometry_version(scene) -> int:
+    """What the model's caches key on (Scene.geometry_version), or the plain
+    version of a stand-in scene."""
+    return getattr(scene, "geometry_version", scene.version)
+
+
+def _bits3(p) -> bytes:
+    """A point's three coordinates as their float32 bits (QVector3D's ==
+    is a fuzzy compare)."""
+    import struct
+    return struct.pack("<3f", p.x(), p.y(), p.z())
+
+
 def _project_loop_2d(loop, normal):
     u, v = plane_basis(normal)
     return [(QVector3D.dotProduct(p, u), QVector3D.dotProduct(p, v)) for p in loop]
@@ -843,6 +856,7 @@ class PushPullTool(Tool):
         # result stays put (restoring it every frame is the snapshot cost the
         # stage exists to avoid); the inference skips its geometry instead.
         self._revert_prism_preview(viewport)
+        self._note_prism_rest(viewport)
         inferred = self._infer_reference_distance(ctx)
         if inferred is not None:
             self.extrusion = inferred
@@ -1464,13 +1478,64 @@ class PushPullTool(Tool):
         objects is what makes it safe.
         """
         mesh = self._target_mesh(viewport.scene)
-        step = self._normal * delta
-        for v in self._prism_verts:
-            mesh.move_vertex(v, step)
-        # Booked as the TARGET, not as a running sum: adding deltas frame by
-        # frame drifts, and the revert has to undo exactly what it applied.
+        start = self._prism_start_positions()
+        # Placed AT the start plus the extrusion, not moved by the delta:
+        # ``(p + d) - d`` is not ``p`` in single precision, and a cap slid
+        # back by arithmetic crept a micrometre off over a drag (21-11). Put
+        # back, it holds its very starting bits, and so does the base a
+        # release pushes from.
+        step = self._normal * applied
+        for v, p in zip(self._prism_verts, start):
+            mesh.place_vertex(v, p + step if applied else p)
+        # Booked as the TARGET, not as a running sum.
         self._prism_applied = applied
-        viewport.scene.version += 1
+        sc = viewport.scene
+        if _geometry_version(sc) != getattr(self, "_prism_own_ver", None):
+            # Someone else edited the model during the drag: the rest state
+            # is no longer the one the pick index was made for.
+            self._prism_rest_ver = False
+        sc.version += 1
+        self._prism_own_ver = _geometry_version(sc)
+
+    def _prism_start_positions(self) -> list:
+        """Where the cap's vertices stood when the drag took them: read once
+        per vertex list (a new push makes a new list), while the cap still
+        stands there."""
+        memo = getattr(self, "_prism_start", None)
+        if memo is None or memo[0] is not self._prism_verts:
+            memo = (self._prism_verts,
+                    [QVector3D(v.position) for v in self._prism_verts])
+            self._prism_start = memo
+            self._prism_rest_ver = None
+            self._prism_own_ver = None
+        return memo[1]
+
+    def _note_prism_rest(self, viewport) -> None:
+        """The cap is back at its very starting bits: tell the viewport the
+        model is the one it indexed for the first frame of the drag, so the
+        pick index made then answers the distance inference again instead
+        of being rebuilt — the cap's move and its revert each bump the
+        version, and a rebuild per pointer move was ~30 ms in a group of
+        3 400 faces and ~125 ms on a loose mesh (21-11). Only while nothing
+        but this drag has touched the model."""
+        if not (self._prism_cap and self._prism_verts) or self._prism_applied:
+            return
+        start = self._prism_start_positions()
+        if any(_bits3(v.position) != _bits3(p)
+               for v, p in zip(self._prism_verts, start)):
+            return
+        sc = viewport.scene
+        gv = _geometry_version(sc)
+        rest = getattr(self, "_prism_rest_ver", None)
+        if rest is None:
+            # The first frame: the model as the click left it.
+            self._prism_rest_ver = self._prism_own_ver = rest = gv
+        elif rest is False or gv != getattr(self, "_prism_own_ver", None):
+            self._prism_rest_ver = False
+            return
+        note = getattr(viewport, "note_same_geometry", None)
+        if note is not None:
+            note(rest)
 
     def _revert_prism_preview(self, viewport) -> None:
         """Put a translated cap back where it started."""
