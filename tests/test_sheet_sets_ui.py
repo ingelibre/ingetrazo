@@ -130,6 +130,67 @@ def test_the_selected_sets_sheets_are_listed_below(doc):
     assert comp.comp is a
 
 
+def test_the_arrows_move_several_sheets_in_and_out(doc):
+    win, scene, explorer, comp = doc
+    hist = win.viewport.history
+    a, g, d = (_sheet(scene, n) for n in "AGD")
+    roofer = SheetSet("Roofer")
+    hist.execute(AddSheetSetCommand(roofer, [g]))
+    box = comp.plan_sets
+    box.set_sheet(g)
+    assert box.member_names() == ["G"]
+    assert box.other_names() == ["D", "A"]              # the explorer's order
+    assert not box.add_sheets_btn.isEnabled()           # nothing selected
+    # Select both others and move them up into the set: one undo step.
+    for i in range(box.others.count()):
+        box.others.item(i).setSelected(True)
+    assert box.add_sheets_btn.isEnabled()
+    box.add_selected()
+    assert box.member_names() == ["D", "G", "A"]        # still explorer order
+    assert box.other_names() == []
+    from views.sheet_sets_ui import COUNT_ROLE, DETAIL_ROLE
+    assert box.list.item(0).data(COUNT_ROLE) == 3       # the count column
+    assert box.list.item(0).data(DETAIL_ROLE) == "D, G, A"
+    assert "• G" in box.list.item(0).toolTip()
+    # The sheet lists say which sets a sheet is in.
+    assert box.members.item(0).data(DETAIL_ROLE) == "Roofer"
+    assert "• Roofer" in box.members.item(0).toolTip()
+    assert not roofer.ordered
+    assert [it.text() for it in box.members.selectedItems()] == ["D", "A"]
+    # Move two out again.
+    box.members.clearSelection()
+    box.members.item(0).setSelected(True)
+    box.members.item(1).setSelected(True)
+    box.remove_selected()
+    assert box.member_names() == ["A"]
+    assert box.other_names() == ["D", "G"]
+    assert box.list.item(0).data(COUNT_ROLE) == 1
+    assert _rows(box) == [("Roofer", False)]            # G left the set
+    assert [c.name for c in ss.members(scene, roofer)] == ["A"]
+    assert hist.undo()
+    box.refresh()
+    assert box.member_names() == ["D", "G", "A"]
+    assert hist.undo()
+    box.refresh()
+    assert box.member_names() == ["G"]
+
+
+def test_moving_the_cover_out_clears_it(doc):
+    from core.history import EditSheetSetCommand
+    win, scene, explorer, comp = doc
+    hist = win.viewport.history
+    a, g, d = (_sheet(scene, n) for n in "AGD")
+    st = SheetSet("Permit")
+    hist.execute(AddSheetSetCommand(st, [a, g]))
+    hist.execute(EditSheetSetCommand(st, cover=a))
+    box = comp.plan_sets
+    box.set_sheet(g)
+    assert box.member_names() == ["A", "G"]             # the cover first
+    box.members.item(0).setSelected(True)
+    box.remove_selected()
+    assert st.cover_uid == "" and box.member_names() == ["G"]
+
+
 def test_the_sheet_list_hides_without_sets(doc):
     win, scene, explorer, comp = doc
     box = comp.plan_sets

@@ -4379,5 +4379,9 @@
  "Dynamic fields for texts and the title block: {proyecto} {autor} {lamina} {escala} {escena} {fecha} {archivo} {hoja} {total} {juego}": "Dynamische Felder für Texte und das Schriftfeld: {proyecto} {autor} {lamina} {escala} {escena} {fecha} {archivo} {hoja} {total} {juego}",
  "The sheets of this plan set, in the order it prints them. Double-click a sheet to open it. A greyed sheet is not printed: its printer, or a folder's, is off.": "Die Blätter dieses Plansatzes, in der Reihenfolge, in der er sie druckt. Doppelklick auf ein Blatt öffnet es. Ein graues Blatt wird nicht gedruckt: sein Drucker oder der eines Ordners ist aus.",
  "Sheets in «{name}»:": "Blätter in „{name}“:",
- "{name} (cover)": "{name} (Deckblatt)"
+ "{name} (cover)": "{name} (Deckblatt)",
+ "Add the selected sheets to the plan set": "Die ausgewählten Blätter zum Plansatz hinzufügen",
+ "Take the selected sheets out of the plan set": "Die ausgewählten Blätter aus dem Plansatz nehmen",
+ "The sheets not in this plan set. Select some (Ctrl / Shift for several) and press ▲ to add them. Double-click a sheet to open it.": "Die Blätter, die nicht in diesem Plansatz sind. Einige auswählen (Strg / Umschalt für mehrere) und ▲ drücken, um sie hinzuzufügen. Doppelklick auf ein Blatt öffnet es.",
+ "Not in «{name}»:": "Nicht in „{name}“:"
 }

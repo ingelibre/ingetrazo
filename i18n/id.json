@@ -4382,5 +4382,9 @@
  "Dynamic fields for texts and the title block: {proyecto} {autor} {lamina} {escala} {escena} {fecha} {archivo} {hoja} {total} {juego}": "Isian dinamis untuk teks dan kop gambar: {proyecto} {autor} {lamina} {escala} {escena} {fecha} {archivo} {hoja} {total} {juego}",
  "The sheets of this plan set, in the order it prints them. Double-click a sheet to open it. A greyed sheet is not printed: its printer, or a folder's, is off.": "Lembar-lembar set ini, dalam urutan set mencetaknya. Klik ganda lembar untuk membukanya. Lembar berwarna abu-abu tidak dicetak: pencetaknya, atau pencetak sebuah folder, mati.",
  "Sheets in «{name}»:": "Lembar di «{name}»:",
- "{name} (cover)": "{name} (sampul)"
+ "{name} (cover)": "{name} (sampul)",
+ "Add the selected sheets to the plan set": "Tambahkan lembar terpilih ke set",
+ "Take the selected sheets out of the plan set": "Keluarkan lembar terpilih dari set",
+ "The sheets not in this plan set. Select some (Ctrl / Shift for several) and press ▲ to add them. Double-click a sheet to open it.": "Lembar yang tidak ada di set ini. Pilih beberapa (Ctrl / Shift untuk lebih dari satu) lalu tekan ▲ untuk menambahkannya. Klik ganda lembar untuk membukanya.",
+ "Not in «{name}»:": "Tidak di «{name}»:"
 }

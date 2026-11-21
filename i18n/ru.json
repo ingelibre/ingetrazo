@@ -4379,5 +4379,9 @@
  "Dynamic fields for texts and the title block: {proyecto} {autor} {lamina} {escala} {escena} {fecha} {archivo} {hoja} {total} {juego}": "Динамические поля для текста и штампа: {proyecto} {autor} {lamina} {escala} {escena} {fecha} {archivo} {hoja} {total} {juego}",
  "The sheets of this plan set, in the order it prints them. Double-click a sheet to open it. A greyed sheet is not printed: its printer, or a folder's, is off.": "Листы этого комплекта в том порядке, в котором он их печатает. Дважды щёлкните лист, чтобы открыть его. Серый лист не печатается: его принтер или принтер папки выключен.",
  "Sheets in «{name}»:": "Листы в «{name}»:",
- "{name} (cover)": "{name} (обложка)"
+ "{name} (cover)": "{name} (обложка)",
+ "Add the selected sheets to the plan set": "Добавить выбранные листы в комплект",
+ "Take the selected sheets out of the plan set": "Убрать выбранные листы из комплекта",
+ "The sheets not in this plan set. Select some (Ctrl / Shift for several) and press ▲ to add them. Double-click a sheet to open it.": "Листы, не входящие в этот комплект. Выберите несколько (Ctrl / Shift для нескольких) и нажмите ▲, чтобы добавить их. Дважды щёлкните лист, чтобы открыть его.",
+ "Not in «{name}»:": "Не в «{name}»:"
 }

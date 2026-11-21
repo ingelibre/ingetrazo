@@ -2706,17 +2706,22 @@ class EditSheetSetCommand(_SheetSetCommand):
     each only when given (``None`` leaves it)."""
 
     def __init__(self, sheet_set, sheets=None, cover=None,
-                 description=None) -> None:
+                 description=None, ordered=True) -> None:
         super().__init__()
         self.sheet_set = sheet_set
         self.sheets = None if sheets is None else list(sheets)
         self.cover = cover            # a sheet, False to clear, None: keep
         self.description = description
+        #: With ``sheets``: they print in that order from now on (True), or
+        #: in the explorer's (False). The Plan sets box only moves sheets
+        #: in and out, so it passes the set's own ``ordered``.
+        self.ordered = ordered
 
     def _apply(self, scene) -> None:
         from core import sheet_sets as ss
         if self.sheets is not None:
-            ss.set_members(scene, self.sheet_set, self.sheets)
+            ss.set_members(scene, self.sheet_set, self.sheets,
+                           ordered=self.ordered)
         if self.cover is False:
             self.sheet_set.cover_uid = ""
         elif self.cover is not None:

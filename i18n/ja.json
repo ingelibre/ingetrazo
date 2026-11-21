@@ -4379,5 +4379,9 @@
  "Dynamic fields for texts and the title block: {proyecto} {autor} {lamina} {escala} {escena} {fecha} {archivo} {hoja} {total} {juego}": "テキストと表題欄の動的フィールド: {proyecto} {autor} {lamina} {escala} {escena} {fecha} {archivo} {hoja} {total} {juego}",
  "The sheets of this plan set, in the order it prints them. Double-click a sheet to open it. A greyed sheet is not printed: its printer, or a folder's, is off.": "このセットのシートを、印刷される順に表示します。シートをダブルクリックすると開きます。灰色のシートは印刷されません:そのプリンター、またはフォルダーのプリンターがオフです。",
  "Sheets in «{name}»:": "「{name}」のシート:",
- "{name} (cover)": "{name}(表紙)"
+ "{name} (cover)": "{name}(表紙)",
+ "Add the selected sheets to the plan set": "選択したシートをセットに追加",
+ "Take the selected sheets out of the plan set": "選択したシートをセットから外す",
+ "The sheets not in this plan set. Select some (Ctrl / Shift for several) and press ▲ to add them. Double-click a sheet to open it.": "このセットに含まれないシートです。いくつか選択して(複数は Ctrl / Shift)▲を押すと追加されます。シートをダブルクリックすると開きます。",
+ "Not in «{name}»:": "「{name}」以外:"
 }

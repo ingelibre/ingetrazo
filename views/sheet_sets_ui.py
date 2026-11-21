@@ -21,9 +21,11 @@ from pathlib import Path
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QPalette
-from PySide6.QtWidgets import (QComboBox, QHBoxLayout, QLabel,
+from PySide6.QtWidgets import (QApplication, QComboBox, QHBoxLayout, QLabel,
                                QListWidget, QListWidgetItem, QMessageBox,
-                               QToolButton, QVBoxLayout, QWidget)
+                               QStyle, QStyledItemDelegate,
+                               QStyleOptionViewItem, QToolButton,
+                               QVBoxLayout, QWidget)
 
 from core import sheet_sets as ss
 from core.i18n import tr
@@ -52,6 +54,85 @@ def fill_set_combo(combo: QComboBox, scene, current=ALL_SHEETS) -> None:
     at = combo.findData(current) if current is not None else 0
     combo.setCurrentIndex(max(0, at))
     combo.blockSignals(False)
+
+
+#: Item data of the lists' extra columns: a set's sheet count, and the
+#: names after the name (a set's sheets, a sheet's sets), cut to fit with
+#: «…» — the row's tooltip has them all.
+COUNT_ROLE = Qt.UserRole + 1
+DETAIL_ROLE = Qt.UserRole + 2
+
+#: The share of the row the name keeps when a detail column follows it.
+_NAME_SHARE = 0.42
+_GAP = 8
+
+
+class _Columns(QStyledItemDelegate):
+    """Columns in a list: name · count · details. A delegate rather than a
+    table, so a row stays a list item that ticks and renames in place."""
+
+    def _parts(self, opt, index, widget):
+        """The rectangles of the name, the count and the details."""
+        style = widget.style() if widget is not None else QApplication.style()
+        text = style.subElementRect(QStyle.SE_ItemViewItemText, opt, widget)
+        fm = opt.fontMetrics
+        n = index.data(COUNT_ROLE)
+        detail = index.data(DETAIL_ROLE)
+        count_w = fm.horizontalAdvance("000") + _GAP if n is not None else 0
+        if detail is None:
+            name_w = text.width() - count_w
+        else:
+            name_w = max(int(opt.rect.width() * _NAME_SHARE)
+                         - (text.left() - opt.rect.left()),
+                         fm.horizontalAdvance("M" * 4))
+        name = text.adjusted(0, 0, name_w - text.width(), 0)
+        count = name.adjusted(name_w, 0, count_w, 0)
+        rest = text.adjusted(name_w + count_w + _GAP, 0, 0, 0)
+        return name, count, rest
+
+    def paint(self, painter, option, index) -> None:
+        if index.data(COUNT_ROLE) is None and index.data(DETAIL_ROLE) is None:
+            super().paint(painter, option, index)
+            return
+        opt = QStyleOptionViewItem(option)
+        self.initStyleOption(opt, index)
+        widget = opt.widget
+        style = widget.style() if widget is not None else QApplication.style()
+        label, opt.text = opt.text, ""
+        # The row as Qt draws it — background, selection, tick — no text.
+        style.drawControl(QStyle.CE_ItemViewItem, opt, painter, widget)
+        name_r, count_r, rest_r = self._parts(opt, index, widget)
+        selected = bool(opt.state & QStyle.State_Selected)
+        main = opt.palette.color(QPalette.HighlightedText if selected
+                                 else QPalette.Text)
+        muted = main if selected else opt.palette.color(QPalette.Disabled,
+                                                        QPalette.Text)
+        fm = opt.fontMetrics
+        painter.save()
+        painter.setFont(opt.font)
+        painter.setPen(main)
+        align = int(Qt.AlignLeft | Qt.AlignVCenter)
+        painter.drawText(name_r, align,
+                         fm.elidedText(label, Qt.ElideRight, name_r.width()))
+        painter.setPen(muted)
+        n = index.data(COUNT_ROLE)
+        if n is not None:
+            painter.drawText(count_r, int(Qt.AlignRight | Qt.AlignVCenter),
+                             str(n))
+        detail = index.data(DETAIL_ROLE)
+        if detail:
+            painter.drawText(rest_r, align, fm.elidedText(
+                detail, Qt.ElideRight, max(0, rest_r.width())))
+        painter.restore()
+
+    def updateEditorGeometry(self, editor, option, index) -> None:  # noqa: N802
+        super().updateEditorGeometry(editor, option, index)
+        opt = QStyleOptionViewItem(option)
+        self.initStyleOption(opt, index)
+        name_r, _count, _rest = self._parts(opt, index, opt.widget)
+        g = editor.geometry()
+        g.setRight(max(name_r.right(), g.left() + 40))
+        editor.setGeometry(g)
 
 
 class PlanSetsBox(QWidget):
@@ -106,6 +187,9 @@ class PlanSetsBox(QWidget):
         _theme_muted(caption)
         lay.addWidget(caption)
         self.list = QListWidget()
+        # Kept here too: a delegate Python lets go of is gone under the view.
+        self._delegates = [_Columns(self.list)]
+        self.list.setItemDelegate(self._delegates[0])
         self.list.setMinimumHeight(90)
         self.list.setMaximumHeight(150)
         self.list.setEditTriggers(QListWidget.DoubleClicked
@@ -121,17 +205,61 @@ class PlanSetsBox(QWidget):
         self.members_caption = QLabel()
         _theme_muted(self.members_caption)
         lay.addWidget(self.members_caption)
-        self.members = QListWidget()
-        self.members.setMinimumHeight(90)
-        self.members.setMaximumHeight(180)
-        self.members.setEditTriggers(QListWidget.NoEditTriggers)
-        self.members.setToolTip(tr(
+        self.members = self._sheet_list(tr(
             "The sheets of this plan set, in the order it prints them. "
             "Double-click a sheet to open it. A greyed sheet is not "
             "printed: its printer, or a folder's, is off."))
-        self.members.itemActivated.connect(self._open_member)
         lay.addWidget(self.members)
+        # ▲ / ▼ between the set's sheets and the others: the selected
+        # sheets (several with Ctrl / Shift) move in or out, one undo step.
+        moves = QHBoxLayout()
+        moves.setSpacing(2)
+        moves.addStretch(1)
+
+        def arrow(kind, tip, slot):
+            b = QToolButton()
+            b.setAutoRaise(True)
+            b.setArrowType(kind)
+            b.setToolTip(tip)
+            b.setAccessibleName(tip)
+            b.clicked.connect(lambda _checked=False: slot())
+            moves.addWidget(b)
+            return b
+
+        self.add_sheets_btn = arrow(
+            Qt.UpArrow, tr("Add the selected sheets to the plan set"),
+            self.add_selected)
+        self.remove_sheets_btn = arrow(
+            Qt.DownArrow, tr("Take the selected sheets out of the plan set"),
+            self.remove_selected)
+        moves.addStretch(1)
+        self.moves_row = QWidget()
+        self.moves_row.setLayout(moves)
+        moves.setContentsMargins(0, 0, 0, 0)
+        lay.addWidget(self.moves_row)
+        self.others_caption = QLabel()
+        _theme_muted(self.others_caption)
+        lay.addWidget(self.others_caption)
+        self.others = self._sheet_list(tr(
+            "The sheets not in this plan set. Select some (Ctrl / Shift for "
+            "several) and press ▲ to add them. Double-click a sheet to "
+            "open it."))
+        lay.addWidget(self.others)
+        self.members.itemSelectionChanged.connect(self._sync_moves)
+        self.others.itemSelectionChanged.connect(self._sync_moves)
         self._sync_buttons()
+
+    def _sheet_list(self, tip: str) -> QListWidget:
+        lst = QListWidget()
+        self._delegates.append(_Columns(lst))
+        lst.setItemDelegate(self._delegates[-1])
+        lst.setMinimumHeight(80)
+        lst.setMaximumHeight(160)
+        lst.setEditTriggers(QListWidget.NoEditTriggers)
+        lst.setSelectionMode(QListWidget.ExtendedSelection)
+        lst.setToolTip(tip)
+        lst.itemActivated.connect(self._open_member)
+        return lst
 
     # ---- model ----------------------------------------------------------------
     def _scene(self):
@@ -167,14 +295,19 @@ class PlanSetsBox(QWidget):
         self._updating = True
         self.list.clear()
         for st in ss.sets_of(scene):
-            n = len(ss.members(scene, st))
+            names = [c.name for c in ss.members(scene, st)]
+            n = len(names)
             item = QListWidgetItem(st.name)
             item.setData(Qt.UserRole, st)
             item.setFlags(item.flags() | Qt.ItemIsUserCheckable
                           | Qt.ItemIsEditable)
             item.setCheckState(Qt.Checked if id(st) in mine
                                else Qt.Unchecked)
-            item.setToolTip(tr("{name}: {n} sheets", name=st.name, n=n))
+            item.setToolTip("\n".join(
+                [tr("{name}: {n} sheets", name=st.name, n=n)]
+                + [f"• {x}" for x in names]))
+            item.setData(COUNT_ROLE, n)
+            item.setData(DETAIL_ROLE, ", ".join(names))
             self.list.addItem(item)
             if st is current:
                 self.list.setCurrentItem(item)
@@ -197,25 +330,30 @@ class PlanSetsBox(QWidget):
         self.delete_btn.setEnabled(has)
         self._show_members()
 
-    def _show_members(self) -> None:
-        """The selected set's sheets as the set prints them, cover first;
-        the open sheet in bold, the unprinted ones greyed."""
+    def _show_members(self, select=()) -> None:
+        """The selected set's sheets as the set prints them, cover first,
+        and below the other sheets in the explorer's order; the open sheet
+        in bold, the unprinted ones greyed, the sheets in ``select``
+        selected (the ones just moved)."""
         from core.sheet_folders import sheet_printed
         st = self.current_set()
         self.members.clear()
-        self.members_caption.setVisible(st is not None)
-        self.members.setVisible(st is not None)
+        self.others.clear()
+        for w in (self.members_caption, self.members, self.moves_row,
+                  self.others_caption, self.others):
+            w.setVisible(st is not None)
         if st is None:
+            self._sync_moves()
             return
         scene = self._scene()
         self.members_caption.setText(tr("Sheets in «{name}»:",
                                         name=st.name))
-        pal = self.members.palette()
-        muted = pal.color(QPalette.Disabled, QPalette.Text)
-        for sheet in ss.members(scene, st):
-            text = sheet.name
-            if st.cover_uid and getattr(sheet, "uid", "") == st.cover_uid:
-                text = tr("{name} (cover)", name=sheet.name)
+        self.others_caption.setText(tr("Not in «{name}»:", name=st.name))
+        muted = self.members.palette().color(QPalette.Disabled,
+                                             QPalette.Text)
+        chosen = {id(c) for c in select}
+
+        def put(lst, sheet, text):
             item = QListWidgetItem(text)
             item.setData(Qt.UserRole, sheet)
             if sheet is self._sheet:
@@ -224,12 +362,71 @@ class PlanSetsBox(QWidget):
                 item.setFont(f)
             if not sheet_printed(scene, sheet):
                 item.setForeground(muted)
-            self.members.addItem(item)
+            # Which plan sets the sheet is in: a column, all in the tooltip.
+            sets = [s.name for s in ss.sets_of_sheet(scene, sheet)]
+            item.setData(DETAIL_ROLE, ", ".join(sets))
+            item.setToolTip("\n".join(
+                [sheet.name, tr("Plan sets") + ":"]
+                + [f"• {x}" for x in sets]) if sets else sheet.name)
+            lst.addItem(item)
+            item.setSelected(id(sheet) in chosen)
+
+        inside = ss.members(scene, st)
+        for sheet in inside:
+            text = sheet.name
+            if st.cover_uid and getattr(sheet, "uid", "") == st.cover_uid:
+                text = tr("{name} (cover)", name=sheet.name)
+            put(self.members, sheet, text)
+        ids = {id(c) for c in inside}
+        for sheet in scene.compositions:
+            if id(sheet) not in ids:
+                put(self.others, sheet, sheet.name)
+        self._sync_moves()
+
+    def _sync_moves(self) -> None:
+        self.add_sheets_btn.setEnabled(bool(self.others.selectedItems()))
+        self.remove_sheets_btn.setEnabled(
+            bool(self.members.selectedItems()))
+
+    @staticmethod
+    def _picked(lst) -> list:
+        """The selected sheets of ``lst``, top to bottom."""
+        return [lst.item(i).data(Qt.UserRole) for i in range(lst.count())
+                if lst.item(i).isSelected()]
+
+    def add_selected(self) -> None:
+        """▲: the sheets selected below go into the set."""
+        self._move(self._picked(self.others), add=True)
+
+    def remove_selected(self) -> None:
+        """▼: the sheets selected in the set leave it (they stay in the
+        document)."""
+        self._move(self._picked(self.members), add=False)
+
+    def _move(self, sheets, add: bool) -> None:
+        from core.history import EditSheetSetCommand
+        st = self.current_set()
+        if st is None or not sheets:
+            return
+        now = ss.members(self._scene(), st)
+        gone = {id(c) for c in sheets}
+        new = now + list(sheets) if add else \
+            [c for c in now if id(c) not in gone]
+        cover = False if not add and st.cover_uid and any(
+            getattr(c, "uid", "") == st.cover_uid for c in sheets) else None
+        self._execute(EditSheetSetCommand(st, new, cover=cover,
+                                          ordered=st.ordered))
+        self._show_members(select=sheets)
 
     def member_names(self) -> list:
         """The sheets the list of the selected set's sheets shows."""
         return [self.members.item(i).data(Qt.UserRole).name
                 for i in range(self.members.count())]
+
+    def other_names(self) -> list:
+        """The sheets the list of the sheets not in the set shows."""
+        return [self.others.item(i).data(Qt.UserRole).name
+                for i in range(self.others.count())]
 
     def _open_member(self, item) -> None:
         sheet = item.data(Qt.UserRole) if item is not None else None

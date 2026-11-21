@@ -4379,5 +4379,9 @@
  "Dynamic fields for texts and the title block: {proyecto} {autor} {lamina} {escala} {escena} {fecha} {archivo} {hoja} {total} {juego}": "文本和标题栏的动态字段: {proyecto} {autor} {lamina} {escala} {escena} {fecha} {archivo} {hoja} {total} {juego}",
  "The sheets of this plan set, in the order it prints them. Double-click a sheet to open it. A greyed sheet is not printed: its printer, or a folder's, is off.": "此图纸集中的图纸,按打印顺序排列。双击图纸即可打开。灰色图纸不会打印:它的打印开关或所在文件夹的打印开关已关闭。",
  "Sheets in «{name}»:": "「{name}」中的图纸:",
- "{name} (cover)": "{name}(封面)"
+ "{name} (cover)": "{name}(封面)",
+ "Add the selected sheets to the plan set": "将所选图纸加入图纸集",
+ "Take the selected sheets out of the plan set": "将所选图纸移出图纸集",
+ "The sheets not in this plan set. Select some (Ctrl / Shift for several) and press ▲ to add them. Double-click a sheet to open it.": "不在此图纸集中的图纸。选择若干张(多选用 Ctrl / Shift)并按 ▲ 加入。双击图纸即可打开。",
+ "Not in «{name}»:": "不在「{name}」中:"
 }
