@@ -40,7 +40,8 @@ from views.viewport._support import (_PERF, _NO_BACK_TINT, _plog, GL_LINES,
                                      fog_backdrop_strength, fog_backdrop,
                                      fog_sky_colors, XRAY_HIDDEN_EDGE_FADE,
                                      selection_dot_color, _box_edges,
-                                     _axes_vertices, _box_edge_vertices,
+                                     _axes_vertices, _axes_vertices_key,
+                                     _box_edge_vertices,
                                      shown_guides, _guide_vertices,
                                      _baked_bytes, _NO_PAINT)
 
@@ -1125,11 +1126,17 @@ class RenderMixin:
             # No axes on a plan sheet / styled composer frame, nor the
             # world's once Camera ▸ Axes is off (an open group keeps its own).
             spacing = max(self.camera.distance * 0.008, 1e-4)
-            axes_coords, self._axes_spans = _axes_vertices(spacing)
-            data = axes_coords.tobytes()
-            self._axes_vbo.bind()
-            self._axes_vbo.allocate(data, len(data))
-            self._axes_vbo.release()
+            # Built and uploaded again only when the spacing or the drawing
+            # axes changed: an orbit or a pan keeps the distance, and the
+            # same vertices went up on every frame (~1 ms on the plaza).
+            akey = _axes_vertices_key(spacing)
+            if getattr(self, "_axes_key", None) != akey:
+                axes_coords, self._axes_spans = _axes_vertices(spacing)
+                data = axes_coords.tobytes()
+                self._axes_vbo.bind()
+                self._axes_vbo.allocate(data, len(data))
+                self._axes_vbo.release()
+                self._axes_key = akey
             self._axes_vao.bind()
             self._gl.glDepthMask(GL_FALSE)
             for name, rgb in (("x", (0.86, 0.22, 0.27)),   # red
