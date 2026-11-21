@@ -60,6 +60,9 @@ fn ingetrazo_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(faces_view, m)?)?;
     m.add_function(wrap_pyfunction!(preview_faces_bake, m)?)?;
     m.add_function(wrap_pyfunction!(preview_sweep_bake, m)?)?;
+    // Bloque 6c: a push's drag preview (textured mesh faces, sweep lines).
+    m.add_function(wrap_pyfunction!(textured_faces_bake, m)?)?;
+    m.add_function(wrap_pyfunction!(preview_sweep_lines, m)?)?;
     m.add_class::<GlReplay>()?;
     m.add_class::<InstanceProto>()?;
     m.add_class::<InstanceSet>()?;
@@ -1738,4 +1741,82 @@ fn preview_sweep_bake<'py>(
         preview::bake(&faces, &mats, l, h)
     });
     preview_out(py, b)
+}
+
+// Bloque 6c: a push's drag preview.
+
+/// views.viewport.chunks.ChunkCacheMixin._append_textured_face over MESH
+/// faces given as arrays (``pos``/``ring_sizes``/``ring_counts``/
+/// ``face_mat``/``mats`` as in preview_faces_bake, every face a texture
+/// row). Returns ``(pos+uv float32 bytes, ends, shades, tris, tri_ends)``:
+/// face ``k``'s floats are ``ends[k]..ends[k+1]`` (counted in floats), its
+/// shade ``shades[k]`` (NaN: Python bakes that face), its ``_tris_of``
+/// triangles the corner indices ``tris[tri_ends[k]..tri_ends[k+1]]`` into
+/// its own corners, three per triangle.
+#[pyfunction]
+#[allow(clippy::too_many_arguments, clippy::type_complexity)]
+fn textured_faces_bake<'py>(
+    py: Python<'py>,
+    pos: PyReadonlyArray2<'_, f32>,
+    ring_sizes: Vec<i64>,
+    ring_counts: Vec<i64>,
+    face_mat: Vec<i64>,
+    mats: PyReadonlyArray2<'_, f64>,
+    light: (f32, f32, f32),
+    hypot: &str,
+) -> PyResult<(Bound<'py, PyBytes>, Bound<'py, PyArray1<u64>>, Bound<'py, PyArray1<f64>>,
+               Bound<'py, PyArray1<u32>>, Bound<'py, PyArray1<u64>>)> {
+    let h = hypot_of(hypot)?;
+    let p = pos.as_array();
+    let m = mats.as_array();
+    let err = pyo3::exceptions::PyValueError::new_err;
+    let mats = preview_mats(&m).map_err(err)?;
+    let rings = preview_rings(&p, &ring_sizes, &ring_counts).map_err(err)?;
+    if face_mat.len() != rings.len() || face_mat.iter().any(|&k| k < 0 || k as usize >= mats.len()) {
+        return Err(err("face materials"));
+    }
+    let faces: Vec<preview::PFace> = rings.into_iter().zip(&face_mat)
+        .map(|((pos, rings), &k)| preview::PFace { pos, rings, mat: k as usize }).collect();
+    let l = facegeom::V3(light.0, light.1, light.2);
+    let b = py.detach(|| preview::bake_textured(&faces, &mats, l, h));
+    Ok((PyBytes::new(py, &f32_bytes(&b.floats)), PyArray1::from_vec(py, b.ends),
+        PyArray1::from_vec(py, b.shades), PyArray1::from_vec(py, b.tris),
+        PyArray1::from_vec(py, b.tri_ends)))
+}
+
+/// tools.pushpull.PushPullTool.rubber_band_lines of the sweep
+/// preview_sweep_bake bakes (same ``pos``/``ring_sizes``/``ring_counts``/
+/// ``offs``) as the float32 bytes ``Viewport._draw_rubber_band`` uploads:
+/// ``a.xyz, b.xyz`` per segment, face by face. ``None`` for a NaN or
+/// infinite number (Python draws those).
+#[pyfunction]
+fn preview_sweep_lines<'py>(
+    py: Python<'py>,
+    pos: PyReadonlyArray2<'_, f32>,
+    ring_sizes: Vec<i64>,
+    ring_counts: Vec<i64>,
+    offs: PyReadonlyArray2<'_, f32>,
+    curve_cos: f64,
+    hypot: &str,
+) -> PyResult<Option<Bound<'py, PyBytes>>> {
+    let h = hypot_of(hypot)?;
+    let p = pos.as_array();
+    let o = offs.as_array();
+    let err = pyo3::exceptions::PyValueError::new_err;
+    let rings = preview_rings(&p, &ring_sizes, &ring_counts).map_err(err)?;
+    let n = rings.len();
+    if o.shape()[0] != n || (n > 0 && o.shape()[1] != 3) {
+        return Err(err("sweep rows"));
+    }
+    let out = py.detach(|| {
+        let mut out = Vec::new();
+        for (k, (pos, rings)) in rings.iter().enumerate() {
+            let off = facegeom::V3(o[[k, 0]], o[[k, 1]], o[[k, 2]]);
+            if !preview::sweep_lines(pos, rings, off, curve_cos, h, &mut out) {
+                return None;
+            }
+        }
+        Some(out)
+    });
+    Ok(out.map(|v| PyBytes::new(py, &f32_bytes(&v))))
 }

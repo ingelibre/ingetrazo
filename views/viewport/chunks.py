@@ -26,8 +26,31 @@ from views.viewport._support import (_PERF, _plog, _chunk_uid, _pv_hole,
 Viewport = None
 
 
+def _corner_bytes(out) -> bytes:
+    """The corners of a textured face's ``pos(3) + uv(2)`` floats, as the
+    float32 ``xyz`` the default-back pass takes."""
+    import numpy as np
+    return np.frombuffer(out, dtype=np.float32).reshape(-1, 5)[:, :3].tobytes()
+
+
+def _tex_face_key(face, tex) -> tuple:
+    """What :meth:`ChunkCacheMixin._append_textured_face` remembers a mesh
+    face's textured floats by: its exact corners (holes too) and the whole
+    map."""
+    return (tuple([(p.x(), p.y(), p.z())
+                   for p in [v.position for v in face.loop]]),
+            tuple([tuple([(v.position.x(), v.position.y(),
+                           v.position.z()) for v in h])
+                   for h in face.hole_loops]),
+            repr(sorted(tex.items())))
+
+
 class ChunkCacheMixin:
     """Mesh-to-GPU chunk caches: edge and face sync, fingerprints, on-disk cache, culling spans."""
+
+    #: The textured faces the walk under way has keys for (see
+    #: :meth:`_seed_textured_native`); None between walks.
+    _tex_keys_now = None
 
     def _newell_of(self, face):
         """The face's raw Newell vector, memoised per scene version — ONE
@@ -122,6 +145,161 @@ class ChunkCacheMixin:
             per_face[fi].append((pts[a], pts[b], pts[c]))
         for (f, _rings), tris in zip(big, per_face):
             memo[1][id(f)] = (f, tris)
+
+    #: At least this many textured faces to bake before the engine takes
+    #: them (:meth:`_seed_textured_native`); fewer stay in Python.
+    NATIVE_TEX_MIN_FACES = 4
+
+    def _seed_textured_native(self, faces, paint=None, skip=(),
+                              force: bool = False) -> dict:
+        """Bake the textured mesh faces among ``faces`` that
+        :meth:`_append_textured_face` would walk again (its memo misses)
+        in one call to the engine (``textured_faces_bake``), and keep what
+        it made where that walk and ``_tris_of`` look first: the same
+        floats in the same run, the same triangles of the same corners.
+        A push that moves the cap of a 100-sided textured pillar changes
+        every wall each frame: their earcut, Newell and UV walks were most
+        of the ~10 ms each paint of the drag took (21-11). ``paint``: the
+        open group's (``effective_attrs``); ``skip``: faces not drawn.
+        Without the engine, or for a face it leaves (a NaN corner), the
+        Python walk does what it always did.
+
+        Returns ``{id(face): (face, key, map, dback)}``: the memo key worked
+        out for each textured face, and its triangles' corners as the
+        default-back pass takes them (float32 bytes, or None), for the walk
+        that follows at once (see ``_tex_keys_now``) — the corners read
+        once, not three times.
+
+        Only once the engine's preview bake passed its check on this
+        machine (``Viewport._preview_native_state``, which bakes a sample
+        of these faces both ways too); ``force``: that check itself."""
+        import numpy as np
+        import core._native as _native
+        nat = _native.native
+        if (nat is None or _native.qt_hypot() is None
+                or not hasattr(nat, "textured_faces_bake")
+                or not (force or Viewport._preview_native_state is True)):
+            return {}
+        from core.materials import effective_attrs
+        memo = self.__dict__.get("_tex_face_memo")
+        if memo is None:
+            memo = self.__dict__["_tex_face_memo"] = {}
+        todo = []
+        keys: dict = {}
+        for f in faces:
+            if f in skip or not hasattr(f, "loop"):
+                continue
+            attrs = effective_attrs(f.attrs, paint)
+            tex = attrs.get("texture")
+            if tex is None or not tex.get("path"):
+                continue
+            ckey = _tex_face_key(f, tex)
+            slot = (id(f), ckey[2])
+            hit = memo.get(slot)
+            if hit is not None and hit[0] is f and hit[1] == ckey:
+                keys[id(f)] = (f, ckey, tex, _corner_bytes(hit[3]))
+                continue
+            keys[id(f)] = (f, ckey, tex, None)
+            todo.append((f, tex, ckey, slot))
+        if len(todo) < self.NATIVE_TEX_MIN_FACES:
+            return keys
+        try:
+            xyz, sizes, counts, fmat = [], [], [], []
+            table = ([], [], [], {}, {})
+            rows: dict = {}                  # one row per map, not per face
+            for f, tex, ckey, _slot in todo:
+                row = rows.get(ckey[2])
+                if row is None:
+                    row = rows[ckey[2]] = self._preview_mat(
+                        {"texture": tex}, table)
+                fmat.append(row)
+                counts.append(1 + len(ckey[1]))
+                sizes.append(len(ckey[0]))
+                xyz.extend(ckey[0])
+                for h in ckey[1]:
+                    sizes.append(len(h))
+                    xyz.extend(h)
+            pos = np.array(xyz, dtype=np.float32).reshape(-1, 3)
+            mats = np.array(table[0], dtype=np.float64).reshape(-1, 14)
+            lt = self._LIGHT
+            raw, ends, shades, tris, tri_ends = nat.textured_faces_bake(
+                pos, sizes, counts, fmat, mats, (lt.x(), lt.y(), lt.z()),
+                _native.qt_hypot())
+        except Exception:  # noqa: BLE001 — the Python walk bakes them
+            return keys
+        raw = memoryview(raw)
+        ends, tri_ends = ends.tolist(), tri_ends.tolist()
+        shades, tris = shades.tolist(), tris.tolist()
+        tri_memo = getattr(self, "_tri_memo", None)
+        if tri_memo is None or tri_memo[0] != _cache_ver(self):
+            tri_memo = self._tri_memo = (_cache_ver(self), {})
+        if len(memo) + len(todo) > getattr(self, "TEX_FACE_MEMO_MAX", 300_000):
+            memo.clear()
+        for k, (f, tex, ckey, slot) in enumerate(todo):
+            shade = shades[k]
+            if shade != shade:               # NaN: Python bakes this one
+                continue
+            out = array("f")
+            out.frombytes(raw[4 * ends[k]:4 * ends[k + 1]])
+            memo[slot] = (f, ckey, (tex["path"], shade), out)
+            keys[id(f)] = (f, ckey, tex, _corner_bytes(out))
+            hit = tri_memo[1].get(id(f))
+            if hit is None or hit[0] is not f:
+                pts = list(f.vertices)
+                for h in f.holes:
+                    pts.extend(h)
+                ix = tris[tri_ends[k]:tri_ends[k + 1]]
+                tri_memo[1][id(f)] = (f, [(pts[ix[i]], pts[ix[i + 1]],
+                                           pts[ix[i + 2]])
+                                          for i in range(0, len(ix), 3)])
+        return keys
+
+    def _textured_seed_matches(self, sample) -> bool:
+        """Whether :meth:`_seed_textured_native` keeps, for mesh faces made
+        of the preview faces ``sample`` under every map of
+        ``core.preview_probe``, the very floats, runs and triangles the
+        Python walk makes (part of ``_check_preview_native``). The view's
+        own memos are put back as they were."""
+        from core.preview_probe import MATERIALS
+        from core.mesh import Mesh
+        maps = [m["texture"] for m in MATERIALS if m and "texture" in m]
+        faces = []
+        for k, f in enumerate(sample):
+            if len(f.vertices) < 3:
+                continue
+            try:
+                mf = Mesh().add_face(list(f.vertices),
+                                     [list(h) for h in f.holes] or None)
+            except Exception:  # noqa: BLE001 — not a face a mesh takes
+                continue
+            mf.attrs = {"texture": dict(maps[k % len(maps)])}
+            faces.append(mf)
+        d = self.__dict__
+        saved = (d.get("_tex_face_memo"), getattr(self, "_tri_memo", None),
+                 getattr(self, "_newell_memo", None))
+
+        def walk(seed):
+            d["_tex_face_memo"] = {}
+            self._tri_memo = None
+            self._newell_memo = None
+            if seed:
+                self._seed_textured_native(faces, force=True)
+                if len(d["_tex_face_memo"]) != len(faces):
+                    return None
+            by_tex: dict = {}
+            tris = []
+            for f in faces:
+                self._append_textured_face(by_tex, f, f.attrs["texture"])
+                tris.append([tuple(p.toTuple() for p in t)
+                             for t in self._tris_of(f)])
+            return [(k, b.tobytes()) for k, b in by_tex.items()], tris
+
+        try:
+            got = walk(True)
+            return got is not None and got == walk(False)
+        finally:
+            d["_tex_face_memo"] = saved[0] if saved[0] is not None else {}
+            self._tri_memo, self._newell_memo = saved[1], saved[2]
 
     def _normal_of(self, face):
         """``face.normal()`` memoised per scene version (see _tris_of):
@@ -534,10 +712,18 @@ class ChunkCacheMixin:
             fcull = bucket_back(face)
             if back_is_default(attrs):
                 db = sink["dback"]
-                for t0, t1, t2 in self._tris_of(face):
-                    db.extend([t0.x(), t0.y(), t0.z(),
-                               t1.x(), t1.y(), t1.z(),
-                               t2.x(), t2.y(), t2.z()])
+                # A textured face the seed just baked: its triangles'
+                # corners are the first three of each of its floats.
+                now = getattr(self, "_tex_keys_now", None)
+                got = now.get(id(face)) if now else None
+                if (got is not None and got[0] is face and got[3] is not None
+                        and got[2] is attrs.get("texture")):
+                    db.frombytes(got[3])
+                else:
+                    for t0, t1, t2 in self._tris_of(face):
+                        db.extend([t0.x(), t0.y(), t0.z(),
+                                   t1.x(), t1.y(), t1.z(),
+                                   t2.x(), t2.y(), t2.z()])
             tex = attrs.get("texture")
             op = float(attrs.get("opacity", 1.0))
             if tex is not None and tex.get("path"):
@@ -582,9 +768,14 @@ class ChunkCacheMixin:
                 sink["vcol"].extend(buf)
 
         if not hide_rest:
-            for face in self.scene.loose_mesh.faces:
-                if self.scene.entity_visible(face):
-                    bucket_face(face)
+            self._tex_keys_now = self._seed_textured_native(
+                self.scene.loose_mesh.faces, ctx_paint, suppressed_faces)
+            try:
+                for face in self.scene.loose_mesh.faces:
+                    if self.scene.entity_visible(face):
+                        bucket_face(face)
+            finally:
+                self._tex_keys_now = None
         group_face_spans: list = []   # (bbox, start-within-groups, count)
         gface_start = 0
         dback_parts: list = []        # default-back tint, per group chunk
@@ -685,8 +876,13 @@ class ChunkCacheMixin:
                 sink["vcol"], sink["tex"] = subj_vcol, subj_by_texture
                 sink["dback"] = subj_dback
                 curved_loose.update(_curved_faces(g.mesh))
-                for face in g.mesh.faces:
-                    bucket_face(face)   # push/pull preview suppresses faces
+                self._tex_keys_now = self._seed_textured_native(
+                    g.mesh.faces, ctx_paint, suppressed_faces)
+                try:
+                    for face in g.mesh.faces:
+                        bucket_face(face)   # push/pull preview hides faces
+                finally:
+                    self._tex_keys_now = None
                 sink["vcol"], sink["tex"] = vcol, by_texture
                 sink["dback"] = dback_loose
                 subject_bucketed = True
@@ -1182,12 +1378,14 @@ class ChunkCacheMixin:
             memo = self.__dict__["_tex_face_memo"] = {}
         ckey = None
         if hasattr(face, "loop"):           # a preview face: nothing to keep
-            ckey = (tuple([(p.x(), p.y(), p.z())
-                           for p in [v.position for v in face.loop]]),
-                    tuple([tuple([(v.position.x(), v.position.y(),
-                                   v.position.z()) for v in h])
-                           for h in face.hole_loops]),
-                    repr(sorted(tex.items())))
+            # The key the seed just read (_seed_textured_native), for the
+            # very map it read it with; else read now.
+            now = getattr(self, "_tex_keys_now", None)
+            got = now.get(id(face)) if now else None
+            if got is not None and got[0] is face and got[2] is tex:
+                ckey = got[1]
+            else:
+                ckey = _tex_face_key(face, tex)
             # One slot per face AND map: a two-sided face bakes its front
             # and its back here, each with its own map.
             slot = (id(face), ckey[2])
