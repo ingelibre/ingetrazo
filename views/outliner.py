@@ -51,6 +51,7 @@ from core import outliner
 from core.group import Group
 from core.i18n import tr
 from core.section import SectionPlane
+from views.icons import mark_pixmap
 from views.layers_toolbar import isolate_icon
 from views.side_tree import SideTree, StayOpenMenu, _HeaderButton
 
@@ -143,8 +144,7 @@ def _cube(p, ink, fill=None) -> None:
 
 def _draw(key: str):
     ink = _ink()
-    pm = QPixmap(18, 18)
-    pm.fill(Qt.transparent)
+    pm = mark_pixmap(18)
     p = QPainter(pm)
     p.setRenderHint(QPainter.Antialiasing)
     p.setPen(QPen(ink, 1.2))
@@ -331,8 +331,7 @@ def fill_icon(color, on: bool) -> QIcon:
     """The section fill as a swatch: the style's fill colour, hatched, or
     an empty faint square when the fill is off."""
     ink = _ink()
-    pm = QPixmap(18, 18)
-    pm.fill(Qt.transparent)
+    pm = mark_pixmap(18)
     p = QPainter(pm)
     p.setRenderHint(QPainter.Antialiasing)
     if on:
