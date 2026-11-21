@@ -3851,5 +3851,9 @@
  "Dynamic fields for texts and the title block: {proyecto} {autor} {lamina} {escala} {escena} {fecha} {archivo} {hoja} {total} {juego}": "Динамічні поля для текстів і основного напису: {proyecto} {autor} {lamina} {escala} {escena} {fecha} {archivo} {hoja} {total} {juego}",
  "The sheets of this plan set, in the order it prints them. Double-click a sheet to open it. A greyed sheet is not printed: its printer, or a folder's, is off.": "Аркуші цього комплекту в тому порядку, у якому він їх друкує. Двічі клацніть аркуш, щоб відкрити його. Сірий аркуш не друкується: його принтер або принтер теки вимкнено.",
  "Sheets in «{name}»:": "Аркуші в «{name}»:",
- "{name} (cover)": "{name} (обкладинка)"
+ "{name} (cover)": "{name} (обкладинка)",
+ "Add the selected sheets to the plan set": "Додати вибрані аркуші до комплекту",
+ "Take the selected sheets out of the plan set": "Вилучити вибрані аркуші з комплекту",
+ "The sheets not in this plan set. Select some (Ctrl / Shift for several) and press ▲ to add them. Double-click a sheet to open it.": "Аркуші, що не входять до цього комплекту. Виберіть кілька (Ctrl / Shift для кількох) і натисніть ▲, щоб додати їх. Двічі клацніть аркуш, щоб відкрити його.",
+ "Not in «{name}»:": "Не в «{name}»:"
 }

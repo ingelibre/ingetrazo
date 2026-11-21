@@ -3847,5 +3847,9 @@
  "Dynamic fields for texts and the title block: {proyecto} {autor} {lamina} {escala} {escena} {fecha} {archivo} {hoja} {total} {juego}": "ຊ່ອງຂໍ້ມູນອັດຕະໂນມັດສຳລັບຂໍ້ຄວາມ ແລະ ຕາຕະລາງຫົວເຈ້ຍ: {proyecto} {autor} {lamina} {escala} {escena} {fecha} {archivo} {hoja} {total} {juego}",
  "The sheets of this plan set, in the order it prints them. Double-click a sheet to open it. A greyed sheet is not printed: its printer, or a folder's, is off.": "ແຜ່ນຂອງຊຸດແບບນີ້ ຕາມລຳດັບທີ່ຊຸດພິມ. ຄລິກສອງເທື່ອໃສ່ແຜ່ນເພື່ອເປີດ. ແຜ່ນສີເທົາຈະບໍ່ຖືກພິມ: ເຄື່ອງພິມຂອງມັນ ຫຼື ຂອງໂຟນເດີປິດຢູ່.",
  "Sheets in «{name}»:": "ແຜ່ນໃນ «{name}»:",
- "{name} (cover)": "{name} (ໜ້າປົກ)"
+ "{name} (cover)": "{name} (ໜ້າປົກ)",
+ "Add the selected sheets to the plan set": "ເພີ່ມແຜ່ນທີ່ເລືອກເຂົ້າຊຸດແບບ",
+ "Take the selected sheets out of the plan set": "ເອົາແຜ່ນທີ່ເລືອກອອກຈາກຊຸດແບບ",
+ "The sheets not in this plan set. Select some (Ctrl / Shift for several) and press ▲ to add them. Double-click a sheet to open it.": "ແຜ່ນທີ່ບໍ່ຢູ່ໃນຊຸດແບບນີ້. ເລືອກບາງແຜ່ນ (Ctrl / Shift ສຳລັບຫຼາຍແຜ່ນ) ແລ້ວກົດ ▲ ເພື່ອເພີ່ມ. ຄລິກສອງເທື່ອໃສ່ແຜ່ນເພື່ອເປີດ.",
+ "Not in «{name}»:": "ບໍ່ຢູ່ໃນ «{name}»:"
 }

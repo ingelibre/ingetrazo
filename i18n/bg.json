@@ -3845,5 +3845,9 @@
  "Dynamic fields for texts and the title block: {proyecto} {autor} {lamina} {escala} {escena} {fecha} {archivo} {hoja} {total} {juego}": "Динамични полета за текстове и основния надпис: {proyecto} {autor} {lamina} {escala} {escena} {fecha} {archivo} {hoja} {total} {juego}",
  "The sheets of this plan set, in the order it prints them. Double-click a sheet to open it. A greyed sheet is not printed: its printer, or a folder's, is off.": "Листовете на този комплект, в реда, в който ги отпечатва. Щракнете двукратно върху лист, за да го отворите. Сив лист не се отпечатва: неговият принтер или този на папка е изключен.",
  "Sheets in «{name}»:": "Листове в „{name}“:",
- "{name} (cover)": "{name} (корица)"
+ "{name} (cover)": "{name} (корица)",
+ "Add the selected sheets to the plan set": "Добавяне на избраните листове към комплекта",
+ "Take the selected sheets out of the plan set": "Изваждане на избраните листове от комплекта",
+ "The sheets not in this plan set. Select some (Ctrl / Shift for several) and press ▲ to add them. Double-click a sheet to open it.": "Листовете извън този комплект. Изберете няколко (Ctrl / Shift за повече) и натиснете ▲, за да ги добавите. Щракнете двукратно върху лист, за да го отворите.",
+ "Not in «{name}»:": "Извън „{name}“:"
 }

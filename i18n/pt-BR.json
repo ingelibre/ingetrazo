@@ -3851,5 +3851,9 @@
  "Dynamic fields for texts and the title block: {proyecto} {autor} {lamina} {escala} {escena} {fecha} {archivo} {hoja} {total} {juego}": "Campos dinâmicos para textos e bloco de título: {proyecto} {autor} {lamina} {escala} {escena} {fecha} {archivo} {hoja} {total} {juego}",
  "The sheets of this plan set, in the order it prints them. Double-click a sheet to open it. A greyed sheet is not printed: its printer, or a folder's, is off.": "As folhas deste conjunto, na ordem em que ele as imprime. Clique duas vezes numa folha para abri-la. Uma folha em cinza não é impressa: a impressora dela, ou a de uma pasta, está desligada.",
  "Sheets in «{name}»:": "Folhas em «{name}»:",
- "{name} (cover)": "{name} (capa)"
+ "{name} (cover)": "{name} (capa)",
+ "Add the selected sheets to the plan set": "Adicionar as folhas selecionadas ao conjunto",
+ "Take the selected sheets out of the plan set": "Tirar as folhas selecionadas do conjunto",
+ "The sheets not in this plan set. Select some (Ctrl / Shift for several) and press ▲ to add them. Double-click a sheet to open it.": "As folhas que não estão neste conjunto. Selecione algumas (Ctrl / Shift para várias) e pressione ▲ para adicioná-las. Clique duas vezes numa folha para abri-la.",
+ "Not in «{name}»:": "Fora de «{name}»:"
 }
