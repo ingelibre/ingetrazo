@@ -800,6 +800,9 @@ def save_scene(scene, path: Path, *, fmt: str = "auto") -> dict:
     sheet_folders = getattr(scene, "sheet_folders", None)
     if sheet_folders:
         payload["sheet_folders"] = [f.to_dict() for f in sheet_folders]
+    sheet_sets = getattr(scene, "sheet_sets", None)
+    if sheet_sets:
+        payload["sheet_sets"] = [s.to_dict() for s in sheet_sets]
     dims = getattr(scene, "dimensions", None)
     if dims:
         payload["dimensions"] = [
@@ -1692,6 +1695,13 @@ def _load_into_inner(scene, path: Path, progress=None) -> None:
                            for r in payload.get("sheet_folders", []) or []
                            if isinstance(r, dict)]
     repair(scene)
+    # The sheet sets (#1519): none in a file from before them. Their
+    # repair drops references to sheets the file does not have.
+    from core import sheet_sets as _sets
+    scene.sheet_sets = [_sets.SheetSet.from_dict(r)
+                        for r in payload.get("sheet_sets", []) or []
+                        if isinstance(r, dict)]
+    _sets.repair(scene)
     proto_meshes: list = []
     import time as _time
     raw_protos = payload.get("protos", [])

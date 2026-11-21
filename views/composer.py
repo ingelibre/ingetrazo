@@ -9117,6 +9117,7 @@ class ComposerWindow(QMainWindow):
         src = comps[index]
         dup = Composicion.from_dict(src.to_dict())
         dup.name = src.name + tr(" (copy)")
+        dup.uid = ""              # a new sheet: in none of the original's sets
         comps.insert(index + 1, dup)
         if show:
             self.comp = dup
@@ -9143,6 +9144,8 @@ class ComposerWindow(QMainWindow):
                 != QMessageBox.Yes:
             return False
         comps.remove(victim)
+        from core.sheet_sets import prune
+        prune(self._scene())           # it leaves every sheet set (#1519)
         if self.comp is victim:
             self.comp = comps[min(index, len(comps) - 1)]
             self.history = ComposerHistory(on_change=self._on_history_change)
@@ -10009,7 +10012,8 @@ class ComposerWindow(QMainWindow):
                 path.read_text(encoding="utf-8")))
         except Exception:  # noqa: BLE001 — a broken template is skipped
             return None
-        for f in comp.frames:               # fresh identities per sheet
+        comp.uid = ""                       # fresh identities per sheet
+        for f in comp.frames:
             f.uid = uuid.uuid4().hex
         for ct in comp.cotas:
             ct.anchor_uid, ct.a_world, ct.b_world = "", None, None
