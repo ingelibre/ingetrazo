@@ -214,12 +214,20 @@ def test_the_bent_faces_and_edges_are_drawn_turned(win):
     tool.on_cancel(vp)
 
 
-def test_copy_mode_draws_no_bent_faces(win):
+def test_copy_mode_draws_the_bent_faces_at_rest(win):
+    """The original stays put in copy mode: the faces it bends are drawn
+    where they are (they are left out of the static buffers, so drawing
+    none left a hole in the model)."""
     vp = _scene(win, "loose")
     tool = _grab(win, vp)
     tool._toggle_copy(vp, say=False)
     tool.on_hover(_ctx(vp, CENTRE + V(0, 1, 0), 30))
-    assert tool.preview_faces() == []
+    faces = tool.preview_faces()
+    shown = [f for f in tool._bent_faces if not f.attrs.get("hidden")]
+    assert len(faces) == len(shown) > 0
+    for moved, f in zip(faces, shown):
+        assert ([p.toTuple() for p in moved.vertices]
+                == [p.toTuple() for p in f.vertices])
     tool.on_cancel(vp)
 
 

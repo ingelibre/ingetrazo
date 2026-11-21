@@ -1194,7 +1194,7 @@ class ChunkCacheMixin:
     #: building it again.
     SEL_SHIFT_MIN = 256
 
-    def _selected_face_runs(self) -> dict:
+    def _selected_face_runs(self, faces=None) -> dict:
         """``{(front_dot, back_dot): array}`` — the triangles of the
         selected faces, by the dot colours they show.
 
@@ -1203,10 +1203,17 @@ class ChunkCacheMixin:
         a Move, three of them per move (night of 18-11). The open mesh's
         per-face geometry answers for faces that stayed where they were,
         and a selection whose corners all moved by one same offset — what
-        Move does — shifts the triangles it had."""
+        Move does — shifts the triangles it had.
+
+        ``faces``: those selected faces only, as they are — a vertex drag
+        bakes the dots of the ones riding it once (begin_verts_preview)."""
         import numpy as np
-        faces = [e for e in self.scene.selection if isinstance(e, Face)]
         vpv = getattr(self, "_verts_preview", None)
+        if faces is not None:
+            faces = list(faces)
+            vpv = None
+        else:
+            faces = [e for e in self.scene.selection if isinstance(e, Face)]
         if vpv is not None:
             # Mid vertex drag: the scratch copy carries the moving faces.
             hide = vpv["hide"]

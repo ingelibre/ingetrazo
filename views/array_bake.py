@@ -819,12 +819,15 @@ def _round_curved(vp, mesh, faces, plain, ent, fk, f_rgb, tfa, tpa, col_a):
 BUILT_MIN_FACES = 500
 
 
-def can_bake_built(mesh) -> bool:
-    """Whether built ``mesh`` can be baked from arrays by this engine."""
+def can_bake_built(mesh, min_faces: int | None = None) -> bool:
+    """Whether built ``mesh`` can be baked from arrays by this engine —
+    from ``min_faces`` faces on (default ``BUILT_MIN_FACES``)."""
+    if min_faces is None:
+        min_faces = BUILT_MIN_FACES
     return (type(mesh) is not DeferredMesh
             and _native.native is not None
             and _native.qt_hypot() is not None
-            and len(mesh.faces) >= BUILT_MIN_FACES)
+            and len(mesh.faces) >= min_faces)
 
 
 def built_plan(mesh, faces=None, edges=None):

@@ -51,7 +51,8 @@ from core.axes import plane_axes  # drawing axes (#44)
 from core.guide import is_guide
 from tools.base import ToolContext
 from tools.move import (
-    copied_guide, gather_targets, groups_ghost_segments, guide_ghost_segments)
+    begin_verts_preview_for, copied_guide, faces_on_verts, gather_targets,
+    groups_ghost_segments, guide_ghost_segments)
 from tools.protractor import ProtractorBase
 
 
@@ -237,15 +238,19 @@ class RotateTool(ProtractorBase):
                 if begin is not None:
                     begin(groups)
                     self._vp_preview = True
-            elif self._verts and not groups:
+            elif self._verts:
                 # Vertices of a big open group or of the big loose model:
                 # Move's vertex-drag preview, turned — nothing mutated
                 # until the commit, what rides drawn through the rotation,
                 # the faces it bends drawn turned here (preview_faces).
                 # Each frame re-walked the whole loose model before
-                # (~0.35 s for 6 400 faces, 21-11).
+                # (~0.35 s for 6 400 faces, 21-11). Objects grabbed with
+                # them turn through the same matrix (a mixed turn): both
+                # preview, or the live turn stays for the whole.
                 begin = getattr(viewport, "begin_verts_preview", None)
-                got = begin(self._verts) if begin is not None else None
+                got = (begin_verts_preview_for(begin, self._verts,
+                                               self._groups)
+                       if begin is not None else None)
                 if got is not None:
                     self._bent_faces, _e, self._bent_paint = got
                     self._vp_preview = True
@@ -393,6 +398,14 @@ class RotateTool(ProtractorBase):
             return None
         return edges, groups
 
+    def moving_face_ids(self) -> set:
+        """The loose faces the turn bends or carries, as Move gives them:
+        the cursor never lands on them nor takes their centre — it would
+        follow the face, the face the cursor."""
+        if self.ref_point is None or self._copy:
+            return set()
+        return faces_on_verts(self)
+
     def moving_guide_ids(self) -> set:
         """The guides swinging live, kept out of the snap (#627)."""
         if self.ref_point is None or self._copy:
@@ -435,8 +448,10 @@ class RotateTool(ProtractorBase):
         once per angle."""
         bent = getattr(self, "_bent_faces", None)
         if (not bent or not getattr(self, "_vp_preview", False)
-                or self._copy or self.start_point is None):
+                or self.start_point is None):
             return []
+        # Copy mode parks the turn at 0°: the bent faces where they are,
+        # or they left a hole in the model.
         from tools.move import _MovedFaces
         # Not turned yet (no reference arm, or put back): the faces where
         # they are, exactly — a turn by 0° maps them through the centre.

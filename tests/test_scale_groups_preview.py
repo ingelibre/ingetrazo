@@ -184,8 +184,11 @@ def test_a_cancel_leaves_the_groups(win):
     assert _state(groups) == start
 
 
-def test_groups_with_loose_geometry_keep_the_live_scale(win):
-    """Groups and loose geometry together: the live scale, as before."""
+def test_groups_with_loose_geometry_preview_with_the_engine(win):
+    """Groups and loose geometry together: both previews at once when the
+    engine bakes the loose part (tests/test_mixed_drag_preview.py), the
+    live scale for the whole selection without it — never the groups
+    previewed alone."""
     vp, groups = _scene(win, "plain")
     m = vp.scene.mesh
     f = m.add_face([V(-3, 0, 0), V(-2, 0, 0), V(-2, 1, 0), V(-3, 1, 0)])
@@ -196,5 +199,10 @@ def test_groups_with_loose_geometry_keep_the_live_scale(win):
     tool._refresh_box(vp)
     grip = next(g for g in tool._grips if len(g.mask) >= 2)
     tool._grab(vp, grip, (10.0, 10.0))
-    assert not tool._vp_preview
+    from views import array_bake
+    both = array_bake.can_bake_built(m, 0)
+    assert tool._vp_preview is both
+    assert (getattr(vp, "_verts_preview", None) is not None) is both
+    assert bool(getattr(vp, "_preview_groups", None)) is both
     tool.on_cancel(vp)
+    assert not getattr(vp, "_preview_groups", None)
