@@ -324,6 +324,14 @@ class ScaleTool(Tool):
         edges = {id(e) for v in self._verts for e in getattr(v, "edges", ())}
         return edges, {id(g) for g in self._groups}
 
+    def moving_face_ids(self) -> set:
+        """The loose faces the scale bends or carries, as Move gives them:
+        the cursor never lands on them nor takes their centre."""
+        if self._grip is None:
+            return set()
+        from tools.move import faces_on_verts
+        return faces_on_verts(self)
+
     def _snapped_point(self, ctx):
         snap = getattr(ctx, "snap", None) if ctx is not None else None
         if snap is None or snap.kind not in self._TARGET_KINDS:

@@ -444,3 +444,172 @@ def test_objects_alone_or_vertices_alone_keep_their_previews(win):
     assert not vp._preview_groups
     tool.on_cancel(vp)
     _no_preview_state(vp)
+
+
+# ---- copy mode ---------------------------------------------------------------
+
+def _copy_drop(w, preview):
+    """A mixed Move with Ctrl pressed mid-drag: what it leaves."""
+    vp, objs = _scene(w, "loose")
+    tool = _grab(w, vp, objs, "move")
+    assert tool._vp_preview is preview
+    _hover(vp, tool, "move", 0.5)
+    tool._toggle_copy(vp, say=False)
+    vp.repaint()
+    if preview:
+        # The original stays: everything drawn at rest, the bent faces
+        # too (they are out of the static buffers).
+        assert vp._preview_offset.toTuple() == (0.0, 0.0, 0.0)
+        faces = tool.preview_faces()
+        shown = [f for f in tool._bent_faces if not f.attrs.get("hidden")]
+        assert len(faces) == len(shown) > 0
+        for moved, f in zip(faces, shown):
+            assert ([p.toTuple() for p in moved.vertices]
+                    == [p.toTuple() for p in f.vertices])
+    _hover(vp, tool, "move", 1.0, 40)
+    _commit(vp, tool, "move")
+    _app.processEvents()
+    _no_preview_state(vp)
+    sc = vp.scene
+    return (_model(vp, objs), len(sc.groups), len(sc.mesh.faces),
+            len(vp.history.undo_stack))
+
+
+def test_a_mixed_copy_leaves_what_the_live_copy_leaves(monkeypatch):
+    w = _window()
+    try:
+        frozen = _copy_drop(w, True)
+    finally:
+        _close_window(w)
+    _live(monkeypatch)
+    w = _window()
+    try:
+        live = _copy_drop(w, False)
+    finally:
+        _close_window(w)
+    # The same copies and the same single step. The copies come in the
+    # selection's order, a set's: compared in no order.
+    assert frozen[1:] == live[1:]
+
+    def canon(m):
+        verts, faces, edges, objects = m
+        return (sorted(verts), sorted(repr(f) for f in faces),
+                sorted(tuple(sorted(e)) for e in edges),
+                objects)
+    assert canon(frozen[0]) == canon(live[0])
+
+
+# ---- the cursor and the faces in motion -------------------------------------
+
+@pytest.mark.parametrize("tool_name", ["move", "rotate", "scale"])
+def test_the_faces_in_motion_are_no_snap_target(win, tool_name):
+    """Rotate and Scale leave the faces they bend or carry out of the
+    snap (their centres, the plane under the cursor), as Move does: the
+    preview draws them elsewhere, and the live drag shook on them."""
+    vp, objs = _scene(win, "loose")
+    mesh = vp.scene.mesh
+    block = _block(mesh)
+    tool = _grab(win, vp, objs, tool_name)
+    want = {id(f) for f in mesh.faces
+            if any(abs(v.position.x() - 4.5) <= 1.5 + 1e-6
+                   and abs(v.position.y() - 4.5) <= 1.5 + 1e-6
+                   for v in f.loop)}
+    assert tool.moving_face_ids() == want
+    assert {id(f) for f in block} <= want
+    # No selected face's centre is offered or drawn while it moves.
+    assert vp._selected_face_centers() == []
+    tool.on_cancel(vp)
+    assert tool.moving_face_ids() == set()
+    assert len(vp._selected_face_centers()) == len(block)
+
+
+# ---- what rides keeps its look ----------------------------------------------
+
+def test_what_rides_keeps_the_selection_look(win):
+    """The riding part keeps the look the live drag gives it: the selected
+    faces their dots (as many as the static pass leaves out), the selected
+    edges the selection colour, the others the edge colour."""
+    vp, objs = _scene(win, "loose")
+    mesh = vp.scene.mesh
+    block = _block(mesh)
+    inside = {id(f) for f in block}
+    edges = [e for e in mesh.edges
+             if e.faces and all(id(f) in inside for f in e.faces)]
+    picked = [edges[0], edges[3]]
+    vp.scene.select(block + picked + list(objs))
+    vp.repaint()
+    dots0 = vp._sel_faces_count
+    win._tool_actions["move"].trigger()
+    tool = vp.active_tool
+    tool.on_click(_ctx(vp, CENTRE))
+    vpv = vp._verts_preview
+    vp.repaint()
+    assert vp._sel_faces_count == 0               # all of them ride
+    assert len(vpv["dots"]) // 12 == dots0
+    assert sum(n for _f, _b, _s, n in vpv["dot_spans"]) == dots0
+    ride_e = [e for e in mesh.edges
+              if all(id(f) in vpv["hide"] for f in e.faces)
+              and id(e) in vpv["hide_e"]
+              and e.v0 in tool._verts and e.v1 in tool._verts]
+    assert len(vpv["sel_edges"]) // 24 == len(
+        [e for e in ride_e if e in picked]) == 2
+    assert len(vpv["plain_edges"]) // 24 == len(ride_e) - 2
+    # The orange scratch edges are the objects' alone.
+    movers = [g for g in vp._placements() if id(g) in vp._preview_groups]
+    assert vp._pv_edges_count == sum(
+        len(vp._preview_chunk(g)["edges"]) // 12 for g in movers)
+    tool.on_cancel(vp)
+
+
+def _frame(vp):
+    import numpy as np
+    img = vp.grabFramebuffer().convertToFormat(
+        vp.grabFramebuffer().Format.Format_RGB888)
+    h, w = img.height(), img.width()
+    a = np.frombuffer(img.constBits(), dtype=np.uint8)
+    return a.reshape(h, img.bytesPerLine())[:, :w * 3].reshape(h, w, 3).copy()
+
+
+def _shot(live, monkeypatch):
+    """A frame mid-way through a mixed Move."""
+    from views.viewport import Viewport
+    if live:
+        monkeypatch.setattr(Viewport, "begin_verts_preview",
+                            lambda self, verts, groups=(): None)
+    w = _window()
+    try:
+        w.resize(900, 700)
+        _app.processEvents()
+        vp, objs = _scene(w, "loose")
+        tool = _grab(w, vp, objs, "move")
+        assert tool._vp_preview is not live
+        _hover(vp, tool, "move", 0.6)
+        vp.repaint()
+        _app.processEvents()
+        out = _frame(vp)
+        tool.on_cancel(vp)
+    finally:
+        _close_window(w)
+        monkeypatch.undo()
+    return out
+
+
+def test_a_mixed_move_frame_looks_as_the_live_one(monkeypatch):
+    """The frame a mixed Move draws from the previews and the one the live
+    drag draws: alike but for the rasterised lines a pixel away (the
+    riding edges drawn through a matrix, not from moved vertices). The
+    selection's dots — none at all before — count the same."""
+    import numpy as np
+    a = _shot(False, monkeypatch)
+    b = _shot(True, monkeypatch)
+    if not (a != a[0, 0]).any():
+        pytest.skip("this platform renders nothing offscreen")
+    d = np.abs(a.astype(int) - b.astype(int)).max(axis=2)
+    # A handful of pixels on lines, not whole faces.
+    assert (d > 40).sum() < 0.01 * d.size
+
+    def orange(x):
+        r, g, bb = (x[..., i].astype(int) for i in range(3))
+        return int(((r > 200) & (g > 70) & (g < 160) & (bb < 90)).sum())
+    oa, ob = orange(a), orange(b)
+    assert ob > 0 and abs(oa - ob) <= 0.15 * ob

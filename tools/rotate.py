@@ -51,7 +51,7 @@ from core.axes import plane_axes  # drawing axes (#44)
 from core.guide import is_guide
 from tools.base import ToolContext
 from tools.move import (
-    begin_verts_preview_for, copied_guide, gather_targets,
+    begin_verts_preview_for, copied_guide, faces_on_verts, gather_targets,
     groups_ghost_segments, guide_ghost_segments)
 from tools.protractor import ProtractorBase
 
@@ -398,6 +398,14 @@ class RotateTool(ProtractorBase):
             return None
         return edges, groups
 
+    def moving_face_ids(self) -> set:
+        """The loose faces the turn bends or carries, as Move gives them:
+        the cursor never lands on them nor takes their centre — it would
+        follow the face, the face the cursor."""
+        if self.ref_point is None or self._copy:
+            return set()
+        return faces_on_verts(self)
+
     def moving_guide_ids(self) -> set:
         """The guides swinging live, kept out of the snap (#627)."""
         if self.ref_point is None or self._copy:
@@ -440,8 +448,10 @@ class RotateTool(ProtractorBase):
         once per angle."""
         bent = getattr(self, "_bent_faces", None)
         if (not bent or not getattr(self, "_vp_preview", False)
-                or self._copy or self.start_point is None):
+                or self.start_point is None):
             return []
+        # Copy mode parks the turn at 0°: the bent faces where they are,
+        # or they left a hole in the model.
         from tools.move import _MovedFaces
         # Not turned yet (no reference arm, or put back): the faces where
         # they are, exactly — a turn by 0° maps them through the centre.

@@ -418,6 +418,20 @@ def begin_verts_preview_for(begin, verts, groups):
     return begin(verts)
 
 
+def faces_on_verts(tool) -> set:
+    """``id`` of every face with a corner on one of ``tool._verts`` —
+    what a vertex drag bends or carries. Kept per grabbed list: the snap
+    asks several times a frame."""
+    verts = tool._verts
+    memo = getattr(tool, "_faces_on_memo", None)
+    if memo is not None and memo[0] is verts:
+        return memo[1]
+    out = {id(f) for v in verts for e in getattr(v, "edges", ())
+           for f in e.faces}
+    tool._faces_on_memo = (verts, out)
+    return out
+
+
 class _MovedFaces:
     """The faces a vertex drag stretches (``shown``, mesh faces), each
     corner in ``moving`` (vertex ids) moved by ``d`` — or, given ``m`` (a
@@ -907,9 +921,10 @@ class MoveTool(Tool):
         bakes it from arrays packed at the grab, and only Python's bake
         walks the faces it builds."""
         bent = getattr(self, "_bent_faces", None)
-        if (not bent or not getattr(self, "_vp_preview", False)
-                or self._copy):
+        if not bent or not getattr(self, "_vp_preview", False):
             return []
+        # Copy mode: the original stays — the bent faces where they are
+        # (the offset is parked at zero), or they left a hole in the model.
         d = self._preview_delta
         key = (id(bent), d.x(), d.y(), d.z())
         memo = getattr(self, "_moved_memo", None)

@@ -1969,9 +1969,40 @@ class RenderMixin:
             ends, rides = ends[drawn], rides[drawn]
         else:
             ends = rides = None
+        # What rides keeps the look the live drag gives it: the selected
+        # faces their dots, the selected edges the selection colour, the
+        # others the edge colour. The scratch copy drew every riding edge
+        # orange and no dot at all. Made once, here, while nothing moved.
+        sel = sc.selection
+        sel_ids = {id(x) for x in sel}
+        dot_faces = [f for f in sel if isinstance(f, Face) and id(f) in ride]
+        dots = self._selected_face_runs(dot_faces) if dot_faces else {}
+        dot_spans, dot_parts, at = [], [], 0
+        for (front, back), buf in dots.items():
+            n = len(buf) // 3
+            dot_spans.append((front, back, at, n))
+            dot_parts.append(buf.tobytes())
+            at += n
+
+        def points(edges):
+            return array("f", (c for e in edges
+                               for p in (e.v0.position, e.v1.position)
+                               for c in (p.x(), p.y(), p.z()))).tobytes()
+
+        # The selection buffer draws every selected edge; the edge pass
+        # only the hard, visible ones.
+        sel_e = [e for e in ride_e if id(e) in sel_ids]
+        plain_e = [e for e in ride_e if id(e) not in sel_ids
+                   and not getattr(e, "soft", False)
+                   and not getattr(e, "hidden", False)
+                   and sc.entity_visible(e)]
         self._verts_preview = {"mesh": mesh, "stay": stay, "hide": hide,
                                "hide_e": hide_e, "bent_ends": ends,
                                "bent_rides": rides, "loose": loose,
+                               "dot_spans": dot_spans,
+                               "dots": b"".join(dot_parts),
+                               "sel_edges": points(sel_e),
+                               "plain_edges": points(plain_e),
                                "token": object()}
         self._frozen_cache_version = sc.version
         self._edges_version = -1          # one resync with the static part
@@ -1995,12 +2026,70 @@ class RenderMixin:
             # Face-me figures preview through their own pass (see
             # begin_groups_preview).
             self._upload_preview_chunks(
-                [rider] + [self._preview_chunk(g) for g in movers
-                           if not getattr(g, "billboard", False)])
+                [dict(rider, edges=b"")]
+                + [self._preview_chunk(g) for g in movers
+                   if not getattr(g, "billboard", False)])
+            self._upload_rider_looks(self._verts_preview)
+            if getattr(self, "_pv_bent_vao", None) is None:
+                # Made here, not in paintGL: making a buffer releases the
+                # shader program, and the rest of that first drag frame
+                # drew nothing — the stretched edges among it.
+                self._pv_bent_vao, self._pv_bent_vbo = self._create_dynamic()
         finally:
             self.doneCurrent()
         self.update()
         return bent, bent_e, paint
+
+    def _upload_rider_looks(self, vpv) -> None:
+        """Upload the riding part's selection dots and its two kinds of
+        edges (``begin_verts_preview``) to their scratch VBOs (GL context
+        current)."""
+        for name, key in (("_pv_dots", "dots"), ("_pv_sel_e", "sel_edges"),
+                          ("_pv_plain_e", "plain_edges")):
+            raw = vpv[key]
+            if not raw:
+                continue
+            if getattr(self, name + "_vao", None) is None:
+                vao, vbo = self._create_dynamic()
+                setattr(self, name + "_vao", vao)
+                setattr(self, name + "_vbo", vbo)
+            vbo = getattr(self, name + "_vbo")
+            vbo.bind()
+            vbo.allocate(raw, len(raw))
+            vbo.release()
+
+    def _draw_rider_looks(self, vpv) -> None:
+        """The riding part's dots and edges, through the transform the
+        scratch copy is drawn with (the MVP set by the caller), as the
+        static passes draw them at rest."""
+        if self._export_size is None and vpv["dots"]:
+            # As the face highlights pass: at the depth of the faces under
+            # them (the scratch copy draws its faces with no offset, the
+            # static passes offset both), no depth written, the dot
+            # pattern.
+            self._gl.glDepthMask(GL_FALSE)
+            self._program.setUniformValue(self._loc_stipple, 3)
+            self._pv_dots_vao.bind()
+            for front, back, start, count in vpv["dot_spans"]:
+                self._set_color(*front, 1.0)
+                self._program.setUniformValue(
+                    self._loc_back_color, QVector4D(*back, 1.0))
+                self._gl.glDrawArrays(GL_TRIANGLES, start, count)
+            self._pv_dots_vao.release()
+            self._program.setUniformValue(self._loc_stipple, 0)
+            self._gl.glDepthMask(GL_TRUE)
+            self._set_back_face_color()
+        if vpv["plain_edges"]:
+            ec = self._effective_style().edge_color
+            self._set_color(ec[0], ec[1], ec[2], 1.0)
+            self._pv_plain_e_vao.bind()
+            self._gl.glDrawArrays(GL_LINES, 0, len(vpv["plain_edges"]) // 12)
+            self._pv_plain_e_vao.release()
+        if self._export_size is None and vpv["sel_edges"]:
+            self._set_color(*self._modeling_color("selected"), 1.0)
+            self._pv_sel_e_vao.bind()
+            self._gl.glDrawArrays(GL_LINES, 0, len(vpv["sel_edges"]) // 12)
+            self._pv_sel_e_vao.release()
 
     def _chunk_without(self, group, hidden):
         """The open group's chunk without the faces in ``hidden`` (a
@@ -2131,8 +2220,10 @@ class RenderMixin:
             self._pv_edges_vao.bind()
             self._gl.glDrawArrays(GL_LINES, 0, n)
             self._pv_edges_vao.release()
-        self._program.setUniformValue(self._loc_mvp, mvp)
         vpv = getattr(self, "_verts_preview", None)
+        if vpv is not None and "dots" in vpv:
+            self._draw_rider_looks(vpv)
+        self._program.setUniformValue(self._loc_mvp, mvp)
         if vpv is not None and vpv.get("bent_ends") is not None \
                 and len(vpv["bent_ends"]):
             # The edges a vertex drag stretches: one end rides, one stays.
