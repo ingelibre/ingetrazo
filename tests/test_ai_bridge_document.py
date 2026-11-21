@@ -88,6 +88,74 @@ def test_open_document_opens_and_reports(bridged, tmp_path):
     assert r["result"]["modified"] is False
 
 
+def _saved_with_edges(path, n):
+    """An .igz of ``n`` edges — enough to tell documents apart."""
+    from PySide6.QtGui import QVector3D
+    from core.scene import Scene
+    from formats import igz
+    scene = Scene()
+    for i in range(n):
+        scene.mesh.add_edge(QVector3D(i, 0, 0), QVector3D(i, 1, 0))
+    igz.save_scene(scene, path)
+
+
+def _edges(win) -> int:
+    return len(win.viewport.scene.mesh.edges)
+
+
+def test_open_document_one_after_another(bridged, tmp_path):
+    """Opening a second document used to fail: the new tab it opened in
+    asked autosave.pending(None, untitled=2), which open_quietly's stand-in
+    did not take (TypeError). And each open kept the one before in a tab
+    nobody sees: the document in front is replaced, not stacked."""
+    a, b, c = (tmp_path / f"{n}.igz" for n in "abc")
+    _saved_with_edges(a, 1)
+    _saved_with_edges(b, 2)
+    _saved_with_edges(c, 3)
+    win, bridge = bridged
+    for path, n in ((a, 1), (b, 2), (c, 3), (a, 1)):
+        r = _ask(bridge, "open_document", {"path": str(path)})
+        assert r["ok"], r
+        assert r["result"]["path"] == str(path)
+        assert _edges(win) == n
+        assert len(win._documents) == 1
+
+
+def test_open_document_reads_the_file_again(bridged, tmp_path):
+    """The same path once more is read from disk, not merely shown: a
+    file changed meanwhile comes in as it is now."""
+    src = tmp_path / "doc.igz"
+    _saved_with_edges(src, 1)
+    win, bridge = bridged
+    assert _ask(bridge, "open_document", {"path": str(src)})["ok"]
+    assert _edges(win) == 1
+    _saved_with_edges(src, 4)
+    assert _ask(bridge, "open_document", {"path": str(src)})["ok"]
+    assert _edges(win) == 4
+    assert len(win._documents) == 1
+
+
+def test_open_document_keeps_unsaved_changes_unless_told(bridged, tmp_path):
+    a, b = tmp_path / "a.igz", tmp_path / "b.igz"
+    _saved_with_edges(a, 1)
+    _saved_with_edges(b, 2)
+    win, bridge = bridged
+    assert _ask(bridge, "open_document", {"path": str(a)})["ok"]
+    r = _ask(bridge, "run_python", {"code": (
+        "mesh.add_edge(QVector3D(5, 5, 0), QVector3D(6, 5, 0))")})
+    assert r["ok"] and r["result"]["changed"], r
+    assert win._doc_is_dirty(win._doc)
+    for path in (b, a):                 # another file, or the same one
+        r = _ask(bridge, "open_document", {"path": str(path)})
+        assert not r["ok"] and "unsaved changes" in r["error"], r
+        assert _edges(win) == 2 and win._current_path == a
+    r = _ask(bridge, "open_document", {"path": str(b),
+                                       "discard_changes": True})
+    assert r["ok"], r
+    assert _edges(win) == 2 and win._current_path == b
+    assert len(win._documents) == 1
+
+
 def test_a_plain_json_document_stays_plain_json(bridged, tmp_path,
                                                 monkeypatch):
     """Opened from the plain-JSON layout and saved under Automatic, a

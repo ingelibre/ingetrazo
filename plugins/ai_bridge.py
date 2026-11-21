@@ -356,14 +356,39 @@ class _Bridge(QObject):
                       getattr(scene, "saved_views", []) or []],
         }
 
-    def _tool_open_document(self, path: str = "") -> dict:
+    def _tool_open_document(self, path: str = "",
+                            discard_changes: bool = False) -> dict:
         """Open ``path`` in place of the document in front, with no
-        question asked (an auto-saved copy is left alone)."""
+        question asked (an auto-saved copy is left alone).
+
+        In place, as it says: the agent works on the document in front
+        only, so ``open_path``'s tabs would pile up unseen — an IngeTrazo
+        without a window that opens one model after another kept every one
+        of them in memory. And always from disk: a file already open is
+        read again, not just shown, so a file changed meanwhile (by Git, by
+        another IngeTrazo) comes in as it is now. Unsaved changes to what
+        would be closed are refused unless ``discard_changes``."""
         p = Path(path).expanduser()
         if not p.is_file():
             raise FileNotFoundError(f"no such file: {p}")
-        if not open_quietly(self._window(), p):
+        w = self._window()
+        front = w._doc
+        same = [d for d in w._documents if d.same_file(p)]
+        dirty = getattr(w, "_doc_is_dirty", None)
+        if not discard_changes and callable(dirty):
+            unsaved = [d for d in dict.fromkeys([front, *same]) if dirty(d)]
+            if unsaved:
+                raise RuntimeError(
+                    "unsaved changes in " + ", ".join(
+                        d.display_name() for d in unsaved)
+                    + ": save_document first, or call open_document with "
+                    "discard_changes=true")
+        for doc in same:                  # read again, not merely shown
+            w.close_document(doc, ask=False)
+        if not open_quietly(w, p):
             raise RuntimeError(f"could not open {p}")
+        if front in w._documents and front is not w._doc:
+            w.close_document(front, ask=False)
         return self._tool_document_info()
 
     def _tool_save_document(self, path: str | None = None,

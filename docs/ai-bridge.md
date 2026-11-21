@@ -84,7 +84,7 @@ cuerpo nunca llega a leerse. Aun así, **detén el puente cuando no lo uses**.
 | `screenshot` | Renderiza el viewport real — el agente mira e itera. |
 | `undo` / `redo` | La historia de siempre. |
 | `document_info` | Ruta del documento, si tiene cambios sin guardar, formato de guardado, láminas, escenas y qué está permitido. |
-| `open_document` | Abre un archivo; error si no se pudo. |
+| `open_document` | Abre un archivo **en lugar** del documento de delante (no apila pestañas) y siempre tal como está en disco: uno ya abierto se vuelve a leer. Se niega si se perderían cambios sin guardar, salvo `discard_changes: true`. Error si no se pudo. |
 | `save_document` | Guarda (en su ruta o en otra `.igz`, `format`: `auto` o `json`). **Solo si el usuario lo permite** (ver abajo). |
 | `export_view` | Una escena (vista guardada) a PNG; la cámara vuelve a donde estaba. |
 | `export_pdf` | Las láminas (todas o las nombradas) a un PDF. |

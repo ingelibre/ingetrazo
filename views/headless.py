@@ -76,7 +76,10 @@ def open_quietly(window, path: Path) -> bool:
     at the time (the bridge's guard, or :class:`DialogRefuser`)."""
     from core import autosave
     pending = autosave.pending
-    autosave.pending = lambda _path: None
+    # The same signature as autosave.pending: opening into a new tab asks
+    # it for free untitled slots too (``pending(None, untitled=n)``), and a
+    # one-argument stand-in made every open after the first a TypeError.
+    autosave.pending = lambda _path, untitled=1: None
     try:
         return bool(window.open_path(Path(path)))
     finally:

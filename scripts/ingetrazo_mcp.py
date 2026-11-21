@@ -136,11 +136,16 @@ TOOLS = [
     },
     {
         "name": "open_document",
-        "description": ("Open an .igz (or .skp/.dae/.dxf) file. An error if "
-                        "it cannot be opened."),
+        "description": ("Open an .igz (or .skp/.dae/.dxf) file in place of "
+                        "the document in front, always as it is on disk now "
+                        "(a file already open is read again). Refused when "
+                        "that would drop unsaved changes, unless "
+                        "discard_changes is true. An error if it cannot be "
+                        "opened."),
         "inputSchema": {
             "type": "object",
-            "properties": {"path": {"type": "string"}},
+            "properties": {"path": {"type": "string"},
+                           "discard_changes": {"type": "boolean"}},
             "required": ["path"],
         },
     },
