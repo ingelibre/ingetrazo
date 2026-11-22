@@ -25,7 +25,16 @@ LAST_KEY = [0.0]
 
 
 def hand_rested(seconds: float) -> bool:
-    """Whether nothing has been done over a view for ``seconds``."""
+    """Whether nothing has been done over a view for ``seconds`` — and no
+    menu is open nor a dialog waiting for an answer. The hand over a menu
+    or a dialog never reaches a view: a scene's picture drawn then froze
+    the menus and the extension manager for 0.3–0.7 s each (final plaza,
+    22-11). Its rest starts again once they close."""
+    from PySide6.QtWidgets import QApplication
+    if (QApplication.activePopupWidget() is not None
+            or QApplication.activeModalWidget() is not None):
+        LAST_HAND[0] = _time_mod.monotonic()
+        return False
     return _time_mod.monotonic() - LAST_HAND[0] >= seconds
 import types
 from array import array

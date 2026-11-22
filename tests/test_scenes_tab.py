@@ -1042,3 +1042,51 @@ def test_a_glide_arrives_with_the_scene_lens(win):
     cam.shift_y = 0.0
     panel.finish_view(_view(win, "Desplazada"), camera=False)
     assert cam.shift_y == pytest.approx(0.25)
+
+
+@pytest.mark.parametrize("opened", ["menu", "dialog"])
+def test_no_picture_is_drawn_while_a_menu_or_a_dialog_is_open(
+        win, monkeypatch, opened):
+    """A scene's picture is a whole render (0.3–0.7 s on a big model): one
+    drawn while a menu is open or the extension manager waits froze them.
+    The hand there never reaches a view, so the rest is theirs to say."""
+    from PySide6.QtCore import QTimer
+    from PySide6.QtGui import QColor, QIcon, QPixmap
+    from PySide6.QtTest import QTest
+    from PySide6.QtWidgets import QDialog, QMenu
+    from views.tray import ScenesPanel
+    from views.viewport import _support
+    drawn = []
+
+    def fake(self, view):
+        drawn.append(view.name)
+        pm = QPixmap(96, 64)
+        pm.fill(QColor("red"))
+        return QIcon(pm)
+    monkeypatch.setattr(ScenesPanel, "_render_thumbnail", fake)
+    monkeypatch.setattr(ScenesPanel, "HAND_REST_S", 0.3)
+    monkeypatch.setattr(_support, "LAST_HAND", [0.0])
+    if opened == "menu":
+        holder = QMenu(win)
+        holder.addAction("Uno")
+        holder.popup(win.mapToGlobal(win.rect().center()))
+        close = holder.close
+    else:
+        holder = QDialog(win)
+        holder.setModal(True)
+        holder.show()
+        close = holder.accept
+    for _ in range(5):
+        _app.processEvents()
+    opened_now = (_app.activePopupWidget() is holder
+                  or _app.activeModalWidget() is holder)
+    if not opened_now:
+        close()
+        pytest.skip("this platform shows no popup or modal offscreen")
+    _scenes(win, "A", "B")
+    QTest.qWait(1200)
+    assert drawn == []                 # waited for the menu or the dialog
+    close()
+    QTimer.singleShot(0, lambda: None)
+    _wait(until=lambda: len(drawn) >= 2)
+    assert sorted(drawn) == ["A", "B"]  # and drew them once it closed
