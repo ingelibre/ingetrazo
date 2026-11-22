@@ -81,7 +81,21 @@ def screen_dpr() -> float:
     """The screen's device pixel ratio (1.0 without an application): what a
     mark drawn at a fixed logical size must be multiplied by to be crisp."""
     app = QApplication.instance()
-    return max(1.0, app.devicePixelRatio()) if app is not None else 1.0
+    if app is None:
+        return 1.0
+    # The window's ratio first: on a fractional screen (Wayland at 125 %)
+    # the screen says 2.0 while the windows paint at 1.25, and a mark drawn
+    # at 2.0 is scaled down by a non-whole factor -- blurred.
+    # Native windows, not widgets: walking the top-level widgets met ones
+    # being torn down and crashed.
+    from PySide6.QtGui import QGuiApplication
+    win = QGuiApplication.focusWindow()
+    if win is None:
+        win = next((w for w in QGuiApplication.topLevelWindows()
+                    if w.isVisible()), None)
+    if win is not None:
+        return max(1.0, win.devicePixelRatio())
+    return max(1.0, app.devicePixelRatio())
 
 
 def mark_pixmap(width: int = 18, height: int | None = None) -> QPixmap:

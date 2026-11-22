@@ -25,13 +25,13 @@ panel, the toolbar and the right-click menus never disagree.
 from __future__ import annotations
 
 from PySide6.QtCore import QEvent, QPoint, QRect, QRectF, QSize, Qt
-from PySide6.QtGui import QAction, QColor, QIcon, QPainter, QPen, QPixmap
+from PySide6.QtGui import QAction, QColor, QIcon, QPainter, QPen
 from PySide6.QtWidgets import (QApplication, QComboBox, QStyle,
                                QStyledItemDelegate, QToolBar)
 
 from core import layers as L
 from core.i18n import tr
-from views.icons import mark_pixmap
+from views.icons import mark_pixmap, screen_dpr
 
 #: Where the eye, the padlock, the isolate mark and the swatch sit in a
 #: drop-down row, from its left edge (px) — the delegate paints there and the
@@ -65,7 +65,7 @@ def isolate_icon(on: bool) -> QIcon:
     Drawn once per state and theme: the Browser paints one per row, and a
     document with ten thousand rows would otherwise draw ten thousand."""
     ink = _ink()
-    key = (bool(on), ink.rgba())
+    key = (bool(on), ink.rgba(), screen_dpr())
     icon = _ISOLATE_ICONS.get(key)
     if icon is not None:
         return icon
@@ -298,9 +298,11 @@ def _row_icon(ly, scene) -> QIcon:
     side, as in the list."""
     from views.outliner import node_icon
     from views.layers_panel import layer_swatch
-    pm = QPixmap(_TEXT_X - 8, _GLYPH)
-    pm.fill(Qt.transparent)
+    # At the window's pixel ratio: a 1:1 pixmap was stretched -- blurred --
+    # on a scaled screen.
+    pm = mark_pixmap(_TEXT_X - 8, _GLYPH)
     p = QPainter(pm)
+    p.setRenderHint(QPainter.SmoothPixmapTransform)
     icons = [(node_icon("eye" if ly.visible else "eye_off"), _EYE_X - 4),
              (node_icon("lock" if ly.locked else "lock_open"), _LOCK_X - 4),
              (layer_swatch(ly), _SWATCH_X - 4)]

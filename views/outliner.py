@@ -33,8 +33,8 @@ sheet, frame) and renames and hides are the usual undoable commands.
 from __future__ import annotations
 
 from PySide6.QtCore import QItemSelectionModel, QPointF, QRectF, QSize, Qt
-from PySide6.QtGui import (QColor, QFont, QIcon, QPainter, QPalette, QPen,
-                           QPixmap)
+from PySide6.QtGui import (QColor, QFont, QIcon, QIconEngine, QPainter,
+                           QPalette, QPen, QPixmap)
 from PySide6.QtWidgets import (QAbstractItemView, QApplication, QDialog,
                                QDockWidget,
                                QHBoxLayout,
@@ -156,21 +156,81 @@ def _cube(p, ink, fill=None) -> None:
 _DRAW_RATIOS = (1, 3)
 
 
+class _DrawnEngine(QIconEngine):
+    """A drawn mark painted at the exact pixel ratio of whatever paints it.
+    Pixmaps kept at fixed ratios (1× and 3×) came out blurred on a
+    fractional screen: a window at 125 % or 160 % got the 3× drawing
+    scaled down by a non-whole factor, softening the 1.2 px lines of the
+    eye and the padlock. ``opacity`` < 1 is the faded inherited mark."""
+
+    def __init__(self, key: str, opacity: float = 1.0):
+        super().__init__()
+        self._key = key
+        self._opacity = opacity
+        self._cache: dict = {}
+
+    def _pm(self, w: int, h: int, ratio: float) -> QPixmap:
+        slot = (w, h, round(ratio, 3))
+        pm = self._cache.get(slot)
+        if pm is None:
+            pm = _draw_pixmap(self._key, ratio * max(w, h) / 18.0)
+            pm.setDevicePixelRatio(ratio)
+            if self._opacity < 1.0:
+                faint = QPixmap(pm.size())
+                faint.setDevicePixelRatio(ratio)
+                faint.fill(Qt.transparent)
+                p = QPainter(faint)
+                p.setOpacity(self._opacity)
+                p.drawPixmap(0, 0, pm)
+                p.end()
+                pm = faint
+            self._cache[slot] = pm
+        return pm
+
+    def paint(self, painter, rect, mode, state):
+        dev = painter.device()
+        ratio = dev.devicePixelRatioF() if dev is not None else 1.0
+        painter.drawPixmap(rect, self._pm(rect.width(), rect.height(),
+                                          ratio))
+
+    def pixmap(self, size, mode, state):
+        return self._pm(size.width(), size.height(), 1.0)
+
+    def scaledPixmap(self, size, mode, state, scale):
+        return self._pm(size.width(), size.height(), scale)
+
+    def actualSize(self, size, mode, state):
+        return size
+
+    def clone(self):
+        return _DrawnEngine(self._key, self._opacity)
+
+
+#: The marks whose icon is a _DrawnEngine, so the faded one is drawn too.
+_DRAWN: set = set()
+
+
 def _draw(key: str) -> QIcon:
-    icon = QIcon()
-    for ratio in _DRAW_RATIOS:
-        icon.addPixmap(_draw_pixmap(key, ratio))
-    return icon
+    _DRAWN.add(key)
+    return QIcon(_DrawnEngine(key))
 
 
 def _draw_pixmap(key: str, ratio: float = 1):
+    def _w(width: float) -> float:
+        # On a fractional screen, a stroke a whole number of device pixels
+        # wide: 1.2 px at 125 % is 1.5 pixels, which antialiasing smears
+        # over two. Whole ratios keep the drawing as it always was.
+        if abs(ratio - round(ratio)) < 1e-6:
+            return width
+        return max(1, round(width * ratio)) / ratio
+
     ink = _ink()
     pm = QPixmap(round(18 * ratio), round(18 * ratio))
     pm.setDevicePixelRatio(ratio)
     pm.fill(Qt.transparent)
     p = QPainter(pm)
     p.setRenderHint(QPainter.Antialiasing)
-    p.setPen(QPen(ink, 1.2))
+    p.setPen(QPen(ink, _w(1.2)))
     if key == "group":
         _cube(p, ink)
     elif key == "component":
@@ -239,11 +299,11 @@ def _draw_pixmap(key: str, ratio: float = 1):
             p.setBrush(fill)
             p.drawPolygon([QPointF(3, 3), QPointF(15, 3), QPointF(3, 15)])
             p.setBrush(Qt.NoBrush)
-            p.setPen(QPen(ink, 1.2))
+            p.setPen(QPen(ink, _w(1.2)))
         else:
             faint = QColor(ink)
             faint.setAlpha(110)
-            p.setPen(QPen(faint, 1.2))
+            p.setPen(QPen(faint, _w(1.2)))
         p.drawRect(QRectF(3, 3, 12, 12))
         p.drawLine(QPointF(1.5, 16.5), QPointF(16.5, 1.5))
     elif key in ("lock", "lock_open"):
@@ -256,7 +316,7 @@ def _draw_pixmap(key: str, ratio: float = 1):
         else:
             faint = QColor(ink)
             faint.setAlpha(110)
-            p.setPen(QPen(faint, 1.2))
+            p.setPen(QPen(faint, _w(1.2)))
             p.drawRoundedRect(QRectF(4, 8.5, 10, 7.5), 1.5, 1.5)
             p.drawArc(QRectF(8.5, 1.5, 7, 9), 0, 180 * 16)
             p.drawLine(QPointF(8.5, 6), QPointF(8.5, 8.5))
@@ -264,7 +324,7 @@ def _draw_pixmap(key: str, ratio: float = 1):
         # A printer: the paper in, the body, the sheet coming out.
         if key == "print_off":
             p.setPen(QPen(QColor(ink.red(), ink.green(), ink.blue(), 110),
-                          1.2))
+                          _w(1.2)))
         p.drawRect(QRectF(5.5, 2.5, 7, 4))
         p.drawRoundedRect(QRectF(2.5, 6.5, 13, 6.5), 1.2, 1.2)
         p.drawRect(QRectF(5.5, 10.5, 7, 5.5))
@@ -299,22 +359,22 @@ def _draw_pixmap(key: str, ratio: float = 1):
                        QPointF(3.5, 10)])
         p.drawLine(QPointF(10.5, 1.5), QPointF(10.5, 4.5))
         p.drawLine(QPointF(10.5, 4.5), QPointF(13.5, 4.5))
-        p.setPen(QPen(_accent(), 1.6))
+        p.setPen(QPen(_accent(), _w(1.6)))
         p.drawLine(QPointF(8.5, 5), QPointF(8.5, 14))
         p.drawPolyline([QPointF(5.5, 11), QPointF(8.5, 14),
                         QPointF(11.5, 11)])
-        p.setPen(QPen(ink, 1.2))
+        p.setPen(QPen(ink, _w(1.2)))
         p.drawPolyline([QPointF(2.5, 13.5), QPointF(2.5, 16.5),
                         QPointF(14.5, 16.5), QPointF(14.5, 13.5)])
     elif key in ("eye", "eye_off"):
         if key == "eye_off":
             p.setPen(QPen(QColor(ink.red(), ink.green(), ink.blue(), 110),
-                          1.2))
+                          _w(1.2)))
         p.drawEllipse(QRectF(2, 5.5, 14, 7))
         p.setBrush(p.pen().color())
         p.drawEllipse(QRectF(7, 7, 4, 4))
         if key == "eye_off":
-            p.setPen(QPen(ink, 1.4))
+            p.setPen(QPen(ink, _w(1.4)))
             p.drawLine(QPointF(3, 15), QPointF(15, 3))
     p.end()
     return pm
@@ -348,7 +408,11 @@ def mark_icon(key: str, inherited: bool = False) -> QIcon:
     ``isolate``… — as the two side trees draw it: same drawing, same size,
     and faded when the state comes from the group around it."""
     icon = node_icon(key)
-    return _faded(icon) if inherited else icon
+    if not inherited:
+        return icon
+    if key in _DRAWN:
+        return QIcon(_DrawnEngine(key, 0.4))
+    return _faded(icon)
 
 
 def inherited_states(groups) -> dict:
