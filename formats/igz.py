@@ -244,7 +244,31 @@ def _pack_textures(payload, *, blobs=None, resolved=None) -> tuple[dict, int]:
             if member:
                 tex.pop("base", None)
                 tex["base_embed"] = member
+    # The pictures placed on sheets ride inside too: by path alone, a
+    # document saved on one machine opened on another with crossed boxes
+    # where its photos and renders were (Marco, 21-11: «Detalle de
+    # pileta», saved on Windows, opened on the laptop).
+    for images, i in _sheet_image_slots(payload):
+        img = images[i] = dict(images[i])
+        src = img.get("path")
+        if src:
+            member = _member_for(src)
+            if member:
+                img.pop("path", None)
+                img["embed"] = member
     return blobs, missing
+
+
+def _sheet_image_slots(payload):
+    """Yield ``(list, index)`` for every picture placed on a sheet in a
+    serialized scene payload (``compositions[*].images``)."""
+    comps = payload.get("compositions") if isinstance(payload, dict) else None
+    for comp in comps or ():
+        images = comp.get("images") if isinstance(comp, dict) else None
+        if isinstance(images, list):
+            for i, img in enumerate(images):
+                if isinstance(img, dict):
+                    yield images, i
 
 
 def _unpack_textures(payload, archive) -> None:
@@ -289,6 +313,14 @@ def _unpack_textures(payload, archive) -> None:
         out = _restore(member)
         if out:
             tex["path"] = out
+    for images, i in _sheet_image_slots(payload):
+        img = images[i]
+        member = img.pop("embed", None)
+        if not member or img.get("path"):
+            continue
+        out = _restore(member)
+        if out:
+            img["path"] = out
 
 
 def _face_json(f) -> dict:
