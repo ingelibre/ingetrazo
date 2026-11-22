@@ -145,6 +145,43 @@ class ShadowMixin:
         view.lookAt(eye, center, up)
         return view, r
 
+    def _shadow_bounds(self):
+        """The box the sun's map is fitted round: the model's, widened to
+        the figures that cast (``_figure_shadow_box``). ``(None, None)``
+        when there is nothing at all."""
+        lo, hi = self.scene.bounds()
+        box = self._figure_shadow_box()
+        if box is None:
+            return lo, hi
+        flo, fhi = box
+        if lo is None:
+            return QVector3D(*flo), QVector3D(*fhi)
+        return (QVector3D(min(lo.x(), flo[0]), min(lo.y(), flo[1]),
+                          min(lo.z(), flo[2])),
+                QVector3D(max(hi.x(), fhi[0]), max(hi.y(), fhi[1]),
+                          max(hi.z(), fhi[2])))
+
+    def _model_preview_epoch(self):
+        """The drag preview's epoch as the model's map sees it: a preview
+        that starts or ends with only face-me figures riding it leaves
+        the model's buffers — so its map — as they were (the figures are
+        in a map of their own), and keeps the epoch the map was keyed on.
+        Dragging the engineer across the plaza redrew the whole model's map
+        as the drag began and again as it ended (Marco, 22-11)."""
+        ep = getattr(self, "_preview_epoch", 0)
+        moving = frozenset(getattr(self, "_preview_groups", None) or ())
+        seen = getattr(self, "_shadow_preview_seen", None)
+        if seen is not None and seen[0] == ep:
+            return seen[1]
+        figures = {id(g) for g in self._faceme_figures()}
+        if (seen is not None and moving <= figures
+                and seen[2] <= figures):
+            kept = seen[1]
+        else:
+            kept = ep
+        self._shadow_preview_seen = (ep, kept, moving)
+        return kept
+
     def _ensure_shadow_map(self, mvp=None):
         """Build or reuse the packed-depth shadow map. Camera-independent:
         keyed by geometry version + sun + cut + bounds, so orbit and zoom
@@ -166,13 +203,13 @@ class ShadowMixin:
             # polygons; the live viewport keeps its normal shadow preview.
             self._shadow_vp = None
             return None
-        lo, hi = self.scene.bounds()
+        lo, hi = self._shadow_bounds()
         if lo is None:
             self._shadow_vp = None
             return None
         clips = getattr(self, "_clip_vecs", None) or ()
         key = (self.scene.version, id(self.scene.mesh),
-               getattr(self, "_preview_epoch", 0),
+               self._model_preview_epoch(),
                tuple(round(v, 4) for v in d),
                tuple((round(c.x(), 4), round(c.y(), 4), round(c.z(), 4),
                       round(c.w(), 4)) for c in clips),
@@ -246,7 +283,7 @@ class ShadowMixin:
         if self._export_size is not None or self._frame_shadow is None:
             return
         d = getattr(self, "_frame_sun", None)
-        lo, hi = self.scene.bounds()
+        lo, hi = self._shadow_bounds()
         if d is None or lo is None:
             return
         state = (tuple(mvp.data()), self._shadow_key)
@@ -305,12 +342,61 @@ class ShadowMixin:
         p = m @ clip
         px, py = p[0] / p[3], p[1] / p[3]
         x0, x1, y0, y1 = px.min(), px.max(), py.min(), py.max()
+        # A figure's shadow on the bare ground is not in the depth (the
+        # ground catcher writes none): the square must also hold the shadow
+        # of every figure the view shows, or that shadow came out cut — a
+        # different cut at each camera (Marco, 21-11).
+        for fx, fy in self._figure_shadows_in_view(mvp, d, view):
+            x0, x1 = min(x0, fx), max(x1, fx)
+            y0, y1 = min(y0, fy), max(y1, fy)
         # Margin: the gaps between sampled pixels, and the PCF kernel.
         half = max(x1 - x0, y1 - y0) * 0.5 * 1.08 + 0.05
         if half >= r * 0.9:
             return None                 # the whole model: nothing to gain
         return (round(float(x0 + x1) * 0.5, 4), round(float(y0 + y1) * 0.5, 4),
                 round(float(half), 4))
+
+    def _figure_shadows_in_view(self, mvp, d, view):
+        """The corners, in the sun's view plane, of the shadow of each
+        casting figure that the camera ``mvp`` may see: its quad as drawn,
+        facing the camera (in that plane the quad and its shadow are one
+        and the same footprint, sun ``d``). A figure counts when the screen
+        box of that quad and of its shadow's far end on its own ground
+        overlaps the view — the figure itself may be out of it. Runs once
+        per settled view."""
+        from PySide6.QtGui import QVector4D
+        out = []
+        for g in self._faceme_figures():
+            if getattr(g, "billboard", False) is not True:
+                continue
+            quad = self._billboard_quad(g)
+            if quad is None:
+                continue
+            corners = quad[0]
+            pts = list(corners)
+            if d[2] > 1e-6:
+                z0 = corners[0].z()
+                for c in corners[2:]:          # the top edge's shadow
+                    t = (c.z() - z0) / d[2]
+                    pts.append(QVector3D(c.x() - d[0] * t,
+                                         c.y() - d[1] * t, z0))
+            xs, ys, behind = [], [], False
+            for q in pts:
+                c = mvp.map(QVector4D(q.x(), q.y(), q.z(), 1.0))
+                if c.w() <= 1e-9:
+                    behind = True
+                    continue
+                xs.append(c.x() / c.w())
+                ys.append(c.y() / c.w())
+            if not xs:
+                continue
+            if not behind and (max(xs) < -1.0 or min(xs) > 1.0
+                               or max(ys) < -1.0 or min(ys) > 1.0):
+                continue
+            for c in corners:
+                v = view.map(c)
+                out.append((v.x(), v.y()))
+        return out
 
     def _render_shadow_map(self, light_vp, fbo=None) -> None:
         """Depth-from-the-sun pass: every caster — the consolidated face
@@ -419,53 +505,170 @@ class ShadowMixin:
                         extra.glDrawArraysInstanced(GL_TRIANGLES, s0, cnt, n)
                 prog.setUniformValue(self._loc_d_use_tex, 0)
                 entry["tex_vao"].release()
-        # Billboard people cast their SILHOUETTE, as a quad turned toward
-        # the sun — a camera-facing caster would swing its shadow while the
-        # camera orbits (face-me "shadows face sun"). Vector-art
-        # and mesh face-me stay non-casting (documented deferral).
-        sun = getattr(self, "_frame_sun", None)
-        bbs = [g for g in self._placements()
-               if getattr(g, "billboard", False) is True
-               and self.scene.entity_visible(g)]
-        if sun is not None and bbs:
-            face = QVector3D(sun[0], sun[1], 0.0)
-            data = array("f")
-            draws = []
-            uvs = [(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)]
-            for g in bbs:
-                quad = self._billboard_quad(g, face_dir=face)
-                if quad is None or not quad[1]:
-                    continue
-                corners, path = quad
-                start = len(data) // 5
-                for idx in (0, 1, 2, 0, 2, 3):
-                    c = corners[idx]
-                    u, v = uvs[idx]
-                    data.extend([c.x(), c.y(), c.z(), u, v])
-                draws.append((path, start))
-            if draws:
-                raw = data.tobytes()
-                self._shadow_bb_vbo.bind()
-                self._shadow_bb_vbo.allocate(raw, len(raw))
-                self._shadow_bb_vbo.release()
-                prog.bind()
-                prog.setUniformValue(self._loc_d_use_tex, 1)
-                prog.setUniformValue(self._loc_d_tex, 0)
-                self._shadow_bb_vao.bind()
-                for path, start in draws:
-                    tex = self._get_texture(path)
-                    if tex is None:
-                        continue
-                    tex.bind(0)
-                    self._gl.glDrawArrays(GL_TRIANGLES, start, 6)
-                    tex.release(0)
-                self._shadow_bb_vao.release()
-                prog.setUniformValue(self._loc_d_use_tex, 0)
+        # The face-me figures are not in this map: their shadow follows
+        # the camera they face, and this map is kept while it orbits.
+        # They have a map of their own (_ensure_figure_shadow_map).
         for i in range(len(clips)):
             self._gl.glDisable(GL_CLIP_DISTANCE0 + i)
         prog.release()
         fbo.release()
         self._gl.glEnable(GL_BLEND)
+
+    #: Side of the figures' map: the model's map's, at most this (an
+    #: export's 8 192 would hold 256 MB for a few quads).
+    _FIG_SHADOW_MAX = 4096
+
+    def _figure_caster_data(self, light_vp, size):
+        """``(vertex data, [(texture, first vertex)])`` of the face-me
+        figures as they cast: each quad AS DRAWN — facing the camera, turned
+        round its feet — so both feet of the shadow meet both shoes at any
+        orbit, the shadow stretching from the soles away from the sun
+        (Marco, 21-11, against the expected behaviour frame by frame). Two
+        quads a figure: the cutout, and a skirt under the feet."""
+        sun = getattr(self, "_frame_sun", None)
+        data = array("f")
+        draws = []
+        if sun is None:
+            return data, draws
+        toward = QVector3D(sun[0], sun[1], sun[2])
+        lift = self._figure_caster_lift(light_vp, sun, size)
+        for g in self._faceme_figures():
+            if getattr(g, "billboard", False) is not True:
+                continue           # mesh face-me figures cast no shadow
+            quad = self._billboard_quad(g)
+            if quad is None or not quad[1]:
+                continue
+            corners, path = quad
+            _fu, fv = self._figure_feet(path)
+            h = (corners[3] - corners[0]).length()
+            # The whole caster slides TOWARD THE SUN: in the map's plane
+            # nothing moves (the slide is along the sun's rays), only its
+            # depth, which now clears the margins the ground keeps against
+            # acne — they peeled the shadow off the feet, 2 cm at 17 h on a
+            # small model and more on a deep map. A figure receives no
+            # shadow, so its own margins are zero (the caller sets them).
+            shift = toward * min(lift, h)
+            c = [p + shift for p in corners]
+            # A skirt under the feet down to the shadow catcher, which lies
+            # a hair under the ground: from the lowest opaque row of the
+            # picture to that plane, painted with that row, so the shadow
+            # reaches the soles on the catcher too.
+            drop = (-self._SHADOW_GROUND_Z
+                    if abs(corners[0].z()) < 1e-3 else 0.0)
+            raise_ = QVector3D(0.0, 0.0, fv * h)
+            lower = QVector3D(0.0, 0.0, drop)
+            skirt = [c[0] - lower, c[1] - lower, c[1] + raise_,
+                     c[0] + raise_]
+            start = len(data) // 5
+            for quad_c, uvs in (
+                    (c, ((0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0))),
+                    (skirt, ((0.0, fv), (1.0, fv), (1.0, fv), (0.0, fv)))):
+                for idx in (0, 1, 2, 0, 2, 3):
+                    p = quad_c[idx]
+                    u, v = uvs[idx]
+                    data.extend([p.x(), p.y(), p.z(), u, v])
+            draws.append((path, start))
+        return data, draws
+
+    def _ensure_figure_shadow_map(self):
+        """The face-me figures' own shadow map for this frame, in the same
+        light matrix as the model's (``_shadow_vp``, whole-model or fitted)
+        — or ``None`` when no figure casts. The figures face the camera, so
+        it is redrawn whenever a quad moves: an orbit, a drag, an edit. A
+        handful of quads; the model's map, kept across the orbit, is never
+        touched. Keyed on the very vertices it would draw: a still view
+        costs building them (a few cached extents) and one comparison. The
+        caller restores the scene FBO/program bindings this pass borrows."""
+        light_vp = self._shadow_vp
+        if light_vp is None:
+            return None
+        main = getattr(self, "_frame_shadow", None)
+        size = min(main.width() if main is not None
+                   else self._SHADOW_MAP_SIZE, self._FIG_SHADOW_MAX)
+        data, draws = self._figure_caster_data(light_vp, size)
+        if not draws:
+            return None
+        clips = getattr(self, "_clip_vecs", None) or ()
+        key = (tuple(light_vp.data()), data.tobytes(),
+               tuple(c.toTuple() for c in clips))
+        fbo = getattr(self, "_fig_shadow_fbo", None)
+        if fbo is not None and fbo.width() != size:
+            fbo = self._fig_shadow_fbo = None
+        if fbo is not None and getattr(self, "_fig_shadow_key", None) == key:
+            return fbo
+        if fbo is None:
+            fmt = QOpenGLFramebufferObjectFormat()
+            fmt.setAttachment(QOpenGLFramebufferObject.CombinedDepthStencil)
+            fbo = QOpenGLFramebufferObject(size, size, fmt)
+            if not fbo.isValid():
+                return None
+            self._fig_shadow_fbo = fbo
+        fbo.bind()
+        self._gl.glViewport(0, 0, size, size)
+        self._gl.glClearColor(1.0, 1.0, 1.0, 1.0)
+        self._gl.glClearDepthf(1.0)
+        self._gl.glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
+        self._gl.glEnable(GL_DEPTH_TEST)
+        self._gl.glDepthFunc(GL_LEQUAL)
+        self._gl.glDepthMask(GL_TRUE)
+        self._gl.glDisable(GL_BLEND)
+        prog = self._depth_program
+        prog.bind()
+        prog.setUniformValue(self._loc_d_mvp, light_vp)
+        prog.setUniformValue1f(self._loc_d_bias_const, 0.0)
+        prog.setUniformValue1f(self._loc_d_bias_slope_max, 0.0)
+        for i, c in enumerate(clips):
+            prog.setUniformValue(self._loc_d_clip_planes[i], c)
+            self._gl.glEnable(GL_CLIP_DISTANCE0 + i)
+        prog.setUniformValue(self._loc_d_clip_count, len(clips))
+        for i, row in enumerate(((1.0, 0.0, 0.0, 0.0), (0.0, 1.0, 0.0, 0.0),
+                                 (0.0, 0.0, 1.0, 0.0),
+                                 (0.0, 0.0, 0.0, 1.0))):
+            self._gl.glVertexAttrib4f(3 + i, *row)
+        raw = data.tobytes()
+        self._shadow_bb_vbo.bind()
+        self._shadow_bb_vbo.allocate(raw, len(raw))
+        self._shadow_bb_vbo.release()
+        prog.setUniformValue(self._loc_d_use_tex, 1)
+        prog.setUniformValue(self._loc_d_tex, 0)
+        self._shadow_bb_vao.bind()
+        for path, start in draws:
+            tex = self._get_texture(path)
+            if tex is None:
+                continue
+            tex.bind(0)
+            self._gl.glDrawArrays(GL_TRIANGLES, start, 12)
+            tex.release(0)
+        self._shadow_bb_vao.release()
+        prog.setUniformValue(self._loc_d_use_tex, 0)
+        for i in range(len(clips)):
+            self._gl.glDisable(GL_CLIP_DISTANCE0 + i)
+        prog.release()
+        fbo.release()
+        self._gl.glEnable(GL_BLEND)
+        self._fig_shadow_key = key
+        return fbo
+
+    #: The shadow catcher's height: a hair under the ground, so a real
+    #: floor at z=0 never z-fights with it.
+    _SHADOW_GROUND_Z = -0.005
+
+    @classmethod
+    def _figure_caster_lift(cls, light_vp, sun, size) -> float:
+        """How far, in metres along the sun, a figure's caster slides
+        toward the sun so the ground under its feet is shadowed despite
+        the margins a receiver keeps (basic.frag ``shadow_light``): the
+        receiver's constant, plus 1.5 texels of the ground's depth slope
+        (``cot(elevation)`` metres of depth per metre across the map,
+        capped at 8 in map units as the shader caps it), plus one texel
+        of slack. A few centimetres on a small model; under a metre on a
+        plaza's whole-model map, where a texel is 20 cm anyway."""
+        across, depth = cls._shadow_footprint(light_vp)
+        recv = cls._shadow_biases(light_vp)[2] * depth
+        elev = max(abs(sun[2]), 1e-3)
+        cot = (max(1.0 - elev * elev, 0.0) ** 0.5) / elev
+        slope = min(8.0 * depth, cot * across) * 1.5 / size
+        return recv + slope + across / size
 
     def _draw_shadow_ground(self, style) -> None:
         """The on-ground shadow catcher: a world plane just under z=0 that
@@ -480,10 +683,10 @@ class ShadowMixin:
         if (self._base_map_showing() or self._terrain_showing()
                 or self._photo_showing()):
             return
-        z = -0.005
+        z = self._SHADOW_GROUND_Z
         if self.camera.sees_from_below(z):
             return
-        lo, hi = self.scene.bounds()
+        lo, hi = self._shadow_bounds()
         if lo is None:
             return
         cx = (lo.x() + hi.x()) / 2.0

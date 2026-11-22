@@ -120,6 +120,10 @@ class GLSetupMixin:
             "u_shadow_enable")
         self._loc_shadow_map = self._program.uniformLocation("u_shadow_map")
         self._loc_light_vp = self._program.uniformLocation("u_light_vp")
+        self._loc_fig_shadow_map = self._program.uniformLocation(
+            "u_fig_shadow_map")
+        self._loc_fig_shadow_enable = self._program.uniformLocation(
+            "u_fig_shadow_enable")
         self._loc_shadow_dark = self._program.uniformLocation("u_shadow_dark")
         self._loc_shadow_bias = self._program.uniformLocation("u_shadow_bias")
         self._loc_shadow_soft = self._program.uniformLocation("u_shadow_soft")
@@ -150,6 +154,8 @@ class GLSetupMixin:
         self._shadow_vp = None
         self._fine_shadow_fbo = None
         self._fine_shadow_key = None
+        self._fig_shadow_fbo = None
+        self._fig_shadow_key = None
         self._shadow_fit = None
 
         # Axes rebuilt per frame (dash spacing scales with zoom), so dynamic.
@@ -720,7 +726,7 @@ class GLSetupMixin:
                 "_ghost_edges_vao", "_ghost_edges_vbo", "_ghost_vcol_vao",
                 "_ghost_vcol_vbo", "_ghost_tex_vao", "_ghost_tex_vbo",
                 "_depth_fbo", "_scene_fbo", "_shadow_fbo", "_depth_snap",
-                "_fine_shadow_fbo",
+                "_fine_shadow_fbo", "_fig_shadow_fbo",
                 "_frame_cache_fbo", "_frame_cache", "_edge_renderer")
 
     def _forget_context_objects(self) -> None:

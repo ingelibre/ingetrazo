@@ -31,6 +31,7 @@ from views.viewport._support import (_PERF, _NO_BACK_TINT, _plog, GL_LINES,
                                      GL_FRAMEBUFFER, GL_READ_FRAMEBUFFER,
                                      GL_DRAW_FRAMEBUFFER, GL_NEAREST,
                                      GL_TEXTURE_2D, GL_TEXTURE0, GL_TEXTURE1,
+                                     GL_TEXTURE2,
                                      SHADER_DIR, _chunk_uid, _FRAME_CACHE,
                                      _array_bake, _proto_wrapper, _scene_blend,
                                      _paint_of, _ghost_edge_points, _cache_ver,
@@ -291,10 +292,20 @@ class RenderMixin:
                               if mode in ("textures", "shaded",
                                           "hidden_line", "monochrome")
                               else None)
+        # The face-me figures' own map (they face the camera, so it follows
+        # the orbit while the model's map above stays as it was).
+        fig_map = (self._ensure_figure_shadow_map()
+                   if self._frame_shadow is not None else None)
         if self._frame_shadow is not None:
             self._scene_fbo.bind()
             self._gl.glViewport(0, 0, w, h)
             self._program.bind()
+            if fig_map is not None:
+                self._gl.glActiveTexture(GL_TEXTURE2)
+                self._gl.glBindTexture(GL_TEXTURE_2D, fig_map.texture())
+            self._program.setUniformValue(self._loc_fig_shadow_map, 2)
+            self._program.setUniformValue(self._loc_fig_shadow_enable,
+                                          int(fig_map is not None))
             self._gl.glActiveTexture(GL_TEXTURE1)
             self._gl.glBindTexture(GL_TEXTURE_2D,
                                    self._frame_shadow.texture())

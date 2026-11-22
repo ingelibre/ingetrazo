@@ -954,11 +954,9 @@ class SnappingMixin:
                 continue
             if not self.scene.group_snappable(g):
                 continue
-            quad = self._billboard_quad(g)
-            if quad is None:
+            feet = self._billboard_feet(g)
+            if feet is None:
                 continue
-            c = quad[0]
-            feet = (c[0] + c[1]) * 0.5
             out.append(_SnapEdge(QVector3D(feet), QVector3D(feet), figure=True))
         return out
 
