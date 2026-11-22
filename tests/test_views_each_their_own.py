@@ -47,7 +47,11 @@ def _click(cell):
 
 
 def _mode(cell):
-    return cell.viewport._effective_style().face_mode
+    # X-ray is a flag over the face mode since #1218: read it as the
+    # mode it used to be, which is what these views compare.
+    from core.style import base_face_mode, xray_enabled
+    style = cell.viewport._effective_style()
+    return "xray" if xray_enabled(style) else base_face_mode(style)
 
 
 def test_a_style_goes_to_the_view_clicked_only(win):

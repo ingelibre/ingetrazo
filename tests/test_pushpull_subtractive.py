@@ -16,6 +16,8 @@ Headless: ``QVector3D`` values + a stub viewport for the tool.
 """
 from __future__ import annotations
 
+import pytest
+
 from PySide6.QtGui import QVector3D
 
 from core.history import AddFaceCommand, History
@@ -520,12 +522,15 @@ def test_push_through_wall_makes_a_real_hole():
     ] == []
 
 
-# ---- push a bump flush back: everything dissolves, the classic way ----------
+# ---- push a bump flush back: the pane stays, the bump's walls go -----------
 
-def test_bump_pushed_flush_back_dissolves_to_clean_cube():
+def test_bump_pushed_flush_back_keeps_its_pane():
     """Extrude a bump out of a wall, then push its front face back level with
-    the wall. The pane must merge into the host wall (no seam, no hole, no
-    zero-area side walls, no stale vertices) — a pristine cube again."""
+    the wall. The bump's side walls go (no zero-area walls, no stale
+    vertices), and the pane keeps its outline: a face of its own, held by
+    the wall as a hole. Marco, 19-11 (#864): a face pushed flush with a
+    neighbour keeps its outline, as the reference program does — this
+    used to dissolve into a plain cube."""
     from core.edits import build_add_edges
     from core.orient import signed_volume
 
@@ -556,11 +561,16 @@ def test_bump_pushed_flush_back_dissolves_to_clean_cube():
     assert vp_prism is True
 
     m = scene.mesh
-    assert (len(m.faces), len(m.edges), len(m.vertices)) == (6, 12, 8)
+    # the cube plus the pane, its 4 edges and 4 corners
+    assert (len(m.faces), len(m.edges), len(m.vertices)) == (7, 16, 12)
     assert all(len(e.faces) == 2 for e in m.edges)     # watertight
     fronts = [f for f in m.faces if all(abs(v.y()) < 1e-9 for v in f.vertices)]
-    assert len(fronts) == 1 and fronts[0].holes == []  # pane + ring dissolved
-    assert signed_volume(m) > 0                        # outward
+    assert len(fronts) == 2                            # wall + pane
+    wall = max(fronts, key=lambda f: f.area())
+    pane = min(fronts, key=lambda f: f.area())
+    assert len(wall.holes) == 1 and pane.holes == []
+    assert pane.area() == pytest.approx(1.0)
+    assert signed_volume(m) == pytest.approx(48.0)     # outward, a cube again
 
 
 # ---- hybrid drag preview ----------------------------------------------------

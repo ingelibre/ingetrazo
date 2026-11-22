@@ -383,3 +383,20 @@ def test_leaving_a_nested_component_counts_its_copies(win, monkeypatch):
     vp.history.execute(SetFaceColorCommand([_front_face(vp)], (1.0, 0.0, 0.0)))
     vp.end_group_edit()
     assert any(" 1 " in text for text in said), said
+
+
+@every_layout
+def test_a_reversed_face_shows_its_back_at_once(win, layout):
+    """#1188: Reverse Faces on a face inside an open group showed the
+    reversed side only after the group was closed (a nested group drew
+    through the instanced path); a loose face turned at once."""
+    from core.history import FlipFacesCommand
+    vp = win.viewport
+    _open(vp, layout)
+    face = _front_face(vp)
+    vp.history.execute(SetFaceColorCommand([face], (1.0, 0.0, 0.0)))
+    assert _red(_pixel(vp))
+    vp.history.execute(FlipFacesCommand([face]))
+    assert not _red(_pixel(vp)), "the reversed face still shows its front"
+    vp.history.undo()
+    assert _red(_pixel(vp))

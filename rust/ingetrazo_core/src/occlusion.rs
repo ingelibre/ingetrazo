@@ -12,6 +12,10 @@
 //! that last bit (a triangle within the bound of a threshold, or a nearest
 //! hit within it of the point) comes back marked: the caller asks NumPy for
 //! those rays. Every other ray's answer is the same by construction.
+//!
+//! A det under `DET_MIN` is read against the triangle's own size, as
+//! `views.viewport._occlusion_det_ok` reads it (#1294): det is
+//! (e1 × e2)·d, so a 1 mm square met head-on (det ≈ 6e-7) hid nothing.
 
 use rayon::prelude::*;
 
@@ -37,6 +41,49 @@ fn dot_err(a: [f64; 3], b: [f64; 3]) -> f64 {
     4.0 * EPS_M * ((a[0] * b[0]).abs() + (a[1] * b[1]).abs() + (a[2] * b[2]).abs())
 }
 
+/// The length of a 3-vector as `np.linalg.norm(.., axis=1)` sums it.
+#[inline]
+fn norm(a: [f64; 3]) -> f64 {
+    ((a[0] * a[0] + a[1] * a[1]) + a[2] * a[2]).sqrt()
+}
+
+/// `_occlusion_det_ok` for one ray and one triangle: whether the det is
+/// not grazing — `|det| > DET_MIN`, or `|det| > DET_MIN·|e1 × e2|·|d|` on
+/// a triangle of some area — when that is sure for any summation order
+/// (`det_err`, and a few ulps of the norms); None when the last bits
+/// could decide.
+#[inline]
+fn det_ok(det: f64, det_err: f64, d: [f64; 3], e1: [f64; 3], e2: [f64; 3]) -> Option<bool> {
+    let a = det.abs();
+    if a - DET_MIN > det_err {
+        return Some(true);
+    }
+    if a == 0.0 && det_err == 0.0 {
+        return Some(false); // every term nought: nought in any order
+    }
+    // The cross product is NumPy's formula, bit for bit; its norm and the
+    // ray's may round a few ulps apart.
+    let scale = norm(cross(e1, e2)) * norm(d);
+    if !(scale > 0.0) {
+        // No area: refused by the second reading; the first decides.
+        return if DET_MIN - a > det_err { Some(false) } else { None };
+    }
+    let thr = DET_MIN * scale;
+    let thr_err = 16.0 * EPS_M * thr;
+    let second = if a - thr > det_err + thr_err {
+        Some(true)
+    } else if thr - a > det_err + thr_err {
+        Some(false)
+    } else {
+        None
+    };
+    if DET_MIN - a > det_err {
+        return second; // surely not past DET_MIN: the second reading alone
+    }
+    // Within det_err of DET_MIN: either reading may be NumPy's.
+    if second == Some(true) { Some(true) } else { None }
+}
+
 /// One ray against the span: the nearest accepted `t` (or `best` when none
 /// is nearer), and whether the answer is too close to call bit for bit.
 fn one_ray(o: [f64; 3], d: [f64; 3], best: f64, limit: f64,
@@ -51,12 +98,13 @@ fn one_ray(o: [f64; 3], d: [f64; 3], best: f64, limit: f64,
         let p = cross(d, e2[i]);
         let det = dot(e1[i], p);
         let det_err = dot_err(e1[i], p);
-        if (det.abs() - DET_MIN).abs() <= det_err {
-            doubt = true;
-            continue;
-        }
-        if !(det.abs() > DET_MIN) {
-            continue;
+        match det_ok(det, det_err, d, e1[i], e2[i]) {
+            None => {
+                doubt = true;
+                continue;
+            }
+            Some(false) => continue,
+            Some(true) => {}
         }
         let inv = 1.0 / det;
         let rel = det_err / det.abs();
@@ -126,11 +174,10 @@ pub fn tri_occludes(o: [f64; 3], d: [f64; 3], limit: f64,
     let p = cross(d, e2);
     let det = dot(e1, p);
     let det_err = dot_err(e1, p);
-    if (det.abs() - DET_MIN).abs() <= det_err {
-        return None;
-    }
-    if !(det.abs() > DET_MIN) {
-        return Some(false);
+    match det_ok(det, det_err, d, e1, e2) {
+        None => return None,
+        Some(false) => return Some(false),
+        Some(true) => {}
     }
     let inv = 1.0 / det;
     let rel = det_err / det.abs();
@@ -190,4 +237,78 @@ pub fn unit_ray(eye: [f32; 3], p: [f64; 3], h: Hypot) -> Option<([f64; 3], f64)>
         return None;
     }
     Some(([(dl[0] / l) as f64, (dl[1] / l) as f64, (dl[2] / l) as f64], l as f64))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn unit(v: [f64; 3]) -> [f64; 3] {
+        let l = norm(v);
+        [v[0] / l, v[1] / l, v[2] / l]
+    }
+
+    /// A square of side `s` (two triangles) met head-on-ish from 2 cm.
+    fn square_hit(s: f64) -> (Option<bool>, f64, bool) {
+        let d = unit([0.1, -0.2, -1.0]);
+        let c = [s / 3.0, s / 3.0, 0.0];
+        let o = [c[0] - d[0] * 0.02, c[1] - d[1] * 0.02, c[2] - d[2] * 0.02];
+        let v0 = [[0.0, 0.0, 0.0], [s, s, 0.0]];
+        let e1 = [[s, 0.0, 0.0], [-s, 0.0, 0.0]];
+        let e2 = [[0.0, s, 0.0], [0.0, -s, 0.0]];
+        let one = tri_occludes(o, d, 0.05, v0[0], e1[0], e2[0]);
+        let (b, doubt) = span(o, &[d], &[f64::INFINITY], &[0.05], &v0, &e1, &e2);
+        (one, b[0], doubt[0])
+    }
+
+    #[test]
+    fn a_millimetre_square_hides_what_is_behind_it() {
+        for s in [0.001, 0.0003] {
+            // det = (e1 × e2)·d ≈ s² — under DET_MIN, refused before #1294.
+            let (one, t, doubt) = square_hit(s);
+            assert_eq!(one, Some(true), "{s}");
+            assert!(!doubt, "{s}");
+            assert!((t - 0.02).abs() < 1e-12, "{s} {t}");
+        }
+    }
+
+    #[test]
+    fn a_normal_triangle_is_read_as_before() {
+        let (one, t, doubt) = square_hit(1.0);
+        assert_eq!(one, Some(true));
+        assert!(!doubt);
+        assert!((t - 0.02).abs() < 1e-12);
+        // A det past DET_MIN is accepted without looking at the size.
+        assert_eq!(det_ok(2e-6, 1e-20, [0.0, 0.0, 1.0], [1e9, 0.0, 0.0], [0.0, 1e9, 0.0]),
+                   Some(true));
+    }
+
+    #[test]
+    fn a_grazing_ray_is_still_refused() {
+        // Along the plane of a 1 m triangle, a hair above it.
+        let o = [-1.0, 0.25, 1e-9];
+        let d = [1.0, 0.0, 0.0];
+        assert_eq!(tri_occludes(o, d, 10.0, [0.0; 3], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]),
+                   Some(false));
+        // Nearly along it: det 1e-7 of a triangle of area 0.5 — an angle of
+        // 1e-7 rad, refused; the same angle on a 1 mm one too.
+        let d = unit([1.0, 0.0, -1e-7]);
+        let o = [-1.0, 0.25, 1e-7];
+        assert_eq!(tri_occludes(o, d, 10.0, [0.0; 3], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]),
+                   Some(false));
+        let s = 0.001;
+        let o = [-s, 0.25 * s, 1e-7 * s];
+        assert_eq!(tri_occludes(o, d, 10.0, [0.0; 3], [s, 0.0, 0.0], [0.0, s, 0.0]),
+                   Some(false));
+    }
+
+    #[test]
+    fn a_triangle_of_no_area_hides_nothing() {
+        let d = unit([0.1, -0.2, -1.0]);
+        let o = [0.0, 0.0, 1.0];
+        // Collinear: e1 × e2 is nought.
+        let r = tri_occludes(o, d, 10.0, [0.0; 3], [1e-3, 0.0, 0.0], [2e-3, 0.0, 0.0]);
+        assert_ne!(r, Some(true));
+        assert_eq!(det_ok(0.0, 0.0, d, [0.0; 3], [0.0; 3]), Some(false));
+    }
 }

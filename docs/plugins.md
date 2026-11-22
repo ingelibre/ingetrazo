@@ -299,6 +299,24 @@ Each download is checked against the catalog's SHA-256 before it is installed.
 The manager marks an extension as reviewed only when its hash matches the
 maintainer's entry in `reviewed.toml`.
 
+Use **Sources…** to add more catalogs or local folders; these choices are
+stored in the current user's IngeTrazo settings. A catalog source is an HTTPS
+URL to a format-1 `catalog.json` file. It uses the same fields as the community
+catalog, and package downloads must also use HTTPS. Custom catalogs are not
+treated as reviewed by IngeTrazo, even if they publish their own review list.
+
+A local folder can contain a format-1 `catalog.json` whose `download` values
+are relative paths to package files or folders inside that source directory.
+Alternatively, without a `catalog.json`, the manager discovers `.py` and
+`.zip` files at any depth and searches nested folders for package folders
+containing `__init__.py`. It also accepts the selected folder itself if it
+contains `__init__.py`; once a package folder is found, its contents are not
+scanned as separate extensions. Local packages are unreviewed and show the
+trust warning before installation. Their SHA-256 is checked again when
+installed; local catalog paths that escape the selected folder are rejected.
+Local package files are limited to 64 MiB; package folders are limited to
+2,000 files and 128 MiB, and symbolic links inside a package are rejected.
+
 Installed catalog extensions can be updated, enabled, disabled, or uninstalled
 from the manager. Update availability is shown as soon as the catalog is
 loaded; extension package files are downloaded only after choosing Download or
@@ -311,6 +329,35 @@ guarantee that code is safe.
 If an installed extension fails to load at startup, its manager entry shows
 the load error and offers actions to disable it, open its folder, and open
 IngeTrazo's log folder for the full traceback.
+
+### Reusable resources and libraries
+
+This only adds to API 2: to know whether the running build has it, test
+`hasattr(app, "register_resource_type")`.
+
+Extensions may register their own reusable resource types without teaching
+the core what those resources mean. The extension owns the schema and payload;
+IngeTrazo owns discovery, namespacing, libraries, dependency resolution,
+search and portable bundle transport.
+
+The public entry points on `ExtensionApp` are:
+
+- `register_resource_type(...)` — register one extension-owned resource type;
+- `resource_types()` — inspect registered types;
+- `export_resource_bundle(...)` — write a portable `.iglib` bundle;
+- `import_resource_bundle(...)` — import a bundle with explicit conflict policy.
+
+The generic models and registry live in `core/resource_library.py`. Portable
+`.iglib` bundles live in `core/resource_bundle.py`; the bundle manifest is
+versioned independently from an extension's own resource schema.
+
+A resource type is intentionally opaque to the core. A wall preset, CAM tool
+library, component type or any future extension resource remains owned by its
+extension. The core does not define architectural concepts such as walls,
+layers, profiles, materials or BIM semantics.
+
+See `docs/resource_api.md`, `docs/resource_bundle.md` and the example
+`docs/examples/resource_api_demo.py` for the complete contract and a minimal example.
 
 ### Where your interface goes
 
@@ -364,7 +411,8 @@ camera, file and saved state wait untouched — and shows the workspace's
 `scene` with its `history`. Meanwhile New / Open / Save / Save As, the
 title, the unsaved-changes prompts and quitting go to the workspace, the
 model's autosave pauses, and only the tools in `workspace.allowed_tools`
-(`None` = all) can be picked. `leave_workspace()` brings the model back
+(`None` = all) can be picked; placing a component uses the key
+`place_group`. `leave_workspace()` brings the model back
 exactly as it was; opening an `.igz` does so first. The workspace object
 provides `scene`, `history`, `title()`, `is_dirty()`, `save()`,
 `save_as()` and `confirm_leave()` (True when it may go: saved, discarded,

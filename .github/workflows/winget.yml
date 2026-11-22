@@ -1,0 +1,41 @@
+name: Publish to Winget
+
+# Manual only (Marco, 19-11): publishing to Microsoft's winget-pkgs is an
+# outside publication, so it must never fire by itself on a release. Our
+# releases are put together in several steps (the Windows installer is
+# attached by build-windows.yml after the tag, and checked by hand on Windows
+# before the release is announced), so a `release: published` trigger could
+# also race the installer upload and submit a release without its .exe.
+# Run it from the Actions tab once the release is final.
+#
+# Needs a repository secret WINGET_TOKEN (classic PAT, public_repo scope).
+# Without it the job is skipped instead of failing.
+on:
+  workflow_dispatch:
+    inputs:
+      release-tag:
+        description: Release tag to submit (for example v0.6.3)
+        required: true
+        type: string
+
+jobs:
+  publish-to-winget:
+    name: Publish release to Winget
+    runs-on: ubuntu-latest
+    env:
+      HAS_TOKEN: ${{ secrets.WINGET_TOKEN != '' }}
+    steps:
+      - name: No WINGET_TOKEN secret, nothing to do
+        if: env.HAS_TOKEN != 'true'
+        run: echo "WINGET_TOKEN is not set; skipping the submission."
+      - name: Submit to Winget
+        if: env.HAS_TOKEN == 'true'
+        # Pinned to the commit of tag v2: this step holds a token that can
+        # open PRs as a maintainer, so a moved tag must not change the code.
+        uses: vedantmgoyal9/winget-releaser@b7370d4d152efdce803a26cc6ca9eee58cb2ad54 # v2
+        with:
+          identifier: Ingelibre.IngeTrazo
+          release-tag: ${{ inputs.release-tag }}
+          # Only the installer: the portable zip's ingetrazo.exe is not one.
+          installers-regex: 'ingetrazo-setup-v.*\.exe$'
+          token: ${{ secrets.WINGET_TOKEN }}

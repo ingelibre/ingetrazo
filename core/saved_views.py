@@ -25,7 +25,8 @@ class SavedView:
                  fov_deg: float = 45.0, perspective: bool = True,
                  two_point: bool = False, hidden_layers=None, style=None, section=None,
                  georef=None, shadows=None, hidden_objects=None,
-                 hidden_shown=None, folder=None, lens=None) -> None:
+                 hidden_shown=None, folder=None, lens=None,
+                 photo=None) -> None:
         self.name = name
         #: The folder of the Scenes tab the scene is filed under, or
         #: ``None`` at the top (core.scene_folders, #1158). Only organises
@@ -85,6 +86,11 @@ class SavedView:
         #: ordinary lens, and recalling it takes off whatever lens the view
         #: had before: every scene stands on its own, like sections.
         self.lens = dict(lens) if lens else {}
+        #: Camera ▸ Camera from Photo: the photo this scene was matched to
+        #: and the lines laid over it (:class:`core.photo_match.PhotoMatch`),
+        #: or ``None``. Showing the scene shows the photo behind the model
+        #: until the camera moves.
+        self.photo = photo
 
     # ---- Snapshot / recall ---------------------------------------------------
     @classmethod
@@ -105,14 +111,7 @@ class SavedView:
                    hidden_layers=[ly.name for ly in scene.layers
                                   if not ly.visible],
                    style=style.to_dict() if style else None,
-                   section={
-                       "active": (scene.active_section().uid
-                                  if scene.active_section() else None),
-                       "planes_shown": getattr(scene, "show_section_planes",
-                                               True),
-                       "cuts_shown": getattr(scene, "show_section_cuts",
-                                             True),
-                   },
+                   section=section_state(scene),
                    georef=georef_state(scene),
                    shadows=(scene.shadows.to_dict()
                             if getattr(scene, "shadows", None) is not None
@@ -145,6 +144,8 @@ class SavedView:
         and the folder). ``style``: as in :meth:`capture`."""
         fresh = SavedView.capture(self.name, scene, camera, style)
         fresh.folder = self.folder
+        # A photo scene stays one: Update keeps the photo and its lines.
+        fresh.photo = self.photo
         self.__dict__.update(fresh.__dict__)
 
     def apply(self, scene, camera, put_style=None) -> None:
@@ -194,6 +195,13 @@ class SavedView:
                 self.section.get("planes_shown", True))
             scene.show_section_cuts = bool(
                 self.section.get("cuts_shown", True))
+            # The section box the scene was made with cuts again, by uid
+            # as the plane; a scene made without one (or before boxes)
+            # leaves every box in the model, none cutting.
+            if hasattr(scene, "set_active_section_box"):
+                uid = self.section.get("box")
+                scene.set_active_section_box(next(
+                    (b for b in scene.section_boxes if b.uid == uid), None))
         if self.georef is not None:
             for key, obj in georef_objects(scene):
                 if obj is not None and key in self.georef:
@@ -207,6 +215,8 @@ class SavedView:
         if self.hidden_shown is not None:
             scene.show_hidden_objects = bool(self.hidden_shown.get("objects"))
             scene.show_hidden_geometry = bool(self.hidden_shown.get("geometry"))
+        from core.modeling_style import apply_modeling_visibility
+        apply_modeling_visibility(scene)
 
     # ---- Serialisation (.igz) ------------------------------------------------
     def to_dict(self) -> dict:
@@ -241,6 +251,8 @@ class SavedView:
             entry["hidden_shown"] = dict(self.hidden_shown)
         if self.folder:
             entry["folder"] = self.folder
+        if self.photo is not None:
+            entry["photo"] = self.photo.to_dict()
         return entry
 
     @classmethod
@@ -264,7 +276,55 @@ class SavedView:
                    folder=(raw.get("folder")
                            if isinstance(raw.get("folder"), str) else None),
                    lens=(raw.get("lens")
-                         if isinstance(raw.get("lens"), dict) else None))
+                         if isinstance(raw.get("lens"), dict) else None),
+                   photo=_photo_from(raw.get("photo")))
+
+    # ---- The camera alone (Camera from Photo's undo) -------------------------
+    def camera_state(self) -> dict:
+        """The scene's camera as a value."""
+        return {"target": tuple(self.target), "distance": self.distance,
+                "yaw": self.yaw, "pitch": self.pitch,
+                "fov_deg": self.fov_deg, "perspective": self.perspective,
+                "two_point": self.two_point, "lens": dict(self.lens)}
+
+    def set_camera_state(self, state: dict) -> None:
+        for k, v in state.items():
+            setattr(self, k, dict(v) if k == "lens" else
+                    tuple(v) if k == "target" else v)
+
+
+def _photo_from(raw):
+    if raw is None:
+        return None
+    from core.photo_match import PhotoMatch
+    return PhotoMatch.from_dict(raw)
+
+
+class PhotoCalibrationCommand(Command):
+    """The lines of a photo scene moved (Camera ▸ Camera from Photo): its
+    calibration and the camera it gives, as one undo step."""
+
+    keeps_paint = True
+    keeps_groups = True
+
+    def __init__(self, view, before_photo: dict, after_photo: dict,
+                 before_camera: dict, after_camera: dict) -> None:
+        self.view = view
+        self.before = (dict(before_photo), dict(before_camera))
+        self.after = (dict(after_photo), dict(after_camera))
+
+    def _put(self, scene, state) -> None:
+        from core.photo_match import PhotoMatch
+        photo, camera = state
+        self.view.photo = PhotoMatch.from_dict(photo)
+        self.view.set_camera_state(camera)
+        scene.version += 1
+
+    def do(self, scene) -> None:
+        self._put(scene, self.after)
+
+    def undo(self, scene) -> None:
+        self._put(scene, self.before)
 
 
 def apply_shadow_state(scene, raw: dict) -> None:
@@ -283,6 +343,22 @@ def georef_objects(scene) -> list[tuple[str, object]]:
             ("survey", getattr(scene, "photo_mesh", None))]
 
 
+def section_state(scene) -> dict:
+    """What a scene keeps of the sections: the active plane, the two
+    View switches and, when one cuts, the section box (its uid)."""
+    state = {
+        "active": (scene.active_section().uid
+                   if scene.active_section() else None),
+        "planes_shown": getattr(scene, "show_section_planes", True),
+        "cuts_shown": getattr(scene, "show_section_cuts", True),
+    }
+    active_box = getattr(scene, "active_section_box", None)
+    box = active_box() if callable(active_box) else None
+    if box is not None:
+        state["box"] = box.uid
+    return state
+
+
 def shown_state(scene) -> tuple:
     """Everything a recalled view can change besides the camera, as a value
     to compare: layer visibility, style, section, geographic layers,
@@ -293,9 +369,12 @@ def shown_state(scene) -> tuple:
     shadows = getattr(scene, "shadows", None)
     section = (scene.active_section()
                if hasattr(scene, "active_section") else None)
+    active_box = getattr(scene, "active_section_box", None)
+    box = active_box() if callable(active_box) else None
     return (tuple((ly.name, ly.visible) for ly in scene.layers),
             style.to_dict() if style is not None else None,
             getattr(section, "uid", None),
+            getattr(box, "uid", None),
             getattr(scene, "show_section_planes", None),
             getattr(scene, "show_section_cuts", None),
             tuple(sorted(georef_state(scene).items())),
@@ -304,6 +383,32 @@ def shown_state(scene) -> tuple:
                          if getattr(g, "hidden", False))),
             getattr(scene, "show_hidden_objects", None),
             getattr(scene, "show_hidden_geometry", None))
+
+
+def visibility_sig(scene) -> tuple:
+    """Layer visibility + map / terrain objects + hidden objects (and the
+    «show hidden objects» switch) as a hashable value to compare: what a
+    scene recall can change WITHOUT bumping ``scene.version``.
+
+    The composer applies a frame's scene transiently
+    (:meth:`views.composer.ComposerWindow._with_frame_camera`) and
+    restores the live state after, so the swap never bumps the version —
+    and the caches keyed on it (the viewport's pick index, the composer's
+    shared geometry) go stale across it (#1450: a copied frame came back
+    with the ORIGINAL portal's layers on export). Face-level hides go
+    through history and bump the version, so they need no place here;
+    style, section and shadows do not change which faces exist."""
+    by_uid = getattr(scene, "groups_by_uid", None)
+    hidden = (frozenset(uid for uid, g in by_uid().items()
+                        if getattr(g, "hidden", False))
+              if callable(by_uid) else frozenset())
+    return (tuple((ly.name, bool(ly.visible))
+                  for ly in getattr(scene, "layers", []) or []),
+            tuple(bool(getattr(obj, "visible", True))
+                  for _k, obj in georef_objects(scene)
+                  if obj is not None),
+            hidden,
+            bool(getattr(scene, "show_hidden_objects", False)))
 
 
 def georef_state(scene) -> dict:

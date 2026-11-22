@@ -21,6 +21,10 @@ mod instances;
 mod jsondoc;
 mod occlusion;
 mod parity;
+mod pick;
+mod preview;
+mod rays;
+mod snap;
 mod visible;
 mod weld;
 
@@ -34,18 +38,42 @@ fn ingetrazo_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(occlusion_span, m)?)?;
     m.add_function(wrap_pyfunction!(face_geometry, m)?)?;
     m.add_function(wrap_pyfunction!(qt_vector_probe, m)?)?;
+    m.add_function(wrap_pyfunction!(qt_dot_rows, m)?)?;
     m.add_function(wrap_pyfunction!(weld_points, m)?)?;
     m.add_function(wrap_pyfunction!(json_mesh_blocks, m)?)?;
     m.add_function(wrap_pyfunction!(boxes_near_px, m)?)?;
     m.add_function(wrap_pyfunction!(points_near_px, m)?)?;
     m.add_function(wrap_pyfunction!(segment_distances, m)?)?;
+    m.add_function(wrap_pyfunction!(snap::px_near_sorted, m)?)?;
+    m.add_function(wrap_pyfunction!(snap::segment_hits, m)?)?;
+    // Bloque 6b: the snap search's per-edge passes, batched.
+    m.add_function(wrap_pyfunction!(snap::qt_px_near, m)?)?;
+    m.add_function(wrap_pyfunction!(snap::snap_on_segment, m)?)?;
+    m.add_function(wrap_pyfunction!(snap::snap_ext_maybe, m)?)?;
+    m.add_function(wrap_pyfunction!(snap::snap_line_hits, m)?)?;
+    m.add_function(wrap_pyfunction!(snap::snap_feet_near, m)?)?;
+    m.add_function(wrap_pyfunction!(rays::ray_dot3_probe, m)?)?;
+    m.add_function(wrap_pyfunction!(rays::ray_tris, m)?)?;
+    m.add_function(wrap_pyfunction!(rays::ray_face_min, m)?)?;
     m.add_function(wrap_pyfunction!(nearest_within, m)?)?;
+    m.add_function(wrap_pyfunction!(project_px, m)?)?;
+    m.add_function(wrap_pyfunction!(edge_grid_bins, m)?)?;
+    // Bloque 6a: the hover's picks under the cursor (pick.rs).
+    m.add_function(wrap_pyfunction!(pick::ray_boxes_meet, m)?)?;
+    m.add_function(wrap_pyfunction!(pick::edge_grid_near, m)?)?;
     m.add_function(wrap_pyfunction!(visible_parts, m)?)?;
     m.add_function(wrap_pyfunction!(earcut_indices, m)?)?;
     m.add_function(wrap_pyfunction!(faces_view, m)?)?;
+    m.add_function(wrap_pyfunction!(preview_faces_bake, m)?)?;
+    m.add_function(wrap_pyfunction!(preview_sweep_bake, m)?)?;
+    // Bloque 6c: a push's drag preview (textured mesh faces, sweep lines).
+    m.add_function(wrap_pyfunction!(textured_faces_bake, m)?)?;
+    m.add_function(wrap_pyfunction!(preview_sweep_lines, m)?)?;
     m.add_class::<GlReplay>()?;
     m.add_class::<InstanceProto>()?;
     m.add_class::<InstanceSet>()?;
+    // Bloque 6d: Move's vertex drag preview
+    m.add_class::<MovePreview>()?;
     Ok(())
 }
 
@@ -214,6 +242,7 @@ fn hypot_of(name: &str) -> PyResult<facegeom::Hypot> {
     match name {
         "libstdc++" => Ok(facegeom::Hypot::LibStdCxx),
         "msvc" => Ok(facegeom::Hypot::Msvc),
+        "libc++" => Ok(facegeom::Hypot::LibCxx),
         _ => Err(pyo3::exceptions::PyValueError::new_err("unknown hypot")),
     }
 }
@@ -438,6 +467,70 @@ fn segment_distances<'py>(py: Python<'py>, ax: PyReadonlyArray1<'py, f64>,
     Ok(PyArray1::from_vec(py, out))
 }
 
+/// ``Viewport._project_px``: world points ``pts`` (N,3) through the MVP
+/// ``mvp`` (16 values, row-major) to widget pixels — ``(px, py, in
+/// front)``, NumPy's operations in NumPy's order (pick::project_one). The
+/// hover projects the open group's loose edges on every move of a Move
+/// drag (~1 ms of NumPy a projection over 9 674 faces of the Plaza, 19-11).
+#[pyfunction]
+fn project_px<'py>(py: Python<'py>, pts: PyReadonlyArray2<'py, f64>, mvp: Vec<f64>,
+                   width: f64, height: f64)
+    -> PyResult<(Bound<'py, PyArray1<f64>>, Bound<'py, PyArray1<f64>>,
+                 Bound<'py, PyArray1<bool>>)> {
+    use rayon::prelude::*;
+    let pts = pts.as_array();
+    if pts.shape()[1] != 3 || mvp.len() != 16 {
+        return Err(pyo3::exceptions::PyValueError::new_err("shape"));
+    }
+    let mut m = [0.0f64; 16];
+    m.copy_from_slice(&mvp);
+    let n = pts.shape()[0];
+    let rows: Vec<[f64; 3]> = match pts.as_slice() {
+        Some(s) => s.chunks_exact(3).map(|c| [c[0], c[1], c[2]]).collect(),
+        None => (0..n).map(|i| [pts[[i, 0]], pts[[i, 1]], pts[[i, 2]]]).collect(),
+    };
+    let out: Vec<(f64, f64, bool)> = py.detach(|| rows.par_iter().with_min_len(8192)
+        .map(|&p| pick::project_one(p, &m, width, height)).collect());
+    let mut xs = Vec::with_capacity(n);
+    let mut ys = Vec::with_capacity(n);
+    let mut ok = Vec::with_capacity(n);
+    for (x, y, k) in out {
+        xs.push(x);
+        ys.push(y);
+        ok.push(k);
+    }
+    Ok((PyArray1::from_vec(py, xs), PyArray1::from_vec(py, ys), PyArray1::from_vec(py, ok)))
+}
+
+/// ``core.edge_grid.EdgeGrid``'s binning (pick::grid_bins): ``(cx0, cy0,
+/// ncx, ncy, long_ids, keys, ids)``, NumPy's to the last index. The first
+/// hover with Line after a click bins the Plaza's group edges (~10 ms of
+/// NumPy, 19-11).
+#[pyfunction]
+#[allow(clippy::too_many_arguments, clippy::type_complexity)]
+fn edge_grid_bins<'py>(py: Python<'py>, ax: PyReadonlyArray1<'py, f64>,
+                       ay: PyReadonlyArray1<'py, f64>, bx: PyReadonlyArray1<'py, f64>,
+                       by: PyReadonlyArray1<'py, f64>, ok: PyReadonlyArray1<'py, bool>,
+                       width: f64, height: f64, reach: f64, cell: f64, max_cells: i64)
+    -> PyResult<(i64, i64, i64, i64, Bound<'py, PyArray1<i64>>, Bound<'py, PyArray1<i64>>,
+                 Bound<'py, PyArray1<i64>>)> {
+    let v = |a: &PyReadonlyArray1<'py, f64>| a.as_array().to_vec();
+    let (ax, ay, bx, by) = (v(&ax), v(&ay), v(&bx), v(&by));
+    let ok: Vec<bool> = ok.as_array().to_vec();
+    let n = ax.len();
+    if ay.len() != n || bx.len() != n || by.len() != n || ok.len() != n {
+        return Err(pyo3::exceptions::PyValueError::new_err("lengths"));
+    }
+    if !(width.is_finite() && height.is_finite() && reach.is_finite() && cell.is_finite()
+         && cell > 0.0) {
+        return Err(pyo3::exceptions::PyValueError::new_err("view"));
+    }
+    let b = py.detach(|| pick::grid_bins(&ax, &ay, &bx, &by, &ok, width, height, reach, cell,
+                                         max_cells));
+    Ok((b.cx0, b.cy0, b.ncx, b.ncy, PyArray1::from_vec(py, b.long_ids),
+        PyArray1::from_vec(py, b.keys), PyArray1::from_vec(py, b.ids)))
+}
+
 /// ``flat`` (3 values a row) as an (N,3) array, without a Vec per row: making
 /// those was most of what a big mesh held the interpreter for (#1092).
 fn flat3<'py, T: numpy::Element>(py: Python<'py>, flat: Vec<T>) -> PyResult<Bound<'py, PyArray2<T>>> {
@@ -476,6 +569,25 @@ fn qt_vector_probe<'py>(
         (ln, nz, pu, pv)
     });
     Ok((PyArray1::from_vec(py, ln), flat3(py, nz)?, flat3(py, pu)?, flat3(py, pv)?))
+}
+
+/// Row-wise QVector3D::dotProduct, with the probed Qt arithmetic.
+#[pyfunction]
+fn qt_dot_rows<'py>(
+    py: Python<'py>,
+    a: PyReadonlyArray2<'_, f32>,
+    b: PyReadonlyArray2<'_, f32>,
+    hypot: &str,
+) -> PyResult<Bound<'py, PyArray1<f32>>> {
+    let h = hypot_of(hypot)?;
+    let (a, b) = (a.as_array(), b.as_array());
+    if a.shape() != b.shape() || a.shape()[1] != 3 {
+        return Err(pyo3::exceptions::PyValueError::new_err("expected matching (N,3) arrays"));
+    }
+    let values = a.outer_iter().zip(b.outer_iter()).map(|(a, b)| {
+        facegeom::V3(a[0], a[1], a[2]).dot(facegeom::V3(b[0], b[1], b[2]), h)
+    }).collect();
+    Ok(PyArray1::from_vec(py, values))
 }
 
 /// views.viewport._face_geometry for every face of a mesh given as arrays:
@@ -1485,4 +1597,347 @@ fn faces_view<'py>(
         arr2(py, &wc, 3)?, PyArray1::from_vec(py, wro), PyArray1::from_vec(py, wfo),
         arr2(py, &pc, 2)?, PyArray1::from_vec(py, pd), PyArray1::from_vec(py, pro), PyArray1::from_vec(py, pfo),
     ))
+}
+
+
+// ---- tool preview faces (preview.rs) --------------------------------------
+
+/// ``pos`` (N,3), ``ring_sizes`` and ``ring_counts`` (rings per face, outer
+/// first) as the faces' rings, each face's corners its own.
+fn preview_rings(pos: &numpy::ndarray::ArrayView2<'_, f32>, sizes: &[i64], counts: &[i64])
+    -> Result<Vec<(Vec<facegeom::V3>, Vec<Vec<u32>>)>, &'static str> {
+    let mut out = Vec::with_capacity(counts.len());
+    let mut at = 0usize;
+    let mut r = 0usize;
+    for &c in counts {
+        if c < 1 || r + c as usize > sizes.len() {
+            return Err("ring counts");
+        }
+        let mut p = Vec::new();
+        let mut rings = Vec::with_capacity(c as usize);
+        for &s in &sizes[r..r + c as usize] {
+            if s < 0 || at + s as usize > pos.shape()[0] {
+                return Err("ring sizes");
+            }
+            let mut ring = Vec::with_capacity(s as usize);
+            for i in at..at + s as usize {
+                ring.push(p.len() as u32);
+                p.push(facegeom::V3(pos[[i, 0]], pos[[i, 1]], pos[[i, 2]]));
+            }
+            at += s as usize;
+            rings.push(ring);
+        }
+        r += c as usize;
+        out.push((p, rings));
+    }
+    if r != sizes.len() || at != pos.shape()[0] {
+        return Err("ring sizes");
+    }
+    Ok(out)
+}
+
+/// Rows ``[kind (0 colour, 1 texture), group, has_uvw, uvw×8, rot, sw, sh]``.
+fn preview_mats(m: &numpy::ndarray::ArrayView2<'_, f64>) -> Result<Vec<preview::Mat>, &'static str> {
+    if m.shape()[0] > 0 && m.shape()[1] != 14 {
+        return Err("material rows");
+    }
+    Ok((0..m.shape()[0]).map(|k| {
+        if m[[k, 0]] == 0.0 {
+            preview::Mat::Color
+        } else {
+            let mut uvw = [0.0f64; 8];
+            for (j, u) in uvw.iter_mut().enumerate() {
+                *u = m[[k, 3 + j]];
+            }
+            preview::Mat::Tex {
+                group: m[[k, 1]] as u32,
+                uvw: if m[[k, 2]] != 0.0 { Some(uvw) } else { None },
+                rot: m[[k, 11]], sw: m[[k, 12]], sh: m[[k, 13]],
+            }
+        }
+    }).collect())
+}
+
+type PreviewOut<'py> = Option<(Bound<'py, PyBytes>, Vec<(u32, u32, u32, f64)>,
+                               Vec<(u32, f64, Bound<'py, PyBytes>)>)>;
+
+fn f32_bytes(v: &[f32]) -> Vec<u8> {
+    v.iter().flat_map(|x| x.to_ne_bytes()).collect()
+}
+
+fn preview_out<'py>(py: Python<'py>, b: Option<preview::Baked>) -> PyResult<PreviewOut<'py>> {
+    let Some(b) = b else { return Ok(None) };
+    let color = PyBytes::new(py, &f32_bytes(&b.color));
+    let tex = b.tex.iter().map(|(g, s, v)| (*g, *s, PyBytes::new(py, &f32_bytes(v)))).collect();
+    Ok(Some((color, b.runs, tex)))
+}
+
+/// views.viewport.Viewport._bake_preview_faces_py over preview faces given
+/// as arrays: ``pos`` (N,3) float32 corners, ring by ring (``ring_sizes``),
+/// face by face (``ring_counts``, outer ring first), ``face_mat`` each
+/// face's row of ``mats`` (see preview_mats), ``light`` the viewport's
+/// light. Returns ``(colour positions as float32 bytes, [(material, first
+/// vertex, vertex count, shade)] per colour face, [(group, shade, pos+uv
+/// float32 bytes)] per texture run in first-use order)``, or ``None`` for
+/// a NaN or infinite corner (Python bakes those).
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+fn preview_faces_bake<'py>(
+    py: Python<'py>,
+    pos: PyReadonlyArray2<'_, f32>,
+    ring_sizes: Vec<i64>,
+    ring_counts: Vec<i64>,
+    face_mat: Vec<i64>,
+    mats: PyReadonlyArray2<'_, f64>,
+    light: (f32, f32, f32),
+    hypot: &str,
+) -> PyResult<PreviewOut<'py>> {
+    let h = hypot_of(hypot)?;
+    let p = pos.as_array();
+    let m = mats.as_array();
+    let err = pyo3::exceptions::PyValueError::new_err;
+    let mats = preview_mats(&m).map_err(err)?;
+    let rings = preview_rings(&p, &ring_sizes, &ring_counts).map_err(err)?;
+    if face_mat.len() != rings.len() || face_mat.iter().any(|&k| k < 0 || k as usize >= mats.len()) {
+        return Err(err("face materials"));
+    }
+    let faces: Vec<preview::PFace> = rings.into_iter().zip(&face_mat)
+        .map(|((pos, rings), &k)| preview::PFace { pos, rings, mat: k as usize }).collect();
+    let l = facegeom::V3(light.0, light.1, light.2);
+    let b = py.detach(|| preview::bake(&faces, &mats, l, h));
+    preview_out(py, b)
+}
+
+/// tools.pushpull._build_light_faces baked: the sweep of each source face
+/// (``pos``/``ring_sizes``/``ring_counts`` as in preview_faces_bake) by its
+/// row of ``offs`` (S,3) float32 — cap with material ``cap_mat``, walls with
+/// ``wall_mat`` — the faces in the tool's order. Returns what
+/// preview_faces_bake returns for those faces.
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+fn preview_sweep_bake<'py>(
+    py: Python<'py>,
+    pos: PyReadonlyArray2<'_, f32>,
+    ring_sizes: Vec<i64>,
+    ring_counts: Vec<i64>,
+    offs: PyReadonlyArray2<'_, f32>,
+    cap_mat: Vec<i64>,
+    wall_mat: Vec<i64>,
+    mats: PyReadonlyArray2<'_, f64>,
+    light: (f32, f32, f32),
+    hypot: &str,
+) -> PyResult<PreviewOut<'py>> {
+    let h = hypot_of(hypot)?;
+    let p = pos.as_array();
+    let m = mats.as_array();
+    let o = offs.as_array();
+    let err = pyo3::exceptions::PyValueError::new_err;
+    let mats = preview_mats(&m).map_err(err)?;
+    let rings = preview_rings(&p, &ring_sizes, &ring_counts).map_err(err)?;
+    let n = rings.len();
+    let ok = |v: &[i64]| v.len() == n && v.iter().all(|&k| k >= 0 && (k as usize) < mats.len());
+    if o.shape()[0] != n || (n > 0 && o.shape()[1] != 3) || !ok(&cap_mat) || !ok(&wall_mat) {
+        return Err(err("sweep rows"));
+    }
+    let l = facegeom::V3(light.0, light.1, light.2);
+    let b = py.detach(|| {
+        let mut faces = Vec::new();
+        for (k, (pos, rings)) in rings.iter().enumerate() {
+            let off = facegeom::V3(o[[k, 0]], o[[k, 1]], o[[k, 2]]);
+            preview::sweep(pos, rings, off, cap_mat[k] as usize, wall_mat[k] as usize, &mut faces);
+        }
+        preview::bake(&faces, &mats, l, h)
+    });
+    preview_out(py, b)
+}
+
+// Bloque 6c: a push's drag preview.
+
+/// views.viewport.chunks.ChunkCacheMixin._append_textured_face over MESH
+/// faces given as arrays (``pos``/``ring_sizes``/``ring_counts``/
+/// ``face_mat``/``mats`` as in preview_faces_bake, every face a texture
+/// row). Returns ``(pos+uv float32 bytes, ends, shades, tris, tri_ends)``:
+/// face ``k``'s floats are ``ends[k]..ends[k+1]`` (counted in floats), its
+/// shade ``shades[k]`` (NaN: Python bakes that face), its ``_tris_of``
+/// triangles the corner indices ``tris[tri_ends[k]..tri_ends[k+1]]`` into
+/// its own corners, three per triangle.
+#[pyfunction]
+#[allow(clippy::too_many_arguments, clippy::type_complexity)]
+fn textured_faces_bake<'py>(
+    py: Python<'py>,
+    pos: PyReadonlyArray2<'_, f32>,
+    ring_sizes: Vec<i64>,
+    ring_counts: Vec<i64>,
+    face_mat: Vec<i64>,
+    mats: PyReadonlyArray2<'_, f64>,
+    light: (f32, f32, f32),
+    hypot: &str,
+) -> PyResult<(Bound<'py, PyBytes>, Bound<'py, PyArray1<u64>>, Bound<'py, PyArray1<f64>>,
+               Bound<'py, PyArray1<u32>>, Bound<'py, PyArray1<u64>>)> {
+    let h = hypot_of(hypot)?;
+    let p = pos.as_array();
+    let m = mats.as_array();
+    let err = pyo3::exceptions::PyValueError::new_err;
+    let mats = preview_mats(&m).map_err(err)?;
+    let rings = preview_rings(&p, &ring_sizes, &ring_counts).map_err(err)?;
+    if face_mat.len() != rings.len() || face_mat.iter().any(|&k| k < 0 || k as usize >= mats.len()) {
+        return Err(err("face materials"));
+    }
+    let faces: Vec<preview::PFace> = rings.into_iter().zip(&face_mat)
+        .map(|((pos, rings), &k)| preview::PFace { pos, rings, mat: k as usize }).collect();
+    let l = facegeom::V3(light.0, light.1, light.2);
+    let b = py.detach(|| preview::bake_textured(&faces, &mats, l, h));
+    Ok((PyBytes::new(py, &f32_bytes(&b.floats)), PyArray1::from_vec(py, b.ends),
+        PyArray1::from_vec(py, b.shades), PyArray1::from_vec(py, b.tris),
+        PyArray1::from_vec(py, b.tri_ends)))
+}
+
+/// tools.pushpull.PushPullTool.rubber_band_lines of the sweep
+/// preview_sweep_bake bakes (same ``pos``/``ring_sizes``/``ring_counts``/
+/// ``offs``) as the float32 bytes ``Viewport._draw_rubber_band`` uploads:
+/// ``a.xyz, b.xyz`` per segment, face by face. ``None`` for a NaN or
+/// infinite number (Python draws those).
+#[pyfunction]
+fn preview_sweep_lines<'py>(
+    py: Python<'py>,
+    pos: PyReadonlyArray2<'_, f32>,
+    ring_sizes: Vec<i64>,
+    ring_counts: Vec<i64>,
+    offs: PyReadonlyArray2<'_, f32>,
+    curve_cos: f64,
+    hypot: &str,
+) -> PyResult<Option<Bound<'py, PyBytes>>> {
+    let h = hypot_of(hypot)?;
+    let p = pos.as_array();
+    let o = offs.as_array();
+    let err = pyo3::exceptions::PyValueError::new_err;
+    let rings = preview_rings(&p, &ring_sizes, &ring_counts).map_err(err)?;
+    let n = rings.len();
+    if o.shape()[0] != n || (n > 0 && o.shape()[1] != 3) {
+        return Err(err("sweep rows"));
+    }
+    let out = py.detach(|| {
+        let mut out = Vec::new();
+        for (k, (pos, rings)) in rings.iter().enumerate() {
+            let off = facegeom::V3(o[[k, 0]], o[[k, 1]], o[[k, 2]]);
+            if !preview::sweep_lines(pos, rings, off, curve_cos, h, &mut out) {
+                return None;
+            }
+        }
+        Some(out)
+    });
+    Ok(out.map(|v| PyBytes::new(py, &f32_bytes(&v))))
+}
+
+
+// ---- Bloque 6d: Move's vertex drag preview (preview.rs) -------------------
+
+/// The faces a Move of vertices stretches (``tools.move``'s bent faces),
+/// packed once at the grab: ``pos`` (N,3) float32 corners and ``ride``
+/// (N,) whether each rides the drag, ring by ring (``ring_sizes``), face by
+/// face (``ring_counts``, outer ring first), ``face_mat`` each face's row
+/// of ``mats`` (as preview_faces_bake takes them). Each frame
+/// :meth:`bake` makes, for the drag's offset, what preview_faces_bake
+/// makes of the moved faces — no face object made or walked.
+#[pyclass(frozen)]
+struct MovePreview {
+    faces: Vec<preview::PFace>,
+    ride: Vec<Vec<bool>>,
+    mats: Vec<preview::Mat>,
+}
+
+#[pymethods]
+impl MovePreview {
+    #[new]
+    fn new(
+        pos: PyReadonlyArray2<'_, f32>,
+        ride: PyReadonlyArray1<'_, bool>,
+        ring_sizes: PyReadonlyArray1<'_, i64>,
+        ring_counts: PyReadonlyArray1<'_, i64>,
+        face_mat: PyReadonlyArray1<'_, i64>,
+        mats: PyReadonlyArray2<'_, f64>,
+    ) -> PyResult<Self> {
+        let err = pyo3::exceptions::PyValueError::new_err;
+        let p = pos.as_array();
+        if p.shape()[0] > 0 && p.shape()[1] != 3 {
+            return Err(err("corners (N,3)"));
+        }
+        let r = ride.as_array();
+        if r.len() != p.shape()[0] {
+            return Err(err("ride flags"));
+        }
+        let mats = preview_mats(&mats.as_array()).map_err(err)?;
+        let sizes = ring_sizes.as_array().to_vec();
+        let counts = ring_counts.as_array().to_vec();
+        let fmat = face_mat.as_array().to_vec();
+        let rings = preview_rings(&p, &sizes, &counts).map_err(err)?;
+        if fmat.len() != rings.len() || fmat.iter().any(|&k| k < 0 || k as usize >= mats.len()) {
+            return Err(err("face materials"));
+        }
+        let mut at = 0usize;
+        let mut flags = Vec::with_capacity(rings.len());
+        let mut faces = Vec::with_capacity(rings.len());
+        for ((fp, fr), &k) in rings.into_iter().zip(&fmat) {
+            flags.push((at..at + fp.len()).map(|i| r[i]).collect());
+            at += fp.len();
+            faces.push(preview::PFace { pos: fp, rings: fr, mat: k as usize });
+        }
+        Ok(Self { faces, ride: flags, mats })
+    }
+
+    fn __len__(&self) -> usize {
+        self.faces.len()
+    }
+
+    /// The bake of the faces moved by ``d``: preview_faces_bake's
+    /// ``(colour bytes, runs, texture runs)`` — the runs of neighbouring
+    /// faces of one material and shade joined into one (same triangles,
+    /// same order, same colour) — or ``None`` (Python bakes the frame).
+    fn bake<'py>(
+        &self,
+        py: Python<'py>,
+        d: (f32, f32, f32),
+        light: (f32, f32, f32),
+        hypot: &str,
+    ) -> PyResult<PreviewOut<'py>> {
+        let h = hypot_of(hypot)?;
+        let d = facegeom::V3(d.0, d.1, d.2);
+        let l = facegeom::V3(light.0, light.1, light.2);
+        let b = py.detach(|| {
+            let faces = preview::moved(&self.faces, &self.ride, d);
+            preview::bake(&faces, &self.mats, l, h).map(|mut b| {
+                b.runs = preview::merge_runs(&b.runs);
+                b
+            })
+        });
+        preview_out(py, b)
+    }
+
+    /// :meth:`bake` with the riding corners at ``placed`` (R,3) float32,
+    /// one row per riding corner in pack order (a Rotate's ``m.map`` of
+    /// each, as the tool's faces hold them). ``None`` too for too few rows.
+    fn bake_placed<'py>(
+        &self,
+        py: Python<'py>,
+        placed: PyReadonlyArray2<'_, f32>,
+        light: (f32, f32, f32),
+        hypot: &str,
+    ) -> PyResult<PreviewOut<'py>> {
+        let h = hypot_of(hypot)?;
+        let p = placed.as_array();
+        if p.shape()[0] > 0 && p.shape()[1] != 3 {
+            return Err(pyo3::exceptions::PyValueError::new_err("places (R,3)"));
+        }
+        let at: Vec<facegeom::V3> = (0..p.shape()[0])
+            .map(|i| facegeom::V3(p[[i, 0]], p[[i, 1]], p[[i, 2]])).collect();
+        let l = facegeom::V3(light.0, light.1, light.2);
+        let b = py.detach(|| {
+            let faces = preview::placed(&self.faces, &self.ride, &at)?;
+            preview::bake(&faces, &self.mats, l, h).map(|mut b| {
+                b.runs = preview::merge_runs(&b.runs);
+                b
+            })
+        });
+        preview_out(py, b)
+    }
 }

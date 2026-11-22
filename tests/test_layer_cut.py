@@ -2976,7 +2976,7 @@ def test_the_viewer_draws_each_layers_cut_weight_with_its_hatches():
     vp._frame_style = vp._effective_style()
     assert set(vp._cut_edge_weights(sp, keep)) == {1.0}     # all alike
     sp.fill = {"pattern": "layers"}
-    tags = vp._section_cut_cache[2]
+    tags = vp._section_cut_tags()
     weights = vp._cut_edge_weights(sp, keep)
     assert weights[tags == "Muros"] == pytest.approx(1.4)
     assert weights[tags == "Carpinterías"] == pytest.approx(0.4)   # floor
@@ -3590,3 +3590,119 @@ def test_picking_does_not_dash_the_model_again(win, monkeypatch):
     scene.version += 1                                   # the model changed
     assert vp._model_linetype_edges() is not groups
     assert len(walked) == 2
+
+
+# ---- Layers inherited from a parent group (#1503) -------------------------
+
+def _nested_cut_scene(top_layer=None, mid_layer="S_Demolition",
+                      leaf_layer=None, face_layer=None):
+    """A storey group holding a status group holding an unlabelled box,
+    cut by a plan plane at 1 m: the BIM tree of #1503, where the status
+    (existing / demolition / new) is a layer on a container group and the
+    parts below carry no layer of their own."""
+    scene = Scene()
+    scene.layers += [Layer("GF", color=(0.5, 0.5, 0.5)),
+                     Layer("S_Demolition", color=(1.0, 0.8, 0.0),
+                           hatch="solid", hatch_ground="layer",
+                           hatch_color="layer"),
+                     Layer("S_New", color=(1.0, 0.0, 0.0)),
+                     Layer("Revestimiento", color=(0.0, 0.5, 0.0))]
+    storey = Group(Mesh(), name="01_GF")
+    if top_layer:
+        storey.layer = top_layer
+    status = Group(Mesh(), name="Walls_Demolition")
+    if mid_layer:
+        status.layer = mid_layer
+    leaf = Group(Mesh(), name="BaseWalls")
+    if leaf_layer:
+        leaf.layer = leaf_layer
+    _box(leaf.mesh, 0, 0, 0, 4, 0.3, 3)
+    if face_layer:
+        for f in leaf.mesh.faces:
+            L.assign_layer(f, face_layer)
+    status.children = [leaf]
+    storey.children = [status]
+    scene.groups += [storey]
+    sp = SectionPlane(V(0, 0, 1), V(0, 0, 1))
+    scene.section_planes.append(sp)
+    scene.set_active_section(sp)
+    return scene
+
+
+def test_a_cut_inherits_the_nearest_containers_layer():
+    scene = _nested_cut_scene()
+    d = hlr_drawing(scene, _top_camera(scene), profiles=False, layers=True)
+    assert d.loop_layers == ["S_Demolition"]
+    assert {t for k, t in zip(d.kinds, d.layers) if k == KIND_CUT} == {
+        "S_Demolition"}
+
+
+def test_the_top_level_layer_is_only_the_fallback():
+    scene = _nested_cut_scene(top_layer="GF")
+    d = hlr_drawing(scene, _top_camera(scene), profiles=False, layers=True)
+    assert d.loop_layers == ["S_Demolition"]      # nearest, not the storey
+
+
+def test_a_face_or_child_with_its_own_layer_still_wins():
+    faced = _nested_cut_scene(face_layer="Revestimiento")
+    d = hlr_drawing(faced, _top_camera(faced), profiles=False, layers=True)
+    assert d.loop_layers == ["Revestimiento"]
+    child = _nested_cut_scene(leaf_layer="S_New")
+    d = hlr_drawing(child, _top_camera(child), profiles=False, layers=True)
+    assert d.loop_layers == ["S_New"]
+
+
+def test_a_cut_with_no_layer_anywhere_stays_default():
+    scene = _nested_cut_scene(mid_layer=None)
+    d = hlr_drawing(scene, _top_camera(scene), profiles=False, layers=True)
+    assert d.loop_layers == [DEFAULT_LAYER]
+
+
+def test_the_viewport_tags_its_cut_and_edges_from_the_placement():
+    from views.viewport import Viewport
+    vp = Viewport(None)
+    vp.scene = _nested_cut_scene()
+    idx = Viewport._pick_flat(vp._pick_index(near="all"))
+    tags = Viewport._cut_layer_tags(idx, np.asarray(idx.tri_ent))
+    assert set(tags.tolist()) == {"S_Demolition"}
+    _tris, _hard, _soft, _n, ttags, htags, _stags = vp.hlr_geometry(
+        tags=True)
+    assert set(ttags.tolist()) == {"S_Demolition"}
+    assert set(htags.tolist()) == {"S_Demolition"}
+
+
+def test_a_sheet_fills_the_nested_cut_in_its_containers_colour():
+    from tests.test_composer_canvas import _FakeViewport
+    from views.composer import ComposerWindow
+    host = QWidget()
+    host.viewport = _FakeViewport()
+    host.viewport.scene = _nested_cut_scene()
+    composer = ComposerWindow(host)
+    frame = composer.comp.frames[0]
+    frame.style = "vectorial"
+    frame.view_key = "std:top"
+    frame.x_mm, frame.y_mm, frame.w_mm, frame.h_mm = 10.0, 10.0, 200.0, 100.0
+    frame.scale_n = 100.0
+    frame.cut_fill_by_layer = True
+    composer.compute_hlr(frame)
+    colours = [look[0] for look in composer.hlr_fill_styles[id(frame)]]
+    assert len(colours) == 1
+    assert colours[0].name() == QColor.fromRgbF(1.0, 0.8, 0.0).name()
+
+
+def test_inherited_layer_walks_owner_then_parents():
+    from core.layers import inherited_layer
+    top = Group(Mesh(), name="top")
+    top.layer = "S_Demolition"
+    mid = Group(Mesh(), name="mid")
+    mid.owner = top
+    assert inherited_layer(mid) == "S_Demolition"
+    assert inherited_layer(top) == "S_Demolition"
+    orphan = Group(Mesh(), name="orphan")
+    assert inherited_layer(orphan) == DEFAULT_LAYER
+    assert inherited_layer(orphan, {id(orphan): top}) == "S_Demolition"
+    assert inherited_layer(None) == DEFAULT_LAYER
+    # A cycle ends at the default layer instead of looping.
+    a, b = Group(Mesh(), name="a"), Group(Mesh(), name="b")
+    a.owner, b.owner = b, a
+    assert inherited_layer(a) == DEFAULT_LAYER

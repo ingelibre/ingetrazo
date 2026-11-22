@@ -1,0 +1,555 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Marco Sumari Tellez and IngeTrazo contributors.
+"""Face-me components and billboards: orientation, meshes, drawing and outlines."""
+from __future__ import annotations
+
+import math
+from array import array
+from PySide6.QtGui import QVector3D, QVector4D
+from core.group import Group
+from views.viewport._support import GL_LINES, GL_TRIANGLES, _content_ver
+
+
+def _feet_of(path) -> tuple[float, float]:
+    """``(u, v)`` of the feet of the cutout at ``path``: across it (see
+    ``BillboardMixin._figure_feet_u``) and the height of its lowest opaque
+    row (0 at the picture's bottom edge, in the middle of that row)."""
+    import numpy as np
+    from PySide6.QtGui import QImage
+    img = QImage(str(path))
+    if img.isNull() or img.width() < 1 or img.height() < 1:
+        return 0.5, 0.0
+    if not img.hasAlphaChannel():
+        return 0.5, 0.0                # a solid rectangle: its middle
+    img = img.convertToFormat(QImage.Format_RGBA8888)
+    a = np.frombuffer(img.constBits(), np.uint8).reshape(
+        img.height(), img.bytesPerLine())[:, :img.width() * 4]
+    opaque = a.reshape(img.height(), img.width(), 4)[..., 3] >= 128
+    rows = np.flatnonzero(opaque.any(axis=1))
+    if rows.size == 0:
+        return 0.5, 0.0
+    top, bottom = int(rows[0]), int(rows[-1])
+    band = opaque[max(top, bottom - int(0.05 * (bottom - top + 1))):
+                  bottom + 1]
+    xs = np.nonzero(band)[1]
+    return (float((xs.mean() + 0.5) / img.width()),
+            float((img.height() - bottom - 0.5) / img.height()))
+
+
+class BillboardMixin:
+    """Face-me components and billboards: orientation, meshes, drawing and outlines."""
+
+    def _faceme_dir(self, anchor: QVector3D) -> QVector3D:
+        """Direction a face-me sprite at ``anchor`` turns toward (not yet
+        flattened or normalised). Perspective: toward the eye, so figures
+        left and right of centre turn slightly. Parallel: the
+        VIEW direction for every sprite — a parallel camera has no real eye,
+        and using the fictitious one made a figure far from the orbit target
+        turn 45° away when zoomed in (Marco: "Sumari no se ve bien en vista
+        frontal", 2026-09-02)."""
+        cam = self.camera
+        if cam.perspective:
+            return cam.eye() - anchor
+        return cam.eye() - cam.target
+
+    def _figure_token(self, group):
+        """What a face-me figure's cached data (placed mesh, extent, draw
+        arrays) depends on: its OWN mesh — the object and a content
+        fingerprint (coordinates, paint, counts) — and its matrix. Unlike
+        the model's content version it does not move when something ELSE
+        is drawn or painted, or when a group is opened or closed: keyed on
+        that version, every edit re-triangulated the
+        villa's 18 vector-art figures (~4 s per stroke, paint or Esc,
+        issue #1006). The coordinate walk (~3 ms for 9 000 vertices) is
+        paid only when the figure's own mesh was edited."""
+        memo = getattr(self, "_figure_tokens", None)
+        if memo is None:
+            memo = self._figure_tokens = {}
+        mesh = group.mesh
+        cv = _content_ver(self)
+        xf = getattr(group, "xform", None)
+        # The matrix is read every time: a placement can be moved in place
+        # without a version bump (the face-me quad of a moved copy).
+        xft = None if xf is None else tuple(xf.data())
+        hit = memo.get(id(group))
+        if hit is not None and hit[0] == cv and hit[1] is mesh \
+                and hit[2] is group and hit[3][1] == xft:
+            return hit[3]
+        # Geometry moves only through the mesh's mutation primitives, which
+        # bump its serial: while it holds, the coordinate walk is skipped
+        # and only the paint — which bypasses them — is re-read (17 faces).
+        # The serial is not in the token itself: the experimental engine
+        # builds a lazy mesh on first touch (drawing elsewhere does it),
+        # bumping the serial of a figure whose content did not change.
+        serial = getattr(mesh, "_mut_serial", None)
+        if (hit is not None and hit[1] is mesh and serial is not None
+                and hit[4] == serial):
+            geo = hit[5]
+        else:
+            geo = self._mesh_fingerprint(mesh)
+        token = (id(mesh), xft, geo, self._faces_paint_fp(mesh))
+        if len(memo) > 4096:
+            memo.clear()
+        memo[id(group)] = (cv, mesh, group, token, serial, geo)
+        return token
+
+    def _billboard_mesh(self, group):
+        """A billboard's mesh in WORLD space. A face-me placed INSIDE a
+        component — the torito on the arch, brought in with the arch —
+        keeps its prototype in the component's frame and reaches the draw
+        list as a proxy with a matrix; reading the raw mesh put the bull at
+        the file's origin, not on the cornice (Marco, 2026-09-11). Sprites
+        are a face or two, so the placed copy is cached per matrix."""
+        xf = getattr(group, "xform", None)
+        if xf is None:
+            return group.mesh
+        cache = getattr(self, "_billboard_world", None)
+        if cache is None:
+            cache = self._billboard_world = {}
+        key = self._figure_token(group)
+        hit = cache.get(id(group))
+        if hit is not None and hit[0] == key:
+            return hit[1]
+        from core.group import transformed_mesh
+        placed = transformed_mesh(group.mesh, xf)
+        if len(cache) > 256:
+            cache.clear()
+        cache[id(group)] = (key, placed)
+        return placed
+
+    def _billboard_extent(self, group):
+        """(anchor, width, height, texture path) of a billboard as placed,
+        before any turn or drag preview — or ``None`` for an empty one.
+        Remembered per model content: a vector-art figure from an imported
+        file carries thousands of vertices, and the walk over them ran for
+        every figure on every click (38 figures, ~250 ms per click on the
+        villa of issue #1006)."""
+        key = self._figure_token(group)
+        cache = getattr(self, "_billboard_extents", None)
+        if cache is None:
+            cache = self._billboard_extents = {}
+        hit = cache.get(id(group))
+        if hit is not None and hit[0] == key:
+            return hit[1]
+        verts = self._billboard_mesh(group).vertices
+        if not verts:
+            ext = None
+        else:
+            xs = [v.position.x() for v in verts]
+            ys = [v.position.y() for v in verts]
+            zs = [v.position.z() for v in verts]
+            anchor = QVector3D((min(xs) + max(xs)) / 2,
+                               (min(ys) + max(ys)) / 2, min(zs))
+            # Planar width: hypot handles a sprite plane at any yaw (an
+            # imported face-me sits wherever its baked transform left it);
+            # an axis-aligned quad gives the same value as before.
+            w = math.hypot(max(xs) - min(xs), max(ys) - min(ys))
+            h = max(zs) - min(zs)
+            tex = None
+            for f in group.mesh.faces:
+                t = f.attrs.get("texture")
+                if t and t.get("path"):
+                    tex = t["path"]
+                    break
+            # tex may stay None for a vector-art face-me (solid-colour
+            # faces, e.g. a 2D person from an imported file): picking,
+            # outline and snap still need the quad; the legacy textured-quad
+            # render skips texture-less groups.
+            ext = (anchor, w, h, tex)
+        if len(cache) > 4096:
+            cache.clear()
+        cache[id(group)] = (key, ext)
+        return ext
+
+    def _billboard_feet(self, group, ext=None):
+        """Where a face-me billboard stands — its feet, the anchor its quad
+        turns round — with a Move/Rotate drag's preview carried on it, or
+        ``None`` for an empty one. The snap point of a figure: no quad
+        needed (the middle of the quad's base is beside the feet of a
+        cutout drawn off its picture's middle, and moved with the camera:
+        «la inferencia de la imagen del ingeniero no la hace bien», Marco,
+        22-11)."""
+        if ext is None:
+            ext = self._billboard_extent(group)
+            if ext is None:
+                return None
+        anchor = ext[0]
+        # A billboard being Move/Rotate-dragged previews through the face-me
+        # pass (its raw mesh quad in the scratch VBOs showed the texture
+        # swimming and ignored the face-me turn): the preview transform
+        # rides on the anchor so the figure follows the cursor,
+        # camera-facing, fixed UVs.
+        if id(group) in (getattr(self, "_preview_groups", None) or ()):
+            m = getattr(self, "_preview_matrix", None)
+            if m is not None:
+                anchor = m.map(anchor)
+            else:
+                off = getattr(self, "_preview_offset", None)
+                if off is not None:
+                    anchor = anchor + off
+        return anchor
+
+    def _billboard_quad(self, group, face_dir=None):
+        """The face-me quad of a billboard group, rotated around its vertical
+        anchor axis to face the camera NOW (or ``face_dir`` when given).
+        Returns (corners[4], tex_path) or ``None``. Shared by the render
+        pass, picking and the shadow casters."""
+        ext = self._billboard_extent(group)
+        if ext is None:
+            return None
+        _anchor, w, h, tex = ext
+        anchor = self._billboard_feet(group, ext)
+        if w < 1e-9 or h < 1e-9:
+            return None
+        # Facing: the camera by default (the figures' shadow pass casts the
+        # quad as drawn); ``face_dir`` turns it another way.
+        d = face_dir if face_dir is not None else self._faceme_dir(anchor)
+        d = QVector3D(d.x(), d.y(), 0.0)
+        if d.length() < 1e-6:
+            d = QVector3D(1.0, 0.0, 0.0)
+        d = d.normalized()
+        r = QVector3D(-d.y(), d.x(), 0.0)
+        up = QVector3D(0.0, 0.0, 1.0)
+        # The quad turns round the vertical through the FEET, which stand
+        # on the anchor: the person in a cutout is rarely centred (the
+        # engineer's roll of plans widens the picture on one side, his feet
+        # are 5.5 cm off its middle, another cutout's 17 cm). Turned round
+        # the picture's middle, the feet swung round the anchor as the
+        # camera orbited and the shadow did not start at them (Marco,
+        # 21-11). Now the feet stay where the figure was placed.
+        fu = self._figure_feet_u(tex)
+        c0 = anchor - r * (w * fu)
+        c1 = anchor + r * (w * (1.0 - fu))
+        return ([c0, c1, c1 + up * h, c0 + up * h], tex)
+
+    def _figure_feet_u(self, path) -> float:
+        """Where a cutout's feet stand across its picture, 0..1 from the
+        left: the middle of its opaque texels in the lowest 5 % of the
+        figure (both feet of a striding figure: 1 % found only the lower
+        one, 0.90 instead of 0.68 on one of the bundled cutouts). 0.5
+        for a picture that cannot be read or has no opaque texel. A few
+        milliseconds for a 1 100-pixel cutout, once per file."""
+        return self._figure_feet(path)[0]
+
+    def _figure_feet(self, path) -> tuple[float, float]:
+        """``(u, v)`` of a cutout's feet in its picture (``_feet_of``),
+        read once per file and again only when the file changes."""
+        if not path:
+            return 0.5, 0.0
+        import os
+        try:
+            stamp = os.stat(path).st_mtime_ns
+        except OSError:
+            stamp = None
+        memo = getattr(self, "_feet_memo", None)
+        if memo is None:
+            memo = self._feet_memo = {}
+        hit = memo.get(path)
+        if hit is not None and hit[0] == stamp:
+            return hit[1]
+        memo[path] = (stamp, _feet_of(path))
+        return memo[path][1]
+
+    def _faceme_figures(self) -> list:
+        """The visible face-me figures. They are a handful among thousands
+        of placements: found once per change of the placements (an epoch
+        memoised per tick), not on every frame."""
+        bkey = self._placements_epoch()
+        bmemo = getattr(self, "_billboard_groups", None)
+        if bmemo is not None and bmemo[0] == bkey:
+            return bmemo[1]
+        groups = [g for g in self._placements()
+                  if getattr(g, "billboard", False)
+                  and self.scene.entity_visible(g)]
+        self._billboard_groups = (bkey, groups)
+        return groups
+
+    def _figure_shadow_box(self):
+        """``(lo, hi)`` as float triples round every figure that casts a
+        shadow (the textured quads), or ``None``. Each figure counts with
+        the room it can take turned ANY way round its feet: a cylinder as
+        wide as its farther side, as tall as it is. So the box does not
+        depend on the camera the figures face, and the sun's map built
+        from it (see ``_shadow_bounds``) is reused while the camera orbits.
+        The model's own box leaves the figures out (they are drawn per
+        frame, not from their mesh): a model holding only the scale figure
+        had no box, so no shadow at all, and a figure standing beside a
+        small drawing fell partly outside the sun's map and lost part of
+        its shadow (Marco, 21-11). Memoised on the placements and the
+        model's version (a figure moves or changes with an edit): it is
+        asked every frame."""
+        key = (self._placements_epoch(), self.scene.version,
+               self._figure_drag_pose())
+        memo = getattr(self, "_figure_box_memo", None)
+        if memo is not None and memo[0] == key:
+            return memo[1]
+        box = self._figure_shadow_box_now()
+        self._figure_box_memo = (key, box)
+        return box
+
+    def _figures_dragged(self) -> bool:
+        """Whether a Move/Rotate drag carries a face-me figure now."""
+        moving = getattr(self, "_preview_groups", None)
+        return bool(moving) and any(id(g) in moving
+                                    for g in self._faceme_figures())
+
+    def _figure_drag_pose(self):
+        """The drag's transform while it carries a figure (else ``None``):
+        the figures' box follows it, so their shadow does as they move."""
+        if not self._figures_dragged():
+            return None
+        m = getattr(self, "_preview_matrix", None)
+        if m is not None:
+            return tuple(round(x, 4) for x in m.data())
+        off = getattr(self, "_preview_offset", None)
+        return None if off is None else (round(off.x(), 4),
+                                         round(off.y(), 4),
+                                         round(off.z(), 4))
+
+    def _figure_shadow_box_now(self):
+        """See ``_figure_shadow_box``. Taken where the figures stand NOW —
+        a drag's preview carried on their feet — and widened to whole
+        metres: the sun's map, fitted round it, is drawn again only as a
+        dragged figure crosses a metre, not on every pointer move (the
+        engineer lost his shadow while dragged: it fell outside the map
+        fitted round where he had stood, ronda Windows 0.6.3)."""
+        import math
+        lo = hi = None
+        for g in self._faceme_figures():
+            if getattr(g, "billboard", False) is not True:
+                continue           # mesh face-me figures cast no shadow
+            ext = self._billboard_extent(g)
+            if ext is None:
+                continue
+            _a, w, h, tex = ext
+            a = self._billboard_feet(g, ext)
+            fu = self._figure_feet_u(tex)
+            r = w * max(fu, 1.0 - fu)
+            glo = (a.x() - r, a.y() - r, a.z())
+            ghi = (a.x() + r, a.y() + r, a.z() + h)
+            if lo is None:
+                lo, hi = glo, ghi
+            else:
+                lo = tuple(map(min, lo, glo))
+                hi = tuple(map(max, hi, ghi))
+        if lo is None:
+            return None
+        return (tuple(float(math.floor(v)) for v in lo),
+                tuple(float(math.ceil(v)) for v in hi))
+
+    def _draw_billboards(self) -> None:
+        """Per-frame pass: each face-me billboard is a textured cutout quad
+        turned toward the camera (2D people). Depth-tested, so it
+        hides behind walls correctly; the shader discards transparent texels."""
+        groups = self._faceme_figures()
+        if not groups:
+            return
+        self._program.setUniformValue(self._loc_use_tex, 1)
+        # Hard alpha cut for face-me figures: their mipmapped edge alpha
+        # under the Bayer dither would stipple dots around the silhouette
+        # (user report); scene cutouts keep the dither (distant fences).
+        self._program.setUniformValue(self._loc_hard_cutout, 1)
+        self._billboard_vao.bind()
+        for g in groups:
+            fade = self._edit_rest_fade(g)
+            if fade is None:
+                continue
+            self._program.setUniformValue1f(self._loc_fade, fade)
+            if getattr(g, "billboard", False) == "mesh":
+                # Imported face-me silhouette: its REAL geometry (a cut
+                # outline, not a rectangle) turns toward the camera.
+                self._draw_faceme_mesh(g)
+                continue
+            quad = self._billboard_quad(g)
+            if quad is None:
+                continue
+            corners, path = quad
+            tex = self._get_texture(path)
+            if tex is None:
+                continue
+            data = array("f")
+            uvs = [(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)]
+            for idx in (0, 1, 2, 0, 2, 3):
+                c = corners[idx]
+                u, v = uvs[idx]
+                data.extend([c.x(), c.y(), c.z(), u, v])
+            raw = data.tobytes()
+            self._billboard_vbo.bind()
+            self._billboard_vbo.allocate(raw, len(raw))
+            self._billboard_vbo.release()
+            tex.bind(0)
+            self._gl.glDrawArrays(GL_TRIANGLES, 0, 6)
+            if g in self.scene.selection:
+                # Selection cue: repaint with the highlight colour untextured.
+                pass
+        self._billboard_vao.release()
+        self._program.setUniformValue1f(self._loc_fade, 0.0)
+        self._program.setUniformValue(self._loc_hard_cutout, 0)
+        self._program.setUniformValue(self._loc_use_tex, 0)
+
+    def _draw_billboard_outlines(self) -> None:
+        """Selection cue for face-me billboards: an orange outline around the
+        quad AS DRAWN this frame (it rotates toward the camera). Tinting the
+        group's static mesh painted a stray plane through the figure —
+        the usual convention shows a selected 2D person as an outlined box too."""
+        sel = [g for g in self.scene.selection
+               if isinstance(g, Group) and getattr(g, "billboard", False)
+               and self.scene.entity_visible(g)]
+        if not sel:
+            return
+        data = array("f")
+        for g in sel:
+            quad = self._billboard_quad(g)
+            if quad is None:
+                continue
+            c = quad[0]
+            for i, j in ((0, 1), (1, 2), (2, 3), (3, 0)):
+                data.extend([c[i].x(), c[i].y(), c[i].z(),
+                             c[j].x(), c[j].y(), c[j].z()])
+        if not data:
+            return
+        raw = data.tobytes()
+        self._bb_sel_vbo.bind()
+        self._bb_sel_vbo.allocate(raw, len(raw))
+        self._bb_sel_vbo.release()
+        self._set_color(*self._modeling_color("selected"), 1.0)
+        self._bb_sel_vao.bind()
+        self._gl.glDrawArrays(GL_LINES, 0, len(data) // 3)
+        self._bb_sel_vao.release()
+
+    def _faceme_base(self, g):
+        """Cached base data of a mesh face-me billboard: interleaved pos+uv
+        arrays per image, the vertical anchor axis and the horizontal base
+        normal. Rebuilt when the MODEL changes, not on a click: a vector-art
+        figure from an imported file is faces with thousands of holes, and
+        triangulating the villa's 18 again after every selection was the
+        ~5 s per click of issue #1006."""
+        cache = getattr(self, "_faceme_cache", None)
+        if cache is None:
+            cache = self._faceme_cache = {}
+        key = self._figure_token(g)
+        cur = cache.get(id(g))
+        if cur is not None and cur[0] == key:
+            return cur[1]
+        import numpy as np
+        mesh = self._billboard_mesh(g)       # world space, matrix applied
+        self._seed_tris_native(mesh.faces)
+        by_tex: dict = {}
+        by_color: dict = {}      # rgb tuple -> interleaved pos+uv (uv unused)
+        n0 = None
+        best_area = 0.0
+        for f in mesh.faces:
+            area = f.area() if hasattr(f, "area") else 0.0
+            if n0 is None or area > best_area:
+                n0 = f.normal()
+                best_area = area
+            tex = f.attrs.get("texture")
+            if tex is not None and tex.get("path"):
+                self._append_textured_face(by_tex, f, tex)
+                continue
+            # Solid-colour face (a vector-art person from a .skp file):
+            # same interleaved layout, uv ignored, drawn with u_color.
+            col = tuple(f.attrs.get("color") or (0.96, 0.95, 0.925))
+            buf = by_color.setdefault(col, array("f"))
+            for t0, t1, t2 in self._tris_of(f):
+                for p in (t0, t1, t2):
+                    buf.extend([p.x(), p.y(), p.z(), 0.0, 0.0])
+        verts = mesh.vertices
+        entry = None
+        if n0 is not None and verts and (by_tex or by_color):
+            xs = [v.position.x() for v in verts]
+            ys = [v.position.y() for v in verts]
+            zs = [v.position.z() for v in verts]
+            # The anchor is the figure's FEET (x, y, min z), like the simple
+            # quad's: _draw_faceme_mesh aims the face-me from it in 3D. A 2-D
+            # anchor here raised IndexError inside paintGL and left the whole
+            # viewport blank for any model carrying a mesh face-me (Susan in
+            # plaza Yanque(2).skp — v0.3.9 shipped with it).
+            anchor = np.array([(min(xs) + max(xs)) / 2,
+                               (min(ys) + max(ys)) / 2, min(zs)])
+            nh = np.array([n0.x(), n0.y()])
+            ln = float(np.hypot(nh[0], nh[1]))
+            if ln > 1e-9:
+                nh = nh / ln
+                arrays = {p: np.frombuffer(buf.tobytes(),
+                                           dtype=np.float32).reshape(-1, 5)
+                          for p, buf in by_tex.items()}
+                colors = {c: np.frombuffer(buf.tobytes(),
+                                           dtype=np.float32).reshape(-1, 5)
+                          for c, buf in by_color.items()}
+                entry = (arrays, colors, anchor, nh)
+        cache[id(g)] = (key, entry)
+        return entry
+
+    def _draw_faceme_mesh(self, g) -> None:
+        """Draw a mesh face-me billboard: rotate its geometry around the
+        vertical axis through its anchor so its plane faces the camera NOW.
+        Runs inside the billboard pass (textured, billboard VAO bound)."""
+        base = self._faceme_base(g)
+        if base is None:
+            return
+        arrays, colors, anchor, nh = base
+        import numpy as np
+        if len(anchor) < 3:                      # an older cached entry
+            anchor = np.array([anchor[0], anchor[1], 0.0])
+        # Preview transform (Move/Rotate drag): the figure follows the
+        # cursor through THIS pass, camera-facing with its baked UVs —
+        # see _billboard_quad for the simple-quad twin.
+        ox = oy = oz = 0.0
+        if id(g) in (getattr(self, "_preview_groups", None) or ()):
+            m = getattr(self, "_preview_matrix", None)
+            if m is not None:
+                p = m.map(QVector3D(anchor[0], anchor[1], anchor[2]))
+                ox, oy, oz = (p.x() - anchor[0], p.y() - anchor[1],
+                              p.z() - anchor[2])
+            else:
+                off = getattr(self, "_preview_offset", None)
+                if off is not None:
+                    ox, oy, oz = off.x(), off.y(), off.z()
+        fd = self._faceme_dir(QVector3D(anchor[0] + ox, anchor[1] + oy,
+                                        anchor[2] + oz))
+        d = np.array([fd.x(), fd.y()])
+        ln = float(np.hypot(d[0], d[1]))
+        d = nh if ln < 1e-9 else d / ln
+        cos = float(nh[0] * d[0] + nh[1] * d[1])
+        sin = float(nh[0] * d[1] - nh[1] * d[0])
+
+        def _rotated(arr):
+            a = arr.copy()
+            x = a[:, 0] - anchor[0]
+            y = a[:, 1] - anchor[1]
+            a[:, 0] = anchor[0] + cos * x - sin * y + ox
+            a[:, 1] = anchor[1] + sin * x + cos * y + oy
+            if oz:
+                a[:, 2] += oz
+            return a
+
+        for (path, _shade), arr in arrays.items():
+            # billboards turn toward the camera: no fixed-normal shade
+            tex = self._get_texture(path)
+            if tex is None:
+                continue
+            a = _rotated(arr)
+            raw = a.tobytes()
+            self._billboard_vbo.bind()
+            self._billboard_vbo.allocate(raw, len(raw))
+            self._billboard_vbo.release()
+            tex.bind(0)
+            self._gl.glDrawArrays(GL_TRIANGLES, 0, len(a))
+        if colors:
+            # Solid-colour runs (vector-art face-me like Susan): same VAO,
+            # texture sampling off, u_color per run; restore for the pass.
+            self._program.setUniformValue(self._loc_use_tex, 0)
+            for col, arr in colors.items():
+                r, gc, b = col[0], col[1], col[2]
+                self._program.setUniformValue(
+                    self._loc_color, QVector4D(r, gc, b, 1.0))
+                self._program.setUniformValue(
+                    self._loc_back_color, QVector4D(r, gc, b, 1.0))
+                a = _rotated(arr)
+                raw = a.tobytes()
+                self._billboard_vbo.bind()
+                self._billboard_vbo.allocate(raw, len(raw))
+                self._billboard_vbo.release()
+                self._gl.glDrawArrays(GL_TRIANGLES, 0, len(a))
+            self._program.setUniformValue(self._loc_use_tex, 1)

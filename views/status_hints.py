@@ -11,6 +11,8 @@ the arc knows its bulge step, the fillet its sizing step. Tools not in
 the table fall back to their name."""
 from __future__ import annotations
 
+import sys
+
 from core.i18n import tr
 
 #: Tool key → hint per phase. A plain string is the same hint always.
@@ -31,7 +33,8 @@ HINTS: dict = {
                         "Click another solid (2): only what they share stays."),
     "solid_split": ("Click a solid group or component (1).",
                     "Click another solid (2): three pieces come out."),
-    "eraser": "Drag over edges to erase them. Shift = hide instead.",
+    "eraser": ("Drag over edges to erase them. Shift = hide, "
+               "Ctrl = soften, Ctrl+Shift = make visible."),
     "paint": "Click a face to paint it. Alt = sample the material under the cursor.",
     "line": ("Click the start point. Arrows lock an axis, Shift locks the inference.",
              "Click the end point, or type the length and Enter."),
@@ -77,10 +80,30 @@ HINTS: dict = {
     # and got the line elided (Marco, 2026-09-17). The classic hint is just
     # as terse — «Haz clic en un elemento que desees medir.» — with the
     # modifiers as their own clauses after it.
-    "tape": ("Click a point or an edge to measure. Arrows lock an axis.",
-             "Click the second point, or type the distance and Enter."),
+    # «measured»: the second click is down and the reading stays in the
+    # Measurements box — typing over it resizes (core/resize.py).
+    "tape": {
+        "idle": "Click a point or an edge to measure. Arrows lock an axis.",
+        "started": "Click the second point, or type the distance and Enter.",
+        "measured": "Type the new length and Enter to resize.",
+    },
     "protractor": ("Click the vertex of the angle.",
                    "Click the start of the angle, then the end; or type the degrees."),
+    "guide_point": "Click to leave a guide point, or type x;y;z and Enter.",
+    "terrain_grid": ("Click the first corner. Type cell or cell;relief first.",
+                     "Click the opposite corner, or type width;height and Enter."),
+    "terrain_deform": ("Click the ground to push. Type the radius first.",
+                       "Move up or down and click, or type the height and Enter."),
+    "terrain_stamp": {
+        "idle": "Click the face with the platform's shape. Type the slope width first.",
+        "ground": "Click the ground to stamp the platform into.",
+        "height": "Move up or down and click, or type the rise above the shape and Enter.",
+    },
+    "terrain_contours": "Select contours at their heights, then the tool. Type a cell to rebuild.",
+    "terrain_points": "Select points (or none: all guide points), then the tool. Type a longest side.",
+    "terrain_height": ("Click a contour line or a guide point.",
+                       "Type its height and Enter."),
+    "terrain_drape": "Select edges, then click the ground to drape them onto it.",
     "north": ("Click the centre of the compass.",
               "Click toward north, or type the degrees from the green axis."),
     "dimension": ("Click the first point of the dimension.",
@@ -93,6 +116,7 @@ HINTS: dict = {
              "Click where the label goes; the text is asked for next."),
     "geopath": "Click the points of the path; Enter or double-click finishes.",
     "section": "Click a face to place the section plane. Shift keeps the orientation.",
+    "section_box": "Drag a face of the box to move it; type a distance while dragging to set it",
     "texture_position": "Drag a pin: red moves, green scales/rotates, blue shears. Enter finishes.",
     "image": "Click the first corner of the image, then the opposite one. Shift frees the aspect.",
     "paste": "Click where the copy goes. Arrows lock an axis.",
@@ -120,8 +144,15 @@ def phase_of(key: str, tool) -> str:
         if getattr(tool, "end_point", None) is not None:
             return "bulge"
         return "end" if getattr(tool, "start_point", None) is not None else "idle"
+    if key == "terrain_stamp":
+        if getattr(tool, "start_point", None) is not None:
+            return "height"
+        return "ground" if getattr(tool, "footprint", None) else "idle"
     if key == "fillet":
         return "sizing" if getattr(tool, "sizing", False) else "idle"
+    if (key == "tape" and getattr(tool, "start_point", None) is None
+            and getattr(tool, "_measure_ends", None) is not None):
+        return "measured"
     if getattr(tool, "start_point", None) is not None:
         return "started"
     if getattr(tool, "dragging", False) or getattr(tool, "nodes", None):
@@ -164,6 +195,12 @@ def hint_for(key: str | None, tool, nav_mode: str | None = None,
         return tr(NAV_HINTS[nav_mode])
     entry = HINTS.get(key or "")
     if entry is None:
+        # A tool with no entry of its own here (Camera from Photo, opened
+        # from a menu) may still say what it does.
+        clause = getattr(tool, "status_clause", None)
+        clause = clause() if callable(clause) else ""
+        if clause:
+            return clause
         name = getattr(tool, "name", None)
         return tr("{name}: Esc cancels.", name=tr(name)) if name else ""
     if isinstance(entry, str):
@@ -183,11 +220,15 @@ def _with_alt(text: str, key, tool, linear_mode) -> str:
     The tool's stays up the whole time it is active (the classic bar keeps
     its modifiers on screen); Alt's only appears mid-operation, because that is
     the only time the key does anything (issue #26)."""
+    if sys.platform == "darwin" and getattr(tool, "option_copies", False):
+        return f"{text} | {tr('Option = copy')}"
     # One modifier at a time, each in the phase where it does something —
     # the classic line carries «Ctrl = …» before the first click and
     # «Alt = …» once a line is under way, never both. Stacking them made
     # the bar elide (Marco, 2026-09-17: «no sale completo el texto»).
-    if phase_of(key, tool) == "idle":
+    # A Tape that has just measured is at rest too: the next click starts
+    # over, so its Ctrl clause still applies.
+    if phase_of(key, tool) in ("idle", "measured"):
         own = getattr(tool, "status_clause", None)
         own = own() if callable(own) else ""
         return f"{text} | {own}" if own else text

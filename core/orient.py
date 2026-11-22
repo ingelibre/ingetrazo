@@ -99,9 +99,10 @@ def _face_shape(face) -> tuple:
                   for h in face.hole_loops))
 
 
-def _face_triangles(mesh) -> dict:
+def _face_triangles(mesh, only=None) -> dict:
     """Triangulate every face once. Returns ``{face: [Triangle, …]}`` in world
-    space (holes included via the face's own earcut triangulation).
+    space (holes included via the face's own earcut triangulation) — of the
+    faces in ``only`` alone when given, in mesh order.
 
     A face whose corners are where they were the last time is not cut
     again: an edit touches a handful of faces, and every pass re-cut all of
@@ -114,6 +115,8 @@ def _face_triangles(mesh) -> dict:
     tris: dict = {}
     kept: dict = {}
     for f in mesh.faces:
+        if only is not None and f not in only:
+            continue
         shape = _face_shape(f)
         known = memo.get(f)
         if known is not None and known[0] == shape:
@@ -122,7 +125,12 @@ def _face_triangles(mesh) -> dict:
             t = f.triangulate()
         tris[f] = t
         kept[f] = (shape, t)
-    memo.clear()
+    if only is None:
+        memo.clear()
+    else:
+        # The rest keep their entries; the faces gone from the mesh go.
+        for f in memo.keys() - set(mesh.faces):
+            del memo[f]
     memo.update(kept)
     return tris
 
@@ -195,28 +203,100 @@ def _face_components(mesh) -> dict:
     the semantically right call (a box modelled inside a room is its own
     outward solid, not "interior" of the room). The payoff is the imported
     group mesh (many welded bricks in one mesh): O(F·T) becomes Σ O(F_c·T_c)
-    — the barbecue's orientation pass dropped ~7×."""
-    idx = {f: i for i, f in enumerate(mesh.faces)}
-    parent = list(range(len(mesh.faces)))
+    — the barbecue's orientation pass dropped ~7×.
 
-    def find(x: int) -> int:
-        while parent[x] != x:
-            parent[x] = parent[parent[x]]
-            x = parent[x]
-        return x
+    A label only names its component (callers compare labels, never order
+    them): here it is the component's lowest face index."""
+    faces, _edges, _first, lab = _component_arrays(mesh)
+    return dict(zip(faces, lab.tolist()))
 
-    for e in mesh.edges:
-        it = iter(e.faces)
-        first = next((idx[f] for f in it if f in idx), None)
-        if first is None:
+
+def _flood_components(roots, live, lab: dict, label: int) -> int:
+    """Label the components of ``roots`` (those in ``live``, the faces of
+    the mesh) into ``lab``, starting at ``label``; returns the next free
+    label. A face already labelled is not flooded again.
+
+    The same split as :func:`_face_components`: from a face, every edge at
+    its corners that lists it leads to the other faces that edge lists —
+    the edges a face bounds are the ones at its corners."""
+    for r in roots:
+        if r in lab or r not in live:
             continue
-        for f in it:
-            j = idx.get(f)
-            if j is not None:
-                ra, rb = find(first), find(j)
-                if ra != rb:
-                    parent[ra] = rb
-    return {f: find(i) for f, i in idx.items()}
+        c = label
+        label += 1
+        lab[r] = c
+        stack = [r]
+        while stack:
+            f = stack.pop()
+            for lp in (f.loop, *f.hole_loops):
+                for v in lp:
+                    for e in v.edges:
+                        fs = e.faces
+                        if f not in fs:
+                            continue
+                        for g in fs:
+                            if g not in lab and g in live:
+                                lab[g] = c
+                                stack.append(g)
+    return label
+
+
+def _component_arrays(mesh):
+    """``(faces, edges, edge_face, labels)`` behind :func:`_face_components`.
+
+    ``faces``/``edges`` are the mesh's, in order; ``labels[i]`` is the
+    component of ``faces[i]`` (its lowest face index); ``edge_face[k]`` is
+    the index of a face of ``edges[k]`` (every face of an edge is in one
+    component), ``-1`` when none of its faces is in the mesh and ``-2`` when
+    it has none.
+
+    The union-find walked in Python, 11 times over the whole 9 674-face
+    group for one push in the Plaza (~45 ms each, night of 19-11): now one
+    pass gathers the face pairs and NumPy hooks and jumps the labels."""
+    import numpy as np
+    faces = list(mesh.faces)
+    edges = list(mesh.edges)
+    get = {f: i for i, f in enumerate(faces)}.get
+    first_of: list = []
+    pa: list = []
+    pb: list = []
+    add_e, add_a, add_b = first_of.append, pa.append, pb.append
+    for e in edges:
+        fs = e.faces
+        if len(fs) == 2:
+            a, b = get(fs[0]), get(fs[1])
+            if a is not None and b is not None:
+                add_e(a)
+                add_a(a)
+                add_b(b)
+                continue
+        first = -1 if fs else -2
+        for f in fs:
+            j = get(f)
+            if j is None:
+                continue
+            if first < 0:
+                first = j
+            else:
+                add_a(first)
+                add_b(j)
+        add_e(first)
+    lab = np.arange(len(faces), dtype=np.int64)
+    a = np.asarray(pa, dtype=np.int64)
+    b = np.asarray(pb, dtype=np.int64)
+    while len(a):
+        la, lb = lab[a], lab[b]
+        if np.array_equal(la, lb):
+            break
+        # Hook each pair's higher root under its lower one, then jump every
+        # face to its root: labels only fall, so it settles.
+        np.minimum.at(lab, np.maximum(la, lb), np.minimum(la, lb))
+        while True:
+            up = lab[lab]
+            if np.array_equal(up, lab):
+                break
+            lab = up
+    return faces, edges, np.asarray(first_of, dtype=np.int64), lab
 
 
 class _PackedTris:
@@ -309,21 +389,23 @@ def _pack_lists(triangle_lists, face_ids=None) -> _PackedTris:
     """Flatten ``triangle_lists`` (iterable of triangle lists) into arrays.
     ``face_ids`` gives the face index per list (defaults to the list's order)."""
     import numpy as np
-    rows_a, rows_b, rows_c, idx = [], [], [], []
-    for li, tlist in enumerate(triangle_lists):
-        fi = face_ids[li] if face_ids is not None else li
-        for (ta, tb, tc) in tlist:
-            rows_a.append((ta.x(), ta.y(), ta.z()))
-            rows_b.append((tb.x(), tb.y(), tb.z()))
-            rows_c.append((tc.x(), tc.y(), tc.z()))
-            idx.append(fi)
-    if not rows_a:
+    # One flat pass over every corner (the rows built one by one were most
+    # of a rebuild's parity packing, night of 19-11).
+    lists = triangle_lists if isinstance(triangle_lists, list) \
+        else list(triangle_lists)
+    sizes = [len(t) for t in lists]
+    n = sum(sizes)
+    if not n:
         return _PackedTris(np.zeros((0, 3)), np.zeros((0, 3)),
                            np.zeros((0, 3)), np.zeros(0, dtype=np.int64))
-    a = np.asarray(rows_a, dtype=np.float64)
-    b = np.asarray(rows_b, dtype=np.float64)
-    c = np.asarray(rows_c, dtype=np.float64)
-    return _PackedTris(a, b - a, c - a, np.asarray(idx, dtype=np.int64))
+    xyz = np.fromiter((c for tlist in lists for tri in tlist for p in tri
+                       for c in p.toTuple()),
+                      dtype=np.float64, count=9 * n).reshape(n, 3, 3)
+    ids = (np.arange(len(lists), dtype=np.int64) if face_ids is None
+           else np.asarray(face_ids[:len(lists)], dtype=np.int64))
+    idx = np.repeat(ids, sizes)
+    a = np.ascontiguousarray(xyz[:, 0])
+    return _PackedTris(a, xyz[:, 1] - a, xyz[:, 2] - a, idx)
 
 
 def _cross_rows(a, b):
@@ -619,17 +701,46 @@ def signed_volume(mesh) -> float:
     winding (positive == outward by the right-hand rule). Mixed winding gives a
     meaningless value — use it only to confirm consistency. Interior partitions
     (marked by :func:`orient_outward`) are not boundary and are skipped — their
-    arbitrary winding would bias the sum."""
+    arbitrary winding would bias the sum.
+
+    Summed in double from the float32 corners: with ``QVector3D``'s float32
+    dot and cross products the total moved by a few millionths when a face
+    was cut into other triangles, by a different amount on each platform."""
     total = 0.0
     for f in mesh.faces:
         if f.interior:
             continue
         for a, b, c in f.triangulate():
-            total += QVector3D.dotProduct(a, QVector3D.crossProduct(b, c)) / 6.0
-    return total
+            ax, ay, az = a.x(), a.y(), a.z()
+            bx, by, bz = b.x(), b.y(), b.z()
+            cx, cy, cz = c.x(), c.y(), c.z()
+            total += (ax * (by * cz - bz * cy) + ay * (bz * cx - bx * cz)
+                      + az * (bx * cy - by * cx))
+    return total / 6.0
 
 
-def orient_outward(mesh, seed: int = 12345, only=None) -> list:
+def orient_outward_each(mesh, faces, seed: int = 12345) -> list:
+    """Exactly ``for f in faces: orient_outward(mesh, seed, only=(f,))`` —
+    the same flips, the same ``interior`` marks, the same rays — without
+    re-reading a whole component for every face of it.
+
+    Each scoped call decides the face's whole component, and before casting
+    its few rays it triangulates, packs and floods every face of it: a push
+    started on one of 100 selected faces of a 16 000-face group re-read the
+    group 100 times, ~0.2 s a face and 21 s for the click (0.6.3 modelling
+    test, 20-11). Those reads depend only on the mesh, so they are kept
+    between the calls for as long as no call has turned a face; the first
+    turn throws them away, and the next call reads the mesh afresh, as the
+    loop did. What each call asks with its own face — the sample of a
+    shell, the rays and their random draws — is asked again every time."""
+    ctx: dict = {}
+    flipped: list = []
+    for f in faces:
+        flipped.extend(orient_outward(mesh, seed, only=(f,), _ctx=ctx))
+    return flipped
+
+
+def orient_outward(mesh, seed: int = 12345, only=None, _ctx=None) -> list:
     """Flip the faces of a closed solid so every boundary normal points
     outward, and mark interior partitions (``face.interior``). Returns the
     faces that were flipped.
@@ -661,7 +772,27 @@ def orient_outward(mesh, seed: int = 12345, only=None) -> list:
             f.interior = False
         return []
     import numpy as np
-    all_tris = _face_triangles(mesh)
+    # Scoped to some faces, only their components are read — triangulated,
+    # packed and labelled: the rest of the group never is (a push in a
+    # 9 674-face group of the Plaza packed all of it to decide ~320 faces,
+    # night of 19-11). Each face is judged against its own component, so
+    # their rows, and every verdict, are the same.
+    # ``_ctx`` (``orient_outward_each``): what a scoped call of one face
+    # reads of its component, kept from an earlier call on the same
+    # component while no face has been turned since. Pure functions of the
+    # mesh, so the call goes on exactly as if it had read them itself.
+    kept = None
+    if _ctx is not None and only is not None and len(only) == 1:
+        kept = _ctx.get(next(iter(only)))
+    if kept is not None:
+        return _orient_scoped(mesh, seed, only, _ctx, **kept)
+    comp_of = None
+    if only is not None:
+        comp_of = {}
+        _flood_components(only, set(mesh.faces), comp_of, 0)
+        if not comp_of:
+            return []
+    all_tris = _face_triangles(mesh, comp_of)
     faces = list(all_tris)
     fidx = {f: i for i, f in enumerate(faces)}
     # Pack every triangle once; per-face queries exclude by mask instead of
@@ -671,7 +802,8 @@ def orient_outward(mesh, seed: int = 12345, only=None) -> list:
     # :func:`_face_components`): slice the packed rows per component up front.
     # A single-component mesh gets exactly one slice — the whole array — so
     # drawn geometry behaves bit-identically to the unsliced pass.
-    comp_of = _face_components(mesh)
+    if comp_of is None:
+        comp_of = _face_components(mesh)
     comp_idx = np.asarray([comp_of[f] for f in faces], dtype=np.int64)
     row_comp = (comp_idx[packed.face_idx] if len(packed.face_idx)
                 else np.zeros(0, dtype=np.int64))
@@ -680,6 +812,55 @@ def orient_outward(mesh, seed: int = 12345, only=None) -> list:
     sub = {c: _PackedTris(packed.a[r], packed.e1[r], packed.e2[r],
                           packed.face_idx[r])
            for c, r in comp_rows.items()}
+
+    # Faces this call decides. Out-of-scope faces stay in ``boundary`` (so the
+    # in-scope components' masks are built the same way) but are never queried
+    # and never re-marked.
+    if only is None:
+        scope = list(mesh.faces)
+    else:
+        live_comps = {comp_of[f] for f in only if f in comp_of}
+        if not live_comps:
+            return []
+        scope = [f for f in mesh.faces if comp_of.get(f) in live_comps]
+
+    # Start with the likely partitions already peeled off: a face whose every
+    # edge is shared by three or more faces (a kept Ctrl-push base standing
+    # on its belt). Two such slabs in a row hide each other otherwise — a
+    # ray from one crosses the other, reads it as a wall of the solid, and
+    # neither is ever taken for interior; the second one was then flipped
+    # and the next push refused («rompería el sólido»). A face peeled here
+    # that is really boundary reads outward/inward in the first round and
+    # goes back, so the fixpoint below still has the last word.
+    touches_manifold = set()
+    edge_count: dict = {}
+    for e in mesh.edges:
+        for f in e.faces:
+            edge_count[f] = edge_count.get(f, 0) + 1
+            if len(e.faces) < 3:
+                touches_manifold.add(f)
+    in_scope = set(scope)
+    seeds = {f for f in in_scope
+             if f in all_tris and edge_count.get(f) and f not in touches_manifold}
+    boundary = {f: t for f, t in all_tris.items() if f not in seeds}
+    mesh_closed = is_closed(mesh)
+    shells = _coherent_shells(scope, comp_of) if scope else set()
+    read = dict(comp_of=comp_of, all_tris=all_tris, fidx=fidx,
+                packed=packed, comp_rows=comp_rows, sub=sub, scope=scope,
+                boundary=boundary, mesh_closed=mesh_closed, shells=shells)
+    if _ctx is not None and only is not None and len(only) == 1:
+        for f in comp_of:
+            _ctx[f] = read
+    return _orient_scoped(mesh, seed, only, _ctx, **read)
+
+
+def _orient_scoped(mesh, seed, only, _ctx, comp_of, all_tris, fidx, packed,
+                   comp_rows, sub, scope, boundary, mesh_closed,
+                   shells) -> list:
+    """The deciding half of :func:`orient_outward`, from what it read of
+    the mesh. ``_ctx`` is emptied as soon as a face is turned: what was
+    read no longer holds."""
+    import numpy as np
 
     def _boundary_base(boundary_set):
         # ONE isin per round — rebuilding the boundary-id array and running
@@ -691,18 +872,6 @@ def orient_outward(mesh, seed: int = 12345, only=None) -> list:
         base = np.isin(packed.face_idx, ids)
         return {c: base[r] for c, r in comp_rows.items()}
 
-    # Faces this call decides. Out-of-scope faces stay in ``boundary`` (so the
-    # in-scope components' masks are built the same way) but are never queried
-    # and never re-marked.
-    if only is None:
-        scope = list(mesh.faces)
-    else:
-        live_comps = {comp_of[f] for f in only if f in comp_of}
-        if not live_comps:
-            return []
-        scope = [f for f in mesh.faces if comp_of[f] in live_comps]
-
-    boundary = dict(all_tris)
     probes: dict = {}
 
     # A closed skin wound one way is decided by a few of its faces, not by
@@ -710,9 +879,7 @@ def orient_outward(mesh, seed: int = 12345, only=None) -> list:
     # rays of six agree with the rays of two thousand. One that the sample
     # does not read plainly (a skin crossing itself, a tied vote) goes
     # through the full pass below, as every other component does.
-    mesh_closed = is_closed(mesh)
     shell_flips: list = []
-    shells = _coherent_shells(scope, comp_of) if scope else set()
     if shells:
         by_comp: dict = {}
         for f in scope:
@@ -736,6 +903,8 @@ def orient_outward(mesh, seed: int = 12345, only=None) -> list:
                 shell_flips.extend(members)
         if decided:
             scope = [f for f in scope if comp_of[f] not in decided]
+            if shell_flips and _ctx is not None:
+                _ctx.clear()
             for f in shell_flips:
                 turn_face_over(f)
             if not scope:
@@ -753,6 +922,23 @@ def orient_outward(mesh, seed: int = 12345, only=None) -> list:
                 skip=fidx[f], probes=probes, all_tris=all_tris)
             if state == "interior":
                 interior_now.add(f)
+        # An edge only two faces share is a seam of one surface: both are
+        # boundary or both are partition. A partition beside a boundary face
+        # there would leave the boundary with a crack, so a parity misread
+        # (a ray grazing a busy corner elsewhere) gives way to the topology.
+        # A wall left marked interior this way hid the material behind it
+        # from every later push, which then refused.
+        changed = True
+        while changed and interior_now:
+            changed = False
+            for e in mesh.edges:
+                if len(e.faces) != 2:
+                    continue
+                a, b = e.faces
+                if (a in interior_now) != (b in interior_now):
+                    interior_now.discard(a)
+                    interior_now.discard(b)
+                    changed = True
         if interior_now == {f for f in scope if f not in boundary}:
             break
         boundary = {f: t for f, t in all_tris.items() if f not in interior_now}
@@ -807,6 +993,8 @@ def orient_outward(mesh, seed: int = 12345, only=None) -> list:
             if comp_of[f] in flip_comps:
                 members.setdefault(comp_of[f], []).append(f)
         before_bad = {c: _incoherent_edges(fs) for c, fs in members.items()}
+    if to_flip and _ctx is not None:
+        _ctx.clear()
     for f in to_flip:
         # Flip in place: reversing the loops reverses the winding (so the normal
         # flips) while keeping the *same* Face object and its shared edges/

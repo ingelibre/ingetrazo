@@ -493,3 +493,51 @@ Every source file carries an SPDX header and copyright notice; these must be
 preserved in any redistribution or derivative work, per the license terms.
 
 Later contributors may add their names below.
+
+İbrahim Halim Gökbulut  (github.com/h-skycloud)
+    Turkish localization, Türkiye BIM display terminology, and reversible
+    CAD/BIM/modeling workspace profiles with a getting-started guide.
+
+Luciano Ribeiro  (github.com/calieno)
+    Brazil.
+    For 0.6.3: automatic publishing on Winget (#766).
+
+Tristan Cebulla  (github.com/d1rty-pixel)
+    Germany.
+    For 0.6.3: History.execute says whether a command ran (#1241), rejected
+    commands inside run_python reported as reverted (#1242), the shortcuts
+    page follows actions added later (#1244) and placing a group honours
+    the workspace's tool filter (#1243).
+
+Daniel Ramos  (github.com/danielcamposramos)
+    Brasília, Brazil.
+    For 0.6.3: one eye of a stereo pair from the camera (#1174, #1311).
+
+diegog321  (github.com/diegog321)
+    For 0.6.3: a large .igz could lose a mesh's faces on opening: cause and
+    fix (#1533).
+
+Max  (github.com/mle-gall)
+    For 0.6.3: faster .skp import and .igz saving with less memory (#938,
+    #1145, #1146, #1147) and drawing inside a set reaching its copies
+    (#1148).
+
+moominot  (github.com/moominot)
+    For 0.6.3: the Catalan translation (#1497) and the Location tab of
+    Model Info (#1502).
+
+renancadastros01-gif  (github.com/renancadastros01-gif)
+    For 0.6.3: Push/Pull bases kept with Ctrl stay sound and cracked
+    results are refused (#1155).
+
+Henry Salinas Flores  (github.com/salinashf)
+    Quito, Ecuador.
+    For 0.6.3: camera roll with a 3D mouse (#1406).
+
+sneffetsd  (github.com/sneffetsd)
+    For 0.6.3: a preference to swap orbit and pan on the middle button
+    (#467).
+
+Urkoh00  (github.com/Urkoh00)
+    For 0.6.3: IFC export writes the project north, the site location and
+    the owning application (#1498).

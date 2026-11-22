@@ -73,7 +73,7 @@ def engine() -> str:
 
 #: The ``std::hypot(x, y, z)`` formulas the module knows (QVector3D's
 #: length() is that call, and C++ standard libraries differ in it).
-_HYPOTS = ("libstdc++", "msvc")
+_HYPOTS = ("libstdc++", "msvc", "libc++")
 _hypot = _UNSET
 
 

@@ -53,9 +53,24 @@ class SheetTabs(QTabBar):
     LABEL_MAX_CHARS = 18
 
     def __init__(self, parent, on_model, on_sheet, on_new=None,
-                 on_menu=None) -> None:
+                 on_menu=None, on_move=None) -> None:
         super().__init__(parent)
         self.setObjectName("sheet_tabs")
+        # Dragging a sheet tab along the strip reorders the sheets (Marco,
+        # 19-11: «en pestañas de laminas me gustaria poder cambiar el orden
+        # arrastrando una pestaña»). Gets (from, to) as sheet indices; only
+        # the composer's strip passes it — the model window's lists one
+        # sheet, with nothing to reorder.
+        self._on_move = on_move
+        #: While the left button holds a sheet tab: its displayed index at
+        #: the press, the pointer's offsets to the tab's edges, where a drag
+        #: has taken it so far, and a ``refresh`` that came in meanwhile.
+        self._held = None
+        self._moved = None
+        self._waiting = None
+        if on_move is not None:
+            self.setMovable(True)
+            self.tabMoved.connect(self._on_tab_moved)
         # Right-click on a sheet tab: the owner's menu — rename, duplicate,
         # delete (Marco, 2026-09-08: «desde los botones de lámina de abajo
         # con el menú del mouse»). Gets (sheet index, global pos).
@@ -145,6 +160,9 @@ class SheetTabs(QTabBar):
         ``current`` is the sheet index to mark, or ``None`` for the model.
         The tabs are only torn down when what they show changed — a hint or
         a hand-over must not rebuild the widget under the mouse."""
+        if self._held is not None:      # never under a press or a drag
+            self._waiting = (list(names), current)
+            return
         self._labels = self._wanted(names)
         self._names = [str(n) for n in names]
         cur = None if current is None else int(current)
@@ -187,8 +205,28 @@ class SheetTabs(QTabBar):
             self._slot_list = slots
             want = ("model",) if self._current is None else ("sheet", self._current)
             self.setCurrentIndex(slots.index(want) if want in slots else 0)
+            # «Model» pinned outside the strip (``pin_model``): its own tab
+            # here stays, hidden, so the logical layout does not change.
+            pin = getattr(self, "_pin", None)
+            if self.count():
+                self.setTabVisible(0, pin is None)
+            if pin is not None:
+                pin.set_selected(self._current is None)
         finally:
             self._updating = False
+
+    def pin_model(self, pin) -> None:
+        """Show «Model» in ``pin`` (a ``PinnedModelTab`` left of the strip)
+        instead of as the strip's first tab, so scrolling through many
+        sheets never takes it out of sight (Marco, 21-11: «me gustaría que
+        Model siempre se viera»)."""
+        self._pin = pin
+        pin.setText(self._labels[0] if self._labels else tr("Model"))
+        pin.setToolTip(tr("Model — Ctrl+Tab goes to the sheet"))
+        pin.clicked.connect(
+            lambda: QTimer.singleShot(0, lambda: self._dispatch_slot(("model",))))
+        self._shown = None
+        self._rebuild()
 
     def names(self) -> list:
         """«Model» and the sheet names — never the «+» tab."""
@@ -236,6 +274,118 @@ class SheetTabs(QTabBar):
         run right away, on the LOGICAL layout whatever is displayed."""
         self._dispatch(index)
 
+    # ---- dragging a sheet tab to reorder -------------------------------------
+    # «Model» and «+» stay where they are: a press on either does not drag,
+    # and a sheet tab is held between them — the pointer is clamped so the
+    # tab's edges never cross theirs, which is where Qt would swap them.
+
+    def _sheet_span(self):
+        """``(left, right)``: the stretch of the strip the sheet tabs take."""
+        left = self.tabRect(0).right() + 1
+        plus = self.plus_index()
+        right = (self.tabRect(plus).left() - 1 if plus is not None
+                 else self.tabRect(self.count() - 1).right())
+        return left, right
+
+    def mousePressEvent(self, ev) -> None:  # noqa: N802 — Qt override
+        at = self.tabAt(ev.position().toPoint())
+        slots = getattr(self, "_slot_list", [])
+        sheet = 0 <= at < len(slots) and slots[at][0] == "sheet"
+        if self._on_move is not None:
+            # Only a sheet tab moves; «Model» and «+» are pressed still.
+            self.setMovable(sheet)
+        if (self._on_move is not None and sheet
+                and ev.button() == Qt.LeftButton):
+            x = ev.position().x()
+            rect = self.tabRect(at)
+            self._held = (at, x - rect.left(), rect.right() - x)
+            self._moved = None
+        super().mousePressEvent(ev)
+
+    def mouseMoveEvent(self, ev) -> None:  # noqa: N802 — Qt override
+        if self._held is not None and ev.buttons() & Qt.LeftButton:
+            _at, off_l, off_r = self._held
+            left, right = self._sheet_span()
+            x = ev.position().x()
+            clamped = min(max(x, left + off_l), right - off_r)
+            if clamped != x:
+                from PySide6.QtCore import QPointF
+                from PySide6.QtGui import QMouseEvent
+                dx = clamped - x
+                ev = QMouseEvent(
+                    ev.type(), QPointF(clamped, ev.position().y()),
+                    QPointF(ev.globalPosition().x() + dx,
+                            ev.globalPosition().y()),
+                    ev.button(), ev.buttons(), ev.modifiers())
+        super().mouseMoveEvent(ev)
+
+    def mouseReleaseEvent(self, ev) -> None:  # noqa: N802 — Qt override
+        super().mouseReleaseEvent(ev)
+        if ev.button() != Qt.LeftButton or self._held is None:
+            return
+        at, to = self._held[0], self._moved
+        waiting, self._waiting = self._waiting, None
+        self._held = self._moved = None
+        n = len(self._names)
+        if to is not None and n:
+            src = min(max(at - 1, 0), n - 1)
+            dst = min(max(to - 1, 0), n - 1)
+            if src != dst:
+                self._take_move(src, dst)
+                QTimer.singleShot(0, lambda: self._on_move(src, dst))
+                return
+        if waiting is not None:
+            self.refresh(*waiting)
+
+    def hideEvent(self, ev) -> None:  # noqa: N802 — Qt override
+        self._held = self._moved = None
+        super().hideEvent(ev)
+        if self._waiting is not None:
+            waiting, self._waiting = self._waiting, None
+            self.refresh(*waiting)
+
+    def _on_tab_moved(self, index: int, to: int) -> None:
+        # Mid-drag, about the tab held or the NEIGHBOUR it passes (Qt slides
+        # that one into its place): follow the tab held. The sheets
+        # themselves only move when it is dropped.
+        if self._held is None:
+            return
+        at = self._held[0] if self._moved is None else self._moved
+        if at == index:
+            at = to
+        elif index < at <= to:
+            at -= 1
+        elif to <= at < index:
+            at += 1
+        self._moved = at
+
+    def _take_move(self, src: int, dst: int) -> None:
+        """What the strip now displays after a drop, in its own books, so
+        the owner's ``refresh`` with the new order finds nothing to tear
+        down — and one that keeps the old order puts the tabs back."""
+        names = list(self._names)
+        names.insert(dst, names.pop(src))
+        self._names = names
+        labels = self._labels[1:1 + len(names)]
+        labels.insert(dst, labels.pop(src))
+        self._labels[1:1 + len(names)] = labels
+        if self._current == src:
+            self._current = dst
+        elif self._current is not None:
+            cur = self._current
+            if src < cur <= dst:
+                self._current = cur - 1
+            elif dst <= cur < src:
+                self._current = cur + 1
+        self._shown = [self._slot_label(sl) for sl in self._slots()]
+
+    def drag(self, src: int, dst: int) -> None:
+        """Programmatic drop of sheet ``src`` at ``dst`` (tests): what a
+        drag along the strip hands its owner."""
+        if self._on_move is not None and src != dst:
+            self._take_move(src, dst)
+            self._on_move(src, dst)
+
     def contextMenuEvent(self, event) -> None:  # noqa: N802
         i = self.tabAt(event.pos())
         slots = getattr(self, "_slot_list", [])
@@ -245,6 +395,53 @@ class SheetTabs(QTabBar):
             event.accept()
             return
         super().contextMenuEvent(event)
+
+
+class PinnedModelTab(QTabBar):
+    """«Model» as a tab of its own, left of the sheet strip: drawn like the
+    strip's tabs (same style, document mode), marked only while the model
+    is what the window shows — a one-tab QTabBar always marks its tab."""
+
+    from PySide6.QtCore import Signal as _Signal
+    clicked = _Signal()
+
+    def __init__(self, parent=None) -> None:
+        super().__init__(parent)
+        self.setObjectName("sheet_tabs_model")
+        self.setDocumentMode(True)
+        self.setExpanding(False)
+        self.setDrawBase(False)
+        self.setUsesScrollButtons(False)
+        self.addTab(tr("Model"))
+        self._selected = True
+        self.tabBarClicked.connect(lambda _i: self.clicked.emit())
+
+    def setText(self, text: str) -> None:  # noqa: N802
+        self.setTabText(0, text)
+
+    def text(self) -> str:
+        return self.tabText(0)
+
+    def set_selected(self, on: bool) -> None:
+        if bool(on) != self._selected:
+            self._selected = bool(on)
+            self.update()
+
+    def is_selected(self) -> bool:
+        return self._selected
+
+    def paintEvent(self, event) -> None:  # noqa: N802 — Qt override
+        if self._selected:
+            super().paintEvent(event)
+            return
+        from PySide6.QtWidgets import QStyle, QStyleOptionTab, QStylePainter
+        p = QStylePainter(self)
+        opt = QStyleOptionTab()
+        self.initStyleOption(opt, 0)
+        opt.state &= ~QStyle.State_Selected
+        if self.tabAt(self.mapFromGlobal(self.cursor().pos())) == 0:
+            opt.state |= QStyle.State_MouseOver
+        p.drawControl(QStyle.CE_TabBarTab, opt)
 
 
 class _ElidedLabel(QLabel):
@@ -290,9 +487,12 @@ class SheetStatusBar(QStatusBar):
     — a plain QStatusBar leaves the bar empty after a timed message."""
 
     def __init__(self, parent, on_model, on_sheet, on_new=None,
-                 on_menu=None) -> None:
+                 on_menu=None, on_move=None) -> None:
         super().__init__(parent)
-        self.tabs = SheetTabs(self, on_model, on_sheet, on_new, on_menu)
+        self.tabs = SheetTabs(self, on_model, on_sheet, on_new, on_menu,
+                              on_move)
+        self.model_tab = PinnedModelTab(self)
+        self.tabs.pin_model(self.model_tab)
         self._msg = _ElidedLabel(self)
         self._base = ""
         self._timer = QTimer(self)
@@ -302,6 +502,7 @@ class SheetStatusBar(QStatusBar):
         # label with all the stretch — it soaks up the free width, so the
         # strip stays glued to the left and whatever the windows add later
         # (tool, coordinates, the VCB, the zoom combo) lines up on the right.
+        self.addPermanentWidget(self.model_tab)
         self.addPermanentWidget(self.tabs)
         self.addPermanentWidget(self._msg, 10)
         # An empty filler takes what the capped message leaves, so the
@@ -330,6 +531,13 @@ class SheetStatusBar(QStatusBar):
     #: make the arrows come and go with it.
     MESSAGE_MIN_CHARS = 45
 
+    def set_message_reserve(self, chars: int) -> None:
+        """How many average characters the strip leaves the message (see
+        MESSAGE_MIN_CHARS): the composer, whose messages are short and
+        timed, leaves less and shows more sheet tabs."""
+        self.MESSAGE_MIN_CHARS = max(0, int(chars))
+        self._update_tab_budget()
+
     #: The strip keeps this much however narrow the window gets.
     TABS_FLOOR = 200
 
@@ -357,8 +565,8 @@ class SheetStatusBar(QStatusBar):
     def _right_width(self) -> int:
         """What the widgets right of the message ask for, gaps included:
         whatever the windows and the extensions added, and the size grip."""
-        ours = (self.tabs, self._msg, self._filler)
-        width = 3 * self.ITEM_GAP
+        ours = (self.tabs, self._msg, self._filler, self.model_tab)
+        width = 4 * self.ITEM_GAP + self.model_tab.sizeHint().width()
         for w in self.findChildren(QWidget, options=Qt.FindDirectChildrenOnly):
             if w in ours or w.isHidden() or w.isWindow():
                 continue

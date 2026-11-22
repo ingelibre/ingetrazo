@@ -947,3 +947,41 @@ def test_one_click_on_a_sound_object_says_so(win):
     assert panel._current is None and not panel._fix_btn.isEnabled()
     assert "No problems left" in panel._problem_label.text()
     panel.close()
+
+
+def test_showing_the_tab_again_unchanged_does_not_inspect_again(win, monkeypatch):
+    """Unfolding the sidebar or leaving clean screen shows the tab again:
+    with the model as it was, nothing is inspected again (a large model
+    took seconds each time). A camera move is not a change."""
+    import plugins.solid_inspector as si
+    panel = SolidInspectorPanel(win.viewport)
+    _box(win.viewport.scene.mesh)
+    panel.show()
+    calls = []
+    real = si.inspect_mesh
+    monkeypatch.setattr(si, "inspect_mesh",
+                        lambda m: calls.append(m) or real(m))
+    panel.hide()
+    win.viewport.scene.view_version += 1        # an orbit: view-only bump
+    win.viewport.scene.version += 1
+    panel.show()
+    assert calls == []
+    assert panel._table.item(0, 2).text().startswith("✔")
+    panel.hide()
+    win.viewport.scene.version += 1             # an edit
+    panel.show()
+    assert calls
+    panel.close()
+
+
+def test_a_long_list_keeps_its_fitted_columns(win):
+    """The columns sized to their contents are fixed only while the table
+    fills, and fitted again after."""
+    from PySide6.QtWidgets import QHeaderView
+    panel = SolidInspectorPanel(win.viewport)
+    panel.show()
+    header = panel._table.horizontalHeader()
+    for c in (1, 2, 4):
+        assert header.sectionResizeMode(c) == QHeaderView.ResizeToContents
+    assert panel._table.updatesEnabled()
+    panel.close()

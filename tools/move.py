@@ -407,9 +407,87 @@ class _MoveCopiesCommand(CompoundCommand):
         scene.bump_view()
 
 
+
+def begin_verts_preview_for(begin, verts, groups):
+    """``begin`` (a viewport's ``begin_verts_preview``) for ``verts``, and
+    for the objects ``groups`` grabbed with them when there are any — a
+    mixed drag previews both or neither (None: the live drag stays).
+    Move, Rotate and Scale share it."""
+    if groups:
+        return begin(verts, list(groups))
+    return begin(verts)
+
+
+def faces_on_verts(tool) -> set:
+    """``id`` of every face with a corner on one of ``tool._verts`` —
+    what a vertex drag bends or carries. Kept per grabbed list: the snap
+    asks several times a frame."""
+    verts = tool._verts
+    memo = getattr(tool, "_faces_on_memo", None)
+    if memo is not None and memo[0] is verts:
+        return memo[1]
+    out = {id(f) for v in verts for e in getattr(v, "edges", ())
+           for f in e.faces}
+    tool._faces_on_memo = (verts, out)
+    return out
+
+
+class _MovedFaces:
+    """The faces a vertex drag stretches (``shown``, mesh faces), each
+    corner in ``moving`` (vertex ids) moved by ``d`` — or, given ``m`` (a
+    Rotate's ``QMatrix4x4``), placed at ``m.map`` of where it is: what
+    :meth:`MoveTool.preview_faces` (and Rotate's) draws. A sequence of
+    ``core.geometry.Face`` built on first walk — as the tools always built
+    them — while ``moved_parts`` hands the viewport what its engine bakes
+    them from without (``Viewport._bake_preview_moved_native``)."""
+
+    __slots__ = ("shown", "moving", "paint", "d", "m", "_faces")
+
+    def __init__(self, shown, moving, paint, d, m=None) -> None:
+        self.shown = shown
+        self.moving = moving
+        self.paint = paint
+        self.d = d
+        self.m = m
+        self._faces = None
+
+    @property
+    def moved_parts(self):
+        return self.shown, self.moving, self.paint, self.d, self.m
+
+    def faces(self) -> list:
+        out = self._faces
+        if out is None:
+            from core.geometry import Face as GeomFace
+            from core.materials import effective_attrs
+            d, m, moving, paint = self.d, self.m, self.moving, self.paint
+            if m is not None:
+                def at(v):
+                    return m.map(v.position) if id(v) in moving else v.position
+            else:
+                def at(v):
+                    return v.position + d if id(v) in moving else v.position
+            out = self._faces = [GeomFace(
+                [at(v) for v in f.loop],
+                [[at(v) for v in h] for h in f.hole_loops],
+                attrs=effective_attrs(f.attrs, paint) or None)
+                for f in self.shown]
+        return out
+
+    def __len__(self) -> int:
+        return len(self.shown)
+
+    def __iter__(self):
+        return iter(self.faces())
+
+    def __getitem__(self, i):
+        return self.faces()[i]
+
+
 class MoveTool(Tool):
     name = "Move"
     shortcut = "M"
+    option_copies = True
     description = (
         "Move the selection, or what you click, to a new place; Ctrl "
         "leaves a copy behind.")
@@ -447,6 +525,8 @@ class MoveTool(Tool):
         self._groups: list[Group] = []         # whole groups being moved
         self._splanes: list = []               # section planes being moved
         self._images: list = []                # reference images being moved
+        # The wall grabbed windows and doors slide on (#1272), or None.
+        self._glide = None
         self._labels: list[TextLabel] = []     # leader texts whose label moves
         self._moved_guides: list[Guide] = []         # construction guides being moved
         self._dims: dict = {}                  # dimension → "line" | "rigid"
@@ -606,6 +686,11 @@ class MoveTool(Tool):
             # (or onto) a coincident vertex never drags the innocent one along.
             self._verts = verts
             self._vp_preview = False
+            self._glide = self._glide_plane(viewport)
+            if self._glide is not None:
+                from core.i18n import tr
+                viewport.flash_status(tr(
+                    "Sliding on the wall: hold Alt to move it freely"), 4000)
             if (self._groups and not self._verts and not self._positions):
                 # Groups-only drag: viewport-side preview — the caches
                 # freeze and the movers render from one-time scratch VBOs
@@ -615,9 +700,80 @@ class MoveTool(Tool):
                 if begin is not None:
                     begin(self._groups)
                     self._vp_preview = True
+            elif self._verts:
+                # Vertices of a big open group, or of the big loose model —
+                # with objects grabbed too, or not (a mixed drag: the
+                # objects ride the same offset, ~0.3 s a frame re-walking
+                # the loose model before, 21-11). Either all of it previews
+                # or none of it does: the live drag stays for the whole.
+                # The same viewport-side preview — the rest of the mesh
+                # baked once, what rides the drag drawn at the offset, the
+                # faces it stretches drawn moved here (preview_faces). A
+                # frame re-baked the whole open group before (~0.4 s, night
+                # of 18-11), or re-walked the whole loose model (~0.33 s
+                # for 6 400 faces, 21-11).
+                begin = getattr(viewport, "begin_verts_preview", None)
+                got = (begin_verts_preview_for(begin, self._verts, self._groups)
+                       if begin is not None else None)
+                if got is not None:
+                    self._bent_faces, _e, self._bent_paint = got
+                    self._vp_preview = True
             self._gather_copy_entities(ctx)
             return
-        self._commit(viewport, ctx.world - self.grab)
+        self._commit(viewport, self._glided(ctx) - self.grab)
+
+    # ---- Sliding on the wall (#1272) ------------------------------------------
+    def _glide_plane(self, viewport):
+        """``(point, normal)`` of the wall the grabbed windows and doors cut
+        — they slide on it instead of flying off with the cursor — or None.
+        Only when everything grabbed is a «Cut opening» container that sits
+        on a wall now, all of them on parallel walls."""
+        if (not self._groups or self._positions or self._labels
+                or self._moved_guides or self._dims or self._splanes
+                or self._images):
+            return None
+        from core import openings
+        normal = None
+        for g in self._groups:
+            rec = openings.made(g)
+            if not openings.wants_opening(g) or not rec or not rec.get("a"):
+                return None
+            fp = openings.footprint(g)
+            if fp is None:
+                return None
+            n = openings._normal(fp)
+            if normal is None:
+                normal = n
+            elif abs(QVector3D.dotProduct(n, normal)) < 0.999:
+                return None
+        return QVector3D(self.grab), normal
+
+    def _glided(self, ctx: ToolContext) -> QVector3D:
+        """The cursor's point, read on the wall the windows slide on: the
+        line of sight through the snapped point meets the wall's plane. Alt
+        held, or nothing sliding: the point as it is."""
+        glide = getattr(self, "_glide", None)
+        if glide is None or (ctx.modifiers & Qt.AltModifier):
+            return ctx.world
+        origin, n = glide
+        p = QVector3D(ctx.world)
+        cam = getattr(ctx.viewport, "camera", None)
+        direction = None
+        if cam is not None:
+            try:
+                if getattr(cam, "perspective", True):
+                    direction = p - cam.eye()
+                else:
+                    direction = cam.target - cam.eye()
+            except Exception:
+                direction = None
+        off = QVector3D.dotProduct(origin - p, n)
+        if direction is not None and direction.length() > 1e-9:
+            d = direction.normalized()
+            along = QVector3D.dotProduct(d, n)
+            if abs(along) > 0.05:
+                return p + d * (off / along)
+        return p + n * off          # looking along the wall: straight onto it
 
     def on_hover(self, ctx: ToolContext) -> None:
         if self._grip_rot is not None:
@@ -625,9 +781,10 @@ class MoveTool(Tool):
             return
         if self.start_point is None:
             self._track_grips(ctx)
-        self.hover_point = ctx.world
+        world = self._glided(ctx) if self.grab is not None else ctx.world
+        self.hover_point = world
         if self.grab is not None and not self._copy:
-            self._apply_preview(ctx.viewport, ctx.world - self.grab)
+            self._apply_preview(ctx.viewport, world - self.grab)
         ctx.viewport.update()
 
     def value_is_unitless(self) -> bool:
@@ -756,6 +913,32 @@ class MoveTool(Tool):
             d = self.hover_point - self.grab
             segments.extend((a + d, b + d) for a, b in self._base_segments)
         return segments
+
+    def preview_faces(self):
+        """Mid vertex drag (see begin_verts_preview): the faces it
+        stretches, drawn where they are going — with their own look. A
+        :class:`_MovedFaces`, made once per offset: the viewport's engine
+        bakes it from arrays packed at the grab, and only Python's bake
+        walks the faces it builds."""
+        bent = getattr(self, "_bent_faces", None)
+        if not bent or not getattr(self, "_vp_preview", False):
+            return []
+        # Copy mode: the original stays — the bent faces where they are
+        # (the offset is parked at zero), or they left a hole in the model.
+        d = self._preview_delta
+        key = (id(bent), d.x(), d.y(), d.z())
+        memo = getattr(self, "_moved_memo", None)
+        if memo is not None and memo[0] == key and memo[1] is bent:
+            return memo[2]
+        parts = getattr(self, "_moved_parts", None)
+        if parts is None or parts[0] is not bent:
+            shown = [f for f in bent if not f.attrs.get("hidden")]
+            parts = self._moved_parts = (
+                bent, shown, frozenset(id(v) for v in self._verts))
+        out = _MovedFaces(parts[1], parts[2],
+                          getattr(self, "_bent_paint", None), QVector3D(d))
+        self._moved_memo = (key, bent, out)
+        return out
 
     def value_label(self):
         if self._grip_rot is not None:
@@ -1262,10 +1445,14 @@ class MoveTool(Tool):
         self._dims = {}
         self._splanes = []
         self._images = []
+        self._glide = None
         self._preview_delta = QVector3D(0.0, 0.0, 0.0)
         self._sel_faces = []
         self._sel_edges = []
         self._base_segments = []
         self._groups_ghost_due = False
         self._vp_preview = False
+        self._bent_faces = []
+        self._moved_parts = None
+        self._moved_memo = None
         self._copy = False      # the Ctrl modifier arms ONE operation

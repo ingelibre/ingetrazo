@@ -80,6 +80,9 @@ def test_the_rest_reads_grey_and_the_group_keeps_its_colour(comp):
         # the open one keeps its own colour
         assert abs(inside.lightnessF() - before.lightnessF()) < 0.03
     finally:
+        # The mode is a saved preference: «hide» left behind kept the rest
+        # of the model out of the snaps of every later test in the batch.
+        vp.set_edit_rest_mode("fade")
         w._saved_version = vp.scene.version
         w.close()
 
@@ -144,5 +147,8 @@ def test_people_and_images_go_grey_with_the_rest(tmp_path, mode):
             # neither the full red of before: washed grey, or gone
             assert c.red() - c.green() < 80, c.name()
     finally:
+        # The mode is a saved preference: «hide» left behind kept the rest
+        # of the model out of the snaps of every later test in the batch.
+        vp.set_edit_rest_mode("fade")
         w._saved_version = vp.scene.version
         w.close()

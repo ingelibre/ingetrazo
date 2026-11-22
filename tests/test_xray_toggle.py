@@ -49,24 +49,27 @@ def test_the_toggle_goes_back_to_the_style_you_left():
         win._set_style_field("profiles", True)
         win._act_xray_toggle.trigger()
         style = win.viewport.scene.display_style
-        assert style.face_mode == "xray"
-        assert win._style_actions["X-ray"].isChecked()
+        assert style.face_mode == "shaded" and style.xray
+        assert win._act_xray_toggle.isChecked()
+        assert win._style_actions["Shaded"].isChecked()
 
         win._act_xray_toggle.trigger()
         style = win.viewport.scene.display_style
         assert style.name == "Shaded" and style.face_mode == "shaded"
+        assert not style.xray and not win._act_xray_toggle.isChecked()
         assert style.profiles is True              # your tweak came back too
         assert win._style_actions["Shaded"].isChecked()
     finally:
         _close(win)
 
 
-def test_xray_picked_from_the_menu_toggles_out_to_default():
+def test_xray_preset_toggles_off_without_replacing_the_style():
     from core.style import style_by_name
     win = _window()
     try:
         win._apply_display_style(style_by_name("X-ray"))
         win._act_xray_toggle.trigger()
-        assert win.viewport.scene.display_style.name == "Default"
+        style = win.viewport.scene.display_style
+        assert style.name == "X-ray" and style.face_mode == "textures" and not style.xray
     finally:
         _close(win)

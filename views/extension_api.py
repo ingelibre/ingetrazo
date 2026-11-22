@@ -10,7 +10,7 @@ is enough to build a whole feature outside the core (the Levels plugin is
 the worked example), which is the point: what only some users need lives
 in an extension they choose, not in everyone's IngeTrazo.
 
-Contract (``API_VERSION`` 2; still 0.x — see docs/plugins.md). Version 2
+Contract (``API_VERSION`` 4; still 0.x — see docs/plugins.md). Version 2
 adds, without changing anything version 1 did: named panels that keep
 their place and have a Window-menu entry, the projection an overlay needs,
 opening an extension's own file type, and workspaces. Projects in tabs
@@ -51,6 +51,8 @@ import logging
 
 log = logging.getLogger("ingetrazo.plugins")
 
+# Stays 2: published extensions accept only 1 or 2, and every later
+# addition (tabs, the resource library of #412) is found by its methods.
 API_VERSION = 2
 
 #: Suffixes the core itself reads (natively, or as an import): an extension
@@ -162,6 +164,53 @@ class ExtensionApp:
         project in front at that moment may be another one."""
         win = self._window
         win.__dict__.setdefault("_doc_close_hooks", []).append(fn)
+
+    # ---- Extension resources ------------------------------------------------
+    def register_resource_type(self, name: str, provider, *,
+                               label: str | None = None):
+        """Register one resource type owned by this extension.
+
+        ``name`` is local to the extension. The core namespaces it with
+        ``app.key``, so two unrelated plugins may both register ``"preset"``
+        without colliding. ``provider`` stays extension-owned: the core does
+        not interpret its domain-specific payload.
+        """
+        registry = getattr(self._window, "resource_registry", None)
+        if registry is None:
+            raise RuntimeError("this IngeTrazo build has no resource registry")
+        return registry.register(self.key, name, provider, label=label)
+
+    def resource_types(self):
+        """Return the resource types registered by this extension."""
+        registry = getattr(self._window, "resource_registry", None)
+        if registry is None:
+            return ()
+        return registry.for_owner(self.key)
+
+    def export_resource_bundle(
+        self, name: str, resource_id: str, path, *,
+        include_dependencies: bool = True,
+    ):
+        """Export one extension resource to a portable .iglib bundle."""
+        from core.resource_bundle import export_bundle
+        from core.resource_library import ResourceRef
+        registry = getattr(self._window, "resource_registry", None)
+        if registry is None:
+            raise RuntimeError("this IngeTrazo build has no resource registry")
+        return export_bundle(
+            registry,
+            ResourceRef(f"{self.key}:{name}", resource_id),
+            path,
+            include_dependencies=include_dependencies,
+        )
+
+    def import_resource_bundle(self, path, *, conflict: str = "error"):
+        """Import a portable .iglib bundle through registered providers."""
+        from core.resource_bundle import import_bundle
+        registry = getattr(self._window, "resource_registry", None)
+        if registry is None:
+            raise RuntimeError("this IngeTrazo build has no resource registry")
+        return import_bundle(registry, path, conflict=conflict)
 
     # ---- Side panel ----------------------------------------------------------
     def add_panel(self, title: str, widget, name: str | None = None, *,
@@ -384,6 +433,14 @@ class ExtensionApp:
         """``fn(viewport, snap, px, py)`` → a ``SnapResult`` to use instead,
         or ``None`` to leave the engine's answer."""
         self.viewport._ext_snap_providers.append(fn)
+
+    def add_snap_toggle(self, key: str, label: str, kinds, tip: str = ""):
+        """A switch in Tools ▸ Inferences for this extension's own snap
+        ``kinds`` (the ``kind`` of the ``SnapResult`` its provider returns):
+        while it is off, those snaps are dropped. ``label`` and ``tip`` are
+        shown as given. The same ``key`` again replaces the switch."""
+        from core.snap import register_snap_toggle
+        return register_snap_toggle(key, label, kinds, tip)
 
     def add_pickable(self, pick, on_select=None, delete=None) -> None:
         """Let the user SELECT this extension's own items with the Select

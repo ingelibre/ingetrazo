@@ -305,10 +305,12 @@ def _fake_view(monkeypatch, w=1000, h=500):
 
     def render(self, width_px, height_px=None, overlays=True,
                annotations_only=False, sharp_shadows=False,
-               transparent=False, crop_to_frame=False):
+               transparent=False, crop_to_frame=False,
+               defined_shadows=False):
         if crop_to_frame:
             return real(self, width_px, height_px, overlays,
-                        annotations_only, sharp_shadows, transparent, True)
+                        annotations_only, sharp_shadows, transparent, True,
+                        defined_shadows=defined_shadows)
         hh = round(width_px * h / w)
         rendered.append((width_px, hh))
         img = QImage(width_px, hh, QImage.Format_RGB32)

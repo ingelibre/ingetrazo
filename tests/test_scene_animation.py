@@ -690,17 +690,105 @@ def test_a_discarded_video_leaves_no_file(tmp_path):
     assert not path.exists()
 
 
-def _fake_render(win, log):
-    """The tests' window is never shown, so it has no GL: each frame is
-    a plain picture, and the log keeps what the camera and layers were."""
+class _EventLog:
+    """Stands in for the writer's QApplication: notes when the event loop
+    runs, and runs it."""
+
+    def __init__(self, app, log):
+        self._app, self._log = app, log
+
+    def processEvents(self, *args):  # noqa: N802 — Qt's name
+        import time
+        self._log.append(("events", time.monotonic()))
+        self._app.processEvents(*args)
+
+
+def _cancel_right_after_the_first_frame(tmp_path, monkeypatch, old_qt):
+    """Write one frame, discard; return (stop time, event-loop times after
+    it), with the Qt version check answering ``old_qt``."""
+    import time
+
     from PySide6.QtGui import QImage
 
-    def render(width, height=None, overlays=True, annotations_only=False):
+    from views import video_export
+    monkeypatch.setattr(video_export, "finalizer_deletes_off_thread",
+                        lambda: old_qt)
+    writer = video_export.MkvWriter(tmp_path / "cancel.mkv", 64, 48, 10)
+    writer.write(QImage(64, 48, QImage.Format_ARGB32))
+    log: list = []
+    rec = writer._recorder
+    real_stop = rec.stop
+
+    def stop():
+        log.append(("stop", time.monotonic()))
+        real_stop()
+    rec.stop = stop
+    writer._app = _EventLog(writer._app, log)
+    writer.discard()
+    assert not (tmp_path / "cancel.mkv").exists()
+    stopped = [t for k, t in log if k == "stop"]
+    assert stopped
+    after = [t for k, t in log if k == "events" and t > stopped[0]]
+    assert after                      # it still waits for Stopped after
+    return stopped[0], after
+
+
+def test_the_event_loop_stays_still_while_qt_finishes_the_file(
+        tmp_path, monkeypatch):
+    """#1488: after ``stop()`` Qt's FFmpeg finalizer (before 6.12) deletes
+    its recording engine from another thread while calls queued for it
+    wait on the main thread; delivering them meanwhile (Cancel right after
+    the first frame) landed on freed memory and segfaulted on macOS. On
+    such a Qt the event loop runs again only once the file has stopped
+    growing."""
+    _need_video()
+    from views import video_export
+    stopped, after = _cancel_right_after_the_first_frame(
+        tmp_path, monkeypatch, old_qt=True)
+    assert after[0] - stopped >= 0.9 * video_export.SETTLE
+
+
+def test_on_qt_6_12_the_event_loop_is_not_held(tmp_path, monkeypatch):
+    """Qt 6.12 deletes the engine on its own thread: nothing to wait for.
+    Only on a real 6.12: on an older Qt, not waiting is the very crash."""
+    _need_video()
+    from views import video_export
+    if video_export.finalizer_deletes_off_thread():
+        pytest.skip("Qt before 6.12: skipping the wait would segfault")
+    stopped, after = _cancel_right_after_the_first_frame(
+        tmp_path, monkeypatch, old_qt=False)
+    assert after[0] - stopped < video_export.SETTLE
+
+
+def test_the_qt_version_decides():
+    from PySide6.QtCore import QLibraryInfo, QVersionNumber
+
+    from views.video_export import finalizer_deletes_off_thread
+    assert finalizer_deletes_off_thread() is (
+        QLibraryInfo.version() < QVersionNumber(6, 12))
+
+
+def _fake_render(win, log, asked=None):
+    """The tests' window is never shown, so it has no GL: each frame is
+    a plain picture, and the log keeps what the camera and layers were.
+    ``asked`` keeps whether each frame was asked with a transparent
+    background; such a frame is see-through but for a grey square, as the
+    real one is but for the model."""
+    from PySide6.QtGui import QImage
+
+    def render(width, height=None, overlays=True, annotations_only=False,
+               transparent=False):
         cam = win.viewport.camera
         log.append((round(cam.pitch, 3), cam.perspective, cam.aspect,
                     tuple(ly.visible for ly in win.viewport.scene.layers)))
+        if asked is not None:
+            asked.append(transparent)
         img = QImage(width, height, QImage.Format_ARGB32)
-        img.fill(0xFF808080)
+        img.fill(0x00000000 if transparent else 0xFF808080)
+        if transparent:
+            for x in range(width // 4, width // 2):
+                for y in range(height // 4, height // 2):
+                    img.setPixel(x, y, 0xFF808080)
         return img
     win.viewport.render_image = render
 
@@ -773,8 +861,9 @@ def test_the_video_is_in_file_export_and_in_the_animation_menu(win):
     from core.i18n import tr
     entries = {(m.title(), a.text()) for m in win.findChildren(QMenu)
                for a in m.actions()}
-    assert (tr("Export"), tr("Scenes as Video (.mkv)…")) in entries
-    assert (tr("Animation"), tr("Export Video (.mkv)…")) in entries
+    # No «(.mkv)» in the names: a PNG sequence is offered too.
+    assert (tr("Export"), tr("Scenes as Video…")) in entries
+    assert (tr("Animation"), tr("Export Video…")) in entries
 
 
 def _without_multimedia(monkeypatch):
@@ -795,11 +884,14 @@ def test_without_multimedia_the_writer_says_why(monkeypatch, tmp_path):
     assert not (tmp_path / "x.mkv").exists()
 
 
-def test_without_multimedia_the_export_says_so_and_asks_nothing(
+def test_without_multimedia_the_export_offers_only_the_png_sequence(
         win, monkeypatch):
+    """No Qt Multimedia (the CI's Linux machine) is no longer a dead end:
+    a PNG sequence needs none, so the dialog offers it alone."""
     from PySide6.QtWidgets import QMessageBox
 
     import views.video_export as ve
+    from core.i18n import tr
     from views.filedialogs import file_dialogs
     _scenes(win, ("A", "iso", set()))
     _without_multimedia(monkeypatch)
@@ -809,4 +901,230 @@ def test_without_multimedia_the_export_says_so_and_asks_nothing(
     monkeypatch.setattr(file_dialogs, "getSaveFileName",
                         lambda *a, **k: asked.append(a) or ("", ""))
     ve.run_export(win)
-    assert said == [ve.no_video_message()] and asked == []
+    assert said == [] and len(asked) == 1
+    _parent, _title, name, filters = asked[0]
+    assert name.endswith(".png")
+    assert filters == tr("PNG image sequence (*.png)")
+
+
+# ---- The PNG sequence --------------------------------------------------------
+def test_png_frames_go_in_a_folder_of_their_own_numbered_in_order(tmp_path):
+    from views.video_export import frame_folder, frame_name
+    assert frame_folder(tmp_path / "casa.png") == tmp_path / "casa"
+    assert frame_folder(tmp_path / "casa.PNG") == tmp_path / "casa"
+    assert frame_folder(tmp_path / "casa.v2.png") == tmp_path / "casa.v2"
+    assert frame_name("casa", 0, 21) == "casa_0001.png"
+    assert frame_name("casa", 20, 21) == "casa_0021.png"
+    # More frames than four digits hold: one more, still in order by name.
+    assert frame_name("casa", 0, 12000) == "casa_00001.png"
+    names = [frame_name("casa", i, 12000) for i in (8, 9, 99, 11999)]
+    assert names == sorted(names)
+
+
+def test_the_png_writer_writes_and_a_discard_leaves_nothing(tmp_path):
+    from PySide6.QtGui import QColor, QImage
+
+    from views.video_export import PngSequenceWriter
+    writer = PngSequenceWriter(tmp_path / "casa.png", 64, 48, 3)
+    for i in range(3):
+        img = QImage(32, 24, QImage.Format_ARGB32)    # scaled to 64 × 48
+        img.fill(QColor.fromHsv(i * 90, 200, 200))
+        writer.write(img)
+    writer.close()
+    folder = tmp_path / "casa"
+    assert writer.frames == 3
+    assert sorted(p.name for p in folder.iterdir()) == [
+        "casa_0001.png", "casa_0002.png", "casa_0003.png"]
+    assert QImage(str(folder / "casa_0002.png")).size().toTuple() == (64, 48)
+    writer.discard()
+    assert not folder.exists()                       # it made it: gone too
+
+
+def test_a_discarded_sequence_keeps_a_folder_it_did_not_make(tmp_path):
+    from PySide6.QtGui import QImage
+
+    from views.video_export import PngSequenceWriter
+    folder = tmp_path / "casa"
+    folder.mkdir()
+    (folder / "notas.txt").write_text("mías")
+    writer = PngSequenceWriter(tmp_path / "casa.png", 16, 16, 2)
+    writer.write(QImage(16, 16, QImage.Format_ARGB32))
+    writer.discard()
+    assert [p.name for p in folder.iterdir()] == ["notas.txt"]
+
+
+def test_a_new_sequence_replaces_the_frames_of_an_earlier_one_only(tmp_path):
+    """An earlier export had more frames: none of them may stay behind
+    and pass for part of the new one. Other files are not touched."""
+    from PySide6.QtGui import QImage
+
+    from views.video_export import PngSequenceWriter, existing_frames
+    folder = tmp_path / "casa"
+    folder.mkdir()
+    for name in ("casa_0001.png", "casa_0030.png", "fondo.png",
+                 "casa_final.png", "notas.txt"):
+        (folder / name).write_bytes(b"x")
+    assert [p.name for p in existing_frames(folder)] == [
+        "casa_0001.png", "casa_0030.png"]
+    writer = PngSequenceWriter(tmp_path / "casa.png", 16, 16, 1)
+    writer.write(QImage(16, 16, QImage.Format_ARGB32))
+    writer.close()
+    assert sorted(p.name for p in folder.iterdir()) == [
+        "casa_0001.png", "casa_final.png", "fondo.png", "notas.txt"]
+    assert (folder / "casa_0001.png").stat().st_size > 1
+
+
+def test_a_folder_name_taken_by_a_file_says_so(tmp_path):
+    from views.video_export import PngSequenceWriter, VideoError
+    (tmp_path / "casa").write_text("un archivo")
+    with pytest.raises(VideoError):
+        PngSequenceWriter(tmp_path / "casa.png", 16, 16, 1)
+
+
+def test_export_png_sequence_writes_every_frame_without_multimedia(
+        win, tmp_path, monkeypatch):
+    """The same run as the video, one file per frame, and no Qt
+    Multimedia needed for it."""
+    from PySide6.QtGui import QImage
+
+    from views.video_export import PNG, export_video
+    _without_multimedia(monkeypatch)
+    _scenes(win, ("Vista", "iso", set()), ("Planta", "top", set()))
+    win.viewport.scene.animation = SceneAnimation(transition=1.0, pause=0.5)
+    cam = win.viewport.camera
+    cam.set_view("front")
+    before = Pose.of_camera(cam), cam.aspect
+    log, asked = [], []
+    _fake_render(win, log, asked)
+    frames = export_video(win, tmp_path / "casa.png", 320, 180, 10,
+                          fmt=PNG)
+    folder = tmp_path / "casa"
+    files = sorted(p.name for p in folder.iterdir())
+    assert frames == 21 and len(files) == 21 and len(log) == 21
+    assert files[0] == "casa_0001.png" and files[-1] == "casa_0021.png"
+    assert asked == [False] * 21                       # not asked: opaque
+    first = QImage(str(folder / files[0]))
+    assert first.size().toTuple() == (320, 180)
+    assert first.pixelColor(0, 0).alpha() == 255
+    assert Pose.of_camera(cam) == before[0] and cam.aspect == before[1]
+    assert not (tmp_path / "casa.png").exists()        # a folder, no file
+
+
+def test_a_transparent_png_sequence_keeps_only_the_model(win, tmp_path):
+    from PySide6.QtGui import QImage
+
+    from views.video_export import PNG, export_video
+    _scenes(win, ("A", "iso", set()), ("B", "top", set()))
+    win.viewport.scene.animation = SceneAnimation(transition=0.2, pause=0.1)
+    asked = []
+    _fake_render(win, [], asked)
+    frames = export_video(win, tmp_path / "solo.png", 64, 48, 10, fmt=PNG,
+                          transparent=True)
+    assert frames and asked == [True] * frames
+    img = QImage(str(tmp_path / "solo" / "solo_0001.png"))
+    assert img.hasAlphaChannel()
+    assert img.pixelColor(0, 0).alpha() == 0            # the background
+    assert img.pixelColor(20, 15).alpha() == 255        # the "model"
+
+
+def test_the_transparent_choice_is_only_for_png(win, tmp_path):
+    """The video ignores it: a Matroska MPEG-4 has no alpha."""
+    _need_video()
+    from views.video_export import MKV, export_video
+    _scenes(win, ("A", "iso", set()), ("B", "top", set()))
+    win.viewport.scene.animation = SceneAnimation(transition=0.2, pause=0.1)
+    asked = []
+    _fake_render(win, [], asked)
+    assert export_video(win, tmp_path / "v.mkv", 64, 48, 10, fmt=MKV,
+                        transparent=True)
+    assert set(asked) == {False}
+
+
+def test_cancelling_the_png_sequence_removes_its_frames(win, tmp_path):
+    from views.video_export import PNG, export_video
+    _scenes(win, ("A", "iso", set()), ("B", "top", set()))
+    _fake_render(win, [])
+    assert export_video(win, tmp_path / "corte.png", 160, 90, 10,
+                        lambda d, t: d < 3, fmt=PNG) == 0
+    assert not (tmp_path / "corte").exists()
+
+
+def test_no_scenes_no_png_sequence(win, tmp_path):
+    from views.video_export import PNG, VideoError, export_video
+    with pytest.raises(VideoError):
+        export_video(win, tmp_path / "nada.png", 160, 90, 10, fmt=PNG)
+    assert not (tmp_path / "nada").exists()
+
+
+def test_the_options_ask_for_transparency_only_for_png(win):
+    from views.video_export import MKV, PNG, VideoOptionsDialog
+    _scenes(win, ("A", "iso", set()))
+    video = VideoOptionsDialog(win, win.viewport.scene, (800, 600), MKV)
+    assert video.transparent_box is None and video.transparent() is False
+    png = VideoOptionsDialog(win, win.viewport.scene, (800, 600), PNG)
+    assert png.transparent() is False                  # off to begin with
+    png.transparent_box.setChecked(True)
+    assert png.transparent() is True
+
+
+def _run_png_export(win, monkeypatch, path, *, transparent=False,
+                    replace=None):
+    """File ▸ Export ▸ Scenes as Video… with the dialogs answered: the
+    PNG filter chosen, OK in the options; ``replace`` answers the question
+    about earlier frames (None: it must not be asked)."""
+    from PySide6.QtWidgets import QMessageBox
+
+    import views.video_export as ve
+    from core.i18n import tr
+    from views.filedialogs import file_dialogs
+    questions = []
+    monkeypatch.setattr(file_dialogs, "getSaveFileName", lambda *a, **k: (
+        str(path), tr("PNG image sequence (*.png)")))
+
+    def question(*a, **k):
+        questions.append(a[2])
+        assert replace is not None, "nothing to replace: no question"
+        return QMessageBox.Yes if replace else QMessageBox.No
+    monkeypatch.setattr(QMessageBox, "question", question)
+    monkeypatch.setattr(QMessageBox, "critical",
+                        lambda *a, **k: pytest.fail(a[2]))
+    monkeypatch.setattr(ve.VideoOptionsDialog, "exec", lambda self: True)
+    monkeypatch.setattr(ve.VideoOptionsDialog, "choice",
+                        lambda self: ((64, 48), 10))
+    monkeypatch.setattr(ve.VideoOptionsDialog, "transparent",
+                        lambda self: transparent)
+    ve.run_export(win)
+    return questions
+
+
+def test_exporting_a_png_sequence_from_the_menu(win, tmp_path, monkeypatch):
+    _scenes(win, ("A", "iso", set()), ("B", "top", set()))
+    win.viewport.scene.animation = SceneAnimation(transition=0.2, pause=0.1)
+    asked = []
+    _fake_render(win, [], asked)
+    # A name typed without «.png», as the filter says what it is.
+    _run_png_export(win, monkeypatch, tmp_path / "recorrido",
+                    transparent=True)
+    folder = tmp_path / "recorrido"
+    frames = sorted(p.name for p in folder.iterdir())
+    assert frames and frames[0] == "recorrido_0001.png"
+    assert asked and set(asked) == {True}
+    assert "recorrido" in win.statusBar().currentMessage()
+    assert str(len(frames)) in win.statusBar().currentMessage()
+
+
+def test_earlier_frames_are_replaced_only_when_the_user_says_so(
+        win, tmp_path, monkeypatch):
+    _scenes(win, ("A", "iso", set()), ("B", "top", set()))
+    win.viewport.scene.animation = SceneAnimation(transition=0.2, pause=0.1)
+    _fake_render(win, [])
+    folder = tmp_path / "casa"
+    folder.mkdir()
+    (folder / "casa_0099.png").write_bytes(b"viejo")
+    said = _run_png_export(win, monkeypatch, tmp_path / "casa.png",
+                           replace=False)
+    assert len(said) == 1 and "casa" in said[0] and "1" in said[0]
+    assert [p.name for p in folder.iterdir()] == ["casa_0099.png"]
+    _run_png_export(win, monkeypatch, tmp_path / "casa.png", replace=True)
+    names = sorted(p.name for p in folder.iterdir())
+    assert "casa_0099.png" not in names and names[0] == "casa_0001.png"

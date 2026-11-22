@@ -8,7 +8,7 @@ layer).
 Closed, a group's layer already decides for everything in it. Open, its
 geometry is drawn and picked as loose geometry, so its faces without a
 layer answered to «Layer 0»: hiding it emptied the open group. Decision of
-Marco (21-10): the untagged contents follow the group, as in SketchUp."""
+Marco (21-10): the untagged contents follow the group."""
 from __future__ import annotations
 
 from PySide6.QtGui import QVector3D as V

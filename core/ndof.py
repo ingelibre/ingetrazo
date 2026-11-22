@@ -5,7 +5,8 @@
 A 3D mouse is a cap that can be pushed, pulled, lifted, tilted and twisted:
 six axes at once. This module is the device-free half: it turns one reading
 of the six axes into a camera move. The drivers that deliver the readings
-live in ``views/ndof_input.py`` (spacenavd on Linux, Raw Input on Windows).
+live in ``views/ndof_input.py`` (spacenavd on Linux, Raw Input on Windows,
+3DconnexionClient on macOS).
 
 The mapping is FreeCAD's default, «object mode»: you hold the
 MODEL. Move the cap right and the model goes right; lift it and the model
@@ -68,11 +69,12 @@ class NdofSample:
 
 
 AXES = ("right", "up", "forward", "tilt", "spin", "roll")
-ACTIONS = ("pan_x", "pan_y", "zoom", "orbit_x", "orbit_y", "disabled")
+ACTIONS = ("pan_x", "pan_y", "zoom", "orbit_x", "orbit_y", "orbit_z", "disabled")
+# The roll axis stays off in the Original mapping: an accidental roll tips
+# a plan out of square. Orbit Z (PR #1406) is there to pick in Custom.
 DEFAULT_MAPPING = dict(zip(AXES, ("pan_x", "pan_y", "zoom",
                                   "orbit_y", "orbit_x", "disabled")))
-# Based on the user's tested FreeCAD-style configuration; true camera roll
-# is not supported by OrbitCamera yet.
+# Based on the user's tested FreeCAD-style configuration.
 FREECAD_MAPPING = dict(zip(AXES, ("pan_x", "zoom", "pan_y",
                                   "orbit_y", "disabled", "orbit_x")))
 FREECAD_INVERSION = {axis: axis in ("up", "tilt") for axis in AXES}
@@ -99,7 +101,7 @@ def effective_axis_mapping(settings):
 
 
 def mapped_movements(sample, settings):
-    """Five camera actions from six physical axes; sum duplicate assignments."""
+    """Six camera actions from six physical axes; sum duplicate assignments."""
     outputs = {action: 0.0 for action in ACTIONS if action != "disabled"}
     mapping = effective_axis_mapping(settings)
     for axis in AXES:
@@ -123,7 +125,7 @@ def mapped_movements(sample, settings):
                 "spin": settings.invert_rotate != settings.invert_spin,
                 "roll": False,
             }
-            if legacy[axis]:
+            if legacy.get(axis, False):
                 value = -value
         outputs[action] += value
     return {key: max(-1.0, min(1.0, value))
@@ -179,9 +181,9 @@ def apply_ndof(camera, sample: NdofSample, dt: float, viewport_h: int,
     movements = mapped_movements(sample, st)
     right, up, forward = (movements["pan_x"], movements["pan_y"],
                           movements["zoom"])
-    spin, tilt = movements["orbit_x"], movements["orbit_y"]
+    spin, tilt, roll_z = movements["orbit_x"], movements["orbit_y"], movements["orbit_z"]
     if st.lock_rotation:
-        spin = tilt = 0.0
+        spin = tilt = roll_z = 0.0
     moved = False
     if right or up:
         # camera.pan GRABS the model like a mouse drag: +dx carries it right,
@@ -201,6 +203,14 @@ def apply_ndof(camera, sample: NdofSample, dt: float, viewport_h: int,
         px = ORBIT_RAD_PER_S * k * h / math.pi
         camera.orbit(spin * px, tilt * px, h)
         moved = True
+    if roll_z:
+        px_roll = ORBIT_RAD_PER_S * k
+        # Orbit Z rolls the view around its forward axis. OrbitCamera.roll
+        # accepts radians; the angle is already time- and speed-scaled.
+        roll = getattr(camera, "roll", None)
+        if callable(roll):
+            roll(roll_z * px_roll)
+            moved = True
     return moved
 
 

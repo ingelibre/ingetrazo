@@ -36,6 +36,10 @@ from core.history import (
     SnapshotCompound,
 )
 from core.topology import (
+    _PLANAR_TOLERANCE,
+    _on_segment_2d,
+    _point_in_face_solid,
+    _strictly_inside_2d,
     face_exists,
     find_chord_split,
     find_cycles_through,
@@ -324,6 +328,118 @@ def _around(near, faces, loop):
     return near.faces_around(faces, loop) if near is not None else faces
 
 
+def _loop_projection(face):
+    """Project onto ``face``'s plane: returns a point -> (u, w) function."""
+    from core.triangulate import plane_axes
+
+    normal = face.normal()
+    origin = face.vertices[0]
+    u, w = plane_axes(normal)
+
+    def proj(p):
+        rel = p - origin
+        return (QVector3D.dotProduct(rel, u), QVector3D.dotProduct(rel, w))
+
+    return proj
+
+
+def _cycle_within_loop(face, loop, cycle) -> bool:
+    """Every cycle vertex lies on ``face``'s plane, inside-or-on ``loop``."""
+    normal = face.normal()
+    origin = face.vertices[0]
+    for p in cycle:
+        if abs(QVector3D.dotProduct(normal, p - origin)) > _PLANAR_TOLERANCE:
+            return False
+    proj = _loop_projection(face)
+    poly = [proj(v) for v in loop]
+    n = len(poly)
+    for p in cycle:
+        q = proj(p)
+        if _strictly_inside_2d(q, poly):
+            continue
+        if not any(_on_segment_2d(q, poly[i], poly[(i + 1) % n])
+                   for i in range(n)):
+            return False
+    return True
+
+
+def _cycle_touches_loop(face, loop, cycle) -> bool:
+    """Some cycle vertex lies on ``loop``'s boundary (vertex or edge)."""
+    proj = _loop_projection(face)
+    poly = [proj(v) for v in loop]
+    n = len(poly)
+    corners = {(round(x, 6), round(y, 6)) for x, y in poly}
+    for p in cycle:
+        q = proj(p)
+        if (round(q[0], 6), round(q[1], 6)) in corners:
+            return True
+        if any(_on_segment_2d(q, poly[i], poly[(i + 1) % n])
+               for i in range(n)):
+            return True
+    return False
+
+
+def _cycle_centroid(cycle):
+    c = QVector3D()
+    for p in cycle:
+        c += p
+    return c / len(cycle)
+
+
+def _cycle_opening_owner(faces, cycle):
+    """The face whose *hole* the cycle wholly re-faces, or ``None``.
+
+    A chord that crosses or grazes a hole makes the cycle finder return the
+    opening's own sub-cycles (the hole loop, or the halves a line through
+    the hole cuts it into). Facing those caps the opening — drawing a line
+    across a slab must leave its hole open (#1407). A cycle another face's
+    solid legitimately fills (a face drawn inside the hole) is not an
+    opening cycle: it belongs to that face.
+    """
+    for f in faces:
+        for hole in f.holes:
+            if _cycle_within_loop(f, hole, cycle):
+                centre = _cycle_centroid(cycle)
+                if any(g is not f and _point_in_face_solid(g, centre)
+                       for g in faces):
+                    return None
+                return f
+    return None
+
+
+def _cycle_solid_owner(faces, cycle):
+    """The face whose solid region the cycle subdivides, or ``None``."""
+    centre = _cycle_centroid(cycle)
+    for f in faces:
+        if (_cycle_within_loop(f, f.vertices, cycle)
+                and _point_in_face_solid(f, centre)):
+            return f
+    return None
+
+
+def _cycle_partially_covers_hole(faces, cycle) -> bool:
+    """The cycle's interior covers part of a face's hole — but not all of it.
+
+    A chord through a hole's corner makes the cycle finder route a piece
+    cycle straight across the opening (corner to corner), so the cycle's
+    interior swallows a slice of the void. Facing it caps that slice
+    (#1407). A cycle enclosing the hole whole is a different draw (the
+    hole stays a hole of whatever it faces), and mere boundary contact —
+    a chord running along the hole's rim — covers nothing.
+    """
+    shell = Face(list(cycle))
+    proj = _loop_projection(shell)
+    poly = [proj(v) for v in cycle]
+    for f in faces:
+        for hole in f.holes:
+            if not any(_strictly_inside_2d(proj(v), poly) for v in hole):
+                continue
+            if _cycle_within_loop(shell, cycle, hole):
+                continue  # the hole sits wholly inside the cycle
+            return True
+    return False
+
+
 def _plan_faces(commands, faces_snapshot, simulated, sa, sb, eye=None,
                 near=None, *, close_cycles=True) -> None:
     """Emit the face commands for a freshly added edge ``sa``–``sb``.
@@ -361,16 +477,38 @@ def _plan_faces(commands, faces_snapshot, simulated, sa, sb, eye=None,
 
     if not close_cycles:
         return
+    claimed: set[int] = set()
     for cycle in find_cycles_through(
             simulated, sa, sb,
             key=getattr(near, "key", None) if near is not None else None,
             graph=(simulated.graph() if isinstance(simulated, _PlanEdges)
                    else None)):
-        if is_planar(cycle) and not face_exists(
+        if not is_planar(cycle) or face_exists(
                 _around(near, faces_snapshot, cycle), cycle):
-            cycle = face_up_or_toward(cycle, eye)
-            commands.append(AddFaceCommand(cycle))
-            faces_snapshot.append(Face(list(cycle)))
+            continue
+        # Never face a cycle that only re-covers an existing face's hole:
+        # the opening must stay open (#1407).
+        if _cycle_opening_owner(faces_snapshot, cycle) is not None:
+            continue
+        # Nor one whose interior swallows part of a hole: leave the region
+        # to the plane rebuild, which traces the true pieces (#1407).
+        if _cycle_partially_covers_hole(faces_snapshot, cycle):
+            continue
+        # One boundary-touching cycle per mother is enough: executing its
+        # AddFaceCommand carves the mother, and the carve's remainder IS
+        # the other side's region. Planning the other side too stacks a
+        # duplicate of that remainder — on a holed mother a hole-less twin
+        # of the piece holding the hole, which the plane rebuild then
+        # misreads as a redraw and caps the hole with (#1407).
+        owner = _cycle_solid_owner(faces_snapshot, cycle)
+        if owner is not None and _cycle_touches_loop(
+                owner, owner.vertices, cycle):
+            if id(owner) in claimed:
+                continue
+            claimed.add(id(owner))
+        cycle = face_up_or_toward(cycle, eye)
+        commands.append(AddFaceCommand(cycle))
+        faces_snapshot.append(Face(list(cycle)))
 
 
 def _scene_has_curves(scene) -> bool:

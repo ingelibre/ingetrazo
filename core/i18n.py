@@ -26,14 +26,14 @@ from core.paths import app_root
 _I18N_DIR = app_root() / "i18n"
 
 #: How each language names itself in the Language menu and Preferences.
-LANGUAGE_NAMES = {"en": "English", "es": "Español",
+LANGUAGE_NAMES = {"en": "English", "es": "Español", "ca": "Català",
                   "pt-BR": "Português (Brasil)", "zh-CN": "简体中文",
                   "zh-TW": "正體中文", "it": "Italiano",
                   "id": "Bahasa Indonesia", "fr": "Français", "de": "Deutsch",
                   "pl": "Polski", "ru": "Русский", "vi": "Tiếng Việt",
                   "lo": "ລາວ", "th": "ไทย",
                   "ja": "日本語", "ko": "한국어", "uk": "Українська",
-                  "ar": "العربية", "bg": "Български"}
+                  "ar": "العربية", "bg": "Български", "tr": "Türkçe"}
 
 #: Languages written from right to left: the whole interface is mirrored
 #: for them (see views/rtl.py). Arabic ships; the rest are ready for when

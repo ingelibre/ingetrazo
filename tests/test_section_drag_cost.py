@@ -21,19 +21,25 @@ from core.section import PlaneReach, cut_chords
 
 
 def _cut_plain(v0, e1, e2, normal, point, visible=None, rows=False):
-    """``cut_chords`` as it was: every triangle, every edge."""
+    """``cut_chords`` the plain way: every triangle, every edge, with its
+    side rule — a corner ON the plane (within a hair) is on the kept side."""
     nv = np.array([normal.x(), normal.y(), normal.z()], dtype=np.float64)
     c = float(np.dot(nv, [point.x(), point.y(), point.z()]))
     p0 = np.asarray(v0, dtype=np.float64)
     p1 = p0 + e1
     p2 = p0 + e2
-    d0 = p0 @ nv - c
-    d1 = p1 @ nv - c
-    d2 = p2 @ nv - c
+    hair = max(1e-5, abs(c) * 1e-6)
+
+    def dist(p):
+        d = p @ nv - c
+        d[np.abs(d) < hair] = 0.0
+        return d
+
+    d0, d1, d2 = dist(p0), dist(p1), dist(p2)
     pts = []
     for (a, b, da, db) in ((p0, p1, d0, d1), (p1, p2, d1, d2),
                            (p2, p0, d2, d0)):
-        cross = (da * db) < 0
+        cross = (da > 0.0) != (db > 0.0)
         t = np.zeros(len(da))
         np.divide(da, da - db, out=t, where=cross)
         pts.append((cross, a + (b - a) * t[:, None]))
@@ -203,3 +209,67 @@ def test_dragging_only_a_section_with_move_keeps_the_index():
     assert vp._pick_index(near="all") is idx
     assert vp.scene.content_version != before
     assert abs(plane.point.z() - 1.25) < 1e-9
+
+
+def test_dragging_a_section_keeps_the_model_box(monkeypatch):
+    """The plane's drawn frame is sized to the model's box: each frame of
+    a plane's drag walked the whole model again for it (150 of the 190 ms
+    of a frame on the plaza, 22-11). The box comes back from its cache
+    while only sections move — and is measured again after an edit."""
+    from tools.move import MoveTool
+    from core.history import translate_points
+    from core.topology import _key
+    vp, _hist, plane = _viewport_with_a_cut()
+    scene = vp.scene
+    lo, hi = scene.bounds()
+    walks = []
+    real = type(scene).placements
+    monkeypatch.setattr(type(scene), "placements",
+                        lambda self, *a, **k: walks.append(1)
+                        or real(self, *a, **k))
+    tool = MoveTool()
+    tool._splanes = [plane]
+    for _ in range(5):
+        tool._shift(vp, QVector3D(0, 0, 0.1))
+        vp.section_plane_frame(plane)
+        assert scene.bounds() == (lo, hi)
+    assert walks == []
+    top = {_key(v.position) for v in scene.mesh.vertices
+           if abs(v.position.z() - 3.0) < 1e-6}
+    translate_points(scene, top, QVector3D(0, 0, 1.0))
+    assert scene.bounds()[1].z() > hi.z() + 0.5
+    assert walks
+
+
+def test_dragging_a_section_keeps_the_layers_of_what_it_cuts(monkeypatch):
+    """Each cut chord is filled with its face's layer: every frame of a
+    plane's drag looked the same faces' layers up again (~16 ms of a
+    frame's ~50 on the plaza, 22-11). They are kept while the model is —
+    and a face put on another layer is filled with that one."""
+    import core.layers as layers
+    from core.history import AssignLayerCommand
+    from tools.move import MoveTool
+    vp, hist, plane = _viewport_with_a_cut()
+    plane.active = True
+    vp.scene.bump_sections()
+    assert vp._section_cut_segments() is not None
+    asked = []
+    real = layers.layer_of
+    from core.section import SectionPlane
+
+    def spy(e):
+        if not isinstance(e, SectionPlane):      # the plane's own layer
+            asked.append(e)
+        return real(e)
+    monkeypatch.setattr(layers, "layer_of", spy)
+    tool = MoveTool()
+    tool._splanes = [plane]
+    for _ in range(4):
+        tool._shift(vp, QVector3D(0, 0, 0.2))
+        assert vp._section_cut_segments() is not None
+    assert asked == []
+    side = next(f for f in vp.scene.mesh.faces
+                if abs(f.normal().z()) < 0.5)
+    hist.execute(AssignLayerCommand([side], "Muros"))
+    tags = vp._section_cut_tags()
+    assert "Muros" in set(tags.tolist())

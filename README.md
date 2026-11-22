@@ -8,6 +8,7 @@
 **A free 3D modeler for architecture, engineering and 3D design — draw as if by hand, built natively for Linux.**
 
 ![License: GPL-3.0-or-later](https://img.shields.io/badge/license-GPL--3.0--or--later-blue)
+![CI](https://github.com/ingelibre/ingetrazo/actions/workflows/ci.yml/badge.svg)
 ![Status: usable](https://img.shields.io/badge/status-usable%20·%200.3.x-brightgreen)
 ![Platform: Linux · Windows · macOS](https://img.shields.io/badge/platform-Linux%20%7C%20Windows%20%7C%20macOS-informational)
 ![Made in Peru](https://img.shields.io/badge/made%20in-Peru%20%F0%9F%87%B5%F0%9F%87%AA-red)
@@ -89,6 +90,14 @@ welcome arch with all its rebar (also attached to every release as
   a face and choose **Align View** to look along its normal, including inside
   an open group or component (two-point perspective switches to perspective).
 - **Walkthrough** — Position Camera, Walk and Look Around at eye height.
+- **SpaceMouse navigation** — pan, zoom and orbit with a 3Dconnexion 3D
+  mouse on Linux (`spacenavd`), Windows and macOS (3DxWare, with a HIDAPI
+  fallback). Lost connections are retried automatically; navigation pauses
+  while a modal dialog is open on macOS. See [setup](docs/spacemouse.md).
+  Preferences ▸ 3D Mouse controls speed, per-axis inversion and rotation
+  lock. Input is released when another application takes focus. The camera
+  stays upright
+  (no roll), and either of the first two buttons fits the model in view.
 - **Drawing tools** — Line, Rectangle, Rotated Rectangle, Circle, Polygon,
   Arc (2-point) and 3-Point Arc, with inferencing, snapping, axis locks and a
   Value Control Box (type exact lengths/coordinates, `200,100` or `200;100`
@@ -168,7 +177,14 @@ the document), **import STL (with principal-plane or advanced all-surface
   Inspector**, and two AI plugins — an in-app **AI Assistant** (chat that
   models for you; Groq/Claude/GPT/Gemini/OpenRouter/DeepSeek/local Ollama)
   and an **AI Bridge** (drive the live document from Claude Code/Desktop
-  via MCP). Every AI action is one transactional undo step. A broken
+  or any MCP client: Python recipes, or named tools for clients that allow
+  no code — scene info, layers, scenes, camera, selection, materials,
+  sheet renders, open/save/import/export). Every AI action is one
+  transactional undo step. The bridge also runs **without a window**
+  (`ingetrazo --headless --ai-bridge --open Casa.igz`, or for short
+  `ingetrazo --server Casa.igz`) for automation, and documents can be saved
+  as **plain JSON** for clean Git diffs — see
+  [docs/ai-bridge.md](docs/ai-bridge.md). A broken
   plugin can never prevent IngeTrazo from starting. Plugins are the
   lowest-friction way to contribute — see [docs/plugins.md](docs/plugins.md).
 - **Undo/redo** — every edit is a single atomic step (console scripts
@@ -215,7 +231,8 @@ python main.py
 ```
 
 Developed on **Python 3.14** (3.11+ should work). Run the tests with
-`python -m pytest -q`.
+`python scripts/pytest_batches.py -m "not slow" tests` (see
+[CONTRIBUTING.md](CONTRIBUTING.md#tests-and-ci)).
 
 ## Contributing
 
@@ -223,8 +240,13 @@ Contributors from anywhere are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md)
 and [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md). All code, comments and commit
 messages are in **English**; the UI speaks Spanish, English, Brazilian
 Portuguese, Simplified Chinese, Italian, Indonesian, French, German, Polish,
-Russian, Vietnamese, Lao, Thai, Japanese and Korean (translations are one
+Russian, Vietnamese, Lao, Thai, Japanese, Korean, Ukrainian, Arabic, Bulgarian,
+Traditional Chinese and Turkish (translations are one
 JSON file each under `i18n/`).
+
+Turkish users can start with the skippable workspace guide; layouts remain
+available under Window > Workspace. See [Turkish localization](docs/turkish-localization.md)
+for the IFC display-label boundary, scope and validation evidence.
 
 ## Acknowledgements
 

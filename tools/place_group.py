@@ -49,6 +49,19 @@ class PlaceGroupTool(Tool):
         # on a wall, text lying on a slab. No face → upright on the ground.
         self._align = align_to_face
         self._face_normal: QVector3D | None = None
+        # A component that cuts an opening (core/openings.py) glues by its
+        # own axes instead: its blue axis comes out of the face, its green
+        # one stays up, and its origin — where its author drew it from —
+        # follows the cursor, so its base plane lies on the wall.
+        from core.openings import wants_opening
+        self._glue = wants_opening(group)
+        if self._glue:
+            self._align = True
+            from core.group import group_frame
+            from PySide6.QtGui import QMatrix4x4
+            frame = group_frame(group)
+            self._frame = QMatrix4x4(frame) if frame is not None else QMatrix4x4()
+            self._anchor = self._frame.map(QVector3D(0.0, 0.0, 0.0))
         # Local preview segments, relative to the anchor (computed once).
         # A container's own mesh is usually empty and its children can be
         # anything: a SMALL placement tree (a 3D text, one group per
@@ -153,15 +166,51 @@ class PlaceGroupTool(Tool):
         return right, -n, up
 
     def _rotate(self, p: QVector3D) -> QVector3D:
+        if self._glue:
+            return QVector3D(p)
         if self._face_normal is None:
             return QVector3D(p)
         right, y_axis, up = self._face_frame(self._face_normal)
         return right * p.x() + y_axis * p.y() + up * p.z()
 
+    def _glue_matrix(self, world: QVector3D):
+        """For a component that cuts an opening: the move that puts its
+        origin at ``world`` with its blue axis along the hovered face's
+        normal and its green axis up the face (north on a level face). Its
+        own scale is kept. No face hovered: only the shift."""
+        from PySide6.QtGui import QMatrix4x4
+        f = self._frame
+        o = f.map(QVector3D(0.0, 0.0, 0.0))
+        m = QMatrix4x4()
+        if self._face_normal is None:
+            m.translate(world - o)
+            return m
+        z = QVector3D(self._face_normal).normalized()
+        up = QVector3D(0.0, 0.0, 1.0)
+        y = up - z * QVector3D.dotProduct(up, z)
+        if y.length() < 1e-6:
+            y = QVector3D(0.0, 1.0, 0.0)
+        y = y.normalized()
+        x = QVector3D.crossProduct(y, z).normalized()
+        sx = f.mapVector(QVector3D(1, 0, 0)).length() or 1.0
+        sy = f.mapVector(QVector3D(0, 1, 0)).length() or 1.0
+        sz = f.mapVector(QVector3D(0, 0, 1)).length() or 1.0
+        target = QMatrix4x4(x.x() * sx, y.x() * sy, z.x() * sz, world.x(),
+                            x.y() * sx, y.y() * sy, z.y() * sz, world.y(),
+                            x.z() * sx, y.z() * sy, z.z() * sz, world.z(),
+                            0.0, 0.0, 0.0, 1.0)
+        inv, ok = f.inverted()
+        if not ok:
+            m.translate(world - o)
+            return m
+        return target * inv
+
     def _pose_matrix(self, shift: QVector3D):
         """The move just applied, as one matrix: the alignment turn followed
         by ``shift`` — what :func:`core.group._remap_uvws` needs."""
         from PySide6.QtGui import QMatrix4x4
+        if self._glue:
+            return self._glue_matrix(shift + self._rotate(self._anchor))
         m = QMatrix4x4()
         m.translate(shift)
         if self._face_normal is not None:
@@ -181,6 +230,24 @@ class PlaceGroupTool(Tool):
             hit = None
         face = hit[0] if isinstance(hit, tuple) else hit
         self._face_normal = face.normal() if face is not None else None
+        owner = hit[1] if isinstance(hit, tuple) and len(hit) > 1 else None
+        xform = getattr(owner, "xform", None)
+        if self._glue and self._face_normal is not None and xform is not None:
+            # A wall that is a placed group keeps its faces in its own
+            # coordinates: its normal, in the world's.
+            n = xform.mapVector(self._face_normal)
+            if n.length() > 1e-9:
+                self._face_normal = n.normalized()
+        if self._glue and self._face_normal is not None:
+            # The side the user sees is the one the component goes on,
+            # whichever way the face was drawn.
+            try:
+                eye = ctx.viewport.camera.eye()
+            except Exception:
+                eye = None
+            if eye is not None and QVector3D.dotProduct(
+                    self._face_normal, eye - ctx.world) < 0:
+                self._face_normal = -self._face_normal
 
     # ---- Spatial input ------------------------------------------------------
     def on_hover(self, ctx: ToolContext) -> None:
@@ -203,16 +270,17 @@ class PlaceGroupTool(Tool):
         if self._group is None:
             return
         shift = world - self._rotate(self._anchor)
+        pose = self._pose_matrix(shift)
         if self._instance:
             # The pose composes into the matrix: the prototype (and every
             # nested placement under it) stays put in its own frame.
-            self._group.xform = self._pose_matrix(shift) * self._group.xform
+            self._group.xform = pose * self._group.xform
         else:
             # Re-pose the group's isolated mesh BEFORE it enters the scene
             # (registry-safe per-vertex move; undo of the insert removes
             # the whole group, so no separate move step lands in history).
             for v in list(self._group.mesh.vertices):
-                target = self._rotate(v.position) + shift
+                target = pose.map(v.position)
                 delta = target - v.position
                 if delta.length() > 1e-9:
                     self._group.mesh.move_vertex(v, delta)
@@ -221,8 +289,8 @@ class PlaceGroupTool(Tool):
             # otherwise the image stays where the component was built and
             # the piece arrives wearing whatever happens to fall on it.
             from core.group import _remap_uvws, carry_axes
-            _remap_uvws(self._group.mesh, self._pose_matrix(shift))
-            carry_axes(self._group, self._pose_matrix(shift))   # #44
+            _remap_uvws(self._group.mesh, pose)
+            carry_axes(self._group, pose)   # #44
         group = self._group
         self._group = None
         viewport.history.execute(InsertGroupCommand(group))
@@ -246,6 +314,10 @@ class PlaceGroupTool(Tool):
         if self._group is None:
             return []
         off = self._offset
+        if self._glue:
+            pose = self._pose_matrix(off)
+            return [(pose.map(a + self._anchor), pose.map(b + self._anchor))
+                    for a, b in self._segments]
         if self._face_normal is not None:
             return [(self._rotate(a + self._anchor) + off,
                      self._rotate(b + self._anchor) + off)

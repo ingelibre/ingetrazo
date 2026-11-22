@@ -10,7 +10,7 @@ quantity takeoff — and later the IFC export to IngePresupuestos. Untagged
 geometry stays plain drawing.
 
 Storage:
-- loose faces: ``face.attrs["ifc"] = {"id": n, "class": ..., "name": ...}``
+- loose faces: ``face.attrs["ifc"] = {"id": n, "uid": ..., "class": ..., "name": ...}``
   — the ``attrs`` dict already survives the engine's face churn (push/pull,
   rebuilds, heals) and serialises with the document, so tags are durable.
 - groups: ``group.ifc = {"class": ..., "name": ...}`` (the group IS the
@@ -31,6 +31,8 @@ from __future__ import annotations
 import math
 
 from PySide6.QtGui import QVector3D
+
+from core.ifc_identity import new_identity
 
 #: Curated civil/architecture classes (IFC4 names).
 IFC_CLASSES = [
@@ -100,8 +102,20 @@ def next_object_id(scene) -> int:
 def tag_faces(faces, ifc_class: str, name: str, obj_id: int) -> None:
     global _TAG_EPOCH
     _TAG_EPOCH += 1
+    faces = list(faces)
+    # Updating an existing local object preserves its token. Applying a new
+    # local id creates a new object (including a deleted id reused later).
+    previous = next((f.attrs["ifc"] for f in faces
+                     if f.attrs.get("ifc", {}).get("id") == obj_id), None)
+    # A legacy tag keeps the deterministic integer-id fallback until it is
+    # removed; adding a UUID during a rename would change its GlobalId.
+    token = previous.get("uid") if previous is not None else new_identity()
     for f in faces:
-        f.attrs["ifc"] = {"id": obj_id, "class": ifc_class, "name": name}
+        import copy
+        extra = {"delivery": copy.deepcopy(previous["delivery"])} if (
+            previous and "delivery" in previous) else {}
+        f.attrs["ifc"] = {"id": obj_id, "class": ifc_class, "name": name,
+                          **({"uid": token} if token else {}), **extra}
 
 
 def untag_faces(faces) -> None:
@@ -112,7 +126,10 @@ def untag_faces(faces) -> None:
 
 
 def tag_group(group, ifc_class: str, name: str) -> None:
-    group.ifc = {"class": ifc_class, "name": name}
+    import copy
+    previous = group.ifc or {}
+    extra = {"delivery": copy.deepcopy(previous["delivery"])} if "delivery" in previous else {}
+    group.ifc = {"class": ifc_class, "name": name, **extra}
 
 
 def untag_group(group) -> None:
@@ -272,9 +289,20 @@ def _face_tags_in(mesh, memo, seen) -> dict:
     return by_id
 
 
+def object_faces(obj: dict) -> list:
+    """The world-space faces a :func:`collect_objects` entry is measured
+    and exported from: the tagged loose faces, or the tagged group's mesh
+    with its placement and nested placements applied (PR #984, BastelBaus:
+    a moved group or component instance exported at its definition's
+    origin)."""
+    faces = obj.get("faces")
+    return faces if faces is not None else obj["world_faces"]
+
+
 def collect_objects(scene, memo: dict | None = None) -> list[dict]:
     """Every tagged BIM object in the document, with live quantities:
-    ``{"key", "class", "name", "area", "volume" (or None), "faces" | "group"}``.
+    ``{"key", "class", "name", "area", "volume" (or None), "faces"}``.
+    ``faces`` are in world space; whole-group objects also carry ``group``.
     Loose-face objects group by tag id; each tagged group is one object, at
     any depth of the tree. Tagged faces inside a group's mesh are one
     object per group and tag id: ``"faces"`` (world space) plus ``"owner"``
@@ -341,7 +369,11 @@ def collect_objects(scene, memo: dict | None = None) -> list[dict]:
             "name": tag.get("name", ""),
             "area": face_set_area(faces),
             "volume": face_set_volume(faces),
+            # Consumers must use the same placed geometry as the quantities;
+            # g.mesh alone loses instance transforms and nested placements.
+            "faces": faces,
             "group": g,
+            "world_faces": faces,
         }
         if memo is not None:
             memo[sig] = obj
@@ -549,17 +581,44 @@ def class_quantities(ifc_class: str, faces):
     return QSET_NAMES.get(ifc_class, "BaseQuantities"), entries, (metrado, unit)
 
 
-def quantities_csv(scene) -> str:
+def object_matches(obj: dict, query: str = "",
+                   classes: set | None = None) -> bool:
+    """Whether a takeoff object passes the BIM panel's filters: its class
+    among ``classes`` (``None``: every class) and ``query`` (already
+    casefolded) in its name, its class or its ``outline`` (the groups it
+    sits in, «Group 1/Group 2») — with ``*`` and ``?`` as wildcards, as in
+    the Browser."""
+    from core.outliner import text_matches
+    cls = obj.get("class", "")
+    if classes is not None and cls not in classes:
+        return False
+    if not query:
+        return True
+    return any(text_matches(t, query) for t in (
+        obj.get("name") or "", cls, cls.removeprefix("Ifc"),
+        obj.get("outline") or ""))
+
+
+def object_metrado(obj: dict) -> tuple:
+    """``(metrado, unit)`` of a takeoff object — the class's budget
+    measure — kept on the object, so a memoised one reuses it."""
+    if "metrado" not in obj:
+        # object_faces: world space, as PR #984 measures a placed group.
+        obj["metrado"] = class_quantities(obj["class"],
+                                          object_faces(obj))[2]
+    return obj["metrado"]
+
+
+def quantities_csv(scene, objects: list | None = None) -> str:
     """The takeoff table (metrado) as CSV — the pre-IFC bridge to
     IngePresupuestos: model → budget quantities in one export. ``metrado``
     is the per-class budget measure (wall face m², column m³, pile m,
-    door und); area/volume stay as the raw shell numbers."""
+    door und); area/volume stay as the raw shell numbers. ``objects``
+    (from :func:`collect_objects`) exports those alone — the rows the BIM
+    panel shows; ``None``: every object of the model."""
     lines = ["class,name,metrado,unit,area_m2,volume_m3"]
-    for obj in collect_objects(scene):
-        faces = obj.get("faces")
-        if faces is None:
-            faces = list(obj["group"].mesh.faces)
-        _, _, (metrado, unit) = class_quantities(obj["class"], faces)
+    for obj in collect_objects(scene) if objects is None else objects:
+        metrado, unit = object_metrado(obj)
         met = "" if metrado is None else f"{metrado:.4f}"
         vol = "" if obj["volume"] is None else f"{obj['volume']:.4f}"
         name = (obj["name"] or "").replace('"', "'")

@@ -345,3 +345,113 @@ def test_a_long_menu_path_leaves_room_for_the_names():
         panel.close()
     finally:
         _close(win)
+
+
+def test_tool_shortcut_keys_are_the_same_in_every_language():
+    """A tool's shortcut key is its English name in every language, even when
+    the translation of that name is shared with another string («Guide
+    Point» and the «Guide point» snap label, the same words in most of
+    them)."""
+    import json
+    from core.i18n import current_language, set_language
+    from core.paths import app_root
+    from views.shortcuts import action_key
+    languages = sorted(p.stem for p in (app_root() / "i18n").glob("*.json"))
+    original_language = current_language()
+    try:
+        set_language("en")
+        win = _window()
+        try:
+            actions = dict(win._tool_actions)
+            english = {k: action_key(a) for k, a in actions.items()}
+            for language in languages:
+                set_language(language)
+                catalog = json.loads((app_root() / "i18n" / f"{language}.json")
+                                     .read_text("utf-8"))
+                for key, act in actions.items():
+                    source = act.property("source_text")
+                    act.setText(catalog.get(source, source))
+                    assert action_key(act) == english[key], (language, key)
+        finally:
+            _close(win)
+    finally:
+        set_language(original_language)
+
+
+def _names(panel):
+    return [panel._tree.topLevelItem(i).text(0)
+            for i in range(panel._tree.topLevelItemCount())]
+
+
+def test_an_action_added_later_shows_up_when_the_page_is_shown():
+    from views.shortcuts import ShortcutsPanel
+    win = _window()
+    try:
+        panel = ShortcutsPanel(win)
+        QAction("Late Extension Action", win)
+        assert "Late Extension Action" not in _names(panel)
+        panel.show()
+        assert "Late Extension Action" in _names(panel)
+        panel.close()
+    finally:
+        _close(win)
+
+
+def test_a_clash_with_an_action_added_later_is_detected(monkeypatch):
+    from views.shortcuts import ShortcutsPanel
+    QSettings().remove("shortcuts")
+    asked = []
+
+    def question(*a, **k):
+        asked.append(a)
+        return QMessageBox.Yes
+    monkeypatch.setattr(QMessageBox, "question", staticmethod(question))
+    win = _window()
+    try:
+        panel = ShortcutsPanel(win)
+        late = QAction("Late Extension Action", win)
+        late.setShortcut(QKeySequence("Ctrl+Alt+Shift+L"))
+        explode = _action(win, "Explode Group")
+        assert panel.assign(explode, [QKeySequence("Ctrl+Alt+Shift+L")])
+        assert asked
+        assert _keys(late) == []
+        assert _keys(explode) == ["Ctrl+Alt+Shift+L"]
+    finally:
+        _close(win)
+        QSettings().remove("shortcuts")
+
+
+def test_a_removed_action_leaves_the_page():
+    from PySide6.QtWidgets import QApplication as App
+    from PySide6.QtCore import QEvent
+    from views.shortcuts import ShortcutsPanel
+    win = _window()
+    try:
+        gone = QAction("Soon Gone Action", win)
+        panel = ShortcutsPanel(win)
+        assert "Soon Gone Action" in _names(panel)
+        gone.setParent(None)
+        gone.deleteLater()
+        App.sendPostedEvents(None, QEvent.DeferredDelete)
+        panel.show()
+        assert "Soon Gone Action" not in _names(panel)
+        panel.close()
+    finally:
+        _close(win)
+
+
+def test_a_row_picked_before_the_page_is_shown_stays_picked():
+    """Show shortcut opens Preferences on this page with a command picked,
+    before the dialog is on screen: re-collecting the actions when the page
+    is shown (PR #1244) must not drop that pick."""
+    from views.shortcuts import ShortcutsPanel
+    win = _window()
+    try:
+        panel = ShortcutsPanel(win)
+        act = _action(win, "Explode Group")
+        panel.pick(act)
+        panel.show()
+        assert panel._current()[1] is act
+        panel.close()
+    finally:
+        _close(win)

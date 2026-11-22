@@ -80,6 +80,8 @@ def test_the_api_version_stays_2():
     from views.extension_api import API_VERSION, ExtensionApp
     assert API_VERSION == 2 and ExtensionApp.api_version == 2
     assert hasattr(ExtensionApp, "on_document_closed")
+    # The resource library (#412) also only adds: found by its methods.
+    assert hasattr(ExtensionApp, "register_resource_type")
 
 
 # ---- panels -----------------------------------------------------------------------
@@ -320,6 +322,18 @@ def test_the_tool_filter_keeps_other_tools_out(win):
     assert win.viewport.active_tool is not win._tools["pushpull"]
     win.leave_workspace()
     assert win._tool_actions["pushpull"].isEnabled()
+
+
+def test_the_tool_filter_also_refuses_placing_a_group(win):
+    from core.group import Group
+    from core.mesh import Mesh
+    ws = FakeWorkspace(allowed={"select", "line"})
+    _app_for(win).enter_workspace(ws)
+    win._start_place(Group(Mesh(), name="piece"))
+    assert type(win.viewport.active_tool).__name__ != "PlaceGroupTool"
+    win.leave_workspace()
+    win._start_place(Group(Mesh(), name="piece"))
+    assert type(win.viewport.active_tool).__name__ == "PlaceGroupTool"
 
 
 def test_a_workspace_that_will_not_go_stops_quitting(win):

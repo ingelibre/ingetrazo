@@ -189,13 +189,14 @@ def test_the_tab_menu_turns_them_off_and_on(win):
     menu.close()
 
 
-def test_alt_e_shows_and_hides_them_for_the_project_in_front(win):
+def test_ctrl_e_shows_and_hides_them_for_the_project_in_front(win):
     from PySide6.QtGui import QKeySequence
     _scene(win, "Exterior")
     act = win._act_scene_tabs
-    assert act.shortcut() == QKeySequence("Alt+E")
+    # Ctrl+E first (what the menus show), Alt+E as it always was.
+    assert act.shortcuts() == [QKeySequence("Ctrl+E"), QKeySequence("Alt+E")]
     assert act.isChecked()
-    act.trigger()                                  # Alt+E
+    act.trigger()                                  # Ctrl+E
     assert _row(win).isHidden() and not win._doc.scene_tabs
     first = win._doc
     win.viewport.scene.version += 1
@@ -207,11 +208,12 @@ def test_alt_e_shows_and_hides_them_for_the_project_in_front(win):
     assert not _row(win).isHidden()
 
 
-def test_alt_e_is_no_other_commands_shortcut(win):
+@pytest.mark.parametrize("keys", ["Ctrl+E", "Alt+E"])
+def test_ctrl_e_and_alt_e_are_no_other_commands_shortcut(win, keys):
     from PySide6.QtGui import QAction, QKeySequence
-    alt_e = QKeySequence("Alt+E")
+    seq = QKeySequence(keys)
     owners = {a.text() for a in win.findChildren(QAction)
-              if alt_e in a.shortcuts()}
+              if seq in a.shortcuts()}
     from core.i18n import tr
     assert owners == {tr("Show scenes as tabs")}
 
@@ -380,7 +382,7 @@ def test_the_bar_hides_the_scenes_from_its_own_menu(win):
     hide.trigger()
     assert row.isHidden() and not win._doc.scene_tabs
     assert not win._act_scene_tabs.isChecked()
-    win._act_scene_tabs.trigger()             # Alt+E brings it back
+    win._act_scene_tabs.trigger()             # Ctrl+E brings it back
     assert not row.isHidden()
 
 
@@ -632,20 +634,6 @@ def test_the_composers_view_sources_follow_rename_order_and_undo(
     win.tray.scenes.move_view(win.viewport.scene.saved_views[1], 0)
     assert sources() == ["B", "A"]
     comp.close()
-
-
-def test_the_composers_panel_renames_in_one_undo_step(win):
-    from views.outliner import SheetsPanel
-    _scene(win, "A")
-    panel = SheetsPanel.__new__(SheetsPanel)
-    panel._window = win
-    panel._shape = None
-    panel._scene = lambda: win.viewport.scene
-    panel.refresh = lambda: None
-    SheetsPanel.rename_scene(panel, win.viewport.scene.saved_views[0], "B")
-    assert _in_step(win) == ["B"]
-    win._on_undo()
-    assert _in_step(win) == ["A"]
 
 
 # ---- the Scenes panel: its menu, ↑ ↓ ------------------------------------------

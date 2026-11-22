@@ -153,3 +153,87 @@ def test_time_slider_is_bounded_to_daylight():
     assert panel._time.maximum() < 14 * 60          # afternoon is night now
     assert sh.hour * 60 + sh.minute == panel._time.value()
     assert panel._time.minimum() <= panel._time.value() <= panel._time.maximum()
+
+
+def test_panel_explains_a_sun_below_the_horizon():
+    """#1312: a stored hour can sit at night — a loaded document is the
+    plain case — and refresh() must not clamp it away; the panel says
+    why there are no shadows instead of looking broken."""
+    from views.tray import ShadowsPanel
+    win = _Win()
+    panel = ShadowsPanel(win)
+    sh = win.viewport.scene.shadows
+    note = panel._below_horizon_note
+    assert note.isHidden()                 # noon: sun up, nothing to explain
+
+    sh.enabled = True
+    sh.month, sh.day, sh.hour, sh.minute = 3, 21, 2, 0   # 02:00 local
+    panel.refresh()
+    assert (sh.hour, sh.minute) == (2, 0)  # the document is untouched
+    assert not note.isHidden()
+    assert note.text() == "The sun is below the horizon: no shadows."
+
+    sh.hour = 12                           # back in daylight: note goes
+    panel.refresh()
+    assert note.isHidden()
+
+    # Shadows off at night: the checkbox is the reason, not the sun.
+    sh.enabled = False
+    sh.hour = 2
+    panel.refresh()
+    assert note.isHidden()
+
+
+def test_panel_note_covers_the_sampled_minutes_past_sunset():
+    """The daylight window is sampled every five minutes and runs a few
+    minutes past the true sunset: at 17:19 on 3 June in Arequipa — the
+    example in #1312 — the sun is already below the horizon, so picking
+    that minute on the slider must show the note, not silent nothing."""
+    from PySide6.QtCore import QDate
+
+    from views.tray import ShadowsPanel
+    win = _Win()
+    panel = ShadowsPanel(win)
+    sh = win.viewport.scene.shadows
+    panel._enable.setChecked(True)
+    panel._date.setDate(QDate(2026, 6, 3))
+    panel._time.setValue(17 * 60 + 19)
+    assert (sh.hour, sh.minute) == (17, 19)
+    assert not panel._below_horizon_note.isHidden()
+    panel._time.setValue(12 * 60)
+    assert panel._below_horizon_note.isHidden()
+
+
+def test_panel_note_and_day_span_at_polar_night():
+    """Polar night has no daylight window to clamp to: the span reads
+    as dashes and every hour is night, so the note is the only thing
+    that explains the missing shadows."""
+    from georef.datum import SceneDatum
+    from views.tray import ShadowsPanel
+    win = _Win()
+    win.viewport.scene.georef = SceneDatum(80.0, 0.0)
+    panel = ShadowsPanel(win)
+    sh = win.viewport.scene.shadows
+    sh.enabled = True
+    sh.month, sh.day, sh.hour, sh.minute = 12, 21, 12, 0
+    panel.refresh()
+    assert not panel._below_horizon_note.isHidden()
+    assert panel._sunrise_lbl.text() == "Sunrise: —"
+    assert panel._sunset_lbl.text() == "Sunset: —"
+
+
+def test_panel_labels_sunrise_sunset_and_automatic_zone_offset():
+    """#1312, suggestions 2 and 3: the day span under the time slider
+    names what its two ends are, and the Automatic zone entry names
+    the UTC offset it ends up using — both from values the sun code
+    already computes (the daylight window, the by-longitude offset)."""
+    from views.tray import ShadowsPanel
+    win = _Win()
+    panel = ShadowsPanel(win)
+    lo, hi = panel._time.minimum(), panel._time.maximum()
+    assert panel._sunrise_lbl.text() == f"Sunrise: {lo // 60:02d}:{lo % 60:02d}"
+    assert panel._sunset_lbl.text() == f"Sunset: {hi // 60:02d}:{hi % 60:02d}"
+    # Automatic at Arequipa's longitude is UTC-5, and the entry still
+    # carries the automatic (None) value.
+    assert panel._tz.itemText(0) == "Automatic (by longitude) — UTC-05:00"
+    assert panel._tz.currentData() is None

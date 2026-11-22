@@ -175,6 +175,20 @@ def _note_definition_kinds() -> bool:
     return True
 
 
+def note_model_kinds(model) -> None:
+    """Take the kinds from the parsed model when the reader keeps them.
+
+    ``Definition.is_group`` is what the file itself reports, in both file formats.
+    The single-pass VFF reader also no longer hands definitions to
+    ``_extract_geometry_from_nodes``, so :func:`_note_definition_kinds` sees
+    nothing there. A reader without the field keeps the notes taken above."""
+    definitions = list((getattr(model, "definitions", None) or {}).values())
+    if not definitions or not all(hasattr(d, "is_group") for d in definitions):
+        return
+    _parse_tables.groups = {d.id for d in definitions if d.is_group}
+    _parse_tables.kinds = True
+
+
 def group_definitions() -> set:
     """The definition ids the last parse on this thread placed as GROUPS:
     through a ``CGroup`` in a classic file, by the definition's own kind in
@@ -226,7 +240,7 @@ def _keep_layer_table() -> bool:
     return True
 
 
-#: Spellings of SketchUp's default tag: a face on it is on no layer.
+#: Spellings of a .skp file's default tag: a face on it is on no layer.
 _DEFAULT_TAGS = ("Layer0", "Layer 0", "Untagged")
 
 
@@ -423,7 +437,7 @@ def _scan_vff_texts(model_dat, id2pos, inst_world):
 
 def _vff_label_point(point, label_raw, bbox):
     """Settle the space of a text's stored ``55F5`` triple. Writer-made
-    files store the label's absolute position; SketchUp itself stores it
+    files store the label's absolute position; the original application stores it
     relative to the anchor (the reporter's staircase: the absolute
     reading puts both labels outside the model, the relative one lands
     each beside its anchor). Prefer whichever lands inside the owner's
@@ -693,11 +707,12 @@ def _fix_definition_list_end(L) -> bool:
 
 
 def _fix_layer_tail_2019(L) -> bool:
-    # A reader that already tells the versions apart in its layer record
-    # has the fix: leave it alone.
+    # A reader that spells out the 2019 tail has the fix: leave it alone.
+    # Reading ``ar.ver`` alone proves nothing: 1.3's reader does, for the
+    # shorter version-3 tail, and still stops two bytes early on 2019.
     original = getattr(L, "_read_layer", None)
     if (original is None or getattr(original, "_long_tail", False)
-            or "ver" in original.__code__.co_names):
+            or 23 in original.__code__.co_consts):
         return False
 
     def _read_layer(ar, r):

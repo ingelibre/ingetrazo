@@ -398,26 +398,18 @@ def test_a_row_dragged_reorders_the_scenes_in_one_undo_step(win):
     assert _rows(panel) == ["C", "A", "B"]
 
 
-def _sheet_list_scenes(panel):
-    """The scene rows of a «Views and sheets» list, top to bottom."""
-    from PySide6.QtWidgets import QTreeWidgetItemIterator
-    panel.refresh()
-    out = []
-    it = QTreeWidgetItemIterator(panel.tree)
-    while it.value() is not None:
-        data = it.value().data(0, Qt.UserRole)
-        if data and data[0] == "scene":
-            out.append(data[1].name)
-        it += 1
-    return out
+def _sheet_list_scenes(lst):
+    """The scenes of the composer's Sheets page list, top to bottom."""
+    lst.refresh()
+    return [it.text(0) for it in lst.scene_rows()]
 
 
-def test_views_and_sheets_lists_the_scenes_in_the_new_order(win):
-    from views.outliner import SheetsPanel
+def test_the_sheets_page_lists_the_scenes_in_the_new_order(win):
+    from views.sheet_browser import SceneList
     panel = _scenes(win, "A", "B", "C")
     panel.drop_rows(("before", _view(win, "A")),
                     [panel.row_for(_view(win, "C"))])
-    assert _sheet_list_scenes(SheetsPanel(win)) == ["C", "A", "B"]
+    assert _sheet_list_scenes(SceneList(win)) == ["C", "A", "B"]
 
 
 # ---- 5. Undo for everything -------------------------------------------------
@@ -523,16 +515,6 @@ def test_a_name_another_scene_has_is_refused_and_nothing_to_undo(win):
     assert "already called" in win.statusBar().currentMessage()
 
 
-def test_rename_from_views_and_sheets_is_undoable_too(win):
-    from views.outliner import SheetsPanel
-    _scenes(win, "A")
-    view = _view(win, "A")
-    assert SheetsPanel(win).rename_scene(view, "Section")
-    assert view.name == "Section"
-    win.viewport.history.undo()
-    assert view.name == "A"
-
-
 def test_delete_is_still_undoable(win):
     panel = _scenes(win, "A", "B")
     panel.select_view(_view(win, "A"))
@@ -566,11 +548,12 @@ def test_the_mark_goes_with_its_scene_when_it_is_deleted(win):
     assert not any(_bold(panel))
 
 
-def test_a_scene_shown_from_views_and_sheets_is_marked_here(win):
-    from views.outliner import SheetsPanel
+def test_a_scene_shown_from_the_sheets_page_is_marked_here(win):
+    from views.sheet_browser import SceneList
     panel = _scenes(win, "A", "B")
     view = _view(win, "B")
-    SheetsPanel(win)._show_scene(view)
+    lst = SceneList(win)                     # no on_activate: shows it
+    lst._on_activate(lst.scene_rows()[1])
     assert panel.shown is view
     assert panel.row_for(view).font(0).bold()
 
@@ -950,3 +933,160 @@ def test_a_scene_with_no_picture_to_be_had_is_not_asked_for_ever(
     _wait()
     QTest.qWait(400)
     assert len(tries) == ScenesPanel.RETRIES + 1
+
+
+# ---- The picture is the screen ----------------------------------------------
+
+def _shot(win, monkeypatch):
+    """Render the pictures through a stand-in for the GL render that notes
+    what the camera, the layers and the style are when it is asked."""
+    from PySide6.QtGui import QColor, QImage
+    vp = win.viewport
+    seen = {}
+
+    def render_image(width_px, height_px=None, **kw):
+        cam = vp.camera
+        seen.update(perspective=cam.perspective, distance=cam.distance,
+                    fov=cam.fov_deg, aspect=cam.aspect,
+                    two_point=cam.two_point, yaw=cam.yaw, pitch=cam.pitch,
+                    shift_y=cam.shift_y, override=vp.style_override,
+                    edge_px=vp._export_edge_px, kw=kw,
+                    visible={ly.name: ly.visible for ly in vp.scene.layers})
+        img = QImage(width_px, height_px or width_px, QImage.Format_RGB32)
+        img.fill(QColor("grey"))
+        return img
+
+    monkeypatch.setattr(vp, "render_image", render_image)
+    monkeypatch.setattr(_ScenesPanel, "_render_thumbnail", _REAL_THUMBNAIL)
+    return seen
+
+
+def test_a_perspective_scene_is_pictured_in_perspective(win, monkeypatch):
+    """A scene saved in perspective, close up, was drawn as a sheet frame:
+    parallel, at the scale that fits the whole model, 3:2 and on white —
+    another, farther view. Its picture is now the screen's."""
+    seen = _shot(win, monkeypatch)
+    cam = win.viewport.camera
+    cam.perspective = True
+    cam.fov_deg = 50.0
+    cam.distance = 3.5
+    panel = _scenes(win, "Cerca")
+    view = _view(win, "Cerca")
+    assert view.perspective
+    icon = panel._render_thumbnail(view)
+    assert icon is not None and not icon.isNull()
+    assert seen["perspective"] is True
+    assert seen["distance"] == pytest.approx(3.5)
+    assert seen["fov"] == pytest.approx(50.0)
+    vp = win.viewport
+    assert seen["aspect"] == pytest.approx(vp.width() / vp.height(),
+                                           rel=0.01)
+    assert seen["override"] is None       # the scene's background, no paper
+    assert seen["edge_px"] == 1           # the screen's hairlines
+    assert seen["kw"].get("sharp_shadows") is False
+
+
+def test_a_parallel_scene_keeps_its_own_zoom(win, monkeypatch):
+    """A parallel scene is drawn at the height its distance gives the live
+    camera — not at a fit to the whole model."""
+    seen = _shot(win, monkeypatch)
+    cam = win.viewport.camera
+    cam.perspective = False
+    cam.fov_deg = 45.0
+    cam.distance = 2.0
+    panel = _scenes(win, "Detalle")
+    panel._render_thumbnail(_view(win, "Detalle"))
+    assert seen["perspective"] is False
+    assert seen["distance"] == pytest.approx(2.0, rel=1e-6)
+
+
+def test_the_picture_shows_the_layers_that_do_not_print(win, monkeypatch):
+    """Sheets leave the layers set not to print out; the screen shows
+    them, and so does the scene's picture."""
+    from core.layers import Layer
+    seen = _shot(win, monkeypatch)
+    scene = win.viewport.scene
+    scene.layers.append(Layer("Borrador", printable=False))
+    panel = _scenes(win, "Con borrador")
+    panel._render_thumbnail(_view(win, "Con borrador"))
+    assert seen["visible"]["Borrador"] is True
+
+
+def test_the_picture_gives_the_live_lens_back(win, monkeypatch):
+    """A scene in two-point perspective with a shifted lens: its picture
+    puts both on the camera, and the live view gets its own back."""
+    seen = _shot(win, monkeypatch)
+    cam = win.viewport.camera
+    cam.perspective = True
+    cam.two_point = True
+    cam.shift_y = 0.2
+    panel = _scenes(win, "Fachada")
+    cam.two_point = False
+    cam.shift_y = 0.0
+    cam.distance += 5.0
+    live = (cam.distance, cam.yaw, cam.pitch)
+    panel._render_thumbnail(_view(win, "Fachada"))
+    assert seen["two_point"] is True and seen["shift_y"] == pytest.approx(0.2)
+    assert cam.two_point is False
+    assert cam.shift_y == 0.0
+    assert (cam.distance, cam.yaw, cam.pitch) == live
+
+
+def test_a_glide_arrives_with_the_scene_lens(win):
+    """With the transitions on, the camera glides to the scene and the rest
+    comes in on arrival — the lens did not: a scene saved with a shifted
+    lens showed without it, and unlike its picture."""
+    cam = win.viewport.camera
+    cam.shift_y = 0.25
+    panel = _scenes(win, "Desplazada")
+    cam.shift_y = 0.0
+    panel.finish_view(_view(win, "Desplazada"), camera=False)
+    assert cam.shift_y == pytest.approx(0.25)
+
+
+@pytest.mark.parametrize("opened", ["menu", "dialog"])
+def test_no_picture_is_drawn_while_a_menu_or_a_dialog_is_open(
+        win, monkeypatch, opened):
+    """A scene's picture is a whole render (0.3–0.7 s on a big model): one
+    drawn while a menu is open or the extension manager waits froze them.
+    The hand there never reaches a view, so the rest is theirs to say."""
+    from PySide6.QtCore import QTimer
+    from PySide6.QtGui import QColor, QIcon, QPixmap
+    from PySide6.QtTest import QTest
+    from PySide6.QtWidgets import QDialog, QMenu
+    from views.tray import ScenesPanel
+    from views.viewport import _support
+    drawn = []
+
+    def fake(self, view):
+        drawn.append(view.name)
+        pm = QPixmap(96, 64)
+        pm.fill(QColor("red"))
+        return QIcon(pm)
+    monkeypatch.setattr(ScenesPanel, "_render_thumbnail", fake)
+    monkeypatch.setattr(ScenesPanel, "HAND_REST_S", 0.3)
+    monkeypatch.setattr(_support, "LAST_HAND", [0.0])
+    if opened == "menu":
+        holder = QMenu(win)
+        holder.addAction("Uno")
+        holder.popup(win.mapToGlobal(win.rect().center()))
+        close = holder.close
+    else:
+        holder = QDialog(win)
+        holder.setModal(True)
+        holder.show()
+        close = holder.accept
+    for _ in range(5):
+        _app.processEvents()
+    opened_now = (_app.activePopupWidget() is holder
+                  or _app.activeModalWidget() is holder)
+    if not opened_now:
+        close()
+        pytest.skip("this platform shows no popup or modal offscreen")
+    _scenes(win, "A", "B")
+    QTest.qWait(1200)
+    assert drawn == []                 # waited for the menu or the dialog
+    close()
+    QTimer.singleShot(0, lambda: None)
+    _wait(until=lambda: len(drawn) >= 2)
+    assert sorted(drawn) == ["A", "B"]  # and drew them once it closed

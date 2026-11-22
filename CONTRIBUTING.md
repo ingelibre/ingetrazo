@@ -10,7 +10,8 @@ Thank you for your interest in IngeTrazo! Contributions of any kind are welcome 
 git clone https://github.com/<your-user>/ingetrazo.git
 cd ingetrazo
 python3 -m venv venv
-source venv/bin/activate
+source venv/bin/activate          # Linux / macOS
+.\venv\Scripts\Activate         # Windows (PowerShell)
 pip install -r requirements.txt
 python main.py
 ```
@@ -20,9 +21,20 @@ Requires Python 3.12+.
 ## Tests and CI
 
 ```bash
-python -m pytest -m "not slow"     # the fast suite (~3,100 tests, ~5 min; what CI runs)
-python -m pytest                   # everything (~3,900), including the slow fuzz sweeps
+python scripts/pytest_batches.py -m "not slow" tests   # the fast suite (~8,900 tests; what CI runs)
+python scripts/pytest_batches.py tests                 # everything (~9,700), including the slow fuzz sweeps
+python -m pytest tests/test_materials.py               # one file, or a few, while you work
 ```
+
+Run the whole suite through `scripts/pytest_batches.py`, not as one
+`python -m pytest` process. About 170 test files build a main window that
+stays alive until the process ends, so in a single process memory keeps
+growing (past 11 GB a sixth of the way in), and every file that switches the
+theme then repaints all those windows: on macOS such a test took more than
+five minutes, and the run did not finish in over an hour. The script runs
+the theme-switching files each in a process of their own and the rest in
+six batches, prints a `batch i/n` line as each one ends, and sums them up in
+one line at the end; a batch that crashes is reported by name.
 
 **Every pull request runs the fast suite automatically** — your PR gets a
 green check or a red cross within a few minutes, no maintainer needed. New
@@ -72,7 +84,7 @@ isolation, and the `SnapshotImport` recipe for modifying the model) is in
 1. **Fork** the repository.
 2. Create a feature branch: `git checkout -b feature/short-description`.
 3. Commit small, focused changes with descriptive messages.
-4. Run the fast suite locally: `python -m pytest -m "not slow"`.
+4. Run the fast suite locally: `python scripts/pytest_batches.py -m "not slow" tests`.
 5. Push to your fork and open a **Pull Request** — CI will run the suite
    on it automatically.
 6. A maintainer will review. We try to respond within a week.

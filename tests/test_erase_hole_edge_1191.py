@@ -121,4 +121,6 @@ def test_erasing_a_shared_edge_still_merges_the_two_faces():
     (merged,) = scene.mesh.faces                  # the split line dissolved
     assert merged.holes == []
     assert abs(merged.area() - 25.0) < 1e-6
-    assert len(scene.mesh.edges) == 4
+    # Only the erased side goes: the inner square's other three stay as
+    # lines on the merged face (#631, PR #647), besides the outer four.
+    assert len(scene.mesh.edges) == 7

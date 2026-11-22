@@ -41,6 +41,11 @@ def _count_calls(monkeypatch, obj, name):
 
 def test_a_hidden_components_list_waits_until_it_is_shown(win, monkeypatch):
     panel = win.tray.components
+    # The refresh the opening asked for (300 ms) is not the edits': after a
+    # slow test before this one it was due by the time the panel showed.
+    pending = getattr(panel, "_in_model_timer", None)
+    if pending is not None:
+        pending.stop()
     panel.hide()
     calls = _count_calls(monkeypatch, panel, "refresh_in_model")
     for _ in range(3):

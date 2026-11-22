@@ -48,6 +48,18 @@ Untuk membuat ulang dokumen, jalankan dari folder utama IngeTrazo:
 python examples/pestanas-prueba.py
 ```
 
+## IngeTrazo tanpa jendela, lewat MCP
+
+`headless-mcp-demo.py` melakukan apa yang dilakukan agen AI di runner CI,
+tanpa ada orang di depan layar: menjalankan server MCP dengan IngeTrazo
+tanpa jendela, membangun rumah kecil dengan `run_python`, mengambil
+tangkapan layar, mengekspor dua scene ke PNG, menyimpan model sebagai JSON
+polos (`Casita.igz` + `Casita.assets/`) lalu menutupnya dengan `shutdown`
+(kode keluar 0). Jalankan `python examples/headless-mcp-demo.py [folder]`
+dari folder IngeTrazo; perlu layar, karena tampilan digambar dengan OpenGL
+di jendela yang tidak pernah muncul. Lihat
+[`docs/ai-bridge.md`](../docs/ai-bridge.md) ▸ «Sin ventana».
+
 ## Ekstensi
 
 `extensions/niveles.py`, bernama **Niveles**, menyimpan elevasi lantai

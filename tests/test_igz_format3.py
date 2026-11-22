@@ -109,6 +109,48 @@ def test_the_texture_travels_with_a_binary_mesh(tmp_path, binary):
     assert len(slab.hole_loops) == 1             # the nested hole was dropped
 
 
+@pytest.mark.parametrize("attrs", [
+    {"color": [1, 0, 0], "mat": "Rojo"},
+    {"color": [1.0, 0.0, 0.0], "mat": "Rojo"},        # not the first: 1 vs 1.0
+    {"color": [-0.0, 0.0, 0.5], "back": True},
+    {"color": [0.0, 0.0, 0.5], "back": True},           # nor this: -0.0
+    {"hidden": True, "opacity": 1.0},
+    {"hidden": True, "opacity": 1},
+    {"texture": {"sw": 1.0, "path": "/x.png", "sh": 2.0}, "mat": "M"},
+    {"mat": "M", "texture": {"path": "/x.png", "sh": 2.0, "sw": 1.0}},
+    {"ifc": {"class": "IfcWall", "name": "W1"}, "layer": "Muros"},
+    {"back": {"color": [0.2, 0.3, 0.4], "texture": None}},
+    {"mat": "Ñandú ✓", "layer": "Ejes"},
+])
+def test_the_attribute_table_key_is_the_sorted_compact_json(attrs):
+    """Equal entries share a table slot by their key-sorted compact JSON
+    text — what json.dumps(sort_keys=True, separators=(",", ":")) gives,
+    which tells 1 from 1.0 and -0.0 from 0.0 and ignores key order."""
+    assert igz._attrs_key(attrs) == json.dumps(
+        attrs, sort_keys=True, separators=(",", ":"))
+
+
+def test_face_attrs_json_reads_every_kind_of_attribute():
+    from types import SimpleNamespace
+    attrs = {"color": (0.1, 0.2, 0.3), "texture": {"path": "/t.png"},
+             "layer": "Muros", "ifc": {"class": "IfcWall"}, "opacity": 0.5,
+             "hidden": 1, "mat": "Ladrillo",
+             "back": {"color": [0.5, 0.5, 0.5], "texture": {"path": "/b.png"}},
+             "selected": True}                        # not a stored attribute
+    entry = igz._face_attrs_json(SimpleNamespace(attrs=attrs))
+    assert entry == {"color": [0.1, 0.2, 0.3], "texture": {"path": "/t.png"},
+                     "layer": "Muros", "ifc": {"class": "IfcWall"},
+                     "opacity": 0.5, "hidden": True, "mat": "Ladrillo",
+                     "back": {"color": [0.5, 0.5, 0.5],
+                              "texture": {"path": "/b.png"}}}
+    assert entry["texture"] is not attrs["texture"]     # copies, not shares
+    assert entry["back"]["texture"] is not attrs["back"]["texture"]
+    assert igz._face_attrs_json(SimpleNamespace(attrs={"back": True,
+                                                       "mat": ""})) == \
+        {"back": True}
+    assert igz._face_attrs_json(SimpleNamespace()) == {}
+
+
 def test_faces_sharing_attributes_do_not_share_the_dicts(tmp_path, binary):
     scene = Scene()
     for i in range(3):

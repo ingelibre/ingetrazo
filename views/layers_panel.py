@@ -33,6 +33,7 @@ from PySide6.QtWidgets import (QAbstractItemView, QApplication, QDialog,
 from core import layers as L
 from core.i18n import tr
 from core.outliner import natural_key  # noqa: F401 — the Browser's too
+from views.icons import mark_pixmap
 from views.outliner import node_icon
 from views.side_tree import SideTree, StayOpenMenu, _HeaderButton
 
@@ -75,8 +76,7 @@ def _pencil_icon(on: bool) -> QIcon:
     from views.icons import pencil_glyph
     from views.theme import accent_color
     ink = QApplication.palette().text().color()
-    pm = QPixmap(18, 18)
-    pm.fill(Qt.transparent)
+    pm = mark_pixmap(18)
     p = QPainter(pm)
     p.setRenderHint(QPainter.Antialiasing)
     # The glyph's 16.5-unit box in the 48 canvas onto the 18 px cell.
@@ -114,8 +114,7 @@ def printer_icon(on: bool) -> QIcon:
     ink = QColor(QApplication.palette().text().color())
     if not on:
         ink.setAlpha(110)
-    pm = QPixmap(18, 18)
-    pm.fill(Qt.transparent)
+    pm = mark_pixmap(18)
     p = QPainter(pm)
     p.setRenderHint(QPainter.Antialiasing)
     pen = QPen(ink, 1.2)
@@ -134,15 +133,62 @@ def printer_icon(on: bool) -> QIcon:
     return QIcon(pm)
 
 
-def swatch_icon(rgb) -> QIcon:
-    pm = QPixmap(18, 18)
-    pm.fill(Qt.transparent)
+def swatch_icon(rgba) -> QIcon:
+    """A layer colour swatch.
+
+    Opaque colours keep the plain 0.5.11 tile. A translucent colour is
+    split diagonally: opaque below the diagonal, its real alpha over a
+    checkerboard above it. This makes colour alpha visible without
+    confusing it with the separate layer-opacity column.
+    """
+    rgb = tuple(rgba[:3])
+    alpha = (min(1.0, max(0.0, float(rgba[3])))
+             if len(rgba) > 3 else 1.0)
+    pm = mark_pixmap(18)
     p = QPainter(pm)
     p.setRenderHint(QPainter.Antialiasing)
     from PySide6.QtWidgets import QApplication
-    p.setPen(QPen(QApplication.palette().text().color(), 1.0))
-    p.setBrush(QColor.fromRgbF(*rgb[:3]))
-    p.drawRoundedRect(QRectF(2.5, 3.5, 13, 11), 2, 2)
+    ink = QApplication.palette().text().color()
+    box = QRectF(2.5, 3.5, 13, 11)
+    if alpha >= 0.99995:
+        p.setPen(QPen(ink, 1.0))
+        p.setBrush(QColor.fromRgbF(*rgb))
+        p.drawRoundedRect(box, 2, 2)
+        p.end()
+        return QIcon(pm)
+
+    from PySide6.QtGui import QPainterPath
+    rounded = QPainterPath()
+    rounded.addRoundedRect(box, 2, 2)
+    p.setPen(Qt.NoPen)
+    p.setBrush(QColor.fromRgbF(*rgb))
+    p.drawPath(rounded)                         # opaque lower-right half
+
+    translucent = QPainterPath()
+    translucent.moveTo(box.topLeft())
+    translucent.lineTo(box.topRight())
+    translucent.lineTo(box.bottomLeft())
+    translucent.closeSubpath()
+    p.setClipPath(rounded.intersected(translucent))
+    p.fillRect(box, QColor(255, 255, 255))
+    cell = 3.0
+    dark = QColor(190, 190, 190)
+    y = box.top()
+    row = 0
+    while y < box.bottom():
+        x = box.left() + (cell if row % 2 else 0.0)
+        while x < box.right():
+            p.fillRect(QRectF(x, y, min(cell, box.right() - x),
+                              min(cell, box.bottom() - y)), dark)
+            x += 2 * cell
+        y += cell
+        row += 1
+    p.fillRect(box, QColor.fromRgbF(*rgb, alpha))
+    p.setClipping(False)
+    p.setPen(QPen(ink, 1.0))
+    p.setBrush(Qt.NoBrush)
+    p.drawLine(box.bottomLeft(), box.topRight())
+    p.drawRoundedRect(box, 2, 2)
     p.end()
     return QIcon(pm)
 
@@ -170,7 +216,7 @@ def layer_swatch(ly) -> QIcon:
     crossed by a red slash from the top-left corner to the bottom-right —
     the usual «none» mark."""
     if ly is None or ly.color is not None or ly.name != L.DEFAULT_LAYER:
-        return swatch_icon(L.layer_color(ly))
+        return swatch_icon(L.layer_rgba(ly))
     return none_swatch()
 
 
@@ -180,8 +226,7 @@ def none_swatch() -> QIcon:
     from PySide6.QtGui import QPainterPath
     from PySide6.QtWidgets import QApplication
     pal = QApplication.palette()
-    pm = QPixmap(18, 18)
-    pm.fill(Qt.transparent)
+    pm = mark_pixmap(18)
     p = QPainter(pm)
     p.setRenderHint(QPainter.Antialiasing)
     box = QRectF(2.5, 3.5, 13, 11)
@@ -329,12 +374,8 @@ def hatch_icon(key, ground=None, ink=None, angle: float = 0.0,
         return none_swatch()
     from PySide6.QtGui import QPainterPath
     from views.hatch_paint import paint_hatch
-    app = QApplication.instance()
-    dpr = app.devicePixelRatio() if app is not None else 1.0
     pal = QApplication.palette()
-    pm = QPixmap(int(18 * dpr), int(18 * dpr))
-    pm.setDevicePixelRatio(dpr)
-    pm.fill(Qt.transparent)
+    pm = mark_pixmap(18)
     p = QPainter(pm)
     p.setRenderHint(QPainter.Antialiasing)
     box = QPainterPath()
@@ -2859,7 +2900,7 @@ class LayersPanel(QWidget):
 
         self._count_timer = QTimer(self)
         self._count_timer.setSingleShot(True)
-        self._count_timer.timeout.connect(self.update_counts)
+        self._count_timer.timeout.connect(self._counts_when_still)
         # Back in the drawing, the rows picked here let go: a highlighted
         # row left behind reads as a layer still being worked on.
         QApplication.instance().focusChanged.connect(self._on_focus_changed)
@@ -2911,15 +2952,20 @@ class LayersPanel(QWidget):
             self._retheming = False
 
     def retheme(self) -> None:
-        from views.icons import tool_icon
         self._header_icons()
+        self._bar_icons()
+        self.refresh()
+
+    def _bar_icons(self) -> None:
+        """The buttons above the list, drawn in the palette's ink and the
+        accent: again after a theme or an accent change."""
+        from views.icons import tool_icon
         self.add_layer_btn.setIcon(add_icon(KIND_LAYER))
         self.add_folder_btn.setIcon(add_icon(KIND_FOLDER))
         self.color_by_layer.setIcon(tool_icon("layers_colour"))
         self.more_btn.setIcon(tool_icon("layers_templates"))
         self._show_filter_state()
         self._update_expand_button()
-        self.refresh()
 
     @staticmethod
     def _tool_button(icon, tip: str, slot) -> QToolButton:
@@ -3029,8 +3075,12 @@ class LayersPanel(QWidget):
 
     def refresh_icons(self) -> None:
         """Repaint the marks drawn in the palette's ink and accent after the
-        theme or accent changes: the header's and every row's (#1086)."""
+        theme or accent changes: the bar's buttons, the header's and every
+        row's (#1086). Without the bar, a new accent left «Add layer», «Add
+        folder», «Colour by layer» and «Templates» in the old one until the
+        app was opened again."""
         from views.layers_toolbar import isolate_icon
+        self._bar_icons()
         hi = self.tree.headerItem()
         hi.setIcon(COL_ACTIVE, _pencil_icon(True))
         hi.setIcon(COL_EYE, node_icon("eye"))
@@ -3316,6 +3366,12 @@ class LayersPanel(QWidget):
         item.setText(COL_COUNT, str(n))
         item.setData(COL_COUNT, Qt.UserRole + 1, n)
         item.setTextAlignment(COL_COUNT, Qt.AlignRight | Qt.AlignVCenter)
+
+    def _counts_when_still(self) -> None:
+        from views.viewport import wait_for_still_view
+        if wait_for_still_view(getattr(self._window, "viewport", None),
+                               self._count_timer):
+            self.update_counts()
 
     def update_counts(self) -> None:
         """How many entities carry each layer — faces, edges, objects and
@@ -4246,21 +4302,35 @@ class LayersPanel(QWidget):
         layers = [scene.layer(n) for n in names if scene.layer(n)]
         if not layers:
             return
-        color = get_color(QColor.fromRgbF(*L.layer_color(layers[0])), self,
-                          tr("Layer colour"))
+        from PySide6.QtWidgets import QColorDialog
+        color = get_color(
+            QColor.fromRgbF(*L.layer_rgba(layers[0])), self,
+            tr("Layer colour"),
+            options=QColorDialog.ColorDialogOption.ShowAlphaChannel)
         if not color.isValid():
             return
-        self.set_color(names, (color.redF(), color.greenF(), color.blueF()))
+        self.set_color(names, (color.redF(), color.greenF(), color.blueF(),
+                               color.alphaF()))
 
-    def set_color(self, names, rgb) -> None:
-        """The colour of the layers ``names`` (``None``: automatic)."""
+    def set_color(self, names, rgba) -> None:
+        """The colour of the layers ``names`` (``None``: automatic).
+
+        Opaque picks stay RGB on disk for compact backwards compatibility;
+        only an actually translucent pick carries the optional alpha.
+        """
         names = [names] if isinstance(names, str) else list(names)
         scene = self._scene()
+        color = None
+        if rgba:
+            values = tuple(min(1.0, max(0.0, float(c))) for c in rgba[:4])
+            if len(values) >= 3:
+                color = values[:3]
+                if len(values) > 3 and values[3] < 0.99995:
+                    color += (values[3],)
         for name in names:
             ly = scene.layer(name)
             if ly is not None:
-                ly.color = (tuple(float(c) for c in rgb[:3]) if rgb
-                            else None)
+                ly.color = color
         self._dirty_paint()
         self._touch()
 

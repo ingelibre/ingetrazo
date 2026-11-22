@@ -69,6 +69,9 @@ def action_key(action: QAction) -> str:
     name = action.objectName()
     if name:
         return name
+    source = action.property("source_text")
+    if source:
+        return "text:" + _plain(source)
     return _text_key(action.text(), current_language())
 
 
@@ -388,15 +391,33 @@ class ShortcutsPanel(QWidget):
         reset_all.clicked.connect(self._on_reset_all)
         foot.addWidget(reset_all)
         lay.addLayout(foot)
-        self._actions = collect_actions(window)
+        self.reload()
+
+    # ---- list -----------------------------------------------------------------
+    def reload(self) -> None:
+        """Re-collect the window's actions: extensions add and remove
+        some after this page was built. The picked row stays picked (Show
+        shortcut picks one before the dialog is shown)."""
+        _row, picked = self._current() if hasattr(self, "_actions") \
+            else (None, None)
+        self._actions = collect_actions(self._window)
         # «Selected», «Last» and «All» say little alone: each row also says
         # where its command lives (#1107). Imported here because
         # views/command_search.py imports this module.
         from views.command_search import menu_paths
-        self._paths = menu_paths(window)
+        self._paths = menu_paths(self._window)
         self._fill()
+        if picked is not None:
+            for i in range(self._tree.topLevelItemCount()):
+                row = self._tree.topLevelItem(i)
+                if row.data(0, Qt.UserRole) is picked and not row.isHidden():
+                    self._tree.setCurrentItem(row)
+                    break
 
-    # ---- list -----------------------------------------------------------------
+    def showEvent(self, event) -> None:
+        self.reload()
+        super().showEvent(event)
+
     def _fill(self) -> None:
         self._tree.clear()
         for act in self._actions:
@@ -450,6 +471,7 @@ class ShortcutsPanel(QWidget):
     def assign(self, act: QAction, seqs: list, ask: bool = True) -> bool:
         """Give ``act`` these keys, taking them from any other action that
         holds them (after asking) — two actions on one key both go dead."""
+        self._actions = collect_actions(self._window)
         wanted = {s.toString(QKeySequence.PortableText) for s in seqs}
         clash = [a for a in self._actions if a is not act and wanted &
                  {s.toString(QKeySequence.PortableText) for s in a.shortcuts()}]

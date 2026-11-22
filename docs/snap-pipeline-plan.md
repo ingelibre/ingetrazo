@@ -44,7 +44,7 @@ the mixing, so that (a) there is **one** code path that runs inference, and
   `QtGui` and `core.snap`; the two post-processors add `core.axes` and
   `logging` **lazily**, inside the method (step 4), so the no-drawing claim
   still holds.
-- `views/viewport.py`: event routing, drawing, and a **bridge** of delegating
+- `views/viewport/` (one mixin per job): event routing, drawing, and a **bridge** of delegating
   properties. The reference state is no longer declared in `__init__`, and
   `compute_snap` is no longer imported.
 
@@ -110,7 +110,7 @@ Deviations from the original sketch, recorded so nobody "fixes" them back:
 ### One code path, as intended
 
 `compute_snap(` has exactly **one** production call site now:
-`core/inference.py::InferenceEngine.snap`. `views/viewport.py` mentions it only
+`core/inference.py::InferenceEngine.snap`. The `views/viewport/` package mentions it only
 in prose. Re-verify with:
 
     grep -rn 'compute_snap(' --include='*.py'

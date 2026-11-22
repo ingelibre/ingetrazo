@@ -27,6 +27,10 @@ if sys.platform == "win32":
     # a command back wrote its traceback into the developer's real
     # %LOCALAPPDATA%\IngeTrazo\ingetrazo-errors.log (ronda Windows 0.5.9).
     os.environ["LOCALAPPDATA"] = _data_dir
+# «My Library» (core.user_library) reads the developer's own folders of
+# components — Documents\IngeTrazo\Components by default. Every window the
+# suite builds reads an empty one of its own instead.
+os.environ["INGETRAZO_USER_LIBRARY"] = os.path.join(_data_dir, "my-library")
 
 # Windows: the offscreen platform has NO font database there (fontconfig
 # finds the fonts on Linux; on Windows nothing looks), so every glyph drew
@@ -82,6 +86,11 @@ _settings_dir = tempfile.mkdtemp(prefix="ingetrazo-tests-settings-")
 QSettings.setDefaultFormat(QSettings.IniFormat)
 for scope in (QSettings.UserScope, QSettings.SystemScope):
     QSettings.setPath(QSettings.IniFormat, scope, _settings_dir)
+
+# The Components tray keeps the user's categories in a file of its own; the
+# suite gets one that is thrown away with it, never the developer's real one.
+os.environ.setdefault("INGETRAZO_CATEGORIES_DB",
+                      os.path.join(_settings_dir, "component_categories.sqlite"))
 
 
 import pytest  # noqa: E402

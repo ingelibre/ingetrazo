@@ -330,3 +330,34 @@ def test_the_soft_shadow_level_is_part_of_the_kept_frame():
     finally:
         w._saved_version = w.viewport.scene.version
         w.close()
+
+
+# ---- A drag's previews go over the kept model (night of 18-11) -------------
+
+def test_a_drag_preview_over_the_kept_model_is_the_whole_frame(win,
+                                                               monkeypatch):
+    """A Move of a group draws its scratch copy at the offset; the model
+    around it does not change, so the kept picture is restored and the
+    copy drawn over it — and that is what a whole frame draws."""
+    w, vp = win
+    reused = []
+    real = type(vp)._frame_cache_restore
+    monkeypatch.setattr(type(vp), "_frame_cache_restore",
+                        lambda self, *a: reused.append(real(self, *a))
+                        or reused[-1])
+    vp.camera.set_view("iso")
+    vp.camera.fit_to(V(-7, -7, -1), V(7, 7, 4))
+    g = _copies(vp.scene)[1]
+    vp.begin_groups_preview([g])
+    try:
+        frames = 0
+        for k in range(1, 5):
+            vp.set_groups_preview_offset(V(0.4 * k, 0.25 * k, 0.1 * k))
+            whole = _frame(vp, False)
+            _frame(vp, True)
+            got = _frame(vp, True)
+            assert _same(got, whole), k
+            frames += bool(reused and reused[-1])
+        assert frames >= 3, "the model was drawn again on every move"
+    finally:
+        vp.end_groups_preview()

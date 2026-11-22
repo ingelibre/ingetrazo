@@ -58,3 +58,55 @@ def test_vector_culling_is_the_walk(monkeypatch):
     finally:
         win._saved_version = win.viewport.scene.version
         win.close()
+
+
+def test_texture_runs_keep_their_span_arrays_between_frames(monkeypatch):
+    """A texture run's span lists are made once per upload (night of
+    19-11): frame after frame the culled spans are what lists made anew
+    give, and the arrays behind them are built once — not every frame."""
+    from views.main_window import MainWindow
+    win = MainWindow()
+    try:
+        vp = win.viewport
+        rng = random.Random(11)
+        runs = []
+        for _ in range(40):                   # more runs than the old bound
+            sp = _spans(rng, rng.randrange(64, 300))
+            runs.append([(bb, s, n, rng.random() < 0.3) for bb, s, n in sp])
+        built = []
+        real = vp._bounding_spheres
+
+        def spy(lo, hi):
+            built.append(1)
+            return real(lo, hi)
+
+        monkeypatch.setattr(vp, "_bounding_spheres", spy)
+        for frame in range(6):
+            planes = _planes(rng)
+            fading = frame % 2 == 1
+            for parts in runs:
+                got = vp._tex_run_spans(parts, planes, fading)
+                fresh = [list(p) for p in parts]  # a new list: no memo
+                vp._tex_span_lists = {}
+                monkeypatch.setattr(vpm, "_SPAN_VECTOR_MIN", 10 ** 9)
+                want = vp._tex_run_spans(fresh, planes, fading)
+                monkeypatch.setattr(vpm, "_SPAN_VECTOR_MIN", 64)
+                assert got == want
+            if frame == 1:
+                after_two = len(built)
+        vp._tex_span_lists = {}
+        # Only the first two frames (plain, then fading) built arrays; the
+        # memo was emptied each check above, so rebuild once more to see it
+        # hold across frames without the check in between.
+        built.clear()
+        vp._span_arrays = {}
+        for frame in range(5):
+            planes = _planes(rng)
+            for parts in runs:
+                vp._tex_run_spans(parts, planes, True)
+        n_lists = sum(bool([1 for *_x, s in p if s]) + bool([1 for *_x, s in p if not s]) for p in runs)
+        assert len(built) <= n_lists, (len(built), n_lists)
+        assert after_two > 0
+    finally:
+        win._saved_version = win.viewport.scene.version
+        win.close()

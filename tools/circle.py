@@ -51,7 +51,8 @@ def busy_plane(scene, new_points):
     return None
 from core.i18n import tr
 from core.axes import plane_axes  # drawing axes (#44)
-from tools.base import AxisMagnet, PlaneLock, Tool, ToolContext
+from tools.base import (AxisMagnet, PlaneLock, Tool, ToolContext,
+                        retype_open)
 
 
 class _RadialTool(AxisMagnet, PlaneLock, Tool):
@@ -63,11 +64,14 @@ class _RadialTool(AxisMagnet, PlaneLock, Tool):
     _guide_capable = False
 
     def vcb_caption(self) -> str:
-        """'Sides' before the centre, 'Radius' after.
+        """'Sides' before the centre, 'Radius' after — and right after
+        a shape is drawn, while a typed number still resizes it (#414).
 
         Returns the English source label; the status bar translates it.
         """
-        return "Radius" if self.start_point is not None else "Sides"
+        if self.start_point is not None or self._radius_retype_open():
+            return "Radius"
+        return "Sides"
 
     def __init__(self) -> None:
         self.start_point: QVector3D | None = None   # centre (also drives work plane)
@@ -92,6 +96,7 @@ class _RadialTool(AxisMagnet, PlaneLock, Tool):
     def on_click(self, ctx: ToolContext) -> None:
         self.note_plane(ctx.viewport)
         if self.start_point is None:
+            self._last = None        # a new centre ends the retype window
             self.start_point = ctx.world
             if self.work_plane is None:
                 self.work_plane = self.locked_work_plane(ctx.world)
@@ -131,28 +136,55 @@ class _RadialTool(AxisMagnet, PlaneLock, Tool):
         stack = getattr(getattr(viewport, "history", None), "undo_stack", None)
         if (self.start_point is None and last is not None and stack
                 and stack[-1] is last[0]):
-            _cmd, center, rim, u, v = last
-            viewport.history.undo()
-            d = rim - center
-            r = math.hypot(QVector3D.dotProduct(d, u), QVector3D.dotProduct(d, v))
-            a0 = math.atan2(QVector3D.dotProduct(d, v), QVector3D.dotProduct(d, u))
-            pts = [center + (u * math.cos(a0 + 2.0 * math.pi * k / n)
-                             + v * math.sin(a0 + 2.0 * math.pi * k / n)) * r
-                   for k in range(n)]
-            self._commit(viewport, pts, axes=(u, v), center=center)
+            self._redraw_last(viewport, n, None)
         viewport.update()
         return True
 
+    def _radius_retype_open(self) -> bool:
+        """Whether a plain number typed now is the NEW RADIUS of the shape
+        just drawn (#414): idle, and that shape still the last thing done.
+        Outside that window an idle number is the side count, as before."""
+        last = self._last
+        return (self.start_point is None and last is not None
+                and retype_open(self._viewport, last[0]))
+
+    def _redraw_last(self, viewport, n: int, radius: float | None) -> None:
+        """Undo the shape just drawn and draw it again in place — same
+        centre, plane and vertex direction — with ``n`` sides and, if
+        given, the new ``radius``. One undo step however many times."""
+        _cmd, center, rim, u, v = self._last
+        d = rim - center
+        r = math.hypot(QVector3D.dotProduct(d, u), QVector3D.dotProduct(d, v))
+        if radius is not None:
+            r = radius
+        a0 = math.atan2(QVector3D.dotProduct(d, v), QVector3D.dotProduct(d, u))
+        pts = [center + (u * math.cos(a0 + 2.0 * math.pi * k / n)
+                         + v * math.sin(a0 + 2.0 * math.pi * k / n)) * r
+               for k in range(n)]
+        viewport.history.undo()
+        self._commit(viewport, pts, axes=(u, v), center=center)
+
     def value_is_unitless(self) -> bool:
         """Before the centre the typed number is a side COUNT (#176);
-        after it, the radius, a length in the document's unit."""
-        return self.start_point is None
+        after it, the radius, a length in the document's unit. Right after
+        a shape is drawn it is that shape's new radius (#414), a length
+        too; «24s» still sets the sides."""
+        return self.start_point is None and not self._radius_retype_open()
 
     def on_value(self, viewport, value) -> bool:
         """Before the centre is placed, a typed number sets the **side count**
-        (type sides + Enter); after it, the number is the **radius**."""
+        (type sides + Enter); after it, the number is the **radius**.
+
+        Right after a shape is drawn, the number is its new radius instead:
+        the shape is redrawn in place (the hot retype of #414)."""
         if isinstance(value, tuple):
             return False
+        if self._radius_retype_open():
+            if value <= 0.0:
+                return False
+            self._redraw_last(viewport, self.sides, value)
+            viewport.update()
+            return True
         if self.start_point is None:
             n = int(round(value))
             if n >= 3:
@@ -177,6 +209,7 @@ class _RadialTool(AxisMagnet, PlaneLock, Tool):
 
     def on_cancel(self, viewport) -> None:
         self._reset()
+        self._last = None            # Esc closes the retype window
         viewport.update()
 
     # ---- Preview ------------------------------------------------------------
@@ -296,8 +329,10 @@ class _RadialTool(AxisMagnet, PlaneLock, Tool):
         cmd = build_add_edges(
             viewport.scene, segments, detect_faces=False, extra=extra)
         viewport.history.execute(cmd)
-        # What «Ns» typed next needs to rebuild this shape in place.
+        # What «Ns» or a new radius typed next needs to rebuild this shape
+        # in place.
         self._last = (cmd, QVector3D(center), QVector3D(pts[0]), *axes)
+        self._viewport = viewport
         self._reset()
         viewport.update()
 

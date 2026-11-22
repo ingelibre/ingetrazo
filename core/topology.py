@@ -669,22 +669,51 @@ def orphaned_edges_at(
     elsewhere (only those touching the operation's vertices are considered).
     """
     vkeys = {_key(v) for v in vertices}
-    key = KeyMemo()
+    # A corner's key once per vertex (its position's key), read in place:
+    # the position lists and a memo call per corner were ~0.12 s a push in
+    # a 9 674-face group of the Plaza (19-11).
+    memo: dict = {}
+
+    def key(v):
+        hit = memo.get(id(v))
+        if hit is None:
+            hit = memo[id(v)] = (_key(v.position), v)
+        return hit[0]
+
+    get = memo.get
     face_edges: set = set()
     for f in faces:
-        loops = [[key(p) for p in lp] for lp in (f.vertices, *f.holes)]
+        rings = (f.loop, *f.hole_loops)
         # Only an edge with an end in ``vkeys`` is asked about, and a face
         # can only carry it if it has that corner: the others are skipped
         # (exact — every face was walked before).
-        if not any(k in vkeys for lk in loops for k in lk):
+        hit = False
+        for lp in rings:
+            for v in lp:
+                k = get(id(v))
+                if k is None:
+                    k = memo[id(v)] = (_key(v.position), v)
+                if k[0] in vkeys:
+                    hit = True
+                    break
+            if hit:
+                break
+        if not hit:
             continue
-        for lk in loops:
+        for lp in rings:
+            lk = [key(v) for v in lp]
             n = len(lk)
             face_edges.update(frozenset((lk[i], lk[(i + 1) % n]))
                               for i in range(n))
     out: list[Edge] = []
     for e in edges:
-        ka, kb = key(e.a), key(e.b)
+        a = get(id(e.v0))
+        if a is None:
+            a = memo[id(e.v0)] = (_key(e.v0.position), e.v0)
+        b = get(id(e.v1))
+        if b is None:
+            b = memo[id(e.v1)] = (_key(e.v1.position), e.v1)
+        ka, kb = a[0], b[0]
         if (ka in vkeys or kb in vkeys) and frozenset((ka, kb)) not in face_edges:
             out.append(e)
     return out
@@ -817,19 +846,43 @@ def classify_push_edge(
     """
     if memo is None:
         memo = {}
-    split = memo.get("split")
-    if split is None or split[0] is not face:
-        fn = face.normal()
-        coplanar, others = [], []
-        for g in faces:
-            if g is face:
-                continue
-            (coplanar if _faces_coplanar(fn, g.normal()) else others).append(g)
-        split = memo["split"] = (face, coplanar, others)
-        memo["edges"] = {}
-    _, coplanar, others = split
-    edges = memo["edges"]
     eset = frozenset((_key(a), _key(b)))
+    # A segment on a face's boundary lies inside the face's box grown by the
+    # test's tolerances (and a face listing the edge has both ends among its
+    # corners): a face whose box leaves out either end is not asked. Every
+    # face of the model was, for every side edge — ~115 000 boundary walks
+    # for one push inside a 9 674-face group of the Plaza (night of 18-11).
+    # The boxes are one NumPy pass, and only the faces left get their
+    # normal read to tell coplanar from not: the normal of every face was
+    # ~0.1 s a push there (19-11). Same answers, in the same order.
+    boxes = memo.get("boxes")
+    if boxes is None or boxes[0] is not face:
+        boxes = memo["boxes"] = (face,) + _face_boxes(faces)
+        memo["edges"] = {}
+        memo["coplanar"] = {}
+    _, flist, lo, hi, bare = boxes
+    edges = memo["edges"]
+    flat = memo["coplanar"]
+    if flist:
+        import numpy as np
+        p = np.array([[a.x(), a.y(), a.z()], [b.x(), b.y(), b.z()]])
+        inside = ((lo <= p[0]).all(axis=1) & (p[0] <= hi).all(axis=1)
+                  & (lo <= p[1]).all(axis=1) & (p[1] <= hi).all(axis=1))
+        near = np.flatnonzero(inside | bare).tolist()
+    else:
+        near = []
+    fn = None
+    coplanar, others = [], []
+    for i in near:
+        g = flist[i]
+        if g is face:
+            continue
+        c = flat.get(g)
+        if c is None:
+            if fn is None:
+                fn = face.normal()
+            c = flat[g] = _faces_coplanar(fn, g.normal())
+        (coplanar if c else others).append(g)
     for g in coplanar:
         all_edges = edges.get(g)
         if all_edges is None:
@@ -840,6 +893,44 @@ def classify_push_edge(
         if _segment_on_face_boundary(a, b, s):
             return ("perp", s)
     return ("free", None)
+
+
+def corner_boxes(faces):
+    """``(faces, lo, hi, bare)``: the list of ``faces`` and each one's
+    outer corners' exact box as (N, 3) arrays — the very min and max of
+    its corners — with ``bare`` marking the faces with no corner (their
+    rows are zeros). One flat pass, for the box filters that walked every
+    face's corners in Python."""
+    import numpy as np
+    flist = list(faces)
+    cnt = np.fromiter((len(g.loop) for g in flist), dtype=np.int64,
+                      count=len(flist))
+    total = int(cnt.sum())
+    pts = np.fromiter((c for g in flist for v in g.loop
+                       for c in v.position.toTuple()),
+                      dtype=np.float64, count=3 * total).reshape(-1, 3)
+    n = len(flist)
+    lo = np.zeros((n, 3))
+    hi = np.zeros((n, 3))
+    bare = cnt == 0
+    has = np.flatnonzero(~bare)
+    if len(has):
+        starts = np.concatenate([[0], np.cumsum(cnt)[:-1]])[has]
+        lo[has] = np.minimum.reduceat(pts, starts, axis=0)
+        hi[has] = np.maximum.reduceat(pts, starts, axis=0)
+    return flist, lo, hi, bare
+
+
+def _face_boxes(faces):
+    """``(faces, lo, hi, bare)`` for :func:`classify_push_edge`: each face's
+    corner box grown by 1 mm plus a thousandth of its diagonal, and which
+    faces have no corner (always asked)."""
+    import numpy as np
+    flist, lo, hi, bare = corner_boxes(faces)
+    d = hi - lo
+    m = (1e-3 + 1e-3 * np.sqrt((d * d).sum(axis=1)))[:, None]
+    m[bare] = 0.0
+    return flist, lo - m, hi + m, bare
 
 
 def face_is_bordered(face: Face, faces: Iterable[Face]) -> bool:
@@ -1695,11 +1786,13 @@ def sweep_tjunctions(mesh, seedkeys=None) -> None:
         edges = list(mesh.edges)
         if not verts or not edges:
             break
-        vpos = np.array([[v.position.x(), v.position.y(), v.position.z()]
-                         for v in verts])
+        # Flat passes (the lists of rows were ~3× slower; twice a push).
+        vpos = np.fromiter((c for v in verts for c in v.position.toTuple()),
+                           dtype=np.float64,
+                           count=3 * len(verts)).reshape(-1, 3)
         vslot = {id(v): i for i, v in enumerate(verts)}
-        ends = np.array([(vslot[id(e.v0)], vslot[id(e.v1)]) for e in edges],
-                        dtype=np.int64)
+        ends = np.fromiter((vslot[id(v)] for e in edges for v in (e.v0, e.v1)),
+                           dtype=np.int64, count=2 * len(edges)).reshape(-1, 2)
         va, vb = vpos[ends[:, 0]], vpos[ends[:, 1]]
         elo, ehi = np.minimum(va, vb), np.maximum(va, vb)
         if seed_lo is None:
@@ -1725,7 +1818,7 @@ def sweep_tjunctions(mesh, seedkeys=None) -> None:
         # ``mesh.vertices`` in order, and which vertex splits first must not
         # depend on the x-sort. ``len(verts)`` is the "none" sentinel so
         # ``np.minimum.at`` can reduce into it.
-        best = np.full(len(edges), len(verts), dtype=np.int64)
+        hit_e, hit_v, hit_t = [], [], []
         cum = np.cumsum(counts)
         p0 = 0
         while p0 < len(pick):
@@ -1765,14 +1858,83 @@ def sweep_tjunctions(mesh, seedkeys=None) -> None:
             d = rel - seg * t[:, None]
             ok &= np.einsum("ij,ij->i", d, d) < tol2
             if ok.any():
-                np.minimum.at(best, eidx[ok], vidx[ok])
-        hits = np.flatnonzero(best < len(verts))
-        if not len(hits):
+                hit_e.append(eidx[ok])
+                hit_v.append(vidx[ok])
+                hit_t.append(t[ok])
+        if not hit_e:
             break
-        for i in hits:
-            # Only the split edge is removed and only existing vertices are
-            # reused, so the sweep's arrays stay valid across these splits.
-            mesh.split_edge_at(edges[int(i)], verts[int(best[int(i)])])
+        he = np.concatenate(hit_e)
+        hv = np.concatenate(hit_v)
+        ht = np.concatenate(hit_t)
+        # Split each edge at ALL the vertices lying on it in this one round,
+        # walking from its first end. One split per edge per round made a
+        # long edge run past N vertices (a stair stringer's edge beside a
+        # finely triangulated tread line) cost N full rounds — the arrays
+        # rebuilt each time — which hung the import of real stair models.
+        # Sorting by edge then by position along it keeps the order
+        # deterministic; each split hands back the far sub-edge, which is
+        # where the next vertex lies.
+        o = np.lexsort((hv, ht, he))
+        he, hv, ht = he[o], hv[o], ht[o]
+        work = []
+
+        def split_chain(e, vis):
+            last = None
+            for vi in vis:
+                if vi == last:
+                    continue             # the same vertex reached twice
+                if e not in e.v0.edges:
+                    break                # already split by another chain
+                rec = mesh.split_edge_at(e, verts[vi])
+                for k in ("e0", "e1"):
+                    if rec[k + "_new"]:
+                        work.append(rec[k])
+                e, last = rec["e1"], vi
+
+        cur, run = None, []
+        for i in range(len(he)):
+            ei = int(he[i])
+            if ei != cur:
+                if run:
+                    split_chain(edges[cur], run)
+                cur, run = ei, []
+            run.append(int(hv[i]))
+        if run:
+            split_chain(edges[cur], run)
+        # A split moves the edge's line by up to the weld tolerance, which can
+        # bring the next vertex of a nearly straight chain (a stringer edge
+        # beside its tread lines) within reach of the new sub-edge. Check the
+        # new sub-edges against the vertices right away — one small vectorised
+        # test each — instead of paying a whole round (every array rebuilt)
+        # per vertex of the chain. Vertices are never added, so ``vpos`` and
+        # ``vslot`` stay valid.
+        guard = 0
+        while work and guard < 100000:
+            guard += 1
+            e = work.pop()
+            if e not in e.v0.edges:
+                continue                 # split again since: not an edge any more
+            ia, ib = vslot.get(id(e.v0)), vslot.get(id(e.v1))
+            if ia is None or ib is None:
+                continue
+            a, b = vpos[ia], vpos[ib]
+            seg = b - a
+            l2 = float(seg @ seg)
+            if l2 <= tol2:
+                continue
+            lo3, hi3 = np.minimum(a, b) - _STITCH_TOL, np.maximum(a, b) + _STITCH_TOL
+            cand = np.flatnonzero(((vpos >= lo3) & (vpos <= hi3)).all(axis=1))
+            cand = cand[(cand != ia) & (cand != ib)]
+            if not len(cand):
+                continue
+            rel = vpos[cand] - a
+            t = rel @ seg / l2
+            tol_t = _STITCH_TOL / np.sqrt(l2)
+            d = rel - np.outer(t, seg)
+            ok = (t > tol_t) & (t < 1.0 - tol_t) & (np.einsum("ij,ij->i", d, d) < tol2)
+            if ok.any():
+                sel = np.lexsort((cand[ok], t[ok]))
+                split_chain(e, [int(c) for c in cand[ok][sel]])
 
 
 def resolve_tjunctions(mesh, max_iter: int = 1000) -> None:

@@ -424,10 +424,17 @@ def run_transactional(viewport, code: str, scope: dict) -> dict:
     build_scope(viewport, scope)
     history = viewport.history
     out_buf, err_buf = io.StringIO(), io.StringIO()
+    scene = viewport.scene
+    version_before = scene.version
+    #: Version bumps the agent's own code made (an API call that reports a
+    #: change bumps it): those keep the document dirty even when the
+    #: snapshot finds nothing different.
+    code_bumps = [0]
 
     def mutate(_scene) -> None:
         old_out, old_err = sys.stdout, sys.stderr
         sys.stdout, sys.stderr = out_buf, err_buf
+        v_in = _scene.version
         try:
             try:
                 compiled = compile(code, "<ai>", "eval")
@@ -447,11 +454,17 @@ def run_transactional(viewport, code: str, scope: dict) -> dict:
             raise
         finally:
             sys.stdout, sys.stderr = old_out, old_err
+            code_bumps[0] = _scene.version - v_in
 
     cmd = SnapshotImport(mutate)
     saved_redo = list(history.redo_stack)
     history.execute(cmd)
-    error = history.last_error
+    # A refused command is rolled back but reported as last_rejected, not
+    # last_error. Only count it when cmd itself missed the undo stack: code
+    # may run a refused command of its own and still succeed.
+    committed = bool(history.undo_stack) and history.undo_stack[-1] is cmd
+    error = history.last_error or (
+        None if committed else history.last_rejected)
     changed = True
     if error is None:
         unchanged = not cmd.changed
@@ -460,6 +473,16 @@ def run_transactional(viewport, code: str, scope: dict) -> dict:
             history.undo_stack.pop()
             history.redo_stack[:] = saved_redo
             changed = False
+            # The command's own machinery bumped ``version`` (the snapshot
+            # command does on every run): nothing changed, so those bumps are
+            # view-only and ``content_version`` — what «unsaved changes»
+            # compares — stays put. Left as content, «x = 1» answered
+            # «changed: False» and still marked the document modified, and
+            # the agent's shutdown was then refused (0.6.3 modelling test,
+            # 20-11). ``version`` still moves on, so every cache refreshes.
+            machinery = scene.version - version_before - code_bumps[0]
+            if machinery > 0:
+                scene.view_version += machinery
     else:
         changed = False
     viewport.notify_scene_changed()
@@ -496,8 +519,8 @@ DEFAULT_MODELS = {
     "openrouter": "anthropic/claude-sonnet-5",
     "deepseek": "deepseek-chat",
     # Go mixes wire formats per model: GPT ids only answer on
-    # /v1/responses, Claude ids on /messages — Kimi speaks the plain
-    # chat/completions this layer sends.
+    # /v1/responses, Claude ids on /messages (wire_style routes them,
+    # PR #516) — Kimi speaks plain chat/completions, the tested default.
     "opencode": "kimi-k2.6",
     # A code model: llama3.2 (3B) wrote wall() for a cube and broke on
     # plain Python in Rafael's review 6 (#461).
@@ -534,11 +557,19 @@ _VISION_TAGS = ("llama-4", "scout", "maverick", "llava", "vision",
                 "mimo-v2", "longcat-2.0", "omen", "hy3", "hy4")
 
 
+#: OpenCode Go multiplexes several vendors; these model families are the
+#: multimodal ones (PR #516; matched by prefix on the model id, ONLY for
+#: that provider, so a "qwen"/"gpt" elsewhere is unaffected).
+_GO_VISION = ("claude", "gpt", "grok", "gemini", "qwen")
+
+
 def supports_vision(provider: str, model: str) -> bool:
     """Whether this provider+model pair can look at images."""
     if provider in VISION:
         return True
     m = (model or "").lower()
+    if provider == "opencode" and m.startswith(_GO_VISION):
+        return True
     return any(t in m for t in _VISION_TAGS)
 
 
@@ -623,6 +654,29 @@ def _session_id() -> str:
 EMPTY_TURN = "(respuesta vacía)"
 
 
+#: OpenCode Go serves each model family on its own wire format (PR #516,
+#: opencode.ai/docs/go): the OpenAI chat default covers DeepSeek, GLM,
+#: Kimi, MiMo, Hy, Space Bunny, LongCat and Step; Claude, Qwen and MiniMax
+#: speak the Anthropic Messages API, and Grok, GPT and Muse Spark the
+#: OpenAI Responses API. Before, only the chat ones answered on Go.
+_GO_ANTHROPIC = ("claude", "minimax", "qwen")
+_GO_RESPONSES = ("grok", "gpt", "muse-spark")
+
+
+def wire_style(provider: str, model: str) -> str:
+    """Which request/response shape a (provider, model) pair speaks:
+    ``"anthropic"``, ``"responses"`` or ``"openai"`` (chat/completions)."""
+    if provider == "anthropic":
+        return "anthropic"
+    if provider == "opencode":
+        m = (model or "").lower()
+        if m.startswith(_GO_ANTHROPIC):
+            return "anthropic"
+        if m.startswith(_GO_RESPONSES):
+            return "responses"
+    return "openai"
+
+
 def build_request(provider: str, model: str, api_key: str,
                   system: str, messages: list,
                   ollama_url: str = "http://localhost:11434",
@@ -634,7 +688,8 @@ def build_request(provider: str, model: str, api_key: str,
     "image_png_b64" / "image_b64"+"image_mime": optional}] — images ride
     only on user turns.
     """
-    if provider == "anthropic":
+    style = wire_style(provider, model)
+    if style == "anthropic":
         content_msgs = []
         for m in messages:
             # Anthropic rejects an empty text block with HTTP 400 («text
@@ -659,11 +714,44 @@ def build_request(provider: str, model: str, api_key: str,
             content_msgs.append({"role": m["role"], "content": blocks})
         payload = {"model": model, "max_tokens": max_tokens,
                    "system": system, "messages": content_msgs}
+        if provider == "opencode":
+            # Go's Anthropic-format endpoint reads the key as x-api-key;
+            # Bearer is kept too so either reading is satisfied.
+            return (_OPENAI_BASES["opencode"] + "/messages",
+                    {"Content-Type": "application/json",
+                     "User-Agent": USER_AGENT,
+                     "x-api-key": api_key,
+                     "Authorization": f"Bearer {api_key}",
+                     "anthropic-version": "2023-06-01",
+                     "x-opencode-session": session_id or _session_id()},
+                    json.dumps(payload).encode())
         return ("https://api.anthropic.com/v1/messages",
                 {"Content-Type": "application/json",
                  "User-Agent": USER_AGENT,
                  "x-api-key": api_key,
                  "anthropic-version": "2023-06-01"},
+                json.dumps(payload).encode())
+
+    if style == "responses":
+        input_items = []
+        for m in messages:
+            content: list = []
+            img, mime = _message_image(m)
+            if img:
+                content.append({"type": "input_image",
+                                "image_url": f"data:{mime};base64," + img})
+            content.append({
+                "type": "output_text" if m["role"] == "assistant"
+                else "input_text",
+                "text": m["text"]})
+            input_items.append({"role": m["role"], "content": content})
+        payload = {"model": model, "instructions": system,
+                   "input": input_items, "max_output_tokens": max_tokens}
+        return (_OPENAI_BASES["opencode"] + "/responses",
+                {"Content-Type": "application/json",
+                 "User-Agent": USER_AGENT,
+                 "Authorization": f"Bearer {api_key}",
+                 "x-opencode-session": session_id or _session_id()},
                 json.dumps(payload).encode())
 
     base = (_local_base(ollama_url) if provider == "ollama"
@@ -697,10 +785,31 @@ def build_request(provider: str, model: str, api_key: str,
             json.dumps(payload).encode())
 
 
-def parse_reply(provider: str, raw: bytes) -> str:
+def _parse_responses(data: dict) -> str:
+    """Text out of an OpenAI Responses payload (``output[].content[]``)."""
+    parts = []
+    for item in data.get("output", []) or []:
+        if item.get("type") != "message":
+            continue
+        for c in item.get("content", []) or []:
+            if c.get("type") in ("output_text", "text"):
+                parts.append(c.get("text", ""))
+    if not parts and isinstance(data.get("output_text"), str):
+        parts.append(data["output_text"])
+    if not parts and "error" in data:
+        raise ValueError(str(data)[:400])
+    return "".join(parts)
+
+
+def parse_reply(provider: str, raw: bytes, style: str | None = None) -> str:
+    """The reply text; ``style`` is :func:`wire_style` (from the provider
+    alone when not given, as before)."""
     data = json.loads(raw)
-    if provider == "anthropic":
+    style = style or ("anthropic" if provider == "anthropic" else "openai")
+    if style == "anthropic":
         return "".join(b.get("text", "") for b in data.get("content", []))
+    if style == "responses":
+        return _parse_responses(data)
     choices = data.get("choices") or []
     if not choices:
         raise ValueError(str(data)[:400])
@@ -768,8 +877,9 @@ def chat(provider: str, model: str, api_key: str, system: str,
     url, headers, payload = build_request(
         provider, model, api_key, system, messages, ollama_url, max_tokens,
         session_id)
-    return parse_reply(provider, _urlopen(url, headers, payload, timeout,
-                                          retries=retries, on_retry=on_retry))
+    raw = _urlopen(url, headers, payload, timeout,
+                   retries=retries, on_retry=on_retry)
+    return parse_reply(provider, raw, style=wire_style(provider, model))
 
 
 #: Substrings of model ids that are not chat models (speech, safety,

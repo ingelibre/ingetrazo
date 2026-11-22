@@ -158,12 +158,41 @@ class PlaneLock:
     #: plane while the sides were measured along X/Y).
     hover_plane: tuple | None = None
 
+    #: ``hover_plane`` as it stood when the first point went down: the
+    #: plane a shape started on a free point keeps (``start_plane``).
+    _start_hover_plane: tuple | None = None
+
     def note_plane(self, viewport) -> None:
         """Remember the plane the viewport just hit — call on every hover
         and click before using the point."""
+        # The plane the first point went down on is kept apart before the
+        # live one moves on. ``hover_plane`` follows every face the cursor
+        # crosses (#545: over a wall the shape lands on the wall), and the
+        # viewport reads the free shape's plane from it — so merely brushing
+        # a face, even the corner pixel of a box while acquiring its vertex,
+        # left that face's normal behind: the rectangle stood up on a
+        # vertical plane through its first corner once the cursor was back
+        # on the ground, and lost its «From point» (0.6.3 modelling test,
+        # 20-11). Frozen at the first hover after the click, not in the
+        # click itself, so a tool that sets the plane along with its start
+        # (the arc's fillet, ``_round_corner``) is kept as it set it.
+        if getattr(self, "start_point", None) is None:
+            self._start_hover_plane = None
+        elif self._start_hover_plane is None:
+            self._start_hover_plane = self.hover_plane
         plane = getattr(viewport, "_last_work_plane", None)
         if plane is not None:
             self.hover_plane = plane
+
+    def start_plane(self):
+        """The plane a shape started on a free point lives in: the one the
+        cursor showed when the first point went down (``note_plane``), not
+        the face it happens to be crossing now; ``hover_plane`` before the
+        first point, or when nothing was noted since."""
+        if (getattr(self, "start_point", None) is not None
+                and self._start_hover_plane is not None):
+            return self._start_hover_plane
+        return self.hover_plane
 
     def drawing_plane(self):
         """``(point, normal)`` the shape is laid out on: the captured or
@@ -516,6 +545,21 @@ def face_the_plane(corners, plane_normal):
     return list(corners)
 
 
+def retype_open(viewport, cmd) -> bool:
+    """Whether a hot retype may still redo ``cmd``: the command a tool
+    just committed is still the top of the undo stack.
+
+    The retype (type a new measurement right after finishing, #414) undoes
+    that command and commits it again with the new value, so the model
+    keeps ONE undo step however many times the number is retyped. Anything
+    done in between — an undo, another operation — closes the window,
+    because undoing then would take away the wrong thing."""
+    if cmd is None:
+        return False
+    stack = getattr(getattr(viewport, "history", None), "undo_stack", None)
+    return bool(stack) and stack[-1] is cmd
+
+
 @dataclass
 class ToolContext:
     """Bundle of data a tool needs to react to a viewport event."""
@@ -540,6 +584,8 @@ class Tool(ABC):
     #: which the tooltip and F3 already show beside it (Blender's
     #: descriptions). English; it goes through ``tr`` where it is shown.
     description: str | None = None
+    #: On macOS, Option is an alias for this tool's Ctrl copy toggle.
+    option_copies: bool = False
     #: Where a plugin tool's entry goes in the Extensions menu among the
     #: others: lower first, the same keeps the folder order. The Python
     #: Console, a tool for developers, goes after the model tools.

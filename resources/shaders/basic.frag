@@ -8,6 +8,10 @@ uniform int u_use_vcolor;
 // Uniform opacity of the current draw (1.0 = opaque pass). Translucent
 // material runs (.skp trans with useTrans) draw last with this < 1.
 uniform float u_opacity;
+// Styles can display materials as opaque without changing their paint.
+uniform int u_material_opaque;
+// Independent style overlay, applied only around model face passes.
+uniform float u_xray_opacity = 1.0;
 // 1 while drawing face-me billboards: a HARD alpha cut at 0.5 instead of
 // the Bayer dither below. Their mipmapped edge alpha would otherwise
 // render as stipple dots around the figure; the dither stays for scene
@@ -24,12 +28,25 @@ uniform float u_shade;
 // 0 = untouched.
 uniform float u_fade;
 uniform vec3 u_fade_color;
+// Linear distance fog along the camera's viewing axis. Start/end are absolute
+// model distances measured from the eye, so the fog follows the camera and
+// never depends on the scene bounds or the clipping-plane safety margin.
+uniform int u_fog_enable;
+uniform vec3 u_fog_eye;
+uniform vec3 u_fog_forward;
+uniform vec3 u_fog_color;
+uniform float u_fog_start;
+uniform float u_fog_end;
 // Sun shadows: the light's view-projection, its packed-depth map (unit 1),
 // how dark a shadowed fragment goes, and the depth-compare bias. Enabled
 // only around the geometry passes — sky, overlays and previews stay unlit.
 uniform int u_shadow_enable;
 uniform sampler2D u_shadow_map;
 uniform mat4 u_light_vp;
+// The face-me figures' shadow map (unit 2): same light matrix as the
+// model's, redrawn when the camera turns them (views/viewport/shadows.py).
+uniform sampler2D u_fig_shadow_map;
+uniform int u_fig_shadow_enable;
 uniform float u_shadow_dark;
 uniform float u_shadow_bias;
 // Soft sun shadows (#1281, Preferences): how fast the penumbra widens with
@@ -67,6 +84,8 @@ uniform float u_dash_px;
 in vec2 v_uv;
 in vec3 v_color;
 in vec3 v_world;
+// The display ground's half-space clips in basic.vert (gl_ClipDistance[7]).
+uniform int u_screen_image;
 in vec3 v_local;
 // Instanced component pass (#482): face colours and texture shades were
 // baked from the PROTOTYPE's normals against the fixed world light, so a
@@ -85,8 +104,8 @@ uniform int u_back_shade;
 out vec4 fragColor;
 
 // The stored depth of the shadow map at ``uv`` (packed in RGB).
-float shadow_depth(vec2 uv) {
-    vec3 e = texture(u_shadow_map, uv).rgb;
+float shadow_depth(sampler2D m, vec2 uv) {
+    vec3 e = texture(m, uv).rgb;
     return dot(e, vec3(1.0, 1.0 / 255.0, 1.0 / 65025.0));
 }
 
@@ -110,7 +129,8 @@ const vec2 POISSON[32] = vec2[32](
 // crisp where a wall meets the floor, soft at the far end of its shadow.
 // Widths are worked out in the world, so the detail map of a settled view
 // (#958) and an export's bigger map soften the same.
-float soft_shadow_light(vec3 uvz, vec2 grad, float bias, vec2 texel) {
+float soft_shadow_light(sampler2D m, vec3 uvz, vec2 grad, float bias,
+                        vec2 texel) {
     // One turn of the disc per pixel: the samples' pattern does not band.
     float a = 6.2831853 * fract(52.9829189 * fract(
         dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
@@ -127,7 +147,7 @@ float soft_shadow_light(vec3 uvz, vec2 grad, float bias, vec2 texel) {
     float n = 0.0;
     for (int i = 0; i < 16; i++) {
         vec2 off = rot * POISSON[i] * search;
-        float d = shadow_depth(uvz.xy + off);
+        float d = shadow_depth(m, uvz.xy + off);
         if (d < uvz.z + dot(grad, off) - bias) {
             sum += d;
             n += 1.0;
@@ -140,7 +160,7 @@ float soft_shadow_light(vec3 uvz, vec2 grad, float bias, vec2 texel) {
     float lit = 0.0;
     for (int i = 0; i < 32; i++) {
         vec2 off = rot * POISSON[i] * pen;
-        lit += (uvz.z + dot(grad, off) - bias <= shadow_depth(uvz.xy + off))
+        lit += (uvz.z + dot(grad, off) - bias <= shadow_depth(m, uvz.xy + off))
             ? 1.0 : 0.0;
     }
     return lit / 32.0;
@@ -151,14 +171,14 @@ float soft_shadow_light(vec3 uvz, vec2 grad, float bias, vec2 texel) {
 // texels around it — so the edge is a smooth ramp instead of the map's
 // staircase (each texel is centimetres of ground, 30 cm on a 280 m plant).
 // Outside the map = fully lit.
-float shadow_light() {
+float map_light(sampler2D m) {
     vec4 lp = u_light_vp * vec4(v_world, 1.0);
     vec3 uvz = lp.xyz / lp.w * 0.5 + 0.5;
     if (uvz.x <= 0.0 || uvz.x >= 1.0 || uvz.y <= 0.0 || uvz.y >= 1.0
             || uvz.z >= 1.0) {
         return 1.0;
     }
-    vec2 texel = 1.0 / vec2(textureSize(u_shadow_map, 0));
+    vec2 texel = 1.0 / vec2(textureSize(m, 0));
     // Receiver-plane depth correction (Isidoro): each PCF tap compares the
     // stored depth against the receiver PLANE evaluated AT the tap, not
     // against the centre fragment. The plane's depth gradient in MAP UV
@@ -188,11 +208,11 @@ float shadow_light() {
     // (covers the within-texel offset of both receiver and caster raster).
     float bias = u_shadow_bias + glen * texel.x * 1.5;
     if (u_shadow_soft > 0.0) {
-        return soft_shadow_light(uvz, grad, bias, texel);
+        return soft_shadow_light(m, uvz, grad, bias, texel);
     }
     // The 4x4 texels under the kernel, each compared once against the
     // receiver plane at its own centre...
-    vec2 size = vec2(textureSize(u_shadow_map, 0));
+    vec2 size = vec2(textureSize(m, 0));
     vec2 st = uvz.xy * size - 0.5;
     vec2 cell = floor(st);
     vec2 f = st - cell;
@@ -201,7 +221,7 @@ float shadow_light() {
         for (int i = 0; i < 4; i++) {
             vec2 uv = (cell + vec2(i - 1, j - 1) + 0.5) * texel;
             vec2 off = uv - uvz.xy;
-            float d = shadow_depth(uv);
+            float d = shadow_depth(m, uv);
             t[j * 4 + i] = (uvz.z + dot(grad, off) - bias <= d) ? 1.0 : 0.0;
         }
     }
@@ -217,6 +237,17 @@ float shadow_light() {
     return lit / 9.0;
 }
 
+// The light reaching this fragment: the model's map (camera-independent,
+// kept across orbits) and the face-me figures' own map, drawn as the
+// figures are drawn — facing the camera — so their shadow follows them.
+float shadow_light() {
+    float lit = map_light(u_shadow_map);
+    if (u_fig_shadow_enable == 1) {
+        lit = min(lit, map_light(u_fig_shadow_map));
+    }
+    return lit;
+}
+
 // 4x4 Bayer matrix, thresholds strictly inside (0, 1) so alpha 0 always
 // discards and alpha 1 always draws.
 const float BAYER[16] = float[16](
@@ -229,7 +260,16 @@ float matte(vec3 n) {
     return 0.62 + 0.38 * abs(dot(n, u_light_fixed));
 }
 
+float fog_amount() {
+    float depth = dot(v_world - u_fog_eye, u_fog_forward);
+    return smoothstep(u_fog_start, u_fog_end, depth);
+}
+
 void main() {
+    if (u_screen_image == 1) {
+        fragColor = texture(u_tex, v_uv);
+        return;
+    }
     // Taken before any discard, while the whole pixel quad is alive.
     vec3 n_local = cross(dFdx(v_local), dFdy(v_local));
     vec3 n_world = cross(dFdx(v_world), dFdy(v_world));
@@ -249,6 +289,7 @@ void main() {
     vec4 c;
     if (u_use_texture == 1) {
         vec4 texel = texture(u_tex, v_uv);
+        if (u_material_opaque == 1) texel.a = 1.0;
         // Cutout transparency (face-me billboards, leaves, chain-link):
         // discard keeps the depth buffer honest behind the holes. Below the
         // 0.5 cut the test is DITHERED, not hard — mipmap minification
@@ -296,9 +337,9 @@ void main() {
     if (u_shadow_enable == 1) {
         if (u_shadow_overlay == 1) {
             // Ground catcher: the shadow and nothing else.
-            fragColor = vec4(0.0, 0.0, 0.0,
-                             (1.0 - u_shadow_dark)
-                             * (1.0 - shadow_light()));
+            float alpha = (1.0 - u_shadow_dark) * (1.0 - shadow_light());
+            if (u_fog_enable == 1) alpha *= 1.0 - fog_amount();
+            fragColor = vec4(0.0, 0.0, 0.0, alpha);
             return;
         }
         // Sun shading + cast shadows, composed the classic way: the sun
@@ -312,5 +353,8 @@ void main() {
         c.rgb *= mix(u_shadow_dark, 1.0,
                      clamp(ndl * 1.5, 0.0, 1.0) * lit);
     }
-    fragColor = vec4(mix(c.rgb, u_fade_color, u_fade), c.a);
+    fragColor = vec4(mix(c.rgb, u_fade_color, u_fade), c.a * u_xray_opacity);
+    if (u_fog_enable == 1) {
+        fragColor.rgb = mix(fragColor.rgb, u_fog_color, fog_amount());
+    }
 }

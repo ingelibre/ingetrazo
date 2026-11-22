@@ -21,8 +21,10 @@ window's tool when the mouse comes in, and its readouts (typed value,
 measurement, coordinates) and document changes reach the window through
 the main viewport's signals, as if it had happened there. Each cell has a
 small title that opens a menu: first the entry that fills the work area with
-that view and, then, brings the others back (Ctrl+Space does the same), and
-after it the standard views.
+that view and, then, brings the others back (Ctrl+Space does the same), under
+it the view's own Style and Perspective (parallel, perspective, two-point),
+then the standard views, and last Lock view, which keeps its camera where it
+is (the label then says so: «Right (locked)»).
 
 A line between the views drags alone (with four views the two halves of the
 cross part ways); near a crossing a square with arrows drags the lines meeting
@@ -45,6 +47,13 @@ VIEWS = (
     ("top", "Top"), ("front", "Front"), ("right", "Right"),
     ("back", "Back"), ("left", "Left"), ("bottom", "Bottom"),
     ("iso", "Isometric"), ("perspective", "Perspective"),
+)
+
+#: (mode, label) of the projections a view's label offers, as the window's
+#: projection buttons name them.
+PROJECTIONS = (
+    ("parallel", "Parallel Projection"), ("perspective", "Perspective"),
+    ("two_point", "Two-Point Perspective"),
 )
 
 #: The view each cell starts in, by cell (row-major).
@@ -77,23 +86,31 @@ def _apply_camera_state(cam, state: dict) -> None:
 
 #: The view's name as a small label over its top-left corner (not a strip
 #: above it), covering as little of the view as it can: small, no arrow, dark
-#: and faint until hovered, in the accent colour for the view being worked in.
+#: and faint until hovered, in the accent colour for the view being worked in
+#: — with black text when the accent is a light one (White, Light grey), and
+#: a thin mid-grey edge (not black), so that a white or grey label still
+#: reads as one on a white sky. Every view's label is drawn by this one
+#: sheet, the window's view as the others: only the colours tell the active
+#: one.
 _CHIP = """
 QToolButton#viewChip {{
     background: rgba(32, 36, 42, 0.45); color: white;
-    border: 0px; border-radius: 2px; padding: 0px 4px;
+    border: 1px solid transparent; border-radius: 2px; padding: 0px 3px;
     font-size: 8pt;
 }}
 QToolButton#viewChip::menu-indicator {{ image: none; width: 0px; }}
 QToolButton#viewChip:hover {{ background: rgba(32, 36, 42, 0.82); }}
-QToolButton#viewChip[active="true"] {{ background: rgb({accent_rgb}); }}
+QToolButton#viewChip[active="true"] {{
+    background: rgb({accent_rgb}); color: {accent_text};
+    border-color: rgb(150, 154, 160);
+}}
 """
 
 
 class _CellHeader(QToolButton):
     """The cell's title, a small label over the view's corner: a click opens
-    its menu, to fill the work area with the cell (and back) or change its
-    view."""
+    its menu, to fill the work area with the cell (and back), change its
+    view or its style, or lock it."""
 
     #: Distance (px) from the view's top-left corner.
     MARGIN = 2
@@ -108,7 +125,8 @@ class _CellHeader(QToolButton):
         self.setCursor(Qt.PointingHandCursor)
         from views.theme import style
         style(self, _CHIP)
-        self.setToolTip(tr("Maximize this view or change it"))
+        self.setToolTip(tr("Maximize this view, change it or its style, "
+                           "or lock it"))
         # Filled as it opens: the window's own view actions (Camera menu,
         # Views bar) stay the only ones with those names, for the shortcut
         # editor and the command search.
@@ -117,10 +135,13 @@ class _CellHeader(QToolButton):
         self.setMenu(menu)
 
     def sizeHint(self):  # noqa: N802 — Qt override
-        """As wide as its name: Qt keeps room for the arrow it no longer has."""
+        """As wide as its name: Qt keeps room for the arrow it no longer has;
+        as tall as a line of it and its thin edge, no more."""
         self.ensurePolished()
         hint = super().sizeHint()
-        hint.setWidth(self.fontMetrics().horizontalAdvance(self.text()) + 10)
+        fm = self.fontMetrics()
+        hint.setWidth(fm.horizontalAdvance(self.text()) + 10)
+        hint.setHeight(min(hint.height(), fm.height() + 4))
         return hint
 
     def _fill(self) -> None:
@@ -129,11 +150,35 @@ class _CellHeader(QToolButton):
             self._maximize_action = menu.addAction("")
             self._maximize_action.triggered.connect(
                 lambda _c=False: self._cell.grid.toggle_maximized(self._cell))
+            # Right under it, how the view is drawn: its style and its
+            # projection, each this view's alone.
+            self._style_menu = menu.addMenu(tr("Style"))
+            self._style_menu.aboutToShow.connect(self._fill_styles)
+            self._projection_menu = menu.addMenu(tr("Perspective"))
+            self._projection_menu.aboutToShow.connect(self._fill_projections)
             menu.addSeparator()
+            self._view_actions = []
             for key, label in VIEWS:
                 act = menu.addAction(tr(label))
                 act.triggered.connect(
                     lambda _c=False, k=key: self._cell.pick_view(k))
+                self._view_actions.append(act)
+            menu.addSeparator()
+            self._lock_action = menu.addAction(tr("Lock view"))
+            self._lock_action.setCheckable(True)
+            self._lock_action.triggered.connect(self._cell.set_locked)
+            # The composition guides of THIS view (its tick box) and the
+            # list, as in the scene row's menus (views/scene_tabs.py).
+            if self._cell.viewport is not None:
+                from views.scene_tabs import CompositionGuidesAction
+                menu.addSeparator()
+                views = getattr(self.window(), "shown_viewports", None)
+                self._composition_action = CompositionGuidesAction(
+                    self._cell.viewport, menu, views)
+                menu.addAction(self._composition_action)
+        row = getattr(getattr(self, "_composition_action", None), "row", None)
+        if row is not None:
+            row.sync()
         # The key only shown, after a tab, so that people learn it: the
         # window's action is the one that holds it.
         text = self._cell.maximize_label()
@@ -141,6 +186,41 @@ class _CellHeader(QToolButton):
         if act is not None and not act.shortcut().isEmpty():
             text += "\t" + act.shortcut().toString(QKeySequence.NativeText)
         self._maximize_action.setText(text)
+        locked = self._cell.is_locked()
+        # A locked view keeps its camera: no other view to pick.
+        for act in self._view_actions:
+            act.setEnabled(not locked)
+        self._projection_menu.menuAction().setEnabled(not locked)
+        self._lock_action.setChecked(locked)
+        self._style_menu.menuAction().setEnabled(
+            hasattr(self.window(), "_apply_display_style"))
+
+    def _fill_projections(self) -> None:
+        """Parallel, perspective or two-point, the view's own one checked:
+        as the projection buttons with this view active."""
+        menu = self._projection_menu
+        menu.clear()
+        current = self._cell.projection_mode()
+        for mode, label in PROJECTIONS:
+            act = menu.addAction(tr(label))
+            act.setCheckable(True)
+            act.setChecked(mode == current)
+            act.triggered.connect(
+                lambda _c=False, m=mode: self._cell.pick_projection(m))
+
+    def _fill_styles(self) -> None:
+        """The built-in styles, the view's own one checked: picked here, it
+        is this view's alone, as from Camera ▸ Style with the view active."""
+        from core.style import BUILTIN_STYLES
+        menu = self._style_menu
+        menu.clear()
+        current = self._cell.style_name()
+        for preset in BUILTIN_STYLES:
+            act = menu.addAction(tr(preset.name))
+            act.setCheckable(True)
+            act.setChecked(preset.name == current)
+            act.triggered.connect(
+                lambda _c=False, p=preset: self._cell.pick_style(p))
 
     def set_active(self, on: bool) -> None:
         if bool(self.property("active")) == bool(on):
@@ -181,8 +261,61 @@ class ViewCell(QWidget):
         self.header.raise_()
 
     def _label(self) -> None:
-        self.header.setText(tr(dict(VIEWS).get(self.view, self.view)))
+        name = tr(dict(VIEWS).get(self.view, self.view))
+        if self.is_locked():
+            name = tr("{name} (locked)", name=name)
+        self.header.setText(name)
         self._place_header()
+
+    # ---- lock and style ------------------------------------------------------
+    def is_locked(self) -> bool:
+        vp = self.viewport
+        return vp is not None and bool(getattr(vp.camera, "locked", False))
+
+    def set_locked(self, on: bool) -> None:
+        """Lock the view's camera where it is (or free it): see
+        :attr:`core.camera.OrbitCamera.locked`."""
+        vp = self.viewport
+        if vp is None or self.is_locked() == bool(on):
+            return
+        vp.camera.locked = bool(on)
+        self._label()
+
+    def style_name(self):
+        """The name of the style this view shows (None: not known yet)."""
+        vp = self.viewport
+        if vp is None:
+            return None
+        style = (vp._view_style() if hasattr(vp, "_view_style")
+                 else getattr(vp, "view_style", None))
+        return getattr(style, "name", None)
+
+    def projection_mode(self):
+        vp = self.viewport
+        return None if vp is None else vp.camera.projection_mode()
+
+    def pick_projection(self, mode: str) -> None:
+        """Draw this view in ``mode`` (:data:`PROJECTIONS`): it becomes the
+        view worked in, and the window's projection buttons follow it."""
+        vp = self.viewport
+        if vp is None or self.is_locked():
+            return
+        self.grid.set_active_cell(self)
+        setter = getattr(self.window(), "_set_projection", None)
+        if setter is not None:
+            setter(mode)
+        else:
+            vp.set_projection(mode)
+        vp.update()
+
+    def pick_style(self, preset) -> None:
+        """Show ``preset`` in this view only: it becomes the view worked in,
+        and the window gives it the style as Camera ▸ Style would."""
+        self.grid.set_active_cell(self)
+        win = self.window()
+        apply = getattr(win, "_apply_display_style", None)
+        if apply is not None:
+            apply(preset)
 
     def _place_header(self) -> None:
         h = self.header
@@ -954,7 +1087,8 @@ class ViewGrid(QWidget):
         # The views a layout suggests, in the cells the user left alone.
         suggested = LAYOUT_VIEWS.get(self._layout, {})
         for cell in self.cells:
-            if getattr(cell, "picked", False) or cell.viewport is None:
+            if (getattr(cell, "picked", False) or cell.viewport is None
+                    or cell.is_locked()):
                 continue
             want = suggested.get(cell.index, DEFAULTS[cell.index])
             if cell.view != want:
@@ -1073,7 +1207,7 @@ class ViewGrid(QWidget):
         if not self.extras():
             return None
         return [(c.view, _camera_state(c.viewport.camera),
-                 c.viewport.view_style)
+                 c.viewport.view_style, c.is_locked())
                 for c in self.cells if c.viewport is not self.main]
 
     def restore(self, state) -> None:
@@ -1087,18 +1221,23 @@ class ViewGrid(QWidget):
             for cell in cells:
                 cell.view = DEFAULTS[cell.index]
                 cam = cell.viewport.camera
+                cam.locked = False
                 cam.target = type(main.target)(main.target)
                 cam.distance = max(main.distance, 15.0)
                 cell.viewport.view_style = None
                 cell.show_view(cell.view)
             return
         for cell, (view, cam, *rest) in zip(cells, state):
-            # Each view's own style (None: the window's); older states
-            # carried only the view and the camera.
+            # Each view's own style (None: the window's) — older states
+            # carried only the view and the camera —
+            # and whether it is locked (states before the lock: free).
             cell.viewport.view_style = rest[0] if rest else None
             cell.view = view
+            camera = cell.viewport.camera
+            camera.locked = False
+            _apply_camera_state(camera, cam)
+            camera.locked = bool(rest[1]) if len(rest) > 1 else False
             cell._label()
-            _apply_camera_state(cell.viewport.camera, cam)
             cell.viewport.update()
 
     def fit_box(self, lo, hi) -> None:

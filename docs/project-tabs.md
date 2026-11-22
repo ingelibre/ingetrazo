@@ -58,7 +58,7 @@ The project right-clicked comes to the front first, so **Save** and
 | Close Project | Closes this one (Ctrl+W). |
 | Close Projects to the Right / to the Left | Closes the tabs on that side, one by one; each asks about its own changes, and Cancel stops there. Greyed out when there are none on that side. |
 | Close All Projects | Closes them all: the [empty area](#4-every-project-closed) is left. |
-| Show scenes as tabs | This project's scene row on or off (Alt+E). |
+| Show scenes as tabs | This project's scene row on or off (Ctrl+E or Alt+E). |
 | Show a picture of the project on hover over its tab | The [picture on hover](#picture-on-hover) on or off, for every tab. |
 
 ### Keys
@@ -68,7 +68,7 @@ The project right-clicked comes to the front first, so **Save** and
 | Ctrl+W | Close the project in front |
 | Ctrl+PgDown / Ctrl+PgUp | Next / previous project |
 | Ctrl+Tab | With several projects, the next one; with one, the sheets |
-| Alt+E | The scene row of the project in front, on or off |
+| Ctrl+E (or Alt+E) | The scene row of the project in front, on or off |
 | Alt+T | The project tabs, on or off |
 | Ctrl+Space | With several views, the one under the pointer alone, and back |
 
@@ -97,7 +97,7 @@ same scenes as in the **Scenes** panel.
 | Drag a scene | Changes the order of the scenes; the view stays where it is. Ctrl+Z puts it back. |
 | **+** after the last scene | Keeps the current view as a new scene. |
 | Right-click on a scene | Its menu, and nothing else: the view does not change. |
-| Right-click on the bar, off the tabs | **Hide scenes**. |
+| Right-click on the bar, off the tabs | **Composition Guides** and **Hide scenes**. |
 
 ![Scene menu](images/project-tabs/scene-menu.png)
 
@@ -105,6 +105,8 @@ same scenes as in the **Scenes** panel.
 |---|---|
 | Update | Keeps the current view in this scene. |
 | Rename… | Asks for its new name; the sheet views that show it follow. Ctrl+Z puts the old one back. |
+| Composition Guides | Lines to frame the picture by, over the active view: rule of thirds, golden ratio, grid, diagonals, golden triangle, golden spiral or centre (a cross from side to side). **Flip horizontally** and **Flip vertically** turn the golden triangle or spiral over, and **Rotate 90°** makes the spiral start from the top or the side, so its strong point falls where the picture needs it. Rest on the name (or click it) for the list; its tick box shows or hides them in the active view. With several views each keeps its own; **Show in all views** and **Hide in all views**, at the foot of the list, act on all of them at once. With a camera frame (Camera Settings ▸ Frame) they fall inside it. They are never exported, and each scene keeps its own. |
+| Hide scenes | Hides the scene row (Ctrl+E brings it back). |
 | Delete | Deletes the scene; Ctrl+Z brings it back. |
 
 Both menus open upwards, from the foot of the window.
@@ -117,7 +119,7 @@ same order, and that order is what the document saves.
 A project without scenes has no row, so it takes no height from the view: the
 first scene brings it (**+ Scene** in the Scenes panel), and deleting the last
 takes it away. Each project keeps its own choice of showing it or not. Turn it
-off or on with **Alt+E**, **Window ▸ Show scenes as tabs**, the project tab's
+off or on with **Ctrl+E** (or **Alt+E**), **Window ▸ Show scenes as tabs**, the project tab's
 menu, or **Hide scenes** on the bar; off, the tabs stay away whatever scenes the
 project has.
 
@@ -156,6 +158,9 @@ as their panes. One view is always first; the rest go from the most used.
   same entry then says **Restore** and brings the others back as they were.
   **Ctrl+Space** or **Window ▸ Maximize view** does the same for the view under
   the pointer.
+- **Composition Guides**, last in the label's menu, as in the scene menus:
+  its tick box shows or hides the guides in THAT view, and its list picks the
+  guide or puts it on or off in all the views at once.
 - All the views draw the same model with the same undo: what is drawn,
   selected or undone in one shows in all. Each view picks up the tool in
   hand as the mouse comes in, and what the tool is about to do shows only in

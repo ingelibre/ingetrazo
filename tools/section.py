@@ -110,8 +110,9 @@ class SectionPlaneTool(Tool):
         sc = viewport.scene
         if not (getattr(sc, "show_section_cuts", True)
                 and getattr(sc, "show_section_planes", True)):
-            sc.show_section_cuts = True
-            sc.show_section_planes = True
+            from core.modeling_style import set_modeling_visibility
+            set_modeling_visibility(sc, "show_section_cuts", True)
+            set_modeling_visibility(sc, "show_section_planes", True)
             sync = getattr(window, "_sync_section_menu", None)
             if callable(sync):
                 sync()

@@ -38,6 +38,7 @@ _PLANE_RGBA = {"x": (216, 56, 68), "y": (40, 158, 90), "z": (52, 102, 198)}
 
 class FlipTool(Tool):
     name = "Flip"
+    option_copies = True
     description = "Mirror the selection across its red, green or blue plane."
     uses_snap = False
 

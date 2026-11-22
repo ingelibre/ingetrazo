@@ -283,7 +283,7 @@ def test_the_segment_is_drawn_and_survives_the_igz(tmp_path):
 
 
 def test_guide_points_mode_keeps_the_segment_from_the_axis_to_a_centre():
-    """#693 (Neil): SketchUp's guide point keeps its dashed segment back
+    """#693 (Neil): a guide point keeps its dashed segment back
     to the start — from a spot on the red axis to a circle's centre. Ours
     left a bare point in the guide-points mode, so the picture could not
     be drawn in any of the three."""
