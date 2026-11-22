@@ -326,7 +326,10 @@ def test_nested_group_geometry_and_quantities_use_world_placement(schema, tmp_pa
     save_ifc(scene, path, schema=schema)
     model = ifcopenshell.open(str(path))
     wall = model.by_type("IfcWall")[0]
-    geometry = ifcopenshell.geom.create_shape(ifcopenshell.geom.settings(), wall).geometry
+    # Keep the shape: its geometry lives inside it, and a shape dropped at
+    # once leaves .verts reading freed memory (4.7e-315 instead of 11).
+    shape = ifcopenshell.geom.create_shape(ifcopenshell.geom.settings(), wall)
+    geometry = shape.geometry
     assert min(geometry.verts[0::3]) == pytest.approx(11)
     assert max(geometry.verts[0::3]) == pytest.approx(15)
     volume = ifcopenshell.util.shape.get_volume(geometry)

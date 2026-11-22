@@ -172,7 +172,8 @@ def test_multiple_storeys_preserve_world_geometry_and_containment(tmp_path):
     settings = ifcopenshell.geom.settings(); settings.set(settings.USE_WORLD_COORDS, True)
     room = next(o for o in model.by_type("IfcSpace") if o.LongName.startswith("K01"))
     assert room.Decomposes[0].RelatingObject.Elevation == 3.
-    verts = ifcopenshell.util.shape.get_vertices(ifcopenshell.geom.create_shape(settings, room).geometry)
+    shape = ifcopenshell.geom.create_shape(settings, room)  # kept: it owns the geometry
+    verts = ifcopenshell.util.shape.get_vertices(shape.geometry)
     assert min(verts[:, 2]) == pytest.approx(3.)
     assert max(verts[:, 2]) == pytest.approx(5.6)
 
