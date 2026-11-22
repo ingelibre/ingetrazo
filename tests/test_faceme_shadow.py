@@ -73,6 +73,10 @@ def view(tmp_path):
         vp = win.viewport
         if getattr(vp, "_gl", None) is None or not vp.isValid():
             pytest.skip("no OpenGL context on this platform")
+        # Offscreen, a window opened after another test's window comes up
+        # without its framebuffer («No fbo, cannot render»): update() then
+        # never paints. One grab builds it — the frames below paint again.
+        vp.grabFramebuffer()
         vp.scene.groups[:] = []           # the new document's own figure
         vp.scene.version += 1
         sh = vp.scene.shadows
