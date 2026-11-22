@@ -433,8 +433,9 @@ class Scene:
         """A visible group is a snap reference, whatever locks it: the
         object's own padlock and a locked layer both protect it from
         EDITING, not from snapping to it (#1510; the object's lock alone
-        was #1210). A hidden group is no reference at all."""
-        return self.entity_visible(group)
+        was #1210). A hidden group is no reference, unless View ▸ Hidden
+        Objects shows it as a ghost: then it takes the click as before."""
+        return self.entity_visible(group) or self.entity_selectable(group)
 
     def edit_definition(self):
         """The shared prototype mesh of the component instance open at the
