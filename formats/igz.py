@@ -2665,10 +2665,19 @@ def _load_geometry(mesh, meta, geom: dict) -> None:
         if top >= _mesh_mod._CURVE_COUNTER:
             _mesh_mod._CURVE_COUNTER = top + 1
 
+    from core import _native
+    if _native.wanted():
+        # Owned, not borrowed: a deferred mesh is built (or saved, or its
+        # materials counted) after load_into has emptied the parsed tree in
+        # place (_release_in_steps) — its face_attrs table came back empty
+        # and the mesh lost every face, in the file too once saved (#1533).
+        # (A pickle round trip: a deep copy, ~5× faster than copy's.)
+        import pickle
+        meta = pickle.loads(pickle.dumps(meta, pickle.HIGHEST_PROTOCOL))
+
     def build(mesh):
         _build_geometry(mesh, meta, pos, edges, flags, curves, layers,
                         rings, sizes, counts, face_attr)
-    from core import _native
     if not (_native.wanted()
             and _mesh_mod.DeferredMesh.defer(
                 mesh, build, len(counts),
