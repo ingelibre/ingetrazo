@@ -723,10 +723,11 @@ def test_make_group_and_component_actions_accept_a_selected_photo(monkeypatch):
         win.close()
 
 
-def test_a_locked_image_draws_its_border_only_while_selected():
-    """A locked scan is a backdrop: its faint dashed border, which runs past
-    the photo over the transparent corners, stays hidden unless selected;
-    an unlocked image keeps it so it can be found and clicked."""
+def test_an_image_draws_its_border_only_while_selected():
+    """No image shows a border unless selected: the dashed rectangle ran
+    past a cut-out over its transparent corners (a box in mid-air round the
+    cow on the arch, Marco 21-11). Selected, a locked one draws it in the
+    locked colour."""
     from types import SimpleNamespace
 
     from PySide6.QtGui import QColor
@@ -749,9 +750,12 @@ def test_a_locked_image_draws_its_border_only_while_selected():
         _world_to_pixel=lambda p: (p.x(), p.y()))
     vp._modeling_color = Viewport._modeling_color.__get__(vp)
     Viewport._draw_image_outlines(vp, painter)
-    assert len(lines) == 4
+    assert lines == []                     # nothing selected: no border
     selection.add(scan)
+    Viewport._draw_image_outlines(vp, painter)
+    assert len(lines) == 4
+    assert pens[-1].color() == QColor.fromRgbF(*locked_color)
+    selection.add(free)
     lines.clear()
     Viewport._draw_image_outlines(vp, painter)
     assert len(lines) == 8
-    assert pens[-1].color() == QColor.fromRgbF(*locked_color)

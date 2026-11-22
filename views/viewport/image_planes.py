@@ -446,28 +446,27 @@ class ImagePlaneMixin:
         return best
 
     def _draw_image_outlines(self, painter: QPainter) -> None:
-        """Border of each reference image: faint normally, selection orange
-        when picked, so an image lying flat on the ground is still findable.
-        A LOCKED image shows it only while selected: it is a backdrop that
-        refuses clicks, and a scan's rectangle runs past the photo over its
-        transparent corners, so the faint dashes cut across the sky (Marco,
-        2026-10-27, the orthomosaic of playa Yanque)."""
+        """Border of a reference image, only while it is selected: in the
+        selection colour, or the locked one for a locked image. The faint
+        dashed rectangle every image used to show runs past the picture
+        over its transparent corners — round a cut-out ornament it drew a
+        box in mid-air and the model did not read clean (Marco, 21-11, the
+        cow on the arch; a locked scan's dashes across the sky before, playa
+        Yanque, 2026-10-27). The picture itself still takes the click."""
         images = getattr(self.scene, "image_planes", None)
         if not images:
             return
-        pen = QPen(QColor(120, 140, 165), 1, Qt.DashLine)
         sel_pen = QPen(QColor.fromRgbF(*self._modeling_color("selected")), 2)
         selection = self.scene.selection
         for im in images:
             if not self.scene.entity_visible(im):
                 continue
-            picked = im in selection
-            if getattr(im, "locked", False) and not picked:
+            if im not in selection:
                 continue
-            if picked and getattr(im, "locked", False):
+            if getattr(im, "locked", False):
                 painter.setPen(QPen(QColor.fromRgbF(*self._modeling_color("locked")), 2))
             else:
-                painter.setPen(sel_pen if picked else pen)
+                painter.setPen(sel_pen)
             for a, b in im.border_edges():
                 seg = self._clip_segment_front(a, b)
                 if seg is None:
