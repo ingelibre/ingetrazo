@@ -4416,7 +4416,8 @@ class SheetsPanel(QWidget):
             reload()
         if comp_win.isVisible():
             # A view placed or taken away from here, on the open sheet.
-            comp_win._rebuild_canvas()
+            # This signal also follows an in-place viewport scale change.
+            comp_win._rebuild_preserving_view_edit()
             from PySide6.QtCore import QTimer
             QTimer.singleShot(0, comp_win._auto_render_stale)
 
