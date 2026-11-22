@@ -6680,6 +6680,12 @@ class ComposerWindow(QMainWindow):
         self._images: dict[str, QImage] = {}
         self._updating = False
         self.history = ComposerHistory(on_change=self._on_history_change)
+        # A script (run_python, the console) that edits a sheet's content:
+        # see _on_sheets_edited_outside. Held weakly.
+        import weakref
+        from core.history import SHEET_CONTENT_LISTENERS
+        SHEET_CONTENT_LISTENERS.append(
+            weakref.WeakMethod(self._on_sheets_edited_outside))
 
         scene = main_window.viewport.scene
         if not scene.compositions:
@@ -9266,6 +9272,31 @@ class ComposerWindow(QMainWindow):
                          if isinstance(c, (SheetSetCommand,
                                            SheetOrderCommand))]
         return new
+
+    def _on_sheets_edited_outside(self, scene, sheets) -> None:
+        """A script's step (``run_python``, the console) changed these
+        sheets' content, or undo/redo put it back.
+
+        The rule between the two histories: such a step belongs to the
+        DOCUMENT's history (the model window's Ctrl+Z and the bridge's
+        ``undo``), never to this window's. This window's item steps for
+        the open sheet end where it begins, as they do when another sheet
+        is opened: their before/after values were taken from a sheet the
+        script has since changed, and undoing one now would overwrite the
+        script's edit field by field. The steps on the SET of sheets
+        stay. The frames, texts and lists are still the same objects (the
+        step restores them in place), so only the canvas is redrawn."""
+        if scene is not self._scene():
+            return
+        if any(s is self.comp for s in sheets):
+            self.history = self._history_for_another_sheet()
+        QTimer.singleShot(0, self._after_outside_sheet_edit)
+
+    def _after_outside_sheet_edit(self) -> None:
+        if self.comp not in self._scene().compositions:
+            return                  # the open sheet went (undo of a paste…)
+        self._reload_comp_combo()   # a renamed sheet: combo, tabs, indices
+        self._rebuild_canvas()
 
     # ---- Model / sheet tabs (the strip at the bottom) -----------------------
     def _refresh_sheet_tabs(self) -> None:
