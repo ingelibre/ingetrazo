@@ -6,47 +6,170 @@ follow [SemVer](https://semver.org).
 
 ## [Unreleased]
 
+## [0.6.3] — 2026-11-22
+
+**La release de los grupos y componentes: editar dentro de ellos sin tirones, copias de componentes que siguen tus cambios, componentes anidados al importar y una biblioteca propia. Mover, Rotar y Escalar ya no tocan el modelo mientras arrastras, así que arrastrar es fluido también en modelos grandes. Las láminas ganan pestañas reordenables, un panel de láminas, leyenda editable e índice, y llegan la Caja de sección, Terreno, Cámara desde foto y Cortar hueco. Más de 100 PRs de la comunidad.**
+
+### Lo más importante
+
+- **Grupos y componentes, el tema de la release:** editar dentro de grupos sin tirones, copias de componentes que reflejan los cambios, componentes anidados al importar y una biblioteca propia de componentes.
+- **Mucho más fluido al arrastrar:** Mover, Rotar y Escalar ya no tocan el modelo mientras arrastras; lo hace el motor Rust y el modelo cambia una sola vez, al soltar. En la geometría suelta pasa de ~320 ms a 1–3 ms por fotograma.
+- **Láminas:** pestañas que se reordenan arrastrando, panel de láminas con miniaturas, leyenda editable, índice de láminas y fondo para la escala y el norte.
+- **Caja de sección**, **Terreno**, **Cámara desde foto** y **Cortar hueco** con ventanas y puertas.
+- **IngeTrazo para agentes de IA:** herramientas MCP con nombre, modo servidor y modo sin ventana.
+- **Nuevos idiomas:** turco, catalán y términos en vietnamita.
+
 ### Añadido
 
-- **Buscar, filtrar y agrupar en la tabla BIM** (#1116): con muchos objetos
-  la tabla se llenaba. Ahora tiene un buscador (nombre, clase o ruta en el
-  esquema; `*` y `?` funcionan), un embudo para ocultar clases IFC (por
-  ejemplo, ver solo los IfcSpace) y una lista «Agrupar por grupo / por
-  clase IFC / por nombre / sin agrupar». Por clase o por nombre, cada
-  encabezado lleva su número de objetos y los totales de metrado y volumen
-  de las filas que se ven. La nueva columna «Ruta en el esquema» dice en
-  qué grupos está cada objeto («Planta 1/Núcleo»), y el botón al final del
-  encabezado (o el clic derecho sobre él) muestra u oculta Metrado, Vol m³
-  y Ruta en el esquema, como en el Navegador. La exportación se divide en «Exportar
-  todo a CSV» y «Exportar lo mostrado a CSV». «Taggear al dibujar» pasa a
-  la fila de «Taggear selección» y «Quitar tag», con botones más delgados.
-  *Cómo probarlo:* en la pestaña BIM de la barra lateral, taggea unas caras como IfcSpace y otras
-  como IfcWall, elige «Agrupar por clase IFC» y desmarca IfcWall en el
-  embudo.
-- **IngeTrazo sin ventana para automatizar con IA**: `ingetrazo --headless
-  --ai-bridge --open Casa.igz` abre el documento sin nada en pantalla y
-  enciende el puente IA (MCP), para que un agente (p. ej. Claude en un runner
-  de CI) trabaje el documento de principio a fin. Si el documento no abre,
-  termina al instante con el código 3; con `--allow-shutdown` el agente lo
-  cierra con `shutdown` y el código de salida es 0 (cualquier otro final, no).
-  `ingetrazo --mcp --headless --open …` lo hace todo con un solo comando para
-  el cliente MCP. *Cómo probarlo:* docs/ai-bridge.md ▸ «Sin ventana».
-- **Herramientas nuevas del puente IA**: `document_info`, `open_document`,
-  `save_document` (solo con `--allow-save` o la casilla «Permitir que el
-  agente guarde el documento» de la sección Puente IA), `export_view` (una
-  escena a PNG), `export_pdf` (las láminas a PDF) y `shutdown`.
-- **Guardar como JSON plano para control de versiones**: Preferencias ▸
-  General ▸ Formato de guardado ▸ JSON plano (o `--save-format json`) escribe
-  el `.igz` siempre como texto legible, para que Git muestre qué cambió; las
-  imágenes van a una carpeta `Nombre.assets` junto al documento. Un documento
-  guardado así se sigue guardando así. El formato automático de siempre no
-  cambia y sigue siendo el predeterminado. Ejemplo:
-  `python examples/headless-mcp-demo.py`.
+#### Grupos y componentes
+- **Las copias de un componente reflejan los cambios:** mover o escalar un grupo dentro de un componente llega a todas sus copias (#1339, #894, #508).
+- **Componentes anidados al importar .skp:** los modelos complejos ya no se funden en un solo componente (gracias a Richard Lamb por los archivos).
+- **Mi biblioteca:** tus propias carpetas de componentes en forma de árbol (#1088, #354) — @canalsecuario-blip; árbol de componentes en la barra lateral — @felixriestra (#362).
+- **Dibujar dentro de un conjunto llega a sus copias**, cada una en su sitio — @mle-gall (#1148).
+- El menú contextual de un componente dice «Editar componente» / «Explotar componente» (#1412) — @canalsecuario-blip.
+- **Gestor de escala:** XYZ enlazados y pivote elegible — @pacaeiro (#1377).
+- Colocar un grupo respeta el filtro de herramientas del espacio de trabajo — @d1rty-pixel (#1243).
+
+#### Herramientas de dibujo y modelado
+- **Caja de sección:** recorta el modelo con una caja de seis caras, en la vista y en las láminas — @canalsecuario-blip (#1422).
+- **Dibujo ▸ Terreno:** crear, deformar, estampar y proyectar terreno editable, también desde puntos topográficos de DXF — @canalsecuario-blip (#1466).
+- **Cortar hueco:** una ventana o una puerta abre su propio hueco en el muro, aunque el muro sea un grupo, y el hueco la sigue al moverla — @canalsecuario-blip (#1472).
+- **Crear caras y Extruir:** cada contorno se vuelve su propio sólido en un paso — @canalsecuario-blip (#1432).
+- **Calculadora en la caja de medidas:** escribe `=1.25*2+2.45/2` donde va una medida (#630) — @canalsecuario-blip.
+- **Rectángulo, Línea y Círculo:** escribir una medida nueva justo al terminar redibuja la figura (#414) — @canalsecuario-blip.
+- **Herramienta Punto guía:** un clic deja un punto guía (#616) — @canalsecuario-blip.
+- **Herramientas ▸ Inferencias:** encender y apagar cada inferencia de punto (#1410) — @canalsecuario-blip.
+- **Cinta métrica:** escribe una longitud tras medir para reescalar el modelo o el grupo abierto — @APBureauEtude (#589).
+- **Geometría oculta:** una faceta se selecciona sola, las líneas invisibles se muestran u ocultan, y las aristas se suavizan a mano — @canalsecuario-blip (#1463).
+- **Área ▸ Selección** en el menú contextual de una cara — @APBureauEtude (#524).
+- Alinear y distribuir cotas por su línea (#1089) — @tony1233200 (#1394).
+- Mover, Rotar y Voltear: copiar con Opción en macOS — @hamzah1985 (#862).
+
+#### Láminas
+- **Pestañas de láminas reordenables arrastrando**, con deshacer.
+- **Panel «Láminas»** en el compositor: miniatura de cada lámina; seleccionar, reordenar, renombrar y eliminar.
+- **Leyenda editable:** nombre y color propios por capa en la lámina, capas que no están en la vista y entradas libres.
+- **Fondo para la barra de escala, la flecha del norte y la leyenda**, para leerlas sobre una ortofoto.
+- **Índice de láminas:** una tabla con el contenido de todas las láminas del documento — @BastelBaus (#1501); navegador de láminas — @BastelBaus (#932).
+- **La pestaña «Modelo» queda siempre a la vista**, fija a la izquierda de las pestañas de láminas, y el compositor muestra muchas más pestañas a la vez.
+- **Las imágenes de las láminas viajan dentro del `.igz`:** un documento abierto en otra máquina ya no muestra recuadros tachados en lugar de sus fotos y renders.
+
+#### Vista, cámara y presentación
+- **Cámara desde foto:** encuentra la cámara que tomó una foto para que el modelo coincida con ella — @canalsecuario-blip (#1424).
+- **Guías de composición** y **Ocultar escenas (Ctrl+E)** — @canalsecuario-blip (#1425).
+- **Varias vistas:** la etiqueta de cada vista se lee, con Estilo, Perspectiva y Bloquear vista — @canalsecuario-blip (#1421).
+- **Editor de estilos completo** y controles de render — @APBureauEtude (#1218); **degradado del horizonte** del cielo — @APBureauEtude (#1120); **niebla** con distancias relativas a la cámara — @APBureauEtude (#1139); **opacidad** en colores de capas y materiales — @APBureauEtude (#1024).
+- **Exportar vídeo:** escenas también como secuencia PNG, con fondo transparente opcional — @canalsecuario-blip (#1435).
+- Perspectiva de dos puntos: desplazar mueve el encuadre; sombras definidas en el PNG — @castrobasso (#1402).
+- Cámara: un ojo de un par estéreo (#1174) — @danielcamposramos (#1311).
+- La imagen de una escena es lo que muestra la pantalla al elegirla — @canalsecuario-blip (#1429).
+- Iso desde una cámara baja va a la Iso de arriba y encuadra el modelo (#1181) — @canalsecuario-blip.
+- Pantalla limpia (Ctrl+0): los atajos y la barra de estado siguen funcionando — @canalsecuario-blip (#1417).
+
+#### Navegación y dispositivos
+- **Trackpad:** pellizcar hace zoom hacia los dedos; doble toque con dos dedos encuadra el modelo — @ultracat (#788).
+- **Ratón 3D:** giro de cámara (roll) — @salinashf (#1406); **SpaceMouse en macOS** — @GWydouw (#433).
+- Preferencia para intercambiar órbita y desplazar con el botón central — @sneffetsd (#467).
+- Rueda pulsada + botón izquierdo desplaza la vista, como alternativa a Mayús — @APBureauEtude (#525).
+
+#### Materiales y texturas
+- **Exportar e importar archivos de material (.igmat)** y «Mis materiales» (#1427) — @ultracat (#1487).
+- **Importar archivos de material .skm** (#1482) — @ultracat (#1491).
+- **Tinte de color de textura:** una textura coloreada conserva sus partes vivas y apagadas — @ultracat (#1499).
+
+#### BIM e IFC
+- **Tabla BIM:** buscar, filtrar por clase IFC, agrupar y ver la ruta en el esquema (#1116) — @BastelBaus (#1125).
+- **Exportación IFC4.3 estable** y paquetes de entrega verificados para Türkiye — @h-skycloud (#1236).
+- **IFC:** exportación en coordenadas de mundo, cabecera Reference View y unidades — @BastelBaus (#984); norte del proyecto, ubicación del sitio y aplicación propietaria — @Urkoh00 (#1498).
+- **Información del modelo:** pestaña Ubicación para ver, fijar y borrar la ubicación del modelo — @moominot (#1502); tabla de materiales en uso a CSV — @tony1233200 (#1393).
+
+#### IA y automatización
+- **Herramientas MCP con nombre**, sin código arbitrario: escena, objeto, capas, escenas, cámara, selección, captura, render de lámina, abrir, guardar, importar, exportar y materiales, todas con deshacer.
+- **Modo servidor:** `ingetrazo --server [archivo] [--port N]`.
+- **Modo sin ventana para automatizar con IA:** `ingetrazo --headless --ai-bridge --open Casa.igz`, más guardar y cerrar desde MCP y **guardar como JSON plano** para control de versiones — @BastelBaus (#1494).
+- Cada documento abierto se direcciona por separado entre ventanas — @clinta (#892).
+- Captura desde cualquier vista estándar, `export_model` y anotaciones de herramientas MCP — @blackflash73 (#463).
+- Proveedor OpenCode Go — @SebWell (#516).
+
+#### Extensiones
+- **Gestor de extensiones mejorado** — @kagehak (#913).
+- **Biblioteca genérica de recursos** para extensiones y paquetes portátiles `.iglib` — @lelopes05 (#412).
+- Una extensión que falla avisa «necesita un IngeTrazo más nuevo» (#1276) — @tony1233200 (#1401).
+
+#### Interfaz
+- **Bandejas de la barra lateral reordenables arrastrando** — @BastelBaus (#441); bandeja lateral de 370 px y paneles flotantes desde el engranaje — @canalsecuario-blip (#1428).
+- Iconos de la barra de herramientas del mismo tamaño óptico; barras más estrechas (20 px) — @canalsecuario-blip (#1426).
+- Progreso y confirmación en la barra de estado al guardar y exportar (#623) — @luisfergromo (#666).
+- Las imágenes de referencia toman una capa desde Información de la entidad y el clic derecho — @Aaron1992 (#701).
+- Los objetos nuevos van a la capa activa, no a «Capa 0» (#1366) — @tony1233200 (#1399).
+- Ayuda ▸ Novedades — @canalsecuario-blip (#1423).
+
+#### Plataformas
+- **Windows:** archivos recientes y anclar en la barra de tareas — @hamzah1985 (#1005); miniatura del `.igz` en el Explorador — @canalsecuario-blip (#1430); publicación automática en Winget — @calieno (#766).
+- **Abrir la ubicación del archivo** — @canalsecuario-blip (#1431).
+- **macOS arm64:** el motor Rust hornea de forma nativa — @ultracat (#1379).
+
+#### Idiomas
+- **Turco** y espacios de trabajo CAD/BIM reversibles — @h-skycloud (#1207).
+- **Catalán** — @moominot (#1497).
+- Términos en **vietnamita** — @vandang890615 (#1449).
+- Documentación para desarrolladores en inglés — @BastelBaus (#908); guías de arquitectura y desarrollo, plantillas de GitHub y política de seguridad — @luisfergromo (#664).
+
+### Rendimiento
+
+- **Selección mixta (grupos y geometría suelta a la vez) con vista previa:** Mover, Rotar y Escalar ya no tocan el modelo mientras arrastras; en la Plaza, de 76–100 ms a ~17 ms por fotograma.
+- **Mover, Rotar y Escalar sin tocar el modelo mientras arrastras** (geometría suelta, dentro de un grupo abierto y grupos enteros, también grupos antiguos): el modelo cambia una vez, al soltar, con el mismo deshacer. En una escena de 6 400 caras, de ~320–350 ms a 1,3–3 ms por fotograma; escalar un grupo antiguo, de 87 a 1,3 ms. Los valores tecleados quedan exactos.
+- **Empujar/Tirar:** losa con huecos, de 51 a 5 ms por fotograma; pilar con textura, de 18 a 12 ms; tapa de un prisma, la mitad.
+- **Ajuste a líneas:** de ~31 a ~6 ms por movimiento.
+- **Cámara en la Plaza** (trabajo por fotograma, frente a la 0.6.2.1): fuera de los grupos, de 6,6 a 5,8 ms; dentro de un grupo grande, de 26,6 a 20,9 ms.
+- **Editar dentro de grupos:** el tirón de ~0,4 s tras cada edición desaparece (#1411); Línea dentro de grupos y entrar en un grupo, más rápidos (#1392).
+- **Mover la Bandera de la Plaza:** de 1,4 s a 0,47 s.
+- **Láminas con un modelo grande:** cambiar de lámina pasa de ~2 s a ~0,1 s; el primer render, de 6 s a 0,14–1,1 s; el compositor ya no se repinta sin fin.
+- **Importar .skp y guardar .igz:** más rápido y con menos memoria — @mle-gall (#938, #1145, #1146, #1147).
+- **Arrastrar un plano de sección en la Plaza:** de 183 ms (0.6.2.1) a ~31 ms por fotograma; orbitar con un plano activo, de 26,6 a 17,6 ms. La caja de envolvente del modelo y las capas de lo cortado ya no se recalculan en cada fotograma.
+- **Las miniaturas de escenas esperan a que cierres menús y diálogos:** antes, tras editar un modelo grande, cada miniatura (0,3–0,7 s) congelaba los menús o el gestor de extensiones.
+- **Unir caras coplanares** en una sola pasada y cadenas en T — @nicolasmarc (#1161).
 
 ### Corregido
 
-- `ingetrazo -i Casa.igz -p` (exportar las láminas a PDF sin ventana) se
-  cerraba con un error al abrir el documento desde 0.6.2.
+- **Abrir un `.igz` grande ya no puede perder las caras de una malla** (y guardarlas vacías) con el motor Rust (#1533) — gracias a @diegog321 por la causa y el arreglo.
+- **Las láminas de detalle ya no dejan ocultos en el modelo los objetos de su escena:** antes la pestaña Modelo podía quedarse con casi todo oculto (y guardarse así).
+- **Mover un personaje recortado (como el ingeniero):** se ve moverse durante todo el arrastre y conserva su sombra, también con sombras ajustadas.
+- **Empujar/Tirar:** las bases que se conservan con Ctrl quedan sanas y se rechazan los resultados agrietados — @renancadastros01-gif (#1155); se conservan las aristas divisorias cuando las caras quedan al ras — @hamzah1985 (#864); empujar varias caras hacia dentro ya no muestra el fallo antiguo de la vista previa (#1478).
+- **Una línea que cruza una cara con huecos ya no cierra los huecos** (#1407) — @tony1233200 (#1454).
+- **Borrar una arista coplanar conserva las demás aristas compartidas** (#631) — @pkoska (#647).
+- **Explotar un grupo colocado reajusta sus texturas** (#1278) — @tony1233200 (#1455).
+- **Z bloqueada desde la esquina superior de una caja:** el punto sigue al cursor hacia arriba (#1085) — @canalsecuario-blip (#1453); la altura del bloqueo no se toma de una arista oculta — @tony1233200 (#1456).
+- **El eje trabado se alinea con el origen** (#1418); imán de eje: «desde un punto a lo largo del eje» — @canalsecuario-blip (#1457).
+- **Perfiles cuando las aristas están apagadas** (#1253) — @tony1233200 (#1400).
+- Al renderizar, la cara trasera de una cara de dos lados lleva su propio material (#1270) — @tony1233200 (#1396).
+- Panel de sombras: explica un sol por debajo del horizonte (#1312) — @tony1233200 (#1397).
+- Un material renombrado a «nombre (2)» conserva su acabado de render (#1481) — @ultracat (#1484).
+- Imágenes: se conserva lo que significa una foto dentro de grupos y componentes — @APBureauEtude (#935).
+- Grupos, texturas y partes leen las matrices sin llamarlas, compatible con PySide6 6.10 (#1405) — @canalsecuario-blip (#1447).
+- La medida en vivo no tapa el icono del cursor (#1262) — @canalsecuario-blip (#1446).
+- Preferencias cabe en una pantalla baja: las páginas se desplazan (#1336) — @canalsecuario-blip (#1445).
+- Las barras de pestañas se miden con el estilo de la aplicación (#1225) — @canalsecuario-blip (#1448).
+- Los iconos del panel de capas siguen un acento nuevo sin reiniciar — @canalsecuario-blip (#1433).
+- Línea sobre el resto del modelo dentro de un grupo abierto vuelve a encontrar su plano.
+- El volumen se suma en doble precisión, igual en todas las plataformas (#1414) — @ultracat (#1415).
+- El motor Rust compara distancias en la caja de oclusión con una tolerancia relativa al tamaño del triángulo (#1294).
+- `History.execute` dice si el comando se ejecutó y quien lo llama se detiene tras un rechazo — @d1rty-pixel (#1241); los comandos rechazados dentro de `run_python` se informan como revertidos — @d1rty-pixel (#1242).
+- La página de atajos sigue las acciones que se añaden o quitan después de crearla — @d1rty-pixel (#1244).
+- **macOS:** cierres por la accesibilidad de Cocoa — @borborborja (#657); cancelar la exportación de vídeo justo tras el primer fotograma ya no se cierra (#1488) — @ultracat (#1489).
+- `ingetrazo -i Casa.igz -p` (láminas a PDF sin ventana) ya no se cierra con un error al abrir el documento.
+- **Sombra de los personajes recortados:** aparece aunque el modelo esté vacío, nace de los dos pies desde cualquier ángulo de cámara, y la inferencia de la figura cae justo en sus pies; mover un personaje ya no recalcula la sombra de todo el modelo.
+- **Las imágenes de referencia** ya no dibujan un rectángulo discontinuo alrededor salvo cuando están seleccionadas (rodeaba en el aire a los recortes con transparencia).
+- Texto en español: «Actualiza la vista para renderizar» (era el único con voseo).
+- **Iconos nítidos del ojo y el candado** en el panel de capas y el explorador con escalas fraccionarias de pantalla (125 %, 150 %).
+- **Un marco de lámina en estilo técnico o de líneas** ya no cambia el estilo de la vista del modelo.
+- **Un objeto oculto mostrado como fantasma** (Ver ▸ Objetos ocultos) vuelve a seleccionarse con un clic.
+- **Se puede imantar a los objetos de una capa bloqueada** (siguen protegidos de la edición) (#1510).
+- Regresiones de la propia 0.6.3 corregidas antes de publicar: salir de un grupo, deshacer un giro y la cámara dentro de grupos.
+### Problemas conocidos
+
+- **macOS 12 (Monterey)** no es compatible: la versión de Qt que usa IngeTrazo necesita macOS 13 o posterior (#1123).
+- Con sombras encendidas, la vista da un fotograma más lento (~50 ms en un modelo grande) cuando la cámara se detiene, mientras las sombras se ajustan a la vista nueva.
 
 ## [0.6.2.1] — 2026-11-14
 

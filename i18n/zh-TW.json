@@ -4342,5 +4342,15 @@
  "New sheet, after the selected one": "新增圖紙，位於選取的圖紙之後",
  "Delete the selected sheets (Delete)": "刪除選取的圖紙（Delete）",
  "A view on this sheet shows the scene «{name}», which the model no longer has: pick another view for it in the composer.": "此圖紙上的一個檢視顯示場景「{name}」，但模型已不再有該場景：請在編排器中為它挑選其他檢視。",
- "Delete these {n} sheets?": "要刪除這 {n} 張圖紙嗎？"
+ "Delete these {n} sheets?": "要刪除這 {n} 張圖紙嗎？",
+ "Automatic publishing on Winget (#766).": "在 Winget 上自動發佈 (#766)。",
+ "History.execute says whether a command ran (#1241), rejected commands inside run_python reported as reverted (#1242), the shortcuts page follows actions added later (#1244) and placing a group honours the workspace's tool filter (#1243).": "History.execute 會告知指令是否執行 (#1241)，run_python 中被拒絕的指令回報為已復原 (#1242)，快捷鍵頁面會跟隨之後新增的動作 (#1244)，放置群組時遵循工作區的工具篩選 (#1243)。",
+ "One eye of a stereo pair from the camera (#1174, #1311).": "相機立體像對中的一隻眼 (#1174, #1311)。",
+ "A large .igz could lose a mesh's faces on opening: cause and fix (#1533).": "大型 .igz 開啟時可能遺失網格的面：原因與修正 (#1533)。",
+ "Faster .skp import and .igz saving with less memory (#938, #1145, #1146, #1147) and drawing inside a set reaching its copies (#1148).": "更快、更省記憶體的 .skp 匯入和 .igz 儲存 (#938, #1145, #1146, #1147)，以及在集合內繪製會同步到其副本 (#1148)。",
+ "The Catalan translation (#1497) and the Location tab of Model Info (#1502).": "加泰隆尼亞語翻譯 (#1497) 和模型資訊的「位置」分頁 (#1502)。",
+ "Push/Pull bases kept with Ctrl stay sound and cracked results are refused (#1155).": "推/拉中以 Ctrl 保留的底面保持完好，出現裂縫的結果會被拒絕 (#1155)。",
+ "Camera roll with a 3D mouse (#1406).": "以 3D 滑鼠橫滾相機 (#1406)。",
+ "A preference to swap orbit and pan on the middle button (#467).": "在中鍵上交換環繞與平移的偏好設定 (#467)。",
+ "IFC export writes the project north, the site location and the owning application (#1498).": "IFC 匯出寫入專案北向、基地位置與所屬應用程式 (#1498)。"
 }

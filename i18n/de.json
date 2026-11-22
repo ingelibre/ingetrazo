@@ -4339,5 +4339,15 @@
  "New sheet, after the selected one": "Neues Blatt, nach dem ausgewählten",
  "Delete the selected sheets (Delete)": "Ausgewählte Blätter löschen (Entf)",
  "A view on this sheet shows the scene «{name}», which the model no longer has: pick another view for it in the composer.": "Eine Ansicht auf diesem Blatt zeigt die Szene «{name}», die das Modell nicht mehr hat: Wähle im Blatt-Layout eine andere Ansicht für sie.",
- "Delete these {n} sheets?": "Diese {n} Blätter löschen?"
+ "Delete these {n} sheets?": "Diese {n} Blätter löschen?",
+ "Automatic publishing on Winget (#766).": "Automatische Veröffentlichung auf Winget (#766).",
+ "History.execute says whether a command ran (#1241), rejected commands inside run_python reported as reverted (#1242), the shortcuts page follows actions added later (#1244) and placing a group honours the workspace's tool filter (#1243).": "History.execute meldet, ob ein Befehl ausgeführt wurde (#1241), abgelehnte Befehle in run_python werden als rückgängig gemacht gemeldet (#1242), die Seite der Tastenkürzel folgt später hinzugefügten Aktionen (#1244) und das Platzieren einer Gruppe beachtet den Werkzeugfilter des Arbeitsbereichs (#1243).",
+ "One eye of a stereo pair from the camera (#1174, #1311).": "Ein Auge eines Stereopaars aus der Kamera (#1174, #1311).",
+ "A large .igz could lose a mesh's faces on opening: cause and fix (#1533).": "Eine große .igz-Datei konnte beim Öffnen die Flächen eines Netzes verlieren: Ursache und Korrektur (#1533).",
+ "Faster .skp import and .igz saving with less memory (#938, #1145, #1146, #1147) and drawing inside a set reaching its copies (#1148).": "Schnellerer .skp-Import und .igz-Speichern mit weniger Speicher (#938, #1145, #1146, #1147), und Zeichnen in einem Set erreicht seine Kopien (#1148).",
+ "The Catalan translation (#1497) and the Location tab of Model Info (#1502).": "Die katalanische Übersetzung (#1497) und der Reiter Standort in den Modellinformationen (#1502).",
+ "Push/Pull bases kept with Ctrl stay sound and cracked results are refused (#1155).": "Mit Strg beibehaltene Basen bei Drücken/Ziehen bleiben intakt und rissige Ergebnisse werden abgelehnt (#1155).",
+ "Camera roll with a 3D mouse (#1406).": "Kamerarollen mit einer 3D-Maus (#1406).",
+ "A preference to swap orbit and pan on the middle button (#467).": "Eine Einstellung, um Orbit und Schwenken auf der mittleren Taste zu tauschen (#467).",
+ "IFC export writes the project north, the site location and the owning application (#1498).": "Der IFC-Export schreibt Projektnord, Standort und die besitzende Anwendung (#1498)."
 }

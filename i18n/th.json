@@ -4342,5 +4342,15 @@
  "New sheet, after the selected one": "แผ่นแบบใหม่ ต่อจากแผ่นที่เลือก",
  "Delete the selected sheets (Delete)": "ลบแผ่นแบบที่เลือก (Delete)",
  "A view on this sheet shows the scene «{name}», which the model no longer has: pick another view for it in the composer.": "มุมมองบนแผ่นแบบนี้แสดงฉาก «{name}» ซึ่งไม่มีในโมเดลอีกต่อไป โปรดเลือกมุมมองอื่นในตัวจัดแผ่นแบบ",
- "Delete these {n} sheets?": "ลบแผ่นแบบ {n} แผ่นนี้หรือไม่?"
+ "Delete these {n} sheets?": "ลบแผ่นแบบ {n} แผ่นนี้หรือไม่?",
+ "Automatic publishing on Winget (#766).": "เผยแพร่อัตโนมัติบน Winget (#766)",
+ "History.execute says whether a command ran (#1241), rejected commands inside run_python reported as reverted (#1242), the shortcuts page follows actions added later (#1244) and placing a group honours the workspace's tool filter (#1243).": "History.execute บอกว่าคำสั่งทำงานหรือไม่ (#1241) คำสั่งที่ถูกปฏิเสธใน run_python ถูกรายงานว่าย้อนกลับแล้ว (#1242) หน้าปุ่มลัดติดตามการกระทำที่เพิ่มภายหลัง (#1244) และการวางกลุ่มเคารพตัวกรองเครื่องมือของพื้นที่ทำงาน (#1243)",
+ "One eye of a stereo pair from the camera (#1174, #1311).": "ภาพตาข้างเดียวของคู่สเตอริโอจากกล้อง (#1174, #1311)",
+ "A large .igz could lose a mesh's faces on opening: cause and fix (#1533).": "ไฟล์ .igz ขนาดใหญ่อาจสูญเสียหน้าของเมชเมื่อเปิด: สาเหตุและการแก้ไข (#1533)",
+ "Faster .skp import and .igz saving with less memory (#938, #1145, #1146, #1147) and drawing inside a set reaching its copies (#1148).": "นำเข้า .skp และบันทึก .igz เร็วขึ้นและใช้หน่วยความจำน้อยลง (#938, #1145, #1146, #1147) และการวาดภายในชุดไปถึงสำเนาของมัน (#1148)",
+ "The Catalan translation (#1497) and the Location tab of Model Info (#1502).": "คำแปลภาษาคาตาลัน (#1497) และแท็บตำแหน่งในข้อมูลโมเดล (#1502)",
+ "Push/Pull bases kept with Ctrl stay sound and cracked results are refused (#1155).": "ฐานที่คงไว้ด้วย Ctrl ในการดัน/ดึงยังสมบูรณ์ และผลลัพธ์ที่แตกร้าวจะถูกปฏิเสธ (#1155)",
+ "Camera roll with a 3D mouse (#1406).": "หมุนกล้องรอบแกนมุมมองด้วยเมาส์ 3 มิติ (#1406)",
+ "A preference to swap orbit and pan on the middle button (#467).": "ตัวเลือกสลับการโคจรและการเลื่อนบนปุ่มกลาง (#467)",
+ "IFC export writes the project north, the site location and the owning application (#1498).": "การส่งออก IFC เขียนทิศเหนือของโครงการ ตำแหน่งที่ตั้ง และแอปพลิเคชันเจ้าของ (#1498)"
 }

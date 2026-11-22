@@ -4342,5 +4342,15 @@
  "New sheet, after the selected one": "Lembar baru, setelah yang dipilih",
  "Delete the selected sheets (Delete)": "Hapus lembar yang dipilih (Delete)",
  "A view on this sheet shows the scene «{name}», which the model no longer has: pick another view for it in the composer.": "Sebuah tampilan di lembar ini menampilkan scene «{name}», yang sudah tidak ada di model: pilih tampilan lain untuknya di penyusun lembar.",
- "Delete these {n} sheets?": "Hapus {n} lembar ini?"
+ "Delete these {n} sheets?": "Hapus {n} lembar ini?",
+ "Automatic publishing on Winget (#766).": "Publikasi otomatis di Winget (#766).",
+ "History.execute says whether a command ran (#1241), rejected commands inside run_python reported as reverted (#1242), the shortcuts page follows actions added later (#1244) and placing a group honours the workspace's tool filter (#1243).": "History.execute memberi tahu apakah perintah dijalankan (#1241), perintah yang ditolak di dalam run_python dilaporkan sebagai dibatalkan (#1242), halaman pintasan mengikuti aksi yang ditambahkan kemudian (#1244), dan menempatkan grup mematuhi filter alat ruang kerja (#1243).",
+ "One eye of a stereo pair from the camera (#1174, #1311).": "Satu mata dari pasangan stereo dari kamera (#1174, #1311).",
+ "A large .igz could lose a mesh's faces on opening: cause and fix (#1533).": "File .igz besar bisa kehilangan muka sebuah mesh saat dibuka: penyebab dan perbaikannya (#1533).",
+ "Faster .skp import and .igz saving with less memory (#938, #1145, #1146, #1147) and drawing inside a set reaching its copies (#1148).": "Impor .skp dan penyimpanan .igz lebih cepat dengan memori lebih sedikit (#938, #1145, #1146, #1147), dan menggambar di dalam satu set sampai ke salinannya (#1148).",
+ "The Catalan translation (#1497) and the Location tab of Model Info (#1502).": "Terjemahan bahasa Katalan (#1497) dan tab Lokasi di Info Model (#1502).",
+ "Push/Pull bases kept with Ctrl stay sound and cracked results are refused (#1155).": "Alas yang dipertahankan dengan Ctrl pada Dorong/Tarik tetap utuh dan hasil yang retak ditolak (#1155).",
+ "Camera roll with a 3D mouse (#1406).": "Putaran kamera (roll) dengan mouse 3D (#1406).",
+ "A preference to swap orbit and pan on the middle button (#467).": "Preferensi untuk menukar orbit dan geser pada tombol tengah (#467).",
+ "IFC export writes the project north, the site location and the owning application (#1498).": "Ekspor IFC menulis utara proyek, lokasi tapak, dan aplikasi pemilik (#1498)."
 }

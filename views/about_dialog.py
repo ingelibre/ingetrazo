@@ -292,6 +292,46 @@ CONTRIBUTORS = [
     ("İbrahim Halim Gökbulut",
      "Turkish localization and workspace guide.",
      "https://github.com/h-skycloud"),
+    ("Luciano Ribeiro",
+     "Automatic publishing on Winget (#766).",
+     "https://github.com/calieno"),
+    ("Tristan Cebulla",
+     "History.execute says whether a command ran (#1241), rejected "
+     "commands inside run_python reported as reverted (#1242), the "
+     "shortcuts page follows actions added later (#1244) and "
+     "placing a group honours the workspace's tool filter (#1243).",
+     "https://github.com/d1rty-pixel"),
+    ("Daniel Ramos",
+     "One eye of a stereo pair from the camera (#1174, #1311).",
+     "https://github.com/danielcamposramos"),
+    ("diegog321",
+     "A large .igz could lose a mesh's faces on opening: cause and "
+     "fix (#1533).",
+     "https://github.com/diegog321"),
+    ("Max",
+     "Faster .skp import and .igz saving with less memory (#938, "
+     "#1145, #1146, #1147) and drawing inside a set reaching its "
+     "copies (#1148).",
+     "https://github.com/mle-gall"),
+    ("moominot",
+     "The Catalan translation (#1497) and the Location tab of Model "
+     "Info (#1502).",
+     "https://github.com/moominot"),
+    ("renancadastros01-gif",
+     "Push/Pull bases kept with Ctrl stay sound and cracked results "
+     "are refused (#1155).",
+     "https://github.com/renancadastros01-gif"),
+    ("Henry Salinas Flores",
+     "Camera roll with a 3D mouse (#1406).",
+     "https://github.com/salinashf"),
+    ("sneffetsd",
+     "A preference to swap orbit and pan on the middle button "
+     "(#467).",
+     "https://github.com/sneffetsd"),
+    ("Urkoh00",
+     "IFC export writes the project north, the site location and "
+     "the owning application (#1498).",
+     "https://github.com/Urkoh00"),
 ]
 
 #: Roll speed: pixels per tick, and the tick.

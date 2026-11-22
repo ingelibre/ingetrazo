@@ -4338,5 +4338,15 @@
  "New sheet, after the selected one": "Lámina nueva, tras la seleccionada",
  "Delete the selected sheets (Delete)": "Eliminar las láminas seleccionadas (Supr)",
  "A view on this sheet shows the scene «{name}», which the model no longer has: pick another view for it in the composer.": "Una vista de esta lámina muestra la escena «{name}», que el modelo ya no tiene: elige otra vista para ella en el compositor.",
- "Delete these {n} sheets?": "¿Eliminar estas {n} láminas?"
+ "Delete these {n} sheets?": "¿Eliminar estas {n} láminas?",
+ "Automatic publishing on Winget (#766).": "Publicación automática en Winget (#766).",
+ "History.execute says whether a command ran (#1241), rejected commands inside run_python reported as reverted (#1242), the shortcuts page follows actions added later (#1244) and placing a group honours the workspace's tool filter (#1243).": "History.execute dice si un comando se ejecutó (#1241), los comandos rechazados dentro de run_python se informan como revertidos (#1242), la página de atajos sigue las acciones añadidas después (#1244) y colocar un grupo respeta el filtro de herramientas del espacio de trabajo (#1243).",
+ "One eye of a stereo pair from the camera (#1174, #1311).": "Un ojo de un par estéreo desde la cámara (#1174, #1311).",
+ "A large .igz could lose a mesh's faces on opening: cause and fix (#1533).": "Un .igz grande podía perder las caras de una malla al abrirse: causa y arreglo (#1533).",
+ "Faster .skp import and .igz saving with less memory (#938, #1145, #1146, #1147) and drawing inside a set reaching its copies (#1148).": "Importar .skp y guardar .igz más rápido y con menos memoria (#938, #1145, #1146, #1147), y dibujar dentro de un conjunto llega a sus copias (#1148).",
+ "The Catalan translation (#1497) and the Location tab of Model Info (#1502).": "La traducción al catalán (#1497) y la pestaña Ubicación de Información del modelo (#1502).",
+ "Push/Pull bases kept with Ctrl stay sound and cracked results are refused (#1155).": "Las bases que se conservan con Ctrl en Empujar/Tirar quedan sanas y se rechazan los resultados agrietados (#1155).",
+ "Camera roll with a 3D mouse (#1406).": "Giro de cámara con un ratón 3D (#1406).",
+ "A preference to swap orbit and pan on the middle button (#467).": "Una preferencia para intercambiar órbita y desplazar en el botón central (#467).",
+ "IFC export writes the project north, the site location and the owning application (#1498).": "La exportación IFC escribe el norte del proyecto, la ubicación del sitio y la aplicación propietaria (#1498)."
 }

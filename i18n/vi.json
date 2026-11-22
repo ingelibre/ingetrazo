@@ -4366,5 +4366,15 @@
  "New sheet, after the selected one": "Trang bản vẽ mới, sau trang đã chọn",
  "Delete the selected sheets (Delete)": "Xóa các trang bản vẽ đã chọn (Delete)",
  "A view on this sheet shows the scene «{name}», which the model no longer has: pick another view for it in the composer.": "Một khung nhìn trên trang này hiển thị cảnh «{name}» mà mô hình không còn có nữa: chọn một chế độ xem khác cho nó trong trình soạn thảo.",
- "Delete these {n} sheets?": "Xóa {n} trang bản vẽ này?"
+ "Delete these {n} sheets?": "Xóa {n} trang bản vẽ này?",
+ "Automatic publishing on Winget (#766).": "Tự động phát hành trên Winget (#766).",
+ "History.execute says whether a command ran (#1241), rejected commands inside run_python reported as reverted (#1242), the shortcuts page follows actions added later (#1244) and placing a group honours the workspace's tool filter (#1243).": "History.execute cho biết lệnh có chạy hay không (#1241), lệnh bị từ chối trong run_python được báo là đã hoàn tác (#1242), trang phím tắt theo kịp các thao tác thêm sau (#1244) và đặt một nhóm tuân theo bộ lọc công cụ của không gian làm việc (#1243).",
+ "One eye of a stereo pair from the camera (#1174, #1311).": "Một mắt của cặp ảnh nổi từ camera (#1174, #1311).",
+ "A large .igz could lose a mesh's faces on opening: cause and fix (#1533).": "Một tệp .igz lớn có thể mất các mặt của lưới khi mở: nguyên nhân và cách sửa (#1533).",
+ "Faster .skp import and .igz saving with less memory (#938, #1145, #1146, #1147) and drawing inside a set reaching its copies (#1148).": "Nhập .skp và lưu .igz nhanh hơn, tốn ít bộ nhớ hơn (#938, #1145, #1146, #1147), và vẽ bên trong một tập hợp đến được các bản sao của nó (#1148).",
+ "The Catalan translation (#1497) and the Location tab of Model Info (#1502).": "Bản dịch tiếng Catalan (#1497) và thẻ Vị trí trong Thông tin mô hình (#1502).",
+ "Push/Pull bases kept with Ctrl stay sound and cracked results are refused (#1155).": "Các đáy giữ lại bằng Ctrl khi Đẩy/Kéo vẫn nguyên vẹn và kết quả bị nứt bị từ chối (#1155).",
+ "Camera roll with a 3D mouse (#1406).": "Nghiêng camera bằng chuột 3D (#1406).",
+ "A preference to swap orbit and pan on the middle button (#467).": "Tùy chọn hoán đổi xoay quỹ đạo và kéo trên nút giữa (#467).",
+ "IFC export writes the project north, the site location and the owning application (#1498).": "Xuất IFC ghi hướng bắc dự án, vị trí khu đất và ứng dụng sở hữu (#1498)."
 }

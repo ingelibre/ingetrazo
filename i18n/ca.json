@@ -4341,5 +4341,15 @@
  "New sheet, after the selected one": "Làmina nova, després de la seleccionada",
  "Delete the selected sheets (Delete)": "Elimina les làmines seleccionades (Supr)",
  "A view on this sheet shows the scene «{name}», which the model no longer has: pick another view for it in the composer.": "Una vista d'aquesta làmina mostra l'escena «{name}», que el model ja no té: tria-li una altra vista al compositor.",
- "Delete these {n} sheets?": "Vols eliminar aquestes {n} làmines?"
+ "Delete these {n} sheets?": "Vols eliminar aquestes {n} làmines?",
+ "Automatic publishing on Winget (#766).": "Publicació automàtica a Winget (#766).",
+ "History.execute says whether a command ran (#1241), rejected commands inside run_python reported as reverted (#1242), the shortcuts page follows actions added later (#1244) and placing a group honours the workspace's tool filter (#1243).": "History.execute diu si una ordre s'ha executat (#1241), les ordres rebutjades dins de run_python s'informen com a revertides (#1242), la pàgina de dreceres segueix les accions afegides després (#1244) i col·locar un grup respecta el filtre d'eines de l'espai de treball (#1243).",
+ "One eye of a stereo pair from the camera (#1174, #1311).": "Un ull d'un parell estèreo des de la càmera (#1174, #1311).",
+ "A large .igz could lose a mesh's faces on opening: cause and fix (#1533).": "Un .igz gran podia perdre les cares d'una malla en obrir-se: causa i correcció (#1533).",
+ "Faster .skp import and .igz saving with less memory (#938, #1145, #1146, #1147) and drawing inside a set reaching its copies (#1148).": "Importar .skp i desar .igz més ràpid i amb menys memòria (#938, #1145, #1146, #1147), i dibuixar dins d'un conjunt arriba a les seves còpies (#1148).",
+ "The Catalan translation (#1497) and the Location tab of Model Info (#1502).": "La traducció al català (#1497) i la pestanya Ubicació de la Informació del model (#1502).",
+ "Push/Pull bases kept with Ctrl stay sound and cracked results are refused (#1155).": "Les bases que es conserven amb Ctrl a Empènyer/Estirar queden sanes i es rebutgen els resultats esquerdats (#1155).",
+ "Camera roll with a 3D mouse (#1406).": "Gir de càmera amb un ratolí 3D (#1406).",
+ "A preference to swap orbit and pan on the middle button (#467).": "Una preferència per intercanviar òrbita i desplaçament al botó central (#467).",
+ "IFC export writes the project north, the site location and the owning application (#1498).": "L'exportació IFC escriu el nord del projecte, la ubicació del lloc i l'aplicació propietària (#1498)."
 }

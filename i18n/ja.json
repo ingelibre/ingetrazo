@@ -4339,5 +4339,15 @@
  "New sheet, after the selected one": "選択したシートの後に新しいシート",
  "Delete the selected sheets (Delete)": "選択したシートを削除（Delete）",
  "A view on this sheet shows the scene «{name}», which the model no longer has: pick another view for it in the composer.": "このシートのビューは、モデルから削除されたシーン「{name}」を表示しています。シートレイアウトで別のビューを選んでください。",
- "Delete these {n} sheets?": "これら {n} 枚のシートを削除しますか？"
+ "Delete these {n} sheets?": "これら {n} 枚のシートを削除しますか？",
+ "Automatic publishing on Winget (#766).": "Winget への自動公開 (#766)。",
+ "History.execute says whether a command ran (#1241), rejected commands inside run_python reported as reverted (#1242), the shortcuts page follows actions added later (#1244) and placing a group honours the workspace's tool filter (#1243).": "History.execute がコマンドの実行有無を返すようになり (#1241)、run_python 内で拒否されたコマンドは取り消し済みとして報告され (#1242)、ショートカットのページが後から追加された操作に追従し (#1244)、グループの配置がワークスペースのツールフィルターに従います (#1243)。",
+ "One eye of a stereo pair from the camera (#1174, #1311).": "カメラからのステレオペアの片目 (#1174, #1311)。",
+ "A large .igz could lose a mesh's faces on opening: cause and fix (#1533).": "大きな .igz を開くとメッシュの面が失われることがあった問題：原因と修正 (#1533)。",
+ "Faster .skp import and .igz saving with less memory (#938, #1145, #1146, #1147) and drawing inside a set reaching its copies (#1148).": "より速く省メモリな .skp の読み込みと .igz の保存 (#938, #1145, #1146, #1147)、およびセット内での描画がそのコピーにも届くように (#1148)。",
+ "The Catalan translation (#1497) and the Location tab of Model Info (#1502).": "カタルーニャ語訳 (#1497) とモデル情報の「位置」タブ (#1502)。",
+ "Push/Pull bases kept with Ctrl stay sound and cracked results are refused (#1155).": "プッシュ/プルで Ctrl により残したベースが健全に保たれ、ひびの入った結果は拒否されます (#1155)。",
+ "Camera roll with a 3D mouse (#1406).": "3D マウスによるカメラのロール (#1406)。",
+ "A preference to swap orbit and pan on the middle button (#467).": "中ボタンのオービットとパンを入れ替える設定 (#467)。",
+ "IFC export writes the project north, the site location and the owning application (#1498).": "IFC 書き出しでプロジェクトの北、敷地の位置、所有アプリケーションを書き込みます (#1498)。"
 }

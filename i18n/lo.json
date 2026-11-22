@@ -4342,5 +4342,15 @@
  "New sheet, after the selected one": "ໜ້າແບບໃໝ່ ຫຼັງໜ້າທີ່ເລືອກ",
  "Delete the selected sheets (Delete)": "ລຶບໜ້າແບບທີ່ເລືອກ (Delete)",
  "A view on this sheet shows the scene «{name}», which the model no longer has: pick another view for it in the composer.": "ມຸມມອງໜຶ່ງໃນໜ້າແບບນີ້ສະແດງສາກ «{name}» ເຊິ່ງບໍ່ມີຢູ່ໃນໂມເດວອີກແລ້ວ: ກະລຸນາເລືອກມຸມມອງອື່ນໃສ່ແທນໃນຕົວຈັດໜ້າເຈ້ຍ.",
- "Delete these {n} sheets?": "ລຶບໜ້າແບບ {n} ໜ້ານີ້ບໍ່?"
+ "Delete these {n} sheets?": "ລຶບໜ້າແບບ {n} ໜ້ານີ້ບໍ່?",
+ "Automatic publishing on Winget (#766).": "ເຜີຍແຜ່ອັດຕະໂນມັດໃນ Winget (#766).",
+ "History.execute says whether a command ran (#1241), rejected commands inside run_python reported as reverted (#1242), the shortcuts page follows actions added later (#1244) and placing a group honours the workspace's tool filter (#1243).": "History.execute ບອກວ່າຄຳສັ່ງເຮັດວຽກຫຼືບໍ່ (#1241), ຄຳສັ່ງທີ່ຖືກປະຕິເສດໃນ run_python ຖືກລາຍງານວ່າຍົກເລີກແລ້ວ (#1242), ໜ້າປຸ່ມລັດຕິດຕາມການກະທຳທີ່ເພີ່ມພາຍຫຼັງ (#1244) ແລະ ການວາງກຸ່ມເຄົາລົບຕົວກອງເຄື່ອງມືຂອງພື້ນທີ່ເຮັດວຽກ (#1243).",
+ "One eye of a stereo pair from the camera (#1174, #1311).": "ຕາຂ້າງດຽວຂອງຄູ່ສະເຕຣິໂອຈາກກ້ອງ (#1174, #1311).",
+ "A large .igz could lose a mesh's faces on opening: cause and fix (#1533).": "ໄຟລ໌ .igz ຂະໜາດໃຫຍ່ອາດສູນເສຍໜ້າຂອງເມຊເມື່ອເປີດ: ສາເຫດ ແລະ ການແກ້ໄຂ (#1533).",
+ "Faster .skp import and .igz saving with less memory (#938, #1145, #1146, #1147) and drawing inside a set reaching its copies (#1148).": "ນຳເຂົ້າ .skp ແລະ ບັນທຶກ .igz ໄວຂຶ້ນ ແລະ ໃຊ້ໜ່ວຍຄວາມຈຳໜ້ອຍລົງ (#938, #1145, #1146, #1147), ແລະ ການແຕ້ມພາຍໃນຊຸດໄປຮອດສຳເນົາຂອງມັນ (#1148).",
+ "The Catalan translation (#1497) and the Location tab of Model Info (#1502).": "ການແປພາສາກາຕາລັນ (#1497) ແລະ ແຖບທີ່ຕັ້ງໃນຂໍ້ມູນແບບຈຳລອງ (#1502).",
+ "Push/Pull bases kept with Ctrl stay sound and cracked results are refused (#1155).": "ຖານທີ່ຮັກສາໄວ້ດ້ວຍ Ctrl ໃນການດັນ/ດຶງ ຍັງສົມບູນ ແລະ ຜົນທີ່ແຕກຮ້າວຈະຖືກປະຕິເສດ (#1155).",
+ "Camera roll with a 3D mouse (#1406).": "ໝຸນກ້ອງດ້ວຍເມົາສ໌ 3 ມິຕິ (#1406).",
+ "A preference to swap orbit and pan on the middle button (#467).": "ຕົວເລືອກສະຫຼັບການໂຄຈອນ ແລະ ການເລື່ອນໃນປຸ່ມກາງ (#467).",
+ "IFC export writes the project north, the site location and the owning application (#1498).": "ການສົ່ງອອກ IFC ຂຽນທິດເໜືອຂອງໂຄງການ, ທີ່ຕັ້ງຂອງສະຖານທີ່ ແລະ ແອັບພລິເຄຊັນເຈົ້າຂອງ (#1498)."
 }
