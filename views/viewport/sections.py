@@ -412,14 +412,23 @@ class SectionPlaneMixin:
     @staticmethod
     def _cut_layer_tags(idx, ents):
         """The layer each cut triangle's section is filled with, as a sheet
-        tags it: the face's own layer, else its object's."""
+        tags it: the face's own layer, else the nearest container's that
+        has one — a wall in a group on «S_Demolition» is filled as
+        demolition, not as the plane's default fill, even when the wall
+        itself carries no layer (#1503)."""
         import numpy as np
-        from core.layers import DEFAULT_LAYER, layer_of
+        from core.layers import DEFAULT_LAYER, inherited_layer, layer_of
         memo: dict = {}
         out = []
         # A lazy placement's face is built with its whole mesh when asked
         # for: its layer is read from the document instead.
         quick = getattr(idx.entities, "layer_at", None)
+        # The placement each entity belongs to, when the index carries it:
+        # a nested placement's proxy already wears the nearest container's
+        # layer (see _expand_placements), so it answers the lookup the
+        # top-level owner alone cannot.
+        places = getattr(idx, "ent_placements", None)
+        place_idx = getattr(idx, "ent_place_idx", None)
         for e in ents.tolist():
             tag = memo.get(e)
             if tag is None:
@@ -429,8 +438,14 @@ class SectionPlaneMixin:
                 else:
                     face, owner = idx.entities[e]
                     tag = layer_of(face)
-                if tag == DEFAULT_LAYER and owner is not None:
-                    tag = layer_of(owner)
+                if tag == DEFAULT_LAYER:
+                    place = None
+                    if places is not None and place_idx is not None:
+                        pi = int(place_idx[e])
+                        if 0 <= pi < len(places):
+                            place = places[pi]
+                    tag = inherited_layer(
+                        place if place is not None else owner)
                 memo[e] = tag
             out.append(tag)
         return np.asarray(out, dtype=object)

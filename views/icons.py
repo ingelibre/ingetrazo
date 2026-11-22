@@ -77,6 +77,27 @@ class _weighted:
         return False
 
 
+def screen_dpr() -> float:
+    """The screen's device pixel ratio (1.0 without an application): what a
+    mark drawn at a fixed logical size must be multiplied by to be crisp."""
+    app = QApplication.instance()
+    return max(1.0, app.devicePixelRatio()) if app is not None else 1.0
+
+
+def mark_pixmap(width: int = 18, height: int | None = None) -> QPixmap:
+    """A transparent pixmap of ``width`` x ``height`` logical px at the
+    screen's pixel ratio, for the small marks drawn in logical coordinates
+    (the rows' eye, padlock, swatches). A bare ``QPixmap(18, 18)`` is 18
+    device pixels, which Qt stretches -- blurry -- on a scaled screen."""
+    if height is None:
+        height = width
+    dpr = screen_dpr()
+    pm = QPixmap(round(width * dpr), round(height * dpr))
+    pm.setDevicePixelRatio(dpr)
+    pm.fill(Qt.transparent)
+    return pm
+
+
 _PX = 48          # render size (QIcon scales down; big = crisp on HiDPI)
 #: Margin of the toolbar and menu icons, in render pixels: each drawing is
 #: written by hand in about the middle two thirds of the canvas, and

@@ -33,6 +33,7 @@ from PySide6.QtWidgets import (QAbstractItemView, QApplication, QDialog,
 from core import layers as L
 from core.i18n import tr
 from core.outliner import natural_key  # noqa: F401 — the Browser's too
+from views.icons import mark_pixmap
 from views.outliner import node_icon
 from views.side_tree import SideTree, StayOpenMenu, _HeaderButton
 
@@ -75,8 +76,7 @@ def _pencil_icon(on: bool) -> QIcon:
     from views.icons import pencil_glyph
     from views.theme import accent_color
     ink = QApplication.palette().text().color()
-    pm = QPixmap(18, 18)
-    pm.fill(Qt.transparent)
+    pm = mark_pixmap(18)
     p = QPainter(pm)
     p.setRenderHint(QPainter.Antialiasing)
     # The glyph's 16.5-unit box in the 48 canvas onto the 18 px cell.
@@ -114,8 +114,7 @@ def printer_icon(on: bool) -> QIcon:
     ink = QColor(QApplication.palette().text().color())
     if not on:
         ink.setAlpha(110)
-    pm = QPixmap(18, 18)
-    pm.fill(Qt.transparent)
+    pm = mark_pixmap(18)
     p = QPainter(pm)
     p.setRenderHint(QPainter.Antialiasing)
     pen = QPen(ink, 1.2)
@@ -145,8 +144,7 @@ def swatch_icon(rgba) -> QIcon:
     rgb = tuple(rgba[:3])
     alpha = (min(1.0, max(0.0, float(rgba[3])))
              if len(rgba) > 3 else 1.0)
-    pm = QPixmap(18, 18)
-    pm.fill(Qt.transparent)
+    pm = mark_pixmap(18)
     p = QPainter(pm)
     p.setRenderHint(QPainter.Antialiasing)
     from PySide6.QtWidgets import QApplication
@@ -228,8 +226,7 @@ def none_swatch() -> QIcon:
     from PySide6.QtGui import QPainterPath
     from PySide6.QtWidgets import QApplication
     pal = QApplication.palette()
-    pm = QPixmap(18, 18)
-    pm.fill(Qt.transparent)
+    pm = mark_pixmap(18)
     p = QPainter(pm)
     p.setRenderHint(QPainter.Antialiasing)
     box = QRectF(2.5, 3.5, 13, 11)
@@ -377,12 +374,8 @@ def hatch_icon(key, ground=None, ink=None, angle: float = 0.0,
         return none_swatch()
     from PySide6.QtGui import QPainterPath
     from views.hatch_paint import paint_hatch
-    app = QApplication.instance()
-    dpr = app.devicePixelRatio() if app is not None else 1.0
     pal = QApplication.palette()
-    pm = QPixmap(int(18 * dpr), int(18 * dpr))
-    pm.setDevicePixelRatio(dpr)
-    pm.fill(Qt.transparent)
+    pm = mark_pixmap(18)
     p = QPainter(pm)
     p.setRenderHint(QPainter.Antialiasing)
     box = QPainterPath()

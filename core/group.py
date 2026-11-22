@@ -576,7 +576,7 @@ def iter_painted_placements(group, base=None, paint=None):
         yield from iter_painted_placements(child, m, paint)
 
 
-def visible_placements(scene, group):
+def visible_placements(scene, group, with_layer=False):
     """:func:`iter_placements` without the nested placements the viewport
     does not draw, for a top-level ``group`` the caller already found
     visible.
@@ -586,7 +586,14 @@ def visible_placements(scene, group):
     nearest one above it; and a hidden or locked tag above puts every
     instance below it on that tag, whatever its children are tagged. A
     hidden group two levels down drew in a sheet while the viewport left it
-    out, because :func:`world_mesh` folds in every child."""
+    out, because :func:`world_mesh` folds in every child.
+
+    ``with_layer`` also yields the layer each placement is drawn with —
+    its own, else the nearest one above it — as a third item, so a caller
+    that tags geometry per placement (a section cut's fill, a sheet's ink)
+    need not walk the tree again."""
+    from core.layers import DEFAULT_LAYER, layer_of
+
     def shown(layer):
         ly = scene.layer(layer) if layer else None
         return ly is None or ly.visible
@@ -594,6 +601,10 @@ def visible_placements(scene, group):
     def blocking(layer):
         ly = scene.layer(layer) if layer else None
         return ly is not None and (not ly.visible or ly.locked)
+
+    def wrap(placed, m, layer):
+        return (placed, m, layer or DEFAULT_LAYER) if with_layer \
+            else (placed, m)
 
     def walk(node, world, hidden, forced, inherited):
         for child in node.children:
@@ -603,7 +614,7 @@ def visible_placements(scene, group):
             layer = forced or child.layer or inherited or node.layer
             off = hidden or bool(child.hidden)
             if not off and shown(layer):
-                yield child, m
+                yield wrap(child, m, layer)
             if child.children:
                 kid_forced = forced
                 if kid_forced is None and blocking(layer):
@@ -611,7 +622,7 @@ def visible_placements(scene, group):
                 yield from walk(child, m, off, kid_forced, layer)
 
     m = getattr(group, "xform", None)
-    yield group, m
+    yield wrap(group, m, layer_of(group))
     if getattr(group, "children", None):
         forced = group.layer if blocking(group.layer) else None
         yield from walk(group, m, bool(group.hidden), forced, None)

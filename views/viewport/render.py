@@ -3579,8 +3579,8 @@ class RenderMixin:
         open surface (no second face).
 
         ``tags``: also the layer each triangle, hard edge and soft edge is
-        inked with on a sheet — its own, else its object's, as
-        ``collect_geometry(layers=True)`` tags them — three more object
+        inked with on a sheet — its own, else the nearest container's that
+        has one, as ``collect_geometry(layers=True)`` tags them — three more object
         arrays ``(…, tri_tags, hard_tags, soft_tags)``. Read from the pick
         index and the chunks (a lazy placement's from the document), never
         from the faces: the walk was 12.8 s of the 16 s of the plaza's
@@ -3616,9 +3616,18 @@ class RenderMixin:
             hard_parts.append(np.stack([idx.gedge_a[m], idx.gedge_b[m]],
                                        axis=1).astype(np.float64))
             if tags:
-                # Its object's layer, unless the edge carries one of its own.
-                owners = np.array([layer_of(g) for g in idx.gedge_groups]
-                                  + [DEFAULT_LAYER], dtype=object)
+                # Its placement's layer — the nearest container's, not the
+                # top-level object's (#1503) — unless the edge carries one
+                # of its own.
+                ilayer = getattr(idx, "gedge_ilayer", None)
+                if ilayer is not None and len(ilayer) == len(
+                        idx.gedge_groups):
+                    owners = np.array(list(ilayer) + [DEFAULT_LAYER],
+                                      dtype=object)
+                else:
+                    owners = np.array(
+                        [layer_of(g) for g in idx.gedge_groups]
+                        + [DEFAULT_LAYER], dtype=object)
                 t = owners[idx.gedge_gi[m]]
                 own = getattr(idx, "gedge_layer", None)
                 if own is not None:
