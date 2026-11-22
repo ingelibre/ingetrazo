@@ -33,7 +33,7 @@ sheet, frame) and renames and hides are the usual undoable commands.
 from __future__ import annotations
 
 from PySide6.QtCore import QItemSelectionModel, QPointF, QRectF, QSize, Qt
-from PySide6.QtGui import (QColor, QFont, QIcon, QIconEngine, QPainter,
+from PySide6.QtGui import (QColor, QFont, QIcon, QPainter,
                            QPalette, QPen, QPixmap)
 from PySide6.QtWidgets import (QAbstractItemView, QApplication, QDialog,
                                QDockWidget,
@@ -150,69 +150,23 @@ def _cube(p, ink, fill=None) -> None:
     p.drawLine(QPointF(11.5, 6.5), QPointF(15.5, 2.5))
 
 
-#: The pixel ratios the drawn icons are kept at: the 1× one for a screen at
-#: 100 %, and a 3× one Qt scales down for 125 %, 150 %, 200 %… — an 18 px
-#: drawing scaled UP to a 125 % screen came out blurred.
-_DRAW_RATIOS = (1, 3)
-
-
-class _DrawnEngine(QIconEngine):
-    """A drawn mark painted at the exact pixel ratio of whatever paints it.
-    Pixmaps kept at fixed ratios (1× and 3×) came out blurred on a
-    fractional screen: a window at 125 % or 160 % got the 3× drawing
-    scaled down by a non-whole factor, softening the 1.2 px lines of the
-    eye and the padlock. ``opacity`` < 1 is the faded inherited mark."""
-
-    def __init__(self, key: str, opacity: float = 1.0):
-        super().__init__()
-        self._key = key
-        self._opacity = opacity
-        self._cache: dict = {}
-
-    def _pm(self, w: int, h: int, ratio: float) -> QPixmap:
-        slot = (w, h, round(ratio, 3))
-        pm = self._cache.get(slot)
-        if pm is None:
-            pm = _draw_pixmap(self._key, ratio * max(w, h) / 18.0)
-            pm.setDevicePixelRatio(ratio)
-            if self._opacity < 1.0:
-                faint = QPixmap(pm.size())
-                faint.setDevicePixelRatio(ratio)
-                faint.fill(Qt.transparent)
-                p = QPainter(faint)
-                p.setOpacity(self._opacity)
-                p.drawPixmap(0, 0, pm)
-                p.end()
-                pm = faint
-            self._cache[slot] = pm
-        return pm
-
-    def paint(self, painter, rect, mode, state):
-        dev = painter.device()
-        ratio = dev.devicePixelRatioF() if dev is not None else 1.0
-        painter.drawPixmap(rect, self._pm(rect.width(), rect.height(),
-                                          ratio))
-
-    def pixmap(self, size, mode, state):
-        return self._pm(size.width(), size.height(), 1.0)
-
-    def scaledPixmap(self, size, mode, state, scale):
-        return self._pm(size.width(), size.height(), scale)
-
-    def actualSize(self, size, mode, state):
-        return size
-
-    def clone(self):
-        return _DrawnEngine(self._key, self._opacity)
-
-
-#: The marks whose icon is a _DrawnEngine, so the faded one is drawn too.
-_DRAWN: set = set()
+#: The pixel ratios the drawn icons are kept at (plus the window's own):
+#: the common screen scales, so Qt paints the exact drawing instead of
+#: scaling another one by a non-whole factor, which blurs the thin lines.
+_DRAW_RATIOS = (1, 1.25, 1.5, 1.75, 2, 2.25, 2.5, 3)
 
 
 def _draw(key: str) -> QIcon:
-    _DRAWN.add(key)
-    return QIcon(_DrawnEngine(key))
+    # Kept at the common ratios and the window's own: Qt then paints the
+    # exact one instead of scaling another by a non-whole factor (a window
+    # at 125 % got the 3x drawing scaled down by 2.4, blurring the 1.2 px
+    # lines of the eye and the padlock). Plain pixmaps, not a Python icon
+    # engine: one owned by the QIcon crashed when Python collected it.
+    from views.icons import screen_dpr
+    icon = QIcon()
+    for ratio in sorted({*_DRAW_RATIOS, screen_dpr()}):
+        icon.addPixmap(_draw_pixmap(key, ratio))
+    return icon
 
 
 def _draw_pixmap(key: str, ratio: float = 1):
@@ -389,8 +343,9 @@ def _faded(icon: QIcon, size: int = MARK_SIZE) -> QIcon:
     """``icon`` at 40 %: the eye or padlock a row inherits from a group
     around it — closed, but not its own — at the row's own size, only
     fainter (16 px made an inherited mark smaller than its neighbours)."""
+    from views.icons import screen_dpr
     out = QIcon()
-    for ratio in _DRAW_RATIOS:
+    for ratio in sorted({*_DRAW_RATIOS, screen_dpr()}):
         src = icon.pixmap(QSize(size, size), ratio)
         pm = QPixmap(src.size())
         pm.setDevicePixelRatio(src.devicePixelRatio())
@@ -408,11 +363,7 @@ def mark_icon(key: str, inherited: bool = False) -> QIcon:
     ``isolate``… — as the two side trees draw it: same drawing, same size,
     and faded when the state comes from the group around it."""
     icon = node_icon(key)
-    if not inherited:
-        return icon
-    if key in _DRAWN:
-        return QIcon(_DrawnEngine(key, 0.4))
-    return _faded(icon)
+    return _faded(icon) if inherited else icon
 
 
 def inherited_states(groups) -> dict:
