@@ -395,7 +395,10 @@ class SectionPlaneMixin:
                                     idx.ent_vis[idx.tri_ent], rows=True,
                                     reach=reach)
             if segs is not None:
-                tags = self._cut_layer_tags(idx, idx.tri_ent[rows])
+                sc = self.scene
+                tags = self._cut_layer_tags(
+                    idx, idx.tri_ent[rows],
+                    key=sc.content_version - sc.section_version)
         memo[ident] = (key, segs, tags)
         return segs
 
@@ -410,7 +413,7 @@ class SectionPlaneMixin:
         return self._section_cut_cache[self._cut_ident(sp)][2]
 
     @staticmethod
-    def _cut_layer_tags(idx, ents):
+    def _cut_layer_tags(idx, ents, key=None):
         """The layer each cut triangle's section is filled with, as a sheet
         tags it: the face's own layer, else the nearest container's that
         has one — a wall in a group on «S_Demolition» is filled as
@@ -418,7 +421,22 @@ class SectionPlaneMixin:
         itself carries no layer (#1503)."""
         import numpy as np
         from core.layers import DEFAULT_LAYER, inherited_layer, layer_of
-        memo: dict = {}
+        # Kept on the index: it is made again by every edit of the model
+        # (a face put on a layer, a layer renamed), so its entities' layers
+        # stand while it does. Dragging a plane over the plaza looked the
+        # same ~1 100 entities up on every frame, ~16 ms of a frame's ~50.
+        # ``key``: the model's version as the caller reads it; without one
+        # nothing is kept.
+        kept = getattr(idx, "_cut_tag_memo", None) if key is not None else None
+        if kept is not None and kept[0] == key:
+            memo = kept[1]
+        else:
+            memo = {}
+            if key is not None:
+                try:
+                    idx._cut_tag_memo = (key, memo)
+                except AttributeError:
+                    pass
         out = []
         # A lazy placement's face is built with its whole mesh when asked
         # for: its layer is read from the document instead.

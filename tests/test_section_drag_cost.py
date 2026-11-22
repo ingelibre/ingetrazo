@@ -239,3 +239,37 @@ def test_dragging_a_section_keeps_the_model_box(monkeypatch):
     translate_points(scene, top, QVector3D(0, 0, 1.0))
     assert scene.bounds()[1].z() > hi.z() + 0.5
     assert walks
+
+
+def test_dragging_a_section_keeps_the_layers_of_what_it_cuts(monkeypatch):
+    """Each cut chord is filled with its face's layer: every frame of a
+    plane's drag looked the same faces' layers up again (~16 ms of a
+    frame's ~50 on the plaza, 22-11). They are kept while the model is —
+    and a face put on another layer is filled with that one."""
+    import core.layers as layers
+    from core.history import AssignLayerCommand
+    from tools.move import MoveTool
+    vp, hist, plane = _viewport_with_a_cut()
+    plane.active = True
+    vp.scene.bump_sections()
+    assert vp._section_cut_segments() is not None
+    asked = []
+    real = layers.layer_of
+    from core.section import SectionPlane
+
+    def spy(e):
+        if not isinstance(e, SectionPlane):      # the plane's own layer
+            asked.append(e)
+        return real(e)
+    monkeypatch.setattr(layers, "layer_of", spy)
+    tool = MoveTool()
+    tool._splanes = [plane]
+    for _ in range(4):
+        tool._shift(vp, QVector3D(0, 0, 0.2))
+        assert vp._section_cut_segments() is not None
+    assert asked == []
+    side = next(f for f in vp.scene.mesh.faces
+                if abs(f.normal().z()) < 0.5)
+    hist.execute(AssignLayerCommand([side], "Muros"))
+    tags = vp._section_cut_tags()
+    assert "Muros" in set(tags.tolist())
