@@ -117,6 +117,34 @@ def test_without_an_active_layer_new_objects_stay_on_layer_0():
                for x in list(scene.mesh.edges) + list(scene.mesh.faces))
 
 
+def test_switching_the_active_layer_moves_only_what_is_drawn_after():
+    """Draw on «Ebene 1», switch the active layer to «Other», draw again,
+    switch back: each new line follows the layer active when it was drawn,
+    and switching never moves what is already there."""
+    scene, history = _scene()
+    scene.layers.append(Layer("Other"))
+    history.execute(AddEdgeCommand(V(0, 0, 0), V(5, 0, 0)))
+    L.set_active(scene, "Other")
+    history.execute(AddEdgeCommand(V(10, 0, 0), V(15, 0, 0)))
+    L.set_active(scene, ACTIVE)
+    history.execute(AddEdgeCommand(V(20, 0, 0), V(25, 0, 0)))
+    assert [layer_of(e) for e in scene.mesh.edges] == [
+        ACTIVE, "Other", ACTIVE]
+
+
+def test_layer_0_as_the_active_layer_keeps_new_objects_on_layer_0():
+    """«Layer 0» itself active (its pencil clicked): new geometry stays
+    on Layer 0 — the fix moves new objects to the active layer, it never
+    changes the default layer itself."""
+    scene, history = _scene(active=False)
+    L.set_active(scene, DEFAULT_LAYER)
+    history.execute(AddEdgeCommand(V(0, 0, 0), V(5, 0, 0)))
+    history.execute(AddFaceCommand(
+        [V(0, 0, 0), V(2, 0, 0), V(2, 2, 0), V(0, 2, 0)]))
+    assert all(layer_of(x) == DEFAULT_LAYER
+               for x in list(scene.mesh.edges) + list(scene.mesh.faces))
+
+
 def test_a_hidden_active_layer_leaves_new_objects_on_layer_0():
     scene, history = _scene()
     scene.layer(ACTIVE).visible = False
