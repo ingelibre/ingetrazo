@@ -259,6 +259,10 @@ class ShadowMixin:
         if (fit is None or mvp is None or self._export_size is not None
                 or fit[0] != (tuple(mvp.data()), key)):
             return None
+        # Measured with the figures where they stood: a dragged one walks
+        # out of it, and its shadow went with nothing to fall on.
+        if self._figures_dragged():
+            return None
         fkey = (key, fit[1])
         vp = self._light_vp(d, lo, hi, fit[1])
         fbo = getattr(self, "_fine_shadow_fbo", None)

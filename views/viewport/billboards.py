@@ -278,7 +278,8 @@ class BillboardMixin:
         its shadow (Marco, 21-11). Memoised on the placements and the
         model's version (a figure moves or changes with an edit): it is
         asked every frame."""
-        key = (self._placements_epoch(), self.scene.version)
+        key = (self._placements_epoch(), self.scene.version,
+               self._figure_drag_pose())
         memo = getattr(self, "_figure_box_memo", None)
         if memo is not None and memo[0] == key:
             return memo[1]
@@ -286,7 +287,33 @@ class BillboardMixin:
         self._figure_box_memo = (key, box)
         return box
 
+    def _figures_dragged(self) -> bool:
+        """Whether a Move/Rotate drag carries a face-me figure now."""
+        moving = getattr(self, "_preview_groups", None)
+        return bool(moving) and any(id(g) in moving
+                                    for g in self._faceme_figures())
+
+    def _figure_drag_pose(self):
+        """The drag's transform while it carries a figure (else ``None``):
+        the figures' box follows it, so their shadow does as they move."""
+        if not self._figures_dragged():
+            return None
+        m = getattr(self, "_preview_matrix", None)
+        if m is not None:
+            return tuple(round(x, 4) for x in m.data())
+        off = getattr(self, "_preview_offset", None)
+        return None if off is None else (round(off.x(), 4),
+                                         round(off.y(), 4),
+                                         round(off.z(), 4))
+
     def _figure_shadow_box_now(self):
+        """See ``_figure_shadow_box``. Taken where the figures stand NOW —
+        a drag's preview carried on their feet — and widened to whole
+        metres: the sun's map, fitted round it, is drawn again only as a
+        dragged figure crosses a metre, not on every pointer move (the
+        engineer lost his shadow while dragged: it fell outside the map
+        fitted round where he had stood, ronda Windows 0.6.3)."""
+        import math
         lo = hi = None
         for g in self._faceme_figures():
             if getattr(g, "billboard", False) is not True:
@@ -294,7 +321,8 @@ class BillboardMixin:
             ext = self._billboard_extent(g)
             if ext is None:
                 continue
-            a, w, h, tex = ext
+            _a, w, h, tex = ext
+            a = self._billboard_feet(g, ext)
             fu = self._figure_feet_u(tex)
             r = w * max(fu, 1.0 - fu)
             glo = (a.x() - r, a.y() - r, a.z())
@@ -304,7 +332,10 @@ class BillboardMixin:
             else:
                 lo = tuple(map(min, lo, glo))
                 hi = tuple(map(max, hi, ghi))
-        return None if lo is None else (lo, hi)
+        if lo is None:
+            return None
+        return (tuple(float(math.floor(v)) for v in lo),
+                tuple(float(math.ceil(v)) for v in hi))
 
     def _draw_billboards(self) -> None:
         """Per-frame pass: each face-me billboard is a textured cutout quad

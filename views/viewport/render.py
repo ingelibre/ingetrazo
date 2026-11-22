@@ -1289,6 +1289,13 @@ class RenderMixin:
                 or self._base_map_showing() or self._terrain_showing()
                 or self._photo_showing()):
             return None
+        # A face-me figure is drawn with the static passes, turned to the
+        # camera: one riding a Move/Rotate drag would stay in the kept
+        # frame where it was while only the line and the distance moved,
+        # and jump on the click (the engineer, ronda Windows 0.6.3).
+        moving = getattr(self, "_preview_groups", None)
+        if moving and any(id(g) in moving for g in self._faceme_figures()):
+            return None
         v3 = lambda v: (None if v is None  # noqa: E731
                         else (v.x(), v.y(), v.z()))
         try:

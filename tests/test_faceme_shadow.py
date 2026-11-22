@@ -202,8 +202,12 @@ def test_a_model_with_only_the_figure_has_a_shadow(view):
     ys = np.linspace(-3, 3, 121) + FEET.y()
     shade = _map_footprint(view, xs, ys)
     assert shade.sum() > 50
-    # ...and it lies where the sun throws it, away from the sun.
+    # ...and it lies where the sun throws it, away from the sun. Read raw
+    # (no PCF), the map shades a few far cells of the ground too, more of
+    # them the wider the map: only the figure's reach counts (its tip
+    # falls 2.3 m from the feet).
     gx, gy = np.meshgrid(xs, ys)
+    shade &= np.hypot(gx - FEET.x(), gy - FEET.y()) < 2.6
     cx, cy = gx[shade].mean(), gy[shade].mean()
     assert (cx - FEET.x()) * d[0] + (cy - FEET.y()) * d[1] < 0
     assert math.hypot(cx - FEET.x() + d[0] * t,
@@ -405,12 +409,15 @@ def test_dragging_a_figure_leaves_the_model_map_alone(view):
     """A Move drag of the figure alone redraws only the figures' map: the
     model's map was redrawn as the drag began and again as it ended
     (158 times while Marco dragged the engineer across the plaza, 22-11).
-    A drag of a model's group still redraws it."""
+    A drag of a model's group still redraws it. The figure walks inside
+    the model's box, as on the plaza (out of it the map widens to keep
+    its shadow, a metre at a time)."""
     from core.group import Group
     from core.mesh import Mesh
     fig = _add_figure(view)
     m = Mesh()
-    m.add_face([V(2, 2, 0), V(3, 2, 0), V(3, 2, 1), V(2, 2, 1)])
+    m.add_face([V(-3, -2, 0), V(4, -2, 0), V(4, -2, 3), V(-3, -2, 3)])
+    m.add_face([V(-3, 3, 0), V(4, 3, 0), V(4, 3, 3), V(-3, 3, 3)])
     box = Group(m, name="wall")
     view.scene.groups.append(box)
     view.scene.shadows.hour = 15
@@ -494,3 +501,126 @@ def test_the_sun_map_box_follows_a_moved_figure(view):
     lo, hi = view._shadow_bounds()
     assert lo.x() <= FEET.x() + 6.0 <= hi.x()
     assert lo.y() <= FEET.y() - 4.0 <= hi.y()
+
+
+def _figure_columns(vp):
+    """The screen columns the cutout's brown covers (``_cutout``)."""
+    img = vp.grabFramebuffer().convertToFormat(QImage.Format_RGBA8888)
+    a = np.frombuffer(img.constBits(), np.uint8).reshape(
+        img.height(), img.bytesPerLine())[:, :img.width() * 4].reshape(
+        img.height(), img.width(), 4).astype(int)
+    m = ((abs(a[..., 0] - 90) < 14) & (abs(a[..., 1] - 60) < 14)
+         & (abs(a[..., 2] - 40) < 14))
+    xs = np.nonzero(m.any(axis=0))[0]
+    return (int(xs.min()), int(xs.max())) if len(xs) else None
+
+
+@pytest.mark.parametrize("sun", [False, True])
+def test_a_dragged_figure_follows_the_cursor_on_screen(view, sun):
+    """Moved with Move, the engineer stayed where he was while the line and
+    the distance followed the cursor, and jumped there on the click (ronda
+    Windows 0.6.3): the frame kept between pointer moves held the figure,
+    drawn with the model's own passes. Frames are drawn between the moves,
+    as the window does."""
+    from PySide6.QtCore import QPointF, Qt
+    from tools.base import ToolContext
+    from tools.move import MoveTool
+    view.scene.shadows.enabled = sun
+    view.scene.shadows.hour = 15
+    fig = _add_figure(view)
+    _orbit(view, -90, 10, 8)
+    _frame(view)
+    rest = _figure_columns(view)
+    assert rest is not None
+    feet = view._billboard_feet(fig)
+
+    def at(p):
+        q = view._project_px(np.array([[p.x(), p.y(), p.z()]]))
+        return ToolContext(viewport=view, world=V(p),
+                           screen=QPointF(float(q[0][0]), float(q[1][0])),
+                           modifiers=Qt.NoModifier, snap=None)
+    tool = MoveTool()
+    view.set_active_tool(tool)
+    tool.on_click(at(feet))
+    _frame(view)
+    seen = []
+    if sun:                   # the view settles: the map fitted to it
+        _frame(view, settle=True)
+    for dx in (0.4, 0.8, 1.2):
+        tool.on_hover(at(feet + V(dx, 0, 0)))
+        _frame(view, settle=sun)
+        seen.append(_figure_columns(view))
+        if sun:                      # its shadow walks with it
+            here = view._billboard_feet(fig)
+            xs = np.linspace(-1.5, 1.5, 61) + here.x()
+            ys = np.linspace(-1.5, 1.5, 61) + here.y()
+            assert _map_footprint(view, xs, ys).sum() > 30, dx
+    tool.on_cancel(view)
+    lefts = [rest[0]] + [s[0] for s in seen]
+    assert lefts == sorted(lefts) and len(set(lefts)) == 4, (rest, seen)
+
+
+def _engineer_drag(sun, dx):
+    """The new document's engineer, the sun at its default hour, dragged
+    ``dx`` metres along +X with Move: the pictures at rest, mid-drag and
+    dropped."""
+    from PySide6.QtCore import QPointF, Qt
+    from tools.base import ToolContext
+    from tools.move import MoveTool
+    from views.main_window import MainWindow
+    win = MainWindow()
+    try:
+        win.resize(900, 700)
+        win.show()
+        _app.processEvents()
+        vp = win.viewport
+        if getattr(vp, "_gl", None) is None or not vp.isValid():
+            pytest.skip("no OpenGL context on this platform")
+        vp.grabFramebuffer()
+        vp.scene.shadows.enabled = sun
+        vp.scene.version += 1
+        fig = vp._faceme_figures()[0]
+        feet = vp._billboard_feet(fig)
+
+        def at(p):
+            q = vp._project_px(np.array([[p.x(), p.y(), p.z()]]))
+            return ToolContext(viewport=vp, world=V(p),
+                               screen=QPointF(float(q[0][0]),
+                                              float(q[1][0])),
+                               modifiers=Qt.NoModifier, snap=None)
+
+        def shot():
+            vp.update()
+            _wait(150)
+            vp.update()
+            _wait(vp.SHADOW_SETTLE_MS + 200)    # the fitted map too
+            img = vp.grabFramebuffer().convertToFormat(QImage.Format_RGBA8888)
+            return np.frombuffer(img.constBits(), np.uint8).reshape(
+                img.height(), img.bytesPerLine())[:, :img.width() * 4] \
+                .reshape(img.height(), img.width(), 4).astype(int)
+        out = {"rest": shot()}
+        tool = MoveTool()
+        vp.set_active_tool(tool)
+        tool.on_click(at(feet))
+        shot()
+        tool.on_hover(at(feet + V(dx, 0, 0)))
+        out["drag"] = shot()
+        tool.on_click(at(feet + V(dx, 0, 0)))
+        out["drop"] = shot()
+        return out
+    finally:
+        win._saved_version = win.viewport.scene.version
+        win.close()
+        _app.processEvents()
+
+
+@pytest.mark.parametrize("dx", [1.84, -1.84])
+def test_the_dragged_engineer_keeps_his_shadow(dx):
+    """Dragged, the engineer lost his shadow until dropped: the sun's map
+    was fitted round where he had stood (ronda Windows 0.6.3)."""
+    lit, unlit = _engineer_drag(True, dx), _engineer_drag(False, dx)
+    shaded = {k: int(((unlit[k] - lit[k]).sum(axis=2) > 40).sum())
+              for k in lit}
+    assert shaded["rest"] > 30, shaded
+    assert shaded["drag"] > 30, shaded
+    assert shaded["drop"] > 30, shaded
