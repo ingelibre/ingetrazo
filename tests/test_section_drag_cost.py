@@ -209,3 +209,33 @@ def test_dragging_only_a_section_with_move_keeps_the_index():
     assert vp._pick_index(near="all") is idx
     assert vp.scene.content_version != before
     assert abs(plane.point.z() - 1.25) < 1e-9
+
+
+def test_dragging_a_section_keeps_the_model_box(monkeypatch):
+    """The plane's drawn frame is sized to the model's box: each frame of
+    a plane's drag walked the whole model again for it (150 of the 190 ms
+    of a frame on the plaza, 22-11). The box comes back from its cache
+    while only sections move — and is measured again after an edit."""
+    from tools.move import MoveTool
+    from core.history import translate_points
+    from core.topology import _key
+    vp, _hist, plane = _viewport_with_a_cut()
+    scene = vp.scene
+    lo, hi = scene.bounds()
+    walks = []
+    real = type(scene).placements
+    monkeypatch.setattr(type(scene), "placements",
+                        lambda self, *a, **k: walks.append(1)
+                        or real(self, *a, **k))
+    tool = MoveTool()
+    tool._splanes = [plane]
+    for _ in range(5):
+        tool._shift(vp, QVector3D(0, 0, 0.1))
+        vp.section_plane_frame(plane)
+        assert scene.bounds() == (lo, hi)
+    assert walks == []
+    top = {_key(v.position) for v in scene.mesh.vertices
+           if abs(v.position.z() - 3.0) < 1e-6}
+    translate_points(scene, top, QVector3D(0, 0, 1.0))
+    assert scene.bounds()[1].z() > hi.z() + 0.5
+    assert walks

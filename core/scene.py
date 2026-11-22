@@ -1031,8 +1031,11 @@ class Scene:
         context (it swaps ``mesh``), Hide Similar (it follows the context)
         and the layers' visibility. Every change of these bumps ``version``
         already; the key is there so that a view-only bump — the selection
-        — is told apart from them."""
-        return (self.content_version,
+        — is told apart from them. A section plane or box moved bumps
+        ``version`` too, and the box of the geometry stays: dragging a
+        plane over the plaza walked the whole model on every frame
+        (150 of its 190 ms, 22-11), for the plane's drawn frame."""
+        return (self.content_version - self.section_version,
                 tuple(id(level["group"]) for level in self._edit_stack),
                 id(self.mesh), bool(self.hide_similar_components),
                 tuple((ly.name, bool(ly.visible)) for ly in self.layers))
