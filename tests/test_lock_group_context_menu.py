@@ -215,6 +215,7 @@ def test_click_locked_group_shows_red_and_right_click_unlocks(
         assert group in vp.scene.selection
         event = QContextMenuEvent(QContextMenuEvent.Mouse, pos, vp.mapToGlobal(pos))
         QApplication.sendEvent(vp, event)
+        unlocked_menu = _texts()
         _action("Lock").trigger()
         assert group.locked
 
@@ -237,6 +238,11 @@ def test_click_locked_group_shows_red_and_right_click_unlocks(
 
         event = QContextMenuEvent(QContextMenuEvent.Mouse, pos, vp.mapToGlobal(pos))
         QApplication.sendEvent(vp, event)
+        assert _texts() == unlocked_menu
+        assert not _action("Lock").isEnabled()
+        assert _action("Unlock").isEnabled()
+        assert not _action("Edit Group").isEnabled()
+        assert not _action("Delete").isEnabled()
         _action("Unlock").trigger()
         assert vp.locked_group_selection is None
         assert not group.locked and group in vp.scene.selection
