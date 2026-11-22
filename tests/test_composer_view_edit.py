@@ -227,6 +227,83 @@ def test_the_view_edit_survives_each_zoom_and_pan_commit(monkeypatch):
         win.close()
 
 
+@pytest.mark.parametrize("perspective", [False, True])
+def test_wheel_edit_survives_deferred_canvas_refresh(monkeypatch, perspective):
+    from PySide6.QtCore import QPoint, QPointF, Qt
+    from PySide6.QtGui import QWheelEvent
+    from PySide6.QtTest import QTest
+    from PySide6.QtWidgets import QApplication
+
+    from core.composition import AddItemCommand
+
+    win, comp, item = _composer_with_model(monkeypatch)
+    try:
+        frame = item.model
+        frame.perspective = perspective
+        frame.cam_distance = 12.0 if perspective else None
+        frame.x_mm, frame.y_mm = 15.0, 20.0
+        frame.w_mm, frame.h_mm = 105.0, 75.0
+        other = MarcoVista(x_mm=132.0, y_mm=20.0, w_mm=65.0, h_mm=75.0)
+        view = comp._view
+        viewport = view.viewport()
+        QApplication.processEvents()
+
+        # Adding a second frame queues a refresh for the next event-loop turn.
+        comp.history.execute(AddItemCommand(comp.comp, other))
+        comp._rebuild_canvas()
+
+        def point(model):
+            return view.mapFromScene(comp._item_for(model).sceneBoundingRect().center())
+
+        def wheel(pos, delta, modifiers=Qt.NoModifier):
+            event = QWheelEvent(QPointF(pos), QPointF(viewport.mapToGlobal(pos)),
+                                QPoint(), QPoint(0, delta), Qt.NoButton,
+                                modifiers, Qt.ScrollPhase.NoScrollPhase, False)
+            QApplication.sendEvent(viewport, event)
+            QApplication.processEvents()
+
+        pos = point(frame)
+        assert viewport.rect().contains(pos)
+        QTest.mouseDClick(viewport, Qt.LeftButton, pos=pos)
+        assert comp.view_edit_item.model is frame
+        initial = frame.cam_distance if perspective else frame.scale_n
+        other_before = comp._view_state(other)
+        for delta in (120, 120, -120):
+            wheel(pos, delta)
+            assert comp.view_edit_item is comp._item_for(frame)
+            assert comp.view_edit_item is not None
+            zoom = frame.cam_distance if perspective else frame.scale_n
+            assert zoom == pytest.approx(initial / (1.1 ** (delta / 120)),
+                                         abs=0.001)
+            initial = zoom
+
+        outside = point(other)
+        assert viewport.rect().contains(outside)
+        view_before = comp._view_state(frame)
+        page_scale = view.transform().m11()
+        wheel(outside, 120, Qt.ControlModifier)
+        assert view.transform().m11() > page_scale
+        assert comp.view_edit_item is comp._item_for(frame)
+        assert comp._view_state(frame) == view_before
+        assert comp._view_state(other) == other_before
+
+        pos = point(frame)
+        QTest.mousePress(viewport, Qt.LeftButton, pos=pos)
+        QTest.mouseMove(viewport, pos + QPoint(16, 4))
+        QTest.mouseRelease(viewport, Qt.LeftButton, pos=pos + QPoint(16, 4))
+        assert comp.view_edit_item is comp._item_for(frame)
+        view_after = comp._view_state(frame)
+        assert view_after["cam_target"] != view_before["cam_target"]
+        QTest.keyClick(viewport, Qt.Key_Escape)
+        assert comp.view_edit_item is None
+        assert comp._view_state(frame) == view_after
+        assert comp._view_state(other) == other_before
+    finally:
+        comp.close()
+        win._saved_version = win.viewport.scene.version
+        win.close()
+
+
 def test_picking_another_view_source_drops_the_frame_camera_edits(monkeypatch):
     """Marco, 2026-09-08: «la escena 1 como que no me actualiza la vista» —
     a frame orbited in place keeps cam_yaw/cam_pitch/cam_target, and those

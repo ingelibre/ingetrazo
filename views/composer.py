@@ -10748,18 +10748,20 @@ class ComposerWindow(QMainWindow):
             self._mark_dirty()
         self._after_view_edit(item, final=True)
         self.on_selection_changed()          # the scale combo follows
-        # The rebuild kills the item (and drops _view_edit with it): remember
-        # first whether the view was being edited, then pick the frame's NEW
-        # item back up — otherwise every wheel notch or drag ended the edit
-        # and the next one needed another double-click (Marco, 2026-09-07:
-        # «solo en el primer scroll, después tengo que hacer doble clic»).
-        editing = self._view_edit is not None
-        self._rebuild_canvas()               # anchored cotas reproject
-        if editing:
-            self._view_edit = self._item_for(frame)
-            if self._view_edit is not None:
-                self._view_edit.force_select()
-                self._view_edit.update()
+        self._rebuild_preserving_view_edit()  # anchored cotas reproject
+
+    def _rebuild_preserving_view_edit(self) -> None:
+        # Canvas items are replaced on rebuild. Keep editing the same model
+        # when a navigation commit or deferred refresh recreates its item.
+        active = self._view_edit
+        frame = active.model if active is not None else None
+        self._rebuild_canvas()
+        if frame is not None:
+            item = self._item_for(frame)
+            if isinstance(item, FrameItem) and item.isVisible() and not frame.locked:
+                self._view_edit = item
+                item.force_select()
+                item.update()
 
     def start_view_drag(self, item, pos_mm, pos_px, orbit: bool = False,
                         mode: str | None = None) -> None:
@@ -11290,7 +11292,7 @@ class ComposerWindow(QMainWindow):
                 self.render_frame(f)
                 done = True
         if done:
-            self._rebuild_canvas()
+            self._rebuild_preserving_view_edit()
         else:
             self.canvas.update()
 
@@ -11316,7 +11318,7 @@ class ComposerWindow(QMainWindow):
         QTimer.singleShot(0, self._rebuild_after_change)
 
     def _rebuild_after_change(self) -> None:
-        self._rebuild_canvas()
+        self._rebuild_preserving_view_edit()
         if self._auto_render and any(self._render_outgrown(f)
                                      for f in self.comp.frames):
             self._auto_timer.start()
