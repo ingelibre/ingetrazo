@@ -1569,7 +1569,7 @@
  "Update": "Actualizar",
  "Update all views": "Actualizar todas las vistas",
  "Update the selected scene from the current view": "Actualiza la escena seleccionada con la vista actual",
- "Update the view to render": "Actualizá la vista para renderizar",
+ "Update the view to render": "Actualiza la vista para renderizar",
  "Update view": "Actualizar vista",
  "Auto-render": "Renderizado automático",
  "Re-render the views by themselves when the model changes. Vector views keep their badge and wait for Update.": "Redibuja las vistas solas cuando cambia el modelo. Las vistas vectoriales conservan su marca y esperan a Actualizar.",
