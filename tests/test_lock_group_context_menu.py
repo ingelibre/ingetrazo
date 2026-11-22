@@ -3,11 +3,13 @@
 """Lock and Unlock from the right-click on the model (#782).
 
 The Browser's padlock was the only way to lock a group, and the only way
-back: a locked group refuses every click, so its right-click must find it
-on its own (as a locked reference image's does) and offer Unlock."""
+back. A locked group is now selectable for inspection while its geometry
+remains protected. Its right-click offers Unlock."""
 from __future__ import annotations
 
 import os
+
+import pytest
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
@@ -81,7 +83,9 @@ def test_lock_locks_every_selected_group_in_one_step(monkeypatch):
         a, b = _group(scene, "muro"), _group(scene, "losa", 4)
         scene.select([a, b])
         win.show_viewport_context_menu(QPoint(0, 0))
-        assert "Lock" in _texts()
+        assert _texts().index("Unlock") == _texts().index("Lock") + 1
+        assert _action("Lock").isEnabled()
+        assert not _action("Unlock").isEnabled()
         _action("Lock").trigger()
         assert a.locked and b.locked
         assert a not in scene.selection and b not in scene.selection
@@ -130,8 +134,10 @@ def test_the_locked_group_under_the_cursor_is_found_and_unlocked(monkeypatch):
         empty = vp._world_to_pixel(V(3, 1, 0))
         assert vp.pick_locked_group(*empty) is None   # off the group
         win.show_viewport_context_menu(QPoint(0, 0), locked_group=g)
-        assert "Unlock “muro”" in _texts()
-        _action("Unlock “muro”").trigger()
+        assert _texts().index("Unlock") == _texts().index("Lock") + 1
+        assert not _action("Lock").isEnabled()
+        assert _action("Unlock").isEnabled()
+        _action("Unlock").trigger()
         assert not g.locked and g in scene.selection
         assert vp.history.undo()                       # undoable
         assert g.locked
@@ -183,5 +189,114 @@ def test_a_loose_face_in_front_hides_the_locked_group(monkeypatch):
         scene.version += 1
         px = vp._world_to_pixel(V(1, 1, 0))
         assert vp.pick_locked_group(*px) is None
+    finally:
+        _close(win)
+
+
+@pytest.mark.parametrize(("component", "line_only"), [(False, False), (True, False), (False, True)])
+def test_click_locked_group_shows_red_and_right_click_unlocks(
+        monkeypatch, component, line_only):
+    from PySide6.QtCore import Qt
+    from PySide6.QtGui import QContextMenuEvent, QImage, QPainter
+    from PySide6.QtTest import QTest
+
+    win = _window(monkeypatch)
+    try:
+        vp = win.viewport
+        group = _group(vp.scene, "muro")
+        group.component = component
+        assert group.is_component() is component
+        if line_only:
+            group.mesh = Mesh()
+            group.mesh.add_edge(V(0, 0), V(2, 0))
+        pos = QPoint(*(round(n) for n in
+                       vp._world_to_pixel(V(1, 0 if line_only else 1, 0))))
+        QTest.mouseClick(vp, Qt.LeftButton, pos=pos)
+        assert group in vp.scene.selection
+        event = QContextMenuEvent(QContextMenuEvent.Mouse, pos, vp.mapToGlobal(pos))
+        QApplication.sendEvent(vp, event)
+        unlocked_menu = _texts()
+        _action("Lock").trigger()
+        assert group.locked
+
+        QTest.mouseClick(vp, Qt.LeftButton, pos=pos)
+        assert vp.locked_group_selection is group
+        assert not vp.scene.selection
+        QTest.keyClick(vp, Qt.Key_Delete)
+        assert group in vp.scene.groups and group.locked
+
+        image = QImage(vp.size(), QImage.Format_RGB32)
+        image.fill(Qt.white)
+        painter = QPainter(image)
+        try:
+            vp._draw_locked_group_selection(painter)
+        finally:
+            painter.end()
+        corner = QPoint(*(round(n) for n in vp._world_to_pixel(V(0, 0, 0))))
+        color = image.pixelColor(corner)
+        assert color.red() > 200 and color.green() < 80 and color.blue() < 80
+
+        event = QContextMenuEvent(QContextMenuEvent.Mouse, pos, vp.mapToGlobal(pos))
+        QApplication.sendEvent(vp, event)
+        assert _texts() == unlocked_menu
+        assert not _action("Lock").isEnabled()
+        assert _action("Unlock").isEnabled()
+        assert not _action("Edit Group").isEnabled()
+        assert not _action("Delete").isEnabled()
+        _action("Unlock").trigger()
+        assert vp.locked_group_selection is None
+        assert not group.locked and group in vp.scene.selection
+        assert vp.history.undo()
+        assert group.locked
+    finally:
+        _close(win)
+
+
+def test_locked_engineer_is_selectable_on_its_camera_facing_quad(monkeypatch):
+    from PySide6.QtCore import Qt
+    from PySide6.QtGui import QContextMenuEvent
+    from PySide6.QtTest import QTest
+
+    win = _window(monkeypatch)
+    try:
+        vp = win.viewport
+        vp.camera.set_view("iso")
+        vp.camera.target = V(0, 0, 1)
+        engineer = next(g for g in vp.scene.groups if g.billboard)
+        assert engineer.billboard
+        corners, _ = vp._billboard_quad(engineer)
+        center = (corners[0] + corners[2]) * 0.5
+        pos = QPoint(*(round(n) for n in vp._world_to_pixel(center)))
+
+        def open_menu():
+            QApplication.sendEvent(vp, QContextMenuEvent(
+                QContextMenuEvent.Mouse, pos, vp.mapToGlobal(pos)))
+
+        QTest.mouseClick(vp, Qt.LeftButton, pos=pos)
+        assert engineer in vp.scene.selection
+        open_menu()
+        _action("Lock").trigger()
+        QTest.mouseClick(vp, Qt.LeftButton, pos=pos)
+        assert vp.locked_group_selection is engineer
+        assert not vp.scene.selection
+        open_menu()
+        _action("Unlock").trigger()
+        assert not engineer.locked
+        assert engineer in vp.scene.selection
+    finally:
+        _close(win)
+
+
+def test_a_locked_container_is_picked_through_its_child_geometry(monkeypatch):
+    win = _window(monkeypatch)
+    try:
+        vp = win.viewport
+        child = _group(vp.scene, "child")
+        parent = Group(Mesh(), "container")
+        parent.adopt([child])
+        vp.scene.groups[:] = [parent]
+        vp.history.execute(LockCommand([parent], True))
+        px = vp._world_to_pixel(V(1, 1, 0))
+        assert vp.pick_locked_group(*px) is parent
     finally:
         _close(win)

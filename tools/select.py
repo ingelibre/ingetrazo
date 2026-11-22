@@ -360,6 +360,8 @@ class SelectTool(Tool):
         pass
 
     def on_deactivate(self, viewport) -> None:
+        if getattr(viewport, "locked_group_selection", None) is not None:
+            viewport.select_locked_group(None)
         viewport.set_hover(None)
 
     def _pick(self, viewport, screen_x: float, screen_y: float):
@@ -443,6 +445,13 @@ class SelectTool(Tool):
             return
         if getattr(viewport, "extension_pick", None) is not None:
             viewport.clear_extension_pick()
+        pick_locked = getattr(viewport, "pick_locked_group", None)
+        group = pick_locked(ctx.screen.x(), ctx.screen.y()) if pick_locked else None
+        if group is not None:
+            viewport.select_locked_group(group)
+            return
+        if getattr(viewport, "locked_group_selection", None) is not None:
+            viewport.select_locked_group(None)
         entity = self._pick(viewport, ctx.screen.x(), ctx.screen.y())
         if entity is None:
             if viewport.scene.edit_group is not None and mode == "replace" \
@@ -578,6 +587,8 @@ class SelectTool(Tool):
 
     def on_box_select(self, viewport, rect, crossing: bool,
                       additive: bool = False, mode: str | None = None) -> None:
+        if getattr(viewport, "locked_group_selection", None) is not None:
+            viewport.select_locked_group(None)
         w2p = _frame_projector(viewport)
         picked = []
         fast = _box_loose_fast(viewport, rect, crossing)
@@ -810,6 +821,8 @@ def delete_selection_or_hover(viewport) -> bool:
     would have erased. True if anything was erased."""
     if getattr(viewport, "extension_pick", None) is not None:
         return viewport.delete_extension_pick()      # a render light, say
+    if getattr(viewport, "locked_group_selection", None) is not None:
+        return False
     selection = list(viewport.scene.selection)
     if selection:
         return erase_entities(viewport, selection)

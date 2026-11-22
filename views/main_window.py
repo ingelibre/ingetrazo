@@ -5626,12 +5626,14 @@ class MainWindow(QMainWindow):
         click did not select (geometry sat on top of it) — it gets its own
         Unlock / Delete entries, or it could never be reached again.
         ``locked_group``: a locked group or component under the cursor,
-        which no click can select — its Unlock entry (#782)."""
+        offered with its Unlock entry (#782)."""
         from core.mesh import Edge, Face
         from core.dimension import Dimension
         from georef.geopath import GeoPath
 
-        sel = self.viewport.scene.selection
+        sel = ((locked_group,) if locked_group is not None
+               else self.viewport.scene.selection)
+        unlock = clear = None
         from core.section import SectionPlane
         has_geopath = any(isinstance(e, GeoPath) for e in sel)
         has_group = any(isinstance(e, Group) for e in sel)
@@ -5654,14 +5656,6 @@ class MainWindow(QMainWindow):
                            lambda im=locked_image: self._unlock_image(im))
             menu.addAction(tr("Delete image “{name}”", name=name),
                            lambda im=locked_image: self._delete_image(im))
-            menu.addSeparator()
-
-        if locked_group is not None and locked_group not in sel:
-            name = (getattr(locked_group, "name", "")
-                    or tr("Component" if locked_group.is_component()
-                          else "Group"))
-            menu.addAction(tr("Unlock “{name}”", name=name),
-                           lambda g=locked_group: self._unlock_group(g))
             menu.addSeparator()
 
         if sec_planes:
@@ -5776,7 +5770,7 @@ class MainWindow(QMainWindow):
                 one = groups[0]
                 menu.addAction(tr("Edit Group"),
                                lambda: self.viewport.begin_group_edit(one))
-            text = self._selected_text3d()
+            text = self._selected_text3d(sel)
             if text is not None:
                 from core.text3d import text_is_pristine
                 if text_is_pristine(text):
@@ -5830,10 +5824,6 @@ class MainWindow(QMainWindow):
             if len(groups) == 1 and len(sel) == 1:
                 menu.addAction(tr("Change Axes"),
                                lambda g=groups[0]: self._on_change_axes(g))
-            # Lock, the Browser's padlock from the model (#782): the
-            # selected groups in one undoable step.
-            menu.addAction(tr("Lock"),
-                           lambda gs=groups: self._lock_groups(gs))
             # The Solid Tools are offered on a selection of solids.
             from core.solids import is_solid
             solid = [e for e in sel if isinstance(e, Group) and is_solid(e)]
@@ -5847,6 +5837,14 @@ class MainWindow(QMainWindow):
                 for key in keys:
                     sm.addAction(tool_icon(key), tr(self._tools[key].name),
                                  lambda k=key: self._activate_tool(k))
+        if has_group:
+            lockable = [entity for entity in sel if isinstance(entity, Group)]
+            lock = menu.addAction(tr("Lock"),
+                                  lambda: self._lock_groups(lockable))
+            unlock = menu.addAction(tr("Unlock"),
+                                    lambda: self._unlock_group(locked_group))
+            lock.setEnabled(locked_group is None)
+            unlock.setEnabled(locked_group is not None)
         if any(isinstance(e, Face) for e in sel) or has_group:
             self._fill_intersect_menu(menu.addMenu(tr("Intersect Faces")))
         if has_mesh or has_group:
@@ -5855,15 +5853,25 @@ class MainWindow(QMainWindow):
         if sel:
             menu.addAction(tr("Zoom Selection"), self._on_zoom_selection)
             menu.addAction(tr("Delete"), self._on_delete_selection)
-            act_clear = menu.addAction(tr("Clear selection"),
-                                       self.viewport.scene.clear_selection)
-            act_clear.triggered.connect(self.viewport.update)
+            clear = menu.addAction(tr("Clear selection"))
+            if locked_group is None:
+                clear.triggered.connect(self.viewport.scene.clear_selection)
+                clear.triggered.connect(self.viewport.update)
+            else:
+                clear.triggered.connect(
+                    lambda: self.viewport.select_locked_group(None))
             menu.addSeparator()
 
         # Extensions' own entries (app.add_context_menu): after the
         # selection's, before Paste and Undo. One that raises is logged and
         # skipped — the menu always opens.
         self._add_extension_context_entries(menu, list(sel))
+        if locked_group is not None:
+            # Build the normal object menu, but keep the locked object out
+            # of the editable selection and disable its editing commands.
+            for action in menu.actions():
+                if action not in (unlock, clear) and not action.isSeparator():
+                    action.setEnabled(False)
 
         from formats import clip as clip_transfer
         if getattr(self.viewport, "clipboard", None) or clip_transfer.available():
@@ -9245,11 +9253,13 @@ class MainWindow(QMainWindow):
             return
         self._start_place(group, align_to_face=True)
 
-    def _selected_text3d(self):
+    def _selected_text3d(self, selection=None):
         """The one selected 3D-text container (a letter picked inside the
         open container counts, through its owner), else ``None``."""
         from core.group import Group
-        sel = [e for e in self.viewport.scene.selection if isinstance(e, Group)]
+        if selection is None:
+            selection = self.viewport.scene.selection
+        sel = [e for e in selection if isinstance(e, Group)]
         if len(sel) != 1:
             return None
         g = sel[0]
@@ -10123,6 +10133,7 @@ class MainWindow(QMainWindow):
         from core.history import LockCommand
         scene = self.viewport.scene
         self.viewport.history.execute(LockCommand([group], False))
+        self.viewport.select_locked_group(None)
         if scene.entity_selectable(group):
             scene.select([group])
         self.viewport.update()
