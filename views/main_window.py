@@ -5626,7 +5626,7 @@ class MainWindow(QMainWindow):
         click did not select (geometry sat on top of it) — it gets its own
         Unlock / Delete entries, or it could never be reached again.
         ``locked_group``: a locked group or component under the cursor,
-        which no click can select — its Unlock entry (#782)."""
+        offered with its Unlock entry (#782)."""
         from core.mesh import Edge, Face
         from core.dimension import Dimension
         from georef.geopath import GeoPath
@@ -5654,14 +5654,6 @@ class MainWindow(QMainWindow):
                            lambda im=locked_image: self._unlock_image(im))
             menu.addAction(tr("Delete image “{name}”", name=name),
                            lambda im=locked_image: self._delete_image(im))
-            menu.addSeparator()
-
-        if locked_group is not None and locked_group not in sel:
-            name = (getattr(locked_group, "name", "")
-                    or tr("Component" if locked_group.is_component()
-                          else "Group"))
-            menu.addAction(tr("Unlock “{name}”", name=name),
-                           lambda g=locked_group: self._unlock_group(g))
             menu.addSeparator()
 
         if sec_planes:
@@ -5830,10 +5822,6 @@ class MainWindow(QMainWindow):
             if len(groups) == 1 and len(sel) == 1:
                 menu.addAction(tr("Change Axes"),
                                lambda g=groups[0]: self._on_change_axes(g))
-            # Lock, the Browser's padlock from the model (#782): the
-            # selected groups in one undoable step.
-            menu.addAction(tr("Lock"),
-                           lambda gs=groups: self._lock_groups(gs))
             # The Solid Tools are offered on a selection of solids.
             from core.solids import is_solid
             solid = [e for e in sel if isinstance(e, Group) and is_solid(e)]
@@ -5847,6 +5835,14 @@ class MainWindow(QMainWindow):
                 for key in keys:
                     sm.addAction(tool_icon(key), tr(self._tools[key].name),
                                  lambda k=key: self._activate_tool(k))
+        if has_group or locked_group is not None:
+            lockable = [entity for entity in sel if isinstance(entity, Group)]
+            lock = menu.addAction(tr("Lock"),
+                                  lambda: self._lock_groups(lockable))
+            unlock = menu.addAction(tr("Unlock"),
+                                    lambda: self._unlock_group(locked_group))
+            lock.setEnabled(locked_group is None)
+            unlock.setEnabled(locked_group is not None)
         if any(isinstance(e, Face) for e in sel) or has_group:
             self._fill_intersect_menu(menu.addMenu(tr("Intersect Faces")))
         if has_mesh or has_group:
@@ -10123,6 +10119,7 @@ class MainWindow(QMainWindow):
         from core.history import LockCommand
         scene = self.viewport.scene
         self.viewport.history.execute(LockCommand([group], False))
+        self.viewport.select_locked_group(None)
         if scene.entity_selectable(group):
             scene.select([group])
         self.viewport.update()

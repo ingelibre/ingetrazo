@@ -5971,34 +5971,67 @@ class Viewport(QOpenGLWidget):
                 best, best_t = im, t
         return best
 
+    @property
+    def locked_group_selection(self):
+        scene, group = getattr(self, "_locked_group_selection", (None, None))
+        if (scene is self.scene and group is not None and group.locked
+                and scene.entity_visible(group)):
+            return group
+        return None
+
+    def select_locked_group(self, group) -> None:
+        if group is not None:
+            self.scene.clear_selection()
+            self.set_hover(None)
+        self._locked_group_selection = (self.scene, group)
+        self.update()
+
     def pick_locked_group(self, screen_x: float, screen_y: float):
         """The right-click's door back to a LOCKED group or component: the
         one whose face is the front-most thing under the cursor (drawn,
-        its layer visible and unlocked), or ``None``. A locked group
-        refuses every click by design, so the context menu is the only
-        place left to offer Unlock (#782)."""
+        its layer visible and unlocked), or ``None``. Used for read-only
+        selection and Unlock without exposing it to editing tools."""
         origin, direction = self._pixel_to_ray(screen_x, screen_y)
         if origin is None or direction is None:
             return None
-        import numpy as np
         idx = self._pick_index(near=Viewport._ray_near(self, screen_x, screen_y))
         if idx is None:
             return None
         hits = Viewport._face_hits(self, idx, origin, direction, "vis")
         Viewport._drop_past_cut(self, hits, origin, direction)
-        if hits is None or not len(hits.t):
-            return None
-        front = Viewport._smallest_at_front(self, hits, origin, direction)
-        if not len(front):
-            return None
-        owner = hits.owner(int(front[0]))
-        for g in (owner, getattr(owner, "owner", None)):
-            if (g is not None and getattr(g, "locked", False)
-                    and hasattr(g, "children")):
-                visible, layer_locked = self.scene._layer_state(g)
-                if (visible and not layer_locked
-                        and self.scene.entity_visible(g)):
-                    return g
+        best = None
+        if hits is not None and len(hits.t):
+            front = Viewport._smallest_at_front(self, hits, origin, direction)
+            if len(front):
+                best = (float(hits.t[front].min()), hits.owner(int(front[0])))
+        for group in self._context_placements():
+            if not group.billboard or not self.scene.entity_visible(group):
+                continue
+            quad = self._billboard_quad(group)
+            if quad is None:
+                continue
+            a, b, c, d = quad[0]
+            for triangle in ((a, b, c), (a, c, d)):
+                depth = _ray_triangle(origin, direction, *triangle)
+                if depth is not None and (best is None or depth < best[0]):
+                    best = (depth, self._owner_of(group))
+        if best is not None:
+            return self._locked_pick_owner(best[1])
+        # A line-only group or a click just outside its silhouette has no
+        # face hit. Use the same screen tolerance as regular group picking.
+        for edge in self._nearby_group_edges(
+                screen_x, screen_y, radius_px=self.pick_threshold_px):
+            point = self.edge_point_under_cursor(edge, screen_x, screen_y)
+            if point is not None and not self._is_occluded(point):
+                return self._locked_pick_owner(edge.group)
+        return None
+
+    def _locked_pick_owner(self, owner):
+        for group in (owner, getattr(owner, "owner", None)):
+            if isinstance(group, Group) and group.locked:
+                visible, layer_locked = self.scene._layer_state(group)
+                if visible and not layer_locked and self.scene.entity_visible(group):
+                    return group
                 return None
         return None
 
@@ -9916,11 +9949,35 @@ class Viewport(QOpenGLWidget):
         if self.linear_inference_mode != "all":
             self._draw_linear_mode_label(painter)
 
+        self._draw_locked_group_selection(painter)
         # Rubber-band selection box.
         self._draw_selection_box(painter)
         self._draw_zoom_box(painter)
 
         painter.end()
+
+    def _draw_locked_group_selection(self, painter: QPainter) -> None:
+        group = self.locked_group_selection
+        if group is None or self._export_size is not None:
+            return
+        if group.billboard:
+            quad = self._billboard_quad(group)
+            if quad is None:
+                return
+            corners = quad[0]
+            segments = ((0, 1), (1, 2), (2, 3), (3, 0))
+        else:
+            from core.group import oriented_box_corners
+            corners = oriented_box_corners(*self._group_obb(group))
+            segments = ((i, i | bit) for i in range(8) for bit in (1, 2, 4)
+                        if i & bit == 0)
+        points = [self._world_to_pixel(point) for point in corners]
+        painter.save()
+        painter.setPen(QPen(QColor("#e03030"), 2))
+        for i, j in segments:
+            if points[i] is not None and points[j] is not None:
+                painter.drawLine(QPointF(*points[i]), QPointF(*points[j]))
+        painter.restore()
 
     def _draw_linear_mode_label(self, painter: QPainter) -> None:
         # The mirror image of the bug above: these had the Spanish written
@@ -19156,16 +19213,20 @@ class Viewport(QOpenGLWidget):
         # Where the menu was opened, for entries that act at the cursor
         # (Texture ▸ Position puts its pins on the tile under it).
         self._context_pixel = (x, y)
+        locked_group = self.pick_locked_group(x, y)
+        if locked_group is not None:
+            self.select_locked_group(locked_group)
+            win.show_viewport_context_menu(ev.globalPos(), locked_group=locked_group)
+            return
+        if self.locked_group_selection is not None:
+            self.select_locked_group(None)
         picked = self._context_pick(x, y)
         # A locked image under the cursor is offered even when the click
         # landed on geometry drawn over it (the plaza on its orthomosaic):
         # the menu is the only way back to Unlock / Delete for it.
         under = self.pick_locked_image_plane(x, y)
-        # A locked group the same way: it can no longer be selected, and
-        # its Unlock lives here (#782).
         win.show_viewport_context_menu(
-            ev.globalPos(), locked_image=under if under is not picked else None,
-            locked_group=self.pick_locked_group(x, y))
+            ev.globalPos(), locked_image=under if under is not picked else None)
 
     def mousePressEvent(self, ev) -> None:
         # A new gesture starts with the inferences back on: the Alt
@@ -20227,6 +20288,9 @@ class Viewport(QOpenGLWidget):
         2026-09-14: «he hecho Esc varias veces y no salgo»)."""
         if self._value_buffer:
             self._set_value_buffer("")
+            return
+        if self.locked_group_selection is not None:
+            self.select_locked_group(None)
             return
         if self.release_constraints():
             return
