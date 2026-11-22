@@ -472,3 +472,21 @@ def test_the_fitted_map_keeps_a_figure_shadow_seen_without_the_figure(view):
     fit = _map_footprint(view, xs, ys)
     assert whole.sum() > 200
     assert (fit & whole).sum() / whole.sum() > 0.85
+
+
+def test_the_sun_map_box_follows_a_moved_figure(view):
+    """The box the sun's map is fitted round is memoised (asked every
+    frame); a figure moved by an edit must still be inside it."""
+    from PySide6.QtGui import QMatrix4x4
+    fig = _add_figure(view)
+    lo, hi = view._shadow_bounds()
+    assert lo.x() <= FEET.x() <= hi.x()
+    m = QMatrix4x4()
+    m.translate(6.0, -4.0, 0.0)
+    if fig.xform is not None:
+        m = m * fig.xform
+    fig.xform = m
+    view.scene.version += 1                 # what a Move commit does
+    lo, hi = view._shadow_bounds()
+    assert lo.x() <= FEET.x() + 6.0 <= hi.x()
+    assert lo.y() <= FEET.y() - 4.0 <= hi.y()

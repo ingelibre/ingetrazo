@@ -275,7 +275,18 @@ class BillboardMixin:
         frame, not from their mesh): a model holding only the scale figure
         had no box, so no shadow at all, and a figure standing beside a
         small drawing fell partly outside the sun's map and lost part of
-        its shadow (Marco, 21-11). A few cached extents per frame."""
+        its shadow (Marco, 21-11). Memoised on the placements and the
+        model's version (a figure moves or changes with an edit): it is
+        asked every frame."""
+        key = (self._placements_epoch(), self.scene.version)
+        memo = getattr(self, "_figure_box_memo", None)
+        if memo is not None and memo[0] == key:
+            return memo[1]
+        box = self._figure_shadow_box_now()
+        self._figure_box_memo = (key, box)
+        return box
+
+    def _figure_shadow_box_now(self):
         lo = hi = None
         for g in self._faceme_figures():
             if getattr(g, "billboard", False) is not True:

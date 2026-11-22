@@ -211,4 +211,4 @@ def test_the_shader_branches_on_the_spread():
     assert "uniform float u_shadow_soft;" in src
     assert "uniform vec2 u_shadow_world;" in src
     assert "if (u_shadow_soft > 0.0) {" in src
-    assert "soft_shadow_light(uvz, grad, bias, texel)" in src
+    assert "soft_shadow_light(m, uvz, grad, bias, texel)" in src
