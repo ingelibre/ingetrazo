@@ -1,0 +1,3 @@
+# IngeTrazo documents are hashed and fingerprinted byte for byte: never
+# convert line endings in a plain-JSON .igz on checkout.
+*.igz -text

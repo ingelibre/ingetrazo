@@ -6,6 +6,14 @@ follow [SemVer](https://semver.org).
 
 ## [Unreleased]
 
+### Rendimiento
+
+- **Abrir un `.igz` antiguo grande (sin espacio de nombres IFC) ya no calcula el SHA-256 de todo el archivo:** por encima de 64 MB, la identidad se deriva del directorio central del ZIP. Los archivos más pequeños y los de JSON plano conservan la misma identidad que en la 0.6.3, así que sus GlobalId no cambian — @h-skycloud.
+
+### Corregido
+
+- **Windows:** los ejemplos `.igz` de JSON plano ya no se descargan con fin de línea CRLF (`.gitattributes`), que cambiaba sus bytes y hacía fallar `test_example_resave_is_unchanged` — @h-skycloud.
+
 ## [0.6.3] — 2026-11-22
 
 **La release más grande hasta ahora, dedicada a los grupos y componentes: editar dentro de ellos sin tirones, copias de componentes que siguen tus cambios, componentes anidados al importar y una biblioteca propia. Mover, Rotar y Escalar ya no tocan el modelo mientras arrastras, así que arrastrar es fluido también en modelos grandes. Las láminas ganan pestañas reordenables, un panel de láminas, leyenda editable e índice, y llegan la Caja de sección, Terreno, Cámara desde foto y Cortar hueco. Más de 100 PRs de la comunidad. El motor Rust ya hace buena parte del trabajo de cada fotograma, y seguiremos afinando el rendimiento con cada release.**

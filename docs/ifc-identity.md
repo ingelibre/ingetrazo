@@ -26,10 +26,15 @@ same wall appear to downstream revision tools as a different object.
 
 No dependency or `.igz` format-version change is required. Added keys are
 ignored by older readers. A legacy file without a namespace gets one from
-its SHA-256 digest, independent of its path; groups without a `uid` get
-deterministic IDs on load. Saving with this version stores the namespace
-explicitly. Reopening unchanged legacy bytes is stable, but independently
-editing an unmigrated legacy file changes its digest. Older applications
+its content, independent of its path: up to 64 MB, and for any plain-JSON
+document, from the file's SHA-256 digest (the 0.6.3 key); a larger ZIP
+document, from its central directory (each member's name, CRC-32, sizes
+and compression method, plus the file size), so opening it does not hash
+the whole file. Groups without a `uid` get deterministic IDs on load, so
+the namespace is needed at open time, not lazily on first export. Saving
+with this version stores the namespace explicitly. Reopening unchanged
+legacy bytes is stable, but independently editing an unmigrated legacy
+file changes its key. Older applications
 can read the geometry but may drop the namespace when saving, so identity
 continuity requires saving with a version that preserves this metadata.
 

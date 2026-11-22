@@ -33,15 +33,52 @@ def stable_guid(namespace: str, *parts) -> str:
 def document_identity(value, path) -> str:
     """Read a valid namespace; migrate legacy documents deterministically.
 
-    Hash bytes, not the filename, so reopening or moving an unchanged old
-    file gives the same identity. The next save writes it explicitly.
+    Derive it from the content, not the filename, so reopening or moving an
+    unchanged old file gives the same identity. The next save writes it
+    explicitly.
     """
     try:
         return uuid.UUID(str(value)).hex
     except (ValueError, AttributeError):
-        with open(path, "rb") as stream:
-            digest = hashlib.file_digest(stream, "sha256").hexdigest()
-        return uuid.uuid5(uuid.NAMESPACE_URL, "ingetrazo:legacy:" + digest).hex
+        return uuid.uuid5(uuid.NAMESPACE_URL, _legacy_key(path)).hex
+
+
+#: Below this size a legacy document keeps the whole-file SHA-256 key of
+#: 0.6.3 (roughly 1 ms per MB), so a file opened there and exported
+#: without saving keeps its GlobalIds. Above it the hash is what costs.
+_FULL_HASH_LIMIT = 64 * 1024 * 1024
+
+
+def _legacy_key(path) -> str:
+    """A content key for a document without a namespace.
+
+    A large ZIP document is keyed by its central directory: every member's
+    name, CRC-32 and sizes, plus the file size. That is read from the end
+    of the file instead of hashing all of it, and a change to any member
+    still changes the key. A plain-JSON document is read whole by the
+    loader anyway, so it keeps the full SHA-256.
+    """
+    import os
+    import zipfile
+    with open(path, "rb") as stream:
+        size = os.fstat(stream.fileno()).st_size
+        if size > _FULL_HASH_LIMIT and stream.read(4) == b"PK\x03\x04":
+            stream.seek(0)
+            try:
+                with zipfile.ZipFile(stream) as archive:
+                    members = [[i.filename, i.CRC, i.file_size,
+                                i.compress_size, i.compress_type]
+                               for i in archive.infolist()]
+            except zipfile.BadZipFile:
+                members = None
+            if members is not None:
+                key = json.dumps([size, members],
+                                 ensure_ascii=True, separators=(",", ":"))
+                digest = hashlib.sha256(key.encode("ascii")).hexdigest()
+                return "ingetrazo:legacy-zip:" + digest
+        stream.seek(0)
+        digest = hashlib.file_digest(stream, "sha256").hexdigest()
+    return "ingetrazo:legacy:" + digest
 
 
 def object_identity(obj) -> tuple:

@@ -181,6 +181,60 @@ def test_legacy_file_reopens_and_migrates_deterministically(namespace, tmp_path)
     assert _roots(b, tmp_path / "migrated.ifc") == before
 
 
+def _legacy_zip(path, document, blob=b"\x89PNG" + bytes(64)):
+    import zipfile
+    stamp = (1980, 1, 1, 0, 0, 0)
+    with zipfile.ZipFile(path, "w") as archive:
+        archive.writestr(zipfile.ZipInfo("document.json", stamp),
+                         json.dumps(document), zipfile.ZIP_DEFLATED)
+        archive.writestr(zipfile.ZipInfo("textures/a.png", stamp),
+                         blob, zipfile.ZIP_STORED)
+
+
+def test_large_legacy_zip_identity_reads_only_the_central_directory(tmp_path, monkeypatch):
+    import hashlib
+    from core import ifc_identity
+    old, moved, edited = (tmp_path / n for n in ("old.igz", "moved.igz", "edited.igz"))
+    document = {"igz_format": 1, "scene": {}}
+    _legacy_zip(old, document)
+    shutil.copyfile(old, moved)
+    _legacy_zip(edited, document, blob=b"\x89PNG" + bytes(63) + b"\x01")
+    monkeypatch.setattr(ifc_identity, "_FULL_HASH_LIMIT", 0)
+
+    def whole_file(*args, **kwargs):
+        raise AssertionError("a large ZIP document must not be hashed whole")
+    monkeypatch.setattr(hashlib, "file_digest", whole_file)
+    key = ifc_identity.document_identity(None, old)
+    assert ifc_identity.document_identity("broken", moved) == key
+    assert ifc_identity.document_identity(None, edited) != key
+    explicit = uuid.UUID(int=7).hex
+    assert ifc_identity.document_identity(explicit, old) == explicit
+
+
+@pytest.mark.parametrize("layout", ["zip", "json"])
+def test_small_legacy_identity_is_unchanged_since_0_6_3(layout, tmp_path):
+    import hashlib
+    from core.ifc_identity import document_identity
+    path = tmp_path / "old.igz"
+    document = {"igz_format": 1, "scene": {}}
+    if layout == "zip":
+        _legacy_zip(path, document)
+    else:
+        path.write_text(json.dumps(document), encoding="utf-8")
+    digest = hashlib.sha256(path.read_bytes()).hexdigest()
+    expected = uuid.uuid5(uuid.NAMESPACE_URL, "ingetrazo:legacy:" + digest).hex
+    assert document_identity(None, path) == expected
+
+
+def test_large_damaged_zip_falls_back_to_the_whole_file(tmp_path, monkeypatch):
+    from core import ifc_identity
+    path = tmp_path / "damaged.igz"
+    path.write_bytes(b"PK\x03\x04not really a zip")
+    monkeypatch.setattr(ifc_identity, "_FULL_HASH_LIMIT", 0)
+    key = ifc_identity.document_identity(None, path)
+    assert key == ifc_identity.document_identity(None, path)
+
+
 def test_inserting_same_document_twice_allocates_new_placement_ids(tmp_path):
     source = _scene("group")
     path = tmp_path / "source.igz"
