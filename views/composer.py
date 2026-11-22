@@ -15551,8 +15551,16 @@ class ComposerWindow(QMainWindow):
     def export_image(self, path: str, dpi: float = IMAGE_EXPORT_DPI) -> None:
         """Write the current sheet to ``path`` as a raster image: white
         paper, ``dpi`` dots per inch, the same painter as the PDF."""
+        img = self._sheet_qimage(self.comp, dpi)
+        quality = 92 if path.lower().endswith((".jpg", ".jpeg")) else -1
+        if not img.save(path, None, quality):
+            raise OSError(f"could not write {path}")
+
+    def _sheet_qimage(self, comp, dpi: float):
+        """``comp`` painted on white paper at ``dpi``, from the renders its
+        frames have now."""
         from PySide6.QtGui import QImage
-        pw, ph = self.comp.page_size_mm()
+        pw, ph = comp.page_size_mm()
         scale = float(dpi) / 25.4
         w_px = max(1, int(round(pw * scale)))
         h_px = max(1, int(round(ph * scale)))
@@ -15566,12 +15574,46 @@ class ComposerWindow(QMainWindow):
             painter.setRenderHint(QPainter.TextAntialiasing, True)
             painter.setRenderHint(QPainter.SmoothPixmapTransform, True)
             painter.scale(scale, scale)
-            self._paint_sheet(painter, self.comp)
+            self._paint_sheet(painter, comp)
         finally:
             painter.end()
-        quality = 92 if path.lower().endswith((".jpg", ".jpeg")) else -1
-        if not img.save(path, None, quality):
-            raise OSError(f"could not write {path}")
+        return img
+
+    # ---- for the AI bridge and the sheets API (#1505) ------------------------
+    def render_sheet_image(self, comp, dpi: float = IMAGE_EXPORT_DPI):
+        """``(image, not_rendered)``: ``comp`` painted at ``dpi`` with its
+        views rendered fresh, as the PDF atlas does, and the names of the
+        views that failed. The window need never have been shown, and it
+        stays on the sheet it was on."""
+        self.sync_with_document()
+        saved = self.comp
+        self.comp = comp
+        blank = []
+        try:
+            for f in comp.frames:
+                try:
+                    self.render_frame(f)
+                except Exception:  # noqa: BLE001 — one view, not the sheet
+                    self._forget_frame(f)
+                    blank.append(f.list_name or f.title_text or f.view_key)
+            self._set_field_context(comp)
+            return self._sheet_qimage(comp, dpi), blank
+        finally:
+            self.comp = saved
+            self._set_field_context(saved)
+
+    def sync_with_document(self) -> None:
+        """Catch up with sheets changed from outside the window (the AI
+        bridge's sheet tools, an undo of one of them): the open sheet may
+        be gone or renamed. Combo, tabs and canvas follow."""
+        comps = self._scene().compositions
+        if not comps:
+            return
+        if self.comp not in comps:
+            self.comp = comps[0]
+            self.history = ComposerHistory(on_change=self._on_history_change)
+        self._reload_comp_combo()
+        self._rebuild_canvas()
 
     @staticmethod
     def print_support():

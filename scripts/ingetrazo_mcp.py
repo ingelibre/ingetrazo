@@ -220,13 +220,20 @@ TOOLS = [
         "name": "export_pdf",
         "description": ("Export the document's sheets (all, or the ones "
                         "given by name, title-block number such as L-02, "
-                        "or place, 1 = first) into one PDF at `path`."),
+                        "or place, 1 = first): format pdf (default) writes "
+                        "ONE PDF at `path`; format png writes one PNG per "
+                        "sheet, <stem>-<nn>-<sheet>.png beside a .png "
+                        "`path` or inside a folder `path`, at `dpi`."),
         "inputSchema": {
             "type": "object",
             "properties": {"path": {"type": "string"},
                            "sheets": {"type": "array",
                                       "items": {"type": ["string",
-                                                         "integer"]}}},
+                                                         "integer"]}},
+                           "format": {"type": "string",
+                                      "enum": ["pdf", "png"]},
+                           "dpi": {"type": "number",
+                                   "description": "png only (default 150)"}},
             "required": ["path"],
         },
     },
@@ -266,6 +273,10 @@ _IDS = {"type": "array", "items": {"type": "string"},
         "description": "group / component ids (get_object_info's id)"}
 _POINT = {"type": "array", "items": {"type": "number"},
           "minItems": 3, "maxItems": 3, "description": "[x, y, z] metres"}
+#: A sheet tool's guard against a stale read (#1505).
+EXPECTED = {"type": "integer",
+            "description": ("the document_revision a read gave: the edit "
+                            "is refused if the document changed since")}
 _SHEET = {"type": ["string", "integer"],
           "description": "the sheet's name, its number in the title block "
                          "(L-02) or its place (1 = first)"}
@@ -309,7 +320,9 @@ TOOLS += [
     },
     {
         "name": "list_scenes",
-        "description": "The saved scenes (named views) and the one shown.",
+        "description": ("The saved scenes (named views) in the Scenes "
+                        "tab's order (index 1 = first), the one shown, and "
+                        "the sheets whose frames show each (used_by)."),
         "inputSchema": {"type": "object", "properties": {}},
     },
     {
@@ -372,6 +385,195 @@ TOOLS += [
             },
             "required": ["sheet"],
         },
+    },
+    {
+        "name": "list_sheets",
+        "description": ("Every sheet (lámina) in order: index (1 = first), "
+                        "name, title-block number, paper, frames, folder, "
+                        "Print flag, and warnings (a frame on a missing "
+                        "scene, clipped, at a non-standard scale with a "
+                        "suggested one, {placeholders} printed literally). "
+                        "Also document_revision for expected_revision."),
+        "inputSchema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "get_sheet",
+        "description": ("One sheet in full: frames (index, uid, view, "
+                        "scale, box, where the drawing lands on paper), "
+                        "texts, title block rows, warnings. dimensions="
+                        "true adds the sheet's dimensions."),
+        "inputSchema": {"type": "object",
+                        "properties": {"sheet": _SHEET,
+                                       "dimensions": {"type": "boolean"}},
+                        "required": ["sheet"]},
+    },
+    {
+        "name": "list_sheet_folders",
+        "description": ("The sheet explorer's folders, top to bottom: id, "
+                        "path, Print flag, and their sheets."),
+        "inputSchema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "create_sheet",
+        "description": ("A new sheet (one undo step): empty with one frame "
+                        "filling the page, or a copy of `template`; after "
+                        "the sheet `after` (into its folder) or last; "
+                        "`folder` (path A/B, '' the top) puts it there."),
+        "inputSchema": {"type": "object", "properties": {
+            "name": _STR, "template": _SHEET, "after": _SHEET,
+            "paper": {"type": "string",
+                      "enum": ["A0", "A1", "A2", "A3", "A4"]},
+            "landscape": {"type": "boolean"}, "frame": {"type": "boolean"},
+            "title_block": {"type": "boolean"}, "folder": _STR,
+            "expected_revision": EXPECTED},
+            "required": ["name"]},
+    },
+    {
+        "name": "update_sheet",
+        "description": ("Rename a sheet, change its paper or margin, move "
+                        "it to place `index` (1 = first) or into `folder`, "
+                        "or switch its Print flag. One undo step."),
+        "inputSchema": {"type": "object", "properties": {
+            "sheet": _SHEET, "name": _STR,
+            "paper": {"type": "string",
+                      "enum": ["A0", "A1", "A2", "A3", "A4"]},
+            "landscape": {"type": "boolean"},
+            "index": {"type": "integer"}, "margin_mm": {"type": "number"},
+            "folder": _STR, "print_in_all": {"type": "boolean"},
+            "expected_revision": EXPECTED},
+            "required": ["sheet"]},
+    },
+    {
+        "name": "delete_sheet",
+        "description": ("Delete a sheet (needs confirm=true; a document "
+                        "keeps at least one). One undo step."),
+        "inputSchema": {"type": "object", "properties": {
+            "sheet": _SHEET, "confirm": {"type": "boolean"},
+            "expected_revision": EXPECTED},
+            "required": ["sheet", "confirm"]},
+    },
+    {
+        "name": "add_frame",
+        "description": ("A view frame on a sheet. `view`: a scene's name, "
+                        "std:top / std:front / … or __current__. scale 50 "
+                        "or '1:50'. Without a box it fills the page inside "
+                        "the margins. fit 'content' centres the drawing, "
+                        "'view' takes the scene's own framing. `fields`: "
+                        "more frame attributes (style, show_title, "
+                        "title_text, list_name, hidden, …)."),
+        "inputSchema": {"type": "object", "properties": {
+            "sheet": _SHEET, "view": _STR,
+            "scale": {"type": ["number", "string"]},
+            "x_mm": {"type": "number"}, "y_mm": {"type": "number"},
+            "w_mm": {"type": "number"}, "h_mm": {"type": "number"},
+            "fit": {"type": "string", "enum": ["content", "view"]},
+            "fields": {"type": "object"},
+            "expected_revision": EXPECTED},
+            "required": ["sheet"]},
+    },
+    {
+        "name": "update_frame",
+        "description": ("Change a frame (by place, 1 = first, uid or Items "
+                        "name): view, scale, box, fit, `fields`."),
+        "inputSchema": {"type": "object", "properties": {
+            "sheet": _SHEET, "frame": {"type": ["integer", "string"]},
+            "view": _STR, "scale": {"type": ["number", "string"]},
+            "x_mm": {"type": "number"}, "y_mm": {"type": "number"},
+            "w_mm": {"type": "number"}, "h_mm": {"type": "number"},
+            "fit": {"type": "string", "enum": ["content", "view"]},
+            "fields": {"type": "object"},
+            "expected_revision": EXPECTED},
+            "required": ["sheet", "frame"]},
+    },
+    {
+        "name": "remove_frame",
+        "description": "Remove a frame from a sheet. One undo step.",
+        "inputSchema": {"type": "object", "properties": {
+            "sheet": _SHEET, "frame": {"type": ["integer", "string"]},
+            "expected_revision": EXPECTED},
+            "required": ["sheet", "frame"]},
+    },
+    {
+        "name": "fit_frame",
+        "description": ("Frame a view: mode 'content' centres it on what "
+                        "the view shows, 'view' takes the scene's (or the "
+                        "model's) centre."),
+        "inputSchema": {"type": "object", "properties": {
+            "sheet": _SHEET, "frame": {"type": ["integer", "string"]},
+            "mode": {"type": "string", "enum": ["content", "view"]},
+            "expected_revision": EXPECTED},
+            "required": ["sheet", "frame"]},
+    },
+    {
+        "name": "set_title_block",
+        "description": ("Fill the title block of one sheet, or of every "
+                        "sheet with sheet='all': fields [[label, value], "
+                        "…] (set, added if missing; replace=true makes them "
+                        "THE rows). Values may use {placeholders}: "
+                        "{proyecto}/{project}, {fecha}/{date}, {escala}, "
+                        "{hoja}/{page}, {total}, …"),
+        "inputSchema": {"type": "object", "properties": {
+            "sheet": _SHEET,
+            "fields": {"type": "array", "items": {
+                "type": "array", "items": {"type": "string"},
+                "minItems": 2, "maxItems": 2}},
+            "columns": {"type": "integer"},
+            "x_mm": {"type": "number"}, "y_mm": {"type": "number"},
+            "w_mm": {"type": "number"}, "h_mm": {"type": "number"},
+            "replace": {"type": "boolean"},
+            "expected_revision": EXPECTED}},
+    },
+    {
+        "name": "add_text",
+        "description": ("A text block on a sheet at x_mm, y_mm; `fields`: "
+                        "size_pt, bold, align, w_mm, color, …"),
+        "inputSchema": {"type": "object", "properties": {
+            "sheet": _SHEET, "text": _STR,
+            "x_mm": {"type": "number"}, "y_mm": {"type": "number"},
+            "fields": {"type": "object"},
+            "expected_revision": EXPECTED},
+            "required": ["sheet", "text"]},
+    },
+    {
+        "name": "update_text",
+        "description": ("Change a text block (`text` is its place on the "
+                        "sheet, 1 = first): `fields` text, x_mm, size_pt, "
+                        "…"),
+        "inputSchema": {"type": "object", "properties": {
+            "sheet": _SHEET, "text": {"type": "integer"},
+            "fields": {"type": "object"},
+            "expected_revision": EXPECTED},
+            "required": ["sheet", "text", "fields"]},
+    },
+    {
+        "name": "create_scene",
+        "description": ("A new scene (saved view): a copy of `from_scene`, "
+                        "else what the camera shows now; folder, hidden "
+                        "layers, target [x, y, z] in metres."),
+        "inputSchema": {"type": "object", "properties": {
+            "name": _STR, "from_scene": _STR, "folder": _STR,
+            "hidden_layers": {"type": "array", "items": _STR}, "target": _POINT,
+            "expected_revision": EXPECTED},
+            "required": ["name"]},
+    },
+    {
+        "name": "update_scene",
+        "description": ("Change a scene. Renaming it renames every frame "
+                        "that shows it, so no sheet loses its view."),
+        "inputSchema": {"type": "object", "properties": {
+            "scene": _STR, "name": _STR, "folder": _STR,
+            "hidden_layers": {"type": "array", "items": _STR}, "target": _POINT,
+            "expected_revision": EXPECTED},
+            "required": ["scene"]},
+    },
+    {
+        "name": "delete_scene",
+        "description": ("Delete a scene (needs confirm=true); the reply "
+                        "names the sheets whose frames showed it."),
+        "inputSchema": {"type": "object", "properties": {
+            "scene": _STR, "confirm": {"type": "boolean"},
+            "expected_revision": EXPECTED},
+            "required": ["scene", "confirm"]},
     },
     {
         "name": "import_file",
@@ -441,10 +643,12 @@ _req_id = 0
 _READ_ONLY = ("list_documents", "query_model", "screenshot", "get_scene_info",
               "get_object_info", "list_layers", "list_scenes",
               "list_materials", "render_sheet", "document_info",
-              "export_view")
+              "export_view", "list_sheets", "get_sheet",
+              "list_sheet_folders")
 # Opening another document, overwriting a file or ending the program can
 # lose work a client did not mean to lose (names as merged with #1494).
-_DESTRUCTIVE = ("run_python", "open_document", "save_document", "shutdown")
+_DESTRUCTIVE = ("run_python", "open_document", "save_document", "shutdown",
+                "delete_sheet", "delete_scene")
 for _tool in TOOLS:
     _name = _tool["name"]
     _tool["annotations"] = (
