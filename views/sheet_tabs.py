@@ -205,8 +205,28 @@ class SheetTabs(QTabBar):
             self._slot_list = slots
             want = ("model",) if self._current is None else ("sheet", self._current)
             self.setCurrentIndex(slots.index(want) if want in slots else 0)
+            # «Model» pinned outside the strip (``pin_model``): its own tab
+            # here stays, hidden, so the logical layout does not change.
+            pin = getattr(self, "_pin", None)
+            if self.count():
+                self.setTabVisible(0, pin is None)
+            if pin is not None:
+                pin.set_selected(self._current is None)
         finally:
             self._updating = False
+
+    def pin_model(self, pin) -> None:
+        """Show «Model» in ``pin`` (a ``PinnedModelTab`` left of the strip)
+        instead of as the strip's first tab, so scrolling through many
+        sheets never takes it out of sight (Marco, 21-11: «me gustaría que
+        Model siempre se viera»)."""
+        self._pin = pin
+        pin.setText(self._labels[0] if self._labels else tr("Model"))
+        pin.setToolTip(tr("Model — Ctrl+Tab goes to the sheet"))
+        pin.clicked.connect(
+            lambda: QTimer.singleShot(0, lambda: self._dispatch_slot(("model",))))
+        self._shown = None
+        self._rebuild()
 
     def names(self) -> list:
         """«Model» and the sheet names — never the «+» tab."""
@@ -377,6 +397,53 @@ class SheetTabs(QTabBar):
         super().contextMenuEvent(event)
 
 
+class PinnedModelTab(QTabBar):
+    """«Model» as a tab of its own, left of the sheet strip: drawn like the
+    strip's tabs (same style, document mode), marked only while the model
+    is what the window shows — a one-tab QTabBar always marks its tab."""
+
+    from PySide6.QtCore import Signal as _Signal
+    clicked = _Signal()
+
+    def __init__(self, parent=None) -> None:
+        super().__init__(parent)
+        self.setObjectName("sheet_tabs_model")
+        self.setDocumentMode(True)
+        self.setExpanding(False)
+        self.setDrawBase(False)
+        self.setUsesScrollButtons(False)
+        self.addTab(tr("Model"))
+        self._selected = True
+        self.tabBarClicked.connect(lambda _i: self.clicked.emit())
+
+    def setText(self, text: str) -> None:  # noqa: N802
+        self.setTabText(0, text)
+
+    def text(self) -> str:
+        return self.tabText(0)
+
+    def set_selected(self, on: bool) -> None:
+        if bool(on) != self._selected:
+            self._selected = bool(on)
+            self.update()
+
+    def is_selected(self) -> bool:
+        return self._selected
+
+    def paintEvent(self, event) -> None:  # noqa: N802 — Qt override
+        if self._selected:
+            super().paintEvent(event)
+            return
+        from PySide6.QtWidgets import QStyle, QStyleOptionTab, QStylePainter
+        p = QStylePainter(self)
+        opt = QStyleOptionTab()
+        self.initStyleOption(opt, 0)
+        opt.state &= ~QStyle.State_Selected
+        if self.tabAt(self.mapFromGlobal(self.cursor().pos())) == 0:
+            opt.state |= QStyle.State_MouseOver
+        p.drawControl(QStyle.CE_TabBarTab, opt)
+
+
 class _ElidedLabel(QLabel):
     """A label that never asks for room: a plain QLabel's minimum width is
     its whole text, and the standing hint of the main window is a long
@@ -424,6 +491,8 @@ class SheetStatusBar(QStatusBar):
         super().__init__(parent)
         self.tabs = SheetTabs(self, on_model, on_sheet, on_new, on_menu,
                               on_move)
+        self.model_tab = PinnedModelTab(self)
+        self.tabs.pin_model(self.model_tab)
         self._msg = _ElidedLabel(self)
         self._base = ""
         self._timer = QTimer(self)
@@ -433,6 +502,7 @@ class SheetStatusBar(QStatusBar):
         # label with all the stretch — it soaks up the free width, so the
         # strip stays glued to the left and whatever the windows add later
         # (tool, coordinates, the VCB, the zoom combo) lines up on the right.
+        self.addPermanentWidget(self.model_tab)
         self.addPermanentWidget(self.tabs)
         self.addPermanentWidget(self._msg, 10)
         # An empty filler takes what the capped message leaves, so the
@@ -461,6 +531,13 @@ class SheetStatusBar(QStatusBar):
     #: make the arrows come and go with it.
     MESSAGE_MIN_CHARS = 45
 
+    def set_message_reserve(self, chars: int) -> None:
+        """How many average characters the strip leaves the message (see
+        MESSAGE_MIN_CHARS): the composer, whose messages are short and
+        timed, leaves less and shows more sheet tabs."""
+        self.MESSAGE_MIN_CHARS = max(0, int(chars))
+        self._update_tab_budget()
+
     #: The strip keeps this much however narrow the window gets.
     TABS_FLOOR = 200
 
@@ -488,8 +565,8 @@ class SheetStatusBar(QStatusBar):
     def _right_width(self) -> int:
         """What the widgets right of the message ask for, gaps included:
         whatever the windows and the extensions added, and the size grip."""
-        ours = (self.tabs, self._msg, self._filler)
-        width = 3 * self.ITEM_GAP
+        ours = (self.tabs, self._msg, self._filler, self.model_tab)
+        width = 4 * self.ITEM_GAP + self.model_tab.sizeHint().width()
         for w in self.findChildren(QWidget, options=Qt.FindDirectChildrenOnly):
             if w in ours or w.isHidden() or w.isWindow():
                 continue

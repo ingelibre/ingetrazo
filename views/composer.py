@@ -6765,6 +6765,10 @@ class ComposerWindow(QMainWindow):
                              on_menu=lambda i, pos: self.sheet_tab_menu(
                                  i, pos, self),
                              on_move=self.move_sheet)
+        # Its messages are short and timed («Saved.»): the sheet tabs get
+        # the room the main window keeps for its standing hint (Marco,
+        # 21-11: about three tabs showed with the bar half empty).
+        bar.set_message_reserve(12)
         self.setStatusBar(bar)
         self._build_window_actions()
         self._build_sidebar_handle()

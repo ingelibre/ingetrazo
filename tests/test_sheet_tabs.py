@@ -206,7 +206,8 @@ def test_a_mouse_click_hands_over_after_the_press_and_the_strips_end_right(monke
         win._sheet_tabs.click(1)                          # first sheet, composer up
         comp = win._composer
         ct = comp._sheet_tabs
-        QTest.mouseClick(ct, Qt.LeftButton, Qt.NoModifier, ct.tabRect(0).center())
+        pin = comp.statusBar().model_tab                  # «Model», pinned left
+        QTest.mouseClick(pin, Qt.LeftButton, Qt.NoModifier, pin.tabRect(0).center())
         _app.processEvents()
         assert ct.current() == 0                          # still marks its sheet
         assert win._sheet_tabs.current() is None
@@ -446,13 +447,70 @@ def test_many_sheets_scroll_and_leave_the_hint_a_useful_stub(monkeypatch, width)
         assert _arrows(tabs)                         # the arrows stay
         assert tabs.width() > width * 0.3            # ... past the old share
         chars = bar._msg.width() / bar._msg.fontMetrics().averageCharWidth()
-        assert chars >= 40                           # the hint still reads
+        # The composer's messages are short and timed: it leaves them a
+        # stub of 12 characters and gives the rest to the sheets (21-11).
+        assert chars >= 10                           # «Saved.» still reads
         _assert_right_end_untouched(comp)
-        assert tabs.x() < 20                         # glued to the left
+        pin = bar.model_tab
+        assert pin.x() < 20                          # «Model» glued to the left
+        assert tabs.x() < pin.x() + pin.width() + 20  # the strip right after it
         comp.show_sheet(24)                          # the marked tab is in view
         _settle()
         rect = tabs.tabRect(tabs.currentIndex())
         assert rect.left() >= 0 and rect.right() <= tabs.width()
+    finally:
+        _close(win)
+
+
+def test_model_stays_in_sight_however_far_the_sheets_scroll(monkeypatch):
+    """«Model» is a tab of its own left of the strip: scrolled to the last
+    of 30 sheets it is still there, unmarked, and a click on it goes to the
+    model (Marco, 21-11: «me gustaría que Model siempre se viera»)."""
+    win = _window(monkeypatch)
+    try:
+        comp = _composer_with(win, 30)
+        comp.show()
+        comp.resize(1000, 900)
+        _settle()
+        bar = comp.statusBar()
+        tabs = comp._sheet_tabs
+        comp.show_sheet(29)
+        _settle()
+        assert _arrows(tabs)
+        pin = bar.model_tab
+        assert pin.isVisible() and pin.text() == tabs.names()[0]
+        assert not pin.is_selected()                 # a sheet is shown here
+        assert not tabs.isTabVisible(0)              # not twice
+        rect = tabs.tabRect(tabs.currentIndex())
+        assert rect.left() >= 0 and rect.right() <= tabs.width()
+        seen = []
+        monkeypatch.setattr(comp, "_show_model", lambda: seen.append(1))
+        tabs._on_model = comp._show_model
+        pin.clicked.emit()
+        _settle()
+        assert seen == [1]
+    finally:
+        _close(win)
+
+
+def test_the_composer_shows_more_sheet_tabs_than_before(monkeypatch):
+    """The composer leaves its timed messages a short stub, so at half a
+    1920 px screen the strip takes what the main window keeps for its
+    standing hint (Marco, 21-11: about three tabs with the bar half empty)."""
+    win = _window(monkeypatch)
+    try:
+        comp = _composer_with(win, 12)
+        comp.show()
+        comp.resize(960, 900)
+        _settle()
+        bar = comp.statusBar()
+        tabs = comp._sheet_tabs
+        avg = bar._msg.fontMetrics().averageCharWidth()
+        # Room the strip has beyond the old 45-character reserve.
+        assert bar.MESSAGE_MIN_CHARS == 12
+        free = bar.width() - bar._right_width()
+        old_budget = max(bar.TABS_FLOOR, free - min(avg * 45, int(free * 0.4)))
+        assert tabs.width() > old_budget
     finally:
         _close(win)
 
