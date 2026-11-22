@@ -15187,7 +15187,16 @@ class ComposerWindow(QMainWindow):
 
         def run():
             vp = self._window.viewport
+            # The model view's own style, put back afterwards: a frame
+            # render must not clear a style the window had set.
+            prev = (getattr(vp, "plano_style", None),
+                    getattr(vp, "style_override", None),
+                    getattr(vp, "_export_edge_px", 1),
+                    getattr(vp, "_export_profile_px", 1))
             try:
+                # The frame draws in its own style only.
+                vp.plano_style = None
+                vp.style_override = None
                 if frame.style in ("tecnico", "lineas"):
                     vp.plano_style = frame.style
                 elif frame.style == "vectorial":
@@ -15221,10 +15230,8 @@ class ComposerWindow(QMainWindow):
                 return vp.render_image(w_px, h_px, overlays=False,
                                        sharp_shadows=not screen)
             finally:
-                vp.plano_style = None
-                vp.style_override = None
-                vp._export_edge_px = 1
-                vp._export_profile_px = 1
+                (vp.plano_style, vp.style_override,
+                 vp._export_edge_px, vp._export_profile_px) = prev
 
         image = self._with_frame_camera(frame, run)
         if image is not None and image.hasAlphaChannel():
