@@ -13,11 +13,14 @@ from tools.line import LineTool
 from tools.move import MoveTool
 from tools.rotate import RotateTool
 from views import viewport as viewport_module
+# The one part that reads sys.platform. Faked through the package, the
+# name came back missing after the first test on Windows (ronda 0.6.3).
+from views.viewport import interaction as interaction_module
 
 
 @pytest.fixture
 def vp(monkeypatch):
-    monkeypatch.setattr(viewport_module, "sys", SimpleNamespace(platform="darwin"))
+    monkeypatch.setattr(interaction_module, "sys", SimpleNamespace(platform="darwin"))
     window = QMainWindow()
     viewport = viewport_module.Viewport(window)
     window.setCentralWidget(viewport)
@@ -77,7 +80,7 @@ def test_an_option_shortcut_does_not_leave_copy_switched(vp):
 
 @pytest.mark.parametrize("platform", ["linux", "win32"])
 def test_alt_is_not_a_copy_modifier_on_other_platforms(vp, monkeypatch, platform):
-    monkeypatch.setattr(viewport_module, "sys", SimpleNamespace(platform=platform))
+    monkeypatch.setattr(interaction_module, "sys", SimpleNamespace(platform=platform))
     tool = MoveTool()
     vp.set_active_tool(tool)
     tap(vp)
