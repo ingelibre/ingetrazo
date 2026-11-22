@@ -166,6 +166,7 @@ follow [SemVer](https://semver.org).
 - **Un objeto oculto mostrado como fantasma** (Ver ▸ Objetos ocultos) vuelve a seleccionarse con un clic.
 - **Se puede imantar a los objetos de una capa bloqueada** (siguen protegidos de la edición) (#1510).
 - Regresiones de la propia 0.6.3 corregidas antes de publicar: salir de un grupo, deshacer un giro y la cámara dentro de grupos.
+
 ### Problemas conocidos
 
 - **macOS 12 (Monterey)** no es compatible: la versión de Qt que usa IngeTrazo necesita macOS 13 o posterior (#1123).
