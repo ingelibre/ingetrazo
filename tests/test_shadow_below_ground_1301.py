@@ -96,6 +96,7 @@ def test_catcher_pass_still_draws_from_above():
         _terrain_showing=lambda: False,
         _photo_showing=lambda: False,
         scene=SimpleNamespace(bounds=bounds),
+        _shadow_bounds=bounds,       # the model's box and the figures'
     )
     Viewport._draw_shadow_ground(fake, style=None)
     assert reached

@@ -10,6 +10,32 @@ from core.group import Group
 from views.viewport._support import GL_LINES, GL_TRIANGLES, _content_ver
 
 
+def _feet_of(path) -> tuple[float, float]:
+    """``(u, v)`` of the feet of the cutout at ``path``: across it (see
+    ``BillboardMixin._figure_feet_u``) and the height of its lowest opaque
+    row (0 at the picture's bottom edge, in the middle of that row)."""
+    import numpy as np
+    from PySide6.QtGui import QImage
+    img = QImage(str(path))
+    if img.isNull() or img.width() < 1 or img.height() < 1:
+        return 0.5, 0.0
+    if not img.hasAlphaChannel():
+        return 0.5, 0.0                # a solid rectangle: its middle
+    img = img.convertToFormat(QImage.Format_RGBA8888)
+    a = np.frombuffer(img.constBits(), np.uint8).reshape(
+        img.height(), img.bytesPerLine())[:, :img.width() * 4]
+    opaque = a.reshape(img.height(), img.width(), 4)[..., 3] >= 128
+    rows = np.flatnonzero(opaque.any(axis=1))
+    if rows.size == 0:
+        return 0.5, 0.0
+    top, bottom = int(rows[0]), int(rows[-1])
+    band = opaque[max(top, bottom - int(0.05 * (bottom - top + 1))):
+                  bottom + 1]
+    xs = np.nonzero(band)[1]
+    return (float((xs.mean() + 0.5) / img.width()),
+            float((img.height() - bottom - 0.5) / img.height()))
+
+
 class BillboardMixin:
     """Face-me components and billboards: orientation, meshes, drawing and outlines."""
 
@@ -135,19 +161,24 @@ class BillboardMixin:
         cache[id(group)] = (key, ext)
         return ext
 
-    def _billboard_quad(self, group, face_dir=None):
-        """The face-me quad of a billboard group, rotated around its vertical
-        anchor axis to face the camera NOW (or ``face_dir`` when given).
-        Returns (corners[4], tex_path) or ``None``. Shared by the render
-        pass, picking and the shadow casters."""
-        ext = self._billboard_extent(group)
+    def _billboard_feet(self, group, ext=None):
+        """Where a face-me billboard stands — its feet, the anchor its quad
+        turns round — with a Move/Rotate drag's preview carried on it, or
+        ``None`` for an empty one. The snap point of a figure: no quad
+        needed (the middle of the quad's base is beside the feet of a
+        cutout drawn off its picture's middle, and moved with the camera:
+        «la inferencia de la imagen del ingeniero no la hace bien», Marco,
+        22-11)."""
         if ext is None:
-            return None
-        anchor, w, h, tex = ext
-        # A billboard being Move/Rotate-dragged previews through THIS pass
-        # (its raw mesh quad in the scratch VBOs showed the texture swimming
-        # and ignored the face-me turn): carry the preview transform on the
-        # anchor so the figure follows the cursor, camera-facing, fixed UVs.
+            ext = self._billboard_extent(group)
+            if ext is None:
+                return None
+        anchor = ext[0]
+        # A billboard being Move/Rotate-dragged previews through the face-me
+        # pass (its raw mesh quad in the scratch VBOs showed the texture
+        # swimming and ignored the face-me turn): the preview transform
+        # rides on the anchor so the figure follows the cursor,
+        # camera-facing, fixed UVs.
         if id(group) in (getattr(self, "_preview_groups", None) or ()):
             m = getattr(self, "_preview_matrix", None)
             if m is not None:
@@ -156,11 +187,22 @@ class BillboardMixin:
                 off = getattr(self, "_preview_offset", None)
                 if off is not None:
                     anchor = anchor + off
+        return anchor
+
+    def _billboard_quad(self, group, face_dir=None):
+        """The face-me quad of a billboard group, rotated around its vertical
+        anchor axis to face the camera NOW (or ``face_dir`` when given).
+        Returns (corners[4], tex_path) or ``None``. Shared by the render
+        pass, picking and the shadow casters."""
+        ext = self._billboard_extent(group)
+        if ext is None:
+            return None
+        _anchor, w, h, tex = ext
+        anchor = self._billboard_feet(group, ext)
         if w < 1e-9 or h < 1e-9:
             return None
-        # Facing: the camera by default; the shadow pass passes the SUN so a
-        # figure's cast silhouette holds still while the camera orbits
-        # (face-me "shadows face sun").
+        # Facing: the camera by default (the figures' shadow pass casts the
+        # quad as drawn); ``face_dir`` turns it another way.
         d = face_dir if face_dir is not None else self._faceme_dir(anchor)
         d = QVector3D(d.x(), d.y(), 0.0)
         if d.length() < 1e-6:
@@ -168,25 +210,107 @@ class BillboardMixin:
         d = d.normalized()
         r = QVector3D(-d.y(), d.x(), 0.0)
         up = QVector3D(0.0, 0.0, 1.0)
-        c0 = anchor - r * (w / 2)
-        c1 = anchor + r * (w / 2)
+        # The quad turns round the vertical through the FEET, which stand
+        # on the anchor: the person in a cutout is rarely centred (the
+        # engineer's roll of plans widens the picture on one side, his feet
+        # are 5.5 cm off its middle, another cutout's 17 cm). Turned round
+        # the picture's middle, the feet swung round the anchor as the
+        # camera orbited and the shadow did not start at them (Marco,
+        # 21-11). Now the feet stay where the figure was placed.
+        fu = self._figure_feet_u(tex)
+        c0 = anchor - r * (w * fu)
+        c1 = anchor + r * (w * (1.0 - fu))
         return ([c0, c1, c1 + up * h, c0 + up * h], tex)
+
+    def _figure_feet_u(self, path) -> float:
+        """Where a cutout's feet stand across its picture, 0..1 from the
+        left: the middle of its opaque texels in the lowest 5 % of the
+        figure (both feet of a striding figure: 1 % found only the lower
+        one, 0.90 instead of 0.68 on one of the bundled cutouts). 0.5
+        for a picture that cannot be read or has no opaque texel. A few
+        milliseconds for a 1 100-pixel cutout, once per file."""
+        return self._figure_feet(path)[0]
+
+    def _figure_feet(self, path) -> tuple[float, float]:
+        """``(u, v)`` of a cutout's feet in its picture (``_feet_of``),
+        read once per file and again only when the file changes."""
+        if not path:
+            return 0.5, 0.0
+        import os
+        try:
+            stamp = os.stat(path).st_mtime_ns
+        except OSError:
+            stamp = None
+        memo = getattr(self, "_feet_memo", None)
+        if memo is None:
+            memo = self._feet_memo = {}
+        hit = memo.get(path)
+        if hit is not None and hit[0] == stamp:
+            return hit[1]
+        memo[path] = (stamp, _feet_of(path))
+        return memo[path][1]
+
+    def _faceme_figures(self) -> list:
+        """The visible face-me figures. They are a handful among thousands
+        of placements: found once per change of the placements (an epoch
+        memoised per tick), not on every frame."""
+        bkey = self._placements_epoch()
+        bmemo = getattr(self, "_billboard_groups", None)
+        if bmemo is not None and bmemo[0] == bkey:
+            return bmemo[1]
+        groups = [g for g in self._placements()
+                  if getattr(g, "billboard", False)
+                  and self.scene.entity_visible(g)]
+        self._billboard_groups = (bkey, groups)
+        return groups
+
+    def _figure_shadow_box(self):
+        """``(lo, hi)`` as float triples round every figure that casts a
+        shadow (the textured quads), or ``None``. Each figure counts with
+        the room it can take turned ANY way round its feet: a cylinder as
+        wide as its farther side, as tall as it is. So the box does not
+        depend on the camera the figures face, and the sun's map built
+        from it (see ``_shadow_bounds``) is reused while the camera orbits.
+        The model's own box leaves the figures out (they are drawn per
+        frame, not from their mesh): a model holding only the scale figure
+        had no box, so no shadow at all, and a figure standing beside a
+        small drawing fell partly outside the sun's map and lost part of
+        its shadow (Marco, 21-11). Memoised on the placements and the
+        model's version (a figure moves or changes with an edit): it is
+        asked every frame."""
+        key = (self._placements_epoch(), self.scene.version)
+        memo = getattr(self, "_figure_box_memo", None)
+        if memo is not None and memo[0] == key:
+            return memo[1]
+        box = self._figure_shadow_box_now()
+        self._figure_box_memo = (key, box)
+        return box
+
+    def _figure_shadow_box_now(self):
+        lo = hi = None
+        for g in self._faceme_figures():
+            if getattr(g, "billboard", False) is not True:
+                continue           # mesh face-me figures cast no shadow
+            ext = self._billboard_extent(g)
+            if ext is None:
+                continue
+            a, w, h, tex = ext
+            fu = self._figure_feet_u(tex)
+            r = w * max(fu, 1.0 - fu)
+            glo = (a.x() - r, a.y() - r, a.z())
+            ghi = (a.x() + r, a.y() + r, a.z() + h)
+            if lo is None:
+                lo, hi = glo, ghi
+            else:
+                lo = tuple(map(min, lo, glo))
+                hi = tuple(map(max, hi, ghi))
+        return None if lo is None else (lo, hi)
 
     def _draw_billboards(self) -> None:
         """Per-frame pass: each face-me billboard is a textured cutout quad
         turned toward the camera (2D people). Depth-tested, so it
         hides behind walls correctly; the shader discards transparent texels."""
-        # The face-me figures are a handful among thousands of placements:
-        # found once per change of the placements, not on every frame.
-        bkey = self._placements_epoch()
-        bmemo = getattr(self, "_billboard_groups", None)
-        if bmemo is not None and bmemo[0] == bkey:
-            groups = bmemo[1]
-        else:
-            groups = [g for g in self._placements()
-                      if getattr(g, "billboard", False)
-                      and self.scene.entity_visible(g)]
-            self._billboard_groups = (bkey, groups)
+        groups = self._faceme_figures()
         if not groups:
             return
         self._program.setUniformValue(self._loc_use_tex, 1)
