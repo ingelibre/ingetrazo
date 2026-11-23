@@ -75,6 +75,18 @@
   <url type="vcs-browser">https://github.com/ingelibre/ingetrazo</url>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="0.6.3.2" date="2026-11-23">
+      <description>
+        <p>Groups and components: editing inside them without stalls, component
+        copies that follow your changes, nested components on import and a
+        component library of your own. Move, Rotate and Scale preview without
+        touching the model, so dragging is smooth on large models. Sheets get
+        draggable tabs, a sheet panel, an editable legend and a sheet index;
+        new Section Box, Terrain, Camera from Photo and Cut Opening tools; MCP
+        tools, server and headless modes for AI agents; Turkish and Catalan. Also:
+        moving or deleting a window or door keeps the wall's paint, zones and tags.</p>
+      </description>
+    </release>
     <release version="0.6.3.1" date="2026-11-22">
       <description>
         <p>Groups and components: editing inside them without stalls, component
