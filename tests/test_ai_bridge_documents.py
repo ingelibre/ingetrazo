@@ -428,3 +428,52 @@ def test_http_request_body_cannot_execute_a_valid_targeted_operation(bridge_wind
     assert not reply["ok"]
     assert len(window.viewport.scene.mesh.edges) == edges
     assert _ask(bridge, "run_python", {"code": "1 + 1"}, target=target)["ok"]
+
+
+def test_call_timeout_comes_from_the_environment(monkeypatch):
+    from plugins.ai_bridge import DEFAULT_CALL_TIMEOUT, call_timeout
+    monkeypatch.delenv("INGETRAZO_AI_TIMEOUT", raising=False)
+    assert call_timeout() == DEFAULT_CALL_TIMEOUT
+    monkeypatch.setenv("INGETRAZO_AI_TIMEOUT", "900")
+    assert call_timeout() == 900.0
+    for bad in ("", "0", "-5", "soon"):
+        monkeypatch.setenv("INGETRAZO_AI_TIMEOUT", bad)
+        assert call_timeout() == DEFAULT_CALL_TIMEOUT
+
+
+def test_mcp_client_waits_longer_than_the_bridge(monkeypatch):
+    import importlib.util
+    from pathlib import Path
+    from plugins.ai_bridge import call_timeout
+    script = Path(__file__).resolve().parents[1] / "scripts" / "ingetrazo_mcp.py"
+    for value in (None, "900"):
+        if value is None:
+            monkeypatch.delenv("INGETRAZO_AI_TIMEOUT", raising=False)
+        else:
+            monkeypatch.setenv("INGETRAZO_AI_TIMEOUT", value)
+        spec = importlib.util.spec_from_file_location("_mcp_timeout_probe", script)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        assert module.OPERATION_TIMEOUT > call_timeout()
+
+
+def test_a_call_the_main_thread_never_reaches_times_out_after_ai_timeout(
+        bridge_window, monkeypatch):
+    """A long export used to hold the reply for a fixed 180 s; a headless
+    render of a big model in software needs longer, a test much less."""
+    window, bridge = bridge_window()
+    target = _document(bridge)
+    edges = len(window.viewport.scene.mesh.edges)
+    monkeypatch.setenv("INGETRAZO_AI_TIMEOUT", "0.5")
+    request = _request("run_python", {"code": (
+        "mesh.add_edge(QVector3D(0,0,0), QVector3D(2,0,0))")}, target=target)
+    started = time.monotonic()
+    thread, out = _queue_request(bridge, request)
+    thread.join(timeout=5.0)                  # no Qt events: never dispatched
+    assert not thread.is_alive(), "the reply waited for the fixed timeout"
+    assert time.monotonic() - started < 5.0
+    reply = json.loads(out["data"].split(b"\n", 1)[0])
+    assert reply["ok"] is False
+    assert reply["error"] == "timed out on the UI thread"
+    QApplication.instance().processEvents()   # the expired call never runs
+    assert len(window.viewport.scene.mesh.edges) == edges

@@ -57,6 +57,24 @@ DEFAULT_PORT = 0
 #: QSettings key of the panel's «Allow the agent to save the document».
 ALLOW_SAVE_KEY = "ai_bridge/allow_save"
 _REFUSED = b'{"id": null, "ok": false, "error": "not a bridge request; closing"}\n'
+#: How long one call may hold the Qt main thread before the agent hears
+#: "timed out on the UI thread", in seconds. Large documents rendered in
+#: software (``--headless`` in a container, Mesa llvmpipe) can need longer
+#: for ``export_sheets`` / ``export_pdf``: ``INGETRAZO_AI_TIMEOUT`` raises it.
+#: ``scripts/ingetrazo_mcp.py`` reads the same variable and waits a little
+#: longer, so the bridge's own answer arrives before the client gives up.
+DEFAULT_CALL_TIMEOUT = 180.0
+
+
+def call_timeout() -> float:
+    """``INGETRAZO_AI_TIMEOUT`` in seconds, else ``DEFAULT_CALL_TIMEOUT``.
+    Read on every call; a value that is not a positive number is ignored."""
+    raw = os.environ.get("INGETRAZO_AI_TIMEOUT", "").strip()
+    try:
+        value = float(raw) if raw else DEFAULT_CALL_TIMEOUT
+    except ValueError:
+        return DEFAULT_CALL_TIMEOUT
+    return value if value > 0 else DEFAULT_CALL_TIMEOUT
 
 
 #: While an agent's code runs, nobody is at the screen to answer a dialog it
@@ -294,7 +312,7 @@ class _Bridge(BridgeTools, QObject):
             self._pending_job = job
         try:
             self._dispatch.emit(job)
-            if not job["done"].wait(timeout=180.0):
+            if not job["done"].wait(timeout=call_timeout()):
                 job["done"].set()  # An expired queued request must never run later.
             reply = job["reply"] or {"id": req.get("id"), "ok": False,
                                      "error": "timed out on the UI thread"}
