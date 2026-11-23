@@ -4376,5 +4376,12 @@
  "Push/Pull bases kept with Ctrl stay sound and cracked results are refused (#1155).": "Các đáy giữ lại bằng Ctrl khi Đẩy/Kéo vẫn nguyên vẹn và kết quả bị nứt bị từ chối (#1155).",
  "Camera roll with a 3D mouse (#1406).": "Nghiêng camera bằng chuột 3D (#1406).",
  "A preference to swap orbit and pan on the middle button (#467).": "Tùy chọn hoán đổi xoay quỹ đạo và kéo trên nút giữa (#467).",
- "IFC export writes the project north, the site location and the owning application (#1498).": "Xuất IFC ghi hướng bắc dự án, vị trí khu đất và ứng dụng sở hữu (#1498)."
+ "IFC export writes the project north, the site location and the owning application (#1498).": "Xuất IFC ghi hướng bắc dự án, vị trí khu đất và ứng dụng sở hữu (#1498).",
+ "360° Image (JPG / PNG)…": "Ảnh 360° (JPG / PNG)…",
+ "Save everything around the camera as one panorama picture, to look around in a 360° viewer, a phone or a headset.": "Lưu mọi thứ xung quanh máy ảnh thành một ảnh toàn cảnh, để nhìn quanh trong trình xem 360°, trên điện thoại hoặc kính thực tế ảo.",
+ "Export 360° Image": "Xuất ảnh 360°",
+ "{name} — {w} × {h} px": "{name} — {w} × {h} px",
+ "Everything around the camera, as seen from where it stands. Open the picture in a 360° viewer to look around.": "Mọi thứ xung quanh máy ảnh, nhìn từ vị trí của nó. Mở ảnh trong trình xem 360° để nhìn quanh.",
+ "Export 360° Image failed": "Không thể xuất ảnh 360°",
+ "JPEG image (*.jpg);;PNG image (*.png)": "Ảnh JPEG (*.jpg);;Ảnh PNG (*.png)"
 }

@@ -1461,6 +1461,11 @@ class RenderMixin:
         self._program.setUniformValue(self._loc_fog_eye, self.camera.eye())
         self._program.setUniformValue(self._loc_fog_forward,
                                       self.camera.forward())
+        # A 360° panorama's six faces must agree on how far a point is.
+        radial = getattr(self, "_loc_fog_radial", None)
+        if radial is not None:
+            self._program.setUniformValue(
+                radial, 1 if getattr(self, "_export_panorama", False) else 0)
         self._program.setUniformValue(self._loc_fog_color,
                                       QVector3D(*color))
         self._program.setUniformValue1f(self._loc_fog_start, float(start))

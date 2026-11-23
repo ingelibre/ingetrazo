@@ -4385,5 +4385,12 @@
  "Push/Pull bases kept with Ctrl stay sound and cracked results are refused (#1155).": "القواعد المحتفظ بها بـ Ctrl في الدفع/السحب تبقى سليمة وتُرفض النتائج المتشققة (#1155).",
  "Camera roll with a 3D mouse (#1406).": "دوران الكاميرا حول محورها بفأرة ثلاثية الأبعاد (#1406).",
  "A preference to swap orbit and pan on the middle button (#467).": "تفضيل لتبديل الدوران والتحريك على الزر الأوسط (#467).",
- "IFC export writes the project north, the site location and the owning application (#1498).": "يكتب تصدير IFC شمال المشروع وموقع الأرض والتطبيق المالك (#1498)."
+ "IFC export writes the project north, the site location and the owning application (#1498).": "يكتب تصدير IFC شمال المشروع وموقع الأرض والتطبيق المالك (#1498).",
+ "360° Image (JPG / PNG)…": "صورة 360° (JPG / PNG)…",
+ "Save everything around the camera as one panorama picture, to look around in a 360° viewer, a phone or a headset.": "احفظ كل ما يحيط بالكاميرا في صورة بانورامية واحدة، للنظر حولك في عارض 360° أو هاتف أو نظارة واقع افتراضي.",
+ "Export 360° Image": "تصدير صورة 360°",
+ "{name} — {w} × {h} px": "{name} — {w} × {h} بكسل",
+ "Everything around the camera, as seen from where it stands. Open the picture in a 360° viewer to look around.": "كل ما يحيط بالكاميرا كما يُرى من موضعها. افتح الصورة في عارض 360° للنظر حولك.",
+ "Export 360° Image failed": "تعذّر تصدير صورة 360°",
+ "JPEG image (*.jpg);;PNG image (*.png)": "صورة JPEG (*.jpg);;صورة PNG (*.png)"
 }

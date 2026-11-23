@@ -4910,6 +4910,10 @@ class MainWindow(QMainWindow):
              tr("Save the view on screen as a PNG or JPG picture at the "
                 "width you choose."),
              self._on_export_image),
+            (tr("360° Image (JPG / PNG)…"),
+             tr("Save everything around the camera as one panorama picture, "
+                "to look around in a 360° viewer, a phone or a headset."),
+             self._on_export_panorama),
             (tr("Scenes as Video…"),
              tr("Save the scenes as a video: the camera glides from one to "
                 "the next, with the times of Camera ▸ Animation."),
@@ -12895,6 +12899,12 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage(
             tr("Exported image {w}×{h} → {name}",
                w=image.width(), h=image.height(), name=path.name), 4000)
+
+    def _on_export_panorama(self) -> None:
+        """A 360° panorama from the eye of the view worked in
+        (views/panorama_export.py)."""
+        from views.panorama_export import export_panorama_from_menu
+        export_panorama_from_menu(self)
 
     def _export(self, label: str, suffix: str, file_filter, writer) -> None:
         base = (self._current_path.stem if self._current_path is not None

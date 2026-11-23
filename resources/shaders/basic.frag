@@ -34,6 +34,10 @@ uniform vec3 u_fade_color;
 uniform int u_fog_enable;
 uniform vec3 u_fog_eye;
 uniform vec3 u_fog_forward;
+// 1 = the distance is measured straight from the eye instead of along the
+// viewing axis: a 360° panorama joins six views looking different ways, and
+// only the distance from the eye is the same seen from all of them.
+uniform int u_fog_radial;
 uniform vec3 u_fog_color;
 uniform float u_fog_start;
 uniform float u_fog_end;
@@ -261,7 +265,8 @@ float matte(vec3 n) {
 }
 
 float fog_amount() {
-    float depth = dot(v_world - u_fog_eye, u_fog_forward);
+    float depth = u_fog_radial == 1 ? length(v_world - u_fog_eye)
+                                    : dot(v_world - u_fog_eye, u_fog_forward);
     return smoothstep(u_fog_start, u_fog_end, depth);
 }
 

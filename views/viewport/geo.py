@@ -3,6 +3,7 @@
 """Geo-referenced content: base-map tiles, terrain, photo mesh, sky and the geo overlays."""
 from __future__ import annotations
 
+import math
 from array import array
 from core.units import fmt_len as _fmt_len
 from PySide6.QtCore import Qt, QPointF, QTimer
@@ -509,6 +510,10 @@ class GeoMixin:
         else:
             sky_rgb, horizon_rgb, ground_rgb = colors
         hy_raw = self._horizon_ndc_y(mvp)
+        if getattr(self, "_export_panorama", False):
+            self._draw_sky_by_direction(mvp, hy_raw, style, sky_rgb,
+                                        horizon_rgb, ground_rgb, fog_strength)
+            return
         hy = max(-1.0, min(1.0, hy_raw))
         c_sky0, c_sky1, c_gnd0, c_gnd1, c_line = self._sky_gradient(
             sky_rgb, horizon_rgb, ground_rgb, hy_raw, fog_strength)
@@ -535,6 +540,109 @@ class GeoMixin:
         # A subtle horizon line where sky meets ground, in a tone
         # derived from the two haze colours so custom skies keep it legible.
         if style.ground is None and style.sky and -1.0 < hy < 1.0:
+            line = array("f", [-1.0, hy, 0.0, 1.0, hy, 0.0])
+            self._sky_vao.bind()
+            self._sky_vbo.bind()
+            self._sky_vbo.allocate(line.tobytes(), len(line) * 4)
+            self._sky_vbo.release()
+            self._set_color(*c_line, 1.0)
+            self._gl.glDrawArrays(GL_LINES, 0, 2)
+            self._sky_vao.release()
+        self._gl.glEnable(GL_DEPTH_TEST)
+        self._gl.glDepthMask(GL_TRUE)
+
+    @staticmethod
+    def _sky_color_at_slope(sky_rgb, horizon_rgb, ground_rgb, slope,
+                            fog_strength=0.0):
+        """The backdrop's colour in a direction rising ``slope`` (the tangent
+        of its elevation: 0 on the horizon, negative below it), as a level
+        view shows it straight ahead, where that direction lands at
+        ``y = slope`` in NDC with a 90° field. A 360° panorama paints its sky
+        with this, so the tone depends only on the elevation and its six
+        faces meet without a join."""
+        if slope >= 0.0:
+            # sky_at(1.0) with the horizon at 1 - slope is sky_at(slope)
+            # with it at 0.
+            return Viewport._sky_gradient(sky_rgb, horizon_rgb, ground_rgb,
+                                          1.0 - slope, fog_strength)[1]
+        # gnd_at(-1.0) with the horizon at -1 - slope is gnd_at(slope) at 0.
+        return Viewport._sky_gradient(sky_rgb, horizon_rgb, ground_rgb,
+                                      -1.0 - slope, fog_strength)[3]
+
+    #: Cells per side of the grid a panorama face paints its sky on.
+    _PANORAMA_SKY_CELLS = 48
+
+    @staticmethod
+    def _sky_grid_rows(hy: float, cells: int) -> list:
+        """The NDC heights of the panorama sky's grid rows: evenly spaced,
+        plus the horizon itself when it is on screen, so no cell straddles
+        it and the line between sky and ground stays sharp."""
+        rows = [-1.0 + 2.0 * i / cells for i in range(cells + 1)]
+        if -1.0 < hy < 1.0:
+            rows = sorted(set(rows) | {hy})
+        return rows
+
+    def _draw_sky_by_direction(self, mvp, hy, style, sky_rgb, horizon_rgb,
+                               ground_rgb, fog_strength) -> None:
+        """``_draw_sky`` for one face of a 360° panorama: the same tones, but
+        each point coloured by the elevation of the direction it looks along
+        (``_sky_color_at_slope``) instead of by its height on the screen."""
+        if not style.sky:
+            return
+        inv, ok = mvp.inverted()
+        if not ok:
+            return
+        cells = self._PANORAMA_SKY_CELLS
+        xs = [-1.0 + 2.0 * i / cells for i in range(cells + 1)]
+        rows = self._sky_grid_rows(hy, cells)
+        ground = style.ground is None
+
+        def slope(x, y):
+            a = inv.map(QVector4D(x, y, -1.0, 1.0))
+            b = inv.map(QVector4D(x, y, 1.0, 1.0))
+            if abs(a.w()) < 1e-12 or abs(b.w()) < 1e-12:
+                return 0.0
+            d = b.toVector3D() / b.w() - a.toVector3D() / a.w()
+            level = math.hypot(d.x(), d.y())
+            if level < 1e-9 * max(abs(d.z()), 1e-30):
+                return 1e6 if d.z() > 0 else -1e6
+            return d.z() / level
+
+        data = array("f")
+        for y0, y1 in zip(rows, rows[1:]):
+            above = (y0 + y1) * 0.5 >= hy
+            if not above and not ground:
+                continue
+
+            def tone(x, y, above=above):
+                s = slope(x, y)
+                s = max(s, 0.0) if above else min(s, 0.0)
+                return self._sky_color_at_slope(sky_rgb, horizon_rgb,
+                                                ground_rgb, s, fog_strength)
+
+            bottom = [tone(x, y0) for x in xs]
+            top = [tone(x, y1) for x in xs]
+            for i in range(cells):
+                xa, xb = xs[i], xs[i + 1]
+                data.extend((xa, y0, 0.0, *bottom[i], xb, y0, 0.0,
+                             *bottom[i + 1], xb, y1, 0.0, *top[i + 1],
+                             xa, y0, 0.0, *bottom[i], xb, y1, 0.0,
+                             *top[i + 1], xa, y1, 0.0, *top[i]))
+        self._program.setUniformValue(self._loc_mvp, QMatrix4x4())  # NDC
+        self._gl.glDisable(GL_DEPTH_TEST)
+        self._gl.glDepthMask(GL_FALSE)
+        if data:
+            self._sky_grad_vao.bind()
+            self._program.setUniformValue(self._loc_use_vcolor, 1)
+            self._sky_grad_vbo.bind()
+            self._sky_grad_vbo.allocate(data.tobytes(), len(data) * 4)
+            self._sky_grad_vbo.release()
+            self._gl.glDrawArrays(GL_TRIANGLES, 0, len(data) // 6)
+            self._program.setUniformValue(self._loc_use_vcolor, 0)
+            self._sky_grad_vao.release()
+        if ground and -1.0 < hy < 1.0:
+            c_line = self._sky_gradient(sky_rgb, horizon_rgb, ground_rgb, hy,
+                                        fog_strength)[4]
             line = array("f", [-1.0, hy, 0.0, 1.0, hy, 0.0])
             self._sky_vao.bind()
             self._sky_vbo.bind()

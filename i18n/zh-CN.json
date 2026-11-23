@@ -4349,5 +4349,12 @@
  "Push/Pull bases kept with Ctrl stay sound and cracked results are refused (#1155).": "推/拉中用 Ctrl 保留的底面保持完好，出现裂缝的结果会被拒绝 (#1155)。",
  "Camera roll with a 3D mouse (#1406).": "用 3D 鼠标横滚相机 (#1406)。",
  "A preference to swap orbit and pan on the middle button (#467).": "在中键上交换环绕和平移的偏好设置 (#467)。",
- "IFC export writes the project north, the site location and the owning application (#1498).": "IFC 导出写入项目北向、场地位置和所属应用程序 (#1498)。"
+ "IFC export writes the project north, the site location and the owning application (#1498).": "IFC 导出写入项目北向、场地位置和所属应用程序 (#1498)。",
+ "360° Image (JPG / PNG)…": "360° 图像 (JPG / PNG)…",
+ "Save everything around the camera as one panorama picture, to look around in a 360° viewer, a phone or a headset.": "将相机周围的一切保存为一张全景图像，可在 360° 查看器、手机或头显中环顾四周。",
+ "Export 360° Image": "导出 360° 图像",
+ "{name} — {w} × {h} px": "{name} — {w} × {h} 像素",
+ "Everything around the camera, as seen from where it stands. Open the picture in a 360° viewer to look around.": "从相机所在位置看到的周围一切。在 360° 查看器中打开图像即可环顾四周。",
+ "Export 360° Image failed": "导出 360° 图像失败",
+ "JPEG image (*.jpg);;PNG image (*.png)": "JPEG 图像 (*.jpg);;PNG 图像 (*.png)"
 }

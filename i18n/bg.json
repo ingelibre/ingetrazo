@@ -4352,5 +4352,12 @@
  "Push/Pull bases kept with Ctrl stay sound and cracked results are refused (#1155).": "Основите, запазени с Ctrl при избутване, остават здрави, а напуканите резултати се отхвърлят (#1155).",
  "Camera roll with a 3D mouse (#1406).": "Накланяне на камерата с 3D мишка (#1406).",
  "A preference to swap orbit and pan on the middle button (#467).": "Настройка за размяна на орбита и панорамиране на средния бутон (#467).",
- "IFC export writes the project north, the site location and the owning application (#1498).": "Експортът в IFC записва севера на проекта, местоположението на терена и приложението собственик (#1498)."
+ "IFC export writes the project north, the site location and the owning application (#1498).": "Експортът в IFC записва севера на проекта, местоположението на терена и приложението собственик (#1498).",
+ "360° Image (JPG / PNG)…": "Изображение 360° (JPG / PNG)…",
+ "Save everything around the camera as one panorama picture, to look around in a 360° viewer, a phone or a headset.": "Запазва всичко около камерата в едно панорамно изображение за разглеждане в 360° визуализатор, на телефон или с VR очила.",
+ "Export 360° Image": "Експортиране на изображение 360°",
+ "{name} — {w} × {h} px": "{name} — {w} × {h} пикс.",
+ "Everything around the camera, as seen from where it stands. Open the picture in a 360° viewer to look around.": "Всичко около камерата, видяно от мястото ѝ. Отворете изображението в 360° визуализатор, за да се огледате.",
+ "Export 360° Image failed": "Неуспешно експортиране на изображение 360°",
+ "JPEG image (*.jpg);;PNG image (*.png)": "Изображение JPEG (*.jpg);;Изображение PNG (*.png)"
 }
