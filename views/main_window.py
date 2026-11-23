@@ -95,7 +95,7 @@ from tools.section import SectionPlaneTool
 from tools.section_box import SectionBoxTool
 from tools.pushpull import PushPullTool
 from tools.rectangle import RectangleTool
-from tools.select import SelectTool
+from tools.select import SelectTool, LassoSelectTool
 from views.tray import BimTray, GeorefTray, Tray, style_slider
 from views.icons import tool_icon
 from views.viewport import Viewport
@@ -597,6 +597,8 @@ class MainWindow(QMainWindow):
 
         self._tools = {
             "select": SelectTool(),
+            # Tools ▸ Lasso Select: an outline drawn round what to take.
+            "lasso": LassoSelectTool(),
             "line": LineTool(),
             "freehand": FreehandTool(),
             "rectangle": RectangleTool(),
@@ -1417,7 +1419,7 @@ class MainWindow(QMainWindow):
 
         # One toolbar per task, each independently movable.
         layout = [
-            ("main", tr("Main"), ["select", "eraser", "paint"]),
+            ("main", tr("Main"), ["select", "lasso", "eraser", "paint"]),
             ("draw", tr("Draw"),
              ["line", "freehand", "rectangle", "rotated_rect", "circle",
               "polygon", "arc", "arc3", "center_arc", "pie"]),
@@ -1846,7 +1848,9 @@ class MainWindow(QMainWindow):
                 from views.shortcuts import set_tooltip
                 set_tooltip(act, tip)
                 self._icon_actions.append((act, key))
-            after = self._tool_actions.get("select")
+            # After the selection tools: Select, then the Lasso.
+            after = (self._tool_actions.get("lasso")
+                     or self._tool_actions.get("select"))
             acts = main_tb.actions()
             nxt = (acts[acts.index(after) + 1]
                    if after in acts and acts.index(after) + 1 < len(acts)
@@ -2375,7 +2379,7 @@ class MainWindow(QMainWindow):
 
         # Tools menu (select/modify/measure — drawing lives in Draw)
         tools_menu = menubar.addMenu(tr("Tools"))
-        for keys in (("select", "eraser", "paint"),
+        for keys in (("select", "lasso", "eraser", "paint"),
                      ("move", "rotate", "scale", "flip"),
                      ("pushpull", "followme", "offset", "fillet"),
                      ("tape", "protractor", "guide_point", "north"),

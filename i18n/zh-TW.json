@@ -4352,5 +4352,9 @@
  "Push/Pull bases kept with Ctrl stay sound and cracked results are refused (#1155).": "推/拉中以 Ctrl 保留的底面保持完好，出現裂縫的結果會被拒絕 (#1155)。",
  "Camera roll with a 3D mouse (#1406).": "以 3D 滑鼠橫滾相機 (#1406)。",
  "A preference to swap orbit and pan on the middle button (#467).": "在中鍵上交換環繞與平移的偏好設定 (#467)。",
- "IFC export writes the project north, the site location and the owning application (#1498).": "IFC 匯出寫入專案北向、基地位置與所屬應用程式 (#1498)。"
+ "IFC export writes the project north, the site location and the owning application (#1498).": "IFC 匯出寫入專案北向、基地位置與所屬應用程式 (#1498)。",
+ "Lasso Select": "套索選取",
+ "Select with an outline: drag around what to take, or click its corners and close with a double-click or Enter. Clockwise takes what is inside, anticlockwise what it touches.": "以輪廓選取：在要選的物件周圍拖曳，或依序點擊其角點，再按兩下或 Enter 封閉。順時針繪製會選取完全在內的物件；逆時針繪製會選取輪廓碰到的物件。",
+ "Drag round what to select, or click its corners. Clockwise = inside, anticlockwise = touching.": "在要選取的物件周圍拖曳，或點擊其角點。順時針 = 在內，逆時針 = 接觸。",
+ "Click the next corner; double-click, Enter or the first corner closes. Backspace = back, Esc = drop.": "點擊下一個角點；按兩下、Enter 或第一個角點封閉。Backspace = 退回，Esc = 放棄。"
 }

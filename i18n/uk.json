@@ -4357,5 +4357,9 @@
  "Push/Pull bases kept with Ctrl stay sound and cracked results are refused (#1155).": "Основи, збережені з Ctrl під час видавлювання, лишаються цілими, а потріскані результати відхиляються (#1155).",
  "Camera roll with a 3D mouse (#1406).": "Крен камери за допомогою 3D-миші (#1406).",
  "A preference to swap orbit and pan on the middle button (#467).": "Налаштування, що міняє місцями обертання й панорамування на середній кнопці (#467).",
- "IFC export writes the project north, the site location and the owning application (#1498).": "Експорт IFC записує північ проєкту, розташування ділянки та застосунок-власник (#1498)."
+ "IFC export writes the project north, the site location and the owning application (#1498).": "Експорт IFC записує північ проєкту, розташування ділянки та застосунок-власник (#1498).",
+ "Lasso Select": "Вибір ласо",
+ "Select with an outline: drag around what to take, or click its corners and close with a double-click or Enter. Clockwise takes what is inside, anticlockwise what it touches.": "Вибір контуром: обведіть потрібне перетягуванням або клацайте по кутах і замкніть подвійним клацанням чи Enter. За годинниковою стрілкою вибирається те, що всередині; проти — те, чого торкається контур.",
+ "Drag round what to select, or click its corners. Clockwise = inside, anticlockwise = touching.": "Обведіть перетягуванням або клацайте кути. За годинниковою = всередині, проти = дотик.",
+ "Click the next corner; double-click, Enter or the first corner closes. Backspace = back, Esc = drop.": "Клацніть наступний кут; замикають подвійне клацання, Enter або перший кут. Esc = скасувати."
 }

@@ -4351,5 +4351,9 @@
  "Push/Pull bases kept with Ctrl stay sound and cracked results are refused (#1155).": "Les bases que es conserven amb Ctrl a Empènyer/Estirar queden sanes i es rebutgen els resultats esquerdats (#1155).",
  "Camera roll with a 3D mouse (#1406).": "Gir de càmera amb un ratolí 3D (#1406).",
  "A preference to swap orbit and pan on the middle button (#467).": "Una preferència per intercanviar òrbita i desplaçament al botó central (#467).",
- "IFC export writes the project north, the site location and the owning application (#1498).": "L'exportació IFC escriu el nord del projecte, la ubicació del lloc i l'aplicació propietària (#1498)."
+ "IFC export writes the project north, the site location and the owning application (#1498).": "L'exportació IFC escriu el nord del projecte, la ubicació del lloc i l'aplicació propietària (#1498).",
+ "Lasso Select": "Selecciona amb llaç",
+ "Select with an outline: drag around what to take, or click its corners and close with a double-click or Enter. Clockwise takes what is inside, anticlockwise what it touches.": "Selecciona amb un contorn: arrossega al voltant del que vols agafar, o fes clic a les seves cantonades i tanca'l amb doble clic o Retorn. En sentit horari agafa el que queda dins; en antihorari, el que toca.",
+ "Drag round what to select, or click its corners. Clockwise = inside, anticlockwise = touching.": "Arrossega al voltant o fes clic a les cantonades. Horari = dins, antihorari = el que toca.",
+ "Click the next corner; double-click, Enter or the first corner closes. Backspace = back, Esc = drop.": "Clic a una altra cantonada; tanca amb doble clic, Retorn o la primera. Retrocés = enrere, Esc = surt."
 }

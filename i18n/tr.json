@@ -4348,5 +4348,9 @@
   "Push/Pull bases kept with Ctrl stay sound and cracked results are refused (#1155).": "İt/Çek'te Ctrl ile korunan tabanlar sağlam kalır ve çatlak sonuçlar reddedilir (#1155).",
   "Camera roll with a 3D mouse (#1406).": "3B fare ile kamera yuvarlanması (#1406).",
   "A preference to swap orbit and pan on the middle button (#467).": "Orta düğmede yörünge ile kaydırmayı değiştirme tercihi (#467).",
-  "IFC export writes the project north, the site location and the owning application (#1498).": "IFC dışa aktarımı proje kuzeyini, arsa konumunu ve sahip uygulamayı yazar (#1498)."
+  "IFC export writes the project north, the site location and the owning application (#1498).": "IFC dışa aktarımı proje kuzeyini, arsa konumunu ve sahip uygulamayı yazar (#1498).",
+  "Lasso Select": "Kement seçimi",
+  "Select with an outline: drag around what to take, or click its corners and close with a double-click or Enter. Clockwise takes what is inside, anticlockwise what it touches.": "Bir çerçeveyle seçin: almak istediğinizin etrafını sürükleyerek çizin ya da köşelerine tıklayıp çift tıklama veya Enter ile kapatın. Saat yönünde çizilirse içinde kalanı, saat yönünün tersine çizilirse dokunduğunu alır.",
+  "Drag round what to select, or click its corners. Clockwise = inside, anticlockwise = touching.": "Etrafını sürükleyin veya köşelere tıklayın. Saat yönü = içindeki, ters = dokunduğu.",
+  "Click the next corner; double-click, Enter or the first corner closes. Backspace = back, Esc = drop.": "Sonraki köşeye tıklayın; çift tıklama, Enter veya ilk köşe kapatır. Esc = bırak."
 }

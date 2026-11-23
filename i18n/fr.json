@@ -4349,5 +4349,9 @@
  "Push/Pull bases kept with Ctrl stay sound and cracked results are refused (#1155).": "Les bases conservées avec Ctrl dans Pousser/Tirer restent saines et les résultats fissurés sont refusés (#1155).",
  "Camera roll with a 3D mouse (#1406).": "Roulis de la caméra avec une souris 3D (#1406).",
  "A preference to swap orbit and pan on the middle button (#467).": "Une préférence pour échanger orbite et panoramique sur le bouton du milieu (#467).",
- "IFC export writes the project north, the site location and the owning application (#1498).": "L'export IFC écrit le nord du projet, l'emplacement du site et l'application propriétaire (#1498)."
+ "IFC export writes the project north, the site location and the owning application (#1498).": "L'export IFC écrit le nord du projet, l'emplacement du site et l'application propriétaire (#1498).",
+ "Lasso Select": "Sélection au lasso",
+ "Select with an outline: drag around what to take, or click its corners and close with a double-click or Enter. Clockwise takes what is inside, anticlockwise what it touches.": "Sélectionner avec un contour : faites glisser autour de ce que vous voulez prendre, ou cliquez ses coins et fermez par un double-clic ou Entrée. Dans le sens horaire il prend ce qui est dedans ; dans le sens antihoraire, ce qu'il touche.",
+ "Drag round what to select, or click its corners. Clockwise = inside, anticlockwise = touching.": "Glissez autour ou cliquez les coins. Horaire = dedans, antihoraire = ce qui touche.",
+ "Click the next corner; double-click, Enter or the first corner closes. Backspace = back, Esc = drop.": "Cliquez le coin suivant ; double-clic, Entrée ou le premier coin ferme. Échap = quitter."
 }
