@@ -947,6 +947,42 @@ def test_the_toolbar_button_switches_the_box_on_and_off(boxed):
     assert sc.active_section_box() is None and sc.section_boxes == [box]
 
 
+def test_the_toolbar_button_makes_no_box_once_it_is_deleted(boxed):
+    """#1552: delete the box, then press the toolbar Section Box button —
+    no new box comes back. The toggle is only a switch: with no box it
+    bounces back off; the Section Box tool is still the way to place one.
+    With a box, the same box switches on and off again."""
+    vp = boxed.viewport
+    sc = vp.scene
+    act = boxed._act_section_box
+    assert sc.section_boxes == []                       # none yet
+    act.setChecked(True)                                # nothing to switch
+    assert sc.section_boxes == []                       # and none is made
+    assert not act.isChecked()                         # bounced back off
+    assert sc.active_section_box() is None
+    assert cut_planes(sc) == []
+    box = SectionBox(V(0, 0, 0), V(4, 4, 2), active=False, name="Planta")
+    sc.section_boxes[:] = [box]
+    act.setChecked(True)
+    assert sc.active_section_box() is box               # the same box
+    assert len(cut_planes(sc)) == 6
+    uid = box.uid
+    act.setChecked(False)                               # off: it stays
+    assert sc.section_boxes == [box]
+    assert sc.active_section_box() is None
+    act.setChecked(True)                                # on: the same one
+    assert sc.active_section_box() is box and box.uid == uid
+    assert len(cut_planes(sc)) == 6
+    boxed._on_remove_section_box(box)                   # delete it
+    assert sc.section_boxes == []
+    assert not act.isChecked()
+    act.setChecked(True)                                # press again
+    assert sc.section_boxes == []                       # no resurrection
+    assert not act.isChecked()
+    assert sc.active_section_box() is None
+    assert cut_planes(sc) == []
+
+
 def test_a_new_box_from_the_browser_with_nothing_selected_boxes_the_model(boxed):
     sc = boxed.viewport.scene
     first = SectionBox(V(0, 0, 0), V(1, 1, 1), name="First")

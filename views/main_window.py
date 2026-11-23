@@ -5921,17 +5921,27 @@ class MainWindow(QMainWindow):
 
     def _on_toggle_section_box(self, on: bool) -> None:
         """Camera ▸ Section Box: a box cuts or none does, one undo step.
-        On, the box selected (or the last one) cuts; with no box yet, one
-        is put in (the tool's way)."""
+        On, the box selected (or the last one) cuts; with no box yet,
+        nothing is made — use the Section Box tool to place one (#1552).
+        The toggle is only a switch, as its label says: it never creates
+        a box, so a deleted box cannot come back through it."""
         scene = self.viewport.scene
         if not on:
             self._show_whole_model()
             return
         box = self._picked_box()
         if box is None:
-            from tools.section_box import place_box
-            place_box(self.viewport, fit_selection=True)
-        elif not box.active:
+            act = self._act_section_box
+            act.blockSignals(True)
+            act.setChecked(False)
+            act.blockSignals(False)
+            self.viewport.flash_status(
+                tr("No section box — use the Section Box tool to place one"),
+                4000)
+            self._sync_section_box_actions()
+            self.viewport.update()
+            return
+        if not box.active:
             self._set_section_box(box, active=True)
         if not getattr(scene, "show_section_cuts", True):
             self._set_section_visibility("show_section_cuts", True)
