@@ -29,6 +29,8 @@ ROOT = Path(SPECPATH).resolve()
 datas = [
     ('resources/shaders/*.vert',   'resources/shaders'),
     ('resources/shaders/*.frag',   'resources/shaders'),
+    # edges.geom: missing from 0.6.3, the view went blank with line types (#1541).
+    ('resources/shaders/*.geom',   'resources/shaders'),
     # Render with Blender (#181): the script Blender runs on the job.
     ('resources/blender/*.py',     'resources/blender'),
     ('resources/icons/*.png',      'resources/icons'),
