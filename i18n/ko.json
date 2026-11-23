@@ -4349,5 +4349,12 @@
  "Push/Pull bases kept with Ctrl stay sound and cracked results are refused (#1155).": "밀기/당기기에서 Ctrl로 남긴 밑면이 온전하게 유지되고 균열이 생긴 결과는 거부됩니다 (#1155).",
  "Camera roll with a 3D mouse (#1406).": "3D 마우스로 카메라 롤 (#1406).",
  "A preference to swap orbit and pan on the middle button (#467).": "가운데 버튼의 궤도 회전과 이동을 바꾸는 설정 (#467).",
- "IFC export writes the project north, the site location and the owning application (#1498).": "IFC 내보내기가 프로젝트 북쪽, 대지 위치, 소유 응용 프로그램을 기록합니다 (#1498)."
+ "IFC export writes the project north, the site location and the owning application (#1498).": "IFC 내보내기가 프로젝트 북쪽, 대지 위치, 소유 응용 프로그램을 기록합니다 (#1498).",
+ "Soften Edges…": "모서리 부드럽게…",
+ "Soften Edges": "모서리 부드럽게",
+ "Soften the selected edges whose faces fold up to an angle, and harden the others.": "면이 지정한 각도 이하로 꺾이는 선택한 모서리를 부드럽게 하고, 나머지는 단단하게 합니다.",
+ "Edges whose faces fold this angle or less turn soft; the others turn hard.": "면이 이 각도 이하로 꺾이는 모서리는 부드러워지고, 나머지는 단단해집니다.",
+ "Soften coplanar edges too": "같은 평면의 모서리도 부드럽게",
+ "{soft} of {n} edges soft": "모서리 {n}개 중 {soft}개 부드러움",
+ "Deselected so the result shows; select something else to soften it instead.": "결과가 보이도록 선택을 해제했습니다. 다른 것을 부드럽게 하려면 그것을 선택하세요."
 }

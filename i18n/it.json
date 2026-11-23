@@ -4349,5 +4349,12 @@
  "Push/Pull bases kept with Ctrl stay sound and cracked results are refused (#1155).": "Le basi mantenute con Ctrl in Spingi/Tira restano integre e i risultati incrinati vengono rifiutati (#1155).",
  "Camera roll with a 3D mouse (#1406).": "Rollio della fotocamera con un mouse 3D (#1406).",
  "A preference to swap orbit and pan on the middle button (#467).": "Una preferenza per scambiare orbita e panoramica sul tasto centrale (#467).",
- "IFC export writes the project north, the site location and the owning application (#1498).": "L'esportazione IFC scrive il nord di progetto, la posizione del sito e l'applicazione proprietaria (#1498)."
+ "IFC export writes the project north, the site location and the owning application (#1498).": "L'esportazione IFC scrive il nord di progetto, la posizione del sito e l'applicazione proprietaria (#1498).",
+ "Soften Edges…": "Ammorbidisci spigoli…",
+ "Soften Edges": "Ammorbidisci spigoli",
+ "Soften the selected edges whose faces fold up to an angle, and harden the others.": "Ammorbidisce gli spigoli selezionati le cui facce si piegano fino a un angolo e indurisce gli altri.",
+ "Edges whose faces fold this angle or less turn soft; the others turn hard.": "Gli spigoli le cui facce si piegano di questo angolo o meno diventano morbidi; gli altri, duri.",
+ "Soften coplanar edges too": "Ammorbidisci anche gli spigoli complanari",
+ "{soft} of {n} edges soft": "{soft} spigoli morbidi su {n}",
+ "Deselected so the result shows; select something else to soften it instead.": "Deselezionato perché si veda il risultato; seleziona qualcos'altro per ammorbidirlo al suo posto."
 }

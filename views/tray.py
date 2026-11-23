@@ -167,6 +167,40 @@ class _Section(QWidget):
             QSettings().setValue(key, "0" if on else "1")
 
 
+def _older_section_order(names) -> list:
+    """The order the user left for a smaller set of these sections. The
+    order is saved under the names of the sections a stack holds, so a
+    section added in a new version starts a new key: without this, the
+    order the user had dragged was lost on updating."""
+    current = set(names)
+    settings = QSettings()
+    settings.beginGroup("tray/section_order")
+    try:
+        best, best_n = [], 0
+        for key in settings.childKeys():
+            older = set(key.split("|"))
+            if older < current and len(older) > best_n:
+                value = settings.value(key, [], type=list)
+                if value:
+                    best, best_n = list(value), len(older)
+        return best
+    finally:
+        settings.endGroup()
+
+
+def _merge_section_order(saved, default) -> list:
+    """``saved`` with the sections it does not know put where ``default``
+    has them: right after the one before them (first, if they lead)."""
+    order = [n for n in saved if n in default]
+    for i, name in enumerate(default):
+        if name in order:
+            continue
+        before = next((default[j] for j in range(i - 1, -1, -1)
+                       if default[j] in order), None)
+        order.insert(order.index(before) + 1 if before else 0, name)
+    return order
+
+
 class _SectionStack(QWidget):
     """Vertical section stack whose headers can be dragged to reorder."""
 
@@ -183,9 +217,13 @@ class _SectionStack(QWidget):
         self._sections = list(sections)
         self._order_key = "tray/section_order/" + "|".join(sorted(
             type(content).__name__ for _, content in sections))
+        default = [type(content).__name__ for _, content in sections]
         saved = QSettings().value(self._order_key, [], type=list)
+        if not saved:
+            saved = _older_section_order(default)
         if saved:
-            rank = {name: i for i, name in enumerate(saved)}
+            order = _merge_section_order(saved, default)
+            rank = {name: i for i, name in enumerate(order)}
             self._sections.sort(key=lambda pair: rank.get(
                 type(pair[1]).__name__, len(rank)))
         for title, content in self._sections:
@@ -7978,6 +8016,10 @@ class Tray(QDockWidget):
         self.materials = MaterialsPanel(window)
         self.components = ComponentsPanel(window)
         self.parts = PartsPanel(window)
+        # Soften Edges (#347): under Entity info, always there; it says
+        # what it acts on, or that edges or faces are to be selected.
+        from views.soften_dialog import SoftenEdgesPanel
+        self.soften = SoftenEdgesPanel(window)
         #: The Scenes panel: its own tab since #1158 (ScenesDock). The
         #: window sets it here once that tab is built, so
         #: ``tray.scenes`` keeps working for the Browser, the scene
@@ -7988,6 +8030,7 @@ class Tray(QDockWidget):
         # was drowning.
         self.setWidget(_scrolled([
             (tr("Entity info"), self.entity_info),
+            (tr("Soften Edges"), self.soften),
             (tr("Materials"), self.materials),
             (tr("Components"), self.components),
             (tr("Parts"), self.parts),
@@ -8008,12 +8051,12 @@ class Tray(QDockWidget):
                 timer = self._info_timer = QTimer(self)
                 timer.setSingleShot(True)
                 timer.setInterval(self.INFO_DEFER_MS)
-                timer.timeout.connect(self.entity_info.refresh)
+                timer.timeout.connect(self._refresh_info)
             timer.start()
         else:
             if timer is not None:
                 timer.stop()
-            self.entity_info.refresh()
+            self._refresh_info()
         # The materials panel scans every render face for its swatches —
         # ~0.5 s on an exploded 28k-face mesh, paid per EDIT when run
         # inline. Debounced: one refresh 300 ms after the last edit.
@@ -8043,6 +8086,10 @@ class Tray(QDockWidget):
                 timer.timeout.connect(self._materials_when_still)
             timer.start(300)
         self._after_materials()
+
+    def _refresh_info(self) -> None:
+        self.entity_info.refresh()
+        self.soften.refresh()
 
     def _materials_when_still(self) -> None:
         from views.viewport import wait_for_still_view

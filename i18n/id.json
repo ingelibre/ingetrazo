@@ -4352,5 +4352,12 @@
  "Push/Pull bases kept with Ctrl stay sound and cracked results are refused (#1155).": "Alas yang dipertahankan dengan Ctrl pada Dorong/Tarik tetap utuh dan hasil yang retak ditolak (#1155).",
  "Camera roll with a 3D mouse (#1406).": "Putaran kamera (roll) dengan mouse 3D (#1406).",
  "A preference to swap orbit and pan on the middle button (#467).": "Preferensi untuk menukar orbit dan geser pada tombol tengah (#467).",
- "IFC export writes the project north, the site location and the owning application (#1498).": "Ekspor IFC menulis utara proyek, lokasi tapak, dan aplikasi pemilik (#1498)."
+ "IFC export writes the project north, the site location and the owning application (#1498).": "Ekspor IFC menulis utara proyek, lokasi tapak, dan aplikasi pemilik (#1498).",
+ "Soften Edges…": "Haluskan tepi…",
+ "Soften Edges": "Haluskan tepi",
+ "Soften the selected edges whose faces fold up to an angle, and harden the others.": "Menghaluskan tepi terpilih yang mukanya terlipat hingga suatu sudut, dan mengeraskan yang lain.",
+ "Edges whose faces fold this angle or less turn soft; the others turn hard.": "Tepi yang mukanya terlipat sebesar sudut ini atau kurang menjadi halus; yang lain menjadi keras.",
+ "Soften coplanar edges too": "Haluskan juga tepi sebidang",
+ "{soft} of {n} edges soft": "{soft} dari {n} tepi halus",
+ "Deselected so the result shows; select something else to soften it instead.": "Pilihan dilepas agar hasilnya terlihat; pilih yang lain untuk menghaluskannya."
 }

@@ -4352,5 +4352,12 @@
  "Push/Pull bases kept with Ctrl stay sound and cracked results are refused (#1155).": "ຖານທີ່ຮັກສາໄວ້ດ້ວຍ Ctrl ໃນການດັນ/ດຶງ ຍັງສົມບູນ ແລະ ຜົນທີ່ແຕກຮ້າວຈະຖືກປະຕິເສດ (#1155).",
  "Camera roll with a 3D mouse (#1406).": "ໝຸນກ້ອງດ້ວຍເມົາສ໌ 3 ມິຕິ (#1406).",
  "A preference to swap orbit and pan on the middle button (#467).": "ຕົວເລືອກສະຫຼັບການໂຄຈອນ ແລະ ການເລື່ອນໃນປຸ່ມກາງ (#467).",
- "IFC export writes the project north, the site location and the owning application (#1498).": "ການສົ່ງອອກ IFC ຂຽນທິດເໜືອຂອງໂຄງການ, ທີ່ຕັ້ງຂອງສະຖານທີ່ ແລະ ແອັບພລິເຄຊັນເຈົ້າຂອງ (#1498)."
+ "IFC export writes the project north, the site location and the owning application (#1498).": "ການສົ່ງອອກ IFC ຂຽນທິດເໜືອຂອງໂຄງການ, ທີ່ຕັ້ງຂອງສະຖານທີ່ ແລະ ແອັບພລິເຄຊັນເຈົ້າຂອງ (#1498).",
+ "Soften Edges…": "ເຮັດໃຫ້ຂອບນຸ່ມ…",
+ "Soften Edges": "ເຮັດໃຫ້ຂອບນຸ່ມ",
+ "Soften the selected edges whose faces fold up to an angle, and harden the others.": "ເຮັດໃຫ້ຂອບທີ່ເລືອກ ເຊິ່ງໜ້າພັບບໍ່ເກີນມຸມທີ່ກຳນົດ ນຸ່ມ ແລະ ເຮັດໃຫ້ຂອບອື່ນແຂງ.",
+ "Edges whose faces fold this angle or less turn soft; the others turn hard.": "ຂອບທີ່ໜ້າພັບເທົ່າມຸມນີ້ ຫຼື ໜ້ອຍກວ່າ ຈະນຸ່ມ; ຂອບອື່ນຈະແຂງ.",
+ "Soften coplanar edges too": "ເຮັດໃຫ້ຂອບທີ່ຢູ່ລະນາບດຽວກັນນຸ່ມນຳ",
+ "{soft} of {n} edges soft": "ຂອບນຸ່ມ {soft} ຈາກ {n}",
+ "Deselected so the result shows; select something else to soften it instead.": "ຍົກເລີກການເລືອກເພື່ອໃຫ້ເຫັນຜົນ; ເລືອກສິ່ງອື່ນເພື່ອເຮັດໃຫ້ມັນນຸ່ມແທນ."
 }

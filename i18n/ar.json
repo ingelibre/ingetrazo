@@ -4385,5 +4385,12 @@
  "Push/Pull bases kept with Ctrl stay sound and cracked results are refused (#1155).": "القواعد المحتفظ بها بـ Ctrl في الدفع/السحب تبقى سليمة وتُرفض النتائج المتشققة (#1155).",
  "Camera roll with a 3D mouse (#1406).": "دوران الكاميرا حول محورها بفأرة ثلاثية الأبعاد (#1406).",
  "A preference to swap orbit and pan on the middle button (#467).": "تفضيل لتبديل الدوران والتحريك على الزر الأوسط (#467).",
- "IFC export writes the project north, the site location and the owning application (#1498).": "يكتب تصدير IFC شمال المشروع وموقع الأرض والتطبيق المالك (#1498)."
+ "IFC export writes the project north, the site location and the owning application (#1498).": "يكتب تصدير IFC شمال المشروع وموقع الأرض والتطبيق المالك (#1498).",
+ "Soften Edges…": "تنعيم الحواف…",
+ "Soften Edges": "تنعيم الحواف",
+ "Soften the selected edges whose faces fold up to an angle, and harden the others.": "ينعّم الحواف المحددة التي تنثني أوجهها حتى زاوية معيّنة، ويقسّي الحواف الأخرى.",
+ "Edges whose faces fold this angle or less turn soft; the others turn hard.": "الحواف التي تنثني أوجهها بهذه الزاوية أو أقل تصبح ناعمة؛ والأخرى تصبح قاسية.",
+ "Soften coplanar edges too": "تنعيم الحواف المستوية أيضًا",
+ "{soft} of {n} edges soft": "{soft} من {n} حواف ناعمة",
+ "Deselected so the result shows; select something else to soften it instead.": "أُلغي التحديد ليظهر الناتج؛ حدّد شيئًا آخر لتنعيمه بدلًا من ذلك."
 }

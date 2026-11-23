@@ -4352,5 +4352,12 @@
  "Push/Pull bases kept with Ctrl stay sound and cracked results are refused (#1155).": "ฐานที่คงไว้ด้วย Ctrl ในการดัน/ดึงยังสมบูรณ์ และผลลัพธ์ที่แตกร้าวจะถูกปฏิเสธ (#1155)",
  "Camera roll with a 3D mouse (#1406).": "หมุนกล้องรอบแกนมุมมองด้วยเมาส์ 3 มิติ (#1406)",
  "A preference to swap orbit and pan on the middle button (#467).": "ตัวเลือกสลับการโคจรและการเลื่อนบนปุ่มกลาง (#467)",
- "IFC export writes the project north, the site location and the owning application (#1498).": "การส่งออก IFC เขียนทิศเหนือของโครงการ ตำแหน่งที่ตั้ง และแอปพลิเคชันเจ้าของ (#1498)"
+ "IFC export writes the project north, the site location and the owning application (#1498).": "การส่งออก IFC เขียนทิศเหนือของโครงการ ตำแหน่งที่ตั้ง และแอปพลิเคชันเจ้าของ (#1498)",
+ "Soften Edges…": "ทำให้ขอบนุ่มนวล…",
+ "Soften Edges": "ทำให้ขอบนุ่มนวล",
+ "Soften the selected edges whose faces fold up to an angle, and harden the others.": "ทำให้ขอบที่เลือกซึ่งหน้าพับไม่เกินมุมที่กำหนดนุ่มนวล และทำให้ขอบอื่นแข็ง",
+ "Edges whose faces fold this angle or less turn soft; the others turn hard.": "ขอบที่หน้าพับเท่ากับมุมนี้หรือน้อยกว่าจะนุ่มนวล ส่วนขอบอื่นจะแข็ง",
+ "Soften coplanar edges too": "ทำให้ขอบที่อยู่ระนาบเดียวกันนุ่มนวลด้วย",
+ "{soft} of {n} edges soft": "ขอบนุ่มนวล {soft} จาก {n}",
+ "Deselected so the result shows; select something else to soften it instead.": "ยกเลิกการเลือกเพื่อให้เห็นผล เลือกสิ่งอื่นเพื่อทำให้สิ่งนั้นนุ่มนวลแทน"
 }

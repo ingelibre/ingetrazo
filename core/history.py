@@ -1418,6 +1418,92 @@ class SoftenEdgesCommand(Command):
         self._touch(scene)
 
 
+#: Below this fold, in degrees, two faces lie in one plane.
+COPLANAR_DEGREES = 0.01
+
+#: How far past the chosen angle a fold still counts as that angle: the
+#: coordinates are single precision, so a 12-sided cylinder's 30° seams
+#: read 30.0001° and must still soften at 30.
+ANGLE_TOLERANCE_DEGREES = 1e-3
+
+
+def edge_fold_degrees(edge) -> Optional[float]:
+    """How far the two faces of ``edge`` fold away from one plane, in
+    degrees: 0 for coplanar faces, 90 for a box's edge, near 180 for a thin
+    wedge's sharp end. None for an edge that does not join exactly two
+    faces (a loose line, a border, a fin of three or more).
+
+    A face turned the other way (a reversed face, an import whose winding
+    does not agree) still measures its true fold: two faces that agree run
+    the shared edge in opposite directions, so when both run it the same
+    way one normal is turned round first — otherwise a nearly flat edge
+    would read as a sharp one, near 180°."""
+    import math
+    faces = list(getattr(edge, "faces", ()))
+    if len(faces) != 2 or faces[0] is faces[1]:
+        return None
+    a, b = faces[0].normal(), faces[1].normal()
+    if a.length() < 1e-9 or b.length() < 1e-9:
+        return None
+    da = _edge_direction_in(faces[0], edge)
+    db = _edge_direction_in(faces[1], edge)
+    sign = -1.0 if (da and db and da == db) else 1.0
+    dot = sign * QVector3D.dotProduct(a, b) / (a.length() * b.length())
+    return math.degrees(math.acos(max(-1.0, min(1.0, dot))))
+
+
+def _edge_direction_in(face, edge) -> int:
+    """+1 when ``face``'s loop runs ``edge`` from v0 to v1, -1 the other
+    way, 0 when the edge is not on its loops."""
+    for lp in (face.loop, *getattr(face, "hole_loops", ())):
+        n = len(lp)
+        for i in range(n):
+            p, q = lp[i], lp[(i + 1) % n]
+            if p is edge.v0 and q is edge.v1:
+                return 1
+            if p is edge.v1 and q is edge.v0:
+                return -1
+    return 0
+
+
+def soften_by_angle(edges, degrees: float, coplanar: bool = False):
+    """Soften by angle (#831): ``(to_soften, to_harden)`` among ``edges`` —
+    the ones whose faces fold ``degrees`` or less turn soft, the others
+    hard. Coplanar ones soften only with ``coplanar``, and are left as they
+    are otherwise; an edge not between two faces is never touched, nor one
+    already as it should be."""
+    soften, harden = [], []
+    for e in edges:
+        fold = edge_fold_degrees(e)
+        if fold is None:
+            continue
+        if fold <= COPLANAR_DEGREES:
+            if coplanar and not e.soft:
+                soften.append(e)
+            continue
+        want = fold <= degrees + ANGLE_TOLERANCE_DEGREES
+        if want and not e.soft:
+            soften.append(e)
+        elif not want and e.soft:
+            harden.append(e)
+    return soften, harden
+
+
+def soften_by_angle_command(edges, degrees: float,
+                            coplanar: bool = False) -> Optional[Command]:
+    """One undo step softening and hardening ``edges`` by angle, or None
+    when every edge already reads right."""
+    soften, harden = soften_by_angle(edges, degrees, coplanar)
+    parts = []
+    if soften:
+        parts.append(SoftenEdgesCommand(soften, soft=True))
+    if harden:
+        parts.append(SoftenEdgesCommand(harden, soft=False))
+    if not parts:
+        return None
+    return parts[0] if len(parts) == 1 else CompoundCommand(parts)
+
+
 def edge_is_invisible(edge) -> bool:
     """Whether ``edge`` is a line the model does not draw: soft (a curved
     surface's seam) or hidden (Hide). Camera ▸ Hidden Geometry shows both
