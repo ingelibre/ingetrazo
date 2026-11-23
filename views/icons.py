@@ -200,6 +200,37 @@ def _select(p, ink):
     p.drawPath(path)
 
 
+def _lasso(p, ink):
+    # Lasso: an uneven loop drawn round what to take, dashed like the
+    # outline on the screen, and a small arrow at the corner where the
+    # drag began (the accent dot) — selecting, by drawing.
+    path = QPainterPath()
+    path.moveTo(15, 27)
+    path.cubicTo(9, 19, 15, 9, 26, 9)
+    path.cubicTo(37, 9, 42, 16, 39, 23)
+    path.cubicTo(37, 29, 31, 28, 27, 31)
+    path.cubicTo(23, 34, 18, 31, 15, 27)
+    pen = QPen(p.pen())
+    pen.setStyle(Qt.DashLine)
+    p.save()
+    p.setPen(pen)
+    p.setBrush(Qt.NoBrush)
+    p.drawPath(path)
+    p.restore()
+    arrow = QPainterPath()
+    arrow.moveTo(15, 27)
+    arrow.lineTo(15, 41)
+    arrow.lineTo(19, 37)
+    arrow.lineTo(22, 43)
+    arrow.lineTo(24.5, 42)
+    arrow.lineTo(21.5, 36)
+    arrow.lineTo(26, 36)
+    arrow.closeSubpath()
+    p.setBrush(QBrush(ink))
+    p.drawPath(arrow)
+    _dot(p, 15, 27)
+
+
 def _line(p, ink):
     # A plain line with its two endpoints — the tool's own shape.
     p.drawLine(QPointF(12, 36), QPointF(36, 12))
@@ -2967,7 +2998,7 @@ _DRAW = {
     **{key: (lambda p, ink, mode=mode: _edge_endpoint(p, ink, mode))
        for mode, key in enumerate(("endpoint_default", "endpoint_round", "endpoint_square", "endpoint_triangle"))},
     **_SOLID_ICONS,
-    "select": _select, "line": _line, "freehand": _freehand,
+    "select": _select, "lasso": _lasso, "line": _line, "freehand": _freehand,
     "side_collapse": _side_collapse, "plus": _plus,
     "overflow_h": _overflow_h, "overflow_v": _overflow_v,
     "side_expand": _side_expand,
@@ -3341,7 +3372,7 @@ def tool_cursor(key: str | None, plus: bool = False) -> QCursor | None:
     means this measurement will leave a guide, no plus means it only
     measures. Without it the mode is invisible and you find out after the
     click (issue #29, @pacaeiro)."""
-    if not key or key == "select":
+    if not key or key in ("select", "lasso"):
         return None
     from core import general_settings as _gs
     style = str(_gs.value("cursor_style", "tool")).lower()

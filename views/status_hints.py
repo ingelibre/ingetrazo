@@ -18,6 +18,8 @@ from core.i18n import tr
 #: Tool key → hint per phase. A plain string is the same hint always.
 HINTS: dict = {
     "select": "Shift = add/remove, Ctrl = add. Double-click a group to edit it. F3 = search commands.",
+    "lasso": ("Drag round what to select, or click its corners. Clockwise = inside, anticlockwise = touching.",
+              "Click the next corner; double-click, Enter or the first corner closes. Backspace = back, Esc = drop."),
     "change_axes": ("Click the new origin.",
                     "Click the red direction, then the green one."),
     "scale_manager": "Type the X, Y, Z scale in the window; Enter or leaving the field applies it.",

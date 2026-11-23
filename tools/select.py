@@ -18,6 +18,8 @@ Behavior:
 """
 from __future__ import annotations
 
+import math
+
 from views import prompts as _prompts
 
 from PySide6.QtCore import Qt
@@ -87,6 +89,296 @@ def _seg_rect_mask(ax, ay, bx, by, ok, rect, crossing):
     return cross
 
 
+# ---- Regions: the box, and the lasso drawn around what to take ----------------
+#
+# Every test the box makes asks the same few questions of its rectangle: is
+# this point inside, does this segment touch it, does it lie wholly inside.
+# A region answers them, so a lasso — any closed outline on the screen —
+# takes exactly what the box would take, by the same rules, wherever the
+# box looks: loose geometry, groups and components, guides, dimensions and
+# labels. The rectangle keeps the box's own arithmetic, unchanged.
+
+class _Region:
+    """A selection outline on the screen, in pixels."""
+    #: A projection keeps what is inside a box inside the hull of its
+    #: corners; a region that is not convex cannot be trusted with that.
+    convex = True
+    bbox: tuple = (0.0, 0.0, 0.0, 0.0)
+
+    def contains(self, p) -> bool:
+        raise NotImplementedError
+
+    def touches(self, a, b) -> bool:
+        """Segment ``a-b`` has a point inside or crosses the outline."""
+        raise NotImplementedError
+
+    def encloses(self, a, b) -> bool:
+        """Segment ``a-b`` lies wholly inside."""
+        raise NotImplementedError
+
+    def inside_mask(self, xs, ys, ok):
+        raise NotImplementedError
+
+    def seg_mask(self, ax, ay, bx, by, ok, crossing):
+        raise NotImplementedError
+
+
+class _RectRegion(_Region):
+    """The rubber-band box: ``(x0, y0, x1, y1)``, normalized."""
+
+    def __init__(self, rect) -> None:
+        self.rect = tuple(float(v) for v in rect)
+        self.bbox = self.rect
+
+    def contains(self, p) -> bool:
+        return _pt_in_rect(p, self.rect)
+
+    def touches(self, a, b) -> bool:
+        return _seg_rect_overlap(a, b, self.rect)
+
+    def encloses(self, a, b) -> bool:
+        return _pt_in_rect(a, self.rect) and _pt_in_rect(b, self.rect)
+
+    def inside_mask(self, xs, ys, ok):
+        x0, y0, x1, y1 = self.rect
+        return ok & (xs >= x0) & (xs <= x1) & (ys >= y0) & (ys <= y1)
+
+    def seg_mask(self, ax, ay, bx, by, ok, crossing):
+        return _seg_rect_mask(ax, ay, bx, by, ok, self.rect, crossing)
+
+
+#: A lasso keeps at most this many corners: a freehand stroke delivers one
+#: point per mouse move, and every test walks the outline once per corner.
+LASSO_MAX_POINTS = 256
+
+
+def simplify_outline(points, tolerance: float = 1.5,
+                     limit: int = LASSO_MAX_POINTS) -> list:
+    """``points`` (screen pixels) with the corners that bend it less than
+    ``tolerance`` px dropped (Ramer–Douglas–Peucker, iterative), the
+    tolerance doubled until at most ``limit`` remain. Repeated points go
+    first."""
+    pts = []
+    for p in points:
+        q = (float(p[0]), float(p[1]))
+        if not pts or abs(q[0] - pts[-1][0]) + abs(q[1] - pts[-1][1]) > 1e-9:
+            pts.append(q)
+    if len(pts) > 1 and pts[0] == pts[-1]:
+        pts.pop()
+    if len(pts) <= 3:
+        return pts
+
+    def rdp(tol):
+        keep = [False] * len(pts)
+        keep[0] = keep[-1] = True
+        stack = [(0, len(pts) - 1)]
+        while stack:
+            i, j = stack.pop()
+            ax, ay = pts[i]
+            bx, by = pts[j]
+            dx, dy = bx - ax, by - ay
+            norm = (dx * dx + dy * dy) ** 0.5
+            far, at = -1.0, -1
+            for k in range(i + 1, j):
+                px, py = pts[k]
+                if norm < 1e-12:
+                    d = ((px - ax) ** 2 + (py - ay) ** 2) ** 0.5
+                else:
+                    d = abs(dy * (px - ax) - dx * (py - ay)) / norm
+                if d > far:
+                    far, at = d, k
+            if at >= 0 and far > tol:
+                keep[at] = True
+                stack.append((i, at))
+                stack.append((at, j))
+        return [p for p, k in zip(pts, keep) if k]
+
+    tol = tolerance
+    out = rdp(tol)
+    while len(out) > limit:
+        tol *= 2.0
+        out = rdp(tol)
+    return out
+
+
+def outline_area(points) -> float:
+    """Signed area of the closed outline in screen pixels (y down):
+    positive when it was drawn clockwise as seen on the screen."""
+    n = len(points)
+    s = 0.0
+    for i in range(n):
+        x0, y0 = points[i]
+        x1, y1 = points[(i + 1) % n]
+        s += x0 * y1 - x1 * y0
+    return 0.5 * s
+
+
+class LassoRegion(_Region):
+    """Any closed outline on the screen. Inside is the even–odd rule; a
+    point on the outline counts as inside, as on the box's border."""
+
+    def __init__(self, points) -> None:
+        import numpy as np
+        pts = simplify_outline(points)
+        if len(pts) < 3:
+            # A lasso smaller than the thinning's tolerance keeps its own
+            # corners rather than collapse to a line.
+            pts = simplify_outline(points, tolerance=0.0)
+        if len(pts) < 3:
+            raise ValueError("a lasso needs three corners")
+        self.points = pts
+        self.px = np.array([p[0] for p in pts], dtype=np.float64)
+        self.py = np.array([p[1] for p in pts], dtype=np.float64)
+        self.qx = np.roll(self.px, -1)
+        self.qy = np.roll(self.py, -1)
+        self.bbox = (float(self.px.min()), float(self.py.min()),
+                     float(self.px.max()), float(self.py.max()))
+        self.convex = self._is_convex()
+
+    def _is_convex(self) -> bool:
+        n = len(self.points)
+        sign = 0
+        for i in range(n):
+            ax, ay = self.points[i]
+            bx, by = self.points[(i + 1) % n]
+            cx, cy = self.points[(i + 2) % n]
+            z = (bx - ax) * (cy - by) - (by - ay) * (cx - bx)
+            if abs(z) < 1e-9:
+                continue
+            s = 1 if z > 0 else -1
+            if sign == 0:
+                sign = s
+            elif s != sign:
+                return False
+        return True
+
+    # ---- One at a time (the per-entity walk) ---------------------------------
+    def _in_bbox(self, p) -> bool:
+        x0, y0, x1, y1 = self.bbox
+        return x0 <= p[0] <= x1 and y0 <= p[1] <= y1
+
+    def _on_outline(self, p) -> bool:
+        x, y = p
+        pts = self.points
+        n = len(pts)
+        for i in range(n):
+            ax, ay = pts[i]
+            bx, by = pts[(i + 1) % n]
+            cross = (bx - ax) * (y - ay) - (by - ay) * (x - ax)
+            if abs(cross) > 1e-6 * max(1.0, abs(bx - ax) + abs(by - ay)):
+                continue
+            if (min(ax, bx) - 1e-9 <= x <= max(ax, bx) + 1e-9
+                    and min(ay, by) - 1e-9 <= y <= max(ay, by) + 1e-9):
+                return True
+        return False
+
+    def contains(self, p) -> bool:
+        if not self._in_bbox(p):
+            return False
+        x, y = p
+        inside = False
+        pts = self.points
+        n = len(pts)
+        j = n - 1
+        for i in range(n):
+            xi, yi = pts[i]
+            xj, yj = pts[j]
+            if (yi > y) != (yj > y):
+                xc = xj + (y - yj) * (xi - xj) / (yi - yj)
+                if x < xc:
+                    inside = not inside
+            j = i
+        return inside or self._on_outline(p)
+
+    def _crosses(self, a, b) -> bool:
+        pts = self.points
+        n = len(pts)
+        return any(_seg_seg_2d(a, b, pts[i], pts[(i + 1) % n])
+                   for i in range(n))
+
+    def touches(self, a, b) -> bool:
+        if self.contains(a) or self.contains(b):
+            return True
+        x0, y0, x1, y1 = self.bbox
+        if (max(a[0], b[0]) < x0 or min(a[0], b[0]) > x1
+                or max(a[1], b[1]) < y0 or min(a[1], b[1]) > y1):
+            return False
+        return self._crosses(a, b)
+
+    def encloses(self, a, b) -> bool:
+        if not (self.contains(a) and self.contains(b)):
+            return False
+        return self.convex or not self._crosses(a, b)
+
+    # ---- Many at once (NumPy, import-scale meshes) ----------------------------
+    def inside_mask(self, xs, ys, ok):
+        import numpy as np
+        x0, y0, x1, y1 = self.bbox
+        cand = ok & (xs >= x0) & (xs <= x1) & (ys >= y0) & (ys <= y1)
+        out = np.zeros(len(xs), dtype=bool)
+        idx = np.nonzero(cand)[0]
+        if not len(idx):
+            return out
+        x = xs[idx]
+        y = ys[idx]
+        inside = np.zeros(len(idx), dtype=bool)
+        on = np.zeros(len(idx), dtype=bool)
+        for ax, ay, bx, by in zip(self.px, self.py, self.qx, self.qy):
+            straddle = (ay > y) != (by > y)
+            if straddle.any():
+                with np.errstate(divide="ignore", invalid="ignore"):
+                    xc = bx + (y - by) * (ax - bx) / (ay - by)
+                inside ^= straddle & (x < xc)
+            cross = (bx - ax) * (y - ay) - (by - ay) * (x - ax)
+            tol = 1e-6 * max(1.0, abs(bx - ax) + abs(by - ay))
+            on |= ((np.abs(cross) <= tol)
+                   & (x >= min(ax, bx) - 1e-9) & (x <= max(ax, bx) + 1e-9)
+                   & (y >= min(ay, by) - 1e-9) & (y <= max(ay, by) + 1e-9))
+        out[idx] = inside | on
+        return out
+
+    def _cross_mask(self, ax, ay, bx, by, todo):
+        """Which of the ``todo`` segments properly cross the outline."""
+        import numpy as np
+        hit = np.zeros(len(ax), dtype=bool)
+        x0, y0, x1, y1 = self.bbox
+        todo = (todo & (np.maximum(ax, bx) >= x0) & (np.minimum(ax, bx) <= x1)
+                & (np.maximum(ay, by) >= y0) & (np.minimum(ay, by) <= y1))
+        idx = np.nonzero(todo)[0]
+        if not len(idx):
+            return hit
+        sax, say, sbx, sby = ax[idx], ay[idx], bx[idx], by[idx]
+        got = np.zeros(len(idx), dtype=bool)
+        for px, py, qx, qy in zip(self.px, self.py, self.qx, self.qy):
+            d1 = (qx - px) * (say - py) - (qy - py) * (sax - px)
+            d2 = (qx - px) * (sby - py) - (qy - py) * (sbx - px)
+            d3 = (sbx - sax) * (py - say) - (sby - say) * (px - sax)
+            d4 = (sbx - sax) * (qy - say) - (sby - say) * (qx - sax)
+            got |= (d1 * d2 < 0) & (d3 * d4 < 0)
+        hit[idx] = got
+        return hit
+
+    def seg_mask(self, ax, ay, bx, by, ok, crossing):
+        in_a = self.inside_mask(ax, ay, ok)
+        in_b = self.inside_mask(bx, by, ok)
+        if not crossing:
+            both = in_a & in_b
+            if self.convex or not both.any():
+                return both
+            return both & ~self._cross_mask(ax, ay, bx, by, both)
+        cross = in_a | in_b
+        todo = ok & ~cross
+        if todo.any():
+            cross |= self._cross_mask(ax, ay, bx, by, todo)
+        return cross
+
+
+def as_region(rect) -> _Region:
+    """The region a box test reads: a region as it is, a rectangle tuple
+    as the classic box."""
+    return rect if isinstance(rect, _Region) else _RectRegion(rect)
+
+
 def _box_loose_fast(viewport, rect, crossing):
     """Vectorized box select over the loose mesh: edges via the cached
     screen projection, faces derived from their boundary edges. Returns
@@ -107,7 +399,7 @@ def _box_loose_fast(viewport, rect, crossing):
     edges_all = idx.edges
     if len(edges_all) != len(ax):
         return None
-    mask = _seg_rect_mask(ax, ay, bx, by, ok, rect, crossing)
+    mask = as_region(rect).seg_mask(ax, ay, bx, by, ok, crossing)
     sel = viewport.scene.entity_selectable
     # What the context lets a click take. The index also carries the rest of
     # the model's loose edges (a reference while a group is open); those are
@@ -244,8 +536,11 @@ def _placement_side(viewport, pg, rect):
     xs, ys, ok = viewport._project_px(box)
     if not ok.all():
         return None
-    x0, y0, x1, y1 = rect
-    if ((xs >= x0) & (xs <= x1) & (ys >= y0) & (ys <= y1)).all():
+    region = as_region(rect)
+    x0, y0, x1, y1 = region.bbox
+    # «In» trusts the hull of the corners: only a convex outline holds a
+    # hull whose corners it holds (a lasso bent round a corner does not).
+    if region.convex and region.inside_mask(xs, ys, ok).all():
         return "in"
     if (xs < x0).all() or (xs > x1).all() or (ys < y0).all() \
             or (ys > y1).all():
@@ -266,6 +561,7 @@ def _box_group_fast(viewport, group, rect, crossing):
     # walk — 1.15M vertices for the hedge.
     expand = getattr(viewport, "_expand_placements", None)
     places = expand(group) if expand is not None else [group]
+    region = as_region(rect)
     seen = False
     try:
         for pg in places:
@@ -273,7 +569,7 @@ def _box_group_fast(viewport, group, rect, crossing):
             # wholly past one of its sides, answers without its triangles:
             # on a model of 2 000 instances the corners of every triangle
             # carried to world and projected were most of a box's 5 s.
-            side = _placement_side(viewport, pg, rect)
+            side = _placement_side(viewport, pg, region)
             if side == "empty":
                 continue
             seen = True
@@ -288,16 +584,21 @@ def _box_group_fast(viewport, group, rect, crossing):
             ch, tv, tp = _box_source(viewport, pg)
             for points, paired in _box_point_batches(ch, tv, tp):
                 xs, ys, ok = viewport._project_px(points)
-                x0, y0, x1, y1 = rect
-                inside = ok & (xs >= x0) & (xs <= x1) & (ys >= y0) & (ys <= y1)
+                inside = region.inside_mask(xs, ys, ok)
                 if not crossing:
                     if not inside.all():
                         return False
+                    # Every corner inside a bent lasso, an edge still
+                    # running out past its bend.
+                    if paired and not region.convex and not region.seg_mask(
+                            xs[0::2], ys[0::2], xs[1::2], ys[1::2],
+                            ok[0::2] & ok[1::2], False).all():
+                        return False
                 elif inside.any():
                     return True
-                elif paired and _seg_rect_mask(
+                elif paired and region.seg_mask(
                         xs[0::2], ys[0::2], xs[1::2], ys[1::2],
-                        ok[0::2] & ok[1::2], rect, True).any():
+                        ok[0::2] & ok[1::2], True).any():
                     return True
     except Exception:  # noqa: BLE001
         return None
@@ -631,9 +932,10 @@ class SelectTool(Tool):
 
     def on_box_select(self, viewport, rect, crossing: bool,
                       additive: bool = False, mode: str | None = None) -> None:
+        region = as_region(rect)
         w2p = _frame_projector(viewport)
         picked = []
-        fast = _box_loose_fast(viewport, rect, crossing)
+        fast = _box_loose_fast(viewport, region, crossing)
         if fast is not None:
             picked.extend(fast[0])
             picked.extend(fast[1])
@@ -647,9 +949,9 @@ class SelectTool(Tool):
             if pa is None or pb is None:
                 continue
             if crossing:
-                if _seg_rect_overlap(pa, pb, rect):
+                if region.touches(pa, pb):
                     picked.append(edge)
-            elif _pt_in_rect(pa, rect) and _pt_in_rect(pb, rect):
+            elif region.encloses(pa, pb):
                 picked.append(edge)
         for face in loose_iter[1]:
             if not viewport.scene.entity_selectable(face):
@@ -659,12 +961,13 @@ class SelectTool(Tool):
                 continue
             if crossing:
                 n = len(pts)
-                touches = any(_pt_in_rect(p, rect) for p in pts) or any(
-                    _seg_rect_overlap(pts[i], pts[(i + 1) % n], rect) for i in range(n)
+                touches = any(region.contains(p) for p in pts) or any(
+                    region.touches(pts[i], pts[(i + 1) % n]) for i in range(n)
                 )
                 if touches:
                     picked.append(face)
-            elif all(_pt_in_rect(p, rect) for p in pts):
+            elif all(region.encloses(pts[i], pts[(i + 1) % len(pts)])
+                     for i in range(len(pts))):
                 picked.append(face)
         # Groups and component instances (the "box select skips groups"
         # report). Window mode: every vertex inside. Crossing mode: any vertex
@@ -705,7 +1008,7 @@ class SelectTool(Tool):
                     for pg, xf in places:
                         for v in pg.mesh.vertices:
                             p = gw2p(v.position, xf)
-                            if p is not None and _pt_in_rect(p, rect):
+                            if p is not None and region.contains(p):
                                 hit = True
                                 break
                         if hit:
@@ -715,7 +1018,7 @@ class SelectTool(Tool):
                             for e in pg.mesh.edges:
                                 pa, pb = gw2p(e.a, xf), gw2p(e.b, xf)
                                 if (pa is not None and pb is not None
-                                        and _seg_rect_overlap(pa, pb, rect)):
+                                        and region.touches(pa, pb)):
                                     hit = True
                                     break
                             if hit:
@@ -727,11 +1030,22 @@ class SelectTool(Tool):
                     for pg, xf in places:
                         for v in pg.mesh.vertices:
                             p = gw2p(v.position, xf)
-                            if p is None or not _pt_in_rect(p, rect):
+                            if p is None or not region.contains(p):
                                 inside = False
                                 break
                         if not inside:
                             break
+                    if inside and not region.convex:
+                        # A bent lasso: an edge may still run out past it.
+                        for pg, xf in places:
+                            for e in pg.mesh.edges:
+                                pa, pb = gw2p(e.a, xf), gw2p(e.b, xf)
+                                if (pa is None or pb is None
+                                        or not region.encloses(pa, pb)):
+                                    inside = False
+                                    break
+                            if not inside:
+                                break
                     if inside:
                         picked.append(group)
         # Guides: an infinite line can never be fully enclosed, so a window
@@ -750,7 +1064,7 @@ class SelectTool(Tool):
                     continue
                 pa, pb = w2p(seg[0]), w2p(seg[1])
                 if (pa is not None and pb is not None
-                        and _seg_rect_overlap(pa, pb, rect)):
+                        and region.touches(pa, pb)):
                     picked.append(g)
             elif getattr(g, "is_circle", False):
                 # A finite circle: a window box takes it whole, a crossing
@@ -759,13 +1073,13 @@ class SelectTool(Tool):
                 if any(p is None for p in rim):
                     continue
                 if crossing:
-                    if any(_pt_in_rect(p, rect) for p in rim):
+                    if any(region.contains(p) for p in rim):
                         picked.append(g)
-                elif all(_pt_in_rect(p, rect) for p in rim):
+                elif all(region.contains(p) for p in rim):
                     picked.append(g)
             else:
                 p = w2p(g.point)
-                if p is not None and _pt_in_rect(p, rect):
+                if p is not None and region.contains(p):
                     picked.append(g)
         selectable = getattr(viewport.scene, "entity_selectable",
                              lambda _e: True)
@@ -777,9 +1091,9 @@ class SelectTool(Tool):
             if pa is None or pb is None:
                 continue
             if crossing:
-                if _seg_rect_overlap(pa, pb, rect):
+                if region.touches(pa, pb):
                     picked.append(dim)
-            elif _pt_in_rect(pa, rect) and _pt_in_rect(pb, rect):
+            elif region.encloses(pa, pb):
                 picked.append(dim)
         for lab in getattr(viewport.scene, "text_labels", []):
             if not selectable(lab):
@@ -788,11 +1102,11 @@ class SelectTool(Tool):
             if pp is None:
                 continue
             if crossing:
-                if _pt_in_rect(pp, rect) or (
-                        pa is not None and _seg_rect_overlap(pa, pp, rect)):
+                if region.contains(pp) or (
+                        pa is not None and region.touches(pa, pp)):
                     picked.append(lab)
-            elif _pt_in_rect(pp, rect) and (
-                    pa is None or _pt_in_rect(pa, rect)):
+            elif region.contains(pp) and (
+                    pa is None or region.encloses(pa, pp)):
                 picked.append(lab)
         if mode == "replace" and getattr(viewport, "extension_pick",
                                          None) is not None:
@@ -811,6 +1125,220 @@ class SelectTool(Tool):
             erase_entities(viewport, list(viewport.scene.selection))
             return True
         return False
+
+    def on_lasso_select(self, viewport, points, crossing: bool,
+                        additive: bool = False,
+                        mode: str | None = None) -> None:
+        """A closed outline released: take what it holds (``crossing``
+        False) or what it touches (True), joined to the selection by
+        ``mode`` as a box would be."""
+        try:
+            region = LassoRegion(points)
+        except ValueError:
+            return
+        self.on_box_select(viewport, region, crossing, additive, mode=mode)
+
+
+class LassoSelectTool(SelectTool):
+    """Lasso: select with an outline drawn around what to take.
+
+    Drag to draw it freehand; it closes when the button comes up. Or click
+    corner after corner and close it with a double-click, Enter, or a
+    click back on the first corner — a drag between clicks draws that
+    stretch freehand. Drawn clockwise it takes what lies wholly inside
+    (blue, like a box dragged to the right); anticlockwise, whatever it
+    touches (green and dashed, like a box dragged to the left). Shift,
+    Ctrl and Shift+Ctrl join the catch to the selection as with the box.
+    Backspace takes back the last corner, Esc drops the outline."""
+
+    name = "Lasso Select"
+    icon = "lasso"
+    shortcut = "Shift+Space"
+    description = (
+        "Select with an outline: drag around what to take, or click its "
+        "corners and close with a double-click or Enter. Clockwise takes "
+        "what is inside, anticlockwise what it touches.")
+    box_select = False          # the press is the lasso's own (on_screen_*)
+
+    #: Below this travel a press and release are a click: a corner.
+    DRAG_PX = 4.0
+    #: A freehand stroke keeps a point every this many pixels.
+    STEP_PX = 3.0
+    #: A click this close to the first corner closes the outline.
+    CLOSE_PX = 8.0
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._reset()
+
+    def _reset(self) -> None:
+        self.nodes: list = []       # the outline's corners so far (pixels)
+        self._stroke = None         # the stretch being dragged, or None
+        self._press = None
+        self._cursor = None
+
+    # ---- Lifecycle ------------------------------------------------------------
+    def on_activate(self, viewport) -> None:
+        self._reset()
+
+    def on_deactivate(self, viewport) -> None:
+        self._reset()
+        super().on_deactivate(viewport)
+
+    def on_cancel(self, viewport) -> None:
+        self._reset()
+        viewport.update()
+
+    def on_hover(self, ctx: ToolContext) -> None:
+        # A click here sets a corner; it picks nothing to highlight.
+        ctx.viewport.set_hover(None)
+
+    # ---- The outline ----------------------------------------------------------
+    def outline(self) -> list:
+        """The corners drawn so far, the stroke being dragged included."""
+        pts = list(self.nodes)
+        if self._stroke:
+            pts.extend(self._stroke)
+        return pts
+
+    def on_screen_press(self, viewport, pos) -> bool:
+        self._press = (float(pos.x()), float(pos.y()))
+        self._stroke = None
+        return True
+
+    def on_screen_drag(self, viewport, pos) -> None:
+        if self._press is None:
+            return
+        p = (float(pos.x()), float(pos.y()))
+        self._cursor = p
+        if self._stroke is None:
+            if math.hypot(p[0] - self._press[0],
+                          p[1] - self._press[1]) < self.DRAG_PX:
+                return
+            self._stroke = [self._press]
+        last = self._stroke[-1]
+        if math.hypot(p[0] - last[0], p[1] - last[1]) >= self.STEP_PX:
+            self._stroke.append(p)
+
+    def on_screen_release(self, viewport, pos) -> None:
+        press, stroke = self._press, self._stroke
+        self._press = None
+        self._stroke = None
+        if press is None:
+            return
+        p = (float(pos.x()), float(pos.y()))
+        if stroke is not None:
+            stroke.append(p)
+            if not self.nodes:
+                # One drag, start to finish: a freehand lasso.
+                self.nodes = stroke
+                self.finish(viewport)
+                return
+            self.nodes.extend(stroke)        # a freehand stretch, then on
+            viewport.update()
+            return
+        if (len(self.nodes) >= 3 and math.hypot(
+                press[0] - self.nodes[0][0],
+                press[1] - self.nodes[0][1]) <= self.CLOSE_PX):
+            self.finish(viewport)
+            return
+        self.nodes.append(press)
+        viewport.update()
+
+    def on_screen_hover(self, viewport, pos) -> bool:
+        self._cursor = (float(pos.x()), float(pos.y()))
+        if self.nodes:
+            viewport.update()            # the rubber line follows the cursor
+        return False
+
+    def on_double_click(self, ctx: ToolContext) -> None:
+        # The first click of the pair already set the last corner.
+        if len(self.nodes) >= 3:
+            self.finish(ctx.viewport)
+            return
+        # Not an outline yet: a double-click opens a group, as in Select.
+        self._reset()
+        super().on_double_click(ctx)
+
+    def on_triple_click(self, ctx: ToolContext) -> None:
+        self._reset()
+        super().on_triple_click(ctx)
+
+    def on_click(self, ctx: ToolContext) -> None:
+        pass                             # the corners come from on_screen_*
+
+    def on_key(self, viewport, key: int, modifiers: Qt.KeyboardModifiers) -> bool:
+        if self.nodes:
+            if key in (Qt.Key_Return, Qt.Key_Enter):
+                self.finish(viewport)
+                return True
+            if key == Qt.Key_Backspace:
+                self.nodes.pop()
+                viewport.update()
+                return True
+        return super().on_key(viewport, key, modifiers)
+
+    def crossing(self, points=None) -> bool:
+        """Anticlockwise on the screen: a crossing lasso."""
+        pts = self.outline() if points is None else points
+        return outline_area(pts) < 0
+
+    def finish(self, viewport, modifiers=None) -> bool:
+        """Close the outline and select with it. False when it encloses
+        nothing worth the name (fewer than three corners, no area)."""
+        pts = self.outline()
+        self._reset()
+        if len(pts) < 3 or abs(outline_area(pts)) < 1.0:
+            viewport.update()
+            return False
+        if modifiers is None:
+            from PySide6.QtWidgets import QApplication
+            modifiers = QApplication.keyboardModifiers()
+        mode = selection_mode(modifiers)
+        self.on_lasso_select(viewport, pts, self.crossing(pts),
+                             mode != "replace", mode=mode)
+        viewport.update()
+        return True
+
+    # ---- Drawing --------------------------------------------------------------
+    def draw_overlay(self, viewport, painter) -> None:
+        pts = self.outline()
+        if self.nodes and self._stroke is None and self._cursor is not None:
+            pts.append(self._cursor)
+        if len(pts) < 2:
+            return
+        from PySide6.QtCore import QPointF
+        from PySide6.QtGui import QBrush, QColor, QPainter, QPen, QPolygonF
+        crossing = len(pts) >= 3 and self.crossing(pts)
+        if crossing:
+            pen = QPen(QColor(40, 158, 92), 1.5, Qt.DashLine)
+            fill = QColor(40, 158, 92, 28)
+        else:
+            pen = QPen(QColor(51, 102, 199), 1.5, Qt.SolidLine)
+            fill = QColor(51, 102, 199, 28)
+        poly = QPolygonF([QPointF(x, y) for x, y in pts])
+        painter.save()
+        painter.setRenderHint(QPainter.Antialiasing, True)
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(QBrush(fill))
+        painter.drawPolygon(poly)
+        painter.setPen(pen)
+        painter.setBrush(Qt.NoBrush)
+        painter.drawPolyline(poly)
+        # The closing side, faint: where the outline will shut.
+        faint = QPen(pen)
+        c = pen.color()
+        faint.setColor(QColor(c.red(), c.green(), c.blue(), 110))
+        faint.setStyle(Qt.DotLine)
+        painter.setPen(faint)
+        painter.drawLine(poly[poly.size() - 1], poly[0])
+        if self.nodes and self._stroke is None:
+            # The first corner: click it to close.
+            painter.setPen(pen)
+            painter.setBrush(QBrush(QColor(255, 255, 255)))
+            x, y = self.nodes[0]
+            painter.drawEllipse(QPointF(x, y), 3.5, 3.5)
+        painter.restore()
 
 
 # ---- Delete: the selection, or what is under the cursor ------------------------
