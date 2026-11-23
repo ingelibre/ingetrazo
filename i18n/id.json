@@ -4352,5 +4352,18 @@
  "Push/Pull bases kept with Ctrl stay sound and cracked results are refused (#1155).": "Alas yang dipertahankan dengan Ctrl pada Dorong/Tarik tetap utuh dan hasil yang retak ditolak (#1155).",
  "Camera roll with a 3D mouse (#1406).": "Putaran kamera (roll) dengan mouse 3D (#1406).",
  "A preference to swap orbit and pan on the middle button (#467).": "Preferensi untuk menukar orbit dan geser pada tombol tengah (#467).",
- "IFC export writes the project north, the site location and the owning application (#1498).": "Ekspor IFC menulis utara proyek, lokasi tapak, dan aplikasi pemilik (#1498)."
+ "IFC export writes the project north, the site location and the owning application (#1498).": "Ekspor IFC menulis utara proyek, lokasi tapak, dan aplikasi pemilik (#1498).",
+ "Unknown variable: {name}": "Variabel tidak dikenal: {name}",
+ "The variable {name} depends on itself": "Variabel {name} bergantung pada dirinya sendiri",
+ "The variable {name} has an error": "Variabel {name} mengandung kesalahan",
+ "Type a name": "Ketik sebuah nama",
+ "A name starts with a letter and has only letters, digits and _": "Nama diawali huruf dan hanya berisi huruf, angka, dan _",
+ "{name} is a unit: choose another name": "{name} adalah satuan: pilih nama lain",
+ "There is already a variable called {name}": "Sudah ada variabel bernama {name}",
+ "{value} (number)": "{value} (angka)",
+ "Give a measurement a name and type it in any calculation: =width/2 in the value box or in a field.": "Beri nama pada sebuah ukuran dan ketik nama itu di perhitungan mana pun: =lebar/2 di kotak ukuran atau di sebuah kolom.",
+ "Add a variable": "Tambah variabel",
+ "Delete the selected variables": "Hapus variabel yang dipilih",
+ "Result": "Hasil",
+ "Variables": "Variabel"
 }

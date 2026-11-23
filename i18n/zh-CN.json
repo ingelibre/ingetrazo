@@ -4349,5 +4349,18 @@
  "Push/Pull bases kept with Ctrl stay sound and cracked results are refused (#1155).": "推/拉中用 Ctrl 保留的底面保持完好，出现裂缝的结果会被拒绝 (#1155)。",
  "Camera roll with a 3D mouse (#1406).": "用 3D 鼠标横滚相机 (#1406)。",
  "A preference to swap orbit and pan on the middle button (#467).": "在中键上交换环绕和平移的偏好设置 (#467)。",
- "IFC export writes the project north, the site location and the owning application (#1498).": "IFC 导出写入项目北向、场地位置和所属应用程序 (#1498)。"
+ "IFC export writes the project north, the site location and the owning application (#1498).": "IFC 导出写入项目北向、场地位置和所属应用程序 (#1498)。",
+ "Unknown variable: {name}": "未知变量：{name}",
+ "The variable {name} depends on itself": "变量 {name} 引用了自身",
+ "The variable {name} has an error": "变量 {name} 有错误",
+ "Type a name": "请输入名称",
+ "A name starts with a letter and has only letters, digits and _": "名称以字母开头，只能包含字母、数字和 _",
+ "{name} is a unit: choose another name": "{name} 是单位：请换一个名称",
+ "There is already a variable called {name}": "已有名为 {name} 的变量",
+ "{value} (number)": "{value}（数值）",
+ "Give a measurement a name and type it in any calculation: =width/2 in the value box or in a field.": "为一个尺寸命名，然后在任何计算中输入该名称：在数值框或输入框中输入 =宽度/2。",
+ "Add a variable": "添加变量",
+ "Delete the selected variables": "删除所选变量",
+ "Result": "结果",
+ "Variables": "变量"
 }

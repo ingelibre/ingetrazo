@@ -4352,5 +4352,18 @@
  "Push/Pull bases kept with Ctrl stay sound and cracked results are refused (#1155).": "ຖານທີ່ຮັກສາໄວ້ດ້ວຍ Ctrl ໃນການດັນ/ດຶງ ຍັງສົມບູນ ແລະ ຜົນທີ່ແຕກຮ້າວຈະຖືກປະຕິເສດ (#1155).",
  "Camera roll with a 3D mouse (#1406).": "ໝຸນກ້ອງດ້ວຍເມົາສ໌ 3 ມິຕິ (#1406).",
  "A preference to swap orbit and pan on the middle button (#467).": "ຕົວເລືອກສະຫຼັບການໂຄຈອນ ແລະ ການເລື່ອນໃນປຸ່ມກາງ (#467).",
- "IFC export writes the project north, the site location and the owning application (#1498).": "ການສົ່ງອອກ IFC ຂຽນທິດເໜືອຂອງໂຄງການ, ທີ່ຕັ້ງຂອງສະຖານທີ່ ແລະ ແອັບພລິເຄຊັນເຈົ້າຂອງ (#1498)."
+ "IFC export writes the project north, the site location and the owning application (#1498).": "ການສົ່ງອອກ IFC ຂຽນທິດເໜືອຂອງໂຄງການ, ທີ່ຕັ້ງຂອງສະຖານທີ່ ແລະ ແອັບພລິເຄຊັນເຈົ້າຂອງ (#1498).",
+ "Unknown variable: {name}": "ບໍ່ຮູ້ຈັກຕົວແປ: {name}",
+ "The variable {name} depends on itself": "ຕົວແປ {name} ອ້າງເຖິງຕົວມັນເອງ",
+ "The variable {name} has an error": "ຕົວແປ {name} ມີຂໍ້ຜິດພາດ",
+ "Type a name": "ພິມຊື່",
+ "A name starts with a letter and has only letters, digits and _": "ຊື່ຕ້ອງເລີ່ມດ້ວຍຕົວອັກສອນ ແລະ ມີໄດ້ສະເພາະຕົວອັກສອນ, ຕົວເລກ ແລະ _",
+ "{name} is a unit: choose another name": "{name} ແມ່ນຫົວໜ່ວຍ: ເລືອກຊື່ອື່ນ",
+ "There is already a variable called {name}": "ມີຕົວແປຊື່ {name} ຢູ່ແລ້ວ",
+ "{value} (number)": "{value} (ຕົວເລກ)",
+ "Give a measurement a name and type it in any calculation: =width/2 in the value box or in a field.": "ຕັ້ງຊື່ໃຫ້ຂະໜາດ ແລ້ວພິມຊື່ນັ້ນໃນການຄິດໄລ່ໃດກໍໄດ້: =ກວ້າງ/2 ໃນຊ່ອງຂະໜາດ ຫຼື ໃນຊ່ອງປ້ອນ.",
+ "Add a variable": "ເພີ່ມຕົວແປ",
+ "Delete the selected variables": "ລຶບຕົວແປທີ່ເລືອກ",
+ "Result": "ຜົນລັບ",
+ "Variables": "ຕົວແປ"
 }

@@ -4355,5 +4355,18 @@
  "Push/Pull bases kept with Ctrl stay sound and cracked results are refused (#1155).": "As bases mantidas com Ctrl em Empurrar/Puxar ficam íntegras e resultados rachados são recusados (#1155).",
  "Camera roll with a 3D mouse (#1406).": "Rolagem da câmera com um mouse 3D (#1406).",
  "A preference to swap orbit and pan on the middle button (#467).": "Uma preferência para trocar órbita e panorâmica no botão do meio (#467).",
- "IFC export writes the project north, the site location and the owning application (#1498).": "A exportação IFC grava o norte do projeto, a localização do terreno e o aplicativo proprietário (#1498)."
+ "IFC export writes the project north, the site location and the owning application (#1498).": "A exportação IFC grava o norte do projeto, a localização do terreno e o aplicativo proprietário (#1498).",
+ "Unknown variable: {name}": "Variável desconhecida: {name}",
+ "The variable {name} depends on itself": "A variável {name} depende de si mesma",
+ "The variable {name} has an error": "A variável {name} tem um erro",
+ "Type a name": "Digite um nome",
+ "A name starts with a letter and has only letters, digits and _": "Um nome começa com uma letra e tem apenas letras, dígitos e _",
+ "{name} is a unit: choose another name": "{name} é uma unidade: escolha outro nome",
+ "There is already a variable called {name}": "Já existe uma variável chamada {name}",
+ "{value} (number)": "{value} (número)",
+ "Give a measurement a name and type it in any calculation: =width/2 in the value box or in a field.": "Dê um nome a uma medida e digite-o em qualquer cálculo: =largura/2 na caixa de medidas ou em um campo.",
+ "Add a variable": "Adicionar uma variável",
+ "Delete the selected variables": "Excluir as variáveis selecionadas",
+ "Result": "Resultado",
+ "Variables": "Variáveis"
 }

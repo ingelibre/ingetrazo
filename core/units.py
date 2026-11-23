@@ -729,6 +729,8 @@ class Parsed:
             return ""
         if "{unit}" in self.error:
             return tr(self.error, unit=self.word)
+        if "{name}" in self.error:
+            return tr(self.error, name=self.word)
         return tr(self.error)
 
 
@@ -901,9 +903,9 @@ _EXPR_FRACTION = re.compile(r"\d+(?: +\d+)?/\d+ *(?:[^\W\d_]+|[\"'°])")
 
 
 class _ExprError(Exception):
-    def __init__(self, message: str, position: int) -> None:
+    def __init__(self, message: str, position: int, word: str = "") -> None:
         super().__init__(message)
-        self.message, self.position = message, position
+        self.message, self.position, self.word = message, position, word
 
 
 def _expr_tokens(text: str, base: int) -> list:
@@ -933,25 +935,150 @@ def _expr_tokens(text: str, base: int) -> list:
     return tokens
 
 
-def parse_expression(text: str, kind: str = "length",
-                     unit: str | None = None) -> Parsed:
-    """A calculation typed after ``=`` (#630): ``=1.25*2+2.45/2``,
-    ``=(3-0.15*2)/4``, ``=1.20m+35cm``, ``=2*45cm``.
+# ---- The model's variables (#630 follow-up) ---------------------------------
+#
+# «=ancho/2»: a measurement given a name once, in the model, and used by
+# that name in every calculation. Each is kept AS TYPED (``3.20m``, ``4``,
+# ``=ancho-2*muro``) in ``Scene.variables``, so it is read in the field's
+# kind whenever it is used: ``giro = 30°`` serves an angle field and is
+# refused, with its name, in a length one.
 
-    ``+ - * /`` and parentheses, with the usual precedence. Each measurement
-    may carry its unit, as in :func:`parse`; a number without one is in the
-    field's unit — unless it multiplies or divides a measurement, where it
-    is the plain number it reads as (``=2*45cm`` is 90 cm, not 2 m × 45
-    cm). Two measurements cannot be multiplied (that is an area, not a
-    length), and a measurement divided by another is a plain number. Read
-    by a small parser of its own: nothing typed is ever run as code."""
-    raw = plain_marks(text) if isinstance(text, str) else ""
-    start = len(raw) - len(raw.lstrip())
-    body = raw.strip()[1:].translate(_MARKS)
-    end = start + len(raw.strip())
-    tokens = _expr_tokens(body, start + 1)
+#: A variable's name: a letter first, then letters, digits or ``_``.
+_VAR_NAME = re.compile(r"[^\W\d_]\w*")
+
+_SELF_LOOP = "The variable {name} depends on itself"
+
+
+def model_variables(scene=None) -> dict:
+    """The variables of ``scene`` (default: the bound one), ``{name:
+    text}`` in the order they were defined — or of a raw .igz payload
+    (a dict), validated: a pair that is not two strings, or whose name is
+    not one, is left out."""
+    if isinstance(scene, dict):
+        raw = scene.get("variables")
+    else:
+        src = _SCENE if scene is None else scene
+        raw = getattr(src, "variables", None) if src is not None else None
+    out = {}
+    if isinstance(raw, dict):
+        for name, text in raw.items():
+            if (isinstance(name, str) and isinstance(text, str)
+                    and not variable_name_error(name, out)):
+                out[name] = text
+    return out
+
+
+def variable_name_error(name: str, others=()) -> str:
+    """Why ``name`` cannot name a variable, or "" when it can. ``others``:
+    the names already taken (a name is the same whatever its case)."""
+    if not isinstance(name, str) or not name.strip():
+        return "Type a name"
+    if not _VAR_NAME.fullmatch(name):
+        return ("A name starts with a letter and has only letters, digits "
+                "and _")
+    if name.lower() in _ALIASES:
+        return "{name} is a unit: choose another name"
+    if name.lower() in {str(o).lower() for o in others}:
+        return "There is already a variable called {name}"
+    return ""
+
+
+def rename_variable(variables: dict, old: str, new: str) -> dict:
+    """``variables`` with ``old`` called ``new``, in its place, and every
+    calculation that read ``old`` reading ``new`` — renaming ``ancho`` to
+    ``luz`` keeps ``=ancho-2*muro`` meaning what it meant."""
+    word = re.compile(rf"(?<!\w){re.escape(old)}(?!\w)", re.IGNORECASE)
+    out = {}
+    for key, text in variables.items():
+        if text.lstrip().startswith("="):
+            text = word.sub(lambda _m: new, text)
+        out[new if key.lower() == old.lower() else key] = text
+    return out
+
+
+def _find_variable(variables: dict, name: str):
+    low = name.lower()
+    for key, text in variables.items():
+        if key.lower() == low:
+            return key, text
+    return None
+
+
+def _variable_value(variables, name, where, kind, unit, visiting):
+    """``(value, has_unit)`` of the variable ``name`` typed at ``where``."""
+    found = _find_variable(variables, name)
+    if found is None:
+        raise _ExprError("Unknown variable: {name}", where, name)
+    key, text = found
+    if key.lower() in visiting:
+        raise _ExprError(_SELF_LOOP, where, key)
+    body = plain_marks(text).strip()
+    if body.startswith("="):
+        try:
+            return _evaluate(body[1:].translate(_MARKS), 1, kind, unit,
+                             variables, visiting | {key.lower()})
+        except _ExprError as e:
+            if e.message in (_SELF_LOOP, *_EXPECTED.values()):
+                raise _ExprError(e.message, where, e.word or key)
+            raise _ExprError("The variable {name} has an error", where, key)
+    if body and not re.search(r"[^\d\s.,/]", body):
+        v = _number(body.translate(_MARKS))
+        if v is None:
+            raise _ExprError("The variable {name} has an error", where, key)
+        return v, False
+    r = parse(body, kind, unit)
+    if r.ok:
+        return r.value, True
+    if r.error in _EXPECTED.values():
+        raise _ExprError(_EXPECTED[kind], where, key)
+    raise _ExprError("The variable {name} has an error", where, key)
+
+
+def read_variable(name: str, variables: dict | None = None):
+    """What the variable ``name`` holds, for the Variables panel: ``(kind,
+    value)`` — ``kind`` one of length, area, volume, angle, or "number" for
+    a plain number, ``value`` in the base unit — or ``(None, Parsed)`` with
+    the error."""
+    vs = model_variables() if variables is None else variables
+    found = _find_variable(vs, name)
+    if found is None:
+        return None, Parsed(error="Unknown variable: {name}", word=name)
+    key, text = found
+    body = plain_marks(text).strip()
+    last = None
+    for kind in ("length", "area", "volume", "angle"):
+        try:
+            if body.startswith("="):
+                # Its own calculation, read here for the reason it fails.
+                v, has_unit = _evaluate(body[1:].translate(_MARKS), 1, kind,
+                                        None, vs, frozenset({key.lower()}))
+            else:
+                v, has_unit = _variable_value(vs, key, 0, kind, None,
+                                              frozenset())
+        except _ExprError as e:
+            last = e
+            if e.message in _EXPECTED.values():
+                continue
+            break
+        except (OverflowError, RecursionError):
+            return None, Parsed(error="Not a number")
+        if not math.isfinite(v) or abs(v) > MAX_TYPED:
+            return None, Parsed(error="Not a number")
+        return (kind if has_unit else "number"), v
+    if last is not None and last.message in _EXPECTED.values():
+        return None, Parsed(error="The variable {name} has an error",
+                            word=name)
+    return None, Parsed(error=last.message, word=last.word)
+
+
+def _evaluate(body: str, base: int, kind: str, unit, variables, visiting):
+    """``(value, has_unit)`` of a calculation's text past its ``=``, which
+    starts at ``base`` in what was typed; :class:`_ExprError` if it is
+    not one."""
+    end = base + len(body.rstrip())
+    tokens = _expr_tokens(body, base)
     if not tokens:
-        return Parsed(error="Type a calculation after =", position=start + 1)
+        raise _ExprError("Type a calculation after =", base)
     pos = 0
 
     def peek():
@@ -968,9 +1095,12 @@ def parse_expression(text: str, kind: str = "length",
             if v is None:
                 raise _ExprError("Not a number", where)
             return v, False
+        if _VAR_NAME.fullmatch(txt) and txt.lower() not in _ALIASES:
+            return _variable_value(variables, txt, where, kind, unit,
+                                   visiting)
         r = parse(txt, kind, unit)
         if not r.ok:
-            raise _ExprError(r.error, where + r.position)
+            raise _ExprError(r.error, where + r.position, r.word)
         return r.value, True
 
     def as_unit(v, has_unit):
@@ -1028,17 +1158,42 @@ def parse_expression(text: str, kind: str = "length",
             a = a + b if op[0] == "+" else a - b
         return a, au
 
+    value, has_unit = expression()
+    tok = peek()
+    if tok is not None:
+        raise _ExprError("A parenthesis closes nothing" if tok[0] == ")"
+                         else "An operator is missing", tok[2])
+    return value, has_unit
+
+
+def parse_expression(text: str, kind: str = "length",
+                     unit: str | None = None,
+                     variables: dict | None = None) -> Parsed:
+    """A calculation typed after ``=`` (#630): ``=1.25*2+2.45/2``,
+    ``=(3-0.15*2)/4``, ``=1.20m+35cm``, ``=2*45cm``, ``=ancho/2``.
+
+    ``+ - * /`` and parentheses, with the usual precedence. Each measurement
+    may carry its unit, as in :func:`parse`; a number without one is in the
+    field's unit — unless it multiplies or divides a measurement, where it
+    is the plain number it reads as (``=2*45cm`` is 90 cm, not 2 m × 45
+    cm). Two measurements cannot be multiplied (that is an area, not a
+    length), and a measurement divided by another is a plain number. A
+    name is one of the model's variables (``variables``, default the bound
+    scene's: :func:`model_variables`), a measurement or a plain number as
+    it was defined. Read by a small parser of its own: nothing typed is
+    ever run as code."""
+    raw = plain_marks(text) if isinstance(text, str) else ""
+    start = len(raw) - len(raw.lstrip())
+    body = raw.strip()[1:].translate(_MARKS)
+    vs = model_variables() if variables is None else variables
     try:
-        value, has_unit = expression()
-        tok = peek()
-        if tok is not None:
-            raise _ExprError("A parenthesis closes nothing" if tok[0] == ")"
-                             else "An operator is missing", tok[2])
+        value, has_unit = _evaluate(body, start + 1, kind, unit, vs,
+                                    frozenset())
     except _ExprError as e:
-        return Parsed(error=e.message, position=e.position)
+        return Parsed(error=e.message, position=e.position, word=e.word)
     except (OverflowError, RecursionError):
         return Parsed(error="Not a number", position=start)
-    value = as_unit(value, has_unit)
+    value = value if has_unit else value * _bare_factor(kind, unit)
     if not math.isfinite(value) or abs(value) > MAX_TYPED:
         return Parsed(error="Not a number", position=start)
     return Parsed(value=value)

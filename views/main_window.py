@@ -1266,6 +1266,14 @@ class MainWindow(QMainWindow):
         from views.tray import ScenesDock
         self.scenes_dock = ScenesDock(self)
         self.tray.scenes = self.scenes_dock.panel
+        # Variables: the model's named measurements, read by «=ancho/2».
+        # A tab few need open all the time: it starts closed, for a first
+        # run and for a window that saved its tabs before it existed.
+        from views.variables_panel import VariablesDock
+        self.variables_dock = VariablesDock(self)
+        if not hasattr(self, "_start_hidden"):
+            self._start_hidden = set()
+        self._start_hidden.add("tray_variables")
         self._lay_out_trays()
         # The tabs show only an icon each (the name is their tooltip): the
         # name heads the panel instead, in place of the dock's own title
@@ -1276,7 +1284,8 @@ class MainWindow(QMainWindow):
                           (self.georef_tray, "panel_terrain"),
                           (self.project_browser, "panel_browser"),
                           (self.layers_dock, "layers_panel"),
-                          (self.scenes_dock, "scenes_thumbs")):
+                          (self.scenes_dock, "scenes_thumbs"),
+                          (self.variables_dock, "panel_variables")):
             self.set_dock_icon(dock, key)
             dock.setTitleBarWidget(QWidget(dock))
         self.tray.raise_()
@@ -2663,7 +2672,9 @@ class MainWindow(QMainWindow):
     #: follows on a first run, nearest first: Layers after the Browser,
     #: Scenes after Layers (#1158).
     _NEW_TRAYS = (("layers_dock", ("project_browser",)),
-                  ("scenes_dock", ("layers_dock", "project_browser")))
+                  ("scenes_dock", ("layers_dock", "project_browser")),
+                  ("variables_dock", ("scenes_dock", "layers_dock",
+                                      "project_browser")))
 
     def _seat_new_trays(self) -> None:
         """A tab younger than the saved layout (Layers, Scenes) goes in its
@@ -2786,7 +2797,8 @@ class MainWindow(QMainWindow):
     #: Properties first, the model's tree next, then the workspaces.
     def _default_tray_order(self) -> list:
         return [self.tray, self.project_browser, self.layers_dock,
-                self.scenes_dock, self.bim_tray, self.georef_tray]
+                self.scenes_dock, self.variables_dock, self.bim_tray,
+                self.georef_tray]
 
     def _lay_out_trays(self) -> None:
         """The trays in their factory place: every one on the right, tabbed
@@ -2949,6 +2961,7 @@ class MainWindow(QMainWindow):
                             getattr(self, "project_browser", None),
                             getattr(self, "layers_dock", None),
                             getattr(self, "scenes_dock", None),
+                            getattr(self, "variables_dock", None),
                             *getattr(self, "_extension_docks", ()),
                             # Camera from Photo's tab, only while it is
                             # there (show_photo_dock): never kept as one.
@@ -8898,7 +8911,8 @@ class MainWindow(QMainWindow):
         # A trackpad's smart zoom (PR #788), on every project's view.
         vp.smartZoomRequested.connect(live(lambda: self._on_smart_zoom()))
         for name in ("tray", "bim_tray", "georef_tray", "project_browser",
-                     "layers_dock", "scenes_dock", "layers_toolbar",
+                     "layers_dock", "scenes_dock", "variables_dock",
+                     "layers_toolbar",
                      "profile_dock"):
             panel = getattr(self, name, None)
             if panel is not None:

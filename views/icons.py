@@ -2707,6 +2707,19 @@ def _first_person(p, ink):
 # A tray tab shows only its icon (the name is its tooltip and heads the
 # panel): one plain picture per panel, in the tools' ink and accent.
 
+def _panel_variables(p, ink):
+    # A named measurement: an «x» over a dimension line, whose two ends
+    # are the accent dots — the name stands for that length.
+    p.setBrush(Qt.NoBrush)
+    p.drawLine(QPointF(18, 10), QPointF(30, 24))
+    p.drawLine(QPointF(30, 10), QPointF(18, 24))
+    p.drawLine(QPointF(9, 34), QPointF(39, 34))
+    p.drawLine(QPointF(9, 29), QPointF(9, 39))
+    p.drawLine(QPointF(39, 29), QPointF(39, 39))
+    _dot(p, 9, 34, 3.4)
+    _dot(p, 39, 34, 3.4)
+
+
 def _panel_properties(p, ink):
     # A sheet of settings: three sliders, their knobs in the accent.
     p.setBrush(Qt.NoBrush)
@@ -3013,6 +3026,7 @@ _DRAW = {
     "terrain_contours": _terrain_contours, "terrain_points": _terrain_points,
     "terrain_height": _terrain_height,
     "styles": _styles_icon, "fog": _fog_icon, "shadows": _shadows_icon,
+    "panel_variables": _panel_variables,
     "panel_properties": _panel_properties, "panel_bim": _panel_bim,
     "panel_terrain": _panel_terrain, "panel_browser": _panel_browser,
     "panel_ai": _panel_ai, "panel_render": _panel_render,

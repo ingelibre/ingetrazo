@@ -4385,5 +4385,18 @@
  "Push/Pull bases kept with Ctrl stay sound and cracked results are refused (#1155).": "القواعد المحتفظ بها بـ Ctrl في الدفع/السحب تبقى سليمة وتُرفض النتائج المتشققة (#1155).",
  "Camera roll with a 3D mouse (#1406).": "دوران الكاميرا حول محورها بفأرة ثلاثية الأبعاد (#1406).",
  "A preference to swap orbit and pan on the middle button (#467).": "تفضيل لتبديل الدوران والتحريك على الزر الأوسط (#467).",
- "IFC export writes the project north, the site location and the owning application (#1498).": "يكتب تصدير IFC شمال المشروع وموقع الأرض والتطبيق المالك (#1498)."
+ "IFC export writes the project north, the site location and the owning application (#1498).": "يكتب تصدير IFC شمال المشروع وموقع الأرض والتطبيق المالك (#1498).",
+ "Unknown variable: {name}": "متغير غير معروف: {name}",
+ "The variable {name} depends on itself": "المتغير {name} يعتمد على نفسه",
+ "The variable {name} has an error": "في المتغير {name} خطأ",
+ "Type a name": "اكتب اسمًا",
+ "A name starts with a letter and has only letters, digits and _": "يبدأ الاسم بحرف ولا يحوي إلا حروفًا وأرقامًا و_",
+ "{name} is a unit: choose another name": "{name} وحدة قياس: اختر اسمًا آخر",
+ "There is already a variable called {name}": "يوجد متغير باسم {name} بالفعل",
+ "{value} (number)": "{value} (عدد)",
+ "Give a measurement a name and type it in any calculation: =width/2 in the value box or in a field.": "سمِّ قياسًا واكتب اسمه في أي عملية حسابية: ‎=عرض/2 في مربع القياسات أو في أي حقل.",
+ "Add a variable": "إضافة متغير",
+ "Delete the selected variables": "حذف المتغيرات المحددة",
+ "Result": "النتيجة",
+ "Variables": "المتغيرات"
 }
