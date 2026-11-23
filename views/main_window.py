@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Optional
 
 from PySide6.QtCore import (Qt, QSettings, QEvent, QCoreApplication, QPoint,
-                            QRect, QSize, QTimer, Signal)
+                            QByteArray, QRect, QSize, QTimer, Signal)
 from PySide6.QtGui import (QAction, QActionGroup, QCursor, QIcon,
                            QKeySequence, QVector3D)
 from PySide6.QtWidgets import (
@@ -1067,14 +1067,23 @@ class MainWindow(QMainWindow):
         docks = {d: d.objectName() for d in self.findChildren(QDockWidget)}
         rows = self._dock_tab_rows(docks)
         size = self.size()
-        for d, name in docks.items():
-            d.setObjectName(f"_keep_{name}")
-        try:
-            self.restoreState(factory.read_bytes())
-        finally:
+        # The factory toolbars with the panels as they are now: restored
+        # under other names instead, the factory layout left Qt a place kept
+        # for each panel it names, saved on closing beside the real one —
+        # Properties came back alone at the top (views/window_state.py).
+        from views.window_state import with_toolbars_of
+        mixed = with_toolbars_of(self.saveState(), factory.read_bytes())
+        if mixed is not None:
+            self.restoreState(QByteArray(mixed))
+        else:
             for d, name in docks.items():
-                d.setObjectName(name)
-        # Even unnamed, the docks are laid out again: their tabs come back
+                d.setObjectName(f"_keep_{name}")
+            try:
+                self.restoreState(factory.read_bytes())
+            finally:
+                for d, name in docks.items():
+                    d.setObjectName(name)
+        # Laid out again, the docks may come back with their tabs
         # reordered, another in front. Put each row of tabs back as it was.
         for row, front in rows:
             for d in row[1:]:
@@ -3254,6 +3263,14 @@ class MainWindow(QMainWindow):
                     else QTabWidget.North)
 
     def restoreState(self, state, version=0) -> bool:  # noqa: N802 — Qt override
+        # A layout saved with a panel twice (a place Qt kept for its name
+        # beside its real one) put it in the first: Properties alone at
+        # the top of the tray, start after start. Each panel once, in its
+        # last place (views/window_state.py).
+        from views.window_state import without_repeated_docks
+        mended = without_repeated_docks(state)
+        if mended is not None:
+            state = QByteArray(mended)
         # A saved layout brings the shape its tab bars had when it was saved.
         restored = super().restoreState(state, version)
         self._apply_dock_tabs_position()
