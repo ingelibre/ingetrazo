@@ -1559,6 +1559,43 @@ def _terrain_drape(p, ink):
     _dot(p, 38, 29, 2.9)
 
 
+def _terrain_flip(p, ink):
+    """Draw ▸ Terrain ▸ Flip Edge, seen from above: two triangles making a
+    quad, the diagonal they shared dashed and the one they take instead
+    in the accent colour, its ends as accent dots."""
+    quad = [(24, 7), (41, 24), (24, 41), (7, 24)]
+    p.setBrush(Qt.NoBrush)
+    p.drawPolygon(QPolygonF([QPointF(x, y) for x, y in quad]))
+    _guide(p, ink, quad[0], quad[2])
+    p.save()
+    pen = QPen(p.pen())
+    pen.setColor(_accent())
+    p.setPen(pen)
+    p.drawLine(QPointF(*quad[3]), QPointF(*quad[1]))
+    p.restore()
+    _dot(p, *quad[3], 2.9)
+    _dot(p, *quad[1], 2.9)
+
+
+def _terrain_detail(p, ink):
+    """Draw ▸ Terrain ▸ Add Detail, seen from above: a ground triangle
+    split in four — the middle one, joining the midpoints of its sides,
+    in the accent colour, the midpoints as accent dots."""
+    a, b, c = (6.0, 39.0), (42.0, 39.0), (24.0, 8.0)
+    p.setBrush(Qt.NoBrush)
+    p.drawPolygon(QPolygonF([QPointF(*a), QPointF(*b), QPointF(*c)]))
+    mids = [((u[0] + w[0]) / 2, (u[1] + w[1]) / 2)
+            for u, w in ((a, b), (b, c), (c, a))]
+    p.save()
+    pen = QPen(p.pen())
+    pen.setColor(_accent())
+    p.setPen(pen)
+    p.drawPolygon(QPolygonF([QPointF(*m) for m in mids]))
+    p.restore()
+    for m in mids:
+        _dot(p, *m, 2.9)
+
+
 def _terrain_contours(p, ink):
     """Draw ▸ Terrain ▸ Terrain from Contours, in section: three contour
     levels as dashed guides, the ground running smoothly through them, and
@@ -3012,6 +3049,7 @@ _DRAW = {
     "terrain_stamp": _terrain_stamp, "terrain_drape": _terrain_drape,
     "terrain_contours": _terrain_contours, "terrain_points": _terrain_points,
     "terrain_height": _terrain_height,
+    "terrain_detail": _terrain_detail, "terrain_flip": _terrain_flip,
     "styles": _styles_icon, "fog": _fog_icon, "shadows": _shadows_icon,
     "panel_properties": _panel_properties, "panel_bim": _panel_bim,
     "panel_terrain": _panel_terrain, "panel_browser": _panel_browser,
@@ -3240,6 +3278,8 @@ _CURSOR_HOTSPOTS = {
     "terrain_contours": (22, 24),    # a point on a contour level
     "terrain_points": (19, 16),      # a survey point
     "terrain_height": (24, 14),      # the clicked line
+    "terrain_detail": (24, 28.7),    # inside the middle triangle
+    "terrain_flip": (24, 24),        # where the two diagonals cross
     "orbit": (24, 24),              # camera navigation (wheel-drag / modes)
     "pan": (24, 24),
     "zoom": (21, 21),               # the magnifier's lens centre

@@ -4349,5 +4349,19 @@
  "Push/Pull bases kept with Ctrl stay sound and cracked results are refused (#1155).": "Основания, сохранённые с Ctrl при выдавливании, остаются целыми, а треснувшие результаты отклоняются (#1155).",
  "Camera roll with a 3D mouse (#1406).": "Крен камеры с помощью 3D-мыши (#1406).",
  "A preference to swap orbit and pan on the middle button (#467).": "Настройка, меняющая местами вращение и панорамирование на средней кнопке (#467).",
- "IFC export writes the project north, the site location and the owning application (#1498).": "Экспорт IFC записывает север проекта, расположение участка и приложение-владельца (#1498)."
+ "IFC export writes the project north, the site location and the owning application (#1498).": "Экспорт IFC записывает север проекта, расположение участка и приложение-владельца (#1498).",
+ "Flip Edge": "Перевернуть ребро",
+ "Click an edge between two triangles of the ground to turn it to the other diagonal.": "Щёлкните ребро между двумя треугольниками рельефа, чтобы заменить его другой диагональю.",
+ "Add Detail": "Добавить детали",
+ "Split the ground triangles round the click in four, for finer deforming. Type the radius first (0: one triangle).": "Делит треугольники рельефа вокруг щелчка на четыре для более точной деформации. Сначала введите радиус (0: один треугольник).",
+ "That edge is on the terrain's rim: there is nothing to flip it toward.": "Это ребро на краю рельефа: его некуда переворачивать.",
+ "Only an edge between two triangles can be flipped.": "Перевернуть можно только ребро между двумя треугольниками.",
+ "That edge is a line on the ground: soften it first to flip it.": "Это ребро — линия на рельефе: сначала сгладьте его, чтобы перевернуть.",
+ "Seen from above, the two triangles make no convex shape: flipping would fold them.": "Сверху два треугольника не образуют выпуклую фигуру: переворот сложил бы их.",
+ "Click an edge of the ground.": "Щёлкните ребро рельефа.",
+ "Click the ground to add detail to.": "Щёлкните рельеф, к которому нужно добавить детали.",
+ "No ground triangles within the radius.": "В пределах радиуса нет треугольников рельефа.",
+ "Only the clicked triangle": "Только треугольник под щелчком",
+ "Click the ground to split its triangles. Type the radius first (0: one).": "Щёлкните рельеф, чтобы разделить его треугольники. Сначала введите радиус (0: один).",
+ "Click near an edge between two triangles to flip it.": "Щёлкните рядом с ребром между двумя треугольниками, чтобы перевернуть его."
 }

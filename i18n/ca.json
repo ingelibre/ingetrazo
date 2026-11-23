@@ -4351,5 +4351,19 @@
  "Push/Pull bases kept with Ctrl stay sound and cracked results are refused (#1155).": "Les bases que es conserven amb Ctrl a Empènyer/Estirar queden sanes i es rebutgen els resultats esquerdats (#1155).",
  "Camera roll with a 3D mouse (#1406).": "Gir de càmera amb un ratolí 3D (#1406).",
  "A preference to swap orbit and pan on the middle button (#467).": "Una preferència per intercanviar òrbita i desplaçament al botó central (#467).",
- "IFC export writes the project north, the site location and the owning application (#1498).": "L'exportació IFC escriu el nord del projecte, la ubicació del lloc i l'aplicació propietària (#1498)."
+ "IFC export writes the project north, the site location and the owning application (#1498).": "L'exportació IFC escriu el nord del projecte, la ubicació del lloc i l'aplicació propietària (#1498).",
+ "Flip Edge": "Gira l'aresta",
+ "Click an edge between two triangles of the ground to turn it to the other diagonal.": "Fes clic en una aresta entre dos triangles del terreny per canviar-la per l'altra diagonal.",
+ "Add Detail": "Afegeix detall",
+ "Split the ground triangles round the click in four, for finer deforming. Type the radius first (0: one triangle).": "Divideix en quatre els triangles del terreny al voltant del clic, per deformar amb més precisió. Escriu abans el radi (0: un triangle).",
+ "That edge is on the terrain's rim: there is nothing to flip it toward.": "Aquesta aresta és a la vora del terreny: no hi ha cap on girar-la.",
+ "Only an edge between two triangles can be flipped.": "Només es pot girar una aresta entre dos triangles.",
+ "That edge is a line on the ground: soften it first to flip it.": "Aquesta aresta és una línia sobre el terreny: suavitza-la abans per girar-la.",
+ "Seen from above, the two triangles make no convex shape: flipping would fold them.": "Vistos des de dalt, els dos triangles no formen una figura convexa: en girar-la es doblegarien.",
+ "Click an edge of the ground.": "Fes clic en una aresta del terreny.",
+ "Click the ground to add detail to.": "Fes clic al terreny on vols afegir detall.",
+ "No ground triangles within the radius.": "No hi ha triangles del terreny dins del radi.",
+ "Only the clicked triangle": "Només el triangle del clic",
+ "Click the ground to split its triangles. Type the radius first (0: one).": "Fes clic al terreny per dividir-ne els triangles. Escriu abans el radi (0: un).",
+ "Click near an edge between two triangles to flip it.": "Fes clic a prop d'una aresta entre dos triangles per girar-la."
 }

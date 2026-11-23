@@ -24,6 +24,13 @@
   boundary) and click the ground: they are cut into it, seen from above,
   as lines on the terrain.
 
+- **Flip Edge** (:class:`TerrainFlipTool`): click near an inner edge of
+  the ground; the two triangles on it take the other diagonal — a ridge
+  or a valley the triangulation drew the wrong way, put right.
+- **Add Detail** (:class:`TerrainDetailTool`): click the ground; the
+  triangles within the radius split in four, keeping the shape, for a
+  finer Deform or Stamp there. Typed first, the radius (0: one triangle).
+
 - **Terrain from Contours** / **from Points**: select contour lines at
   their heights, or survey points (guide points — a DXF's points arrive
   as such — edges, groups), and pick the tool up: a terrain through them
@@ -559,6 +566,184 @@ class TerrainDrapeTool(Tool):
         if cmd.result == 0 and vp.history.last_error is None:
             vp.flash_status(tr("The selected edges are not over this ground."))
         vp.update()
+
+
+# ---- Flip edge / Add detail --------------------------------------------------
+
+#: The status-bar word for each reason an edge does not flip.
+_FLIP_WHY = {
+    "rim": "That edge is on the terrain's rim: there is nothing to flip it "
+           "toward.",
+    "polygon": "Only an edge between two triangles can be flipped.",
+    "hard": "That edge is a line on the ground: soften it first to flip it.",
+    "concave": "Seen from above, the two triangles make no convex shape: "
+               "flipping would fold them.",
+}
+
+
+def _nearest_side(face, xform, world: QVector3D):
+    """The corners ``(u, w)`` of the side of ``face`` nearest the world
+    point ``world`` (where the cursor meets the face)."""
+    loop = face.loop
+    best, best_d = None, math.inf
+    for k in range(len(loop)):
+        u, w = loop[k], loop[(k + 1) % len(loop)]
+        a = xform.map(u.position) if xform is not None else u.position
+        b = xform.map(w.position) if xform is not None else w.position
+        ab = b - a
+        l2 = QVector3D.dotProduct(ab, ab)
+        t = 0.0 if l2 < 1e-24 else max(0.0, min(1.0, QVector3D.dotProduct(
+            world - a, ab) / l2))
+        d = (world - (a + ab * t)).length()
+        if d < best_d:
+            best, best_d = (u, w), d
+    return best
+
+
+class TerrainFlipTool(Tool):
+    """Draw ▸ Terrain ▸ Flip Edge: the edge two triangles share turned to
+    the other diagonal of their quad — a ridge or a valley the
+    triangulation got wrong, put right."""
+
+    name = "Flip Edge"
+    description = ("Click an edge between two triangles of the ground to "
+                   "turn it to the other diagonal.")
+    allow_inferences = False
+    uses_snap = False
+
+    def __init__(self) -> None:
+        #: ``(mesh, xform, edge)`` under the cursor.
+        self._target = None
+
+    def on_activate(self, viewport) -> None:
+        self._target = None
+
+    def on_deactivate(self, viewport) -> None:
+        self._target = None
+
+    @staticmethod
+    def pick(viewport, screen, world):
+        """``(mesh, xform, edge)``: the side of the ground face under the
+        cursor nearest to it — the inner edges of a terrain are soft and
+        not drawn, so the face, not the edge, is what the cursor finds."""
+        picker = getattr(viewport, "pick_face_placement", None)
+        if not callable(picker) or world is None:
+            return None
+        face, place = picker(screen.x(), screen.y())
+        if face is None:
+            return None
+        mesh = place.mesh if place is not None else viewport.scene.mesh
+        xform = getattr(place, "xform", None) if place is not None else None
+        side = _nearest_side(face, xform, world)
+        if side is None:
+            return None
+        edge = mesh.find_edge(*side)
+        return None if edge is None else (mesh, xform, edge)
+
+    def on_hover(self, ctx: ToolContext) -> None:
+        self._target = self.pick(ctx.viewport, ctx.screen, ctx.world)
+        ctx.viewport.update()
+
+    def on_click(self, ctx: ToolContext) -> None:
+        from core.terrain_mesh import FlipEdgeCommand, flip_problem
+        vp = ctx.viewport
+        target = self.pick(vp, ctx.screen, ctx.world)
+        if target is None:
+            vp.flash_status(tr("Click an edge of the ground."))
+            return
+        mesh, xform, edge = target
+        why = flip_problem(mesh, edge, xform)
+        if why is not None:
+            vp.flash_status(tr(_FLIP_WHY[why]))
+            return
+        vp.history.execute(FlipEdgeCommand(mesh, edge.v0.position,
+                                           edge.v1.position, xform))
+        self._target = self.pick(vp, ctx.screen, ctx.world)
+        vp.update()
+
+    def rubber_band_lines(self):
+        from core.terrain_mesh import flip_preview, flip_problem
+        if self._target is None:
+            return []
+        mesh, xform, edge = self._target
+        if edge not in edge.v0.edges or flip_problem(mesh, edge, xform):
+            return []
+        return flip_preview(edge, xform)
+
+
+class TerrainDetailTool(Tool):
+    """Draw ▸ Terrain ▸ Add Detail: the ground triangles round the click
+    split in four, the ground keeping its shape — more corners where Deform
+    or Stamp need them. Typed first, a radius (0: the triangle clicked)."""
+
+    name = "Add Detail"
+    description = ("Split the ground triangles round the click in four, for "
+                   "finer deforming. Type the radius first (0: one triangle).")
+    vcb_label = "Radius"
+    allow_inferences = False
+    uses_snap = False
+
+    #: The reach of the next split (model units); kept between uses.
+    radius = 1.0
+
+    def __init__(self) -> None:
+        self.hover_point: QVector3D | None = None
+        #: ``(mesh, xform)`` of the ground under the cursor.
+        self._target = None
+
+    def on_activate(self, viewport) -> None:
+        self._target = None
+
+    def on_deactivate(self, viewport) -> None:
+        self._target = None
+        self.hover_point = None
+
+    def on_hover(self, ctx: ToolContext) -> None:
+        self.hover_point = ctx.world
+        self._target = TerrainDeformTool.pick_target(ctx.viewport, ctx.screen)
+        ctx.viewport.update()
+
+    def on_click(self, ctx: ToolContext) -> None:
+        from core.terrain_mesh import AddDetailCommand, detail_preview
+        vp = ctx.viewport
+        target = TerrainDeformTool.pick_target(vp, ctx.screen)
+        if target is None or ctx.world is None:
+            vp.flash_status(tr("Click the ground to add detail to."))
+            return
+        mesh, xform = target
+        if not detail_preview(mesh, ctx.world, self.radius, xform):
+            vp.flash_status(tr("No ground triangles within the radius."))
+            return
+        vp.history.execute(AddDetailCommand(mesh, ctx.world, self.radius,
+                                            xform))
+        vp.update()
+
+    def on_value(self, viewport, value) -> bool:
+        if isinstance(value, tuple) or value < 0.0:
+            return False
+        self.radius = float(value)
+        viewport.flash_status(tr("Radius: {size}", size=_fmt(value)))
+        self.refresh_hint(viewport)
+        viewport.update()
+        return True
+
+    def status_clause(self) -> str:
+        if self.radius <= 0.0:
+            return tr("Only the clicked triangle")
+        return tr("Radius {size}", size=_fmt(self.radius))
+
+    def rubber_band_lines(self):
+        from core.terrain_mesh import detail_preview
+        if self.hover_point is None:
+            return []
+        lines = []
+        if self.radius > 0.0:
+            lines += TerrainDeformTool._ring(self, self.hover_point)
+        if self._target is not None:
+            mesh, xform = self._target
+            lines += detail_preview(mesh, self.hover_point, self.radius,
+                                    xform)
+        return lines
 
 
 # ---- From survey data --------------------------------------------------------

@@ -4357,5 +4357,19 @@
  "Push/Pull bases kept with Ctrl stay sound and cracked results are refused (#1155).": "Podstawy zachowane z Ctrl w Wypychaniu/Przeciąganiu pozostają poprawne, a pęknięte wyniki są odrzucane (#1155).",
  "Camera roll with a 3D mouse (#1406).": "Przechylenie kamery myszą 3D (#1406).",
  "A preference to swap orbit and pan on the middle button (#467).": "Ustawienie zamiany orbity i przesuwania na środkowym przycisku (#467).",
- "IFC export writes the project north, the site location and the owning application (#1498).": "Eksport IFC zapisuje północ projektu, lokalizację terenu i aplikację właściciela (#1498)."
+ "IFC export writes the project north, the site location and the owning application (#1498).": "Eksport IFC zapisuje północ projektu, lokalizację terenu i aplikację właściciela (#1498).",
+ "Flip Edge": "Obróć krawędź",
+ "Click an edge between two triangles of the ground to turn it to the other diagonal.": "Kliknij krawędź między dwoma trójkątami terenu, aby zamienić ją na drugą przekątną.",
+ "Add Detail": "Dodaj szczegóły",
+ "Split the ground triangles round the click in four, for finer deforming. Type the radius first (0: one triangle).": "Dzieli na cztery trójkąty terenu wokół kliknięcia, do dokładniejszego odkształcania. Najpierw wpisz promień (0: jeden trójkąt).",
+ "That edge is on the terrain's rim: there is nothing to flip it toward.": "Ta krawędź leży na brzegu terenu: nie ma jej w co obrócić.",
+ "Only an edge between two triangles can be flipped.": "Obrócić można tylko krawędź między dwoma trójkątami.",
+ "That edge is a line on the ground: soften it first to flip it.": "Ta krawędź jest linią na terenie: najpierw ją wygładź, aby ją obrócić.",
+ "Seen from above, the two triangles make no convex shape: flipping would fold them.": "Widziane z góry, oba trójkąty nie tworzą figury wypukłej: obrót by je złożył.",
+ "Click an edge of the ground.": "Kliknij krawędź terenu.",
+ "Click the ground to add detail to.": "Kliknij teren, do którego chcesz dodać szczegóły.",
+ "No ground triangles within the radius.": "Brak trójkątów terenu w promieniu.",
+ "Only the clicked triangle": "Tylko kliknięty trójkąt",
+ "Click the ground to split its triangles. Type the radius first (0: one).": "Kliknij teren, aby podzielić jego trójkąty. Najpierw wpisz promień (0: jeden).",
+ "Click near an edge between two triangles to flip it.": "Kliknij blisko krawędzi między dwoma trójkątami, aby ją obrócić."
 }

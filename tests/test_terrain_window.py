@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2026 Marco Sumari Tellez and IngeTrazo contributors.
 """Draw ▸ Terrain in the window: Terrain from Scratch, Deform Terrain,
-Stamp Platform and Drape are in the Draw menu's own submenu, pick up
+Stamp Platform, Drape, Add Detail and Flip Edge are in the Draw menu's own submenu, pick up
 their tool and have an icon; their Terrain toolbar starts hidden, can be
 turned on, and Restore default toolbars puts it back off."""
 from __future__ import annotations
@@ -12,7 +12,8 @@ from PySide6.QtWidgets import QApplication, QMenu
 _app = QApplication.instance() or QApplication([])
 
 KEYS = ("terrain_grid", "terrain_contours", "terrain_points",
-        "terrain_height", "terrain_deform", "terrain_stamp", "terrain_drape")
+        "terrain_height", "terrain_deform", "terrain_stamp", "terrain_drape",
+        "terrain_detail", "terrain_flip")
 
 
 @pytest.fixture
@@ -35,12 +36,15 @@ def _terrain_menu(win):
 
 
 def test_the_terrain_tools_are_in_draw_terrain(win):
-    from tools.terrain import (TerrainDeformTool, TerrainDrapeTool,
+    from tools.terrain import (TerrainDeformTool, TerrainDetailTool,
+                               TerrainDrapeTool, TerrainFlipTool,
                                TerrainGridTool, TerrainStampTool)
     assert isinstance(win._tools["terrain_grid"], TerrainGridTool)
     assert isinstance(win._tools["terrain_deform"], TerrainDeformTool)
     assert isinstance(win._tools["terrain_stamp"], TerrainStampTool)
     assert isinstance(win._tools["terrain_drape"], TerrainDrapeTool)
+    assert isinstance(win._tools["terrain_detail"], TerrainDetailTool)
+    assert isinstance(win._tools["terrain_flip"], TerrainFlipTool)
     menu = _terrain_menu(win)
     assert [win._tool_actions[k] for k in KEYS] == menu.actions()
 

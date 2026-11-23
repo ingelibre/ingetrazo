@@ -4352,5 +4352,19 @@
  "Push/Pull bases kept with Ctrl stay sound and cracked results are refused (#1155).": "Alas yang dipertahankan dengan Ctrl pada Dorong/Tarik tetap utuh dan hasil yang retak ditolak (#1155).",
  "Camera roll with a 3D mouse (#1406).": "Putaran kamera (roll) dengan mouse 3D (#1406).",
  "A preference to swap orbit and pan on the middle button (#467).": "Preferensi untuk menukar orbit dan geser pada tombol tengah (#467).",
- "IFC export writes the project north, the site location and the owning application (#1498).": "Ekspor IFC menulis utara proyek, lokasi tapak, dan aplikasi pemilik (#1498)."
+ "IFC export writes the project north, the site location and the owning application (#1498).": "Ekspor IFC menulis utara proyek, lokasi tapak, dan aplikasi pemilik (#1498).",
+ "Flip Edge": "Balik Tepi",
+ "Click an edge between two triangles of the ground to turn it to the other diagonal.": "Klik tepi di antara dua segitiga medan untuk menggantinya dengan diagonal yang lain.",
+ "Add Detail": "Tambah Detail",
+ "Split the ground triangles round the click in four, for finer deforming. Type the radius first (0: one triangle).": "Membagi empat segitiga medan di sekitar klik, untuk deformasi yang lebih halus. Ketik radius dulu (0: satu segitiga).",
+ "That edge is on the terrain's rim: there is nothing to flip it toward.": "Tepi ini ada di batas medan: tidak ada arah untuk membaliknya.",
+ "Only an edge between two triangles can be flipped.": "Hanya tepi di antara dua segitiga yang bisa dibalik.",
+ "That edge is a line on the ground: soften it first to flip it.": "Tepi ini adalah garis di medan: haluskan dulu untuk membaliknya.",
+ "Seen from above, the two triangles make no convex shape: flipping would fold them.": "Dilihat dari atas, kedua segitiga tidak membentuk bangun cembung: membaliknya akan melipatnya.",
+ "Click an edge of the ground.": "Klik tepi medan.",
+ "Click the ground to add detail to.": "Klik medan yang ingin ditambah detail.",
+ "No ground triangles within the radius.": "Tidak ada segitiga medan dalam radius.",
+ "Only the clicked triangle": "Hanya segitiga yang diklik",
+ "Click the ground to split its triangles. Type the radius first (0: one).": "Klik medan untuk membagi segitiganya. Ketik radius dulu (0: satu).",
+ "Click near an edge between two triangles to flip it.": "Klik di dekat tepi di antara dua segitiga untuk membaliknya."
 }
