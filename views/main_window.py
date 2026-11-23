@@ -70,7 +70,8 @@ from tools.line import LineTool
 from tools.protractor import ProtractorTool
 from tools.north import NorthTool
 from tools.guide_point import GuidePointTool
-from tools.terrain import (TerrainDeformTool, TerrainDrapeTool,
+from tools.terrain import (TerrainDeformTool, TerrainDetailTool,
+                           TerrainDrapeTool, TerrainFlipTool,
                            TerrainFromContoursTool,
                            TerrainFromPointsTool, TerrainGridTool,
                            TerrainHeightTool, TerrainStampTool)
@@ -574,7 +575,7 @@ class _FloatingPanels(QMainWindow):
 #: toolbar's buttons.
 TERRAIN_TOOLS = ("terrain_grid", "terrain_contours", "terrain_points",
                  "terrain_height", "terrain_deform", "terrain_stamp",
-                 "terrain_drape")
+                 "terrain_drape", "terrain_detail", "terrain_flip")
 #: The window's own toolbars that start hidden — a new window, and Restore
 #: default toolbars, leave them off; turned on, the saved layout keeps them.
 TOOLBARS_HIDDEN_BY_DEFAULT = ("terrain",)
@@ -636,6 +637,8 @@ class MainWindow(QMainWindow):
             "terrain_deform": TerrainDeformTool(),
             "terrain_stamp": TerrainStampTool(),
             "terrain_drape": TerrainDrapeTool(),
+            "terrain_detail": TerrainDetailTool(),
+            "terrain_flip": TerrainFlipTool(),
             "text": TextTool(),
             # Georef trace (Track G) — draws a GeoPath, never mesh geometry.
             "geopath": GeoPathTool(),

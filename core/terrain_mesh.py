@@ -666,6 +666,267 @@ def stamp_platform(mesh, footprint, height: float, slope: float,
     return len(moved)
 
 
+# ---- Flip edge ---------------------------------------------------------------
+
+#: Why an edge cannot be flipped — the keys :func:`flip_problem` returns.
+FLIP_RIM = "rim"            # one triangle only: the terrain's rim
+FLIP_POLYGON = "polygon"    # not between two plain triangles
+FLIP_HARD = "hard"          # a line drawn or cut on the ground
+FLIP_CONCAVE = "concave"    # the other diagonal would fold the pair
+
+
+def _opposite(face, u, w):
+    """The corner of triangle ``face`` that is neither ``u`` nor ``w``."""
+    for v in face.loop:
+        if v is not u and v is not w:
+            return v
+    return None
+
+
+def flip_pair(edge):
+    """``(x, y, c, d)`` of the two triangles on ``edge``: ``x → y`` the
+    edge the way the first triangle turns, ``c`` that triangle's third
+    corner, ``d`` the other's — the quad ``x, d, y, c`` in its turn."""
+    f1, f2 = edge.faces[0], edge.faces[1]
+    loop = f1.loop
+    for k in range(3):
+        x, y = loop[k], loop[(k + 1) % 3]
+        if {id(x), id(y)} == {id(edge.v0), id(edge.v1)}:
+            return x, y, loop[(k + 2) % 3], _opposite(f2, x, y)
+    return None
+
+
+def flip_problem(mesh, edge, xform=None):
+    """``None`` when ``edge`` can be flipped — turned to the other diagonal
+    of the two triangles that share it — or why not (a ``FLIP_*`` key).
+    Only soft (or hidden) edges flip: a hard edge inside the ground is a
+    line someone drew or cut — a platform's outline, a draped path."""
+    faces = list(edge.faces)
+    if len(faces) < 2:
+        return FLIP_RIM
+    if len(faces) > 2 or any(len(f.loop) != 3 or f.hole_loops
+                             for f in faces):
+        return FLIP_POLYGON
+    if not (edge.soft or edge.hidden):
+        return FLIP_HARD
+    pair = flip_pair(edge)
+    if pair is None or pair[3] is None or pair[2] is pair[3]:
+        return FLIP_POLYGON
+    x, y, c, d = pair
+    if mesh.find_edge(c, d) is not None:
+        return FLIP_CONCAVE
+    # Seen from above, the new diagonal must cross the old one inside
+    # both: the pair is a convex quad, and the two new triangles cover
+    # just the ground the old ones did.
+    px, py, pc, pd = (_world(xform, v.position) for v in (x, y, c, d))
+    hit = _cross(pc.x(), pc.y(), pd.x(), pd.y(), px, py)
+    eps = 1e-6
+    if hit is None or not (eps < hit[0] < 1.0 - eps
+                           and eps < hit[1] < 1.0 - eps):
+        return FLIP_CONCAVE
+    return None
+
+
+def flip_preview(edge, xform=None):
+    """The world lines of a flip: the quad round the two triangles and
+    the diagonal it would take; ``[]`` when the edge has no such pair."""
+    if len(edge.faces) != 2 or any(len(f.loop) != 3 for f in edge.faces):
+        return []
+    pair = flip_pair(edge)
+    if pair is None or pair[3] is None:
+        return []
+    x, y, c, d = (_world(xform, v.position) for v in pair)
+    return [(x, d), (d, y), (y, c), (c, x), (c, d)]
+
+
+def flip_edge(mesh, edge, xform=None) -> bool:
+    """Turn ``edge`` into the other diagonal of its two triangles, when
+    :func:`flip_problem` allows it. Each new triangle keeps the paint of
+    the one it mostly comes from; the new diagonal takes the old one's
+    flags (soft, hidden…). Returns whether it flipped."""
+    from core.mesh import edge_flags, stamp_edge_flags
+    if flip_problem(mesh, edge, xform) is not None:
+        return False
+    x, y, c, d = flip_pair(edge)
+    f1, f2 = edge.faces[0], edge.faces[1]
+    flags = edge_flags(edge)
+    attrs1, attrs2 = dict(f1.attrs), dict(f2.attrs)
+    pos = {k: QVector3D(v.position) for k, v in
+           (("x", x), ("y", y), ("c", c), ("d", d))}
+    mesh.remove_face(f1)
+    mesh.remove_face(f2)
+    if not edge.faces and edge in edge.v0.edges:
+        mesh.remove_edge(edge)
+    a = mesh.add_face([pos["x"], pos["d"], pos["c"]])
+    b = mesh.add_face([pos["d"], pos["y"], pos["c"]])
+    a.attrs = attrs1
+    b.attrs = attrs2
+    diag = mesh.find_edge(mesh.vertex_at(pos["c"]), mesh.vertex_at(pos["d"]))
+    if diag is not None:
+        stamp_edge_flags(diag, flags)
+    return True
+
+
+# ---- Add detail --------------------------------------------------------------
+
+def _plan_distance_to_triangle(x, y, a, b, c) -> float:
+    """Plan distance from ``(x, y)`` to triangle ``a b c`` (0 inside)."""
+    def side(p, q):
+        return (q.x() - p.x()) * (y - p.y()) - (q.y() - p.y()) * (x - p.x())
+    s = (side(a, b), side(b, c), side(c, a))
+    if all(v >= -1e-12 for v in s) or all(v <= 1e-12 for v in s):
+        return 0.0
+    return min(_along(p, q, x, y)[1] for p, q in ((a, b), (b, c), (c, a)))
+
+
+def _detail_marks(mesh, center: QVector3D, radius: float, xform=None):
+    """``(chosen, marked)``: the ground triangles within ``radius`` of
+    ``center`` in plan (world) — touching it, or under it at radius 0 —
+    and the ids of the edges a split at their middles cuts. A triangle
+    outside whose three sides are all cut joins the chosen, so no
+    neighbour is left with a corner on each side."""
+    def is_tri(f):
+        return len(f.loop) == 3 and not f.hole_loops
+
+    cx, cy = center.x(), center.y()
+    r = max(float(radius), 0.0)
+    chosen = []
+    for f in mesh.faces:
+        if not is_tri(f):
+            continue
+        a, b, c = (_world(xform, v.position) for v in f.loop)
+        n = QVector3D.crossProduct(b - a, c - a)
+        if n.length() < 1e-12 or n.z() / n.length() <= UPWARD:
+            continue
+        if _plan_distance_to_triangle(cx, cy, a, b, c) <= r:
+            chosen.append(f)
+    marked = {}
+    for f in chosen:
+        for k in range(3):
+            e = mesh.find_edge(f.loop[k], f.loop[(k + 1) % 3])
+            if e is not None and not any(g.hole_loops for g in e.faces):
+                marked[id(e)] = e
+    picked = {id(f) for f in chosen}
+    grew = True
+    while grew:
+        grew = False
+        for e in list(marked.values()):
+            for f in e.faces:
+                if id(f) in picked or not is_tri(f):
+                    continue
+                sides = [mesh.find_edge(f.loop[k], f.loop[(k + 1) % 3])
+                         for k in range(3)]
+                if all(s is not None and id(s) in marked for s in sides):
+                    picked.add(id(f))
+                    chosen.append(f)
+                    grew = True
+    return chosen, marked
+
+
+def _mid(e) -> QVector3D:
+    return (e.v0.position + e.v1.position) * 0.5
+
+
+def _split_loops(mesh, face, marked):
+    """The loops (positions) ``face`` becomes once its ``marked`` edges
+    are cut at their middles: a triangle in 4, 3 or 2 (no corner left on
+    a side), a larger face just gaining the corners."""
+    loop = face.loop
+    n = len(loop)
+    pts = [QVector3D(v.position) for v in loop]
+    mids = []
+    for k in range(n):
+        e = mesh.find_edge(loop[k], loop[(k + 1) % n])
+        mids.append(_mid(e) if e is not None and id(e) in marked else None)
+    if n != 3:
+        out = []
+        for k in range(n):
+            out.append(pts[k])
+            if mids[k] is not None:
+                out.append(mids[k])
+        return [out]
+    count = sum(m is not None for m in mids)
+    if count == 3:
+        m0, m1, m2 = mids
+        return [[pts[0], m0, m2], [m0, pts[1], m1], [m2, m1, pts[2]],
+                [m0, m1, m2]]
+    if count == 1:
+        k = next(i for i, m in enumerate(mids) if m is not None)
+        p0, p1, p2 = pts[k], pts[(k + 1) % 3], pts[(k + 2) % 3]
+        return [[p0, mids[k], p2], [mids[k], p1, p2]]
+    # Two sides cut: the corner between them, and the quad left split
+    # along its shorter diagonal.
+    k = next(i for i, m in enumerate(mids) if m is None)   # the whole side
+    p0, p1, p2 = pts[k], pts[(k + 1) % 3], pts[(k + 2) % 3]
+    ma, mb = mids[(k + 1) % 3], mids[(k + 2) % 3]           # on p1p2, p2p0
+    tri = [ma, p2, mb]
+    if (ma - p0).length() <= (p1 - mb).length():
+        return [tri, [p0, p1, ma], [p0, ma, mb]]
+    return [tri, [p0, p1, mb], [p1, ma, mb]]
+
+
+def detail_preview(mesh, center: QVector3D, radius: float, xform=None):
+    """The new edges Add Detail would draw, as world lines — the middle
+    triangle of every chosen one; ``[]`` when nothing is within reach."""
+    chosen, marked = _detail_marks(mesh, center, radius, xform)
+    lines = []
+    for f in chosen:
+        loop = f.loop
+        es = [mesh.find_edge(loop[k], loop[(k + 1) % 3]) for k in range(3)]
+        mids = [_world(xform, _mid(e)) for e in es if e is not None
+                and id(e) in marked]
+        for k in range(len(mids)):
+            lines.append((mids[k], mids[(k + 1) % len(mids)]))
+    return lines
+
+
+def add_detail(mesh, center: QVector3D, radius: float, xform=None) -> int:
+    """Split the ground triangles within ``radius`` of world ``center``
+    (in plan; at 0, the one under it) into four, cutting each side at its
+    middle — the ground keeps its shape, with more corners to deform or
+    stamp. Neighbours that take a new corner are split too (in two or
+    three), so no crack opens. The new edges are soft; the halves of a cut
+    edge keep its flags and every piece its face's paint. Returns how many
+    triangles were split in four."""
+    from core.mesh import edge_flags, stamp_edge_flags
+    chosen, marked = _detail_marks(mesh, center, radius, xform)
+    if not chosen:
+        return 0
+    faces = {}
+    for e in marked.values():
+        for f in e.faces:
+            faces[id(f)] = f
+    jobs = [(f, _split_loops(mesh, f, marked), dict(f.attrs))
+            for f in faces.values()]
+    cuts = [(QVector3D(e.v0.position), QVector3D(e.v1.position), _mid(e),
+             edge_flags(e)) for e in marked.values()]
+    before = {id(e) for e in mesh.edges}
+    for f, _loops, _attrs in jobs:
+        mesh.remove_face(f)
+    for e in marked.values():
+        if not e.faces and e in e.v0.edges:
+            mesh.remove_edge(e)
+    new_faces = []
+    for _f, loops, attrs in jobs:
+        for loop in loops:
+            g = mesh.add_face(loop)
+            g.attrs = dict(attrs)
+            new_faces.append(g)
+    for g in new_faces:
+        n = len(g.loop)
+        for k in range(n):
+            e = mesh.find_edge(g.loop[k], g.loop[(k + 1) % n])
+            if e is not None and id(e) not in before:
+                e.soft = True
+    for a, b, m, flags in cuts:
+        vm = mesh.vertex_at(m)
+        for end in (a, b):
+            half = mesh.find_edge(mesh.vertex_at(end), vm) if vm else None
+            if half is not None:
+                stamp_edge_flags(half, flags)
+    return len(chosen)
+
+
 # ---- Commands ----------------------------------------------------------------
 
 class _TerrainEdit(Command):
@@ -749,6 +1010,45 @@ class StampCommand(_TerrainEdit):
     def apply(self) -> int:
         return stamp_platform(self.mesh, self.footprint, self.height,
                               self.slope, self.xform)
+
+
+class FlipEdgeCommand(_TerrainEdit):
+    """Flip one edge of the ground to the other diagonal of its two
+    triangles, one undo step. The edge is found again by its ends (local
+    positions), so the command does not hold on to objects a snapshot
+    replaces. ``result`` is 1 when it flipped, 0 when not; ``problem``
+    the ``FLIP_*`` key of why not."""
+
+    def __init__(self, mesh, a: QVector3D, b: QVector3D, xform=None) -> None:
+        super().__init__(mesh, xform)
+        self.a = QVector3D(a)
+        self.b = QVector3D(b)
+        self.problem = None
+
+    def apply(self) -> int:
+        va, vb = self.mesh.vertex_at(self.a), self.mesh.vertex_at(self.b)
+        edge = self.mesh.find_edge(va, vb) if va and vb else None
+        if edge is None:
+            self.problem = FLIP_POLYGON
+            return 0
+        self.problem = flip_problem(self.mesh, edge, self.xform)
+        if self.problem is not None:
+            return 0
+        return int(flip_edge(self.mesh, edge, self.xform))
+
+
+class AddDetailCommand(_TerrainEdit):
+    """Split the ground triangles round a point in four, one undo step;
+    ``result`` is how many were split."""
+
+    def __init__(self, mesh, center: QVector3D, radius: float,
+                 xform=None) -> None:
+        super().__init__(mesh, xform)
+        self.center = QVector3D(center)
+        self.radius = float(radius)
+
+    def apply(self) -> int:
+        return add_detail(self.mesh, self.center, self.radius, self.xform)
 
 
 

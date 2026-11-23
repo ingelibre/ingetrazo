@@ -4357,5 +4357,19 @@
  "Push/Pull bases kept with Ctrl stay sound and cracked results are refused (#1155).": "Основи, збережені з Ctrl під час видавлювання, лишаються цілими, а потріскані результати відхиляються (#1155).",
  "Camera roll with a 3D mouse (#1406).": "Крен камери за допомогою 3D-миші (#1406).",
  "A preference to swap orbit and pan on the middle button (#467).": "Налаштування, що міняє місцями обертання й панорамування на середній кнопці (#467).",
- "IFC export writes the project north, the site location and the owning application (#1498).": "Експорт IFC записує північ проєкту, розташування ділянки та застосунок-власник (#1498)."
+ "IFC export writes the project north, the site location and the owning application (#1498).": "Експорт IFC записує північ проєкту, розташування ділянки та застосунок-власник (#1498).",
+ "Flip Edge": "Перевернути ребро",
+ "Click an edge between two triangles of the ground to turn it to the other diagonal.": "Клацніть ребро між двома трикутниками рельєфу, щоб замінити його іншою діагоналлю.",
+ "Add Detail": "Додати деталі",
+ "Split the ground triangles round the click in four, for finer deforming. Type the radius first (0: one triangle).": "Ділить трикутники рельєфу навколо клацання на чотири для точнішої деформації. Спершу введіть радіус (0: один трикутник).",
+ "That edge is on the terrain's rim: there is nothing to flip it toward.": "Це ребро на краю рельєфу: його нікуди перевертати.",
+ "Only an edge between two triangles can be flipped.": "Перевернути можна лише ребро між двома трикутниками.",
+ "That edge is a line on the ground: soften it first to flip it.": "Це ребро — лінія на рельєфі: спершу згладьте його, щоб перевернути.",
+ "Seen from above, the two triangles make no convex shape: flipping would fold them.": "Згори два трикутники не утворюють опуклої фігури: переворот склав би їх.",
+ "Click an edge of the ground.": "Клацніть ребро рельєфу.",
+ "Click the ground to add detail to.": "Клацніть рельєф, до якого треба додати деталі.",
+ "No ground triangles within the radius.": "У межах радіуса немає трикутників рельєфу.",
+ "Only the clicked triangle": "Лише трикутник під клацанням",
+ "Click the ground to split its triangles. Type the radius first (0: one).": "Клацніть рельєф, щоб поділити його трикутники. Спершу введіть радіус (0: один).",
+ "Click near an edge between two triangles to flip it.": "Клацніть біля ребра між двома трикутниками, щоб перевернути його."
 }

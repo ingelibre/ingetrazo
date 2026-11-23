@@ -104,6 +104,8 @@ HINTS: dict = {
     "terrain_height": ("Click a contour line or a guide point.",
                        "Type its height and Enter."),
     "terrain_drape": "Select edges, then click the ground to drape them onto it.",
+    "terrain_detail": "Click the ground to split its triangles. Type the radius first (0: one).",
+    "terrain_flip": "Click near an edge between two triangles to flip it.",
     "north": ("Click the centre of the compass.",
               "Click toward north, or type the degrees from the green axis."),
     "dimension": ("Click the first point of the dimension.",

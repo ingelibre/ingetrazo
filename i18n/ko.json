@@ -4349,5 +4349,19 @@
  "Push/Pull bases kept with Ctrl stay sound and cracked results are refused (#1155).": "밀기/당기기에서 Ctrl로 남긴 밑면이 온전하게 유지되고 균열이 생긴 결과는 거부됩니다 (#1155).",
  "Camera roll with a 3D mouse (#1406).": "3D 마우스로 카메라 롤 (#1406).",
  "A preference to swap orbit and pan on the middle button (#467).": "가운데 버튼의 궤도 회전과 이동을 바꾸는 설정 (#467).",
- "IFC export writes the project north, the site location and the owning application (#1498).": "IFC 내보내기가 프로젝트 북쪽, 대지 위치, 소유 응용 프로그램을 기록합니다 (#1498)."
+ "IFC export writes the project north, the site location and the owning application (#1498).": "IFC 내보내기가 프로젝트 북쪽, 대지 위치, 소유 응용 프로그램을 기록합니다 (#1498).",
+ "Flip Edge": "모서리 뒤집기",
+ "Click an edge between two triangles of the ground to turn it to the other diagonal.": "지형의 두 삼각형 사이 모서리를 클릭하면 다른 대각선으로 바꿉니다.",
+ "Add Detail": "디테일 추가",
+ "Split the ground triangles round the click in four, for finer deforming. Type the radius first (0: one triangle).": "클릭한 곳 주변의 지형 삼각형을 넷으로 나눠 더 세밀하게 변형할 수 있게 합니다. 먼저 반지름을 입력하세요 (0: 삼각형 하나).",
+ "That edge is on the terrain's rim: there is nothing to flip it toward.": "이 모서리는 지형의 가장자리에 있습니다: 뒤집을 방향이 없습니다.",
+ "Only an edge between two triangles can be flipped.": "두 삼각형 사이의 모서리만 뒤집을 수 있습니다.",
+ "That edge is a line on the ground: soften it first to flip it.": "이 모서리는 지형 위의 선입니다: 뒤집으려면 먼저 부드럽게 하세요.",
+ "Seen from above, the two triangles make no convex shape: flipping would fold them.": "위에서 보면 두 삼각형이 볼록한 모양을 이루지 않습니다: 뒤집으면 겹쳐 접힙니다.",
+ "Click an edge of the ground.": "지형의 모서리를 클릭하세요.",
+ "Click the ground to add detail to.": "디테일을 추가할 지형을 클릭하세요.",
+ "No ground triangles within the radius.": "반지름 안에 지형 삼각형이 없습니다.",
+ "Only the clicked triangle": "클릭한 삼각형만",
+ "Click the ground to split its triangles. Type the radius first (0: one).": "지형을 클릭해 삼각형을 나눕니다. 먼저 반지름 입력 (0: 하나).",
+ "Click near an edge between two triangles to flip it.": "두 삼각형 사이 모서리 근처를 클릭해 뒤집습니다."
 }

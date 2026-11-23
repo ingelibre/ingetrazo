@@ -4376,5 +4376,19 @@
  "Push/Pull bases kept with Ctrl stay sound and cracked results are refused (#1155).": "Các đáy giữ lại bằng Ctrl khi Đẩy/Kéo vẫn nguyên vẹn và kết quả bị nứt bị từ chối (#1155).",
  "Camera roll with a 3D mouse (#1406).": "Nghiêng camera bằng chuột 3D (#1406).",
  "A preference to swap orbit and pan on the middle button (#467).": "Tùy chọn hoán đổi xoay quỹ đạo và kéo trên nút giữa (#467).",
- "IFC export writes the project north, the site location and the owning application (#1498).": "Xuất IFC ghi hướng bắc dự án, vị trí khu đất và ứng dụng sở hữu (#1498)."
+ "IFC export writes the project north, the site location and the owning application (#1498).": "Xuất IFC ghi hướng bắc dự án, vị trí khu đất và ứng dụng sở hữu (#1498).",
+ "Flip Edge": "Lật cạnh",
+ "Click an edge between two triangles of the ground to turn it to the other diagonal.": "Nhấp vào một cạnh giữa hai tam giác của địa hình để thay bằng đường chéo còn lại.",
+ "Add Detail": "Thêm chi tiết",
+ "Split the ground triangles round the click in four, for finer deforming. Type the radius first (0: one triangle).": "Chia bốn các tam giác địa hình quanh chỗ nhấp, để biến dạng mịn hơn. Gõ bán kính trước (0: một tam giác).",
+ "That edge is on the terrain's rim: there is nothing to flip it toward.": "Cạnh này nằm ở mép địa hình: không có hướng nào để lật.",
+ "Only an edge between two triangles can be flipped.": "Chỉ có thể lật cạnh nằm giữa hai tam giác.",
+ "That edge is a line on the ground: soften it first to flip it.": "Cạnh này là một đường trên địa hình: hãy làm mềm nó trước khi lật.",
+ "Seen from above, the two triangles make no convex shape: flipping would fold them.": "Nhìn từ trên xuống, hai tam giác không tạo thành hình lồi: lật sẽ gập chúng lại.",
+ "Click an edge of the ground.": "Nhấp vào một cạnh của địa hình.",
+ "Click the ground to add detail to.": "Nhấp vào địa hình cần thêm chi tiết.",
+ "No ground triangles within the radius.": "Không có tam giác địa hình nào trong bán kính.",
+ "Only the clicked triangle": "Chỉ tam giác được nhấp",
+ "Click the ground to split its triangles. Type the radius first (0: one).": "Nhấp vào địa hình để chia các tam giác. Gõ bán kính trước (0: một).",
+ "Click near an edge between two triangles to flip it.": "Nhấp gần một cạnh giữa hai tam giác để lật nó."
 }
