@@ -6,7 +6,7 @@ follow [SemVer](https://semver.org).
 
 ## [Unreleased]
 
-## [0.6.3] — 2026-11-22
+## [0.6.3.2] — 2026-11-23
 
 **La release más grande hasta ahora, dedicada a los grupos y componentes: editar dentro de ellos sin tirones, copias de componentes que siguen tus cambios, componentes anidados al importar y una biblioteca propia. Mover, Rotar y Escalar ya no tocan el modelo mientras arrastras, así que arrastrar es fluido también en modelos grandes. Las láminas ganan pestañas reordenables, un panel de láminas, leyenda editable e índice, y llegan la Caja de sección, Terreno, Cámara desde foto y Cortar hueco. Más de 100 PRs de la comunidad. El motor Rust ya hace buena parte del trabajo de cada fotograma, y seguiremos afinando el rendimiento con cada release.**
 
@@ -132,6 +132,8 @@ follow [SemVer](https://semver.org).
 
 ### Corregido
 
+- **Cortar hueco conserva el muro tal como estaba** (0.6.3.2): al mover o borrar una ventana o una puerta, las zonas del muro (zócalos, pinturas, texturas, etiquetas y capas) se quedan en su sitio. Antes podían perderse sin aviso. Además, una ventana que cruza dos zonas ahora abre su hueco.
+- **La vista 3D ya no deja de dibujarse con tipos de línea o estilos de arista** (#1541, 0.6.3.1): los paquetes de Windows, macOS, AppImage, tar.gz y snap de la 0.6.3 salieron sin un shader (`edges.geom`). Ahora cada paquete comprueba que los lleva todos — gracias a @arthurarquitetoamb por el reporte y a @bolotov por encontrar la causa.
 - **Abrir un `.igz` grande ya no puede perder las caras de una malla** (y guardarlas vacías) con el motor Rust (#1533) — gracias a @diegog321 por la causa y el arreglo.
 - **Las láminas de detalle ya no dejan ocultos en el modelo los objetos de su escena:** antes la pestaña Modelo podía quedarse con casi todo oculto (y guardarse así).
 - **Mover un personaje recortado (como el ingeniero):** se ve moverse durante todo el arrastre y conserva su sombra, también con sombras ajustadas.

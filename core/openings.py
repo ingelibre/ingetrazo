@@ -22,8 +22,10 @@ back through the wall. Each of its faces is one planar polygon:
   piece inside taken away (the caps, a door's sill on the wall's foot); one
   that lies on nothing is added, facing into the hole (the reveals);
 - healing is the mirror: a polygon filled by a reveal loses it; one that is
-  empty gets its face back, facing out, and merges with its coplanar
-  neighbours, so the wall reads as it did before.
+  empty gets its face back, facing out, and joins the faces the opening was
+  taken from — those alone: a plinth, a change of paint or of BIM tag, any
+  line of the wall stays where it was, lines the opening ran over included
+  (what they were is kept in the prism's ``was``, see :func:`_note`).
 
 **Following.** :func:`records` lists, before a command runs, what every
 cutting component of the context has cut; :func:`follow`, after it,
@@ -206,6 +208,63 @@ def _covers(face, points) -> bool:
     return True
 
 
+def _covered(mesh, face, points) -> bool:
+    """Whether the polygon ``points`` lies within ``face``, or within it and
+    the faces of its plane that carry it on across a mere division (a
+    plinth's line, a change of paint). A line where a third face stands — a
+    partition meeting the wall — is an edge no opening crosses."""
+    n = _normal(points)
+    u, v = _basis(n)
+    origin = points[0]
+    poly = _to2d(points, origin, u, v)
+    scale = max(max(abs(x) for x, _ in poly), max(abs(y) for _, y in poly), 1.0)
+    eps = 1e-6 * scale
+    if _covers(face, points) and not any(
+            _inside(c, poly) and not _on_boundary(c, poly, eps)
+            for h in face.holes for c in _to2d(h, origin, u, v)):
+        return True
+    faces = _coplanar_faces(mesh, points)
+    shared: dict = {}
+    for f in faces:
+        for e in _face_edges(mesh, f):
+            shared.setdefault(id(e), [e, 0])[1] += 1
+    for e, count in shared.values():
+        if count == 2 and len(e.faces) == 2:
+            continue                                     # a mere division
+        (ax, ay), (bx, by) = _to2d((e.a, e.b), origin, u, v)
+        dx, dy = bx - ax, by - ay
+        stops = [0.0, 1.0]
+        for i, (cx, cy) in enumerate(poly):
+            fx, fy = poly[(i + 1) % len(poly)]
+            ex, ey = fx - cx, fy - cy
+            det = dx * ey - dy * ex
+            if abs(det) < 1e-12:
+                continue
+            t = ((cx - ax) * ey - (cy - ay) * ex) / det
+            if 0.0 < t < 1.0:
+                stops.append(t)
+        stops.sort()
+        for t0, t1 in zip(stops, stops[1:]):
+            t = (t0 + t1) / 2.0
+            mid = (ax + dx * t, ay + dy * t)
+            if _inside(mid, poly) and not _on_boundary(mid, poly, eps):
+                return False                # the wall ends inside the opening
+    for p, c in zip(points, poly):
+        if not any(_face_holds(f, p, n) or _on_boundary(
+                c, _to2d(f.vertices, origin, u, v), eps) for f in faces):
+            return False
+    return True
+
+
+def _face_edges(mesh, face):
+    """The edges of ``face``'s loops."""
+    for lp in (face.loop, *face.hole_loops):
+        for i in range(len(lp)):
+            e = mesh.find_edge(lp[i - 1], lp[i])
+            if e is not None:
+                yield e
+
+
 def _coplanar_faces(mesh, points):
     """The faces of ``mesh`` in the plane of the loop ``points``."""
     n = _normal(points)
@@ -239,6 +298,19 @@ def _host_face(mesh, points):
         if _face_holds(f, probe, n):
             return f
     return None
+
+
+def _face_around(mesh, points):
+    """The face most of the outline ``points`` runs on: what the reveals
+    are painted like — not a panel of the wall inside it."""
+    n = _normal(points)
+    best, most = None, 0.0
+    for f in _coplanar_faces(mesh, points):
+        on = sum((b - a).length() for a, b in _segments(points)
+                 if _face_holds(f, (a + b) / 2.0, n))
+        if on > most:
+            best, most = f, on
+    return best if best is not None else _host_face(mesh, points)
 
 
 def _faces_within(mesh, points):
@@ -332,7 +404,7 @@ def plan_in(mesh, a) -> Optional[dict]:
     cut in ``mesh``: ``{"a": front loop, "b": back loop or None}``, or None
     when it lies on no face of it."""
     host = _host_face(mesh, a)
-    if host is None or not _covers(host, a):
+    if host is None or not _covered(mesh, host, a):
         return None
     n = _normal(a)
     probe = _interior_point(a)
@@ -346,7 +418,8 @@ def plan_in(mesh, a) -> Optional[dict]:
             continue
         if best is not None and d >= best[0]:
             continue
-        if _face_holds(f, probe - n * d, n) and _covers(f, [p - n * d for p in a]):
+        if (_face_holds(f, probe - n * d, n)
+                and _covered(mesh, f, [p - n * d for p in a])):
             best = (d, f)
     b = [p - n * best[0] for p in a] if best is not None else None
     return {"a": a, "b": b}
@@ -395,22 +468,58 @@ def _segments(points):
             for i in range(n)]
 
 
-def _draw_on(scene, points) -> None:
-    """Draw the polygon's outline into the mesh, splitting the faces it
-    crosses — the Line tool's own plan. A side already drawn is left out:
-    drawn again, it closes cycles of its own on the OTHER planes it lies in
-    (a door's sill runs along the front's foot, and faced the whole front
-    once more)."""
-    from core.edits import build_add_edges
-    mesh = scene.mesh
-    new = []
-    for a, b in _segments(points):
-        va, vb = mesh.vertex_at(a), mesh.vertex_at(b)
-        if va is not None and vb is not None and mesh.find_edge(va, vb):
-            continue
-        new.append((a, b))
-    if new:
-        build_add_edges(scene, new, detect_faces=True).do(scene)
+def _off_segment(p, a, b) -> float:
+    """Distance from ``p`` to the segment ``a``-``b``."""
+    d = b - a
+    ll = d.lengthSquared()
+    t = QVector3D.dotProduct(p - a, d) / ll if ll > 1e-18 else 0.0
+    return (p - a - d * max(0.0, min(1.0, t))).length()
+
+
+def _on_outline(p, points) -> bool:
+    return any(_off_segment(p, a, b) <= _PLANE_EPS
+               for a, b in _segments(points))
+
+
+def _edge_on_outline(e, points) -> bool:
+    return any(_off_segment(e.a, a, b) <= _PLANE_EPS
+               and _off_segment(e.b, a, b) <= _PLANE_EPS
+               for a, b in _segments(points))
+
+
+def _chain(mesh, a, b) -> list:
+    """The corners met going from ``a`` to ``b`` along the edges drawn
+    between them, ``b`` left out — just ``a`` when no edges join them. A
+    face built on these shares every edge of the faces around it; one built
+    on ``a``-``b`` alone would leave the corners between hanging on its
+    side, and the wall open."""
+    cur, end = mesh.vertex_at(a), mesh.vertex_at(b)
+    if cur is None or end is None:
+        return [a]
+    d = b - a
+    ll = d.lengthSquared()
+    out, t = [a], 0.0
+    while cur is not end:
+        best = None
+        for e in cur.edges:
+            w = e.other(cur)
+            tw = QVector3D.dotProduct(w.position - a, d) / ll
+            if (tw <= t + 1e-9 or tw > 1.0 + 1e-5
+                    or _off_segment(w.position, a, b) > _PLANE_EPS):
+                continue
+            rank = (not e.faces, tw)
+            if best is None or rank < best[0]:
+                best = (rank, w, tw)
+        if best is None:
+            return [a]
+        _rank, cur, t = best
+        out.append(QVector3D(cur.position))
+    return out[:-1]
+
+
+def _refined(mesh, points) -> list:
+    """``points`` with the corners the mesh already has along its sides."""
+    return [p for a, b in _segments(points) for p in _chain(mesh, a, b)]
 
 
 def _add_face(scene, points, paint: Optional[dict]):
@@ -486,7 +595,7 @@ def cut(scene, prism) -> None:
     so the hole heals the same way."""
     mesh = scene.mesh
     centre = _prism_centre(prism)
-    host = _host_face(mesh, prism["a"])
+    host = _face_around(mesh, prism["a"])
     paint = _paint_of(host) if host is not None else None
     polys = _polygons(prism)
     on_faces, keep = [], []
@@ -499,22 +608,233 @@ def cut(scene, prism) -> None:
         else:
             on_faces.append(i)
     prism["keep"] = keep
-    # Every outline is drawn BEFORE any piece is taken away: drawing on a
-    # plane rebuilds the planes its edges touch, and a door's sill drawn on
-    # the wall's foot would face the front's emptied cap all over again.
+    had = {i: [QVector3D(x.position)
+               for x in _corners_on(_coplanar_faces(mesh, polys[i]), polys[i])]
+           for i in on_faces}
     for i in on_faces:
-        _draw_on(scene, polys[i])
+        _split_crossed(mesh, polys[i])
+    was, inner = {}, {}
     for i in on_faces:
-        for f in _faces_within(mesh, polys[i]):
-            mesh.remove_face(f)
+        note, edges = _take(mesh, polys[i], had[i])
+        inner.update((id(e), e) for e in edges)
+        if note:
+            was[str(i)] = note
+    prism["was"] = was
     for i, poly in enumerate(polys):
         if i in on_faces or i in keep:
             continue
-        face = _add_face(scene, poly, paint)
+        face = _add_face(scene, _refined(mesh, poly), paint)
         if face is not None:
             _orient(mesh, face, centre, inward=True)
+    for e in inner.values():              # the lines the opening ran over
+        if not e.faces and mesh.find_edge(e.v0, e.v1) is e:
+            mesh.remove_edge(e)
     _drop_loose(mesh, prism)
+    mesh.prune_orphan_vertices()
     scene.version += 1
+
+
+# ---- What was there ----------------------------------------------------------
+def _corners_on(faces, poly) -> list:
+    """The corners of ``faces`` on the outline ``poly``."""
+    return list({id(x): x for f in faces for lp in (f.loop, *f.hole_loops)
+                 for x in lp if _on_outline(x.position, poly)}.values())
+
+
+def _take(mesh, poly, had) -> tuple:
+    """Take the polygon ``poly`` out of the faces of its plane, which keep
+    their attrs and their winding. ``(note, edges)``: what healing cannot
+    read off the wall around the hole — or ``{}`` — and the edges of the
+    pieces taken away, some of them now loose. The note holds:
+
+    - ``pieces``: the pieces taken, when more than one, each ``{"loop",
+      "holes"}`` — with its ``attrs`` when it reached the outline nowhere
+      but along lines of its own, so no face around it has them;
+    - ``seams``: the parts of the outline that already were an edge;
+    - ``lines``: the flags of the edges inside, those that have any;
+    - ``corners``: ``had``, the corners that already were on the outline.
+
+    Worked out here, and not drawn with the Line tool's plan: that one also
+    closes cycles and faces them, over the wall it has just divided."""
+    from core.mesh import edge_flags, edge_is_plain
+    n = _normal(poly)
+    u, v = _basis(n)
+    zones = _coplanar_faces(mesh, poly)
+    corners = _corners_on(zones, poly)
+    ring = []
+    for a, b in _segments(poly):
+        d = b - a
+        on = [x for x in (*corners, mesh.vertex(a))
+              if _off_segment(x.position, a, b) <= _PLANE_EPS
+              and x is not mesh.vertex_at(b)]
+        for x in sorted(on, key=lambda x: QVector3D.dotProduct(
+                x.position - a, d)):
+            if x not in ring:
+                ring.append(x)
+    at: dict = {}
+
+    def flat(x):
+        c = at.get(x)
+        if c is None:
+            c = at[x] = _to2d([x.position], poly[0], u, v)[0]
+        return c
+
+    def mid(x, y):
+        (ax, ay), (bx, by) = flat(x), flat(y)
+        return (ax + bx) / 2.0, (ay + by) / 2.0
+
+    outline = [flat(x) for x in ring]
+    eps = 1e-5
+    sides = [(x, ring[(i + 1) % len(ring)]) for i, x in enumerate(ring)]
+    forward = {(id(x), id(y)) for x, y in sides}
+    seams, marked, rows, edges = [], [], [], {}
+    # The outline first, in its order, as the Line tool would leave it.
+    drawn = set()
+    for x, y in sides:
+        if mesh.find_edge(x, y) is None:
+            e = mesh.add_edge(x.position, y.position)
+            drawn.add(id(e))
+            edges[id(e)] = e
+    alone = False
+    for f in zones:
+        loops = []
+        for k, lp in enumerate((f.loop, *f.hole_loops)):
+            ccw = _area2d([flat(x) for x in lp]) > 0
+            loops.append(list(lp) if ccw == (k == 0) else lp[::-1])
+        border = [[flat(x) for x in lp] for lp in loops]
+        rest, piece = [], []
+        for lp in loops:
+            for i, x in enumerate(lp):
+                y = lp[(i + 1) % len(lp)]
+                if (id(x), id(y)) in forward:
+                    piece.append((x, y))
+                elif (id(y), id(x)) in forward:
+                    rest.append((x, y))
+                else:
+                    m = mid(x, y)
+                    (piece if _inside(m, outline)
+                     and not _on_boundary(m, outline, eps)
+                     else rest).append((x, y))
+        for x, y in sides:
+            m = mid(x, y)
+            if (_inside(m, border[0])
+                    and not any(_inside(m, h) for h in border[1:])
+                    and not any(_on_boundary(m, b, eps) for b in border)):
+                piece.append((x, y))
+                rest.append((y, x))
+        if not piece:
+            continue
+        attrs, interior = f.attrs, f.interior
+        turned = QVector3D.dotProduct(f.normal(), n) < 0
+        for e in _face_edges(mesh, f):
+            edges[id(e)] = e
+        taken = _trace(piece, flat)
+        for loop, holes in taken:
+            joined = False
+            for lp in (loop, *holes):
+                for i, x in enumerate(lp):
+                    y = lp[(i + 1) % len(lp)]
+                    e = mesh.find_edge(x, y)
+                    if (id(x), id(y)) not in forward:
+                        if e is not None and not edge_is_plain(e):
+                            marked.append({"at": [x.position, y.position],
+                                           "flags": list(edge_flags(e))})
+                    elif e is not None and id(e) not in drawn:
+                        seams.append([QVector3D(x.position),
+                                      QVector3D(y.position)])
+                    else:
+                        joined = True
+            row = {"loop": [QVector3D(x.position) for x in
+                            (loop[::-1] if turned else loop)],
+                   "holes": [[QVector3D(x.position) for x in h]
+                             for h in holes]}
+            if not joined:
+                alone = True
+                row["attrs"] = copy.deepcopy(attrs)
+            rows.append(row)
+        mesh.remove_face(f)
+        for loop, holes in _trace(rest, flat):
+            new = mesh.add_face([x.position for x in
+                                 (loop[::-1] if turned else loop)],
+                                [[x.position for x in h] for h in holes])
+            new.attrs = copy.deepcopy(attrs)
+            new.interior = interior
+    note = {}
+    if len(rows) > 1 or alone or any(r["holes"] for r in rows):
+        note["pieces"] = rows
+    if seams:
+        note["seams"] = seams
+    if marked:
+        note["lines"] = marked
+    if had:
+        note["corners"] = had
+    return note, list(edges.values())
+
+
+def _trace(sides, flat) -> list:
+    """``[(outer loop, [hole loops])]`` of the regions the directed ``sides``
+    (the inside on their left) go round."""
+    import math
+    out: dict = {}
+    for x, y in sides:
+        out.setdefault(x, []).append(y)
+    loops = []
+    while out:
+        start = next(iter(out))
+        x, y = start, out[start].pop()
+        if not out[start]:
+            del out[start]
+        loop = [x]
+        while y is not start:
+            loop.append(y)
+            ways = out.get(y)
+            if not ways:
+                break                                  # an open chain
+            (px, py), (qx, qy) = flat(x), flat(y)
+            back = math.atan2(py - qy, px - qx)
+
+            def turn(z, back=back, qx=qx, qy=qy):
+                zx, zy = flat(z)
+                return (back - math.atan2(zy - qy, zx - qx)) % (2 * math.pi)
+
+            z = min(ways, key=lambda z: turn(z) or 2 * math.pi)
+            ways.remove(z)
+            if not ways:
+                del out[y]
+            x, y = y, z
+        if len(loop) >= 3:
+            loops.append(loop)
+    areas = [_area2d([flat(x) for x in lp]) for lp in loops]
+    outers = [(lp, a, []) for lp, a in zip(loops, areas) if a > 1e-10]
+    for lp, a in zip(loops, areas):
+        if a >= -1e-10:
+            continue
+        (ax, ay), (bx, by) = flat(lp[0]), flat(lp[1])
+        m = ((ax + bx) / 2.0, (ay + by) / 2.0)
+        around = [o for o in outers if o[1] > -a
+                  and _inside(m, [flat(x) for x in o[0]])]
+        if around:
+            min(around, key=lambda o: o[1])[2].append(lp)
+    return [(lp, holes) for lp, _a, holes in outers]
+
+
+def _map_was(was, fn) -> dict:
+    """``was`` with every list of points mapped by ``fn`` (list to list)."""
+    out = {}
+    for i, note in (was or {}).items():
+        new = dict(note)
+        if "pieces" in note:
+            new["pieces"] = [{**r, "loop": fn(r["loop"]),
+                              "holes": [fn(h) for h in r.get("holes") or ()]}
+                             for r in note["pieces"]]
+        if "seams" in note:
+            new["seams"] = [fn(s) for s in note["seams"]]
+        if "lines" in note:
+            new["lines"] = [{**r, "at": fn(r["at"])} for r in note["lines"]]
+        if "corners" in note:
+            new["corners"] = fn(note["corners"])
+        out[i] = new
+    return out
 
 
 def intact(mesh, prism) -> bool:
@@ -554,85 +874,302 @@ def heal(scene, prism) -> bool:
     if not intact(mesh, prism):
         return False
     centre = _prism_centre(prism)
-    added = []
-    paint = None
-    for f in mesh.faces:
-        if _face_borders(f, prism["a"]):
-            paint = _paint_of(f)
-            break
     keep = _kept(prism)
+    was = prism.get("was") or {}
+    empty, loose = [], {}
+    polys = [p for i, p in enumerate(_polygons(prism)) if i not in keep]
+    _weld_outlines(mesh, polys)
     for i, poly in enumerate(_polygons(prism)):
         if i in keep:
             continue
-        inner = _faces_within(mesh, poly)
-        if inner:
-            for f in inner:
-                mesh.remove_face(f)
-            continue
-        face = _add_face(scene, poly, paint)
-        if face is not None:
-            _orient(mesh, face, centre, inward=False)
-            added.append(face)
-    for face in added:
-        _merge_into_neighbours(mesh, face)
+        reveals = _faces_within(mesh, poly)
+        for f in reveals:
+            loose.update((id(e), e) for e in _face_edges(mesh, f))
+            mesh.remove_face(f)
+        if not reveals:
+            empty.append((i, poly))
+    corners, had = [], []
+    for i, poly in empty:
+        note = was.get(str(i)) or {}
+        had += note.get("corners") or ()
+        corners += [*_refined(mesh, poly),
+                    *(p for r in note.get("pieces") or () for p in r["loop"])]
+        _close(mesh, poly, note, centre)
+    for e in list(loose.values()):
+        if not e.faces and mesh.find_edge(e.v0, e.v1) is e:
+            mesh.remove_edge(e)
     _drop_loose(mesh, prism)
-    _collapse_corners(mesh, prism)
+    mesh.prune_orphan_vertices()
+    _collapse_corners(mesh, corners, had)
     scene.version += 1
     return True
 
 
-def _collapse_corners(mesh, prism) -> None:
-    """The prism's corners left in the middle of a straight edge once the
-    wall is whole again (a door's foot splits the wall's bottom edge)."""
-    for loop in (prism["a"], prism.get("b") or ()):
-        for p in loop:
-            v = mesh.vertex_at(p)
-            if v is not None and mesh.collapsible_vertex(v):
-                mesh.collapse_vertex(v)
+def _collapse_corners(mesh, corners, had) -> None:
+    """The ``corners`` of the outline left in the middle of a straight edge
+    once the wall is whole again (a door's foot splits the wall's bottom
+    edge) — but for those the wall ``had`` before."""
+    had = {_k(p) for p in had}
+    for p in corners:
+        v = mesh.vertex_at(p)
+        if (v is not None and _k(v.position) not in had
+                and mesh.collapsible_vertex(v)):
+            mesh.collapse_vertex(v)
 
 
-def _face_borders(face, points) -> bool:
-    keys = {_k(p) for p in points}
-    return any(_k(v.position) in keys
-               for lp in (face.loop, *face.hole_loops) for v in lp)
+def _close(mesh, poly, note, centre) -> None:
+    """Fill the empty polygon ``poly`` of the prism with the faces the
+    opening took, each joined to the face it was taken from."""
+    from core.mesh import stamp_edge_flags
+    rows = note.get("pieces") or [{"loop": list(poly)}]
+    for row in rows:
+        for p in row["loop"]:
+            _ensure_corner(mesh, p, poly)
+    seams = [tuple(s) for s in note.get("seams") or ()]
+    chords = []
+    for p, q in _divisions_met(mesh, poly):
+        (seams if _on_outline((p + q) / 2.0, poly) else chords).append((p, q))
+    loops = [(_refined(mesh, r["loop"]),
+              [_refined(mesh, h) for h in r.get("holes") or ()],
+              r.get("attrs")) for r in rows]
+    for chord in chords:
+        loops = [part for piece in loops for part in _split_piece(piece, chord)]
+    added = []
+    for loop, holes, attrs in loops:
+        face = mesh.add_face(loop, holes or None)
+        if attrs:
+            face.attrs = copy.deepcopy(attrs)
+        if "pieces" not in note:
+            _orient(mesh, face, centre, inward=False)
+        added.append(face)
+    for row in note.get("lines") or ():
+        va, vb = (mesh.vertex_at(p) for p in row["at"])
+        e = (mesh.find_edge(va, vb)
+             if va is not None and vb is not None else None)
+        if e is not None:
+            stamp_edge_flags(e, row["flags"])
+    new = set(added)
+    for face in added:
+        new.discard(_rejoin(mesh, face, poly, seams, new))
 
 
-def _merge_into_neighbours(mesh, face) -> None:
-    """Melt a healed face into the coplanar faces around it."""
-    if face not in mesh.faces:
-        return
-    n = face.normal()
-    region = {face}
-    stack = [face]
-    while stack:
-        f = stack.pop()
+def _weld_outlines(mesh, polys) -> None:
+    """Where a corner of one face hangs in the middle of another's side along
+    the outlines ``polys`` (a line drawn up to the jamb, after the opening,
+    splits the jamb and not the wall), split that side too — closed as it
+    is, the hole would leave the wall open there."""
+    faces = {id(f): f for p in polys for f in _coplanar_faces(mesh, p)}
+    corners = {id(v): v for f in faces.values()
+               for lp in (f.loop, *f.hole_loops) for v in lp
+               if any(_on_outline(v.position, p) for p in polys)}
+    for f in faces.values():
         for lp in (f.loop, *f.hole_loops):
-            m = len(lp)
-            for i in range(m):
-                e = mesh.find_edge(lp[i], lp[(i + 1) % m])
-                if e is None:
+            i = 0
+            while i < len(lp):
+                va, vb = lp[i], lp[(i + 1) % len(lp)]
+                i += 1
+                a, b = va.position, vb.position
+                if id(va) not in corners or id(vb) not in corners:
                     continue
-                for g in e.faces:
-                    if g in region:
-                        continue
-                    if QVector3D.dotProduct(g.normal(), n) < _PARALLEL:
-                        continue
-                    if abs(QVector3D.dotProduct(g.loop[0].position
-                                                - face.loop[0].position, n)) \
-                            > _PLANE_EPS:
-                        continue
-                    region.add(g)
-                    stack.append(g)
-    if len(region) > 1:
-        mesh.dissolve_coplanar_region(region)
+                hang = [v for v in corners.values()
+                        if v is not va and v is not vb
+                        and _off_segment(v.position, a, b) <= _PLANE_EPS]
+                if not hang:
+                    continue
+                d = b - a
+                mid = min(hang, key=lambda v: QVector3D.dotProduct(
+                    v.position - a, d))
+                e = mesh.find_edge(va, vb)
+                if e is not None:
+                    _split_edge(mesh, e, mid.position)
+                    continue
+                lp.insert(i, mid)        # a side the split left with no edge
+                for x, y in ((va, mid), (mid, vb)):
+                    half = mesh.find_edge(x, y)
+                    if half is not None and f not in half.faces:
+                        half.faces.append(f)
+                mesh._chunk_dirty = True
+                mesh._mut_serial += 1
+
+
+def _ensure_corner(mesh, p, poly) -> None:
+    """A corner at ``p`` of ``poly``'s outline, where a line the opening ran
+    over met it: erased since, the edge there is whole and is split again
+    (and whole again once the pieces join)."""
+    if mesh.vertex_at(p) is not None:
+        return
+    for a, b in _segments(poly):
+        if _off_segment(p, a, b) > _PLANE_EPS:
+            continue
+        chain = [*_chain(mesh, a, b), b]
+        for q, r in zip(chain, chain[1:]):
+            if _off_segment(p, q, r) > _PLANE_EPS:
+                continue
+            vq, vr = mesh.vertex_at(q), mesh.vertex_at(r)
+            e = (mesh.find_edge(vq, vr)
+                 if vq is not None and vr is not None else None)
+            if e is not None:
+                _split_edge(mesh, e, p)
+            return
+
+
+def _split_edge(mesh, e, p) -> None:
+    """Split ``e`` at ``p``, both halves keeping its flags (its layer)."""
+    from core.mesh import edge_flags, stamp_edge_flags
+    flags = edge_flags(e)
+    for half in mesh.split_edge(e, p):
+        stamp_edge_flags(half, flags)
+
+
+def _split_crossed(mesh, poly) -> None:
+    """Split the edges of ``poly``'s plane its outline meets, where it meets
+    them. Drawn over them, the outline would split them too, but what the
+    planner splits loses its layer."""
+    sides = _segments(poly)
+    edges = {id(e): e for f in _coplanar_faces(mesh, poly)
+             for e in _face_edges(mesh, f)}
+    for e in edges.values():
+        points = [p for p in poly if _off_segment(p, e.a, e.b) <= _PLANE_EPS]
+        d = e.b - e.a
+        for a, b in sides:
+            s = b - a
+            c = QVector3D.crossProduct(d, s)
+            if c.lengthSquared() <= 1e-10 * d.lengthSquared() * s.lengthSquared():
+                continue
+            t = QVector3D.dotProduct(QVector3D.crossProduct(a - e.a, s), c) \
+                / c.lengthSquared()
+            p = e.a + d * t
+            if (0.0 < t < 1.0 and _off_segment(p, a, b) <= _PLANE_EPS
+                    and not any((p - q).length() <= _PLANE_EPS for q in points)):
+                points.append(p)
+        rest = [e]
+        for p in points:
+            for k, part in enumerate(rest):
+                if (min((p - part.a).length(), (p - part.b).length())
+                        > _PLANE_EPS
+                        and _off_segment(p, part.a, part.b) <= _PLANE_EPS):
+                    va, vb = part.v0, part.v1
+                    _split_edge(mesh, part, p)
+                    m = mesh.vertex_at(p)
+                    rest[k:k + 1] = [x for x in (mesh.find_edge(va, m),
+                                                 mesh.find_edge(m, vb)) if x]
+                    break
+
+
+def _in_plane(face, p0, n) -> bool:
+    return (abs(QVector3D.dotProduct(face.normal(), n)) >= _PARALLEL
+            and all(abs(QVector3D.dotProduct(v.position - p0, n)) <= _PLANE_EPS
+                    for v in face.loop[:3]))
+
+
+def _divisions_met(mesh, poly) -> list:
+    """``(p, q)`` for every line of the wall the opening interrupts: one that
+    divides two faces of its plane reaches the outline at ``p`` and goes on,
+    straight, from ``q``. Drawn after the opening was cut, or cut before
+    openings kept note of what they ran over."""
+    n = _normal(poly)
+    ends = []
+    for p in _refined(mesh, poly):
+        v = mesh.vertex_at(p)
+        if v is None:
+            continue
+        for e in v.edges:
+            if len(set(e.faces)) != 2 or len(e.faces) != 2:
+                continue
+            if not all(_in_plane(f, poly[0], n) for f in e.faces):
+                continue
+            o = e.other(v).position
+            if _on_outline(o, poly) and _on_outline((o + p) / 2.0, poly):
+                continue
+            ends.append((p, (p - o).normalized()))
+    out = []
+    for i, (p, d) in enumerate(ends):
+        for q, g in ends[i + 1:]:
+            w = q - p
+            if w.length() < _PLANE_EPS:
+                continue
+            w = w.normalized()
+            if (QVector3D.dotProduct(w, d) > 0.99999
+                    and QVector3D.dotProduct(w, g) < -0.99999):
+                out.append((p, q))
+    return out
+
+
+def _split_piece(piece, chord) -> list:
+    """``(loop, holes, attrs)`` cut along ``chord`` when it joins two of its
+    corners through its inside."""
+    loop, holes, attrs = piece
+    keys = [_k(p) for p in loop]
+    try:
+        i, j = sorted(keys.index(_k(p)) for p in chord)
+    except ValueError:
+        return [piece]
+    n = _normal(loop)
+    u, v = _basis(n)
+    mid = (loop[i] + loop[j]) / 2.0
+    if (holes or _on_outline(mid, loop) or not _inside(
+            _to2d([mid], loop[0], u, v)[0], _to2d(loop, loop[0], u, v))):
+        return [piece]
+    return [(loop[i:j + 1], [], attrs), (loop[j:] + loop[:i + 1], [], attrs)]
+
+
+def _rejoin(mesh, face, poly, seams, new):
+    """Give ``face`` back to the wall: what the opening cut it from — the
+    faces across the outline, where the outline was not already a line of the
+    wall — passes it its attrs (paint of both sides, BIM tag, layer), and is
+    one face with it again. Faces that differ, and faces a line of the wall
+    divides, are left as they are. Returns ``face``."""
+    n = _normal(poly)
+
+    def is_seam(e):
+        mid = (e.a + e.b) / 2.0
+        return any(_off_segment(mid, a, b) <= _PLANE_EPS for a, b in seams)
+
+    across: dict = {}                     # neighbour -> length shared with it
+    for e in _face_edges(mesh, face):
+        if len(e.faces) != 2 or not _edge_on_outline(e, poly) or is_seam(e):
+            continue
+        for g in e.faces:
+            if g is not face and g not in new and _in_plane(g, poly[0], n):
+                across[g] = across.get(g, 0.0) + e.length()
+    if not across:
+        return face
+    order = sorted(across, key=lambda g: -across[g])
+    leader = order[0]
+    if QVector3D.dotProduct(face.normal(), leader.normal()) < 0:
+        face.loop.reverse()
+        for h in face.hole_loops:
+            h.reverse()
+        mesh._chunk_dirty = True
+        mesh._mut_serial += 1
+    face.attrs = copy.deepcopy(leader.attrs)
+    face.interior = leader.interior
+    region, lines = [face, leader], {id(e) for e in _face_edges(mesh, leader)}
+    for g in order[1:]:
+        own = list(_face_edges(mesh, g))
+        if (g.attrs != leader.attrs
+                or QVector3D.dotProduct(g.normal(), leader.normal()) < _PARALLEL
+                or any(id(e) in lines for e in own)):
+            continue
+        region.append(g)
+        lines.update(id(e) for e in own)
+    keep = [e for g in region for e in _face_edges(mesh, g) if is_seam(e)]
+    merged = mesh.dissolve_coplanar_region(region, keep=keep)
+    if merged is not None:
+        merged.attrs = copy.deepcopy(face.attrs)
+        merged.interior = face.interior
+    return face
 
 
 def _drop_loose(mesh, prism) -> None:
-    """Edges of the prism no face uses any more, and their vertices."""
-    keys = {_k(p) for loop in (prism["a"], prism.get("b") or ()) for p in loop}
-    loose = [e for e in mesh.edges if not e.faces
-             and (_k(e.v0.position) in keys or _k(e.v1.position) in keys)]
-    for e in loose:
+    """Edges of the prism no face uses any more, and their vertices. A line
+    of the user's that only touches one of its corners is not one."""
+    polys = _polygons(prism)
+    corners = [mesh.vertex_at(p) for loop in (prism["a"], prism.get("b") or ())
+               for p in loop]
+    loose = {id(e): e for v in corners if v is not None for e in v.edges
+             if not e.faces and any(_edge_on_outline(e, p) for p in polys)}
+    for e in loose.values():
         mesh.remove_edge(e)
     if loose:
         mesh.prune_orphan_vertices()
@@ -892,7 +1429,9 @@ def _prism_from(host, rec) -> dict:
     return {"a": host.local_to_mesh([QVector3D(*p) for p in rec["a"]]),
             "b": (host.local_to_mesh([QVector3D(*p) for p in rec["b"]])
                   if rec.get("b") else None),
-            "keep": list(rec.get("keep") or ())}
+            "keep": list(rec.get("keep") or ()),
+            "was": _map_was(rec.get("was"), lambda pts: host.local_to_mesh(
+                [QVector3D(*p) for p in pts]))}
 
 
 def _cut_at(scene, host, prism, edits, refused):
@@ -980,6 +1519,9 @@ def _record(group, host, prism) -> dict:
                     if prism.get("b") else None)
         if prism.get("keep"):
             rec["keep"] = list(prism["keep"])
+        if prism.get("was"):
+            rec["was"] = _map_was(prism["was"], lambda pts: [
+                list(p.toTuple()) for p in host.mesh_to_local(pts)])
     return rec
 
 

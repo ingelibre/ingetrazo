@@ -273,6 +273,24 @@ class _App(QApplication):
         return super().event(e)
 
 
+#: What resources/shaders must hold for the 3D view (see --check).
+SHADERS = (
+    "ao.frag",
+    "ao.vert",
+    "ao_apply.frag",
+    "ao_blur.frag",
+    "basic.frag",
+    "basic.vert",
+    "depth.frag",
+    "depth.vert",
+    "edges.frag",
+    "edges.geom",
+    "edges.vert",
+    "style_ground.frag",
+    "style_ground.vert",
+)
+
+
 def _self_check() -> int:
     """Report whether this install can find everything it needs; --check.
 
@@ -300,8 +318,9 @@ def _self_check() -> int:
             problems.append("Cocoa accessibility fix")
     # Only files something actually reads at runtime.
     for label, path in (
-        ("vertex shader", root / "resources" / "shaders" / "basic.vert"),
-        ("fragment shader", root / "resources" / "shaders" / "basic.frag"),
+        # Every shader, by name: 0.6.3 shipped without edges.geom, and the
+        # view went blank as soon as a style or a layer needed it (#1541).
+        *((name, root / "resources" / "shaders" / name) for name in SHADERS),
         ("translations", root / "i18n" / "es.json"),
         ("texture library", root / "resources" / "textures" / "library.json"),
         ("components", root / "resources" / "components" / "components.json"),
