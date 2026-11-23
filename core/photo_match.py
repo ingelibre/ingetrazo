@@ -406,6 +406,86 @@ class Solution:
         return (d[0] / n, d[1] / n)
 
 
+def _axis_coordinate(sol: Solution, img, axis: int, tol: float):
+    """The coordinate along world ``axis`` (0 red, 1 green) of the point
+    seen at image ``img``, when that point lies on the axis itself: the
+    ray through it then meets the two planes across the axis in one and
+    the same point. ``None`` when it does not (within ``tol`` metres)."""
+    d = (img[0] * sol.right[0] + img[1] * sol.up[0] - sol.focal * sol.back[0],
+         img[0] * sol.right[1] + img[1] * sol.up[1] - sol.focal * sol.back[1],
+         img[0] * sol.right[2] + img[1] * sol.up[2] - sol.focal * sol.back[2])
+    hits = []
+    for k in (0, 1, 2):
+        if k == axis:
+            continue
+        if abs(d[k]) < 1e-12:
+            return None
+        t = -sol.eye[k] / d[k]
+        if t <= 0.0:
+            return None
+        hits.append(tuple(sol.eye[i] + t * d[i] for i in range(3)))
+    if math.hypot(*(a - b for a, b in zip(hits[0], hits[1]))) > tol:
+        return None
+    return 0.5 * (hits[0][axis] + hits[1][axis])
+
+
+def _other_side(sol: Solution) -> Solution:
+    """The other camera of the same picture: ``sol`` turned half a turn
+    about the blue axis through the origin. It stands the same height,
+    projects the blue axis and both vanishing points exactly as ``sol``
+    does, and sees every other point mirrored in that axis."""
+    def turned(v):
+        return (-v[0], -v[1], v[2])
+    return Solution(focal=sol.focal, right=turned(sol.right),
+                    up=turned(sol.up), back=turned(sol.back),
+                    eye=(-sol.eye[0], -sol.eye[1], sol.eye[2]),
+                    vp_x=sol.vp_x, vp_y=sol.vp_y,
+                    flipped_y=not sol.flipped_y)
+
+
+def _right_side(pm: PhotoMatch, sol: Solution) -> Solution:
+    """``sol``, or its other side, as the lines describe.
+
+    The vanishing points fix the camera only up to that half turn: the
+    blue-up rule in :func:`solve` settles which way is up, not which side
+    of the model the camera stands on, and for a photo taken from the
+    red side it picks the mirrored camera — the model then faces away,
+    its green side turned from the viewer (issue #1553). The lines
+    themselves tell the sides apart where one of them lies on an axis:
+    the bottom edge of the facade is the red axis and the bottom edge
+    round the corner is the green one. A line laid along such an edge
+    covers it, and the model's edges run into the positive octant from
+    the origin, so under the camera that truly saw the photo the drawn
+    line reaches into positive coordinates along its axis; a drawn line
+    that lies wholly at negative coordinates covers no edge there, and
+    its camera is the mirror. A line that crosses the origin says
+    nothing (it reaches both ways), a line on no axis says nothing, and
+    lines that disagree — the groups laid the wrong way round — keep
+    the camera :func:`solve` found."""
+    tol = 0.03 * float(pm.scale_length)
+    eps = 0.02 * float(pm.scale_length)
+    against = False
+    for_it = False
+    for lines, axis in ((pm.x_lines, 0), (pm.y_lines, 1)):
+        for ln in lines:
+            ends = [_axis_coordinate(sol, pm.to_image(p), axis, tol)
+                    for p in ln]
+            if None in ends:
+                continue
+            lo, hi = min(ends), max(ends)
+            pos = hi - max(lo, 0.0) if hi > 0.0 else 0.0
+            neg = min(hi, 0.0) - lo if lo < 0.0 else 0.0
+            if pos < eps and neg < eps:
+                continue            # a dot on the origin: no side to tell
+            if pos < eps:
+                against = True      # wholly negative: covers no edge
+            elif neg < eps:
+                for_it = True       # wholly positive, as an edge runs
+    if against and not for_it:
+        return _other_side(sol)
+    return sol
+
+
 def solve(pm: PhotoMatch, fixed_focal: float | None = None) -> Solution:
     """The camera of ``pm``. Raises :class:`CalibrationError` when the
     lines give none. ``fixed_focal`` (image units) imposes the focal length
@@ -491,8 +571,9 @@ def solve(pm: PhotoMatch, fixed_focal: float | None = None) -> Solution:
     eye = (-(o_cam[0] * right[0] + o_cam[1] * up[0] + o_cam[2] * back[0]),
            -(o_cam[0] * right[1] + o_cam[1] * up[1] + o_cam[2] * back[1]),
            -(o_cam[0] * right[2] + o_cam[1] * up[2] + o_cam[2] * back[2]))
-    return Solution(focal=f, right=right, up=up, back=back, eye=eye,
-                    vp_x=vx, vp_y=vy, flipped_y=flipped)
+    sol = Solution(focal=f, right=right, up=up, back=back, eye=eye,
+                   vp_x=vx, vp_y=vy, flipped_y=flipped)
+    return _right_side(pm, sol)
 
 
 def solve_match(pm: PhotoMatch) -> Solution:

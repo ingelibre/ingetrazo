@@ -94,6 +94,49 @@ def test_the_camera_comes_back(spec):
     assert not sol.flipped_y
 
 
+CAMERAS_FROM_THE_OTHER_SIDES = [
+    # Across the green axis, the corner seen from the other street.
+    dict(eye=(-14.0, 12.0, 6.0), target=(2.0, 2.0, 2.0), fov=50.0),
+    # From the red side (issue #1553): the calibration used to hand
+    # back the mirror camera, (-14, 12, 6) — the model faced away,
+    # its red side to the viewer and the green side turned from it.
+    dict(eye=(14.0, -12.0, 6.0), target=(2.0, 2.0, 2.0), fov=50.0),
+    # From behind the corner altogether.
+    dict(eye=(14.0, 13.0, 7.0), target=(2.0, 2.0, 2.0), fov=50.0),
+]
+
+
+@pytest.mark.parametrize("spec", CAMERAS_FROM_THE_OTHER_SIDES)
+def test_a_camera_from_any_side_comes_back(spec):
+    cam = FakeCamera(**spec)
+    sol = PM.solve(_photo(cam))
+    assert sol.focal == pytest.approx(cam.f, rel=1e-6)
+    for got, want in ((sol.right, cam.right), (sol.up, cam.up),
+                      (sol.back, cam.back)):
+        assert got == pytest.approx(want, abs=1e-6)
+    assert sol.eye == pytest.approx(spec["eye"], abs=1e-5)
+
+
+def test_the_layout_of_issue_1553_solves_to_the_green_side():
+    """The green lines need not lie on the origin's own wall: on the
+    right-hand wall of a 5 m cube, the red lines on the front wall and
+    the origin at the corner between them, a camera standing in front
+    of the green face still comes back — not its mirror image."""
+    cam = FakeCamera(eye=(14.0, -12.0, 6.0), target=(2.0, 2.0, 2.0),
+                     fov=50.0)
+    pm = PM.PhotoMatch(width_px=int(1000 * cam.aspect), height_px=1000)
+    pm.x_lines = [[list(cam.uv((0, 0, 0))), list(cam.uv((5, 0, 0)))],
+                  [list(cam.uv((0, 0, 5))), list(cam.uv((5, 0, 5)))]]
+    pm.y_lines = [[list(cam.uv((5, 0, 0))), list(cam.uv((5, 5, 0)))],
+                  [list(cam.uv((5, 0, 5))), list(cam.uv((5, 5, 5)))]]
+    pm.origin = list(cam.uv((0, 0, 0)))
+    pm.scale_point = list(cam.uv((0, 0, 5)))
+    pm.scale_length = 5.0
+    sol = PM.solve(pm)
+    assert sol.eye == pytest.approx(cam.eye, abs=1e-5)
+    assert sol.eye[1] < 0.0 and sol.forward[1] > 0.0
+
+
 def test_vanishing_point_of_two_lines():
     vp = PM.vanishing_point(((0, 0), (1, 1)), ((0, 2), (1, 1.5)))
     assert vp == pytest.approx((4.0 / 3.0, 4.0 / 3.0))
