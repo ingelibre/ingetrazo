@@ -71,7 +71,7 @@ BLOCKS = {
               "themselves.",
               "Sheet_Tiles = V_Tiles at 1:25 · Sheet_Kitchen = V_Kitchen at 1:25",
               [("sheet_tiles.png", "Sheet_Tiles")]),
-    "set": (1, 3, "#ffe6cc", True, "Sheet Sets (planned)",
+    "set": (1, 3, "#ffe6cc", True, "Sheet Sets (optional → planned)",
             "A sheet set bundles the sheets one trade or tender needs, in "
             "order and with its own cover page. Each trade gets exactly the "
             "drawings it needs, and nothing else. Until the feature exists: "
@@ -94,7 +94,17 @@ EDGES = [("tree", "layer", "container → layer"),
          ("view", "sheet", "frame uses view"),
          ("sheet", "set", "select sheets"),
          ("set", "out", "export set"),
-         ("bim", "out", "quantities")]
+         ("bim", "out", "quantities"),
+         ("sheet", "out", "export sheets")]
+OPTIONAL = {("sheet", "set"), ("set", "out")}   # drawn dashed
+
+
+def bent(a, b):
+    """Corner path for the one edge that crosses columns (sheets -> output):
+    out of the left side of a, along, then down into the top of b."""
+    (xa, ya), (xb, yb) = box(a), box(b)
+    turn_x = xb + W * 0.72
+    return [(xa, ya + H / 2), (turn_x, ya + H / 2), (turn_x, yb)]
 
 
 def box(key):
@@ -156,8 +166,19 @@ def png(out: Path) -> None:
             ax.text(ix + iw / 2, y + H - 16, cap, fontsize=8, ha="center",
                     color="#444")
     for a, b, label in EDGES:
+        ls = "--" if (a, b) in OPTIONAL else "-"
+        if box(a)[0] != box(b)[0] and box(a)[1] != box(b)[1]:
+            pts = bent(a, b)
+            ax.plot([p[0] for p in pts[:-1]], [p[1] for p in pts[:-1]],
+                    color="black", lw=1.6, ls=ls)
+            ax.annotate("", pts[-1], pts[-2],
+                        arrowprops=dict(arrowstyle="-|>", lw=1.6, ls=ls))
+            ax.text(pts[1][0] + 8, (pts[1][1] + pts[2][1]) / 2, label,
+                    fontsize=8.5, style="italic", va="center")
+            continue
         s, e = points(a, b)
-        ax.annotate("", e, s, arrowprops=dict(arrowstyle="-|>", lw=1.6))
+        ax.annotate("", e, s, arrowprops=dict(arrowstyle="-|>", lw=1.6,
+                                              ls=ls))
         if s[1] == e[1]:
             ax.text((s[0] + e[0]) / 2, s[1] - 8, label, fontsize=8.5,
                     style="italic", ha="center")
@@ -209,9 +230,13 @@ def drawio(out: Path) -> None:
                 f'x="{ix - 20:.0f}" y="{y + H - 30}" width="{iw + 40:.0f}" '
                 f'height="22" as="geometry"/></mxCell>')
     for i, (a, b, label) in enumerate(EDGES):
+        extra = "dashed=1;" if (a, b) in OPTIONAL else ""
+        if box(a)[0] != box(b)[0] and box(a)[1] != box(b)[1]:
+            extra += "exitX=0;exitY=0.5;entryX=0.72;entryY=0;"
         cells.append(f'<mxCell id="e{i}" value="{escape(label)}" '
                      'style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;'
-                     'endArrow=block;fontSize=11;fontStyle=2;" edge="1" '
+                     f'endArrow=block;fontSize=11;fontStyle=2;{extra}" '
+                     'edge="1" '
                      f'parent="1" source="{a}" target="{b}"><mxGeometry '
                      'relative="1" as="geometry"/></mxCell>')
     xml = ('<mxfile><diagram name="IngeTrazo workflow"><mxGraphModel '

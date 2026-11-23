@@ -91,9 +91,9 @@ scale and sheet number.
 |---|---|
 | ![Sheet_Tiles](images/sheet_tiles.png) | ![Sheet_Kitchen](images/sheet_kitchen.png) |
 
-## 6. Sheet sets (planned) and output
+## 6. Sheet sets (optional, planned) and output
 
-A **sheet set** bundles the sheets one trade or tender needs, in order and
+Sheets can be exported directly. Optionally, a **sheet set** bundles the sheets one trade or tender needs, in order and
 with its own cover page. Each trade gets exactly the drawings it needs, and
 nothing else. Until the feature exists, the demo uses one **sheet folder per
 trade**:

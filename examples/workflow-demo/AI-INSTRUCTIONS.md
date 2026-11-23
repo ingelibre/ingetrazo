@@ -74,8 +74,9 @@ Model tree ──► Layers ──► Saved views ──► Sheets ──► She
 - Before rendering or exporting a sheet, apply its view in the model once so
   that frames follow the view's layer visibility.
 
-## 7. Sheet sets (planned feature)
-- A sheet set is an ordered selection of sheets for one recipient – one trade
+## 7. Sheet sets (optional, planned feature)
+- Sheets can always be exported directly. Optionally, a sheet set is an
+  ordered selection of sheets for one recipient – one trade
   or tender (e.g. *Tiler*, *Kitchen fitter*, *Structural engineer*) – with its
   own cover and contents page, exported as one PDF.
 - Until the feature exists, use **one sheet folder per trade**
