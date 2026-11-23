@@ -129,8 +129,13 @@ def test_a_negative_factor_mirrors():
     assert tool._typed_factors(-1.0, absolute=False) == (-1.0, 1.0, 1.0)
 
 
-def test_zero_is_rejected():
+def test_zero_flattens_one_axis_but_never_all_of_them():
+    """A 0 on a face grip flattens that axis (#688); on every axis at once
+    it is still refused, as is anything else under 0.0001."""
     tool, _ = _armed_tool()
+    assert tool._typed_factors(0.0, absolute=False) == (0.0, 1.0, 1.0)
+    assert tool._typed_factors(0.00001, absolute=False) is None
+    tool.uniform = True
     assert tool._typed_factors(0.0, absolute=False) is None
 
 

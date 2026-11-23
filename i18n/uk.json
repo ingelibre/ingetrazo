@@ -1243,6 +1243,8 @@
  "Saved with missing textures": "Збережено з відсутніми текстурами",
  "Saved — {n} texture(s) packed into the document.": "Збережено — текстур, упакованих у документ: {n}.",
  "Scale": "Масштаб",
+ "Scale 0 flattens loose geometry only, not groups": "Масштаб 0 сплющує лише вільну геометрію, не групи",
+ "Scale 0 on every axis would leave a point": "Масштаб 0 за всіма осями залишив би точку",
  "Scale Uniformly: off": "Рівномірне масштабування: вимк.",
  "Scale Uniformly: on": "Рівномірне масштабування: увімк.",
  "Scale bar": "Масштабна лінійка",

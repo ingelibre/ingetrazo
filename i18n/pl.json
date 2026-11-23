@@ -1241,6 +1241,8 @@
  "Saved views": "Zapisane widoki",
  "Saved with missing textures": "Zapisano z brakującymi teksturami",
  "Scale": "Skala",
+ "Scale 0 flattens loose geometry only, not groups": "Skala 0 spłaszcza tylko luźną geometrię, nie grupy",
+ "Scale 0 on every axis would leave a point": "Skala 0 we wszystkich osiach zostawiłaby punkt",
  "Scale Uniformly: off": "Skalowanie proporcjonalne: wyłączone",
  "Scale Uniformly: on": "Skalowanie proporcjonalne: włączone",
  "Scale bar": "Podziałka liniowa",

@@ -47,6 +47,8 @@ from tools.base import Tool, ToolContext
 from tools.move import gather_images, gather_targets
 
 _MIN_FACTOR = 1e-4
+# A typed 0 on some axes flattens loose geometry onto the anchor's plane
+# (#688); anything else below _MIN_FACTOR stays refused.
 # Below this extent an axis is flat: it gets no grips and never scales
 # (a 2D face shows the 8-grip box instead of a degenerate 26).
 _FLAT = 1e-6
@@ -614,6 +616,15 @@ class ScaleTool(Tool):
         return True
 
     def on_value(self, viewport, value) -> bool:
+        self._refusal = None
+        try:
+            return self._on_value(viewport, value)
+        finally:
+            if getattr(self, "_refusal", None):
+                viewport.flash_status(self._refusal)
+                self._refusal = None
+
+    def _on_value(self, viewport, value) -> bool:
         absolute = False
         if isinstance(value, tuple) and value and value[0] == "abs_len":
             absolute, value = True, value[1]
@@ -654,13 +665,25 @@ class ScaleTool(Tool):
             mask = grip.mask
             ext = self._extents()
             active = tuple(i for i in range(3) if ext[i] > _FLAT)
+            loose = not self._groups and not self._images
         else:
-            uniform, mask, ext, active = spec
+            uniform, mask, ext, active, loose = spec
         values = value if isinstance(value, tuple) else (value,)
         if not all(isinstance(v, float) for v in values):
             return None
-        if any(abs(v) < _MIN_FACTOR for v in values):
+        if any(v != 0.0 and abs(v) < _MIN_FACTOR for v in values):
             return None
+        if any(v == 0.0 for v in values):
+            axes = active if uniform else mask
+            if not loose:
+                self._refusal = tr(
+                    "Scale 0 flattens loose geometry only, not groups")
+                return None
+            if len(values) == 1 or all(v == 0.0 for v in values):
+                if set(axes) >= set(active):
+                    self._refusal = tr(
+                        "Scale 0 on every axis would leave a point")
+                    return None
         axes = active if uniform else mask
         factors = [1.0, 1.0, 1.0]
         if len(values) == 1:
@@ -811,7 +834,8 @@ class ScaleTool(Tool):
         mask = grip.mask if grip is not None else (0, 1, 2)
         ext = self._extents() if self._lo is not None else (1.0, 1.0, 1.0)
         active = tuple(i for i in range(3) if ext[i] > _FLAT)
-        spec = (uniform, mask, ext, active)
+        spec = (uniform, mask, ext, active,
+                not self._groups and not self._images)
         anchor = QVector3D(self._anchor)
         box_axes = self._axes
         groups = list(self._groups)
@@ -834,7 +858,8 @@ class ScaleTool(Tool):
             return cmds[0] if len(cmds) == 1 else CompoundCommand(cmds)
 
         changed = any(abs(f - 1.0) > 1e-9 for f in factors)
-        if changed and all(abs(f) >= _MIN_FACTOR for f in factors):
+        if changed and all(f == 0.0 or abs(f) >= _MIN_FACTOR
+                           for f in factors):
             cmd = build(factors)
             if cmd is not None:
                 viewport.history.execute(cmd)

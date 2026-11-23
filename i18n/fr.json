@@ -1243,6 +1243,8 @@
  "Saved views": "Vues enregistrées",
  "Saved with missing textures": "Enregistré avec des textures manquantes",
  "Scale": "Échelle",
+ "Scale 0 flattens loose geometry only, not groups": "L'échelle 0 n'aplatit que la géométrie libre, pas les groupes",
+ "Scale 0 on every axis would leave a point": "L'échelle 0 sur tous les axes ne laisserait qu'un point",
  "Scale Uniformly: off": "Mise à l'échelle uniforme : désactivée",
  "Scale Uniformly: on": "Mise à l'échelle uniforme : activée",
  "Scale bar": "Échelle graphique",

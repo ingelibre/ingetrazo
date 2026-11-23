@@ -1241,6 +1241,8 @@
  "Saved views": "Gespeicherte Ansichten",
  "Saved with missing textures": "Mit fehlenden Texturen gespeichert",
  "Scale": "Skalieren",
+ "Scale 0 flattens loose geometry only, not groups": "Skalieren mit 0 ebnet nur lose Geometrie ein, keine Gruppen",
+ "Scale 0 on every axis would leave a point": "Skalieren mit 0 auf allen Achsen ließe nur einen Punkt übrig",
  "Scale Uniformly: off": "Gleichmäßig skalieren: aus",
  "Scale Uniformly: on": "Gleichmäßig skalieren: an",
  "Scale bar": "Maßstabsleiste",

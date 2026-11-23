@@ -1239,6 +1239,8 @@
  "Saved views": "Visualizações salvas",
  "Saved with missing textures": "Salvo com texturas ausentes",
  "Scale": "Escala",
+ "Scale 0 flattens loose geometry only, not groups": "Escala 0 só achata geometria solta, não grupos",
+ "Scale 0 on every axis would leave a point": "Escala 0 em todos os eixos deixaria um ponto",
  "Scale Uniformly: off": "Escalar Uniformemente: desativado",
  "Scale Uniformly: on": "Escalar Uniformemente: ativado",
  "Scale bar": "Barra de escala",

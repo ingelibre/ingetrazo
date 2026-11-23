@@ -1241,6 +1241,8 @@
  "Saved views": "已保存的视图",
  "Saved with missing textures": "带有缺失纹理的保存",
  "Scale": "比例尺",
+ "Scale 0 flattens loose geometry only, not groups": "缩放 0 只能压平散开的几何体，不能用于组",
+ "Scale 0 on every axis would leave a point": "在所有轴上缩放 0 只会剩下一个点",
  "Scale Uniformly: off": "均匀缩放: 关闭",
  "Scale Uniformly: on": "均匀缩放: 开启",
  "Scale bar": "比例尺",

@@ -1290,6 +1290,8 @@
  "Saved views": "المشاهدات المحفوظة",
  "Saved with missing textures": "تم الحفظ باستخدام القوام المفقود",
  "Saved — {n} texture(s) packed into the document.": "تم الحفظ — {n} مادة (مواد) معبأة في المستند.",
+ "Scale 0 flattens loose geometry only, not groups": "القياس 0 يسطّح الهندسة الحرة فقط، وليس المجموعات",
+ "Scale 0 on every axis would leave a point": "القياس 0 على كل المحاور سيترك نقطة",
  "Scale Uniformly: off": "مقياس موحد: إيقاف",
  "Scale Uniformly: on": "مقياس موحد: تشغيل",
  "Scene '{name}'": "المشهد \"{name}\"",

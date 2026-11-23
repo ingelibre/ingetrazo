@@ -1240,6 +1240,8 @@
  "Saved with missing textures": "已儲存，但缺少部分紋理",
  "Saved — {n} texture(s) packed into the document.": "已儲存 — {n} 個紋理已封裝進文件。",
  "Scale": "比例",
+ "Scale 0 flattens loose geometry only, not groups": "縮放 0 只能壓平散開的幾何體，不能用於群組",
+ "Scale 0 on every axis would leave a point": "在所有軸上縮放 0 只會剩下一個點",
  "Scale Uniformly: off": "等比例縮放：關",
  "Scale Uniformly: on": "等比例縮放：開",
  "Scale bar": "比例尺",

@@ -1240,6 +1240,8 @@
  "Saved views": "มุมมองที่บันทึกไว้",
  "Saved with missing textures": "บันทึกโดยไม่มีพื้นผิวบางส่วน",
  "Scale": "ปรับขนาด",
+ "Scale 0 flattens loose geometry only, not groups": "มาตราส่วน 0 ทำให้แบนได้เฉพาะรูปทรงที่ไม่อยู่ในกลุ่ม ไม่ใช่กลุ่ม",
+ "Scale 0 on every axis would leave a point": "มาตราส่วน 0 ทุกแกนจะเหลือเพียงจุดเดียว",
  "Scale Uniformly: off": "ปรับขนาดตามสัดส่วน: ปิด",
  "Scale Uniformly: on": "ปรับขนาดตามสัดส่วน: เปิด",
  "Scale bar": "แถบมาตราส่วน",

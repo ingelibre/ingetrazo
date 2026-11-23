@@ -1241,6 +1241,8 @@
  "Saved with missing textures": "Запазено с липсващи текстури",
  "Saved — {n} texture(s) packed into the document.": "Запазено — {n} текстура(и) са включени в документа.",
  "Scale": "Мащаб",
+ "Scale 0 flattens loose geometry only, not groups": "Мащаб 0 изравнява само свободна геометрия, не групи",
+ "Scale 0 on every axis would leave a point": "Мащаб 0 по всички оси би оставил точка",
  "Scale Uniformly: off": "Пропорционално мащабиране: изключено",
  "Scale Uniformly: on": "Пропорционално мащабиране: включено",
  "Scale bar": "Графичен мащаб",

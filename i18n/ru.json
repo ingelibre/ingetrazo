@@ -1242,6 +1242,8 @@
  "Saved views": "Сохраненные виды",
  "Saved with missing textures": "Сохранено с отсутствующими текстурами",
  "Scale": "Масштаб",
+ "Scale 0 flattens loose geometry only, not groups": "Масштаб 0 сплющивает только свободную геометрию, не группы",
+ "Scale 0 on every axis would leave a point": "Масштаб 0 по всем осям оставил бы точку",
  "Scale Uniformly: off": "Равномерный масштаб: выкл",
  "Scale Uniformly: on": "Равномерный масштаб: вкл",
  "Scale bar": "Масштабная линейка",

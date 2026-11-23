@@ -1118,6 +1118,8 @@
   "Saved views": "Kaydedilen görünümler",
   "Saved with missing textures": "Eksik dokularla kaydedildi.",
   "Scale": "Ölçekle",
+  "Scale 0 flattens loose geometry only, not groups": "Ölçek 0 yalnızca serbest geometriyi düzler, grupları değil",
+  "Scale 0 on every axis would leave a point": "Tüm eksenlerde ölçek 0 yalnızca bir nokta bırakır",
   "Scale Uniformly: off": "Orantılı ölçekle: kapalı",
   "Scale Uniformly: on": "Orantılı ölçekle: açık",
   "Scale bar": "Ölçek çubuğu",
