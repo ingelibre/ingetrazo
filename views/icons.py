@@ -1845,6 +1845,16 @@ def _shadows_icon(p, ink):
     p.restore()
 
 
+def _receive_shadows_icon(p, ink):
+    p.drawRoundedRect(QRectF(9, 12, 30, 25), 3, 3)
+    p.save()
+    p.setPen(Qt.NoPen)
+    p.setBrush(QColor(ink.red(), ink.green(), ink.blue(), 115))
+    p.drawPolygon(QPolygonF([QPointF(11, 35), QPointF(37, 14),
+                             QPointF(37, 35)]))
+    p.restore()
+
+
 # ---- Layers (the Layers toolbar and tab) -------------------------------------
 # A layer is drawn as wide sheets stacked down to the left, the front one in
 # the accent — the same rounded cards as Styles, turned on their side, so
@@ -3013,6 +3023,7 @@ _DRAW = {
     "terrain_contours": _terrain_contours, "terrain_points": _terrain_points,
     "terrain_height": _terrain_height,
     "styles": _styles_icon, "fog": _fog_icon, "shadows": _shadows_icon,
+    "receive_shadows": _receive_shadows_icon,
     "panel_properties": _panel_properties, "panel_bim": _panel_bim,
     "panel_terrain": _panel_terrain, "panel_browser": _panel_browser,
     "panel_ai": _panel_ai, "panel_render": _panel_render,

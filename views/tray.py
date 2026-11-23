@@ -5586,6 +5586,26 @@ class EntityInfoPanel(QWidget):
             "there is one behind, and moves it with it"))
         self._opening_box.toggled.connect(self._on_opening_toggled)
         lay.addWidget(self._opening_box)
+        self._selection_actions = QWidget()
+        actions = QHBoxLayout(self._selection_actions)
+        actions.setContentsMargins(0, 0, 0, 0)
+        self._visibility_button = QToolButton()
+        self._visibility_button.clicked.connect(self._toggle_selection_visibility)
+        actions.addWidget(self._visibility_button)
+        self._lock_button = QToolButton()
+        self._lock_button.clicked.connect(self._toggle_selection_lock)
+        actions.addWidget(self._lock_button)
+        self._cast_shadows_button = QToolButton()
+        self._receive_shadows_button = QToolButton()
+        for button, casting in ((self._cast_shadows_button, True),
+                                (self._receive_shadows_button, False)):
+            button.setCheckable(True)
+            button.clicked.connect(
+                lambda _checked=False, cast=casting: self._toggle_shadows(cast))
+            actions.addWidget(button)
+        actions.addStretch()
+        lay.addWidget(self._selection_actions)
+        self._selection_actions.hide()
         # A steady height. Selecting something used to resize this panel —
         # one line for nothing, two for an edge, four and a layer row for a
         # face — and everything below it (layers, scenes, the materials
@@ -5623,6 +5643,76 @@ class EntityInfoPanel(QWidget):
                                    or self._curve is not None)
         self._refresh_layer(sel)
         self._refresh_opening(sel)
+        self._refresh_selection_actions(sel)
+
+    def _refresh_selection_actions(self, selection) -> None:
+        from core.history import _is_hidden
+        from views.outliner import mark_icon
+
+        hideable = [e for e in selection if isinstance(e, (Edge, Face, Group))]
+        groups = [e for e in selection if isinstance(e, Group)]
+        self._selection_actions.setVisible(bool(hideable))
+        self._visibility_button.setVisible(bool(hideable))
+        hidden = bool(hideable) and all(_is_hidden(e) for e in hideable)
+        self._visibility_button.setIcon(mark_icon("eye_off" if hidden else "eye"))
+        tip = tr("Show selection") if hidden else tr("Hide selection")
+        self._visibility_button.setToolTip(tip)
+        self._visibility_button.setAccessibleName(tip)
+        self._lock_button.setVisible(bool(groups))
+        locked = any(g.locked for g in groups)
+        self._lock_button.setIcon(mark_icon("lock" if locked else "lock_open"))
+        tip = tr("Unlock selected objects") if locked else tr("Lock selected objects")
+        self._lock_button.setToolTip(tip)
+        self._lock_button.setAccessibleName(tip)
+
+        from views.icons import tool_icon
+        for button, field, icon, enable, disable in (
+            (self._cast_shadows_button, "casts_shadows", "shadows",
+             tr("Cast shadows"), tr("Don't cast shadows")),
+            (self._receive_shadows_button, "receives_shadows", "receive_shadows",
+             tr("Receive shadows"), tr("Don't receive shadows")),
+        ):
+            enabled = bool(groups) and all(getattr(g, field) for g in groups)
+            button.setVisible(bool(groups))
+            button.setChecked(enabled)
+            button.setIcon(tool_icon(icon))
+            button.setToolTip(disable if enabled else enable)
+            button.setAccessibleName(disable if enabled else enable)
+
+    def _toggle_shadows(self, casting: bool) -> None:
+        from core.history import GroupShadowCommand
+
+        viewport = self._window.viewport
+        groups = [g for g in viewport.scene.selection if isinstance(g, Group)]
+        if not groups:
+            return
+        field = "casts_shadows" if casting else "receives_shadows"
+        enabled = not all(getattr(g, field) for g in groups)
+        viewport.history.execute(GroupShadowCommand(
+            groups, casting=casting, enabled=enabled))
+        self._refresh_selection_actions(viewport.scene.selection)
+        viewport.update()
+
+    def _toggle_selection_visibility(self) -> None:
+        from core.history import _is_hidden
+
+        selection = self._window.viewport.scene.selection
+        targets = [e for e in selection if isinstance(e, (Edge, Face, Group))]
+        if targets and all(_is_hidden(e) for e in targets):
+            self._window._on_unhide_selected()
+        elif targets:
+            self._window._on_hide()
+
+    def _toggle_selection_lock(self) -> None:
+        from core.history import LockCommand
+
+        viewport = self._window.viewport
+        groups = [g for g in viewport.scene.selection if isinstance(g, Group)]
+        if any(g.locked for g in groups):
+            viewport.history.execute(LockCommand(groups, False))
+            viewport.update()
+        elif groups:
+            self._window._lock_groups(groups)
 
     # ---- Cut opening --------------------------------------------------------
     def _refresh_opening(self, sel: list) -> None:

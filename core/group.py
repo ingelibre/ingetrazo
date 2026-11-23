@@ -80,7 +80,12 @@ class Group:
     __slots__ = ("mesh", "name", "layer", "ifc", "billboard", "xform",
                  "children", "owner", "context", "text3d", "hidden", "uid",
                  "material", "axes", "component", "exploded",
-                 "explode_offset", "ext", "locked", "images", "source")
+                 "explode_offset", "ext", "locked", "images", "source",
+                 "casts_shadows", "receives_shadows")
+
+    @property
+    def shadow_flags(self) -> int:
+        return int(not self.casts_shadows) | (int(not self.receives_shadows) << 1)
 
     def __init__(self, mesh: Mesh | None = None, name: str | None = None) -> None:
         self.mesh = mesh if mesh is not None else Mesh()
@@ -113,6 +118,8 @@ class Group:
         # Structure plugin of #87 kept it outside the document: «the
         # padlock function is not saved in the .igz file»).
         self.locked = False
+        self.casts_shadows = True
+        self.receives_shadows = True
         #: The external file this component was loaded from — its file
         #: name, from Insert (a document), the component library or the
         #: kept components of another document — or ``None`` for one
@@ -841,6 +848,8 @@ def copy_group(group, delta=None, _in_definition=False):
     g.ext = copy.deepcopy(group.ext) if getattr(group, "ext", None) else None
     g.hidden = group.hidden
     g.locked = getattr(group, "locked", False)
+    g.casts_shadows = group.casts_shadows
+    g.receives_shadows = group.receives_shadows
     g.source = getattr(group, "source", None)
     g.material = dict(group.material) if getattr(group, "material", None) else None
     g.component = getattr(group, "component", True)

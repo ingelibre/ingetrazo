@@ -11,6 +11,8 @@ layout(location = 3) in vec4 a_inst0;
 layout(location = 4) in vec4 a_inst1;
 layout(location = 5) in vec4 a_inst2;
 layout(location = 6) in vec4 a_inst3;
+layout(location = 7) in float a_shadow_flags;
+flat out int v_shadow_flags;
 
 uniform mat4 u_mvp;
 // Section cut: world-space planes as (n, d) with the KEPT
@@ -49,6 +51,7 @@ flat out vec4 v_line_clip;
 
 void main() {
     v_uv = a_uv;
+    v_shadow_flags = int(round(a_shadow_flags * 255.0));
     v_color = a_color;
     // World position: instanced draws bake local coords and carry the
     // transform per instance; everything else has identity here (buffers

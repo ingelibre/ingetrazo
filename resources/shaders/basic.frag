@@ -41,6 +41,8 @@ uniform float u_fog_end;
 // how dark a shadowed fragment goes, and the depth-compare bias. Enabled
 // only around the geometry passes — sky, overlays and previews stay unlit.
 uniform int u_shadow_enable;
+uniform int u_instance_no_receive;
+flat in int v_shadow_flags;
 uniform sampler2D u_shadow_map;
 uniform mat4 u_light_vp;
 // The face-me figures' shadow map (unit 2): same light matrix as the
@@ -241,6 +243,7 @@ float map_light(sampler2D m) {
 // kept across orbits) and the face-me figures' own map, drawn as the
 // figures are drawn — facing the camera — so their shadow follows them.
 float shadow_light() {
+    if ((v_shadow_flags & 2) != 0 || u_instance_no_receive != 0) return 1.0;
     float lit = map_light(u_shadow_map);
     if (u_fig_shadow_enable == 1) {
         lit = min(lit, map_light(u_fig_shadow_map));

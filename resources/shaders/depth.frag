@@ -16,9 +16,11 @@ uniform float u_bias_const;
 uniform float u_bias_slope_max;
 
 in vec2 v_uv;
+flat in int v_shadow_flags;
 out vec4 fragColor;
 
 void main() {
+    if ((v_shadow_flags & 1) != 0) discard;
     if (u_use_texture == 1 && texture(u_tex, v_uv).a < 0.5) {
         discard;
     }

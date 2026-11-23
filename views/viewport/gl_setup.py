@@ -87,6 +87,7 @@ class GLSetupMixin:
         self._loc_fog_color = self._program.uniformLocation("u_fog_color")
         self._loc_fog_start = self._program.uniformLocation("u_fog_start")
         self._loc_fog_end = self._program.uniformLocation("u_fog_end")
+        self._loc_instance_no_receive = self._program.uniformLocation("u_instance_no_receive")
         self._loc_pos = self._program.attributeLocation("a_pos")
         self._loc_uv = self._program.attributeLocation("a_uv")
         self._loc_use_tex = self._program.uniformLocation("u_use_texture")
@@ -175,6 +176,8 @@ class GLSetupMixin:
         self._sel_faces_vao, self._sel_faces_vbo = self._create_dynamic()
         self._faces_vao, self._faces_vbo = self._create_dynamic_vcol()
         self._tex_faces_vao, self._tex_faces_vbo = self._create_dynamic_uv()
+        self._face_shadow_flags = self._create_shadow_flags()
+        self._tex_shadow_flags = self._create_shadow_flags()
         self._billboard_vao, self._billboard_vbo = self._create_dynamic_uv()
         self._bb_sel_vao, self._bb_sel_vbo = self._create_dynamic()
         self._hover_faces_vao, self._hover_faces_vbo = self._create_dynamic()
@@ -508,6 +511,26 @@ class GLSetupMixin:
         vbo.release()
         vao.release()
         return vao, vbo
+
+    def _create_shadow_flags(self):
+        vbo = QOpenGLBuffer(QOpenGLBuffer.VertexBuffer)
+        vbo.setUsagePattern(QOpenGLBuffer.DynamicDraw)
+        vbo.create()
+        return vbo
+
+    def _upload_shadow_flags(self, vao, vbo, sections) -> None:
+        """Bind one byte per vertex only when a draw buffer has exceptions."""
+        vao.bind()
+        if any(flag and count for count, flag in sections):
+            data = b"".join(bytes((flag,)) * count for count, flag in sections)
+            vbo.bind()
+            vbo.allocate(data, len(data))
+            self._program.setAttributeBuffer(7, 0x1401, 0, 1, 1)  # GL_UNSIGNED_BYTE
+            self._program.enableAttributeArray(7)
+            vbo.release()
+        else:
+            self._program.disableAttributeArray(7)
+        vao.release()
 
     def _create_dynamic_uv(self):
         """A dynamic VAO/VBO interleaving position (3f) + UV (2f) per vertex —

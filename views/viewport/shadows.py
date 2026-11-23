@@ -487,6 +487,10 @@ class ShadowMixin:
             self._frame_planes = saved
         extra = self.context().extraFunctions()
         for mesh, paint, groups, mirrored in by_proto.values():
+            if groups.no_cast:
+                groups = [g for g in groups if g.casts_shadows]
+                if not groups:
+                    continue
             entry = self._proto_view(self._ensure_proto_draw(mesh, paint),
                                      mirrored)
             n = self._update_inst_matrices(entry, groups)
@@ -545,7 +549,7 @@ class ShadowMixin:
         corners = []
         feet_v = []
         for g in self._faceme_figures():
-            if getattr(g, "billboard", False) is not True:
+            if not g.casts_shadows or getattr(g, "billboard", False) is not True:
                 continue           # mesh face-me figures cast no shadow
             quad = self._billboard_quad(g)
             if quad is None or not quad[1]:

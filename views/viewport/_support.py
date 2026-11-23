@@ -822,7 +822,7 @@ class _InstanceBatch(list):
     read per placement. ``split``: which of them are the surroundings of
     the open group (``InstancingMixin._instanced_batches``)."""
 
-    __slots__ = ("idx", "mats", "split")
+    __slots__ = ("idx", "mats", "split", "no_cast", "no_receive")
 
 
 #: The CPU side of a document's bakes — the render/pick chunks of its

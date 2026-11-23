@@ -887,6 +887,10 @@ def _save_document(scene, path, *, large, stream=None, thumbnail=None,
                 entry["hidden"] = True
             if getattr(g, "locked", False):
                 entry["locked"] = True          # older readers ignore it
+            if not g.casts_shadows:
+                entry["casts_shadows"] = False
+            if not g.receives_shadows:
+                entry["receives_shadows"] = False
             if getattr(g, "source", None):
                 # The external file a component was loaded from (a model
                 # resize keeps it at its size); older readers ignore it.
@@ -2000,6 +2004,8 @@ def _load_into_inner(scene, path: Path, progress=None) -> None:
             group.hidden = True
         if raw.get("locked"):
             group.locked = True
+        group.casts_shadows = raw.get("casts_shadows") is not False
+        group.receives_shadows = raw.get("receives_shadows") is not False
         if raw.get("source"):
             group.source = str(raw["source"])
         if isinstance(raw.get("material"), dict):

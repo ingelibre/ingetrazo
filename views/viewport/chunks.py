@@ -673,6 +673,16 @@ class ChunkCacheMixin:
         from core.materials import back_is_default
         group_texture: dict = {}     # chunk byte-parts per image path
         face_parts: list = []        # interleaved vcol byte chunks
+        face_flags = []
+        tcol_flags = {}
+        ttex_flags = {}
+        edit_group = self.scene.edit_group
+        edit_flags = edit_group.shadow_flags if edit_group is not None else 0
+        if edit_group is not None:
+            for placement in draw_groups:
+                if placement.mesh is edit_group.mesh and not self._draws_in_edit_context(placement):
+                    edit_flags = placement.shadow_flags
+                    break
 
         tcol_runs: dict = {}         # opacity -> [byte parts] (translucent colour)
         ttex_runs: dict = {}         # (path, opacity) -> [byte parts]
@@ -819,10 +829,11 @@ class ChunkCacheMixin:
                     dback_start += sz["d"] // 12
                 # (one part per object, empty or not: as many as before)
                 face_parts.append(_zeros(sz.get("f", 0)))
+                face_flags.append((sz.get("f", 0) // 24, 0))
                 gface_start += sz.get("f", 0) // 24
                 for path, n in (sz.get("t") or {}).items():
                     group_texture.setdefault(path, []).append(
-                        (_zeros(n), None, False))
+                        (_zeros(n), None, False, 0))
                 # Its share of the translucent and back-side runs too: the
                 # runs keep their sizes, and their joins their parts.
                 runs = sz.get("runs") or {}
@@ -864,10 +875,11 @@ class ChunkCacheMixin:
                     dback_parts.append(_pv_hole(chunk["dback"]))
                     dback_start += len(chunk["dback"]) // 12
                 face_parts.append(_pv_hole(chunk["vcol"]))
+                face_flags.append((len(chunk["vcol"]) // 24, 0))
                 gface_start += len(chunk["vcol"]) // 24
                 for path, raw in chunk["by_texture"].items():
                     group_texture.setdefault(path, []).append(
-                        (_pv_hole(raw), None, False))
+                        (_pv_hole(raw), None, False, 0))
                 sl.sizes.update(
                     f=len(chunk["vcol"]), d=len(chunk.get("dback") or b""),
                     t={p: len(r) for p, r in chunk["by_texture"].items()})
@@ -915,6 +927,7 @@ class ChunkCacheMixin:
                                     len(chunk["dback"]) // 12))
                 dback_start += len(chunk["dback"]) // 12
             face_parts.append(chunk["vcol"])
+            face_flags.append((len(chunk["vcol"]) // 24, g.shadow_flags))
             group_face_spans.append((chunk.get("bbox"), gface_start,
                                      len(chunk["vcol"]) // 24))
             gface_start += len(chunk["vcol"]) // 24
@@ -928,11 +941,17 @@ class ChunkCacheMixin:
             subj = not self._draws_in_edit_context(g)
             for path, raw in chunk["by_texture"].items():
                 group_texture.setdefault(path, []).append(
-                    (raw, chunk.get("bbox"), subj))
+                    (raw, chunk.get("bbox"), subj, g.shadow_flags))
             for a, raw in chunk.get("tcol", {}).items():
-                tcol_runs.setdefault(a, []).append(raw)
+                parts = tcol_runs.setdefault(a, [])
+                if g.shadow_flags:
+                    tcol_flags.setdefault(a, {})[len(parts)] = g.shadow_flags
+                parts.append(raw)
             for key, raw in chunk.get("ttex", {}).items():
-                ttex_runs.setdefault(key, []).append(raw)
+                parts = ttex_runs.setdefault(key, [])
+                if g.shadow_flags:
+                    ttex_flags.setdefault(key, {})[len(parts)] = g.shadow_flags
+                parts.append(raw)
             if chunk.get("back_vcol"):
                 back_vcol_parts.append(chunk["back_vcol"])
             for key, raw in chunk.get("back_tex", {}).items():
@@ -952,6 +971,7 @@ class ChunkCacheMixin:
         # Loose faces sit at the front of the VBO and always draw; group spans
         # follow them, and a bucketed subject block closes the buffer.
         loose_n = len(vcol) // 6
+        face_flags = [(loose_n, edit_flags)] + face_flags + [(len(subj_raw) // 24, edit_flags)]
         self._face_spans = ([(None, 0, loose_n)]
                             + [(bb, loose_n + s, n)
                                for bb, s, n in group_face_spans])
@@ -977,6 +997,7 @@ class ChunkCacheMixin:
             self._face_room_at = at
             if at > main:
                 all_face_parts.append(_zeros(at - main))
+                face_flags.append(((at - main) // 24, 0))
         else:
             self._face_room_at = None
         # Translucent colour runs live in the SAME VBO, after the opaque
@@ -990,12 +1011,16 @@ class ChunkCacheMixin:
         for key in sorted(tcol_runs):
             a, fc = key
             run = pieces(tcol_runs[key])
+            flags = tcol_flags.get(key, {})
+            face_flags.extend((len(raw) // 24, flags.get(i, 0))
+                              for i, raw in enumerate(tcol_runs[key]))
             all_face_parts += run
             count = sum(map(len, run)) // 24
             self._tcol_runs.append((a, fc, start, count))
             self._face_transparency_runs.append(transparency_run(
                 run, start, 6, a, side="front" if fc else "both"))
             start += count
+        opaque_and_translucent_end = start
         run = pieces(back_vcol_parts)
         self._back_vcol_run = (start, sum(map(len, run)) // 24)
         all_face_parts += run
@@ -1013,6 +1038,9 @@ class ChunkCacheMixin:
             self._face_transparency_runs.append(transparency_run(run, start, 6, a, side="back"))
             start += count
         self._upload_vbo(self._faces_vbo, "faces", all_face_parts, empty=48)
+        face_flags.append((start - opaque_and_translucent_end, 0))
+        self._upload_shadow_flags(self._faces_vao, self._face_shadow_flags,
+                                  face_flags)
 
         # Default-back tint buffer: loose head, group chunks, bucketed
         # subject tail — the same shape as the faces buffer, so the fade
@@ -1037,6 +1065,7 @@ class ChunkCacheMixin:
 
         # Textured faces: one interleaved (pos+uv) VBO, a run per image path.
         tex_parts = []
+        tex_flags = []
         self._tex_runs = []
         # per run: [(bbox, start, count, is_subject)] — the flag lets the fade
         # pass tell the edited group's textured faces from its surroundings,
@@ -1047,17 +1076,18 @@ class ChunkCacheMixin:
                                  + list(subj_by_texture)):
             run_start = start
             run_parts: list = []
-            parts = ([(by_texture[key].tobytes(), None, False)]
+            parts = ([(by_texture[key].tobytes(), None, False, edit_flags)]
                      if key in by_texture else [])
             parts += group_texture.get(key, [])
             # A bucketed subject's textured faces are the subject too, so the
             # fade pass must not wash them out with the surroundings.
             if key in subj_by_texture:
-                parts.append((subj_by_texture[key].tobytes(), None, True))
-            for raw, bb, subj in parts:
+                parts.append((subj_by_texture[key].tobytes(), None, True, edit_flags))
+            for raw, bb, subj, flags in parts:
                 tex_parts.append(raw)
                 n = len(raw) // 20
                 run_parts.append((bb, start, n, subj))
+                tex_flags.append((n, flags))
                 start += n
             self._tex_runs.append((key, run_start, start - run_start))
             self._tex_run_parts.append(run_parts)
@@ -1069,12 +1099,16 @@ class ChunkCacheMixin:
         for full in sorted(ttex_runs):
             key, a, fc = full
             run = pieces(ttex_runs[full])
+            flags = ttex_flags.get(full, {})
+            tex_flags.extend((len(raw) // 20, flags.get(i, 0))
+                             for i, raw in enumerate(ttex_runs[full]))
             tex_parts += run
             count = sum(map(len, run)) // 20
             self._ttex_runs.append((key, a, fc, start, count))
             self._face_transparency_runs.append(transparency_run(
                 run, start, 5, a, path=key[0], shade=key[1], side="front" if fc else "both"))
             start += count
+        opaque_and_translucent_end = start
         self._back_tex_runs = []
         for key in sorted(back_tex_runs):
             run = pieces(back_tex_runs[key])
@@ -1092,6 +1126,9 @@ class ChunkCacheMixin:
             self._face_transparency_runs.append(transparency_run(
                 run, start, 5, a, path=key[0], shade=key[1], side="back"))
             start += count
+        tex_flags.append((start - opaque_and_translucent_end, 0))
+        self._upload_shadow_flags(self._tex_faces_vao, self._tex_shadow_flags,
+                                  tex_flags)
         self._tex_faces_count = self._upload_vbo(
             self._tex_faces_vbo, "tex", tex_parts, empty=40) // 20
 
