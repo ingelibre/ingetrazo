@@ -294,6 +294,10 @@ class History:
         # looks for its own command on top of the stack (a hot retype)
         # still finds it.
         self._follow_openings(cmd, openings_before)
+        # The followers run after the tagging above, and a cut or healed
+        # opening draws its own rim edges and reveal faces (#1366: that
+        # geometry is new too, so it takes the active layer as well).
+        self._tag_new_objects(objs_before)
         self._keep_paint_cv(cmd, before)
         self.undo_stack.append(cmd)
         cap = int(getattr(self, "max_steps", 0) or 0)
