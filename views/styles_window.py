@@ -19,7 +19,9 @@ class StylesWindow(QDialog):
         self.setWindowIcon(tool_icon("styles"))
         self.setModal(False)
         self.setSizeGripEnabled(True)
-        self.resize(400, 560)
+        # Wide enough for the Background page's sections: a label column
+        # and a slider with its value side by side.
+        self.resize(460, 620)
         self.setMinimumSize(340, 420)
 
         layout = QVBoxLayout(self)

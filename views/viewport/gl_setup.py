@@ -75,6 +75,8 @@ class GLSetupMixin:
 
         self._program = self._compile_program()
         self._style_ground_program = None
+        self._panorama_program = None
+        self._panorama_cache = None
         self._watermark_textures = {}
         self._loc_mvp = self._program.uniformLocation("u_mvp")
         self._loc_color = self._program.uniformLocation("u_color")
@@ -770,6 +772,10 @@ class GLSetupMixin:
         self._forget_frame_records()
         self.makeCurrent()
         try:
+            panorama = getattr(self, "_panorama_cache", None)
+            if panorama is not None and panorama[1] is not None:
+                panorama[1].destroy()
+            self._panorama_cache = None
             watermarks = getattr(self, "_watermark_textures", None)
             if watermarks:
                 for _key, texture in watermarks.values():

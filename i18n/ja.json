@@ -4349,5 +4349,20 @@
  "Push/Pull bases kept with Ctrl stay sound and cracked results are refused (#1155).": "プッシュ/プルで Ctrl により残したベースが健全に保たれ、ひびの入った結果は拒否されます (#1155)。",
  "Camera roll with a 3D mouse (#1406).": "3D マウスによるカメラのロール (#1406)。",
  "A preference to swap orbit and pan on the middle button (#467).": "中ボタンのオービットとパンを入れ替える設定 (#467)。",
- "IFC export writes the project north, the site location and the owning application (#1498).": "IFC 書き出しでプロジェクトの北、敷地の位置、所有アプリケーションを書き込みます (#1498)。"
+ "IFC export writes the project north, the site location and the owning application (#1498).": "IFC 書き出しでプロジェクトの北、敷地の位置、所有アプリケーションを書き込みます (#1498)。",
+ "A 360° picture (equirectangular, 2:1) — JPG, PNG or HDR — shown instead of the sky. Visible with the sky on, in perspective.": "空の代わりに表示する 360° 画像（正距円筒図法、2:1）— JPG、PNG、HDR。空がオンで透視投影のときに表示されます。",
+ "Remove the panorama": "パノラマを削除",
+ "Rotation:": "回転:",
+ "Turns the panorama around the vertical, to line up the sun or a street with the model": "太陽や通りをモデルに合わせるため、パノラマを鉛直軸まわりに回転します",
+ "Exposure:": "露出:",
+ "Brighter or darker, in stops — for HDR pictures": "明るく・暗く（段数）— HDR 画像用",
+ "Choose a 360° panorama": "360° パノラマを選択",
+ "Panoramas (*.hdr *.jpg *.jpeg *.png)": "パノラマ (*.hdr *.jpg *.jpeg *.png)",
+ "HDR image (*.hdr)": "HDR 画像 (*.hdr)",
+ "Pictures (*.jpg *.jpeg *.png)": "画像 (*.jpg *.jpeg *.png)",
+ "Panorama": "パノラマ",
+ "This picture cannot be used as a panorama:\n{error}": "この画像はパノラマとして使用できません:\n{error}",
+ "The picture is not 2:1: a 360° panorama will look stretched.": "画像が 2:1 ではありません。360° パノラマが引き伸ばされて見えます。",
+ "Sky and ground": "空と地面",
+ "Image:": "画像:"
 }

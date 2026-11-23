@@ -4130,7 +4130,9 @@ class StylesPanel(QWidget):
         for _title, _key in self._CATEGORIES:
             content = QWidget()
             grid = QGridLayout(content)
-            grid.setContentsMargins(0, 4, 0, 8)
+            # Room on the right keeps the scroll bar off the swatches and
+            # fields, as on the Preferences pages.
+            grid.setContentsMargins(2, 4, 12, 8)
             grid.setHorizontalSpacing(12)
             grid.setVerticalSpacing(10)
             grid.setColumnStretch(1, 1)
@@ -4138,7 +4140,13 @@ class StylesPanel(QWidget):
             scroll = QScrollArea()
             scroll.setFrameShape(QFrame.NoFrame)
             scroll.setWidgetResizable(True)
+            # Only up and down, like every scrolling page of the app: the
+            # controls shrink with the window instead (see _panorama_btn).
+            scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
             scroll.setWidget(content)
+            # The page's own colour, not a darker box inside the tab.
+            scroll.viewport().setAutoFillBackground(False)
+            content.setAutoFillBackground(False)
             self._edit_stack.addWidget(scroll)
         layout.addWidget(self._edit_stack, 1)
         edges, faces, background, watermark, modeling = grids
@@ -4325,6 +4333,24 @@ class StylesPanel(QWidget):
         xray_row.addWidget(self._xray_opacity)
         faces.addLayout(xray_row, 5, 1)
 
+        # Three parts, folding like the Camera Settings' and the side
+        # panels' sections; their label columns line up (_align_sections).
+        from views.fold_section import FoldSection
+        page_grid = background
+
+        def section(title: str, key: str, row: int) -> QGridLayout:
+            sec = FoldSection(title, f"styles/open/{key}")
+            body = QGridLayout(sec.body)
+            body.setContentsMargins(10, 8, 10, 10)
+            body.setHorizontalSpacing(12)
+            body.setVerticalSpacing(10)
+            body.setColumnStretch(1, 1)
+            page_grid.addWidget(sec, row, 0, 1, 2)
+            self._background_sections.append(sec)
+            return body
+
+        self._background_sections = []
+        background = section(tr("Sky and ground"), "sky", 0)
         background.addWidget(QLabel(tr("Background:")), 0, 0)
         self._bg_c = self._swatch(
             tr("Background — visible with the sky off"), "background")
@@ -4363,6 +4389,67 @@ class StylesPanel(QWidget):
         background.addWidget(QLabel(tr("Horizon:")), 5, 0)
         self._horizon_c = self._swatch(tr("Horizon color"), "horizon_color")
         background.addWidget(self._horizon_c, 5, 1)
+        # A 360° panorama in place of the sky (core/panorama_backdrop.py).
+        background = section(tr("Panorama"), "panorama", 1)
+        self._panorama_label = QLabel(tr("Image:"))
+        background.addWidget(self._panorama_label, 0, 0)
+        pano_row = QHBoxLayout()
+        self._panorama_btn = QPushButton(tr("Choose…"))
+        self._panorama_btn.setAutoDefault(False)
+        # A long file name must not widen the panel (in the Styles window
+        # it pushed the colour swatches and «×» out of sight).
+        self._panorama_btn.setSizePolicy(QSizePolicy.Ignored,
+                                         QSizePolicy.Fixed)
+        self._panorama_btn.setMinimumWidth(60)
+        self._panorama_btn.setProperty("help", tr(
+            "A 360° picture (equirectangular, 2:1) — JPG, PNG or HDR — "
+            "shown instead of the sky. Visible with the sky on, in "
+            "perspective."))
+        self._panorama_btn.setToolTip(self._panorama_btn.property("help"))
+        self._panorama_btn.setAccessibleName(tr("Panorama"))
+        self._panorama_btn.clicked.connect(self._pick_panorama)
+        pano_row.addWidget(self._panorama_btn, 1)
+        self._panorama_clear = QPushButton("×")
+        self._panorama_clear.setAutoDefault(False)
+        self._panorama_clear.setFixedWidth(28)
+        self._panorama_clear.setToolTip(tr("Remove the panorama"))
+        self._panorama_clear.setAccessibleName(tr("Remove the panorama"))
+        self._panorama_clear.clicked.connect(self._clear_panorama)
+        pano_row.addWidget(self._panorama_clear)
+        background.addLayout(pano_row, 0, 1)
+        self._panorama_rot_label = QLabel(tr("Rotation:"))
+        background.addWidget(self._panorama_rot_label, 1, 0)
+        self._panorama_rotation = QDoubleSpinBox()
+        self._panorama_rotation.setRange(-360.0, 360.0)
+        self._panorama_rotation.setDecimals(0)
+        self._panorama_rotation.setSingleStep(5.0)
+        self._panorama_rotation.setWrapping(True)
+        self._panorama_rotation.setSuffix(" °")
+        self._panorama_rotation.setToolTip(tr(
+            "Turns the panorama around the vertical, to line up the sun or a "
+            "street with the model"))
+        self._panorama_rotation.setAccessibleName(tr("Rotation:"))
+        self._panorama_rotation.valueChanged.connect(self._apply_edits)
+        background.addWidget(self._panorama_rotation, 1, 1)
+        self._panorama_exp_label = QLabel(tr("Exposure:"))
+        background.addWidget(self._panorama_exp_label, 2, 0)
+        self._panorama_exposure = QDoubleSpinBox()
+        self._panorama_exposure.setRange(-10.0, 10.0)
+        self._panorama_exposure.setDecimals(1)
+        self._panorama_exposure.setSingleStep(0.5)
+        self._panorama_exposure.setSuffix(" EV")
+        self._panorama_exposure.setToolTip(tr(
+            "Brighter or darker, in stops — for HDR pictures"))
+        self._panorama_exposure.setAccessibleName(tr("Exposure:"))
+        self._panorama_exposure.valueChanged.connect(self._apply_edits)
+        background.addWidget(self._panorama_exposure, 2, 1)
+        # Fog lives here, with the rest of the backdrop: it is part of the
+        # style (core.style), and a separate toolbar button hid that.
+        background = section(tr("Fog"), "fog", 2)
+        self.fog = FogPanel(self._window, changed=self._fog_changed,
+                            grid=background, row=0)
+        self._align_sections()
+        background = page_grid
 
         self._fill = QCheckBox(tr("Section Fill"))
         self._fill.toggled.connect(self._apply_edits)
@@ -4580,6 +4667,20 @@ class StylesPanel(QWidget):
             return (1.0, 1.0, 1.0)
         return getattr(style, attr)
 
+    def _align_sections(self) -> None:
+        """One label column for the Background page's sections, so their
+        swatches and fields start at the same x as if in one table."""
+        grids = [sec.body.layout() for sec in self._background_sections]
+        width = 0
+        for grid in grids:
+            for i in range(grid.count()):
+                _r, column, _rs, span = grid.getItemPosition(i)
+                widget = grid.itemAt(i).widget()
+                if column == 0 and span == 1 and widget is not None:
+                    width = max(width, widget.sizeHint().width())
+        for grid in grids:
+            grid.setColumnMinimumWidth(0, width)
+
     def _swatch(self, title: str, attr: str) -> QPushButton:
         btn = QPushButton()
         btn.setAutoDefault(False)
@@ -4663,7 +4764,12 @@ class StylesPanel(QWidget):
             self._ground.setChecked(ground_enabled(style))
             self._ground_transparency.setValue(style.ground_transparency)
             self._ground_from_below.setChecked(style.ground_from_below)
+            self._panorama_rotation.setValue(
+                getattr(style, "panorama_rotation", 0.0))
+            self._panorama_exposure.setValue(
+                getattr(style, "panorama_exposure", 0.0))
             self._sync_background_controls()
+            self.fog.refresh()
             self._watermarks.refresh()
             self._modeling.refresh()
             self._fill.setChecked(style.section_fill)
@@ -4761,6 +4867,9 @@ class StylesPanel(QWidget):
         style.sky = self._sky.isChecked()
         style.ground_transparency = self._ground_transparency.value()
         style.ground_from_below = self._ground_from_below.isChecked()
+        if style.panorama:
+            style.panorama_rotation = self._panorama_rotation.value()
+            style.panorama_exposure = self._panorama_exposure.value()
         self._sync_background_controls()
         style.section_fill = self._fill.isChecked()
         style.ambient_occlusion = self._ao.isChecked()
@@ -4801,6 +4910,9 @@ class StylesPanel(QWidget):
         self._window._sync_style_menu()
         self._repaint()
 
+    def _fog_changed(self) -> None:
+        self._window._sync_style_menu()
+
     def _watermark_changed(self) -> None:
         self._window._sync_style_menu()
         self._repaint()
@@ -4810,6 +4922,85 @@ class StylesPanel(QWidget):
         for widget in (self._ground_transparency_label, self._ground_slider,
                        self._ground_transparency, self._ground_from_below):
             widget.setEnabled(on)
+        style = self._style()
+        path = getattr(style, "panorama", "") if style is not None else ""
+        from core.panorama_backdrop import is_hdr_file, panorama_label
+        self._panorama_btn.setText(panorama_label(path) if path
+                                   else tr("Choose…"))
+        self._panorama_btn.setToolTip(
+            path if path else self._panorama_btn.property("help"))
+        self._panorama_clear.setEnabled(bool(path))
+        for widget in (self._panorama_rot_label, self._panorama_rotation):
+            widget.setEnabled(bool(path))
+        hdr = bool(path) and is_hdr_file(path)
+        for widget in (self._panorama_exp_label, self._panorama_exposure):
+            widget.setEnabled(hdr)
+
+    def _pick_panorama(self) -> None:
+        """Choose…: an equirectangular picture becomes the style's sky."""
+        from core.panorama_backdrop import load_pixels
+        style = self._style()
+        if style is None:
+            return
+        start = (str(Path(style.panorama).parent) if style.panorama
+                 else str(Path.home()))
+        path, _ = file_dialogs.getOpenFileName(
+            self, tr("Choose a 360° panorama"), start,
+            ";;".join((tr("Panoramas (*.hdr *.jpg *.jpeg *.png)"),
+                       tr("HDR image (*.hdr)"),
+                       tr("Pictures (*.jpg *.jpeg *.png)"))))
+        if not path:
+            return
+        from PySide6.QtWidgets import QApplication
+        QApplication.setOverrideCursor(Qt.WaitCursor)
+        try:
+            pixels = load_pixels(path)       # read once: refuse a bad file
+        except (OSError, ValueError, MemoryError) as exc:
+            pixels = None
+            error = str(exc)
+        finally:
+            QApplication.restoreOverrideCursor()
+        if pixels is None:
+            QMessageBox.warning(self, tr("Panorama"), tr(
+                "This picture cannot be used as a panorama:\n{error}",
+                error=error))
+            return
+        h, w = pixels.shape[:2]
+        status_bar = getattr(self._window, "statusBar", None)
+        if abs(w / max(h, 1) - 2.0) > 0.05 and callable(status_bar):
+            status_bar().showMessage(tr(
+                "The picture is not 2:1: a 360° panorama will look stretched."),
+                6000)
+        own = self._own_style()
+        own.panorama = path
+        if not own.sky:
+            own.sky = True
+            self._updating = True
+            try:
+                self._sky.setChecked(True)
+            finally:
+                self._updating = False
+        self._sync_background_controls()
+        self._window._sync_style_menu()
+        self._repaint()
+
+    def _clear_panorama(self) -> None:
+        style = self._style()
+        if style is None or not style.panorama:
+            return
+        own = self._own_style()
+        own.panorama = ""
+        own.panorama_rotation = 0.0
+        own.panorama_exposure = 0.0
+        self._updating = True
+        try:
+            self._panorama_rotation.setValue(0.0)
+            self._panorama_exposure.setValue(0.0)
+        finally:
+            self._updating = False
+        self._sync_background_controls()
+        self._window._sync_style_menu()
+        self._repaint()
 
     _AO_DIST_STEPS = 200
 
@@ -4978,40 +5169,62 @@ class FogPanel(QWidget):
     directly; every edit only needs a repaint.
     """
 
-    def __init__(self, window) -> None:
+    def __init__(self, window, changed=None, grid=None, row: int = 0) -> None:
+        """``grid``/``row``: lay the controls into a host's grid from that
+        row on (the Fog section of the Styles panel's Background page), so
+        they line up with the host's own. Without it the panel lays out on
+        its own."""
         super().__init__()
         self._window = window
+        self._changed = changed      # the Styles panel it sits in, if any
         self._updating = False
-        grid = QGridLayout(self)
-        grid.setContentsMargins(8, 6, 8, 8)
+        embedded = grid is not None
+        if not embedded:
+            grid = QGridLayout(self)
+            grid.setContentsMargins(8, 6, 8, 8)
+        r = row
 
         self._enable = QCheckBox(tr("Show fog"))
         self._enable.toggled.connect(self._apply)
-        grid.addWidget(self._enable, 0, 0, 1, 2)
+        grid.addWidget(self._enable, r, 0, 1, 2)
+        r += 1
 
+        # The usual slider pattern: name on the left and its value on the
+        # right of one line, the track under them across the full width —
+        # the two distances no longer squeeze the track (or the panel).
         self._distance_lbl = QLabel(tr("Distance:"))
-        grid.addWidget(self._distance_lbl, 1, 0)
-        distance_row = QHBoxLayout()
+        grid.addWidget(self._distance_lbl, r, 0)
+        self._range_val = QLabel()
+        self._range_val.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        grid.addWidget(self._range_val, r, 1)
+        r += 1
         self._range = _FogRangeSlider()
         self._range.setRange(0, self._FOG_SLIDER_STEPS)
         self._range.positionsChanged.connect(self._on_range_slider)
         self._distance_lbl.setBuddy(self._range)
-        distance_row.addWidget(self._range, 1)
-        self._range_val = QLabel()
-        self._range_val.setMinimumWidth(138)
-        distance_row.addWidget(self._range_val)
-        grid.addLayout(distance_row, 1, 1)
+        grid.addWidget(self._range, r, 0, 1, 2)
+        r += 1
+
+        self._color_lbl = QLabel(tr("Fog color:"))
+        grid.addWidget(self._color_lbl, r, 0)
+        self._color = QPushButton()
+        self._color.setAutoDefault(False)
+        self._color.setToolTip(tr("Fog color"))
+        self._color.setAccessibleName(tr("Fog color"))
+        self._color.clicked.connect(self._pick_color)
+        grid.addWidget(self._color, r, 1)
+        r += 1
 
         self._use_background = QCheckBox(tr("Use background color"))
         self._use_background.toggled.connect(self._apply)
-        grid.addWidget(self._use_background, 2, 0, 1, 2)
-
-        self._color_lbl = QLabel(tr("Fog color:"))
-        grid.addWidget(self._color_lbl, 3, 0)
-        self._color = QPushButton()
-        self._color.setToolTip(tr("Fog color"))
-        self._color.clicked.connect(self._pick_color)
-        grid.addWidget(self._color, 3, 1)
+        grid.addWidget(self._use_background, r, 0, 1, 2)
+        if embedded:
+            # The controls live in the host's grid; this widget only keeps
+            # the logic, a hidden child of the host page.
+            host = grid.parentWidget()
+            if host is not None:
+                self.setParent(host)
+            self.hide()
 
         self.refresh()
 
@@ -5040,6 +5253,8 @@ class FogPanel(QWidget):
             again()
         else:
             self._window.viewport.update()
+        if self._changed is not None:
+            self._changed()
 
     @staticmethod
     def _safe_fog_value(value, bounds: tuple, default: float) -> float:

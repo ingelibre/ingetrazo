@@ -1290,14 +1290,15 @@ class MainWindow(QMainWindow):
         self.toolbars["layers"] = layers_tb
         self.layers_toolbar = LayersToolbar(self, layers_tb)
 
-        # Styles stays open in its own window while the user models.
-        # Fog (#1139), Shadows and Dimension style remain toolbar dropdowns.
+        # Styles stays open in its own window while the user models; the
+        # fog (#1139) is part of the style and sits in its Background page.
+        # Shadows and Dimension style remain toolbar dropdowns.
         from PySide6.QtWidgets import QToolButton, QWidgetAction
-        from views.tray import (DimensionStylePanel, FogPanel, ShadowsPanel,
+        from views.tray import (DimensionStylePanel, ShadowsPanel,
                                 StylesPanel)
         self.styles_panel = StylesPanel(self)
         self._styles_window = None
-        self.fog_panel = FogPanel(self)
+        self.fog_panel = self.styles_panel.fog
         self.shadows_panel = ShadowsPanel(self)
         self.dimstyle_panel = DimensionStylePanel(self)
         panels_tb = self._new_toolbar(tr("Panels"), "panels_toolbar")
@@ -1305,8 +1306,6 @@ class MainWindow(QMainWindow):
                 (self.styles_panel, "styles", tr("Styles"),
                  tr("How the model looks: faces, edges, background and "
                     "sky.")),
-                (self.fog_panel, "fog", tr("Fog"),
-                 tr("Fade distant geometry into a chosen color.")),
                 (self.shadows_panel, "shadows", tr("Shadows"),
                  tr("The sun's shadows: on or off, the date, the time and "
                     "how dark they are.")),

@@ -22,6 +22,28 @@ def _polygon(points) -> QPolygonF:
     return QPolygonF([QPointF(x, y) for x, y in points])
 
 
+def _panorama_crop(style):
+    """The view ahead in the style's panorama (a quarter of the way around,
+    from 45° up to 45° down), or None without a readable one."""
+    path = getattr(style, "panorama", "")
+    if not path:
+        return None
+    try:
+        from PySide6.QtGui import QImage
+        from core.panorama_backdrop import load_pixels
+        pixels = load_pixels(path, getattr(style, "panorama_exposure", 0.0))
+    except (OSError, ValueError, MemoryError):
+        return None
+    h, w = pixels.shape[:2]
+    shift = round(getattr(style, "panorama_rotation", 0.0) / 360.0 * w)
+    import numpy as np
+    rolled = np.roll(pixels, -shift, axis=1)   # see direction_uv
+    part = np.ascontiguousarray(rolled[h // 4:h * 3 // 4,
+                                       w * 3 // 8:w * 5 // 8])
+    ph, pw = part.shape[:2]
+    return QImage(part.data, pw, ph, pw * 3, QImage.Format_RGB888).copy()
+
+
 def style_preview(style: Style, size: QSize) -> QPixmap:
     """Paint a sample box with an unpainted face, material and back face.
 
@@ -42,6 +64,11 @@ def style_preview(style: Style, size: QSize) -> QPixmap:
             sky.setColorAt(0, _color(style.sky_color))
             sky.setColorAt(1, _color(horizon))
             painter.fillRect(QRectF(0, 0, 100, 48), sky)
+            crop = _panorama_crop(style)
+            if crop is not None:
+                # The panorama stands for the whole sky and ground.
+                painter.drawImage(QRectF(0, 0, 100, 80 if style.ground is None
+                                         else 48), crop)
         if style.ground is not None:
             paint_watermarks(painter, style, QSize(100, 80), "background")
         if ground_enabled(style):

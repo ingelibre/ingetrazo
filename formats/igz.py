@@ -1229,7 +1229,8 @@ def _write_atomic(path: Path, data: bytes) -> None:
 def _write_container(path: Path, doc: str, blobs: dict,
                      fast: bool = False, deflated: dict | None = None) -> None:
     """The ZIP shape: ``document.json`` deflated, images stored as-is (PNG/JPG
-    are already compressed — deflating them again costs time for nothing).
+    are already compressed — deflating them again costs time for nothing;
+    only an HDR panorama is deflated too).
     ``fast`` deflates at level 1 (see ``_LARGE_DOCUMENT``). ``deflated``
     holds members compressed like the document — the geometry blocks."""
     import zipfile
@@ -1258,7 +1259,11 @@ def _write_container(path: Path, doc: str, blobs: dict,
             for member in sorted(deflated or ()):
                 write(member, deflated[member], zipfile.ZIP_DEFLATED)
             for member in sorted(blobs):
-                write(member, blobs[member], zipfile.ZIP_STORED)
+                # A Radiance .hdr (a 360° backdrop) is barely compressed by
+                # its own run-length scheme: deflate it like the document.
+                write(member, blobs[member],
+                      zipfile.ZIP_DEFLATED if member.lower().endswith(".hdr")
+                      else zipfile.ZIP_STORED)
         tmp.replace(path)
     except BaseException:
         tmp.unlink(missing_ok=True)

@@ -4348,5 +4348,20 @@
   "Push/Pull bases kept with Ctrl stay sound and cracked results are refused (#1155).": "İt/Çek'te Ctrl ile korunan tabanlar sağlam kalır ve çatlak sonuçlar reddedilir (#1155).",
   "Camera roll with a 3D mouse (#1406).": "3B fare ile kamera yuvarlanması (#1406).",
   "A preference to swap orbit and pan on the middle button (#467).": "Orta düğmede yörünge ile kaydırmayı değiştirme tercihi (#467).",
-  "IFC export writes the project north, the site location and the owning application (#1498).": "IFC dışa aktarımı proje kuzeyini, arsa konumunu ve sahip uygulamayı yazar (#1498)."
+  "IFC export writes the project north, the site location and the owning application (#1498).": "IFC dışa aktarımı proje kuzeyini, arsa konumunu ve sahip uygulamayı yazar (#1498).",
+  "A 360° picture (equirectangular, 2:1) — JPG, PNG or HDR — shown instead of the sky. Visible with the sky on, in perspective.": "Gökyüzü yerine gösterilen 360° bir resim (eşdikdörtgen, 2:1) — JPG, PNG veya HDR. Gökyüzü açıkken, perspektifte görünür.",
+  "Remove the panorama": "Panoramayı kaldır",
+  "Rotation:": "Döndürme:",
+  "Turns the panorama around the vertical, to line up the sun or a street with the model": "Güneşi veya bir sokağı modelle hizalamak için panoramayı düşey eksen etrafında döndürür",
+  "Exposure:": "Pozlama:",
+  "Brighter or darker, in stops — for HDR pictures": "Daha açık veya koyu, durak olarak — HDR resimler için",
+  "Choose a 360° panorama": "360° panorama seç",
+  "Panoramas (*.hdr *.jpg *.jpeg *.png)": "Panoramalar (*.hdr *.jpg *.jpeg *.png)",
+  "HDR image (*.hdr)": "HDR resmi (*.hdr)",
+  "Pictures (*.jpg *.jpeg *.png)": "Resimler (*.jpg *.jpeg *.png)",
+  "Panorama": "Panorama",
+  "This picture cannot be used as a panorama:\n{error}": "Bu resim panorama olarak kullanılamaz:\n{error}",
+  "The picture is not 2:1: a 360° panorama will look stretched.": "Resim 2:1 değil: 360° panorama gerilmiş görünecek.",
+  "Sky and ground": "Gökyüzü ve zemin",
+  "Image:": "Resim:"
 }

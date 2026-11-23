@@ -4352,5 +4352,20 @@
  "Push/Pull bases kept with Ctrl stay sound and cracked results are refused (#1155).": "推/拉中以 Ctrl 保留的底面保持完好，出現裂縫的結果會被拒絕 (#1155)。",
  "Camera roll with a 3D mouse (#1406).": "以 3D 滑鼠橫滾相機 (#1406)。",
  "A preference to swap orbit and pan on the middle button (#467).": "在中鍵上交換環繞與平移的偏好設定 (#467)。",
- "IFC export writes the project north, the site location and the owning application (#1498).": "IFC 匯出寫入專案北向、基地位置與所屬應用程式 (#1498)。"
+ "IFC export writes the project north, the site location and the owning application (#1498).": "IFC 匯出寫入專案北向、基地位置與所屬應用程式 (#1498)。",
+ "A 360° picture (equirectangular, 2:1) — JPG, PNG or HDR — shown instead of the sky. Visible with the sky on, in perspective.": "取代天空顯示的 360° 影像（等距長方投影，2:1）— JPG、PNG 或 HDR。在開啟天空且為透視投影時可見。",
+ "Remove the panorama": "移除全景圖",
+ "Rotation:": "旋轉：",
+ "Turns the panorama around the vertical, to line up the sun or a street with the model": "繞垂直軸旋轉全景圖，使太陽或街道與模型對齊",
+ "Exposure:": "曝光：",
+ "Brighter or darker, in stops — for HDR pictures": "更亮或更暗，以級為單位 — 用於 HDR 影像",
+ "Choose a 360° panorama": "選擇 360° 全景圖",
+ "Panoramas (*.hdr *.jpg *.jpeg *.png)": "全景圖 (*.hdr *.jpg *.jpeg *.png)",
+ "HDR image (*.hdr)": "HDR 影像 (*.hdr)",
+ "Pictures (*.jpg *.jpeg *.png)": "圖片 (*.jpg *.jpeg *.png)",
+ "Panorama": "全景圖",
+ "This picture cannot be used as a panorama:\n{error}": "此圖片無法用作全景圖：\n{error}",
+ "The picture is not 2:1: a 360° panorama will look stretched.": "圖片不是 2:1：360° 全景圖會被拉伸。",
+ "Sky and ground": "天空與地面",
+ "Image:": "圖片："
 }
