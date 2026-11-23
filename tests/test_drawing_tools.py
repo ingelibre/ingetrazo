@@ -254,6 +254,25 @@ def test_pushed_circle_hides_facets_but_keeps_the_circle_line():
     assert not any(e.soft for e in scene2.mesh.edges)  # hexagonal prism stays hard
 
 
+def test_pushed_12_gon_keeps_its_sides_visible():
+    # #1547: a 12-sided prism's sides meet at 30°, under the old 32° soften
+    # threshold, so Push/Pull softened every side and the prism read as a
+    # cylinder. A polygon's sides are real corners: they stay visible, while
+    # a pushed circle still softens (the test above).
+    import tests.test_fuzz_engine as F
+    for n in (12, 18):
+        scene = Scene()
+        vp = _VP(scene)
+        p = PolygonTool()
+        assert p.on_value(vp, float(n)) is True
+        p.on_click(_ctx(vp, V(0, 0, 0)))
+        p.on_hover(_ctx(vp, V(2, 0, 0)))
+        p.on_click(_ctx(vp, V(2, 0, 0)))
+        face = next(f for f in scene.mesh.faces if len(f.vertices) == n)
+        F._push(scene, vp.history, face, 3.0 if face.normal().z() > 0 else -3.0)
+        assert not any(e.soft for e in scene.mesh.edges), f"{n}-gon softened"
+
+
 def test_cylinder_side_is_one_surface():
     # Clicking a side quad of a cylinder should act on the whole curved surface
     # (24 quads joined by soft edges), while the caps (hard-edged) stay separate.

@@ -16,6 +16,7 @@ from core.history import AddFaceCommand, History
 from core.orient import is_closed, signed_volume
 from core.scene import Scene
 from tools.base import ToolContext
+from tools.circle import CircleTool, PolygonTool
 from tools.pushpull import _MIN_EXTRUDE, PushPullTool
 
 
@@ -931,12 +932,24 @@ def _preview_segments(scene, face, dist=3.0):
     return tool.rubber_band_lines()
 
 
+def _ctx_at(vp, world):
+    return ToolContext(viewport=vp, world=world, screen=QPointF(0, 0),
+                       modifiers=Qt.NoModifier, snap=None)
+
+
 def test_pushing_a_circle_previews_a_smooth_cylinder():
     # Pushing a circle drew every facet seam of the side, so the cylinder came
     # out streaked with lines and only cleaned up on release (Marco). The drag
-    # must hide exactly the risers the commit is going to soften.
+    # must hide exactly the risers the commit is going to soften. A bare
+    # 24-gon is not a circle — its edges carry no curve id — so the circle
+    # here is drawn with the Circle tool, as a user would draw it (#1547).
     scene = Scene()
-    circle = _ngon_face(scene, 24)          # 15 deg steps: a curve
+    vp = _StubViewport(scene)
+    c = CircleTool()
+    c.on_click(_ctx_at(vp, V(0, 0, 0)))
+    c.on_hover(_ctx_at(vp, V(2, 0, 0)))
+    c.on_click(_ctx_at(vp, V(2, 0, 0)))
+    circle = next(f for f in scene.mesh.faces if len(f.vertices) == 24)
     segs = _preview_segments(scene, circle)
 
     def key(p):
@@ -946,6 +959,24 @@ def test_pushing_a_circle_previews_a_smooth_cylinder():
               if abs(key(s[0])[2] - key(s[1])[2]) > 1e-6]
     assert risers == [], "the cylinder's side is drawn with facet lines"
     assert len(segs) == 24                  # the moved circle, nothing else
+
+
+def test_pushing_a_12_gon_keeps_its_real_edges():
+    # #1547: a 12-gon's sides meet at 30° — under the old threshold the drag
+    # hid its risers and the commit softened them, so the prism previewed
+    # (and arrived) as a cylinder. The risers stay, as the commit keeps them.
+    scene = Scene()
+    vp = _StubViewport(scene)
+    p = PolygonTool()
+    assert p.on_value(vp, 12.0) is True
+    p.on_click(_ctx_at(vp, V(0, 0, 0)))
+    p.on_hover(_ctx_at(vp, V(2, 0, 0)))
+    p.on_click(_ctx_at(vp, V(2, 0, 0)))
+    face = next(f for f in scene.mesh.faces if len(f.vertices) == 12)
+    segs = _preview_segments(scene, face)
+    risers = [s for s in segs if abs(s[0].z() - s[1].z()) > 1e-6]
+    assert len(risers) == 12
+    assert len(segs) == 24                  # the moved 12-gon plus its risers
 
 
 def test_pushing_a_hexagon_keeps_its_real_edges():
