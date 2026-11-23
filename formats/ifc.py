@@ -23,7 +23,7 @@ from pathlib import Path
 
 from core.bim import (IFC_CLASSES, class_quantities, collect_objects,
                       face_set_volume, object_faces)
-from core.ifc_identity import compressed_guid, object_identity, stable_guid
+from core.ifc_identity import compressed_guid, element_guids, stable_guid
 from core.ifc_identity import _CHARS as _GUID_CHARS
 from core.sun import north_vector_xy, scene_north_deg
 from core.version import __version__
@@ -281,10 +281,7 @@ def save_ifc(scene, path, project_name: str = "IngeTrazo project", *,
         return stable_guid(scene.ifc_namespace, *parts)
 
     # Reject identity collisions rather than publish an ambiguous IFC file.
-    identities = [object_identity(obj) for obj in objects]
-    element_guids = [guid("element", *key) for key in identities]
-    if len(set(element_guids)) != len(element_guids):
-        raise ValueError("Duplicate BIM object identity; copy or retag the objects")
+    guids = element_guids(scene, objects)
 
     stamp = datetime.datetime.now()
     w = _Writer()
@@ -356,7 +353,7 @@ def save_ifc(scene, path, project_name: str = "IngeTrazo project", *,
               f"#{building}", f"(#{storey})")
     element_ids = []
     space_ids = []
-    for obj, element_guid in zip(objects, element_guids):
+    for obj, element_guid in zip(objects, guids):
         # World space: a moved group or a component instance lands where it
         # is drawn, not at its definition's origin (#984).
         faces = object_faces(obj)

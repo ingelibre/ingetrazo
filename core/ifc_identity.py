@@ -54,3 +54,17 @@ def object_identity(obj) -> tuple:
     token = tag.get("uid") or ("legacy", tag.get("id"))
     owner = obj.get("owner")
     return ("faces", owner.uid if owner is not None else None, token)
+
+
+def element_guid(scene, obj) -> str:
+    """The GlobalId of a :func:`core.bim.collect_objects` entry."""
+    return stable_guid(scene.ifc_namespace, "element", *object_identity(obj))
+
+
+def element_guids(scene, objects) -> list[str]:
+    """The GlobalIds of ``objects``, in order. Two objects with one identity
+    raise ``ValueError`` rather than publish an ambiguous file or takeoff."""
+    guids = [element_guid(scene, obj) for obj in objects]
+    if len(set(guids)) != len(guids):
+        raise ValueError("Duplicate BIM object identity; copy or retag the objects")
+    return guids

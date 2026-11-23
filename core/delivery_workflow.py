@@ -225,8 +225,8 @@ def project_issues(scene, objects):
 
 
 def object_key(scene, obj):
-    from core.ifc_identity import object_identity, stable_guid
-    return stable_guid(scene.ifc_namespace, "element", *object_identity(obj))
+    from core.ifc_identity import element_guid
+    return element_guid(scene, obj)
 
 
 def bounds(obj):
