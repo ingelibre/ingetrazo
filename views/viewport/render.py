@@ -264,6 +264,11 @@ class RenderMixin:
         # after the DEM terrain so the real capture wins where both exist.
         self._render_photo_mesh()
 
+        # Point clouds (laser scans, photogrammetric clouds): reference
+        # points to trace over, depth-tested against the model and cut by
+        # the section like it.
+        self._render_point_clouds(mvp)
+
         # Imported reference images (a scanned plan, a facade photo). Last of
         # the reference layers and before any model geometry: they are what
         # the user draws ON TOP of.
@@ -1287,7 +1292,8 @@ class RenderMixin:
                 or getattr(sc, "show_hidden_objects", False)
                 or getattr(sc, "show_hidden_geometry", False)
                 or self._base_map_showing() or self._terrain_showing()
-                or self._photo_showing()):
+                or self._photo_showing()
+                or self._point_clouds_showing()):
             return None
         # A face-me figure is drawn with the static passes, turned to the
         # camera: one riding a Move/Rotate drag would stay in the kept

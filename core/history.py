@@ -2921,6 +2921,94 @@ class AddImagePlaneCommand(Command):
         scene.version += 1
 
 
+class AddPointCloudCommand(Command):
+    """Bring in an imported point cloud (``georef.pointcloud``), one undo
+    step. Like a reference image it rides its own layer, which the command
+    creates when missing and takes back on undo."""
+
+    keeps_paint = True
+    keeps_groups = True
+
+    def __init__(self, cloud) -> None:
+        self.cloud = cloud
+        self._made_layer = False
+
+    def do(self, scene) -> None:
+        from core.layers import Layer
+        name = getattr(self.cloud, "layer", None)
+        self._made_layer = False
+        if name and scene.layer(name) is None:
+            scene.layers.append(Layer(name))
+            self._made_layer = True
+        scene.point_clouds.append(self.cloud)
+        scene.version += 1
+
+    def undo(self, scene) -> None:
+        if self.cloud in scene.point_clouds:
+            scene.point_clouds.remove(self.cloud)
+        if self._made_layer:
+            name = getattr(self.cloud, "layer", None)
+            ly = scene.layer(name) if name else None
+            if ly is not None:
+                scene.layers.remove(ly)
+            self._made_layer = False
+        scene.version += 1
+
+
+class RemovePointCloudsCommand(Command):
+    """Take point clouds out of the document; undo puts them back where
+    they were in the list."""
+
+    keeps_paint = True
+    keeps_groups = True
+
+    def __init__(self, clouds) -> None:
+        self.clouds = list(clouds)
+        self._slots: list = []
+
+    def do(self, scene) -> None:
+        self._slots = [(scene.point_clouds.index(c), c)
+                       for c in self.clouds if c in scene.point_clouds]
+        for _i, cloud in self._slots:
+            scene.point_clouds.remove(cloud)
+        scene.version += 1
+
+    def undo(self, scene) -> None:
+        for i, cloud in sorted(self._slots, key=lambda s: s[0]):
+            scene.point_clouds.insert(i, cloud)
+        scene.version += 1
+
+
+class SetPointCloudDisplayCommand(Command):
+    """Change how the clouds are drawn — shown or not, colour mode, point
+    size — one undo step, like any other change to the document."""
+
+    keeps_paint = True
+    keeps_groups = True
+
+    def __init__(self, clouds, **changes) -> None:
+        self.clouds = list(clouds)
+        self.changes = {k: v for k, v in changes.items()
+                        if k in ("visible", "color_mode", "point_size")}
+        self._before: list = []
+
+    def do(self, scene) -> None:
+        self._before = [{k: getattr(c, k) for k in self.changes}
+                        for c in self.clouds]
+        for cloud in self.clouds:
+            for key, value in self.changes.items():
+                setattr(cloud, key, value)
+            cloud.revision += 1
+        scene.version += 1
+
+    def undo(self, scene) -> None:
+        for cloud, before in zip(self.clouds, self._before):
+            for key, value in before.items():
+                setattr(cloud, key, value)
+            cloud.revision += 1
+        scene.version += 1
+
+
 class MakeImageGroupCommand(Command):
     """Wrap imported photos in a group or component without texturing faces.
 

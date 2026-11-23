@@ -4863,6 +4863,10 @@ class MainWindow(QMainWindow):
              tr("Bring in a WebODM drone survey in its true place, as a "
                 "mesh to trace over."),
              self._on_import_photomesh),
+            (tr("Point cloud (LAS / PLY / XYZ)…"),
+             tr("Bring in a laser scan or a photogrammetric point cloud to "
+                "model over, snapping to its points."),
+             self._on_import_point_cloud),
         ):
             act = QAction(label, self)
             act.setStatusTip(tip)
@@ -7772,7 +7776,8 @@ class MainWindow(QMainWindow):
         # Extents did nothing after zooming far away (Marco, 23-09).
         # Visible reference images too: a plan imported to trace on stayed
         # off screen while Zoom Selection over it did frame it.
-        for extra in (self._figure_bounds(), self._image_bounds()):
+        for extra in (self._figure_bounds(), self._image_bounds(),
+                      self._point_cloud_bounds()):
             if extra is None:
                 continue
             lo, hi = extra
@@ -7846,6 +7851,17 @@ class MainWindow(QMainWindow):
         if lo is None:
             return None
         return QVector3D(*map(float, lo)), QVector3D(*map(float, hi))
+
+    def _point_cloud_bounds(self):
+        """World box of the visible point clouds, or None."""
+        from PySide6.QtGui import QVector3D
+        boxes = [c.bounds() for c in self.viewport._visible_point_clouds()]
+        boxes = [b for b in boxes if b[0] is not None]
+        if not boxes:
+            return None
+        lo = [min(float(b[0][i]) for b in boxes) for i in range(3)]
+        hi = [max(float(b[1][i]) for b in boxes) for i in range(3)]
+        return QVector3D(*lo), QVector3D(*hi)
 
     def _image_bounds(self):
         """World box of the visible reference images, or None."""
@@ -9141,6 +9157,7 @@ class MainWindow(QMainWindow):
             try:
                 georef.base_map._sync_from_scene()
                 georef.base_map.sync_photo_mesh()
+                georef.base_map.sync_point_clouds()
             except Exception:  # noqa: BLE001 — a panel never blocks the switch
                 pass
         self.viewport.notify_scene_changed()    # panels, title, extensions
@@ -10395,6 +10412,7 @@ class MainWindow(QMainWindow):
         # shows stale defaults over a scene that has its own.
         self.georef_tray.base_map.sync_from_document()
         self.georef_tray.base_map.sync_photo_mesh()
+        self.georef_tray.base_map.sync_point_clouds()
         repaired = getattr(self.viewport.scene, "load_repairs", 0)
         if repaired:
             # Pieces with a coordinate that is not a number (NaN / inf) were
@@ -12359,6 +12377,7 @@ class MainWindow(QMainWindow):
         scene.photo_mesh = mesh
         self.viewport.upload_photo_mesh(mesh, mesh.images)
         self.georef_tray.base_map.sync_photo_mesh()
+        self.georef_tray.base_map.sync_point_clouds()
 
         # Point the base map at the flown ground. Survey and imagery already
         # share the datum, so they line up by construction — but the tile layer
@@ -12465,6 +12484,100 @@ class MainWindow(QMainWindow):
         thread.wait()
         worker.deleteLater()
         return result.get("mesh"), result.get("images"), result.get("exc")
+
+    def _on_import_point_cloud(self) -> None:
+        """Import a point cloud (``georef.pointcloud``) as reference to model
+        over: display-only, one undo step, on the survey layer."""
+        path_str, _ = file_dialogs.getOpenFileName(
+            self, tr("Import point cloud"), "",
+            tr("Point clouds (*.las *.ply *.xyz *.txt *.csv *.pts);;"
+               "All files (*)"))
+        if path_str:
+            self.import_point_cloud(Path(path_str))
+
+    def import_point_cloud(self, path: Path) -> bool:
+        """Read ``path`` off the UI thread and add it to the document. A
+        second cloud reuses the first one's offset so the scans line up."""
+        from PySide6.QtGui import QVector3D
+
+        from core.history import AddPointCloudCommand
+        from core.layers import SURVEY_LAYER
+        from georef.pointcloud import DEFAULT_MAX_POINTS
+
+        scene = self.viewport.scene
+        offset = next((c.offset for c in scene.point_clouds
+                       if c.offset is not None), None)
+        try:
+            cap = int(QSettings().value("import/pointcloud_max_points",
+                                        DEFAULT_MAX_POINTS))
+        except (TypeError, ValueError):
+            cap = DEFAULT_MAX_POINTS
+        dlg, cb = self._import_progress(tr("Importing {name}…", name=path.name))
+        cloud, exc = self._load_point_cloud_threaded(path, cap, offset, cb)
+        dlg.close()
+        if exc is not None or cloud is None:
+            template = getattr(exc, "template", None)
+            text = (tr(template, **exc.fields) if template is not None
+                    else str(exc))
+            QMessageBox.critical(self, tr("Import failed"), text)
+            return False
+        cloud.layer = SURVEY_LAYER
+        self.viewport.history.execute(AddPointCloudCommand(cloud))
+        self.georef_tray.base_map.sync_point_clouds()
+        lo, hi = cloud.bounds()
+        if lo is not None:
+            self.viewport.camera.fit_box(QVector3D(*map(float, lo)),
+                                         QVector3D(*map(float, hi)))
+        self.viewport.update()
+        note = self._survey_note(cloud.offset)
+        if cloud.thinned:
+            note += "  ·  " + tr(
+                "{kept:,} of {total:,} points kept",
+                kept=cloud.point_count, total=cloud.total_points)
+        self.statusBar().showMessage(
+            tr("Imported {name}", name=path.name) + note, 8000)
+        return True
+
+    def _load_point_cloud_threaded(self, path, cap, offset, cb):
+        """``(cloud, exc)``: the file read off the UI thread — a scanner
+        station is hundreds of megabytes. Nothing here touches ``Scene``."""
+        from PySide6.QtCore import QEventLoop, QObject, QThread, Qt, Signal
+
+        from georef.pointcloud import load_point_cloud
+
+        class _Worker(QObject):
+            progressed = Signal(float, str)
+            finished = Signal(object, object)       # (cloud, exc)
+
+            def run(self):
+                try:
+                    self.progressed.emit(0.1, "Reading points…")
+                    cloud = load_point_cloud(path, cap, offset=offset)
+                    self.finished.emit(cloud, None)
+                except Exception as exc:  # noqa: BLE001 — reported to caller
+                    self.finished.emit(None, exc)
+
+        thread = QThread(self)
+        worker = _Worker()
+        worker.moveToThread(thread)
+        result = {}
+        # A bound method, for the reason _load_photomesh_threaded gives.
+        self._photo_progress = cb
+        worker.progressed.connect(self._on_photo_progress, Qt.QueuedConnection)
+        loop = QEventLoop()
+
+        def _done(cloud, exc):
+            result.update(cloud=cloud, exc=exc)
+            loop.quit()
+
+        worker.finished.connect(_done, Qt.QueuedConnection)
+        thread.started.connect(worker.run)
+        thread.start()
+        loop.exec()
+        thread.quit()
+        thread.wait()
+        worker.deleteLater()
+        return result.get("cloud"), result.get("exc")
 
     def _on_import_georef(self) -> None:
         """Import a KML/KMZ/GeoJSON alignment as georeferenced GeoPath traces —

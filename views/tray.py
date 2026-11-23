@@ -978,10 +978,43 @@ class BaseMapPanel(QWidget):
         grid.addWidget(QLabel(tr("Layer")), 17, 0)
         grid.addWidget(self._photo_layer, 17, 1)
 
+        # Point clouds (georef/pointcloud.py): shown or not, how they are
+        # coloured and how big a point is. Disabled until one is imported.
+        self._clouds = QCheckBox(tr("Point clouds"))
+        self._clouds.setEnabled(False)
+        self._clouds.toggled.connect(self._on_toggle_clouds)
+        grid.addWidget(self._clouds, 18, 0, 1, 2)
+        self._cloud_color = QComboBox()
+        for key, label in (("rgb", tr("True colour")),
+                           ("elevation", tr("Elevation")),
+                           ("intensity", tr("Intensity")),
+                           ("single", tr("Single colour"))):
+            self._cloud_color.addItem(label, key)
+        self._cloud_color.setEnabled(False)
+        self._cloud_color.setToolTip(tr(
+            "How the points are coloured. A cloud without that data is "
+            "coloured by elevation."))
+        self._cloud_color.currentIndexChanged.connect(
+            self._on_cloud_color_changed)
+        grid.addWidget(QLabel(tr("Colour")), 19, 0)
+        grid.addWidget(self._cloud_color, 19, 1)
+        self._cloud_size = QSpinBox()
+        self._cloud_size.setRange(1, 10)
+        self._cloud_size.setSuffix(" px")
+        self._cloud_size.setValue(2)
+        self._cloud_size.setEnabled(False)
+        self._cloud_size.valueChanged.connect(self._on_cloud_size_changed)
+        grid.addWidget(QLabel(tr("Point size")), 20, 0)
+        grid.addWidget(self._cloud_size, 20, 1)
+        self._cloud_remove = QPushButton(tr("Remove point clouds"))
+        self._cloud_remove.setEnabled(False)
+        self._cloud_remove.clicked.connect(self._on_remove_clouds)
+        grid.addWidget(self._cloud_remove, 21, 0, 1, 2)
+
         self._attribution = QLabel("")
         self._attribution.setWordWrap(True)
         theme_style(self._attribution, "color:{muted}; font-size:10px; margin-top:4px;")
-        grid.addWidget(self._attribution, 18, 0, 1, 2)
+        grid.addWidget(self._attribution, 22, 0, 1, 2)
 
         self._restore_saved_source()
         self._sync_from_scene()
@@ -1442,6 +1475,63 @@ class BaseMapPanel(QWidget):
         mesh.layer = None if name == DEFAULT_LAYER else name
         self._window.viewport.update()
 
+    # ---- Point clouds -------------------------------------------------------
+    def _point_clouds(self) -> list:
+        return list(getattr(self._window.viewport.scene, "point_clouds",
+                            None) or ())
+
+    def _set_clouds(self, **changes) -> None:
+        clouds = self._point_clouds()
+        if not clouds:
+            return
+        from core.history import SetPointCloudDisplayCommand
+        vp = self._window.viewport
+        vp.history.execute(SetPointCloudDisplayCommand(clouds, **changes))
+        vp.update()
+
+    def _on_toggle_clouds(self, on: bool) -> None:
+        self._set_clouds(visible=bool(on))
+
+    def _on_cloud_color_changed(self, _index: int) -> None:
+        mode = self._cloud_color.currentData()
+        if mode:
+            self._set_clouds(color_mode=mode)
+
+    def _on_cloud_size_changed(self, value: int) -> None:
+        self._set_clouds(point_size=float(value))
+
+    def _on_remove_clouds(self) -> None:
+        clouds = self._point_clouds()
+        if not clouds:
+            return
+        from core.history import RemovePointCloudsCommand
+        vp = self._window.viewport
+        vp.history.execute(RemovePointCloudsCommand(clouds))
+        vp.update()
+        self.sync_point_clouds()
+
+    def sync_point_clouds(self) -> None:
+        """Mirror the document's point clouds into the controls (after an
+        import, an undo, opening a document), signals blocked."""
+        from PySide6.QtCore import QSignalBlocker
+        clouds = self._point_clouds()
+        have = bool(clouds)
+        widgets = (self._clouds, self._cloud_color, self._cloud_size,
+                   self._cloud_remove)
+        blockers = [QSignalBlocker(w) for w in widgets]
+        for w in widgets:
+            w.setEnabled(have)
+        if have:
+            first = clouds[0]
+            self._clouds.setChecked(any(c.visible for c in clouds))
+            index = self._cloud_color.findData(first.color_mode)
+            if index >= 0:
+                self._cloud_color.setCurrentIndex(index)
+            self._cloud_size.setValue(int(round(first.point_size)))
+        else:
+            self._clouds.setChecked(False)
+        del blockers
+
     def sync_photo_mesh(self) -> None:
         """Enable the survey controls after an import (or on load)."""
         from PySide6.QtCore import QSignalBlocker
@@ -1527,6 +1617,8 @@ class BaseMapPanel(QWidget):
 
     def on_scene_changed(self) -> None:
         self._sync_from_scene()
+        # An undo or redo can bring a cloud in or take it out.
+        self.sync_point_clouds()
 
 
 class ComponentsPanel(QWidget):

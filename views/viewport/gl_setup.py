@@ -398,7 +398,9 @@ class GLSetupMixin:
         layer = getattr(sc, "tile_layer", None)
         survey = getattr(sc, "photo_mesh", None)
         if (layer is not None and getattr(layer, "visible", False)) \
-                or (survey is not None and getattr(survey, "visible", False)):
+                or (survey is not None and getattr(survey, "visible", False)) \
+                or any(getattr(c, "visible", False)
+                       for c in getattr(sc, "point_clouds", None) or ()):
             cam.depth_reach = None
             return
         from core import axes as _axes
@@ -727,7 +729,8 @@ class GLSetupMixin:
                 "_ghost_vcol_vbo", "_ghost_tex_vao", "_ghost_tex_vbo",
                 "_depth_fbo", "_scene_fbo", "_shadow_fbo", "_depth_snap",
                 "_fine_shadow_fbo", "_fig_shadow_fbo",
-                "_frame_cache_fbo", "_frame_cache", "_edge_renderer")
+                "_frame_cache_fbo", "_frame_cache", "_edge_renderer",
+                "_cloud_program", "_cloud_gpu")
 
     def _forget_context_objects(self) -> None:
         """Forget every lazily made GL object (see ``_LAZY_GL``) and the

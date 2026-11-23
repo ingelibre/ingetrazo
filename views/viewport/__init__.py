@@ -102,6 +102,7 @@ from views.viewport.billboards import BillboardMixin
 from views.viewport.chunks import ChunkCacheMixin
 from views.viewport.image_planes import ImagePlaneMixin
 from views.viewport.geo import GeoMixin
+from views.viewport.pointclouds import PointCloudMixin
 from views.viewport.shadows import ShadowMixin
 from views.viewport.gl_setup import GLSetupMixin
 
@@ -110,7 +111,7 @@ class Viewport(InteractionMixin, ValueInputMixin, SnappingMixin, PickingMixin,
                OcclusionMixin, ProjectionMixin, GroupEditMixin, ClipboardMixin,
                OverlayMixin, SectionPlaneMixin, RenderMixin, InstancingMixin,
                BillboardMixin, ChunkCacheMixin, ImagePlaneMixin, GeoMixin,
-               ShadowMixin, GLSetupMixin, QOpenGLWidget):
+               PointCloudMixin, ShadowMixin, GLSetupMixin, QOpenGLWidget):
     """OpenGL viewport with orbital camera, grid, XYZ axes, tools and snapping."""
 
     valueBufferChanged = Signal(str)
