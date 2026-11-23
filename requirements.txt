@@ -32,7 +32,9 @@ manifold3d>=3.5.3
 truststore>=0.10.5; sys_platform == "win32"
 
 # --- Development ---
-pytest>=8.0
+# < 9.2: from 9.2.0 monkeypatch's undo deletes a name it did not find in the
+# module's own __dict__, and views.viewport hands that deletion to every part.
+pytest>=8.0,<9.2
 
 # --- Planned (NOT yet required; do not install on Python 3.14 — no wheels) ---
 # ifcopenshell   # IFC import/export (BIM bridge with IngePresupuestos)

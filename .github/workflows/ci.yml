@@ -37,6 +37,7 @@ jobs:
     # repository keeps every trigger — its minutes are free.
     if: github.event_name != 'push' || !github.event.repository.private
     runs-on: ubuntu-22.04
+    timeout-minutes: 150
     steps:
       - uses: actions/checkout@v4
 
@@ -89,8 +90,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        runner: [macos-14, macos-15-intel]
+        runner: [macos-15, macos-15-intel]   # macos-14 left Actions 2026-11-02
     runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
