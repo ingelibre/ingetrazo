@@ -3954,7 +3954,6 @@
  "Explode Component": "Explodir Componente",
  "Inferences": "Inferências",
  "Turn all inferences on": "Ativar todas as inferências",
- "Switch every point inference of this menu back on.": "Reativa todas as inferências de ponto deste menu.",
  "Snap to the ends of edges.": "Encaixa nas extremidades das arestas.",
  "Snap to the middle of edges and arcs.": "Encaixa no ponto médio de arestas e arcos.",
  "Snap where edges, guides and faces cross.": "Encaixa onde arestas, guias e faces se cruzam.",
@@ -4355,5 +4354,19 @@
  "Push/Pull bases kept with Ctrl stay sound and cracked results are refused (#1155).": "As bases mantidas com Ctrl em Empurrar/Puxar ficam íntegras e resultados rachados são recusados (#1155).",
  "Camera roll with a 3D mouse (#1406).": "Rolagem da câmera com um mouse 3D (#1406).",
  "A preference to swap orbit and pan on the middle button (#467).": "Uma preferência para trocar órbita e panorâmica no botão do meio (#467).",
- "IFC export writes the project north, the site location and the owning application (#1498).": "A exportação IFC grava o norte do projeto, a localização do terreno e o aplicativo proprietário (#1498)."
+ "IFC export writes the project north, the site location and the owning application (#1498).": "A exportação IFC grava o norte do projeto, a localização do terreno e o aplicativo proprietário (#1498).",
+ "Show a grid of lines on the ground. Its spacing is set in Grid Settings.": "Mostra uma grade de linhas no chão. O espaçamento é definido em Configurações da grade.",
+ "Snap to Grid": "Ajustar à grade",
+ "Free points on the ground jump to the nearest grid crossing. Points of the model still win.": "Pontos livres no chão saltam para o cruzamento da grade mais próximo. Os pontos do modelo continuam tendo prioridade.",
+ "Grid Settings…": "Configurações da grade…",
+ "Choose the grid spacing, the major lines and their color.": "Escolha o espaçamento da grade, as linhas principais e sua cor.",
+ "On grid": "Na grade",
+ "Grid Settings": "Configurações da grade",
+ "Show the grid": "Mostrar a grade",
+ "Major line every:": "Linha principal a cada:",
+ "divisions": "divisões",
+ "Line color:": "Cor da linha:",
+ "Choose which point inferences are on.": "Escolha quais inferências de ponto estão ativas.",
+ "Tick to switch every point inference of this menu on, untick to switch them all off.": "Marque para ativar todas as inferências de ponto deste menu, desmarque para desativar todas.",
+ "Show the grid on the ground, snap to it (F7, F9) and choose its spacing.": "Mostra a grade no chão, ajusta a ela (F7, F9) e escolhe seu espaçamento."
 }

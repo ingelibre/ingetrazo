@@ -3984,7 +3984,6 @@
  "Click an inference point, or press Esc": "انقر على نقطة استدلال أو اضغط Esc",
  "Inferences": "الاستدلالات",
  "Turn all inferences on": "تشغيل كل الاستدلالات",
- "Switch every point inference of this menu back on.": "يعيد تشغيل كل استدلالات النقاط في هذه القائمة.",
  "Snap to the ends of edges.": "الالتقاط عند نهايات الحواف.",
  "Snap to the middle of edges and arcs.": "الالتقاط عند منتصف الحواف والأقواس.",
  "Snap where edges, guides and faces cross.": "الالتقاط حيث تتقاطع الحواف والأدلة والأوجه.",
@@ -4385,5 +4384,19 @@
  "Push/Pull bases kept with Ctrl stay sound and cracked results are refused (#1155).": "القواعد المحتفظ بها بـ Ctrl في الدفع/السحب تبقى سليمة وتُرفض النتائج المتشققة (#1155).",
  "Camera roll with a 3D mouse (#1406).": "دوران الكاميرا حول محورها بفأرة ثلاثية الأبعاد (#1406).",
  "A preference to swap orbit and pan on the middle button (#467).": "تفضيل لتبديل الدوران والتحريك على الزر الأوسط (#467).",
- "IFC export writes the project north, the site location and the owning application (#1498).": "يكتب تصدير IFC شمال المشروع وموقع الأرض والتطبيق المالك (#1498)."
+ "IFC export writes the project north, the site location and the owning application (#1498).": "يكتب تصدير IFC شمال المشروع وموقع الأرض والتطبيق المالك (#1498).",
+ "Show a grid of lines on the ground. Its spacing is set in Grid Settings.": "يعرض شبكة من الخطوط على الأرض. تُضبط المسافة بينها في إعدادات الشبكة.",
+ "Snap to Grid": "الالتقاط إلى الشبكة",
+ "Free points on the ground jump to the nearest grid crossing. Points of the model still win.": "تقفز النقاط الحرة على الأرض إلى أقرب تقاطع في الشبكة. تبقى نقاط النموذج هي الأولى.",
+ "Grid Settings…": "إعدادات الشبكة…",
+ "Choose the grid spacing, the major lines and their color.": "اختر المسافة بين خطوط الشبكة والخطوط الرئيسية ولونها.",
+ "On grid": "على الشبكة",
+ "Grid Settings": "إعدادات الشبكة",
+ "Show the grid": "إظهار الشبكة",
+ "Major line every:": "خط رئيسي كل:",
+ "divisions": "أقسام",
+ "Line color:": "لون الخطوط:",
+ "Choose which point inferences are on.": "اختر استدلالات النقاط المفعّلة.",
+ "Tick to switch every point inference of this menu on, untick to switch them all off.": "حدّده لتشغيل كل استدلالات النقاط في هذه القائمة، وألغِ تحديده لإيقافها كلها.",
+ "Show the grid on the ground, snap to it (F7, F9) and choose its spacing.": "يعرض الشبكة على الأرض، ويلتقط إليها (F7، F9)، ويختار المسافة بين خطوطها."
 }

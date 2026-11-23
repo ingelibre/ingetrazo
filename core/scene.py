@@ -246,6 +246,10 @@ class Scene:
     # drawing hides — axis inference and the arrow-key locks still work,
     # and an open group keeps showing its own axes.
     show_axes: bool = True
+    #: View ▸ Grid (#780): the drawing grid on the ground and Snap to Grid,
+    #: as ``core.grid`` reads them; None = never set (hidden, snap off).
+    #: Travels in the .igz.
+    grid: dict | None = None
     # Tools ▸ North without a location: where true north lies, degrees
     # clockwise from the green (Y) axis — the sun turns with it. Once the
     # model has a location the datum's own north angle is the one that
@@ -962,6 +966,7 @@ class Scene:
         # Outside the guard: an empty document has a camera to forget too.
         self.camera_home = None
         self.views_home = None
+        self.grid = None                 # the grid of #780, as new
         self.ifc_namespace = new_identity()
         self.ifc_project = {}
         self.units = {"length": "m", "precision": 2}

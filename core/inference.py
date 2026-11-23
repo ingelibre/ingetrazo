@@ -320,7 +320,41 @@ class InferenceEngine:
             self._sticky_axis = None
         snap = self._axis_source_cue(snap, px_x, px_y)
         snap = self._extension_snap(snap, px_x, px_y, off)
+        snap = self._grid_snap(snap, start_pt)
         return self._limit_snap(snap, tool)
+
+    #: What a grid crossing may replace: only a free point (#780). Every
+    #: named inference — a corner, a midpoint, an edge, an axis lock —
+    #: keeps winning over the grid.
+    _GRID_REPLACES = frozenset(("none", "on_face", "axis_inference"))
+
+    def _grid_snap(self, snap, start_pt=None):
+        """Snap to Grid (#780): a free point on the ground goes to the
+        nearest crossing of the document's grid. Over a face only when that
+        face lies on the ground (a floor at Z=0); the soft axis cue keeps
+        its colour when the crossing is still on its line."""
+        if snap is None or snap.kind not in self._GRID_REPLACES:
+            return snap
+        from core.grid import COLOR_GRID, snap_point
+        vp = self.viewport
+        point = snap_point(vp.scene, snap.point)
+        if point is None:
+            return snap
+        if snap.kind == "on_face":
+            normal = vp._work_plane_normal() if hasattr(
+                vp, "_work_plane_normal") else None
+            if normal is None or abs(normal.normalized().z()) < 0.999:
+                return snap
+        if snap.kind == "axis_inference" and snap.axis and start_pt is not None:
+            from dataclasses import replace
+            d = point - start_pt
+            off_axis = {"x": (d.y(), d.z()), "y": (d.x(), d.z()),
+                        "z": (d.x(), d.y())}[snap.axis]
+            if all(abs(c) < 1e-9 for c in off_axis):
+                return replace(snap, point=point)
+        return SnapResult(point, "grid", COLOR_GRID,
+                          context=snap.context if snap.kind == "on_face"
+                          else None)
 
     def _limit_snap(self, snap, tool):
         """Enforce ``tool.allowed_snap_kinds``: a snap the tool does not

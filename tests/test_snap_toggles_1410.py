@@ -229,11 +229,11 @@ def test_the_menu_switches_remember_and_turn_all_back_on():
         acts = win._inference_actions
         assert list(acts) == [t.key for t in SNAP_TOGGLES]
         assert all(a.isCheckable() and a.isChecked() for a in acts.values())
-        assert not win._act_inferences_all.isEnabled()
+        assert win._act_inferences_all.isChecked()      # all on (#780)
         acts["face_center"].setChecked(False)
         assert not snap_toggle_enabled("face_center")
         assert QSettings().value(win._INFERENCES_OFF_KEY) == "face_center"
-        assert win._act_inferences_all.isEnabled()
+        assert not win._act_inferences_all.isChecked()
         acts["origin"].setChecked(False)
         assert QSettings().value(win._INFERENCES_OFF_KEY) == "face_center,origin"
         win._act_inferences_all.trigger()

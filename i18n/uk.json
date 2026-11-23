@@ -3956,7 +3956,6 @@
  "Explode Component": "Розбити компонент",
  "Inferences": "Прив'язки",
  "Turn all inferences on": "Увімкнути всі прив'язки",
- "Switch every point inference of this menu back on.": "Знову вмикає всі точкові прив'язки цього меню.",
  "Snap to the ends of edges.": "Прив'язка до кінців ребер.",
  "Snap to the middle of edges and arcs.": "Прив'язка до середин ребер і дуг.",
  "Snap where edges, guides and faces cross.": "Прив'язка до перетинів ребер, напрямних і граней.",
@@ -4357,5 +4356,19 @@
  "Push/Pull bases kept with Ctrl stay sound and cracked results are refused (#1155).": "Основи, збережені з Ctrl під час видавлювання, лишаються цілими, а потріскані результати відхиляються (#1155).",
  "Camera roll with a 3D mouse (#1406).": "Крен камери за допомогою 3D-миші (#1406).",
  "A preference to swap orbit and pan on the middle button (#467).": "Налаштування, що міняє місцями обертання й панорамування на середній кнопці (#467).",
- "IFC export writes the project north, the site location and the owning application (#1498).": "Експорт IFC записує північ проєкту, розташування ділянки та застосунок-власник (#1498)."
+ "IFC export writes the project north, the site location and the owning application (#1498).": "Експорт IFC записує північ проєкту, розташування ділянки та застосунок-власник (#1498).",
+ "Show a grid of lines on the ground. Its spacing is set in Grid Settings.": "Показує сітку ліній на землі. Крок задається в налаштуваннях сітки.",
+ "Snap to Grid": "Прив'язка до сітки",
+ "Free points on the ground jump to the nearest grid crossing. Points of the model still win.": "Вільні точки на землі перескакують до найближчого вузла сітки. Точки моделі й далі мають перевагу.",
+ "Grid Settings…": "Налаштування сітки…",
+ "Choose the grid spacing, the major lines and their color.": "Виберіть крок сітки, основні лінії та їхній колір.",
+ "On grid": "На сітці",
+ "Grid Settings": "Налаштування сітки",
+ "Show the grid": "Показати сітку",
+ "Major line every:": "Основна лінія кожні:",
+ "divisions": "поділок",
+ "Line color:": "Колір ліній:",
+ "Choose which point inferences are on.": "Виберіть, які точкові прив'язки ввімкнено.",
+ "Tick to switch every point inference of this menu on, untick to switch them all off.": "Позначте, щоб увімкнути всі точкові прив'язки цього меню; зніміть позначку, щоб вимкнути їх усі.",
+ "Show the grid on the ground, snap to it (F7, F9) and choose its spacing.": "Показати сітку на землі, прив'язку до неї (F7, F9) і вибрати її крок."
 }

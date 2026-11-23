@@ -420,6 +420,13 @@ class OverlayMixin:
             painter.setPen(mark)
             painter.setBrush(QColor.fromRgbF(r, g, b, 0.30))
             painter.drawPolygon(diamond)
+        elif snap.kind == "grid":
+            # A crossing of the drawing grid (#780): a plus, the shape of
+            # the two grid lines that meet there.
+            for pen in (halo, mark):
+                painter.setPen(pen)
+                painter.drawLine(QPointF(px - 7, py), QPointF(px + 7, py))
+                painter.drawLine(QPointF(px, py - 7), QPointF(px, py + 7))
         elif snap.kind == "on_face":
             painter.setPen(halo)
             painter.drawEllipse(QPointF(px, py), 5.5, 5.5)
