@@ -1529,6 +1529,30 @@ class BaseMapPanel(QWidget):
         self._sync_from_scene()
 
 
+class _InModelList(QListWidget):
+    """The «In model» list: a row dragged into the view places a copy of
+    its component there (``views/place_drag.py``), as «Place a Copy»."""
+
+    #: ``item → starter`` (or ``None``), set by the panel.
+    starter_for = None
+
+    def startDrag(self, actions) -> None:          # noqa: N802 — Qt override
+        item = self.currentItem()
+        starter = (self.starter_for(item) if item is not None
+                   and self.starter_for is not None else None)
+        if starter is None:
+            return
+        from PySide6.QtCore import QMimeData
+        from PySide6.QtGui import QDrag
+        from views import place_drag
+        drag = QDrag(self)
+        drag.setMimeData(place_drag.offer(QMimeData(), starter))
+        icon = item.icon()
+        if not icon.isNull():
+            drag.setPixmap(icon.pixmap(self.iconSize()))
+        place_drag.run(drag, Qt.CopyAction)
+
+
 class ComponentsPanel(QWidget):
     """Components tray: thumbnails grouped in a tree of user-owned
     categories (views/component_tree.py).
@@ -1621,10 +1645,13 @@ class ComponentsPanel(QWidget):
         self._in_model_filter.setClearButtonEnabled(True)
         self._in_model_filter.textChanged.connect(self._apply_in_model_filter)
         lay.addWidget(self._in_model_filter)
-        self._in_model = QListWidget()
+        self._in_model = _InModelList()
         self._in_model.setToolTip(tr(
             "Components placed in this drawing — click one to select its "
-            "copies"))
+            "copies, or drag it into the view to place another"))
+        self._in_model.setDragEnabled(True)
+        self._in_model.setDragDropMode(QListWidget.DragOnly)
+        self._in_model.starter_for = self._place_copy_starter
         self._in_model.itemClicked.connect(self._select_component)
         # Each row shows what the component looks like
         # (views/component_thumbs.py), not only its name.
@@ -1893,6 +1920,18 @@ class ComponentsPanel(QWidget):
         groups = item.data(Qt.UserRole)
         if groups:
             self._select_groups(groups)
+
+    def _place_copy_starter(self, item):
+        """What «Place a Copy» runs for the row ``item`` — what dragging it
+        into the view runs too. ``None`` for «No components yet»."""
+        groups = item.data(Qt.UserRole) or []
+        kept = item.data(Qt.UserRole + 1)
+        if not groups and kept is None:
+            return None
+        from core.kept_components import make_template, place_copy
+        definition = kept if kept is not None else groups[0]
+        return lambda: self._window._start_place(place_copy(
+            kept if kept is not None else make_template(definition)))
 
     def _in_model_actions(self, groups, kept=None) -> list:
         """``[(text, callback, checked, tip)]`` for a row of the «In model»

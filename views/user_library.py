@@ -68,6 +68,15 @@ class LibraryTree(SideTree):
     def apply_drop(self, token, rows) -> None:
         self._panel.move_rows(token, rows)
 
+    def drag_starter(self, rows):
+        """One component file dragged: let go in the view, it is placed
+        there, as its double click places it. Folders, or several rows,
+        only move."""
+        if len(rows) != 1 or rows[0].data(0, DIR_ROLE):
+            return None
+        path = Path(self._panel._key(rows[0]))
+        return lambda: self._panel.insert(path)
+
     def resizeEvent(self, event) -> None:            # noqa: N802 — Qt
         super().resizeEvent(event)
         # Taller, it shows rows that had no room: their pictures now.
@@ -110,7 +119,7 @@ class UserLibraryWidget(QWidget):
         self.tree.setSelectionMode(QTreeWidget.SingleSelection)
         self.tree.setToolTip(tr(
             "Your own components, one .igz file each, sorted in folders — "
-            "double-click one to place it"))
+            "double-click one to place it, or drag it into the view"))
         self.tree.itemDoubleClicked.connect(self._on_double_click)
         self.tree.itemExpanded.connect(self._on_expanded)
         self.tree.itemCollapsed.connect(

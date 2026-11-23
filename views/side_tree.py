@@ -362,7 +362,12 @@ class SideTree(QTreeWidget):
         if not rows:
             return
         drag = QDrag(self)
-        drag.setMimeData(self.mimeData(rows))
+        mime = self.mimeData(rows)
+        starter = self.drag_starter(rows)
+        if starter is not None:
+            from views import place_drag
+            place_drag.offer(mime, starter)
+        drag.setMimeData(mime)
         drag.setPixmap(pm)
         # Held where it was picked up: the pointer stays on the row it
         # pressed, within the first row's height.
@@ -371,8 +376,17 @@ class SideTree(QTreeWidget):
         drag.setHotSpot(QPoint(max(0, min(at.x(), first.width() - 1)),
                                max(0, min(at.y() - first.top(),
                                           first.height() - 1))))
-        drag.exec(Qt.MoveAction)
+        if starter is not None:
+            place_drag.run(drag)
+        else:
+            drag.exec(Qt.MoveAction)
         self._clear_hint()
+
+    def drag_starter(self, rows):
+        """What the dragged ``rows`` place when let go in the view — the
+        callable their double click runs (``views/place_drag.py``) — or
+        ``None``: by default a drag only moves rows within the list."""
+        return None
 
     def dragMoveEvent(self, event) -> None:
         if event.source() is self:

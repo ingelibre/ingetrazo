@@ -60,6 +60,29 @@ class _DropTree(QTreeWidget):
     #: categories, so dragging with a modifier ADDS instead of moving.
     dropped = Signal(str, str, object, object, bool)
 
+    #: ``key → starter`` of a component row, set by the panel: dragged
+    #: into the view, the row places its component there
+    #: (``views/place_drag.py``); dropped on a category it still moves.
+    starter_for = None
+
+    def startDrag(self, actions) -> None:          # noqa: N802 — Qt override
+        item = self.currentItem()
+        if item is None:
+            return
+        from PySide6.QtGui import QDrag
+        from views import place_drag
+        mime = self.mimeData([item])
+        if item.data(0, _KIND) == "item" and self.starter_for is not None:
+            starter = self.starter_for(item.data(0, _REF))
+            if starter is not None:
+                place_drag.offer(mime, starter)
+        drag = QDrag(self)
+        drag.setMimeData(mime)
+        icon = item.icon(0)
+        if not icon.isNull():
+            drag.setPixmap(icon.pixmap(self.iconSize()))
+        place_drag.run(drag)
+
     def dropEvent(self, event) -> None:            # noqa: N802 — Qt override
         src = self.currentItem()
         if src is None:
@@ -133,10 +156,12 @@ class ComponentTree(QWidget):
         self.tree.itemExpanded.connect(self._on_expanded)
         self.tree.itemCollapsed.connect(self._on_collapsed)
         self.tree.dropped.connect(self._on_dropped)
+        self.tree.starter_for = self._starter_for
         self.tree.setToolTip(tr(
-            "Double-click a component to insert it · right-click to manage "
-            "categories · drag a component onto a category to move it "
-            "(hold Alt or Ctrl to list it there as well)"))
+            "Double-click a component to insert it, or drag it into the "
+            "view · right-click to manage categories · drag a component "
+            "onto a category to move it (hold Alt or Ctrl to list it there "
+            "as well)"))
         lay.addWidget(self.tree)
 
         self.set_entries(entries or [])
@@ -449,6 +474,12 @@ class ComponentTree(QWidget):
         node_id = self._pick_category(item_key, tr("Move to category"))
         if node_id is not None:
             self._guarded(self.move_item, item_key, from_id, node_id)
+
+    def _starter_for(self, key: str):
+        """What a double click on the row ``key`` runs — what a drag of it
+        into the view runs too. ``None`` for a key no longer listed."""
+        entry = self._by_key.get(key)
+        return entry.insert if entry is not None else None
 
     def _on_activated(self, item, _col=0) -> None:
         if item.data(0, _KIND) == "item":
