@@ -12,7 +12,7 @@ The example is one room corner that gets new tiles and a sink cabinet:
   Layers       storey / trade / status layers on the CONTAINERS only
   BIM          IFC class on every element; tiles give 2.4 m2
   Views        V_Tiles (delta) and V_Kitchen (new), filed in folders
-  Sheets       Sheet_Tiles and Sheet_Kitchen, one frame each at 1:20
+  Sheets       Sheet_Tiles and Sheet_Kitchen, one frame each at 1:25
   Sheet sets   (planned feature) shown here as one sheet folder per trade
 
 See WORKFLOW.md in this folder for the walkthrough and the screenshots.
@@ -71,6 +71,16 @@ def element(name, ifc_class, colour, *bbox) -> Group:
     return g
 
 
+def covering(name, colour, *corners) -> Group:
+    """A finish (tiles): one face, so its takeoff is exactly its area."""
+    m = Mesh()
+    m.add_face([V(*c) for c in corners])
+    g = Group(m, name=name)
+    g.ifc = {"class": "IfcCovering", "name": name}
+    g.material = {"color": colour, "opacity": 1.0}
+    return g
+
+
 def container(name, layer, children) -> Group:
     """A container of the tree: carries the layer, holds the children."""
     g = Group(Mesh(), name=name)
@@ -98,17 +108,21 @@ def build() -> Scene:
 
     # ---- Elements (metres, Z up). Corner at the origin, room at +X/+Y ---
     floor = element("Floor", "IfcSlab", (0.80, 0.78, 0.74),
-                    -0.2, -0.2, -0.2, 3.0, 2.2, 0.0)
+                    -0.2, -0.2, -0.2, 3.0, 2.6, 0.0)
     wall_a = element("Wall_A", "IfcWall", (0.92, 0.91, 0.88),
                      -0.2, -0.2, 0.0, 3.0, 0.0, 2.5)
     wall_b = element("Wall_B", "IfcWall", (0.92, 0.91, 0.88),
-                     -0.2, 0.0, 0.0, 0.0, 2.2, 2.5)
-    old_tiles = element("Splashback_old", "IfcCovering", (0.55, 0.70, 0.55),
-                        0.2, 0.0, 0.85, 1.8, 0.012, 1.45)
-    new_tiles = element("Tiles_new", "IfcCovering", (0.93, 0.95, 0.98),
-                        0.0, 0.014, 0.85, 2.4, 0.026, 1.85)   # 2.4 x 1.0 m
+                     -0.2, 0.0, 0.0, 0.0, 2.6, 2.5)
+    # The old splashback on Wall_A goes; the sink moves to Wall_B with new
+    # tiles behind it.
+    old_tiles = covering("Splashback_old", (0.55, 0.70, 0.55),   # 1.2 m2
+                         (0.3, 0.005, 0.85), (0.3, 0.005, 1.45),
+                         (2.3, 0.005, 1.45), (2.3, 0.005, 0.85))
+    new_tiles = covering("Tiles_new", (0.93, 0.95, 0.98),        # 2.4 m2
+                         (0.005, 0.2, 0.85), (0.005, 2.2, 0.85),
+                         (0.005, 2.2, 2.05), (0.005, 0.2, 2.05))
     cabinet = element("Sink_base_cabinet", "IfcFurniture",
-                      (0.30, 0.35, 0.45), 0.4, 0.03, 0.0, 1.2, 0.63, 0.85)
+                      (0.30, 0.35, 0.45), 0.012, 0.6, 0.0, 0.612, 1.4, 0.85)
 
     # ---- Model tree: Storey > Trade > Status > Element -----------------
     gf = container("GF", "GF", [
@@ -124,20 +138,21 @@ def build() -> Scene:
     s.groups.append(gf)
 
     # A dimension anchored in the model: the tiled width.
-    s.dimensions.append(Dimension(V(0.0, 0.03, 1.85), V(2.4, 0.03, 1.85),
+    s.dimensions.append(Dimension(V(0.03, 0.2, 2.05), V(0.03, 2.2, 2.05),
                                   V(0, 0, 0.15), layer="Annotations"))
 
     # ---- Saved views (scenes), in folders ------------------------------
     delta = Style(name="Delta", color_by_layer=True).to_dict()
-    cam = dict(target=(1.2, 0.8, 0.9), distance=5.5,
-               yaw=math.radians(55), pitch=math.radians(22),
-               perspective=True)
+    cam = dict(target=(1.3, 1.1, 0.9), distance=7.0,
+               yaw=math.radians(45), pitch=math.radians(24),
+               perspective=False)   # parallel: sheets print to scale
     s.scene_folders = ["Status", "Trades"]
     s.saved_views += [
         SavedView("V_Tiles", folder="Trades", style=delta,
                   hidden_layers=["Kitchen", "Archive"], **cam),
         SavedView("V_Kitchen", folder="Trades",
-                  hidden_layers=["S_Demolition", "Tiles", "Archive"], **cam),
+                  hidden_layers=["S_Demolition", "Tiles", "Annotations",
+                                 "Archive"], **cam),
         SavedView("Corner_old", folder="Status",
                   hidden_layers=["S_New", "Archive"], **cam),
         SavedView("Corner_new", folder="Status",
@@ -149,14 +164,15 @@ def build() -> Scene:
     # ---- Sheets: one frame each, title block with placeholders ---------
     def sheet(name, view, title, number):
         c = Composicion(name=name, paper="A4", landscape=True)
-        c.frames.append(MarcoVista(view_key=f"scene:{view}", scale_n=20.0,
+        c.frames.append(MarcoVista(view_key=f"scene:{view}", scale_n=25.0,
                                    x_mm=15.0, y_mm=15.0, w_mm=267.0,
                                    h_mm=140.0, show_title=True,
                                    title_text=title))
         c.cajetin = Cajetin(x_mm=102.0, y_mm=162.0, w_mm=180.0, h_mm=33.0,
                             proyecto="IngeTrazo workflow demo",
                             autor="IngeTrazo contributors",
-                            escala="1:20", lamina=number)
+                            fecha="2026-11-23", escala="1:25",
+                            lamina=number)
         return c
 
     tiles_sheet = sheet("Sheet_Tiles", "V_Tiles",

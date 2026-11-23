@@ -94,15 +94,21 @@ Model tree ──► Layers ──► Saved views ──► Sheets ──► She
 
 ## 9. Minimal example (this folder)
 
+One room corner: the old splashback on Wall_A is removed, a sink cabinet
+with new tiles goes on Wall_B.
+
 | Element | Model tree | Layers (inherited) | BIM |
 |---|---|---|---|
 | Floor, Wall_A, Wall_B | GF › Walls › Walls_Existing | GF / Walls / S_Existing | IfcSlab, IfcWall |
-| Splashback_old | GF › Tiles › Tiles_Demolition | GF / Tiles / S_Demolition | IfcCovering |
+| Splashback_old | GF › Tiles › Tiles_Demolition | GF / Tiles / S_Demolition | IfcCovering, 1.2 m² |
 | Tiles_new | GF › Tiles › Tiles_New | GF / Tiles / S_New | IfcCovering, 2.4 m² |
 | Sink_base_cabinet | GF › Kitchen › Kitchen_New | GF / Kitchen / S_New | IfcFurniture, 1 pc |
 
+- Finishes such as tiles are single faces, so the takeoff is exactly their
+  area.
 - Views: `V_Tiles` (delta), `V_Kitchen` (new) in folder *Trades*;
-  `Corner_old`, `Corner_new`, `Corner_delta` in folder *Status*.
-- Sheets: `Sheet_Tiles` (V_Tiles, 1:20), `Sheet_Kitchen` (V_Kitchen, 1:20).
+  `Corner_old`, `Corner_new`, `Corner_delta` in folder *Status*. All in
+  parallel projection so that sheets print to scale.
+- Sheets: `Sheet_Tiles` (V_Tiles, 1:25), `Sheet_Kitchen` (V_Kitchen, 1:25).
 - Sheet sets (folders): `Set_Tiler` = Sheet_Tiles,
   `Set_Kitchen_fitter` = Sheet_Kitchen → one PDF each.

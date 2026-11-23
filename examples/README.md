@@ -37,6 +37,18 @@ también para probar las distribuciones de vistas. Es el que sigue el manual
 `pestanas-prueba.py` (`python examples/pestanas-prueba.py` desde la carpeta
 de IngeTrazo).
 
+## Flujo de trabajo completo (workflow-demo)
+
+`workflow-demo/` — la esquina de una habitación (azulejos nuevos y un mueble
+bajo fregadero) que recorre todo el flujo: árbol del modelo
+(planta › oficio › estado › elemento), capas, etiquetas BIM con metrados,
+escenas, láminas y una carpeta de láminas por oficio (anticipo de los juegos
+de láminas). Trae el diagrama de flujo con capturas
+(`workflow-flowchart.drawio`/`.png`), el recorrido en
+[`WORKFLOW.md`](workflow-demo/WORKFLOW.md) y las reglas para un asistente de
+IA en [`AI-INSTRUCTIONS.md`](workflow-demo/AI-INSTRUCTIONS.md) (en inglés).
+Lo genera `workflow-demo/workflow-demo.py`.
+
 ## IngeTrazo sin ventana, por MCP
 
 `headless-mcp-demo.py` — hace lo que haría un agente de IA en un runner de
