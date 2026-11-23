@@ -4352,5 +4352,12 @@
  "Push/Pull bases kept with Ctrl stay sound and cracked results are refused (#1155).": "推/拉中以 Ctrl 保留的底面保持完好，出現裂縫的結果會被拒絕 (#1155)。",
  "Camera roll with a 3D mouse (#1406).": "以 3D 滑鼠橫滾相機 (#1406)。",
  "A preference to swap orbit and pan on the middle button (#467).": "在中鍵上交換環繞與平移的偏好設定 (#467)。",
- "IFC export writes the project north, the site location and the owning application (#1498).": "IFC 匯出寫入專案北向、基地位置與所屬應用程式 (#1498)。"
+ "IFC export writes the project north, the site location and the owning application (#1498).": "IFC 匯出寫入專案北向、基地位置與所屬應用程式 (#1498)。",
+ "Soften Edges…": "柔化邊線…",
+ "Soften Edges": "柔化邊線",
+ "Soften the selected edges whose faces fold up to an angle, and harden the others.": "柔化所選邊線中兩側面折角不超過指定角度的邊線，並硬化其餘邊線。",
+ "Edges whose faces fold this angle or less turn soft; the others turn hard.": "兩側面折角不超過此角度的邊線變為柔化，其餘變為硬邊。",
+ "Soften coplanar edges too": "同時柔化共面邊線",
+ "{soft} of {n} edges soft": "{n} 條邊線中 {soft} 條已柔化",
+ "Deselected so the result shows; select something else to soften it instead.": "已取消選取以便檢視結果；選取其他物件即可改為柔化它。"
 }

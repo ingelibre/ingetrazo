@@ -4357,5 +4357,12 @@
  "Push/Pull bases kept with Ctrl stay sound and cracked results are refused (#1155).": "Основи, збережені з Ctrl під час видавлювання, лишаються цілими, а потріскані результати відхиляються (#1155).",
  "Camera roll with a 3D mouse (#1406).": "Крен камери за допомогою 3D-миші (#1406).",
  "A preference to swap orbit and pan on the middle button (#467).": "Налаштування, що міняє місцями обертання й панорамування на середній кнопці (#467).",
- "IFC export writes the project north, the site location and the owning application (#1498).": "Експорт IFC записує північ проєкту, розташування ділянки та застосунок-власник (#1498)."
+ "IFC export writes the project north, the site location and the owning application (#1498).": "Експорт IFC записує північ проєкту, розташування ділянки та застосунок-власник (#1498).",
+ "Soften Edges…": "Згладити ребра…",
+ "Soften Edges": "Згладити ребра",
+ "Soften the selected edges whose faces fold up to an angle, and harden the others.": "Згладжує вибрані ребра, грані яких сходяться під кутом не більшим за заданий, а решту робить жорсткими.",
+ "Edges whose faces fold this angle or less turn soft; the others turn hard.": "Ребра, грані яких сходяться під цим кутом або меншим, стають м'якими; решта — жорсткими.",
+ "Soften coplanar edges too": "Згладжувати й компланарні ребра",
+ "{soft} of {n} edges soft": "М'яких ребер: {soft} з {n}",
+ "Deselected so the result shows; select something else to soften it instead.": "Виділення знято, щоб було видно результат; виберіть інше, щоб згладити його."
 }

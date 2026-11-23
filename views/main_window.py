@@ -2004,6 +2004,15 @@ class MainWindow(QMainWindow):
         unhide_all_action.triggered.connect(self._on_unhide_all)
         unhide_menu.addAction(unhide_all_action)
 
+        # Soften Edges (#831): the selection's edges soft or hard by the
+        # angle their faces fold — all at once, where Soften goes by hand.
+        soften_action = QAction(tr("Soften Edges…"), self)
+        soften_action.setStatusTip(tr(
+            "Soften the selected edges whose faces fold up to an angle, "
+            "and harden the others."))
+        soften_action.triggered.connect(self.show_soften_dialog)
+        edit_menu.addAction(soften_action)
+
         reverse_action = QAction(tr("Reverse Faces"), self)
         reverse_action.setStatusTip(tr(
             "Swap the front and back sides of the selected faces."))
@@ -6786,6 +6795,8 @@ class MainWindow(QMainWindow):
             menu.addAction(tr("Hide"), self._on_hide)
         if any(not e.soft for e in line_edges):
             menu.addAction(tr("Soften"), lambda: self._on_soften(True))
+        if any(len(getattr(e, "faces", ())) == 2 for e in line_edges):
+            menu.addAction(tr("Soften Edges…"), self.show_soften_dialog)
         if any(self.viewport.scene.entity_hidden(e)
                for e in sel if not isinstance(e, Edge)):
             # Hidden lines come back with Make Visible above.
@@ -7157,6 +7168,27 @@ class MainWindow(QMainWindow):
         self.viewport.update()
         self.statusBar().showMessage(
             tr("Softened {n} edge(s)", n=len(edges)), 3000)
+
+    def show_soften_dialog(self) -> None:
+        """Edit ▸ Soften Edges… (#347): the window that softens the
+        selection by angle — the same controls as the Properties palette's
+        section. One at a time, kept beside the model."""
+        from views.soften_dialog import SoftenEdgesDialog
+        dlg = getattr(self, "_soften_dialog", None)
+        if dlg is None:
+            dlg = SoftenEdgesDialog(self)
+            self._soften_dialog = dlg
+        else:
+            dlg.refresh()
+        dlg.show()
+        dlg.raise_()
+        dlg.activateWindow()
+
+    def _on_soften_scene_changed(self) -> None:
+        """The Soften Edges window, when open, says what it now acts on."""
+        dlg = getattr(self, "_soften_dialog", None)
+        if dlg is not None and dlg.isVisible():
+            dlg.refresh()
 
     def _on_make_visible(self) -> None:
         """Right-click ▸ Make Visible (#831): the selection's invisible
@@ -8906,6 +8938,8 @@ class MainWindow(QMainWindow):
                     live(lambda _v, p=panel: p.on_scene_changed()))
         vp.sceneVersionChanged.connect(
             live(lambda _v: self._on_surfaces_scene_changed()))
+        vp.sceneVersionChanged.connect(
+            live(lambda _v: self._on_soften_scene_changed()))
         # The button of the section box says what undo, a scene or a file
         # just did to it.
         vp.sceneVersionChanged.connect(
