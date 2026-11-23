@@ -15,10 +15,10 @@ Tools: list_documents (start here: every other call names its
 document_id, #892), run_python (transactional, one undo step per call),
 query_model, screenshot (the agent SEES the viewport), undo, redo — and
 named tools with a schema, for clients that do not allow code:
-get_scene_info, get_object_info, list_layers, set_layer_visibility,
-list_scenes, show_scene, set_camera, select, render_sheet, export_view,
-list_materials, apply_material, import_file, export_file; and for
-automation document_info, open_document, save_document, export_pdf and
+get_scene_info, get_object_info, get_takeoff, list_layers,
+set_layer_visibility, list_scenes, show_scene, set_camera, select,
+render_sheet, export_view, list_materials, apply_material, import_file,
+export_file; and for automation document_info, open_document, save_document, export_pdf and
 shutdown. Every mutation goes through IngeTrazo's command engine — the
 hermeticity guard validates the agent's recipes, and Ctrl+Z always works.
 
@@ -292,6 +292,24 @@ TOOLS += [
                         "properties": {"name": _STR, "id": _STR}},
     },
     {
+        "name": "get_takeoff",
+        "description": ("Quantity takeoff (metrado) of the BIM-tagged "
+                        "objects as inge-takeoff v1 JSON: IFC GlobalId (the "
+                        "one the IFC export writes), class, name, type, "
+                        "storey, layer, material, quantities and budget "
+                        "measure in SI units (m, m2, m3, kg, und). What "
+                        "cannot be measured is absent. Optionally only some "
+                        "IFC classes, or only the selection."),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "classes": {"type": "array", "items": {"type": "string"},
+                            "description": "IFC classes, e.g. IfcWall"},
+                "selection_only": {"type": "boolean"},
+            },
+        },
+    },
+    {
         "name": "list_layers",
         "description": "The layers: name, visible, locked, folder; the active one.",
         "inputSchema": {"type": "object", "properties": {}},
@@ -342,12 +360,17 @@ TOOLS += [
     },
     {
         "name": "select",
-        "description": ("Select groups / components by names or ids "
-                        "(mode replace, add, remove, toggle), or clear."),
+        "description": ("Select groups / components by names or ids, or "
+                        "BIM objects by IFC global_ids (mode replace, add, "
+                        "remove, toggle), or clear. global_ids the model "
+                        "does not have come back in not_found."),
         "inputSchema": {
             "type": "object",
             "properties": {
                 "names": _NAMES, "ids": _IDS,
+                "global_ids": {"type": "array", "items": {"type": "string"},
+                               "description": "IFC GlobalIds "
+                                              "(get_takeoff's global_id)"},
                 "clear": {"type": "boolean"},
                 "mode": {"type": "string",
                          "enum": ["replace", "add", "remove", "toggle"]},
@@ -439,7 +462,7 @@ _req_id = 0
 #: auto-approve; running code or opening another document is not. Every
 #: other tool changes the document through one undoable step.
 _READ_ONLY = ("list_documents", "query_model", "screenshot", "get_scene_info",
-              "get_object_info", "list_layers", "list_scenes",
+              "get_object_info", "get_takeoff", "list_layers", "list_scenes",
               "list_materials", "render_sheet", "document_info",
               "export_view")
 # Opening another document, overwriting a file or ending the program can

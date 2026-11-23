@@ -167,7 +167,7 @@ def env():
 
 # ---- The schema ----------------------------------------------------------------
 
-NAMED = ("get_scene_info", "get_object_info", "list_layers",
+NAMED = ("get_scene_info", "get_object_info", "get_takeoff", "list_layers",
          "set_layer_visibility", "list_scenes", "show_scene", "set_camera",
          "select", "screenshot", "export_view", "render_sheet",
          "export_pdf", "document_info", "open_document", "save_document",
