@@ -4352,5 +4352,12 @@
  "Push/Pull bases kept with Ctrl stay sound and cracked results are refused (#1155).": "ฐานที่คงไว้ด้วย Ctrl ในการดัน/ดึงยังสมบูรณ์ และผลลัพธ์ที่แตกร้าวจะถูกปฏิเสธ (#1155)",
  "Camera roll with a 3D mouse (#1406).": "หมุนกล้องรอบแกนมุมมองด้วยเมาส์ 3 มิติ (#1406)",
  "A preference to swap orbit and pan on the middle button (#467).": "ตัวเลือกสลับการโคจรและการเลื่อนบนปุ่มกลาง (#467)",
- "IFC export writes the project north, the site location and the owning application (#1498).": "การส่งออก IFC เขียนทิศเหนือของโครงการ ตำแหน่งที่ตั้ง และแอปพลิเคชันเจ้าของ (#1498)"
+ "IFC export writes the project north, the site location and the owning application (#1498).": "การส่งออก IFC เขียนทิศเหนือของโครงการ ตำแหน่งที่ตั้ง และแอปพลิเคชันเจ้าของ (#1498)",
+ "360° Image (JPG / PNG)…": "ภาพ 360° (JPG / PNG)…",
+ "Save everything around the camera as one panorama picture, to look around in a 360° viewer, a phone or a headset.": "บันทึกทุกสิ่งรอบกล้องเป็นภาพพาโนรามาภาพเดียว เพื่อมองไปรอบ ๆ ในโปรแกรมดู 360° โทรศัพท์ หรือแว่น VR",
+ "Export 360° Image": "ส่งออกภาพ 360°",
+ "{name} — {w} × {h} px": "{name} — {w} × {h} พิกเซล",
+ "Everything around the camera, as seen from where it stands. Open the picture in a 360° viewer to look around.": "ทุกสิ่งรอบกล้อง ตามที่เห็นจากตำแหน่งของกล้อง เปิดภาพในโปรแกรมดู 360° เพื่อมองไปรอบ ๆ",
+ "Export 360° Image failed": "ส่งออกภาพ 360° ไม่สำเร็จ",
+ "JPEG image (*.jpg);;PNG image (*.png)": "ภาพ JPEG (*.jpg);;ภาพ PNG (*.png)"
 }

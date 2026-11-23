@@ -4349,5 +4349,12 @@
  "Push/Pull bases kept with Ctrl stay sound and cracked results are refused (#1155).": "밀기/당기기에서 Ctrl로 남긴 밑면이 온전하게 유지되고 균열이 생긴 결과는 거부됩니다 (#1155).",
  "Camera roll with a 3D mouse (#1406).": "3D 마우스로 카메라 롤 (#1406).",
  "A preference to swap orbit and pan on the middle button (#467).": "가운데 버튼의 궤도 회전과 이동을 바꾸는 설정 (#467).",
- "IFC export writes the project north, the site location and the owning application (#1498).": "IFC 내보내기가 프로젝트 북쪽, 대지 위치, 소유 응용 프로그램을 기록합니다 (#1498)."
+ "IFC export writes the project north, the site location and the owning application (#1498).": "IFC 내보내기가 프로젝트 북쪽, 대지 위치, 소유 응용 프로그램을 기록합니다 (#1498).",
+ "360° Image (JPG / PNG)…": "360° 이미지 (JPG / PNG)…",
+ "Save everything around the camera as one panorama picture, to look around in a 360° viewer, a phone or a headset.": "카메라 주변 전체를 하나의 파노라마 이미지로 저장하여 360° 뷰어, 휴대폰 또는 헤드셋에서 둘러볼 수 있게 합니다.",
+ "Export 360° Image": "360° 이미지 내보내기",
+ "{name} — {w} × {h} px": "{name} — {w} × {h} px",
+ "Everything around the camera, as seen from where it stands. Open the picture in a 360° viewer to look around.": "카메라가 있는 자리에서 본 주변 전체입니다. 360° 뷰어에서 이미지를 열어 둘러보세요.",
+ "Export 360° Image failed": "360° 이미지를 내보내지 못했습니다",
+ "JPEG image (*.jpg);;PNG image (*.png)": "JPEG 이미지 (*.jpg);;PNG 이미지 (*.png)"
 }

@@ -84,6 +84,7 @@ class GLSetupMixin:
         self._loc_fog_enable = self._program.uniformLocation("u_fog_enable")
         self._loc_fog_eye = self._program.uniformLocation("u_fog_eye")
         self._loc_fog_forward = self._program.uniformLocation("u_fog_forward")
+        self._loc_fog_radial = self._program.uniformLocation("u_fog_radial")
         self._loc_fog_color = self._program.uniformLocation("u_fog_color")
         self._loc_fog_start = self._program.uniformLocation("u_fog_start")
         self._loc_fog_end = self._program.uniformLocation("u_fog_end")
@@ -425,6 +426,10 @@ class GLSetupMixin:
 
     #: This picture's background is alpha 0 (``render_image``'s ``transparent``).
     _export_transparent = False
+    #: This picture is one face of a 360° panorama (views.panorama_export):
+    #: the sky and the fog are drawn by direction from the eye, the same in
+    #: all six faces, so the joins between them do not show.
+    _export_panorama = False
 
     # ---- Setup helpers ------------------------------------------------------
     def _compile_program(self) -> QOpenGLShaderProgram:
