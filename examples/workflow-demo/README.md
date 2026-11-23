@@ -10,10 +10,10 @@ tiles is added on the other wall.
 | File | What it is |
 |---|---|
 | `workflow-demo.igz` | the demo model – open it with **File ▸ Open** |
-| `workflow-demo.py` | builds `workflow-demo.igz` (`python examples/workflow-demo/workflow-demo.py` from the IngeTrazo folder) |
-| `workflow-flowchart.drawio` / `.png` | the flow chart above (editable in draw.io, screenshots embedded) – `make_flowchart.py` redraws it |
-| `AI-INSTRUCTIONS.md` | the same workflow as rules for an AI assistant |
+| `workflow-flowchart.drawio` / `.png` | the flow chart above (editable in draw.io, screenshots embedded) |
+| [`AI-INSTRUCTIONS.md`](AI-INSTRUCTIONS.md) | the same workflow as rules for an AI assistant |
 | `images/` | the screenshots used here |
+| `create-demo/` | scripts that rebuild the model (`workflow-demo.py`) and the flow chart (`make_flowchart.py`) |
 
 ## 1. Model tree (Outliner)
 
@@ -31,7 +31,9 @@ GF                       [GF]
    └─ Kitchen_New        [S_New]         Sink_base_cabinet
 ```
 
-![Browser](images/ui_outliner.png)
+| Browser | Model |
+|---|---|
+| ![Browser](images/ui_outliner.png) | ![Model](images/view_model.png) |
 
 ## 2. Layers
 

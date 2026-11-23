@@ -3,9 +3,10 @@
 """Builds workflow-demo.igz: the smallest model that walks through the whole
 IngeTrazo workflow, from the model tree to one PDF per trade.
 
-    python examples/workflow-demo/workflow-demo.py
+    python examples/workflow-demo/create-demo/workflow-demo.py
 
-(from the IngeTrazo folder). It writes workflow-demo.igz next to this script.
+(from the IngeTrazo folder). It writes workflow-demo.igz one folder up,
+next to README.md.
 The example is one room corner that gets new tiles and a sink cabinet:
 
   Model tree   Ground floor > Trade > Status > Element
@@ -15,7 +16,7 @@ The example is one room corner that gets new tiles and a sink cabinet:
   Sheets       Sheet_Tiles and Sheet_Kitchen, one frame each at 1:25
   Sheet sets   (planned feature) shown here as one sheet folder per trade
 
-See WORKFLOW.md in this folder for the walkthrough and the screenshots.
+See ../README.md for the walkthrough and the screenshots.
 """
 from __future__ import annotations
 
@@ -25,8 +26,8 @@ import sys
 from pathlib import Path
 
 try:
-    OUT = Path(__file__).with_name("workflow-demo.igz")
-    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+    OUT = Path(__file__).resolve().parents[1] / "workflow-demo.igz"
+    sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 except NameError:          # run inside IngeTrazo's Python console / MCP
     OUT = None
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")

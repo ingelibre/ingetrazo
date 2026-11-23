@@ -2,12 +2,12 @@
 # Copyright (C) 2026 IngeTrazo contributors.
 """Draws the workflow flow chart with the demo's screenshots, as
 workflow-flowchart.drawio (editable in draw.io, images embedded) and
-workflow-flowchart.png.
+workflow-flowchart.png, one folder up.
 
-    python examples/workflow-demo/make_flowchart.py
+    python examples/workflow-demo/create-demo/make_flowchart.py
 
 Needs matplotlib and Pillow (not IngeTrazo dependencies). The screenshots in
-images/ come from workflow-demo.igz (see WORKFLOW.md).
+images/ come from workflow-demo.igz (see ../README.md).
 """
 from __future__ import annotations
 
@@ -23,7 +23,7 @@ import matplotlib.pyplot as plt  # noqa: E402
 from matplotlib.patches import FancyBboxPatch  # noqa: E402
 from PIL import Image  # noqa: E402
 
-HERE = Path(__file__).resolve().parent
+HERE = Path(__file__).resolve().parents[1]    # examples/workflow-demo
 IMG = HERE / "images"
 W, H, TXT = 720, 270, 285          # block size, width of the text column
 COLS = (40, 880)
@@ -33,10 +33,10 @@ BLUE = "#1a4d8f"
 # key: (col, row, fill, dashed, title, bullets, example, [(image, caption)])
 BLOCKS = {
     "tree": (0, 0, "#dae8fc", False, "Model Tree (Outliner)",
-             "Storey → Trade → Status → Element\n• Containers carry layers\n"
-             "• Elements have no layer (inherit)",
+             "Storey → Trade → Status\n→ Element\n• Containers carry layers\n"
+             "• Elements: no layer (inherit)",
              "GF › Tiles › Tiles_New › Tiles_new",
-             [("ui_outliner.png", "Browser")]),
+             [("ui_outliner.png", "Browser"), ("view_model.png", "Model")]),
     "layer": (1, 0, "#fff2cc", False, "Layers",
               "• Storey / Trade / Status folders\n• Archive (always hidden)\n"
               "→ visibility + colour",

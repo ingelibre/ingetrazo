@@ -80,7 +80,10 @@ Something to open right away: [`examples/`](examples/) holds four real
 documents from the Yanque plaza project — the fountain, the bench with its
 pergola and the solar lamp post with their A3 sheets and PDFs, and the
 welcome arch with all its rebar (also attached to every release as
-`IngeTrazo-ejemplos.zip`).
+`IngeTrazo-ejemplos.zip`). To see how model tree, layers, BIM data,
+scenes and sheets work together, start with the small
+[workflow demo](examples/workflow-demo/) – it also comes with
+[instructions for AI assistants](examples/workflow-demo/AI-INSTRUCTIONS.md).
 
 ## What works today
 

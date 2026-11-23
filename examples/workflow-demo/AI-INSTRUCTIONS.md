@@ -5,8 +5,8 @@ instructions, `CLAUDE.md`, a skill …). It describes a best-practice workflow
 for building and documenting a building model in IngeTrazo, for example
 through the AI bridge (MCP, see [`docs/ai-bridge.md`](../../docs/ai-bridge.md)).
 The demo model in this folder (`workflow-demo.igz`, built by
-`workflow-demo.py`) follows every rule below; [`WORKFLOW.md`](WORKFLOW.md)
-shows it step by step with screenshots.
+`create-demo/workflow-demo.py`) follows every rule below;
+[`README.md`](README.md) shows it step by step with screenshots.
 
 ## 1. Core idea
 The model geometry is the single source of truth. Everything else – layers,

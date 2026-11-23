@@ -45,9 +45,9 @@ bajo fregadero) que recorre todo el flujo: árbol del modelo
 escenas, láminas y una carpeta de láminas por oficio (anticipo de los juegos
 de láminas). Trae el diagrama de flujo con capturas
 (`workflow-flowchart.drawio`/`.png`), el recorrido en
-[`WORKFLOW.md`](workflow-demo/WORKFLOW.md) y las reglas para un asistente de
+[`README.md`](workflow-demo/README.md) y las reglas para un asistente de
 IA en [`AI-INSTRUCTIONS.md`](workflow-demo/AI-INSTRUCTIONS.md) (en inglés).
-Lo genera `workflow-demo/workflow-demo.py`.
+Lo genera `workflow-demo/create-demo/workflow-demo.py`.
 
 ## IngeTrazo sin ventana, por MCP
 
