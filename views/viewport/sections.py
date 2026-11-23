@@ -13,6 +13,7 @@ from core.style import xray_enabled
 from core.triangulate import plane_axes
 from views.viewport._support import (_active_cut, GL_LINES, GL_TRIANGLES,
                                      GL_CLIP_DISTANCE0, GL_POLYGON_OFFSET_FILL,
+                                     _MAX_CUT_PLANES,
                                      _point_to_segment_distance_2d)
 
 
@@ -25,9 +26,14 @@ class SectionPlaneMixin:
         (``gl_ClipDistance`` in basic.vert). ``skip`` leaves that plane (or
         those, a tuple) out: what is drawn IN a cut plane (its fill, its
         thick lines) is clipped by the others only — a box face's fill stops
-        at the box. No-op when nothing cuts."""
+        at the box. With no cut active the clip is switched off instead of
+        left alone: every frame ends with it on (``_draw_previews_after``),
+        so a bare return would leave the last plane cutting (#1574)."""
         vecs = getattr(self, "_clip_vecs", None)
         if not vecs:
+            self._program.setUniformValue(self._loc_clip_count, 0)
+            for i in range(_MAX_CUT_PLANES):
+                self._gl.glDisable(GL_CLIP_DISTANCE0 + i)
             return
         skips = skip if isinstance(skip, tuple) else (skip,)
         if on:
