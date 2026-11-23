@@ -4349,5 +4349,18 @@
  "Push/Pull bases kept with Ctrl stay sound and cracked results are refused (#1155).": "밀기/당기기에서 Ctrl로 남긴 밑면이 온전하게 유지되고 균열이 생긴 결과는 거부됩니다 (#1155).",
  "Camera roll with a 3D mouse (#1406).": "3D 마우스로 카메라 롤 (#1406).",
  "A preference to swap orbit and pan on the middle button (#467).": "가운데 버튼의 궤도 회전과 이동을 바꾸는 설정 (#467).",
- "IFC export writes the project north, the site location and the owning application (#1498).": "IFC 내보내기가 프로젝트 북쪽, 대지 위치, 소유 응용 프로그램을 기록합니다 (#1498)."
+ "IFC export writes the project north, the site location and the owning application (#1498).": "IFC 내보내기가 프로젝트 북쪽, 대지 위치, 소유 응용 프로그램을 기록합니다 (#1498).",
+ "Unknown variable: {name}": "알 수 없는 변수: {name}",
+ "The variable {name} depends on itself": "변수 {name}이(가) 자기 자신을 참조합니다",
+ "The variable {name} has an error": "변수 {name}에 오류가 있습니다",
+ "Type a name": "이름을 입력하세요",
+ "A name starts with a letter and has only letters, digits and _": "이름은 문자로 시작하며 문자, 숫자, _만 쓸 수 있습니다",
+ "{name} is a unit: choose another name": "{name}은(는) 단위입니다. 다른 이름을 고르세요",
+ "There is already a variable called {name}": "{name}(이)라는 변수가 이미 있습니다",
+ "{value} (number)": "{value} (숫자)",
+ "Give a measurement a name and type it in any calculation: =width/2 in the value box or in a field.": "치수에 이름을 붙이고 어떤 계산에서든 그 이름을 입력하세요: 치수 상자나 입력란에서 =너비/2.",
+ "Add a variable": "변수 추가",
+ "Delete the selected variables": "선택한 변수 삭제",
+ "Result": "결과",
+ "Variables": "변수"
 }

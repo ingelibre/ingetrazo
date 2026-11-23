@@ -4349,5 +4349,18 @@
  "Push/Pull bases kept with Ctrl stay sound and cracked results are refused (#1155).": "プッシュ/プルで Ctrl により残したベースが健全に保たれ、ひびの入った結果は拒否されます (#1155)。",
  "Camera roll with a 3D mouse (#1406).": "3D マウスによるカメラのロール (#1406)。",
  "A preference to swap orbit and pan on the middle button (#467).": "中ボタンのオービットとパンを入れ替える設定 (#467)。",
- "IFC export writes the project north, the site location and the owning application (#1498).": "IFC 書き出しでプロジェクトの北、敷地の位置、所有アプリケーションを書き込みます (#1498)。"
+ "IFC export writes the project north, the site location and the owning application (#1498).": "IFC 書き出しでプロジェクトの北、敷地の位置、所有アプリケーションを書き込みます (#1498)。",
+ "Unknown variable: {name}": "不明な変数: {name}",
+ "The variable {name} depends on itself": "変数 {name} が自分自身を参照しています",
+ "The variable {name} has an error": "変数 {name} にエラーがあります",
+ "Type a name": "名前を入力してください",
+ "A name starts with a letter and has only letters, digits and _": "名前は文字で始まり、文字・数字・_ だけを使えます",
+ "{name} is a unit: choose another name": "{name} は単位です。別の名前を選んでください",
+ "There is already a variable called {name}": "{name} という変数はすでにあります",
+ "{value} (number)": "{value}（数値）",
+ "Give a measurement a name and type it in any calculation: =width/2 in the value box or in a field.": "寸法に名前を付けて、どの計算でもその名前を入力できます: 寸法ボックスや入力欄で =幅/2。",
+ "Add a variable": "変数を追加",
+ "Delete the selected variables": "選択した変数を削除",
+ "Result": "結果",
+ "Variables": "変数"
 }

@@ -155,6 +155,25 @@ class SetPluginDataCommand(Command):
         scene.version += 1
 
 
+class SetVariablesCommand(Command):
+    """Replace the model's variables (``scene.variables``, the names a
+    calculation after «=» reads), undoably: the Variables panel's every
+    edit. ``variables`` is ``{name: text}`` in the order to keep."""
+
+    def __init__(self, variables: dict) -> None:
+        self.variables = {str(k): str(v) for k, v in dict(variables).items()}
+        self._before: dict = {}
+
+    def do(self, scene) -> None:
+        self._before = dict(getattr(scene, "variables", None) or {})
+        scene.variables = dict(self.variables)
+        scene.version += 1
+
+    def undo(self, scene) -> None:
+        scene.variables = dict(self._before)
+        scene.version += 1
+
+
 class History:
     """Undo/redo stacks. ``execute`` is TRANSACTIONAL: if a command throws
     mid-mutation, the mesh is restored to its pre-command state, the failure

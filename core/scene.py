@@ -206,6 +206,11 @@ class Scene:
     #: .igz; the core never reads it. Changed through
     #: ``core.history.SetPluginDataCommand`` so each edit is undoable.
     plugin_data: dict = field(default_factory=dict)
+    #: The model's variables, ``{name: text}`` as typed (``3.20m``, ``4``,
+    #: ``=ancho-2*muro``): what a calculation after «=» reads by name
+    #: (``core.units.model_variables``). Travels in the .igz; changed
+    #: through ``core.history.SetVariablesCommand``.
+    variables: dict = field(default_factory=dict)
     #: The layout the document was opened from, when it was the plain-JSON
     #: one (``"json"``, formats.igz): an Automatic save keeps it, so a
     #: document kept in Git stays diffable. None for everything else.
@@ -902,7 +907,7 @@ class Scene:
                 or self.guides or self.geo_points or self.text_labels
                 or self.saved_views or self.compositions
                 or self.scene_folders or self.sheet_folders
-                or self.image_planes or self.plugin_data
+                or self.image_planes or self.plugin_data or self.variables
                 or self.kept_components or self.section_planes
                 or self.section_boxes
                 or self.materials or self.animation.to_dict()
@@ -932,6 +937,7 @@ class Scene:
             self.kept_components.clear()
             self.materials.clear()
             self.plugin_data = {}
+            self.variables = {}
             self.selection.clear()
             from core.layers import DEFAULT_LAYER, Layer
             self.layers = [Layer(DEFAULT_LAYER)]
@@ -966,6 +972,7 @@ class Scene:
         self.ifc_project = {}
         self.units = {"length": "m", "precision": 2}
         self.plugin_data = {}
+        self.variables = {}
 
     # ---- Queries ------------------------------------------------------------
     def iter_world_faces(self):
