@@ -277,7 +277,9 @@ class RenderMixin:
             self._draw_image_planes()
         _fmark("ground")
 
-        # No grid — the infinite axes are the spatial reference.
+        # The infinite axes are the spatial reference; the drawing grid
+        # (#780, off by default) goes over the model's static passes, see
+        # _paint_static.
 
         # Persistent edges + faces
         self._sync_edges()
@@ -470,6 +472,13 @@ class RenderMixin:
             self._perf_stat = st
 
     def _paint_static(self, mvp, w, h, style, mode, _fmark, hover) -> None:
+        """The model's static passes, then the drawing grid over them (it
+        belongs to the kept frame, as the ground does)."""
+        self._paint_static_model(mvp, w, h, style, mode, _fmark, hover)
+        self._draw_grid(mvp, style)
+
+    def _paint_static_model(self, mvp, w, h, style, mode, _fmark,
+                            hover) -> None:
         """Composite far geometry, the display ground, then near geometry.
 
         Splitting at Z=0 keeps translucent faces on either side correctly
@@ -1309,6 +1318,7 @@ class RenderMixin:
                 id(sc.edit_group), self._edit_rest_mode,
                 self.edit_rest_fade,
                 getattr(sc, "show_axes", True),
+                repr(getattr(sc, "grid", None)),
                 tuple((id(g), v3(g.point), v3(getattr(g, "direction", None)),
                        v3(getattr(g, "origin", None)), g in sc.selection)
                       for g in (getattr(sc, "guides", None) or ())),
@@ -1670,6 +1680,65 @@ class RenderMixin:
         self._gl.glDepthMask(GL_TRUE)
         self._gl.glEnable(GL_DEPTH_TEST)
         _scene_blend(self._gl)
+
+    def _grid_showing(self) -> bool:
+        """The drawing grid (#780) is drawn: shown in the document, and the
+        view is the model's own — not an export, not a plan style, not over
+        a map, terrain or photo that already is the ground."""
+        from core.grid import grid_of
+        if not grid_of(self.scene)["visible"]:
+            return False
+        return (self._export_size is None and self.plano_style is None
+                and not self._base_map_showing()
+                and not self._terrain_showing() and not self._photo_showing())
+
+    def _draw_grid(self, mvp, style) -> None:
+        """The grid on the Z=0 plane, depth-tested against the model (what
+        stands in front of it hides it) without writing depth itself."""
+        if not self._grid_showing():
+            return
+        from core.grid import grid_of, line_color
+        inverse, valid = mvp.inverted()
+        if not valid:
+            return
+        program = getattr(self, "_grid_program", None)
+        if program is None:
+            program = QOpenGLShaderProgram(self)
+            vertex = program.addShaderFromSourceFile(
+                QOpenGLShader.Vertex, str(SHADER_DIR / "style_ground.vert"))
+            fragment = program.addShaderFromSourceFile(
+                QOpenGLShader.Fragment, str(SHADER_DIR / "grid.frag"))
+            if not (vertex and fragment and program.link()):
+                raise RuntimeError("grid shader compile/link failed:\n"
+                                   + program.log())
+            self._grid_program = program
+        grid = grid_of(self.scene)
+        base = (style.ground_color if self._style_ground_visible(style)
+                else style.background)
+        program.bind()
+        program.setUniformValue("u_mvp", mvp)
+        program.setUniformValue("u_inverse_mvp", inverse)
+        program.setUniformValue("u_color", QVector3D(
+            *line_color(self.scene, base)))
+        program.setUniformValue1f("u_spacing", float(grid["spacing"]))
+        program.setUniformValue1f("u_major", float(grid["major"]))
+        program.setUniformValue1f("u_alpha", 1.0)
+        quad = array("f", [-1, -1, 0, 1, -1, 0, 1, 1, 0,
+                           -1, -1, 0, 1, 1, 0, -1, 1, 0])
+        self._ground_vbo.bind()
+        self._ground_vbo.allocate(quad.tobytes(), len(quad) * 4)
+        self._ground_vbo.release()
+        self._ground_vao.bind()
+        self._gl.glEnable(GL_DEPTH_TEST)
+        self._gl.glDepthMask(GL_FALSE)
+        self._gl.glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA,
+                                     1, GL_ONE_MINUS_SRC_ALPHA)
+        self._gl.glDrawArrays(GL_TRIANGLES, 0, 6)
+        _scene_blend(self._gl)
+        self._gl.glDepthMask(GL_TRUE)
+        self._ground_vao.release()
+        program.release()
+        self._program.bind()
 
     def _draw_style_ground(self, mvp, style) -> None:
         """Composite the optional Z=0 plane over geometry below ground.

@@ -2348,6 +2348,32 @@ class MainWindow(QMainWindow):
         self._act_show_axes.setChecked(True)
         self._act_show_axes.toggled.connect(self._set_show_axes)
         camera_menu.addAction(self._act_show_axes)
+        # Camera ▸ Grid / Snap to Grid / Grid Settings… (#780): the drawing
+        # grid on the ground, off until the user asks for it; the settings
+        # travel with the document. The same actions are the Grid and Snap
+        # switches of the status bar.
+        self._act_grid_show = QAction(tr("Grid"), self)
+        self._act_grid_show.setShortcut(QKeySequence("F7"))
+        self._act_grid_show.setStatusTip(tr(
+            "Show a grid of lines on the ground. Its spacing is set in "
+            "Grid Settings."))
+        self._act_grid_show.setCheckable(True)
+        self._act_grid_show.toggled.connect(
+            lambda on: self._set_grid(visible=on))
+        camera_menu.addAction(self._act_grid_show)
+        self._act_grid_snap = QAction(tr("Snap to Grid"), self)
+        self._act_grid_snap.setShortcut(QKeySequence("F9"))
+        self._act_grid_snap.setStatusTip(tr(
+            "Free points on the ground jump to the nearest grid crossing. "
+            "Points of the model still win."))
+        self._act_grid_snap.setCheckable(True)
+        self._act_grid_snap.toggled.connect(self._set_grid_snap)
+        camera_menu.addAction(self._act_grid_snap)
+        self._act_grid_settings = QAction(tr("Grid Settings…"), self)
+        self._act_grid_settings.setStatusTip(tr(
+            "Choose the grid spacing, the major lines and their color."))
+        self._act_grid_settings.triggered.connect(self._edit_grid_settings)
+        camera_menu.addAction(self._act_grid_settings)
 
         camera_menu.addSeparator()
         for action in self._nav_actions.values():   # Orbit / Pan / Zoom / Zoom Window
@@ -4259,13 +4285,22 @@ class MainWindow(QMainWindow):
         menu = QMenu(tr("Inferences"), parent)
         self._inference_menu = menu         # a QMenu dies with its locals
         self._inference_actions = {}
+        # A check for all of them at once (#780): ticked while every one is
+        # on; untick it to switch them all off, tick it for all on again.
         act_all = QAction(tr("Turn all inferences on"), self)
+        act_all.setCheckable(True)
         act_all.setStatusTip(tr(
-            "Switch every point inference of this menu back on."))
-        act_all.triggered.connect(self._on_all_inferences_on)
+            "Tick to switch every point inference of this menu on, untick "
+            "to switch them all off."))
+        act_all.toggled.connect(self._on_all_inferences)
         menu.addAction(act_all)
         menu.addSeparator()
         self._act_inferences_all = act_all
+        # The status bar's Inferences button (#780): a click opens this
+        # menu. Not a switch itself, so it is never highlighted.
+        self._act_inferences_switch = QAction(tr("Inferences"), self)
+        self._act_inferences_switch.setStatusTip(tr(
+            "Choose which point inferences are on."))
         self._sync_inference_menu()
         menu.aboutToShow.connect(self._sync_inference_menu)
         return menu
@@ -4288,16 +4323,21 @@ class MainWindow(QMainWindow):
             act.blockSignals(True)
             act.setChecked(snap_toggle_enabled(toggle.key))
             act.blockSignals(False)
-        self._act_inferences_all.setEnabled(bool(disabled_snap_toggles()))
+        self._act_inferences_all.blockSignals(True)
+        self._act_inferences_all.setChecked(not disabled_snap_toggles())
+        self._act_inferences_all.blockSignals(False)
 
     def _on_inference_toggled(self, key: str, on: bool) -> None:
         from core.snap import set_snap_toggle_enabled
         set_snap_toggle_enabled(key, on)
         self._inferences_changed()
 
-    def _on_all_inferences_on(self) -> None:
-        from core.snap import set_disabled_snap_toggles
-        set_disabled_snap_toggles(())
+    def _on_all_inferences(self, on: bool) -> None:
+        """«Turn all inferences on» ticked: every one on; unticked: every
+        one off (an extension's switches too)."""
+        from core.snap import SNAP_TOGGLES, set_disabled_snap_toggles
+        set_disabled_snap_toggles(
+            () if on else [t.key for t in SNAP_TOGGLES])
         self._inferences_changed()
 
     def _inferences_changed(self) -> None:
@@ -5022,6 +5062,52 @@ class MainWindow(QMainWindow):
         self._repeat_label.hide()
         bar.addPermanentWidget(self._repeat_label)
 
+        # The status bar's switches (#780): the drawing grid and the point
+        # inferences, as icons with their tooltips. A click (or a
+        # right-click) on either opens its list of checks: Grid, Snap to
+        # Grid and Grid Settings…; the inferences one by one.
+        from views.status_toggles import StatusToggles
+        self._status_toggles = StatusToggles(bar)
+        theme_style(self._status_toggles,
+                    # The accent while the pointer is on it or its list is
+                    # open, as the toolbars' buttons; plain again after.
+                    "QToolButton {{ padding: 1px 6px; border-radius: 3px;"
+                    " background: transparent;"
+                    " border: 1px solid transparent; }}"
+                    "QToolButton:hover {{"
+                    " background: rgba({accent_rgb}, 38);"
+                    " border-color: rgba({accent_rgb}, 110); }}"
+                    "QToolButton:pressed, QToolButton:open {{"
+                    " background: rgba({accent_rgb}, 70);"
+                    " border-color: rgba({accent_rgb}, 180); }}"
+                    "QToolButton::menu-indicator {{ image: none; width: 0; }}")
+        # The grid's button opens its list, as the inferences' does: it is
+        # no switch itself, so it is never highlighted.
+        from views.shortcuts import set_tooltip
+        self._act_grid_switch = QAction(tool_icon("grid"), tr("Grid"), self)
+        self._act_grid_switch.setStatusTip(tr(
+            "Show the grid on the ground, snap to it (F7, F9) and choose "
+            "its spacing."))
+        set_tooltip(self._act_grid_switch, tr("Grid"))
+        grid_menu = QMenu(self)
+        grid_menu.addAction(self._act_grid_show)
+        grid_menu.addAction(self._act_grid_snap)
+        grid_menu.addSeparator()
+        grid_menu.addAction(self._act_grid_settings)
+        self._grid_menu = grid_menu              # a QMenu dies with its locals
+        self._act_inferences_switch.setIcon(tool_icon("inferences"))
+        set_tooltip(self._act_inferences_switch, tr("Inferences"))
+        icon_actions = self.__dict__.setdefault("_icon_actions", [])
+        icon_actions += [(self._act_grid_switch, "grid"),
+                         (self._act_inferences_switch, "inferences")]
+        self._status_toggles.add("grid", self._act_grid_switch,
+                                 menu=grid_menu, popup=True,
+                                 context=grid_menu)
+        self._status_toggles.add("inferences", self._act_inferences_switch,
+                                 menu=self._inference_menu, popup=True,
+                                 context=self._inference_menu)
+        self._sync_grid_actions()
+
         # Measurements box (VCB), pinned bottom-right: a caption
         # ("Length" / "Dimensions" / "Distance") plus a boxed field showing the
         # live measurement, or what you're typing (highlighted while typing).
@@ -5035,6 +5121,9 @@ class MainWindow(QMainWindow):
         self._vcb_value.setStyleSheet(self._VCB_IDLE_STYLE)
         bar.addPermanentWidget(self._vcb_name)
         bar.addPermanentWidget(self._vcb_value)
+        # The grid and inference icons last: always the far right of the
+        # bar, the measurements box right beside them on their left.
+        bar.addPermanentWidget(self._status_toggles)
         # Numbers and coordinates read left to right in a mirrored (right-to-
         # left, #1067) interface too: what is typed here goes to the tools.
         from views.rtl import keep_ltr
@@ -6023,7 +6112,61 @@ class MainWindow(QMainWindow):
             act.blockSignals(True)
             act.setChecked(value)
             act.blockSignals(False)
+        self._sync_grid_actions()
         self._sync_styles_hidden_geometry()
+
+    # ---- The drawing grid (#780) --------------------------------------------
+    def _sync_grid_actions(self) -> None:
+        """Grid and Snap to Grid show the active document's grid; Snap reads
+        on only while the grid is shown, as it only acts then."""
+        from core.grid import grid_of
+        grid = grid_of(self.viewport.scene)
+        for act, value in ((getattr(self, "_act_grid_show", None),
+                            grid["visible"]),
+                           (getattr(self, "_act_grid_snap", None),
+                            grid["visible"] and grid["snap"])):
+            if act is None:
+                continue
+            act.blockSignals(True)
+            act.setChecked(value)
+            act.blockSignals(False)
+
+    def _set_grid(self, **changes) -> None:
+        from core.grid import set_grid
+        set_grid(self.viewport.scene, **changes)
+        self._sync_grid_actions()
+        for vp in self.all_viewports():
+            vp.update()
+
+    def _set_grid_snap(self, on: bool) -> None:
+        """Snap to Grid on shows the grid too: a snap to lines nobody can
+        see would only move points for no visible reason."""
+        if on:
+            self._set_grid(snap=True, visible=True)
+        else:
+            self._set_grid(snap=False)
+
+    def _edit_grid_settings(self) -> None:
+        """Camera ▸ Grid Settings…: a change of spacing, major lines or
+        colour is the document's (it asks to be saved); showing the grid
+        and its snap are view switches, like the axes."""
+        from PySide6.QtWidgets import QDialog
+        from core.grid import grid_of
+        from views.grid_dialog import GridDialog
+        scene = self.viewport.scene
+        before = grid_of(scene)
+        dlg = GridDialog(before, self)
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return
+        after = dlg.settings()
+        if after["snap"]:
+            after["visible"] = True
+        self._set_grid(**after)
+        now = grid_of(scene)
+        if (any(now[k] != before[k] for k in ("spacing", "major", "color"))
+                and scene.version == self._saved_version):
+            self._saved_version = -1
+            self._update_title()
 
     def _sync_styles_hidden_geometry(self) -> None:
         """The Styles panel's Hidden Geometry box follows the scene flag

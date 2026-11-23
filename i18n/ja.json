@@ -3948,7 +3948,6 @@
  "Explode Component": "コンポーネントを分解",
  "Inferences": "推定",
  "Turn all inferences on": "すべての推定をオン",
- "Switch every point inference of this menu back on.": "このメニューの点の推定をすべて再びオンにします。",
  "Snap to the ends of edges.": "エッジの端点にスナップします。",
  "Snap to the middle of edges and arcs.": "エッジと円弧の中点にスナップします。",
  "Snap where edges, guides and faces cross.": "エッジ、ガイド、面が交差する位置にスナップします。",
@@ -4349,5 +4348,19 @@
  "Push/Pull bases kept with Ctrl stay sound and cracked results are refused (#1155).": "プッシュ/プルで Ctrl により残したベースが健全に保たれ、ひびの入った結果は拒否されます (#1155)。",
  "Camera roll with a 3D mouse (#1406).": "3D マウスによるカメラのロール (#1406)。",
  "A preference to swap orbit and pan on the middle button (#467).": "中ボタンのオービットとパンを入れ替える設定 (#467)。",
- "IFC export writes the project north, the site location and the owning application (#1498).": "IFC 書き出しでプロジェクトの北、敷地の位置、所有アプリケーションを書き込みます (#1498)。"
+ "IFC export writes the project north, the site location and the owning application (#1498).": "IFC 書き出しでプロジェクトの北、敷地の位置、所有アプリケーションを書き込みます (#1498)。",
+ "Show a grid of lines on the ground. Its spacing is set in Grid Settings.": "地面に線のグリッドを表示します。間隔はグリッド設定で指定します。",
+ "Snap to Grid": "グリッドにスナップ",
+ "Free points on the ground jump to the nearest grid crossing. Points of the model still win.": "地面上の自由な点は最も近いグリッドの交点へ移動します。モデルの点が引き続き優先されます。",
+ "Grid Settings…": "グリッド設定…",
+ "Choose the grid spacing, the major lines and their color.": "グリッドの間隔、主線とその色を選びます。",
+ "On grid": "グリッド上",
+ "Grid Settings": "グリッド設定",
+ "Show the grid": "グリッドを表示",
+ "Major line every:": "主線の間隔:",
+ "divisions": "分割",
+ "Line color:": "線の色:",
+ "Choose which point inferences are on.": "有効にする点の推定を選びます。",
+ "Tick to switch every point inference of this menu on, untick to switch them all off.": "チェックするとこのメニューの点の推定をすべてオンに、外すとすべてオフにします。",
+ "Show the grid on the ground, snap to it (F7, F9) and choose its spacing.": "地面にグリッドを表示し、スナップし (F7、F9)、間隔を選びます。"
 }

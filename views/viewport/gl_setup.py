@@ -75,6 +75,7 @@ class GLSetupMixin:
 
         self._program = self._compile_program()
         self._style_ground_program = None
+        self._grid_program = None
         self._watermark_textures = {}
         self._loc_mvp = self._program.uniformLocation("u_mvp")
         self._loc_color = self._program.uniformLocation("u_color")

@@ -1046,6 +1046,10 @@ def _save_document(scene, path, *, large, stream=None, thumbnail=None,
         payload["hidden_view"] = shown       # View ▸ Hidden Objects / Geometry
     if not getattr(scene, "show_axes", True):
         payload["axes_hidden"] = True        # Camera ▸ Axes (shown is implicit)
+    from core.grid import to_payload as _grid_payload
+    grid = _grid_payload(scene)
+    if grid is not None:
+        payload["grid"] = grid               # View ▸ Grid (#780), once set
     dstyle = getattr(scene, "display_style", None)
     if dstyle is not None:
         from core.style import Style
@@ -1854,6 +1858,7 @@ def _load_into_inner(scene, path: Path, progress=None) -> None:
     scene.show_hidden_objects = False
     scene.show_hidden_geometry = False
     scene.show_axes = True
+    scene.grid = None
     scene.custom_scales = []
     scene.back_face_color = None
     from core.scene import Scene
@@ -2092,6 +2097,8 @@ def _load_into_inner(scene, path: Path, progress=None) -> None:
     scene.views_home = dict(views) if isinstance(views, dict) else None
     from core.units import model_units_of
     scene.units = model_units_of(payload)   # validated; absent = metres
+    from core.grid import from_payload as _grid_from
+    scene.grid = _grid_from(payload, scene.units.get("length", "m"))
     pdata = payload.get("plugin_data")
     scene.plugin_data = dict(pdata) if isinstance(pdata, dict) else {}
     scales = payload.get("custom_scales")

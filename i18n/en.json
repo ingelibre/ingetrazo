@@ -51,5 +51,19 @@
  "Serializing geometry…": "Serializing geometry…",
  "Packing textures…": "Packing textures…",
  "Writing file…": "Writing file…",
- "Saved": "Saved"
+ "Saved": "Saved",
+ "Show a grid of lines on the ground. Its spacing is set in Grid Settings.": "Show a grid of lines on the ground. Its spacing is set in Grid Settings.",
+ "Snap to Grid": "Snap to Grid",
+ "Free points on the ground jump to the nearest grid crossing. Points of the model still win.": "Free points on the ground jump to the nearest grid crossing. Points of the model still win.",
+ "Grid Settings…": "Grid Settings…",
+ "Choose the grid spacing, the major lines and their color.": "Choose the grid spacing, the major lines and their color.",
+ "On grid": "On grid",
+ "Grid Settings": "Grid Settings",
+ "Show the grid": "Show the grid",
+ "Major line every:": "Major line every:",
+ "divisions": "divisions",
+ "Line color:": "Line color:",
+ "Choose which point inferences are on.": "Choose which point inferences are on.",
+ "Tick to switch every point inference of this menu on, untick to switch them all off.": "Tick to switch every point inference of this menu on, untick to switch them all off.",
+ "Show the grid on the ground, snap to it (F7, F9) and choose its spacing.": "Show the grid on the ground, snap to it (F7, F9) and choose its spacing."
 }

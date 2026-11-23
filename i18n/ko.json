@@ -3948,7 +3948,6 @@
  "Explode Component": "컴포넌트 분해",
  "Inferences": "추정",
  "Turn all inferences on": "모든 추정 켜기",
- "Switch every point inference of this menu back on.": "이 메뉴의 모든 점 추정을 다시 켭니다.",
  "Snap to the ends of edges.": "모서리의 끝점에 스냅합니다.",
  "Snap to the middle of edges and arcs.": "모서리와 호의 중점에 스냅합니다.",
  "Snap where edges, guides and faces cross.": "모서리, 가이드, 면이 교차하는 곳에 스냅합니다.",
@@ -4349,5 +4348,19 @@
  "Push/Pull bases kept with Ctrl stay sound and cracked results are refused (#1155).": "밀기/당기기에서 Ctrl로 남긴 밑면이 온전하게 유지되고 균열이 생긴 결과는 거부됩니다 (#1155).",
  "Camera roll with a 3D mouse (#1406).": "3D 마우스로 카메라 롤 (#1406).",
  "A preference to swap orbit and pan on the middle button (#467).": "가운데 버튼의 궤도 회전과 이동을 바꾸는 설정 (#467).",
- "IFC export writes the project north, the site location and the owning application (#1498).": "IFC 내보내기가 프로젝트 북쪽, 대지 위치, 소유 응용 프로그램을 기록합니다 (#1498)."
+ "IFC export writes the project north, the site location and the owning application (#1498).": "IFC 내보내기가 프로젝트 북쪽, 대지 위치, 소유 응용 프로그램을 기록합니다 (#1498).",
+ "Show a grid of lines on the ground. Its spacing is set in Grid Settings.": "바닥에 선 격자를 표시합니다. 간격은 격자 설정에서 정합니다.",
+ "Snap to Grid": "격자에 스냅",
+ "Free points on the ground jump to the nearest grid crossing. Points of the model still win.": "바닥의 자유로운 점은 가장 가까운 격자 교차점으로 이동합니다. 모델의 점이 계속 우선합니다.",
+ "Grid Settings…": "격자 설정…",
+ "Choose the grid spacing, the major lines and their color.": "격자 간격, 주선과 그 색을 고릅니다.",
+ "On grid": "격자 위",
+ "Grid Settings": "격자 설정",
+ "Show the grid": "격자 표시",
+ "Major line every:": "주선 간격:",
+ "divisions": "칸",
+ "Line color:": "선 색:",
+ "Choose which point inferences are on.": "켤 점 추정을 고릅니다.",
+ "Tick to switch every point inference of this menu on, untick to switch them all off.": "체크하면 이 메뉴의 모든 점 추정을 켜고, 체크를 해제하면 모두 끕니다.",
+ "Show the grid on the ground, snap to it (F7, F9) and choose its spacing.": "바닥에 격자를 표시하고 스냅하며 (F7, F9) 간격을 고릅니다."
 }

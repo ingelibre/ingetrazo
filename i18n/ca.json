@@ -189,7 +189,6 @@
  "Explode Component": "Descompon el component",
  "Inferences": "Inferències",
  "Turn all inferences on": "Activa totes les inferències",
- "Switch every point inference of this menu back on.": "Torna a activar totes les inferències de punt d'aquest menú.",
  "Snap to the ends of edges.": "S'enganxa als extrems de les arestes.",
  "Snap to the middle of edges and arcs.": "S'enganxa al punt mitjà d'arestes i arcs.",
  "Snap where edges, guides and faces cross.": "S'enganxa on es creuen arestes, guies i cares.",
@@ -4351,5 +4350,19 @@
  "Push/Pull bases kept with Ctrl stay sound and cracked results are refused (#1155).": "Les bases que es conserven amb Ctrl a Empènyer/Estirar queden sanes i es rebutgen els resultats esquerdats (#1155).",
  "Camera roll with a 3D mouse (#1406).": "Gir de càmera amb un ratolí 3D (#1406).",
  "A preference to swap orbit and pan on the middle button (#467).": "Una preferència per intercanviar òrbita i desplaçament al botó central (#467).",
- "IFC export writes the project north, the site location and the owning application (#1498).": "L'exportació IFC escriu el nord del projecte, la ubicació del lloc i l'aplicació propietària (#1498)."
+ "IFC export writes the project north, the site location and the owning application (#1498).": "L'exportació IFC escriu el nord del projecte, la ubicació del lloc i l'aplicació propietària (#1498).",
+ "Show a grid of lines on the ground. Its spacing is set in Grid Settings.": "Mostra una quadrícula de línies a terra. La separació es tria a Configura la quadrícula.",
+ "Snap to Grid": "Ajusta a la quadrícula",
+ "Free points on the ground jump to the nearest grid crossing. Points of the model still win.": "Els punts lliures a terra salten al creuament de quadrícula més proper. Els punts del model continuen guanyant.",
+ "Grid Settings…": "Configura la quadrícula…",
+ "Choose the grid spacing, the major lines and their color.": "Tria la separació de la quadrícula, les línies principals i el seu color.",
+ "On grid": "A la quadrícula",
+ "Grid Settings": "Configura la quadrícula",
+ "Show the grid": "Mostra la quadrícula",
+ "Major line every:": "Línia principal cada:",
+ "divisions": "divisions",
+ "Line color:": "Color de línia:",
+ "Choose which point inferences are on.": "Tria quines inferències de punt estan actives.",
+ "Tick to switch every point inference of this menu on, untick to switch them all off.": "Marca-la per activar totes les inferències de punt d'aquest menú, desmarca-la per desactivar-les totes.",
+ "Show the grid on the ground, snap to it (F7, F9) and choose its spacing.": "Mostra la quadrícula a terra, s'hi ajusta (F7, F9) i en tria la separació."
 }

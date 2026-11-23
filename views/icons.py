@@ -1174,6 +1174,35 @@ def _four_views(p, ink):
     p.restore()
 
 
+def _grid(p, ink):
+    """The status bar's grid switch (#780): three lines each way on the
+    ground, seen from above, with no frame around them (the four views are
+    panes), and the crossing a point snaps to as the accent dot."""
+    p.save()
+    p.setBrush(Qt.NoBrush)
+    p.setPen(_rpen(ink, 2.4))
+    for v in (12.0, 24.0, 36.0):
+        p.drawLine(QPointF(6, v), QPointF(42, v))
+        p.drawLine(QPointF(v, 6), QPointF(v, 42))
+    p.restore()
+    _dot(p, 24, 24, 4.6)
+
+
+def _inferences(p, ink):
+    """The status bar's inferences switch (#780): an edge with the two
+    markers the cursor meets on it -- the endpoint's square, in the
+    accent, and the midpoint's diamond."""
+    p.drawLine(QPointF(9, 39), QPointF(36, 12))
+    p.save()
+    p.setBrush(Qt.NoBrush)
+    p.setPen(_rpen(_accent(), 3.0))
+    p.drawRect(QRectF(31, 7, 10, 10))
+    p.setPen(_rpen(ink, 2.6))
+    p.drawPolygon(QPolygonF([QPointF(22.5, 18.5), QPointF(29, 25.5),
+                             QPointF(22.5, 32.5), QPointF(16, 25.5)]))
+    p.restore()
+
+
 def _close(p, ink):
     # The cross of a project tab's close button: round, centred, filling
     # most of its square (a small one read as a speck at tab size).
@@ -3042,6 +3071,7 @@ _DRAW = {
     "photo_lines": _photo_lines, "photo_reset": _photo_reset,
     "look_around": _look_around, "first_person": _first_person,
     "four_views": _four_views, "close": _close,
+    "grid": _grid, "inferences": _inferences,
     "zoom_extents": _zoom_extents, "zoom_selection": _zoom_selection,
     "view_iso": _view_iso,
     "proj_parallel": _proj_parallel, "proj_perspective": _proj_perspective,

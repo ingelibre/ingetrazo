@@ -3951,7 +3951,6 @@
  "Click an inference point, or press Esc": "Щракнете върху точка за прихващане или натиснете Esc",
  "Inferences": "Привличания",
  "Turn all inferences on": "Включи всички привличания",
- "Switch every point inference of this menu back on.": "Включва отново всички точкови привличания от това меню.",
  "Snap to the ends of edges.": "Привличане към краищата на ръбовете.",
  "Snap to the middle of edges and arcs.": "Привличане към средата на ръбове и дъги.",
  "Snap where edges, guides and faces cross.": "Привличане там, където се пресичат ръбове, помощни линии и повърхнини.",
@@ -4352,5 +4351,19 @@
  "Push/Pull bases kept with Ctrl stay sound and cracked results are refused (#1155).": "Основите, запазени с Ctrl при избутване, остават здрави, а напуканите резултати се отхвърлят (#1155).",
  "Camera roll with a 3D mouse (#1406).": "Накланяне на камерата с 3D мишка (#1406).",
  "A preference to swap orbit and pan on the middle button (#467).": "Настройка за размяна на орбита и панорамиране на средния бутон (#467).",
- "IFC export writes the project north, the site location and the owning application (#1498).": "Експортът в IFC записва севера на проекта, местоположението на терена и приложението собственик (#1498)."
+ "IFC export writes the project north, the site location and the owning application (#1498).": "Експортът в IFC записва севера на проекта, местоположението на терена и приложението собственик (#1498).",
+ "Show a grid of lines on the ground. Its spacing is set in Grid Settings.": "Показва мрежа от линии върху земята. Стъпката се задава в Настройки на мрежата.",
+ "Snap to Grid": "Прилепване към мрежата",
+ "Free points on the ground jump to the nearest grid crossing. Points of the model still win.": "Свободните точки върху земята скачат към най-близкия възел на мрежата. Точките на модела продължават да имат предимство.",
+ "Grid Settings…": "Настройки на мрежата…",
+ "Choose the grid spacing, the major lines and their color.": "Изберете стъпката на мрежата, основните линии и цвета им.",
+ "On grid": "Върху мрежата",
+ "Grid Settings": "Настройки на мрежата",
+ "Show the grid": "Показване на мрежата",
+ "Major line every:": "Основна линия на всеки:",
+ "divisions": "деления",
+ "Line color:": "Цвят на линиите:",
+ "Choose which point inferences are on.": "Изберете кои точкови привличания са включени.",
+ "Tick to switch every point inference of this menu on, untick to switch them all off.": "Отметнете, за да включите всички точкови привличания от това меню; махнете отметката, за да ги изключите всички.",
+ "Show the grid on the ground, snap to it (F7, F9) and choose its spacing.": "Показване на мрежата върху земята, прилепване към нея (F7, F9) и избор на стъпката ѝ."
 }
