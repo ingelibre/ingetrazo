@@ -219,6 +219,65 @@ def _write_owner_history(w: _Writer, stamp) -> int:
                  ".NOTDEFINED.", "$", "$", "$", str(int(stamp.timestamp())))
 
 
+_DEFAULT_STOREY = ("", "Storey", 0.0)
+
+
+def _storey_of(obj) -> tuple:
+    """(key, name, elevation) of the building storey an object's tag names
+    as ``"storey": {"name", "elevation", "id"}``, or the default storey.
+
+    ``id`` (any text) keeps a storey's GlobalId when it is renamed; without
+    it the name does. A storey named badly is the default one, so a stray
+    tag never makes the export fail."""
+    tag = (obj["group"].ifc if obj.get("group") is not None
+           else obj["faces"][0].attrs.get("ifc")) or {}
+    storey = tag.get("storey")
+    if not isinstance(storey, dict):
+        return _DEFAULT_STOREY
+    name = storey.get("name")
+    if not isinstance(name, str) or not name.strip():
+        return _DEFAULT_STOREY
+    elevation = storey.get("elevation", 0.0)
+    if isinstance(elevation, bool) or not isinstance(elevation, (int, float)) \
+            or not math.isfinite(elevation):
+        elevation = 0.0
+    ident = storey.get("id")
+    key = ident.strip() if isinstance(ident, str) and ident.strip() else name.strip()
+    return (key, name.strip(), float(elevation))
+
+
+def _write_storeys(w, guid, building, base_placement, members) -> None:
+    """One IfcBuildingStorey per storey the objects name, lowest first, each
+    placed at its elevation (element geometry stays in world space, #984).
+    Elements are contained in their storey; spaces decompose it."""
+    storeys, seen = [], set()
+    for key in sorted(members, key=lambda k: (k[2], k[1], k[0])):
+        ident, name, elevation = key
+        # the default storey keeps its usual GlobalIds; an id given to two
+        # storeys of different name or elevation must not give them one
+        parts = (ident,) if ident else ()
+        if parts in seen:
+            parts = (ident, name, repr(elevation))
+        seen.add(parts)
+        origin = w.add("IFCCARTESIANPOINT", f"(0.,0.,{_f(elevation)})")
+        axis = w.add("IFCAXIS2PLACEMENT3D", f"#{origin}", "$", "$")
+        placement = w.add("IFCLOCALPLACEMENT", f"#{base_placement}", f"#{axis}")
+        storey = w.add("IFCBUILDINGSTOREY", _s(guid("storey", *parts)), "$", _s(name),
+                       "$", "$", f"#{placement}", "$", "$", ".ELEMENT.", _f(elevation))
+        storeys.append(storey)
+        elements = [e for e, is_space in members[key] if not is_space]
+        spaces = [e for e, is_space in members[key] if is_space]
+        if elements:
+            w.add("IFCRELCONTAINEDINSPATIALSTRUCTURE",
+                  _s(guid("storey-containment", *parts)), "$", "$", "$",
+                  "(" + ",".join(f"#{e}" for e in elements) + ")", f"#{storey}")
+        if spaces:
+            w.add("IFCRELAGGREGATES", _s(guid("storey-spaces", *parts)), "$", "$", "$",
+                  f"#{storey}", "(" + ",".join(f"#{e}" for e in spaces) + ")")
+    w.add("IFCRELAGGREGATES", _s(guid("building-storey")), "$", "$", "$",
+          f"#{building}", "(" + ",".join(f"#{s}" for s in storeys) + ")")
+
+
 def _properties(w, owner, guid, owner_guid, values):
     sets = {}
     for pset, name, kind, value in values:
@@ -334,6 +393,7 @@ def save_ifc(scene, path, project_name: str = "IngeTrazo project", *,
         spatial_export = SpatialExport(w, project, placement, project_data, guid)
         from formats.ifc_delivery import survey_annotation
         survey_annotation(w, context, placement, spatial_export.site, project_data, guid, schema)
+    named = set()                   # storeys the tags name (normal export)
     if not full_delivery:
         lat = lon = elev = "$"
         datum = getattr(scene, "georef", None)       # the location, if any
@@ -346,14 +406,18 @@ def save_ifc(scene, path, project_name: str = "IngeTrazo project", *,
         building = w.add("IFCBUILDING", _s(guid("building")), "$", "'Building'", "$",
                          "$", f"#{placement}", "$", "$", ".ELEMENT.",
                          "$", "$", "$")
-        storey = w.add("IFCBUILDINGSTOREY", _s(guid("storey")), "$", "'Storey'", "$",
-                       "$", f"#{placement}", "$", "$", ".ELEMENT.", "0.")
         w.add("IFCRELAGGREGATES", _s(guid("project-site")), "$", "$", "$",
               f"#{project}", f"(#{site})")
         w.add("IFCRELAGGREGATES", _s(guid("site-building")), "$", "$", "$",
               f"#{site}", f"(#{building})")
-        w.add("IFCRELAGGREGATES", _s(guid("building-storey")), "$", "$", "$",
-              f"#{building}", f"(#{storey})")
+        # A tag may name its storey; one storey per name, else one "Storey".
+        named = {_storey_of(obj) for obj in objects} - {_DEFAULT_STOREY}
+        if not named:
+            storey = w.add("IFCBUILDINGSTOREY", _s(guid("storey")), "$", "'Storey'", "$",
+                           "$", f"#{placement}", "$", "$", ".ELEMENT.", "0.")
+            w.add("IFCRELAGGREGATES", _s(guid("building-storey")), "$", "$", "$",
+                  f"#{building}", f"(#{storey})")
+    members = {}                    # named storeys: key -> [(element, is_space)]
     element_ids = []
     space_ids = []
     for obj, element_guid in zip(objects, element_guids):
@@ -424,6 +488,8 @@ def save_ifc(scene, path, project_name: str = "IngeTrazo project", *,
         if spatial_export:
             spatial_export.register(obj, elem, element_guid)
         (space_ids if cls == "IfcSpace" else element_ids).append(elem)
+        if not spatial_export and named:
+            members.setdefault(_storey_of(obj), []).append((elem, cls == "IfcSpace"))
 
         # Per-class BaseQuantities (Qto_* naming): the takeoff numbers in
         # the budget's own measures, straight in the file.
@@ -446,11 +512,13 @@ def save_ifc(scene, path, project_name: str = "IngeTrazo project", *,
         raise ValueError("No tagged BIM objects to export")
     if spatial_export:
         spatial_export.finish()
-    if element_ids and not spatial_export:
+    if not spatial_export and named:
+        _write_storeys(w, guid, building, placement, members)
+    elif element_ids and not spatial_export:
         w.add("IFCRELCONTAINEDINSPATIALSTRUCTURE",
               _s(guid("storey-containment")), "$", "$", "$",
               "(" + ",".join(f"#{e}" for e in element_ids) + ")", f"#{storey}")
-    if space_ids and not spatial_export:
+    if space_ids and not spatial_export and not named:
         # Spaces are spatial structure: decompose the storey, never put
         # them in RelatedElements (IfcRelContainedInSpatialStructure.WR31).
         w.add("IFCRELAGGREGATES", _s(guid("storey-spaces")), "$", "$", "$",
