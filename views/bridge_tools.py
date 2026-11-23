@@ -339,6 +339,30 @@ class BridgeTools:
             "bim": dict(g.ifc) if getattr(g, "ifc", None) else None,
         }
 
+    def _takeoff_objects(self) -> list:
+        """The measured BIM objects of the document in front, kept until
+        its content changes: selecting one after another must not measure
+        the whole model each time (#857)."""
+        from core.bim import collect_objects
+        scene = self._viewport.scene
+        key = (scene.document_id, scene.content_version)
+        kept = getattr(self, "_takeoff_kept", None)
+        if kept is None or kept[0] is not scene or kept[1] != key:
+            kept = self._takeoff_kept = (scene, key, collect_objects(scene))
+        return kept[2]
+
+    def _tool_get_takeoff(self, classes=None,
+                          selection_only: bool = False) -> dict:
+        """The quantity takeoff of the BIM-tagged objects as «inge-takeoff»
+        JSON (core.takeoff): the GlobalIds and quantities File ▸ Export ▸
+        IFC writes. ``classes`` and ``selection_only`` narrow it."""
+        from core.takeoff import takeoff
+        if isinstance(classes, str):
+            classes = [classes]
+        return takeoff(self._viewport.scene,
+                       self._tool_list_documents()["documents"][0]["name"],
+                       classes, bool(selection_only), self._takeoff_objects())
+
     def _tool_list_layers(self) -> dict:
         from core.layers import active_layer
         scene = self._viewport.scene
@@ -468,24 +492,75 @@ class BridgeTools:
         return self._camera()
 
     def _tool_select(self, names=None, ids=None, clear: bool = False,
-                     mode: str = "replace") -> dict:
+                     mode: str = "replace", global_ids=None) -> dict:
         """Select groups and components by name or uid (``mode`` as the
-        click modifiers: replace, add, remove, toggle), or empty the
-        selection."""
+        click modifiers: replace, add, remove, toggle), BIM objects by IFC
+        GlobalId (``get_takeoff``'s), or empty the selection. A GlobalId
+        the model does not have is reported in ``not_found``, not an error:
+        a budget may hold elements already deleted."""
         scene = self._viewport.scene
         if clear:
             scene.clear_selection()
         else:
-            if not names and not ids:
-                raise ValueError("give names or ids, or clear=true")
+            if not names and not ids and not global_ids:
+                raise ValueError("give names, ids or global_ids, "
+                                 "or clear=true")
+            if isinstance(global_ids, str):
+                global_ids = [global_ids]
             if mode not in ("replace", "add", "remove", "toggle"):
                 raise ValueError("mode is replace, add, remove or toggle")
-            scene.select(self._groups(names, ids), mode=mode)
+            groups = self._groups(names, ids)
+            found: dict = {}
+            if global_ids:
+                entities, found = self._by_global_id(global_ids, mode)
+                # Once each: toggling one entity twice would undo it.
+                groups = list(dict.fromkeys(groups + entities))
+            scene.select(groups, mode=mode)
         self._viewport.notify_scene_changed()
         picked = [e for e in scene.selection if hasattr(e, "uid")]
-        return {"selected": len(scene.selection),
-                "objects": [{"name": g.name, "id": g.uid}
-                            for g in picked][:200]}
+        reply = {"selected": len(scene.selection),
+                 "objects": [{"name": g.name, "id": g.uid}
+                             for g in picked][:200]}
+        if not clear:
+            reply.update(found)
+        return reply
+
+    def _by_global_id(self, global_ids, mode) -> tuple:
+        """``(entities, report)`` of the BIM objects with those GlobalIds: a
+        tagged group, or the tagged loose faces. Tagged faces inside a group
+        that is not open are not selectable on their own: their group
+        stands for them, named in ``report["by_group"]``."""
+        from core.takeoff import find_objects
+        scene = self._viewport.scene
+        objects, missing = find_objects(scene, global_ids,
+                                        self._takeoff_objects())
+        if (scene.edit_group is not None and mode != "remove"
+                and any(o.get("group") is None and o.get("owner") is None
+                        for o in objects)):
+            # Loose faces are out of reach while a group is open.
+            self._viewport.end_group_edit()
+            objects, missing = find_objects(scene, global_ids,
+                                            self._takeoff_objects())
+        entities: list = []
+        by_group: list = []
+        for obj in objects:
+            owner = obj.get("owner")
+            if obj.get("group") is not None:
+                entities.append(obj["group"])
+            elif owner is None:
+                entities += obj["faces"]
+            elif scene.edit_group is owner:
+                entities += [f for f in owner.mesh.faces if
+                             (f.attrs.get("ifc") or {}).get("id")
+                             == obj["tag_id"]]
+            else:
+                entities.append(owner)
+                by_group.append({"name": owner.name, "id": owner.uid})
+        report = {"found": len(set(global_ids)) - len(missing),
+                  "not_found": missing}
+        if by_group:
+            report["by_group"] = by_group
+        return entities, report
 
     def _tool_show_scene(self, name: str) -> dict:
         """Show a saved scene as a click on its row does (no glide)."""
