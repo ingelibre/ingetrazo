@@ -94,6 +94,13 @@ class Style:
     sky_color: tuple = (0.925, 0.935, 0.945)
     horizon_color: tuple | None = None
     ground_color: tuple = (0.815, 0.820, 0.815)
+    # A 360° panorama in place of the sky/ground gradient (drawn when ``sky``
+    # is on): an equirectangular JPG/PNG or Radiance .hdr — see
+    # core.panorama_backdrop. Empty = the gradient. Rotation in degrees
+    # (counter-clockwise from above), exposure in stops (HDR only).
+    panorama: str = ""
+    panorama_rotation: float = 0.0
+    panorama_exposure: float = 0.0
     # Section Fill: paint the cut-through areas of solids.
     # Lives in the STYLE, with the other modeling settings.
     section_fill: bool = True
@@ -199,6 +206,13 @@ class Style:
         # exactly as before; an explicitly picked white remains distinguishable.
         if self.horizon_color is not None:
             out["horizon_color"] = list(self.horizon_color)
+        # Hung under a "texture" key on purpose: the .igz embeds every such
+        # entry (formats.igz._pack_textures), so the picture travels inside
+        # the document — and is stored once however many scenes share it.
+        if self.panorama:
+            out["panorama"] = {"texture": {"path": self.panorama},
+                               "rotation": self.panorama_rotation,
+                               "exposure": self.panorama_exposure}
         return out
 
     @classmethod
@@ -278,6 +292,7 @@ class Style:
                                             d.fog_use_background)),
             color_by_layer=bool(raw.get("color_by_layer", False)),
             model_linetypes=raw.get("model_linetypes") is not False,
+            **_panorama_fields(raw.get("panorama")),
         )
 
     def copy(self) -> "Style":
@@ -292,6 +307,27 @@ AO_INTENSITY_RANGE = (0.0, 2.0)
 #: working reach without tying the effect to its clipping-plane safety margin.
 FOG_DISTANCE_RANGE = (0.0, 40000.0)
 FOG_THICKNESS_RANGE = (0.01, 40000.0)
+
+
+#: The panorama's rotation, in degrees.
+PANORAMA_ROTATION_RANGE = (-360.0, 360.0)
+
+
+def _panorama_fields(raw) -> dict:
+    """The panorama keys of a serialized style; anything malformed (or a
+    picture whose embedded file was lost) leaves the gradient."""
+    from core.panorama_backdrop import EXPOSURE_RANGE
+    if not isinstance(raw, dict):
+        return {}
+    tex = raw.get("texture")
+    path = tex.get("path") if isinstance(tex, dict) else None
+    if not isinstance(path, str) or not path:
+        return {}
+    return {"panorama": path,
+            "panorama_rotation": _clamped(raw.get("rotation"), 0.0,
+                                          PANORAMA_ROTATION_RANGE),
+            "panorama_exposure": _clamped(raw.get("exposure"), 0.0,
+                                          EXPOSURE_RANGE)}
 
 
 def _pixel_value(raw, default: int, bounds: tuple) -> int:

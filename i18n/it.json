@@ -4349,5 +4349,20 @@
  "Push/Pull bases kept with Ctrl stay sound and cracked results are refused (#1155).": "Le basi mantenute con Ctrl in Spingi/Tira restano integre e i risultati incrinati vengono rifiutati (#1155).",
  "Camera roll with a 3D mouse (#1406).": "Rollio della fotocamera con un mouse 3D (#1406).",
  "A preference to swap orbit and pan on the middle button (#467).": "Una preferenza per scambiare orbita e panoramica sul tasto centrale (#467).",
- "IFC export writes the project north, the site location and the owning application (#1498).": "L'esportazione IFC scrive il nord di progetto, la posizione del sito e l'applicazione proprietaria (#1498)."
+ "IFC export writes the project north, the site location and the owning application (#1498).": "L'esportazione IFC scrive il nord di progetto, la posizione del sito e l'applicazione proprietaria (#1498).",
+ "A 360° picture (equirectangular, 2:1) — JPG, PNG or HDR — shown instead of the sky. Visible with the sky on, in perspective.": "Un'immagine a 360° (equirettangolare, 2:1) — JPG, PNG o HDR — mostrata al posto del cielo. Visibile con il cielo attivo, in prospettiva.",
+ "Remove the panorama": "Rimuovi il panorama",
+ "Rotation:": "Rotazione:",
+ "Turns the panorama around the vertical, to line up the sun or a street with the model": "Ruota il panorama attorno alla verticale, per allineare il sole o una strada al modello",
+ "Exposure:": "Esposizione:",
+ "Brighter or darker, in stops — for HDR pictures": "Più chiara o più scura, in stop — per le immagini HDR",
+ "Choose a 360° panorama": "Scegli un panorama a 360°",
+ "Panoramas (*.hdr *.jpg *.jpeg *.png)": "Panorami (*.hdr *.jpg *.jpeg *.png)",
+ "HDR image (*.hdr)": "Immagine HDR (*.hdr)",
+ "Pictures (*.jpg *.jpeg *.png)": "Immagini (*.jpg *.jpeg *.png)",
+ "Panorama": "Panorama",
+ "This picture cannot be used as a panorama:\n{error}": "Questa immagine non può essere usata come panorama:\n{error}",
+ "The picture is not 2:1: a 360° panorama will look stretched.": "L'immagine non è 2:1: un panorama a 360° apparirà stirato.",
+ "Sky and ground": "Cielo e terreno",
+ "Image:": "Immagine:"
 }

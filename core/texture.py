@@ -142,12 +142,13 @@ _IMAGE_MAGIC = (
     b"GIF87a", b"GIF89a",
     b"BM",                              # BMP
     b"II*\x00", b"MM\x00*",             # TIFF
+    b"#?RADIANCE", b"#?RGBE",           # Radiance HDR (360° backdrops)
 )
 
 
 def is_image_bytes(data: bytes) -> bool:
     """True when ``data`` starts like an image file (PNG, JPEG, GIF, BMP,
-    TIFF, WebP). TGA has no signature: it is accepted only through
+    TIFF, WebP, Radiance HDR). TGA has no signature: it is accepted only through
     :func:`is_image_file` by extension plus a Qt decode."""
     head = bytes(data[:16])
     if head.startswith(_IMAGE_MAGIC):

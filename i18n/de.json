@@ -4349,5 +4349,20 @@
  "Push/Pull bases kept with Ctrl stay sound and cracked results are refused (#1155).": "Mit Strg beibehaltene Basen bei Drücken/Ziehen bleiben intakt und rissige Ergebnisse werden abgelehnt (#1155).",
  "Camera roll with a 3D mouse (#1406).": "Kamerarollen mit einer 3D-Maus (#1406).",
  "A preference to swap orbit and pan on the middle button (#467).": "Eine Einstellung, um Orbit und Schwenken auf der mittleren Taste zu tauschen (#467).",
- "IFC export writes the project north, the site location and the owning application (#1498).": "Der IFC-Export schreibt Projektnord, Standort und die besitzende Anwendung (#1498)."
+ "IFC export writes the project north, the site location and the owning application (#1498).": "Der IFC-Export schreibt Projektnord, Standort und die besitzende Anwendung (#1498).",
+ "A 360° picture (equirectangular, 2:1) — JPG, PNG or HDR — shown instead of the sky. Visible with the sky on, in perspective.": "Ein 360°-Bild (equirektangulär, 2:1) — JPG, PNG oder HDR — anstelle des Himmels. Sichtbar bei eingeschaltetem Himmel, in der Perspektive.",
+ "Remove the panorama": "Panorama entfernen",
+ "Rotation:": "Drehung:",
+ "Turns the panorama around the vertical, to line up the sun or a street with the model": "Dreht das Panorama um die Senkrechte, um die Sonne oder eine Straße am Modell auszurichten",
+ "Exposure:": "Belichtung:",
+ "Brighter or darker, in stops — for HDR pictures": "Heller oder dunkler, in Blendenstufen — für HDR-Bilder",
+ "Choose a 360° panorama": "360°-Panorama auswählen",
+ "Panoramas (*.hdr *.jpg *.jpeg *.png)": "Panoramen (*.hdr *.jpg *.jpeg *.png)",
+ "HDR image (*.hdr)": "HDR-Bild (*.hdr)",
+ "Pictures (*.jpg *.jpeg *.png)": "Bilder (*.jpg *.jpeg *.png)",
+ "Panorama": "Panorama",
+ "This picture cannot be used as a panorama:\n{error}": "Dieses Bild kann nicht als Panorama verwendet werden:\n{error}",
+ "The picture is not 2:1: a 360° panorama will look stretched.": "Das Bild ist nicht 2:1: Ein 360°-Panorama wirkt gestreckt.",
+ "Sky and ground": "Himmel und Boden",
+ "Image:": "Bild:"
 }

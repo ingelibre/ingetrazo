@@ -4352,5 +4352,20 @@
  "Push/Pull bases kept with Ctrl stay sound and cracked results are refused (#1155).": "ຖານທີ່ຮັກສາໄວ້ດ້ວຍ Ctrl ໃນການດັນ/ດຶງ ຍັງສົມບູນ ແລະ ຜົນທີ່ແຕກຮ້າວຈະຖືກປະຕິເສດ (#1155).",
  "Camera roll with a 3D mouse (#1406).": "ໝຸນກ້ອງດ້ວຍເມົາສ໌ 3 ມິຕິ (#1406).",
  "A preference to swap orbit and pan on the middle button (#467).": "ຕົວເລືອກສະຫຼັບການໂຄຈອນ ແລະ ການເລື່ອນໃນປຸ່ມກາງ (#467).",
- "IFC export writes the project north, the site location and the owning application (#1498).": "ການສົ່ງອອກ IFC ຂຽນທິດເໜືອຂອງໂຄງການ, ທີ່ຕັ້ງຂອງສະຖານທີ່ ແລະ ແອັບພລິເຄຊັນເຈົ້າຂອງ (#1498)."
+ "IFC export writes the project north, the site location and the owning application (#1498).": "ການສົ່ງອອກ IFC ຂຽນທິດເໜືອຂອງໂຄງການ, ທີ່ຕັ້ງຂອງສະຖານທີ່ ແລະ ແອັບພລິເຄຊັນເຈົ້າຂອງ (#1498).",
+ "A 360° picture (equirectangular, 2:1) — JPG, PNG or HDR — shown instead of the sky. Visible with the sky on, in perspective.": "ຮູບ 360° (equirectangular, 2:1) — JPG, PNG ຫຼື HDR — ສະແດງແທນທ້ອງຟ້າ. ເຫັນໄດ້ເມື່ອເປີດທ້ອງຟ້າ, ໃນມຸມມອງເປີສເປັກທີບ.",
+ "Remove the panorama": "ລຶບພາບພາໂນຣາມາ",
+ "Rotation:": "ການໝູນ:",
+ "Turns the panorama around the vertical, to line up the sun or a street with the model": "ໝູນພາບພາໂນຣາມາອ້ອມແກນຕັ້ງ ເພື່ອຈັດຕາເວັນ ຫຼື ຖະໜົນໃຫ້ກົງກັບແບບຈຳລອງ",
+ "Exposure:": "ການຮັບແສງ:",
+ "Brighter or darker, in stops — for HDR pictures": "ແຈ້ງຂຶ້ນ ຫຼື ມືດລົງ, ເປັນສະຕັອບ — ສຳລັບຮູບ HDR",
+ "Choose a 360° panorama": "ເລືອກພາບພາໂນຣາມາ 360°",
+ "Panoramas (*.hdr *.jpg *.jpeg *.png)": "ພາບພາໂນຣາມາ (*.hdr *.jpg *.jpeg *.png)",
+ "HDR image (*.hdr)": "ຮູບ HDR (*.hdr)",
+ "Pictures (*.jpg *.jpeg *.png)": "ຮູບພາບ (*.jpg *.jpeg *.png)",
+ "Panorama": "ພາບພາໂນຣາມາ",
+ "This picture cannot be used as a panorama:\n{error}": "ບໍ່ສາມາດໃຊ້ຮູບນີ້ເປັນພາບພາໂນຣາມາໄດ້:\n{error}",
+ "The picture is not 2:1: a 360° panorama will look stretched.": "ຮູບບໍ່ແມ່ນ 2:1: ພາບພາໂນຣາມາ 360° ຈະເບິ່ງຄືຖືກຍືດ.",
+ "Sky and ground": "ທ້ອງຟ້າ ແລະ ພື້ນດິນ",
+ "Image:": "ຮູບພາບ:"
 }

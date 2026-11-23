@@ -4357,5 +4357,20 @@
  "Push/Pull bases kept with Ctrl stay sound and cracked results are refused (#1155).": "Основи, збережені з Ctrl під час видавлювання, лишаються цілими, а потріскані результати відхиляються (#1155).",
  "Camera roll with a 3D mouse (#1406).": "Крен камери за допомогою 3D-миші (#1406).",
  "A preference to swap orbit and pan on the middle button (#467).": "Налаштування, що міняє місцями обертання й панорамування на середній кнопці (#467).",
- "IFC export writes the project north, the site location and the owning application (#1498).": "Експорт IFC записує північ проєкту, розташування ділянки та застосунок-власник (#1498)."
+ "IFC export writes the project north, the site location and the owning application (#1498).": "Експорт IFC записує північ проєкту, розташування ділянки та застосунок-власник (#1498).",
+ "A 360° picture (equirectangular, 2:1) — JPG, PNG or HDR — shown instead of the sky. Visible with the sky on, in perspective.": "Зображення 360° (рівнопроміжне, 2:1) — JPG, PNG або HDR — замість неба. Видно з увімкненим небом, у перспективі.",
+ "Remove the panorama": "Прибрати панораму",
+ "Rotation:": "Поворот:",
+ "Turns the panorama around the vertical, to line up the sun or a street with the model": "Повертає панораму навколо вертикалі, щоб узгодити сонце або вулицю з моделлю",
+ "Exposure:": "Експозиція:",
+ "Brighter or darker, in stops — for HDR pictures": "Світліше або темніше, у ступенях — для зображень HDR",
+ "Choose a 360° panorama": "Вибрати панораму 360°",
+ "Panoramas (*.hdr *.jpg *.jpeg *.png)": "Панорами (*.hdr *.jpg *.jpeg *.png)",
+ "HDR image (*.hdr)": "Зображення HDR (*.hdr)",
+ "Pictures (*.jpg *.jpeg *.png)": "Зображення (*.jpg *.jpeg *.png)",
+ "Panorama": "Панорама",
+ "This picture cannot be used as a panorama:\n{error}": "Це зображення не можна використати як панораму:\n{error}",
+ "The picture is not 2:1: a 360° panorama will look stretched.": "Зображення не 2:1: панорама 360° буде розтягнута.",
+ "Sky and ground": "Небо і земля",
+ "Image:": "Зображення:"
 }

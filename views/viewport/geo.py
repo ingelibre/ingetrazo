@@ -498,6 +498,10 @@ class GeoMixin:
             # (a sky photo) keeps working. The fog comes from the style here.
             colors = fog_sky_colors(style)
             fog_strength = fog_backdrop_strength(style)
+        # A 360° panorama, when the style has one, stands for the whole
+        # gradient: sky, ground and horizon line.
+        if style.sky and self._draw_panorama(mvp, style, fog_strength):
+            return
         if colors is None:
             sky_rgb = tuple(getattr(style, "sky_color", None)
                             or self._SKY_RGB)[:3]
@@ -545,6 +549,97 @@ class GeoMixin:
             self._sky_vao.release()
         self._gl.glEnable(GL_DEPTH_TEST)
         self._gl.glDepthMask(GL_TRUE)
+
+    def _panorama_texture(self, style):
+        """The style's panorama on the GPU, or None (no picture, a parallel
+        view, or a file that cannot be read — then the gradient shows). One
+        texture is kept, keyed by file and exposure; a failed read is
+        remembered too, so a missing file is not retried every frame."""
+        path = getattr(style, "panorama", "")
+        if not path or not self.camera.perspective:
+            return None
+        key = (path, round(float(getattr(style, "panorama_exposure", 0.0)), 3))
+        cached = getattr(self, "_panorama_cache", None)
+        if cached is not None and cached[0] == key:
+            return cached[1]
+        if cached is not None and cached[1] is not None:
+            cached[1].destroy()
+        texture = None
+        try:
+            from core.panorama_backdrop import load_pixels
+            from PySide6.QtGui import QImage
+            pixels = load_pixels(path, key[1])
+            h, w = pixels.shape[:2]
+            # Bottom row first: v = 0 is the nadir, v = 1 the zenith.
+            flipped = pixels[::-1].copy()
+            image = QImage(flipped.data, w, h, w * 3, QImage.Format_RGB888)
+            texture = QOpenGLTexture(image.copy(),
+                                     QOpenGLTexture.DontGenerateMipMaps)
+            texture.setMinificationFilter(QOpenGLTexture.Linear)
+            texture.setMagnificationFilter(QOpenGLTexture.Linear)
+            texture.setWrapMode(QOpenGLTexture.DirectionS,
+                                QOpenGLTexture.Repeat)
+            texture.setWrapMode(QOpenGLTexture.DirectionT,
+                                QOpenGLTexture.ClampToEdge)
+        except (OSError, ValueError, MemoryError):
+            texture = None
+        self._panorama_cache = (key, texture)
+        return texture
+
+    def _draw_panorama(self, mvp, style, fog_strength: float) -> bool:
+        """Paint the style's 360° panorama over the whole frame, looked up
+        per pixel by the direction of sight (resources/shaders/panorama.*).
+        False when there is nothing to paint, so the gradient shows."""
+        import math
+        from PySide6.QtGui import QVector3D
+        from PySide6.QtOpenGL import QOpenGLShader, QOpenGLShaderProgram
+        from views.viewport._support import SHADER_DIR, effective_fog_color
+        texture = self._panorama_texture(style)
+        if texture is None:
+            return False
+        inverse, valid = mvp.inverted()
+        if not valid:
+            return False
+        program = getattr(self, "_panorama_program", None)
+        if program is None:
+            program = QOpenGLShaderProgram(self)
+            vertex = program.addShaderFromSourceFile(
+                QOpenGLShader.Vertex, str(SHADER_DIR / "panorama.vert"))
+            fragment = program.addShaderFromSourceFile(
+                QOpenGLShader.Fragment, str(SHADER_DIR / "panorama.frag"))
+            if not (vertex and fragment and program.link()):
+                raise RuntimeError("panorama shader compile/link failed:\n"
+                                   + program.log())
+            self._panorama_program = program
+        program.bind()
+        program.setUniformValue(program.uniformLocation("u_inverse_mvp"),
+                                inverse)
+        program.setUniformValue1i(program.uniformLocation("u_tex"), 0)
+        program.setUniformValue1f(program.uniformLocation("u_centre"), math.radians(
+            90.0 + float(getattr(style, "panorama_rotation", 0.0))))
+        strength = max(0.0, min(1.0, float(fog_strength)))
+        program.setUniformValue(program.uniformLocation("u_fog_color"), QVector3D(
+            *(effective_fog_color(style) if strength > 0.0
+              else (0.0, 0.0, 0.0))))
+        program.setUniformValue1f(program.uniformLocation("u_fog_strength"),
+                                  strength)
+        quad = array("f", [-1, -1, 0, 1, -1, 0, 1, 1, 0,
+                           -1, -1, 0, 1, 1, 0, -1, 1, 0])
+        self._ground_vbo.bind()
+        self._ground_vbo.allocate(quad.tobytes(), len(quad) * 4)
+        self._ground_vbo.release()
+        self._gl.glDisable(GL_DEPTH_TEST)
+        self._gl.glDepthMask(GL_FALSE)
+        texture.bind(0)
+        self._ground_vao.bind()
+        self._gl.glDrawArrays(GL_TRIANGLES, 0, 6)
+        self._ground_vao.release()
+        texture.release(0)
+        self._gl.glEnable(GL_DEPTH_TEST)
+        self._gl.glDepthMask(GL_TRUE)
+        program.release()
+        self._program.bind()
+        return True
 
     def _style_ground_visible(self, style) -> bool:
         return (style.ground is True and style.ground_transparency < 100
