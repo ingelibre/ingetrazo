@@ -19,7 +19,9 @@ import argparse
 import os
 import re
 import subprocess
+import signal
 import sys
+import tempfile
 import time
 from pathlib import Path
 
@@ -33,6 +35,51 @@ def _switches_theme(path: str) -> bool:
     except OSError:
         return False
     return "apply_theme(" in text or "apply_accent(" in text
+
+
+#: A batch takes ~12 min on a CI runner. One that has stopped answering is
+#: killed, with the stack of the test it was in, so a job does not hang for
+#: the six hours GitHub allows (23-11).
+BATCH_LIMIT = 3000
+TEST_LIMIT = 600
+
+
+def _run(cmd: list[str], env: dict):
+    """The finished process, or None if it had to be killed. Output goes to
+    files: a pipe kept open by a grandchild would hold us after the kill."""
+    with tempfile.TemporaryFile() as out, tempfile.TemporaryFile() as err:
+        proc = subprocess.Popen(
+            cmd, env=env, stdout=out, stderr=err,
+            start_new_session=os.name == "posix")
+        late = False
+        try:
+            proc.wait(timeout=BATCH_LIMIT)
+        except subprocess.TimeoutExpired:
+            late = True
+        except BaseException:
+            _kill(proc)             # Ctrl+C: its session is not ours
+            raise
+        if late:
+            _kill(proc)
+        out.seek(0)
+        err.seek(0)
+        text = [f.read().decode("utf-8", "replace") for f in (out, err)]
+    if late:
+        # A stack says which test: the newest is what it was still in.
+        sys.stderr.write(text[0][-3000:] + text[1][-8000:] + "\n")
+        return None
+    return subprocess.CompletedProcess(cmd, proc.returncode, *text)
+
+
+def _kill(proc) -> None:
+    if os.name == "posix":
+        try:
+            os.killpg(proc.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+    else:
+        proc.kill()
+    proc.wait()
 
 
 def main() -> int:
@@ -63,14 +110,18 @@ def main() -> int:
     env = dict(os.environ, QT_QPA_PLATFORM=os.environ.get(
         "QT_QPA_PLATFORM", "offscreen"))
     for i, chunk in enumerate(chunks, 1):
-        cmd = [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider"]
+        cmd = [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider",
+               "-o", f"faulthandler_timeout={TEST_LIMIT}"]
         if args.marker:
             cmd += ["-m", args.marker]
         # pytest writes UTF-8; text=True alone decodes with the locale's
         # codepage (cp1252 on Windows), which died on the first byte it
         # has no character for and left stdout None (ronda Windows 0.5.9).
-        proc = subprocess.run(cmd + chunk, env=env, capture_output=True,
-                              text=True, encoding="utf-8", errors="replace")
+        proc = _run(cmd + chunk, env)
+        if proc is None:
+            crashed.append(f"batch {i} (no answer in {BATCH_LIMIT} s)")
+            print(f"batch {i}/{n}: stopped", file=sys.stderr, flush=True)
+            continue
         lines = [ln for ln in proc.stdout.splitlines() if ln.strip()]
         last = lines[-1] if lines else ""
         for num, kind in _COUNT.findall(last):
