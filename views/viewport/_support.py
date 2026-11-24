@@ -2292,6 +2292,46 @@ def _load_soft_shadows() -> int:
     return n if n in SOFT_SHADOW_SPREAD else 0
 
 
+def soft_shadow_level() -> int:
+    """The level the soft shadows come back at when they are turned on
+    (Moderate unless another one was chosen): kept apart from the on/off
+    switch, so turning them off and on again keeps it."""
+    from PySide6.QtCore import QSettings
+    st = QSettings()
+    try:
+        on = int(st.value("display/soft_shadows", 0))
+    except (TypeError, ValueError):
+        on = 0
+    if on in SOFT_SHADOW_SPREAD:
+        return on
+    try:
+        level = int(st.value("display/soft_shadows_level", 2))
+    except (TypeError, ValueError):
+        level = 2
+    return level if level in SOFT_SHADOW_SPREAD else 2
+
+
+def set_soft_shadows(viewports, on: bool, level: int, settings=None) -> int:
+    """Turn the soft sun shadows on (at ``level``) or off, from Preferences
+    ▸ General or from the Shadows dropdown (#1587): saved for this computer,
+    not in the document, and every view (one per project tab) redraws at
+    once. Returns what the views now draw with: 0 or the level."""
+    if settings is None:
+        from PySide6.QtCore import QSettings
+        settings = QSettings()
+    level = int(level) if int(level) in SOFT_SHADOW_SPREAD else 2
+    soft = level if on else 0
+    settings.setValue("display/soft_shadows", soft)
+    settings.setValue("display/soft_shadows_level", level)
+    for vp in viewports:
+        if getattr(vp, "_soft_shadows", None) != soft:
+            vp._soft_shadows = soft
+            update = getattr(vp, "update", None)
+            if callable(update):
+                update()
+    return soft
+
+
 def _build_hard_shadow_image(scene, camera, width: int, height: int):
     """Rasterize the exact projected shadow polygons into a transparent image."""
     from PySide6.QtCore import Qt

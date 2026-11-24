@@ -5186,11 +5186,30 @@ class ShadowsPanel(QWidget):
         self._enable.toggled.connect(self._apply)
         grid.addWidget(self._enable, 0, 0, 1, 2)
 
-        grid.addWidget(QLabel(tr("Date:")), 1, 0)
+        # Soft sun shadows (#1587), the same switch as Preferences ▸
+        # General's: a setting of this computer (they cost the graphics
+        # card more), not of the document, so it never marks it changed.
+        soft_row = QHBoxLayout()
+        self._soft = QCheckBox(tr("Soft sun shadows"))
+        self._soft.setToolTip(tr(
+            "Shadow edges that soften away from what casts them, as in "
+            "daylight. They cost the graphics card more while the sun casts "
+            "shadows."))
+        self._soft.toggled.connect(self._apply_soft)
+        soft_row.addWidget(self._soft)
+        self._soft_level = QComboBox()
+        for level, label in ((1, "Slight"), (2, "Moderate"), (3, "Strong")):
+            self._soft_level.addItem(tr(label), level)
+        self._soft_level.currentIndexChanged.connect(self._apply_soft)
+        soft_row.addWidget(self._soft_level)
+        soft_row.addStretch(1)
+        grid.addLayout(soft_row, 1, 0, 1, 2)
+
+        grid.addWidget(QLabel(tr("Date:")), 2, 0)
         self._date = QDateEdit()
         self._date.setDisplayFormat("dd/MM")
         self._date.dateChanged.connect(self._on_date_edited)
-        grid.addWidget(self._date, 1, 1)
+        grid.addWidget(self._date, 2, 1)
 
         # The month bar: a day-of-year slider with the month initials
         # underneath — drag it and the asoleamiento sweeps the year.
@@ -5198,7 +5217,7 @@ class ShadowsPanel(QWidget):
         style_slider(self._doy)
         self._doy.setRange(1, 365)
         self._doy.valueChanged.connect(self._on_doy_slid)
-        grid.addWidget(self._doy, 2, 0, 1, 2)
+        grid.addWidget(self._doy, 3, 0, 1, 2)
         months = QHBoxLayout()
         months.setSpacing(0)
         for initial in tr("J F M A M J J A S O N D").split():
@@ -5206,9 +5225,9 @@ class ShadowsPanel(QWidget):
             lbl.setAlignment(Qt.AlignCenter)
             theme_style(lbl, "color:{muted}; font-size: 10px;")
             months.addWidget(lbl, 1)
-        grid.addLayout(months, 3, 0, 1, 2)
+        grid.addLayout(months, 4, 0, 1, 2)
 
-        grid.addWidget(QLabel(tr("Time:")), 4, 0)
+        grid.addWidget(QLabel(tr("Time:")), 5, 0)
         row = QHBoxLayout()
         self._time = QSlider(Qt.Horizontal)
         style_slider(self._time)
@@ -5224,7 +5243,7 @@ class ShadowsPanel(QWidget):
         row.addWidget(self._time, 1)
         self._time_lbl = QLabel("12:00")
         row.addWidget(self._time_lbl)
-        grid.addLayout(row, 4, 1)
+        grid.addLayout(row, 5, 1)
 
         span = QHBoxLayout()
         self._sunrise_lbl = QLabel("")
@@ -5234,7 +5253,7 @@ class ShadowsPanel(QWidget):
         self._sunset_lbl = QLabel("")
         theme_style(self._sunset_lbl, "color:{muted}; font-size: 10px;")
         span.addWidget(self._sunset_lbl)
-        grid.addLayout(span, 5, 1)
+        grid.addLayout(span, 6, 1)
 
         # Why there are no shadows, when there are none to draw: the sun
         # under the horizon casts nothing, and without this line the
@@ -5245,26 +5264,26 @@ class ShadowsPanel(QWidget):
         theme_style(self._below_horizon_note,
                     "color:{muted}; font-size: 11px;")
         self._below_horizon_note.setVisible(False)
-        grid.addWidget(self._below_horizon_note, 6, 0, 1, 2)
+        grid.addWidget(self._below_horizon_note, 7, 0, 1, 2)
 
-        grid.addWidget(QLabel(tr("Darkness:")), 7, 0)
+        grid.addWidget(QLabel(tr("Darkness:")), 8, 0)
         self._dark = QSlider(Qt.Horizontal)
         style_slider(self._dark)
         self._dark.setRange(0, 80)              # 100 % black is never useful
         self._dark.valueChanged.connect(self._apply)
-        grid.addWidget(self._dark, 7, 1)
+        grid.addWidget(self._dark, 8, 1)
 
-        grid.addWidget(QLabel(tr("Time zone:")), 8, 0)
+        grid.addWidget(QLabel(tr("Time zone:")), 9, 0)
         self._tz = QComboBox()
         self._tz.addItem(tr("Automatic (by longitude)"), None)
         for off in range(-12, 15):
             self._tz.addItem(f"UTC{off:+03d}:00", off)
         self._tz.currentIndexChanged.connect(self._apply)
-        grid.addWidget(self._tz, 8, 1)
+        grid.addWidget(self._tz, 9, 1)
 
         # Where true north lies (core.sun.scene_north_deg): typed here, or
         # aimed on screen with Tools ▸ North — the button picks it up.
-        grid.addWidget(QLabel(tr("North:")), 9, 0)
+        grid.addWidget(QLabel(tr("North:")), 10, 0)
         north_row = QHBoxLayout()
         self._north = QDoubleSpinBox()
         self._north.setRange(-180.0, 180.0)
@@ -5282,16 +5301,16 @@ class ShadowsPanel(QWidget):
             "Tools ▸ North: click a centre, then click toward north."))
         self._north_btn.clicked.connect(self._on_north_tool)
         north_row.addWidget(self._north_btn)
-        grid.addLayout(north_row, 9, 1)
+        grid.addLayout(north_row, 10, 1)
 
         self._site = QLabel("")
         self._site.setWordWrap(True)
         theme_style(self._site, "color:{muted}; font-size: 11px;")
-        grid.addWidget(self._site, 10, 0, 1, 2)
+        grid.addWidget(self._site, 11, 0, 1, 2)
 
         self._locate_btn = QPushButton(tr("Add location…"))
         self._locate_btn.clicked.connect(self._on_add_location)
-        grid.addWidget(self._locate_btn, 11, 0, 1, 2)
+        grid.addWidget(self._locate_btn, 12, 0, 1, 2)
 
         self.refresh()
 
@@ -5382,7 +5401,35 @@ class ShadowsPanel(QWidget):
             "Automatic (by longitude) — UTC{off:+03d}:00",
             off=default_utc_offset(lon)))
 
+    def refresh_soft_shadows(self) -> None:
+        """The soft-shadow switch as saved: Preferences may have changed
+        it since the dropdown last opened."""
+        from views.viewport._support import (_load_soft_shadows,
+                                             soft_shadow_level)
+        on = _load_soft_shadows() != 0
+        level = soft_shadow_level()
+        was = self._updating
+        self._updating = True
+        try:
+            self._soft.setChecked(on)
+            self._soft_level.setCurrentIndex(
+                max(0, self._soft_level.findData(level)))
+            self._soft_level.setEnabled(on)
+        finally:
+            self._updating = was
+
+    def _apply_soft(self, *_a) -> None:
+        self._soft_level.setEnabled(self._soft.isChecked())
+        if self._updating:
+            return
+        from views.viewport._support import set_soft_shadows
+        every = getattr(self._window, "all_viewports", None)
+        viewports = every() if callable(every) else [self._window.viewport]
+        set_soft_shadows(viewports, self._soft.isChecked(),
+                         int(self._soft_level.currentData()))
+
     def refresh(self) -> None:
+        self.refresh_soft_shadows()
         sh = self._shadows()
         if sh is None:
             return
