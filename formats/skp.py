@@ -288,11 +288,18 @@ def _apply_payload_inner(scene, payload, progress=None, *, consume=False) -> str
         return p if hasattr(p, "x") else QVector3D(p[0], p[1], p[2])
 
     def _add_lines(mesh, loose_edges):
-        """The file's loose edges (lines on no face), welded to the faces'
-        corners where they meet them."""
-        for a, b in loose_edges or ():
+        """Add loose edges, preserving their optional layer name."""
+        for segment in loose_edges or ():
+            if len(segment) == 3:
+                a, b, layer = segment
+            else:
+                a, b = segment
+                layer = None
+
             try:
-                mesh.add_edge(_q(a), _q(b))
+                edge = mesh.add_edge(_q(a), _q(b))
+                if layer:
+                    edge.layer = layer
             except ValueError:      # endpoints weld to one vertex
                 continue
 

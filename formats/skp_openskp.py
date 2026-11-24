@@ -1053,46 +1053,61 @@ _hidden_tags: frozenset = frozenset()
 
 
 def _loose_edge_segments(defn, xform, out) -> None:
-    """Append the transformed endpoint pairs of ``defn``'s LOOSE edges —
-    lines that bound no face — to ``out``. Only face rings were read, so a
-    group holding nothing but lines arrived empty and was dropped. Hidden
-    edges stay out (the file does not draw them), and so do the lines on a
-    tag the file hides (``_hidden_tags``, set by :func:`_adapt`): the
-    contour lines of a survey drawing kept on a hidden tag would otherwise
-    cover the plaza, and a line inside a group does not hide with its tag
-    here. Cached on the definition like the soft edges."""
+    """Append loose edges and explicitly tagged face-bound edges."""
     import numpy as np
+
     arr = getattr(defn, "_loose_arr", None)
-    if arr is None:
+    layers = getattr(defn, "_loose_layers", None)
+
+    if arr is None or layers is None:
         hidden_tags = _hidden_tags
         used = set()
         for face in getattr(defn, "faces", {}).values():
             for loop in getattr(face, "loops", None) or ():
                 used.update(eid for eid, _sense in loop)
+
         pairs = []
+        layers = []
+
         for eid, e in getattr(defn, "edges", {}).items():
-            if eid in used or getattr(e, "hidden", False):
+            if getattr(e, "hidden", False):
                 continue
-            if hidden_tags and getattr(e, "layer", None) in hidden_tags:
+
+            layer = getattr(e, "layer", None)
+
+            if eid in used and not layer:
                 continue
+
+            if hidden_tags and layer in hidden_tags:
+                continue
+
             va = defn.vertices.get(e.v1_id)
             vb = defn.vertices.get(e.v2_id)
             if va is None or vb is None:
                 continue
+
             pairs.append((va.x, va.y, va.z))
             pairs.append((vb.x, vb.y, vb.z))
+            layers.append(layer or None)
+
         arr = np.asarray(pairs, dtype=np.float64).reshape(-1, 3) * _INCH
-        try:
-            defn._loose_arr = arr
-        except AttributeError:      # __slots__ definition: just skip the cache
-            pass
+
+        _remember_geometry(defn, "_loose_arr", arr, arr.nbytes)
+        _remember_geometry(
+            defn, "_loose_layers", layers,
+            len(layers) * 8
+        )
+
     if not len(arr):
         return
+
     wl = _world_points(arr, xform)
     for i in range(0, len(wl), 2):
         a = wl[i]
         b = wl[i + 1]
-        out.append(((a[0], a[1], a[2]), (b[0], b[1], b[2])))
+        segment = ((a[0], a[1], a[2]), (b[0], b[1], b[2]))
+        layer = layers[i // 2] if i // 2 < len(layers) else None
+        out.append(segment + (layer,) if layer else segment)
 
 
 def _collect(defn, xform, by_id, attr_map, out, depth, stack,
@@ -2048,6 +2063,7 @@ def _parse_raw(openskp, openskp_compat, path):
     enabled = gc.isenabled()
     gc.disable()
     try:
+        openskp_compat._keep_layer_table()
         model = openskp.SkpFile.open(str(path)).parse()
         openskp_compat.resolve_face_layers(model)   # tag ids → names (#700)
         openskp_compat.resolve_vff_annotations(model)   # dims/texts (#1226)

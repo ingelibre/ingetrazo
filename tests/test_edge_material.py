@@ -248,3 +248,25 @@ def test_edge_only_material_is_visible_in_the_materials_panel():
     finally:
         window._saved_version = window.viewport.scene.version
         window.close()
+
+def test_edge_layers_survive_group_copy_transform_and_merge():
+    from core.group import _append_mesh
+
+    group = Group()
+    edge = group.mesh.add_edge(V(0, 0, 0), V(1, 0, 0))
+    edge.layer = "Ejes"
+
+    # Copiar el grupo.
+    duplicate = copy_group(group, V(3, 0, 0))
+    assert duplicate.mesh.edges[0].layer == "Ejes"
+
+    # Transformar la geometría.
+    matrix = QMatrix4x4()
+    matrix.translate(0, 4, 0)
+    transformed = transformed_mesh(group.mesh, matrix)
+    assert transformed.edges[0].layer == "Ejes"
+
+    # Fusionar la malla en otra.
+    merged = Scene().mesh
+    _append_mesh(merged, group.mesh)
+    assert merged.edges[0].layer == "Ejes"

@@ -1784,7 +1784,9 @@ def _load_structured(scene, dae: _Dae, root, tick) -> None:
                     continue
             for e in src.edges:
                 try:
-                    dst.add_edge(e.a, e.b).soft = e.soft
+                    ne = dst.add_edge(e.a, e.b)
+                    ne.soft = e.soft
+                    ne.layer = e.layer
                 except Exception:  # noqa: BLE001
                     continue
             continue

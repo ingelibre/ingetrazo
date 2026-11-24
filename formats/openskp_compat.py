@@ -252,20 +252,27 @@ def hidden_tags(names) -> frozenset:
     return frozenset(names | {i for i, n in table.items() if n in names})
 
 
+
 def resolve_face_layers(model) -> int:
-    """Turn the face layers that are tag ids into tag names, from the table
-    of the parse that built ``model``. A face on the default tag, or on an
-    id the table does not know, gets no layer. Returns how many changed."""
+    """Turn face and edge layers that are tag ids into tag names,
+    using the table from the parse that built ``model``.
+    Default or unknown tags get no layer. Returns how many changed."""
     table = getattr(_parse_tables, "layers", None) or {}
     changed = 0
+
     for defn in (getattr(model, "definitions", None) or {}).values():
-        for face in (getattr(defn, "faces", None) or {}).values():
-            lay = getattr(face, "layer", None)
-            if isinstance(lay, bool) or not isinstance(lay, int):
-                continue
-            name = table.get(lay, "")
-            face.layer = "" if name in _DEFAULT_TAGS else name
-            changed += 1
+        for collection in (
+            getattr(defn, "faces", None) or {},
+            getattr(defn, "edges", None) or {},
+        ):
+            for item in collection.values():
+                lay = getattr(item, "layer", None)
+                if isinstance(lay, bool) or not isinstance(lay, int):
+                    continue
+                name = table.get(lay, "")
+                item.layer = "" if name in _DEFAULT_TAGS else name
+                changed += 1
+
     return changed
 
 

@@ -135,7 +135,7 @@ def test_lines_on_a_hidden_tag_stay_out():
     payload = skp_openskp._adapt(model, "plaza")
     got = [seg for part in payload["groups"] + payload["protos"]
            for seg in part.get("loose_edges") or []]
-    assert sorted(round(a[0] / 0.0254) for a, _b in got) == [20, 40]
+    assert sorted(round(a[0] / 0.0254) for a, _b, *_rest in got) == [20, 40]
 
 
 def test_the_model_s_own_flag_tells_groups_from_components():
