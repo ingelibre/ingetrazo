@@ -4352,5 +4352,9 @@
  "Push/Pull bases kept with Ctrl stay sound and cracked results are refused (#1155).": "ຖານທີ່ຮັກສາໄວ້ດ້ວຍ Ctrl ໃນການດັນ/ດຶງ ຍັງສົມບູນ ແລະ ຜົນທີ່ແຕກຮ້າວຈະຖືກປະຕິເສດ (#1155).",
  "Camera roll with a 3D mouse (#1406).": "ໝຸນກ້ອງດ້ວຍເມົາສ໌ 3 ມິຕິ (#1406).",
  "A preference to swap orbit and pan on the middle button (#467).": "ຕົວເລືອກສະຫຼັບການໂຄຈອນ ແລະ ການເລື່ອນໃນປຸ່ມກາງ (#467).",
- "IFC export writes the project north, the site location and the owning application (#1498).": "ການສົ່ງອອກ IFC ຂຽນທິດເໜືອຂອງໂຄງການ, ທີ່ຕັ້ງຂອງສະຖານທີ່ ແລະ ແອັບພລິເຄຊັນເຈົ້າຂອງ (#1498)."
+ "IFC export writes the project north, the site location and the owning application (#1498).": "ການສົ່ງອອກ IFC ຂຽນທິດເໜືອຂອງໂຄງການ, ທີ່ຕັ້ງຂອງສະຖານທີ່ ແລະ ແອັບພລິເຄຊັນເຈົ້າຂອງ (#1498).",
+ "USD (.usdz / .usda)…": "USD (.usdz / .usda)…",
+ "Save the model as Universal Scene Description, with its groups, components and materials, for Blender, renderers and visualisation programs.": "ບັນທຶກແບບຈຳລອງເປັນ Universal Scene Description ພ້ອມກຸ່ມ, ອົງປະກອບ ແລະ ວັດສະດຸ ສຳລັບ Blender, ໂປຣແກຣມເຣັນເດີ ແລະ ໂປຣແກຣມສະແດງພາບ.",
+ "USD package, one file (*.usdz)": "ແພັກເກດ USD, ໄຟລ໌ດຽວ (*.usdz)",
+ "USD text, pictures in a folder (*.usda)": "USD ແບບຂໍ້ຄວາມ, ຮູບພາບຢູ່ໃນໂຟນເດີ (*.usda)"
 }

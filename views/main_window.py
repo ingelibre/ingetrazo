@@ -61,6 +61,7 @@ from formats import obj as obj_format
 from formats import ifc as ifc_format
 from formats import stl as stl_format
 from formats import gltf as gltf_format
+from formats import usd as usd_format
 from tools.arc import CenterArcTool, ArcTool, ThreePointArcTool
 from tools.circle import CircleTool, PolygonTool
 from tools.dimension import DimensionTool
@@ -4886,6 +4887,11 @@ class MainWindow(QMainWindow):
              tr("Save the model as one .glb file with its materials and "
                 "textures, for Blender and web viewers."),
              self._on_export_glb),
+            (tr("USD (.usdz / .usda)…"),
+             tr("Save the model as Universal Scene Description, with its "
+                "groups, components and materials, for Blender, renderers "
+                "and visualisation programs."),
+             self._on_export_usd),
             (tr("COLLADA (.dae)…"),
              tr("Save the model as COLLADA, which most 3D programs open; "
                 "the texture images go beside the file."),
@@ -12614,6 +12620,31 @@ class MainWindow(QMainWindow):
         else:
             writer = gltf_format.save_glb
         self._export("GLB", "glb", tr("glTF binary (*.glb)"), writer)
+
+    def _on_export_usd(self) -> None:
+        """USD export: ``.usdz``, one file with the pictures inside, or
+        ``.usda``, the text layer with its pictures in a folder beside it —
+        by the type chosen in the dialog (or the name typed). Asks first,
+        as the GLB does, for the whole model or the selection."""
+        only = self._ask_export_scope()
+        if only is False:
+            return                          # cancelled
+        package = tr("USD package, one file (*.usdz)")
+        text = tr("USD text, pictures in a folder (*.usda)")
+        base = (self._current_path.stem if self._current_path is not None
+                else "untitled")
+        path_str, chosen = file_dialogs.getSaveFileName(
+            self, tr("Export {label}", label="USD"), f"{base}.usdz",
+            f"{package};;{text}")
+        if not path_str:
+            return
+        path = Path(path_str)
+        if path.suffix.lower() not in (".usdz", ".usda"):
+            path = path.with_suffix(".usda" if chosen == text else ".usdz")
+        save = (usd_format.save_usda if path.suffix.lower() == ".usda"
+                else usd_format.save_usdz)
+        self._write_export("USD", path,
+                           lambda scene, p: save(scene, p, only=only))
 
     def _ask_export_scope(self):
         """With a selection: ``set`` of the selected entities to export

@@ -43,7 +43,8 @@ UNITS = {"m": 1.0, "cm": 0.01, "mm": 0.001, "in": 0.0254, "ft": 0.3048}
 IMPORT_SUFFIXES = (".igz", ".dae", ".glb", ".gltf", ".skp", ".obj", ".stl",
                    ".dxf", ".dwg")
 #: What ``export_file`` writes, by suffix.
-EXPORT_SUFFIXES = (".ifc", ".glb", ".dae", ".stl", ".obj", ".dxf")
+EXPORT_SUFFIXES = (".ifc", ".glb", ".usdz", ".usda", ".dae", ".stl", ".obj",
+                   ".dxf")
 
 NO_GL = ("no OpenGL context: this IngeTrazo has nothing to render with "
          "(a server started on the offscreen platform, or a machine without "
@@ -612,8 +613,8 @@ class BridgeTools:
     def _tool_export_file(self, path: str, unit: str = "mm",
                           selection_only: bool = False) -> dict:
         """File ▸ Export, by the suffix: IFC (the BIM-tagged objects),
-        glTF binary, COLLADA, STL, OBJ and DXF (the view's lines). The
-        sheets are ``export_pdf`` and the pictures ``screenshot`` /
+        glTF binary, USD (.usdz / .usda), COLLADA, STL, OBJ and DXF (the
+        view's lines). The sheets are ``export_pdf`` and the pictures ``screenshot`` /
         ``export_view`` / ``render_sheet`` (PR #1494's names): one tool for
         each job."""
         from formats import dae as dae_format
@@ -621,6 +622,7 @@ class BridgeTools:
         from formats import ifc as ifc_format
         from formats import obj as obj_format
         from formats import stl as stl_format
+        from formats import usd as usd_format
         out = _writable(absolute(path))
         suffix = out.suffix.lower()
         win = self._window()
@@ -654,6 +656,14 @@ class BridgeTools:
                 raise ValueError("selection_only, and nothing is selected")
             ok = win._write_export("GLB", out, lambda s, p:
                                    gltf_format.save_glb(s, p, only=only))
+        elif suffix in (".usdz", ".usda"):
+            only = set(scene.selection) if selection_only else None
+            if selection_only and not only:
+                raise ValueError("selection_only, and nothing is selected")
+            save = (usd_format.save_usdz if suffix == ".usdz"
+                    else usd_format.save_usda)
+            ok = win._write_export("USD", out, lambda s, p:
+                                   save(s, p, only=only))
         elif suffix == ".dae":
             ok = win._write_export("COLLADA", out, dae_format.save_dae)
         elif suffix == ".stl":

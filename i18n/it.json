@@ -4349,5 +4349,9 @@
  "Push/Pull bases kept with Ctrl stay sound and cracked results are refused (#1155).": "Le basi mantenute con Ctrl in Spingi/Tira restano integre e i risultati incrinati vengono rifiutati (#1155).",
  "Camera roll with a 3D mouse (#1406).": "Rollio della fotocamera con un mouse 3D (#1406).",
  "A preference to swap orbit and pan on the middle button (#467).": "Una preferenza per scambiare orbita e panoramica sul tasto centrale (#467).",
- "IFC export writes the project north, the site location and the owning application (#1498).": "L'esportazione IFC scrive il nord di progetto, la posizione del sito e l'applicazione proprietaria (#1498)."
+ "IFC export writes the project north, the site location and the owning application (#1498).": "L'esportazione IFC scrive il nord di progetto, la posizione del sito e l'applicazione proprietaria (#1498).",
+ "USD (.usdz / .usda)…": "USD (.usdz / .usda)…",
+ "Save the model as Universal Scene Description, with its groups, components and materials, for Blender, renderers and visualisation programs.": "Salva il modello come Universal Scene Description, con i suoi gruppi, componenti e materiali, per Blender, i motori di rendering e i programmi di visualizzazione.",
+ "USD package, one file (*.usdz)": "Pacchetto USD, un solo file (*.usdz)",
+ "USD text, pictures in a folder (*.usda)": "USD testuale, immagini in una cartella (*.usda)"
 }
