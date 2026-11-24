@@ -429,9 +429,57 @@ ICON_INKS = {DARK: "#d9dce1", LIGHT: "#55595f",
              **{k: e["ink"] for k, e in SHEET_EXTRAS.items()}}
 
 
-def icon_ink() -> QColor:
-    """The icons' ink for the theme in force."""
+# ---- the icons' line colour -------------------------------------------------
+# Preferences ▸ General ▸ Icon line colour: the ink of the icons' lines.
+# «Automatic» — the default — keeps the theme's grey above, so nobody sees
+# a change until they pick a colour; the others hold on every theme, as
+# the accent does.
+AUTO_ICON_INK = "auto"
+ICON_INK_CHOICES = (
+    (AUTO_ICON_INK, "Automatic (follows the theme)", None),
+    ("white", "White", (245, 245, 245)),
+    ("light_grey", "Light grey", (184, 188, 194)),
+    ("dark_grey", "Dark grey", (85, 89, 95)),
+    ("black", "Black", (24, 26, 30)),
+    ("orange", "IngeTrazo orange", (243, 115, 41)),
+    ("blue", "Blue", (53, 132, 228)),
+    ("green", "Green", (46, 160, 67)),
+    ("red", "Red", (224, 27, 36)),
+    ("purple", "Purple", (145, 65, 172)),
+    ("yellow", "Yellow", (229, 165, 10)),
+)
+_ICON_INK_KEY = "icon_ink"   # a General setting, like the accent
+
+
+def saved_icon_ink() -> str:
+    from core import general_settings
+    name = str(general_settings.value(_ICON_INK_KEY, AUTO_ICON_INK)
+               or AUTO_ICON_INK)
+    return (name if any(name == key for key, _l, _c in ICON_INK_CHOICES)
+            else AUTO_ICON_INK)
+
+
+def save_icon_ink(name: str) -> None:
+    from core import general_settings
+    general_settings.set_value(
+        _ICON_INK_KEY,
+        name if any(name == key for key, _l, _c in ICON_INK_CHOICES)
+        else AUTO_ICON_INK)
+
+
+def theme_icon_ink() -> QColor:
+    """The theme's own icon grey, whatever the user chose."""
     return QColor(ICON_INKS.get(_grip_key, ICON_INKS[DARK]))
+
+
+def icon_ink(name: str | None = None) -> QColor:
+    """The icons' ink in force (or ``name``'s): the colour chosen in
+    Preferences, or the theme's grey when it is «Automatic»."""
+    name = saved_icon_ink() if name is None else name
+    for key, _label, rgb in ICON_INK_CHOICES:
+        if key == name and rgb is not None:
+            return QColor(*rgb)
+    return theme_icon_ink()
 
 
 def grip_colour() -> QColor:

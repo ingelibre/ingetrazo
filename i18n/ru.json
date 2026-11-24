@@ -4349,5 +4349,10 @@
  "Push/Pull bases kept with Ctrl stay sound and cracked results are refused (#1155).": "Основания, сохранённые с Ctrl при выдавливании, остаются целыми, а треснувшие результаты отклоняются (#1155).",
  "Camera roll with a 3D mouse (#1406).": "Крен камеры с помощью 3D-мыши (#1406).",
  "A preference to swap orbit and pan on the middle button (#467).": "Настройка, меняющая местами вращение и панорамирование на средней кнопке (#467).",
- "IFC export writes the project north, the site location and the owning application (#1498).": "Экспорт IFC записывает север проекта, расположение участка и приложение-владельца (#1498)."
+ "IFC export writes the project north, the site location and the owning application (#1498).": "Экспорт IFC записывает север проекта, расположение участка и приложение-владельца (#1498).",
+ "Automatic (follows the theme)": "Автоматически (по теме)",
+ "Icon line colour:": "Цвет линий значков:",
+ "Colour of the lines of the icons in the toolbars, menus and panels. «Automatic» uses the theme's grey, light on the dark themes and dark on the light ones. Applies at once.": "Цвет линий значков на панелях инструментов, в меню и панелях. «Автоматически» — серый цвет темы: светлый в тёмных темах и тёмный в светлых. Применяется сразу.",
+ "Icon size": "Размер значков",
+ "Apply the changes and keep Preferences open, to try several options one after another.": "Применяет изменения, не закрывая настройки, чтобы попробовать несколько вариантов подряд."
 }

@@ -177,6 +177,20 @@ class PreferencesDialog(QDialog):
             "Applies at once."))
         form.addRow(tr("Accent colour:"), self._accent)
 
+        from views.theme import ICON_INK_CHOICES, icon_ink, saved_icon_ink
+        self._icon_ink = QComboBox()
+        for key, label, _rgb in ICON_INK_CHOICES:
+            swatch = QPixmap(14, 14)
+            swatch.fill(icon_ink(key))
+            self._icon_ink.addItem(QIcon(swatch), tr(label), key)
+        self._icon_ink.setCurrentIndex(max(0, self._icon_ink.findData(
+            saved_icon_ink())))
+        self._icon_ink.setToolTip(tr(
+            "Colour of the lines of the icons in the toolbars, menus and "
+            "panels. «Automatic» uses the theme's grey, light on the dark "
+            "themes and dark on the light ones. Applies at once."))
+        form.addRow(tr("Icon line colour:"), self._icon_ink)
+
         self._rest = QComboBox()
         for key, label in _REST_MODES:
             self._rest.addItem(tr(label), key)
@@ -730,9 +744,18 @@ class PreferencesDialog(QDialog):
         self._tabs = tabs
 
         buttons = QDialogButtonBox(QDialogButtonBox.Ok
+                                   | QDialogButtonBox.Apply
                                    | QDialogButtonBox.Cancel)
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
+        # Apply: the changes take effect and the dialog stays open.
+        self._apply_btn = buttons.button(QDialogButtonBox.Apply)
+        self._apply_btn.setText(tr("Apply"))
+        self._apply_btn.setAutoDefault(False)
+        self._apply_btn.setToolTip(tr(
+            "Apply the changes and keep Preferences open, to try several "
+            "options one after another."))
+        self._apply_btn.clicked.connect(self.apply)
         # Back to how IngeTrazo comes: only the controls change, so OK
         # saves it and Cancel still touches nothing.
         self._defaults_btn = buttons.addButton(tr("Restore defaults"),
@@ -1053,6 +1076,8 @@ class PreferencesDialog(QDialog):
 
         pick(self._theme, DARK)
         pick(self._accent, ORANGE)
+        from views.theme import AUTO_ICON_INK
+        pick(self._icon_ink, AUTO_ICON_INK)
         pick(self._rest, "fade")
         from views.viewport import EDIT_REST_FADE
         self._rest_fade.setValue(round(EDIT_REST_FADE * 100))
@@ -1098,6 +1123,14 @@ class PreferencesDialog(QDialog):
         self._units_at_start.setChecked(True)
 
     def accept(self) -> None:  # noqa: D102 — QDialog override
+        self.apply()
+        super().accept()
+
+    def apply(self) -> None:
+        """Save and apply every page as it stands, leaving the dialog
+        open: Apply tries one choice after another (an icon colour, a
+        theme, a size) without closing Preferences each time. OK is Apply
+        and close; Cancel after an Apply keeps what was applied."""
         st = QSettings()
 
         # Units of the open document (issue #33).
@@ -1149,9 +1182,16 @@ class PreferencesDialog(QDialog):
 
         from views.theme import apply_accent, save_accent, saved_accent
         accent = self._accent.currentData()
-        if accent != saved_accent():
-            save_accent(accent)
+        from views.theme import save_icon_ink, saved_icon_ink
+        icon_ink = self._icon_ink.currentData()
+        ink_changed = icon_ink != saved_icon_ink()
+        if ink_changed:
+            save_icon_ink(icon_ink)
+        if accent != saved_accent() or ink_changed:
+            if accent != saved_accent():
+                save_accent(accent)
             from PySide6.QtWidgets import QApplication
+            # The same repaint as the accent: every drawn icon again.
             apply_accent(QApplication.instance())
 
         # Rest-of-model mode: through the viewport (it persists the setting),
@@ -1301,4 +1341,7 @@ class PreferencesDialog(QDialog):
         panel = getattr(self._window, "_ai_assistant", None)
         if panel is not None:          # the AI tab lives on: show the change
             panel._load_settings()
-        super().accept()
+        # What is applied is the new starting point: a second Apply (or
+        # OK) compares with it, and does not redo the units.
+        self._initial_units = chosen
+        self._units_for_new_explicit = False

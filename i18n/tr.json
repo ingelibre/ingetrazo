@@ -4348,5 +4348,10 @@
   "Push/Pull bases kept with Ctrl stay sound and cracked results are refused (#1155).": "İt/Çek'te Ctrl ile korunan tabanlar sağlam kalır ve çatlak sonuçlar reddedilir (#1155).",
   "Camera roll with a 3D mouse (#1406).": "3B fare ile kamera yuvarlanması (#1406).",
   "A preference to swap orbit and pan on the middle button (#467).": "Orta düğmede yörünge ile kaydırmayı değiştirme tercihi (#467).",
-  "IFC export writes the project north, the site location and the owning application (#1498).": "IFC dışa aktarımı proje kuzeyini, arsa konumunu ve sahip uygulamayı yazar (#1498)."
+  "IFC export writes the project north, the site location and the owning application (#1498).": "IFC dışa aktarımı proje kuzeyini, arsa konumunu ve sahip uygulamayı yazar (#1498).",
+  "Automatic (follows the theme)": "Otomatik (temaya uyar)",
+  "Icon line colour:": "Simge çizgi rengi:",
+  "Colour of the lines of the icons in the toolbars, menus and panels. «Automatic» uses the theme's grey, light on the dark themes and dark on the light ones. Applies at once.": "Araç çubuklarındaki, menülerdeki ve panellerdeki simgelerin çizgi rengi. «Otomatik» temanın grisini kullanır: koyu temalarda açık, açık temalarda koyu. Hemen uygulanır.",
+  "Icon size": "Simge boyutu",
+  "Apply the changes and keep Preferences open, to try several options one after another.": "Tercihler'i kapatmadan değişiklikleri uygular; böylece birkaç seçeneği art arda deneyebilirsiniz."
 }

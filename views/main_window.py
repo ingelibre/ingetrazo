@@ -1117,11 +1117,35 @@ class MainWindow(QMainWindow):
         menu = super().createPopupMenu()
         if menu is None:
             menu = QMenu(self)
+        menu.addSeparator()
+        self._add_icon_size_menu(menu)
         act = getattr(self, "_act_reset_toolbars", None)
         if act is not None:
             menu.addSeparator()
             menu.addAction(act)
         return menu
+
+    def _add_icon_size_menu(self, menu: QMenu) -> QMenu:
+        """«Icon size ▸ Small · Normal · Large · Extra large» on the
+        toolbars' right-click menu: the size of Preferences ▸ General ▸
+        Toolbar icons, one click away. Small is the size the bars have
+        by default."""
+        from PySide6.QtGui import QActionGroup as _Group
+        from views.icons import TOOLBAR_ICON_SIZES, toolbar_icon_px
+        sub = QMenu(tr("Icon size"), menu)
+        group = _Group(sub)
+        group.setExclusive(True)
+        current = toolbar_icon_px()
+        for px, label in TOOLBAR_ICON_SIZES:
+            act = sub.addAction(f"{tr(label)} ({px} px)")
+            act.setCheckable(True)
+            act.setChecked(px == current)
+            act.setData(px)
+            group.addAction(act)
+            act.triggered.connect(
+                lambda _c=False, v=px: self.set_toolbar_icon_size(v))
+        menu.addAction(sub.menuAction())
+        return sub
 
     def _place_new_toolbars(self, st) -> None:
         """A toolbar born after a profile saved its layout is unknown to

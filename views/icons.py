@@ -113,6 +113,8 @@ def mark_pixmap(width: int = 18, height: int | None = None) -> QPixmap:
 
 
 _PX = 48          # render size (QIcon scales down; big = crisp on HiDPI)
+#: Largest icon a bar can show, in logical px (TOOLBAR_ICON_SIZES).
+_LARGEST_ICON = 40
 #: Margin of the toolbar and menu icons, in render pixels: each drawing is
 #: written by hand in about the middle two thirds of the canvas, and
 #: :func:`tool_icon` scales it up and centres it until its ink stops this
@@ -154,11 +156,15 @@ def _text_ink() -> QColor:
     return QColor(40, 44, 52)
 
 
-def _canvas():
-    pm = QPixmap(_PX, _PX)
+def _canvas(res: int = 1):
+    """A blank icon canvas of _PX × ``res`` pixels, its painter scaled so
+    the drawings keep writing in the 48-space."""
+    pm = QPixmap(_PX * res, _PX * res)
     pm.fill(Qt.transparent)
     p = QPainter(pm)
     p.setRenderHint(QPainter.Antialiasing, True)
+    if res != 1:
+        p.scale(res, res)
     ink = _ink()
     pen = _Pen(ink, 3.0)
     pen.setJoinStyle(Qt.RoundJoin)
@@ -634,8 +640,11 @@ def _bridge(p, ink):
 
 def _make_faces(p, ink):
     """Make Faces: the edges of a loop, their corners in the accent, and
-    the face they close filled in between; a + for the new face."""
-    pts = [QPointF(4, 28), QPointF(22, 15), QPointF(40, 28), QPointF(22, 41)]
+    the face they close filled in between; a small + for the new face.
+    The loop fills the box and the + sits in its free corner, so the
+    face reads as large as the shapes of its neighbours (a flat rhombus
+    with the + out in the corner came out the smallest of its bar)."""
+    pts = [QPointF(4, 21), QPointF(26, 10), QPointF(37, 32), QPointF(15, 43)]
     acc = _accent()
     p.save()
     p.setPen(Qt.NoPen)
@@ -654,17 +663,19 @@ def _make_faces(p, ink):
     plus = QPen(ink, 3.0)
     plus.setCapStyle(Qt.RoundCap)
     p.setPen(plus)
-    p.drawLine(QPointF(34, 9), QPointF(44, 9))
-    p.drawLine(QPointF(39, 4), QPointF(39, 14))
+    p.drawLine(QPointF(37, 8), QPointF(45, 8))
+    p.drawLine(QPointF(41, 4), QPointF(41, 12))
     p.restore()
 
 
 def _make_faces_extrude(p, ink):
     """Make Faces and Extrude: Make Faces' loop with its corners in the
     accent, at the bottom, and the solid it rises into: the same outline
-    lifted, joined by its upright edges, and an arrow going up."""
-    lift = 16.0
-    base = [QPointF(4, 36), QPointF(18, 28), QPointF(32, 36), QPointF(18, 44)]
+    lifted, joined by its upright edges, and an arrow going up out of
+    its lid. The block takes the whole box (it was a small cube beside
+    a tall arrow, the smallest of its bar)."""
+    lift = 18.0
+    base = [QPointF(4, 35), QPointF(22, 27), QPointF(40, 35), QPointF(22, 43)]
     top = [QPointF(q.x(), q.y() - lift) for q in base]
     acc = _accent()
     p.save()
@@ -689,9 +700,9 @@ def _make_faces_extrude(p, ink):
     arrow.setCapStyle(Qt.RoundCap)
     arrow.setJoinStyle(Qt.RoundJoin)
     p.setPen(arrow)
-    p.drawLine(QPointF(40, 22), QPointF(40, 5))
-    p.drawPolyline(QPolygonF([QPointF(35, 10), QPointF(40, 5),
-                              QPointF(45, 10)]))
+    p.drawLine(QPointF(22, 17), QPointF(22, 3))
+    p.drawPolyline(QPolygonF([QPointF(17, 8), QPointF(22, 3),
+                              QPointF(27, 8)]))
     p.restore()
 
 
@@ -1402,7 +1413,9 @@ def _proj_perspective(p, ink):
 
 
 def _proj_two_point(p, ink):
-    # the horizon and its two vanishing points
+    # the horizon and its two vanishing points, close to the box: a box
+    # as tall as the other two projections' and a short horizon, or the
+    # long line set the icon's size and the box came out the smallest.
     p.save()
     p.setPen(_rpen(ink, 1.6))
     p.drawLine(QPointF(3, 24), QPointF(45, 24))
@@ -1410,9 +1423,9 @@ def _proj_two_point(p, ink):
     _dot(p, 3.5, 24, r=2.6)
     _dot(p, 44.5, 24, r=2.6)
     _box(p, ink,
-         (QPointF(13, 18), QPointF(13, 30.5)),
-         (QPointF(24, 11), QPointF(24, 38)),
-         (QPointF(35, 18), QPointF(35, 30.5)))
+         (QPointF(9, 16), QPointF(9, 32)),
+         (QPointF(24, 7), QPointF(24, 41)),
+         (QPointF(39, 16), QPointF(39, 32)))
 
 
 def _text(p, ink):
@@ -3079,12 +3092,14 @@ _fit_cache: dict = {}
 _factor_cache: dict = {}
 
 
-def _render(draw, weight: float, fit=None) -> QPixmap:
+def _render(draw, weight: float, fit=None, res: int = 1) -> QPixmap:
     """One drawing on a fresh canvas; ``fit`` = (scale, dx, dy) to apply
-    first, with the lines thinned by the scale so they keep their weight."""
+    first, with the lines thinned by the scale so they keep their weight.
+    ``res`` multiplies the canvas (see _RESOLUTIONS): the same drawing,
+    more pixels."""
     scale = fit[0] if fit else 1.0
     with _weighted(weight / scale):
-        pm, p, ink = _canvas()
+        pm, p, ink = _canvas(res)
         if fit:
             p.translate(fit[1], fit[2])
             p.scale(scale, scale)
@@ -3169,7 +3184,27 @@ def tool_icon(key: str) -> QIcon:
         return QIcon()
     weight = 1.0 if key in FULL_WEIGHT else ICON_STROKE
     fit = None if key in FULL_WEIGHT else _fit_for(key, draw, weight)
-    return QIcon(_render(draw, weight, fit))
+    icon = QIcon()
+    for res in icon_resolutions():
+        icon.addPixmap(_render(draw, weight, fit, res))
+    return icon
+
+
+def icon_resolutions() -> tuple[int, ...]:
+    """The canvas multiples a tool icon is drawn at: 48 px always, and
+    96 / 144 / 192 px when a connected screen's scale would stretch the
+    48 px drawing — a 40 px icon on a 4K screen at 300 % wants 120
+    device pixels, and stretched to it the 48 px one came out blurred.
+    QIcon picks the smallest that covers the size asked and scales it
+    down; a plain screen pays for one drawing only, as before."""
+    dpr = 1.0
+    app = QApplication.instance()
+    if app is not None:
+        from PySide6.QtGui import QGuiApplication
+        dpr = max([s.devicePixelRatio() for s in QGuiApplication.screens()]
+                  or [1.0])
+    need = min(4, max(1, math.ceil(_LARGEST_ICON * dpr / _PX - 1e-6)))
+    return tuple(range(1, need + 1))
 
 
 def letter_icon(name: str) -> QIcon:
