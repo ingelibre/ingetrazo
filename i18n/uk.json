@@ -4357,5 +4357,20 @@
  "Push/Pull bases kept with Ctrl stay sound and cracked results are refused (#1155).": "Основи, збережені з Ctrl під час видавлювання, лишаються цілими, а потріскані результати відхиляються (#1155).",
  "Camera roll with a 3D mouse (#1406).": "Крен камери за допомогою 3D-миші (#1406).",
  "A preference to swap orbit and pan on the middle button (#467).": "Налаштування, що міняє місцями обертання й панорамування на середній кнопці (#467).",
- "IFC export writes the project north, the site location and the owning application (#1498).": "Експорт IFC записує північ проєкту, розташування ділянки та застосунок-власник (#1498)."
+ "IFC export writes the project north, the site location and the owning application (#1498).": "Експорт IFC записує північ проєкту, розташування ділянки та застосунок-власник (#1498).",
+ "Slab": "Slab",
+ "Column": "Column",
+ "Beam": "Beam",
+ "Footing": "Footing",
+ "Roof": "Roof",
+ "Stair": "Stair",
+ "Ramp": "Ramp",
+ "Door": "Door",
+ "Railing": "Railing",
+ "Covering": "Covering",
+ "Pile": "Pile",
+ "Member": "Member",
+ "Space": "Space",
+ "ReinforcingBar": "ReinforcingBar",
+ "Türkiye delivery information": "Türkiye delivery information"
 }
