@@ -238,8 +238,13 @@ def _storey_of(obj) -> tuple:
     if not isinstance(name, str) or not name.strip():
         return _DEFAULT_STOREY
     elevation = storey.get("elevation", 0.0)
-    if isinstance(elevation, bool) or not isinstance(elevation, (int, float)) \
-            or not math.isfinite(elevation):
+    if isinstance(elevation, bool) or not isinstance(elevation, (int, float)):
+        elevation = 0.0
+    try:
+        elevation = float(elevation)
+    except OverflowError:
+        elevation = 0.0
+    if not math.isfinite(elevation):
         elevation = 0.0
     ident = storey.get("id")
     key = ident.strip() if isinstance(ident, str) and ident.strip() else name.strip()

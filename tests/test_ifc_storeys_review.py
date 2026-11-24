@@ -40,3 +40,11 @@ def test_only_empty_named_groups_do_not_truncate_an_existing_file(tmp_path):
     with pytest.raises(ValueError, match="No tagged BIM objects"):
         save_ifc(scene, path)
     assert path.read_text() == "existing content"
+
+
+@pytest.mark.parametrize("elevation", [10**400, -(10**400)], ids=["huge-positive", "huge-negative"])
+def test_an_integer_elevation_outside_float_range_falls_back_to_zero(tmp_path, elevation):
+    scene = _scene()
+    _add(scene, "IfcWall", "Wall", 0.0, {"name": "Ground", "elevation": elevation})
+    model = _export(tmp_path, scene)
+    assert model.by_type("IfcBuildingStorey")[0].Elevation == 0.0
