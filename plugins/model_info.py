@@ -4,7 +4,9 @@
 """Model Info plugin — model statistics in a dialog (Extensions menu).
 
 A tabbed breakdown of the open document: geometry counts, bounding box,
-materials in use, layers, BIM objects, and its geographic location — the
+materials in use, layers, BIM objects, a report of the whole model by layer,
+material or component (:mod:`core.model_report`, exportable to CSV), and
+its geographic location — the
 one place in it that changes the document (set or clear the location, one
 undo step, as Model Info ▸ Geo-location in other modellers). The numbers agree
 with the rest of the application because they come from the same sources:
@@ -34,6 +36,7 @@ from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QApplication,
+    QComboBox,
     QDialog,
     QHBoxLayout,
     QHeaderView,
@@ -46,7 +49,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from core import bim
+from core import bim, model_report
 from core.i18n import tr
 from tools.base import Tool
 from core.units import fmt_area, fmt_volume
@@ -246,6 +249,55 @@ def materials_csv(stats: dict) -> str:
     return out.getvalue()
 
 
+def info_csv_rows(stats: dict) -> list[list]:
+    """The rest of Model Info as rows of the report CSV
+    (:data:`core.model_report.CSV_HEADER`), for «Export all»: the geometry
+    summary (``summary``: counts in ``count``, the bounding box in metres
+    in ``value``), every BIM object (``bim``: its class in ``value``) and
+    the location (``location``). Keys stay in English, like the
+    ``grouping`` column, so a spreadsheet formula survives a language
+    change."""
+    def count(name, n):
+        return ["summary", name, n, "", "", "", ""]
+
+    def value(grouping, name, v):
+        return [grouping, name, "", "", "", "", v]
+
+    s, bbox = stats, stats["bbox"]
+    rows = [
+        count("vertices", s["total_verts"]),
+        count("edges", s["total_edges"]),
+        count("faces", s["total_faces"]),
+        count("triangles", s["tri_count"]),
+        count("groups", s["classic_groups"]),
+        count("component_instances", s["instances"]),
+        count("dimensions", s["dims_count"]),
+        count("text_labels", s["text_count"]),
+        count("guides", s["guides_count"]),
+        count("saved_views", s["saved_views_count"]),
+        count("geo_paths", s["geo_paths_count"]),
+        value("summary", "width_m", f"{bbox['width']:.4f}"),
+        value("summary", "depth_m", f"{bbox['depth']:.4f}"),
+        value("summary", "height_m", f"{bbox['height']:.4f}"),
+    ]
+    for o in s["bim_objects"]:
+        vol = o["volume"]
+        rows.append(["bim", o["name"], 1, "", f"{o['area']:.4f}",
+                     "" if vol is None else f"{vol:.4f}", o["class"]])
+    loc = s.get("location")
+    if loc is not None:
+        rows += [
+            value("location", "latitude", f"{loc['lat']:.8f}"),
+            value("location", "longitude", f"{loc['lon']:.8f}"),
+            value("location", "utm_zone",
+                  f"{loc['zone']}{'N' if loc['northern'] else 'S'}"),
+            value("location", "utm_east_m", f"{loc['east']:.3f}"),
+            value("location", "utm_north_m", f"{loc['north']:.3f}"),
+            value("location", "north_deg", f"{loc['north_deg']:.2f}"),
+        ]
+    return rows
+
+
 def _stats_to_text(stats: dict) -> str:
     """Plain-text summary (the Copy to Clipboard payload)."""
     s, style = stats, stats["style"]
@@ -399,6 +451,47 @@ class ModelInfoDialog(QDialog):
         bl.addWidget(self._no_bim_label)
         self._tabs.addTab(bim_tab, tr("BIM"))
 
+        # Report tab — the whole model by layer, material or component
+        rep_tab = QWidget()
+        rl = QVBoxLayout(rep_tab)
+        by_row = QHBoxLayout()
+        by_row.addWidget(QLabel(tr("Group by:")))
+        self._report_by = QComboBox()
+        for key, label in ((model_report.LAYER, tr("Layer")),
+                           (model_report.MATERIAL, tr("Material")),
+                           (model_report.COMPONENT, tr("Component"))):
+            self._report_by.addItem(label, key)
+        self._report_by.currentIndexChanged.connect(self._populate_report)
+        by_row.addWidget(self._report_by)
+        by_row.addStretch(1)
+        rl.addLayout(by_row)
+        self._report_table = _make_table(
+            [tr("Name"), tr("Objects"), tr("Faces"), tr("Area"),
+             tr("Volume")])
+        rl.addWidget(self._report_table, stretch=1)
+        self._report_note = QLabel()
+        self._report_note.setWordWrap(True)
+        rl.addWidget(self._report_note)
+        exp_row = QHBoxLayout()
+        # The BIM panel's pair: everything Model Info knows in one file,
+        # or just the table on screen.
+        self._export_all_btn = QPushButton(tr("Export all CSV…"))
+        self._export_all_btn.setToolTip(tr(
+            "Every layer, material and component, plus the geometry "
+            "summary, the BIM objects and the location, in one CSV"))
+        self._export_all_btn.clicked.connect(
+            lambda: self._export_report_csv(shown=False))
+        exp_row.addWidget(self._export_all_btn)
+        self._export_shown_btn = QPushButton(tr("Export shown CSV…"))
+        self._export_shown_btn.setToolTip(tr(
+            "Only the table on screen (the grouping chosen above)"))
+        self._export_shown_btn.clicked.connect(
+            lambda: self._export_report_csv(shown=True))
+        exp_row.addWidget(self._export_shown_btn)
+        exp_row.addStretch(1)
+        rl.addLayout(exp_row)
+        self._tabs.addTab(rep_tab, tr("Report"))
+
         # Location tab — the model's geographic location (scene.georef)
         loc_tab = QWidget()
         ll = QVBoxLayout(loc_tab)
@@ -436,6 +529,8 @@ class ModelInfoDialog(QDialog):
         self._populate_geom()
         self._populate_materials()
         self._populate_bim()
+        self._report = model_report.collect_report(self._viewport.scene)
+        self._populate_report()
         self._populate_location()
 
     def _populate_geom(self) -> None:
@@ -538,7 +633,70 @@ class ModelInfoDialog(QDialog):
             self._bim_table.setItem(i, 3, QTableWidgetItem(vol))
         self._bim_table.resizeRowsToContents()
 
+    def _populate_report(self) -> None:
+        """Fill the Report tab with the rows of the chosen grouping."""
+        by = self._report_by.currentData()
+        rows = self._report.get(by, [])
+        count_header = (tr("Instances") if by == model_report.COMPONENT
+                        else tr("Objects"))
+        self._report_table.setHorizontalHeaderItem(
+            1, QTableWidgetItem(count_header))
+        table = self._report_table
+        table.setRowCount(max(len(rows), 1))
+        if not rows:
+            table.setItem(0, 0, QTableWidgetItem(tr("(none)")))
+            for c in range(1, 5):
+                table.setItem(0, c, QTableWidgetItem(""))
+        for i, r in enumerate(rows):
+            name = r["name"] or tr("(no material)")
+            if by == model_report.LAYER and not r.get("visible", True):
+                name = f"{name} {tr('(hidden)')}"
+            item = QTableWidgetItem(name)
+            rgb = r.get("rgb")
+            if rgb is not None:
+                item.setBackground(QColor.fromRgbF(*rgb[:3]))
+                lum = 0.299 * rgb[0] + 0.587 * rgb[1] + 0.114 * rgb[2]
+                item.setForeground(
+                    QColor("black") if lum > 0.5 else QColor("white"))
+            table.setItem(i, 0, item)
+            for c, text in ((1, f"{r['count']:,}"), (2, f"{r['faces']:,}"),
+                            (3, fmt_area(r["area"])),
+                            (4, fmt_volume(r["volume"])
+                             if r["volume"] is not None else "—")):
+                cell = QTableWidgetItem(text)
+                cell.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+                table.setItem(i, c, cell)
+        table.resizeRowsToContents()
+        self._export_shown_btn.setEnabled(bool(rows))
+        self._report_note.setText(tr(
+            "The whole model, hidden objects included. Areas are net "
+            "(holes left out) and in world size; volume only where an "
+            "object is closed (—: nothing closed here)."))
+
     # ---- Export ------------------------------------------------------------
+    def _export_report_csv(self, shown: bool = False) -> None:
+        """Save the report as CSV: everything Model Info knows (every
+        grouping, the geometry summary, the BIM objects, the location) or,
+        with ``shown``, only the table on screen."""
+        from views.filedialogs import file_dialogs
+        by = self._report_by.currentData()
+        name = f"report-{by}.csv" if shown else "report.csv"
+        path, _ = file_dialogs.getSaveFileName(
+            self, tr("Export report CSV"), name,
+            tr("CSV (*.csv);;All files (*)"))
+        if not path:
+            return
+        if shown:
+            text = model_report.report_csv(
+                self._report, no_material_label=tr("(no material)"),
+                groupings=(by,))
+        else:
+            text = model_report.report_csv(
+                self._report, no_material_label=tr("(no material)"),
+                extra=info_csv_rows(self._stats))
+        with open(path, "w", encoding="utf-8", newline="") as fh:
+            fh.write(text)
+
     def _export_materials_csv(self) -> None:
         """Save the materials-in-use table as a CSV spreadsheet (#1277):
         the takeoff a user asked to carry into their budget."""

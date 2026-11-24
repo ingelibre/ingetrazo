@@ -4348,5 +4348,14 @@
  "Push/Pull bases kept with Ctrl stay sound and cracked results are refused (#1155).": "Las bases que se conservan con Ctrl en Empujar/Tirar quedan sanas y se rechazan los resultados agrietados (#1155).",
  "Camera roll with a 3D mouse (#1406).": "Giro de cámara con un ratón 3D (#1406).",
  "A preference to swap orbit and pan on the middle button (#467).": "Una preferencia para intercambiar órbita y desplazar en el botón central (#467).",
- "IFC export writes the project north, the site location and the owning application (#1498).": "La exportación IFC escribe el norte del proyecto, la ubicación del sitio y la aplicación propietaria (#1498)."
+ "IFC export writes the project north, the site location and the owning application (#1498).": "La exportación IFC escribe el norte del proyecto, la ubicación del sitio y la aplicación propietaria (#1498).",
+ "Group by:": "Agrupar por:",
+ "Instances": "Instancias",
+ "Report": "Informe",
+ "(hidden)": "(oculta)",
+ "(no material)": "(sin material)",
+ "Export report CSV": "Exportar informe CSV",
+ "The whole model, hidden objects included. Areas are net (holes left out) and in world size; volume only where an object is closed (—: nothing closed here).": "Todo el modelo, incluidos los objetos ocultos. Las áreas son netas (sin huecos) y a tamaño real; volumen solo donde un objeto está cerrado (—: nada cerrado aquí).",
+ "Every layer, material and component, plus the geometry summary, the BIM objects and the location, in one CSV": "Todas las capas, materiales y componentes, más el resumen de geometría, los objetos BIM y la ubicación, en un solo CSV",
+ "Only the table on screen (the grouping chosen above)": "Solo la tabla en pantalla (la agrupación elegida arriba)"
 }

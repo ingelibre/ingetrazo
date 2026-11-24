@@ -4385,5 +4385,14 @@
  "Push/Pull bases kept with Ctrl stay sound and cracked results are refused (#1155).": "القواعد المحتفظ بها بـ Ctrl في الدفع/السحب تبقى سليمة وتُرفض النتائج المتشققة (#1155).",
  "Camera roll with a 3D mouse (#1406).": "دوران الكاميرا حول محورها بفأرة ثلاثية الأبعاد (#1406).",
  "A preference to swap orbit and pan on the middle button (#467).": "تفضيل لتبديل الدوران والتحريك على الزر الأوسط (#467).",
- "IFC export writes the project north, the site location and the owning application (#1498).": "يكتب تصدير IFC شمال المشروع وموقع الأرض والتطبيق المالك (#1498)."
+ "IFC export writes the project north, the site location and the owning application (#1498).": "يكتب تصدير IFC شمال المشروع وموقع الأرض والتطبيق المالك (#1498).",
+ "Group by:": "تجميع حسب:",
+ "Instances": "النسخ",
+ "Report": "تقرير",
+ "(hidden)": "(مخفية)",
+ "(no material)": "(بلا مادة)",
+ "Export report CSV": "تصدير التقرير CSV",
+ "The whole model, hidden objects included. Areas are net (holes left out) and in world size; volume only where an object is closed (—: nothing closed here).": "النموذج كله، بما فيه الكائنات المخفية. المساحات صافية (دون الفتحات) وبالحجم الحقيقي؛ الحجم فقط حيث يكون الكائن مغلقًا (—: لا شيء مغلق هنا).",
+ "Every layer, material and component, plus the geometry summary, the BIM objects and the location, in one CSV": "كل الطبقات والمواد والمكوّنات، ومعها ملخص الهندسة وكائنات BIM والموقع، في ملف CSV واحد",
+ "Only the table on screen (the grouping chosen above)": "الجدول المعروض فقط (التجميع المختار في الأعلى)"
 }

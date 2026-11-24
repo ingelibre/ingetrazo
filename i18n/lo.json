@@ -4352,5 +4352,14 @@
  "Push/Pull bases kept with Ctrl stay sound and cracked results are refused (#1155).": "ຖານທີ່ຮັກສາໄວ້ດ້ວຍ Ctrl ໃນການດັນ/ດຶງ ຍັງສົມບູນ ແລະ ຜົນທີ່ແຕກຮ້າວຈະຖືກປະຕິເສດ (#1155).",
  "Camera roll with a 3D mouse (#1406).": "ໝຸນກ້ອງດ້ວຍເມົາສ໌ 3 ມິຕິ (#1406).",
  "A preference to swap orbit and pan on the middle button (#467).": "ຕົວເລືອກສະຫຼັບການໂຄຈອນ ແລະ ການເລື່ອນໃນປຸ່ມກາງ (#467).",
- "IFC export writes the project north, the site location and the owning application (#1498).": "ການສົ່ງອອກ IFC ຂຽນທິດເໜືອຂອງໂຄງການ, ທີ່ຕັ້ງຂອງສະຖານທີ່ ແລະ ແອັບພລິເຄຊັນເຈົ້າຂອງ (#1498)."
+ "IFC export writes the project north, the site location and the owning application (#1498).": "ການສົ່ງອອກ IFC ຂຽນທິດເໜືອຂອງໂຄງການ, ທີ່ຕັ້ງຂອງສະຖານທີ່ ແລະ ແອັບພລິເຄຊັນເຈົ້າຂອງ (#1498).",
+ "Group by:": "ຈັດກຸ່ມຕາມ:",
+ "Instances": "ອິນສະແຕນ",
+ "Report": "ລາຍງານ",
+ "(hidden)": "(ເຊື່ອງ)",
+ "(no material)": "(ບໍ່ມີວັດສະດຸ)",
+ "Export report CSV": "ສົ່ງອອກລາຍງານ CSV",
+ "The whole model, hidden objects included. Areas are net (holes left out) and in world size; volume only where an object is closed (—: nothing closed here).": "ທັງໂມເດວ ລວມທັງວັດຖຸທີ່ເຊື່ອງໄວ້. ເນື້ອທີ່ແມ່ນສຸດທິ (ບໍ່ລວມຮູ) ຕາມຂະໜາດຈິງ; ປະລິມາດສະເພາະວັດຖຸທີ່ປິດ (—: ບໍ່ມີຫຍັງປິດຢູ່ນີ້).",
+ "Every layer, material and component, plus the geometry summary, the BIM objects and the location, in one CSV": "ທຸກຊັ້ນ, ວັດສະດຸ ແລະ ອົງປະກອບ, ພ້ອມສະຫຼຸບຮູບຊົງ, ວັດຖຸ BIM ແລະ ທີ່ຕັ້ງ, ໃນ CSV ດຽວ",
+ "Only the table on screen (the grouping chosen above)": "ສະເພາະຕາຕະລາງເທິງໜ້າຈໍ (ການຈັດກຸ່ມທີ່ເລືອກຂ້າງເທິງ)"
 }
