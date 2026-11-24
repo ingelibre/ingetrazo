@@ -554,8 +554,9 @@ class Mesh:
             return [edge]
         return [e for e in self.edges if e.curve == cid]
 
-    def resplit_curves(self) -> None:
-        """Re-partition curve ids into contiguous contours.
+    def resplit_curves(self, only=None) -> None:
+        """Re-partition curve ids into contiguous contours (every curve, or
+        just the ids in ``only``).
 
         A curve breaks where its own connectivity isn't a simple chain
         (curve-degree ≠ 2), or where other geometry attaches IN ITS PLANE (a
@@ -570,7 +571,7 @@ class Mesh:
         global _CURVE_COUNTER
         by_id: dict[int, list[Edge]] = {}
         for e in self.edges:
-            if e.curve is not None:
+            if e.curve is not None and (only is None or e.curve in only):
                 by_id.setdefault(e.curve, []).append(e)
         for cid, edges in by_id.items():
             eset = set(edges)
