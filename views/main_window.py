@@ -708,8 +708,8 @@ class MainWindow(QMainWindow):
         # An extension's panel that takes one of the window's keys (#1334).
         _shortcuts.resolve_shortcut_clashes()
         self._activate_tool("select")
-        self._apply_new_document_units()
-        self._insert_scale_figure()
+        if not self._apply_new_document_units():
+            self._insert_scale_figure()
         self._update_title()
 
     # ---- Layout -------------------------------------------------------------
@@ -4755,6 +4755,13 @@ class MainWindow(QMainWindow):
         new_action.triggered.connect(self._on_new)
         actions.append(new_action)
 
+        tpl_menu = QMenu(tr("New from Template"), self)
+        tpl_menu.setStatusTip(tr(
+            "Start a new project from one of your saved templates."))
+        tpl_menu.aboutToShow.connect(
+            lambda m=tpl_menu: self._fill_template_menu(m))
+        actions.append(tpl_menu)
+
         # A second IngeTrazo beside this one: each window is its own
         # document, and Copy/Paste now crosses between them (issue #76).
         window_action = QAction(tr("New Window"), self)
@@ -4798,6 +4805,13 @@ class MainWindow(QMainWindow):
         save_as_action.setShortcut(QKeySequence.SaveAs)
         save_as_action.triggered.connect(self._on_save_as)
         actions.append(save_as_action)
+
+        save_tpl_action = QAction(tr("Save As Template\u2026"), self)
+        save_tpl_action.setStatusTip(tr(
+            "Keep this document's settings (units, layers, materials, "
+            "styles, camera) as a template for new documents."))
+        save_tpl_action.triggered.connect(self._on_save_as_template)
+        actions.append(save_tpl_action)
 
         # The folder of the project in front, with its file picked out;
         # also on the project tab's right-click menu.
@@ -8980,8 +8994,8 @@ class MainWindow(QMainWindow):
         self.viewport.inference.reset()
         self._forget_coordinate()
         self._reset_camera_home()
-        self._apply_new_document_units()
-        self._insert_scale_figure()
+        if not self._apply_new_document_units():
+            self._insert_scale_figure()
         self.viewport.notify_scene_changed()
         self._sync_style_menu()
         self._sync_section_menu()
@@ -10128,12 +10142,91 @@ class MainWindow(QMainWindow):
         self._start_blank_document()
         self.settle_heap()
 
-    def _apply_new_document_units(self) -> None:
-        """A new, empty document starts in the units chosen for new documents
-        in Preferences (#121). Not a change to the document: no version bump,
-        so it does not ask to be saved."""
-        from core import units as _units
+    def _on_save_as_template(self) -> None:
+        """File > Save As Template: the document in front becomes a template."""
+        from PySide6.QtWidgets import QMessageBox
+        from core import templates
+        from views.template_dialog import SaveTemplateDialog
+
+        dlg = SaveTemplateDialog(self)
+        if not dlg.exec():
+            return
+        stem = templates._safe_name(dlg.file_stem())
+        dest = templates.templates_dir() / (stem + templates.SUFFIX)
+        if dest.exists() and QMessageBox.question(
+                self, tr("Save As Template"),
+                tr("A template with that name already exists. "
+                       "Replace it?")
+        ) != QMessageBox.StandardButton.Yes:
+            return
+        try:
+            path = templates.save_as_template(
+                self.viewport.scene, dlg.name(),
+                description=dlg.description(), file_stem=stem,
+                make_default=dlg.make_default())
+        except Exception as exc:
+            QMessageBox.warning(self, tr("Save As Template"), str(exc))
+            return
+        self.statusBar().showMessage(
+            tr("Template saved: {name}").format(name=path.stem), 6000)
+
+    def _fill_template_menu(self, menu) -> None:
+        """File ▸ New from Template: one entry per saved template."""
+        from core import templates
+        menu.clear()
+        found = templates.list_templates()
+        for path in found:
+            info = templates.read_info(path)
+            act = menu.addAction(info["name"])
+            tip = info["description"] or tr(
+                "Start a new project from one of your saved templates.")
+            act.setStatusTip(tip)
+            act.setToolTip(tip)
+            act.triggered.connect(
+                lambda _c=False, p=path: self._on_new_from_template(p))
+        if not found:
+            menu.addAction(tr("No templates yet")).setEnabled(False)
+        menu.addSeparator()
+        blank = menu.addAction(tr("Blank document"))
+        blank.setStatusTip(tr("Start a new project without any template."))
+        blank.triggered.connect(
+            lambda _c=False: self._on_new_from_template(None))
+
+    def _on_new_from_template(self, path) -> None:
+        """File ▸ New from Template: like New, but from the chosen
+        template (``None``: no template at all)."""
+        self._template_choice = False if path is None else path
+        try:
+            self._on_new()
+        finally:
+            self._template_choice = None
+
+    def _apply_new_document_units(self) -> bool:
+        """A new, empty document starts from a template if there is one
+        (the one chosen in File ▸ New from Template, else the default),
+        else in the units chosen for new documents (#121). Returns True when
+        a template was applied (it carries its own contents, so the caller
+        skips the scale figure)."""
+        from core import units as _units, templates
+        choice = getattr(self, "_template_choice", None)
+        if choice is False:
+            tpl = None
+        elif choice is not None:
+            tpl = choice
+        else:
+            tpl = templates.default_template()
+        if tpl is not None:
+            try:
+                templates.apply_template(self.viewport.scene, tpl)
+                try:
+                    self._saved_version = self.viewport.scene.version
+                except Exception:
+                    pass
+                return True
+            except Exception:
+                pass  # broken template: fall back to the plain start
         _units.apply_units(self.viewport.scene, _units.new_document_units())
+        return False
 
     def _on_recover_discarded(self) -> None:
         """Open one of the retired auto-save copies as a NEW, unsaved

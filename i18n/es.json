@@ -4348,5 +4348,20 @@
  "Push/Pull bases kept with Ctrl stay sound and cracked results are refused (#1155).": "Las bases que se conservan con Ctrl en Empujar/Tirar quedan sanas y se rechazan los resultados agrietados (#1155).",
  "Camera roll with a 3D mouse (#1406).": "Giro de cámara con un ratón 3D (#1406).",
  "A preference to swap orbit and pan on the middle button (#467).": "Una preferencia para intercambiar órbita y desplazar en el botón central (#467).",
- "IFC export writes the project north, the site location and the owning application (#1498).": "La exportación IFC escribe el norte del proyecto, la ubicación del sitio y la aplicación propietaria (#1498)."
+ "IFC export writes the project north, the site location and the owning application (#1498).": "La exportación IFC escribe el norte del proyecto, la ubicación del sitio y la aplicación propietaria (#1498).",
+ "Save As Template…": "Guardar como plantilla…",
+ "Save As Template": "Guardar como plantilla",
+ "Description:": "Descripción:",
+ "File:": "Archivo:",
+ "Set as default template": "Definir como plantilla predeterminada",
+ "A template with that name already exists. Replace it?": "Ya existe una plantilla con ese nombre. ¿Reemplazarla?",
+ "Keep this document's settings (units, layers, materials, styles, camera) as a template for new documents.": "Guarda la configuración de este documento (unidades, capas, materiales, estilos, cámara) como plantilla para documentos nuevos.",
+ "New from Template": "Nuevo desde plantilla",
+ "Start a new project from one of your saved templates.": "Empieza un proyecto nuevo desde una de tus plantillas guardadas.",
+ "No templates yet": "Aún no hay plantillas",
+ "Blank document": "Documento en blanco",
+ "Start a new project without any template.": "Empieza un proyecto nuevo sin ninguna plantilla.",
+ "Default template": "Plantilla predeterminada",
+ "None (blank document)": "Ninguna (documento en blanco)",
+ "The template that File ▸ New starts from. Save one with File ▸ Save As Template…": "La plantilla con la que empieza Archivo ▸ Nuevo. Guarda una con Archivo ▸ Guardar como plantilla…"
 }

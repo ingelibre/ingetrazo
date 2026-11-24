@@ -4352,5 +4352,20 @@
  "Push/Pull bases kept with Ctrl stay sound and cracked results are refused (#1155).": "ຖານທີ່ຮັກສາໄວ້ດ້ວຍ Ctrl ໃນການດັນ/ດຶງ ຍັງສົມບູນ ແລະ ຜົນທີ່ແຕກຮ້າວຈະຖືກປະຕິເສດ (#1155).",
  "Camera roll with a 3D mouse (#1406).": "ໝຸນກ້ອງດ້ວຍເມົາສ໌ 3 ມິຕິ (#1406).",
  "A preference to swap orbit and pan on the middle button (#467).": "ຕົວເລືອກສະຫຼັບການໂຄຈອນ ແລະ ການເລື່ອນໃນປຸ່ມກາງ (#467).",
- "IFC export writes the project north, the site location and the owning application (#1498).": "ການສົ່ງອອກ IFC ຂຽນທິດເໜືອຂອງໂຄງການ, ທີ່ຕັ້ງຂອງສະຖານທີ່ ແລະ ແອັບພລິເຄຊັນເຈົ້າຂອງ (#1498)."
+ "IFC export writes the project north, the site location and the owning application (#1498).": "ການສົ່ງອອກ IFC ຂຽນທິດເໜືອຂອງໂຄງການ, ທີ່ຕັ້ງຂອງສະຖານທີ່ ແລະ ແອັບພລິເຄຊັນເຈົ້າຂອງ (#1498).",
+ "Save As Template…": "Save As Template…",
+ "Save As Template": "Save As Template",
+ "Description:": "Description:",
+ "File:": "File:",
+ "Set as default template": "Set as default template",
+ "A template with that name already exists. Replace it?": "A template with that name already exists. Replace it?",
+ "Keep this document's settings (units, layers, materials, styles, camera) as a template for new documents.": "Keep this document's settings (units, layers, materials, styles, camera) as a template for new documents.",
+ "New from Template": "New from Template",
+ "Start a new project from one of your saved templates.": "Start a new project from one of your saved templates.",
+ "No templates yet": "No templates yet",
+ "Blank document": "Blank document",
+ "Start a new project without any template.": "Start a new project without any template.",
+ "Default template": "Default template",
+ "None (blank document)": "None (blank document)",
+ "The template that File ▸ New starts from. Save one with File ▸ Save As Template…": "The template that File ▸ New starts from. Save one with File ▸ Save As Template…"
 }
