@@ -1667,10 +1667,13 @@ class ComponentsPanel(QWidget):
                 continue
             by_proto.setdefault(id(g.mesh), []).append(g)
         from core.mesh import face_count
-        rows = [(gs[0].name, face_count(gs[0].mesh), gs,
+        from core.group import definition_name
+        # The definition's name, not the first copy's own (#199): copies
+        # named «Puerta izquierda», «Puerta derecha» list as «Puerta».
+        rows = [(definition_name(gs[0]), face_count(gs[0].mesh), gs,
                  kept_template(scene, gs[0].mesh))
                 for gs in by_proto.values()]
-        rows += [(t.name, face_count(t.mesh), [], t)
+        rows += [(definition_name(t), face_count(t.mesh), [], t)
                  for t in getattr(scene, "kept_components", None) or ()
                  if id(t.mesh) not in by_proto]
         rows.sort(key=lambda r: (-len(r[2]), (r[0] or "").lower()))
@@ -1883,7 +1886,9 @@ class ComponentsPanel(QWidget):
             groups = item.data(Qt.UserRole) or []
             kept = item.data(Qt.UserRole + 1)
             definition = groups[0] if groups else kept
-            name = (definition.name or "") if definition is not None else ""
+            from core.group import definition_name
+            name = (definition_name(definition)
+                    if definition is not None else "")
             item.setHidden(bool(needle) and definition is not None
                            and needle not in name.casefold())
         fit_rows(self._in_model, max_rows=12)
@@ -5547,6 +5552,22 @@ class EntityInfoPanel(QWidget):
         name_row.addWidget(self._name_caption)
         name_row.addWidget(self._name_edit, 1)
         self._named = None               # the group the field is showing
+        # A component's DEFINITION, under its copy's name (#199): ten
+        # copies of «Puerta» share it, each copy may be «Puerta izquierda»,
+        # «Puerta derecha»… as a cut list labels every piece.
+        def_row = QHBoxLayout()
+        def_row.setContentsMargins(0, 0, 0, 0)
+        self._def_caption = QLabel(tr("Definition:"))
+        self._def_edit = QLineEdit()
+        self._def_edit.setToolTip(tr(
+            "The name every copy of this component shares — Enter renames "
+            "it for all of them; a copy named on its own keeps its name"))
+        self._def_edit.editingFinished.connect(self._on_definition_edited)
+        def_row.addWidget(self._def_caption)
+        def_row.addWidget(self._def_edit, 1)
+        self._def_page = QWidget()
+        self._def_page.setLayout(def_row)
+        self._def_page.hide()
         # The segment count of ONE circle, arc or polygon, changed after
         # it is drawn — the «24s» of the tools only reaches the shape just
         # drawn. It shares the name's line: a curve is never a group, and
@@ -5569,6 +5590,7 @@ class EntityInfoPanel(QWidget):
         self._first_row.setSizePolicy(QSizePolicy.Preferred,
                                       QSizePolicy.Fixed)
         lay.addWidget(self._first_row)
+        lay.addWidget(self._def_page)
         row = QHBoxLayout()
         self._layer_caption = QLabel(tr("Layer:"))
         self._layer_box = QComboBox()
@@ -5601,9 +5623,10 @@ class EntityInfoPanel(QWidget):
         # at the same x (they sat at three different ones).
         fm = self._layer_caption.fontMetrics()
         cap_w = max(fm.horizontalAdvance(t) for t in (
-            tr("Name:"), tr("Sides:"), tr("Segments:"), tr("Layer:"))) + 4
-        for cap in (self._name_caption, self._seg_caption,
-                    self._layer_caption):
+            tr("Name:"), tr("Instance:"), tr("Definition:"), tr("Sides:"),
+            tr("Segments:"), tr("Layer:"))) + 4
+        for cap in (self._name_caption, self._def_caption,
+                    self._seg_caption, self._layer_caption):
             cap.setFixedWidth(cap_w)
         from PySide6.QtGui import QFont, QFontMetrics
         font = QFont(self._label.font())
@@ -5650,12 +5673,36 @@ class EntityInfoPanel(QWidget):
         one = sel[0] if len(sel) == 1 and isinstance(sel[0], Group) else None
         changed = one is not self._named
         self._named = one
+        component = one is not None and one.is_component()
+        self._def_page.setVisible(component)
         if one is None:
             return
         self._first_row.setCurrentIndex(0)
+        # A component's copy has a name of its own and its definition's.
+        self._name_caption.setText(tr("Instance:") if component
+                                   else tr("Name:"))
+        self._name_edit.setToolTip(
+            tr("The name of this copy alone — Enter keeps it")
+            if component else
+            tr("The name of the selected group or component — Enter keeps it"))
         # Not while typing into it — unless the selection moved on.
         if changed or not self._name_edit.hasFocus():
             self._name_edit.setText(one.name or "")
+        if component and (changed or not self._def_edit.hasFocus()):
+            from core.group import definition_name
+            self._def_edit.setText(definition_name(one))
+
+    def _on_definition_edited(self) -> None:
+        group = self._named
+        if group is None or not group.is_component():
+            return
+        from core.group import definition_name
+        renamer = getattr(self._window, "rename_definition", None)
+        if not callable(renamer) or not renamer(group, self._def_edit.text()):
+            self._def_edit.setText(definition_name(group))   # empty: keep it
+            return
+        self._window.viewport.update()
+        self.refresh()
 
     def _on_name_edited(self) -> None:
         group = self._named

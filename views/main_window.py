@@ -5644,25 +5644,36 @@ class MainWindow(QMainWindow):
 
     def rename_component(self, definition) -> None:
         """Rename a component definition: every copy, placed or nested,
-        and the kept template take the new name, as one undo step."""
-        from core.history import CompoundCommand, RenameGroupCommand
-        from core.kept_components import copies_of, kept_template
-        scene = self.viewport.scene
+        and the kept template take the new name, as one undo step — but a
+        copy named on its own keeps its name (#199)."""
+        from core.group import definition_name
+        current = definition_name(definition)
         name, ok = _prompts.get_text(
             self, tr("Rename Component"), tr("Component name:"),
-            text=definition.name or "")
-        name = name.strip()
-        if not ok or not name or name == definition.name:
-            return
+            text=current)
+        if ok:
+            self.rename_definition(definition, name)
+
+    def rename_definition(self, definition, name: str) -> bool:
+        """Give ``definition``'s component the name ``name`` (the Rename
+        prompt and Entity Info's Definition field); False when nothing
+        changed."""
+        from core.group import definition_name
+        from core.history import RenameDefinitionCommand
+        from core.kept_components import copies_of, kept_template
+        name = (name or "").strip()
+        if not name or name == definition_name(definition):
+            return False
+        scene = self.viewport.scene
         targets = copies_of(scene, definition.mesh)
         kept = kept_template(scene, definition.mesh)
         if kept is not None and kept not in targets:
             targets.append(kept)
         if definition not in targets:
             targets.append(definition)
-        self.viewport.history.execute(CompoundCommand(
-            [RenameGroupCommand(g, name) for g in targets]))
+        self.viewport.history.execute(RenameDefinitionCommand(targets, name))
         self.viewport.notify_scene_changed()
+        return True
 
     def _on_components_from_file(self) -> None:
         start = (str(self._current_path.parent)

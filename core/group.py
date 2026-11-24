@@ -80,7 +80,8 @@ class Group:
     __slots__ = ("mesh", "name", "layer", "ifc", "billboard", "xform",
                  "children", "owner", "context", "text3d", "hidden", "uid",
                  "material", "axes", "component", "exploded",
-                 "explode_offset", "ext", "locked", "images", "source")
+                 "explode_offset", "ext", "locked", "images", "source",
+                 "definition")
 
     def __init__(self, mesh: Mesh | None = None, name: str | None = None) -> None:
         self.mesh = mesh if mesh is not None else Mesh()
@@ -121,6 +122,14 @@ class Group:
         #: (core/resize.py): a chair placed in a plan stays a chair when
         #: the plan is rescaled.
         self.source = None
+        #: The DEFINITION's name — what every copy of a component shares
+        #: («Puerta»), apart from ``name``, this copy's own («Puerta
+        #: izquierda»), as a cut list labels each piece (issue #199). Each
+        #: placement carries it and the copies keep it equal (see
+        #: ``core.history.RenameDefinitionCommand``). ``None`` = the copy's
+        #: own name is the definition's too, as in documents written
+        #: before it existed. Read it through :func:`definition_name`.
+        self.definition = None
         # Stable identity that survives save/load — what a scene names when
         # it remembers which objects it hides. Fresh per object; a copy gets
         # its own (see ``copy_group``).
@@ -842,6 +851,7 @@ def copy_group(group, delta=None, _in_definition=False):
     g.hidden = group.hidden
     g.locked = getattr(group, "locked", False)
     g.source = getattr(group, "source", None)
+    g.definition = getattr(group, "definition", None)
     g.material = dict(group.material) if getattr(group, "material", None) else None
     g.component = getattr(group, "component", True)
     g.exploded = dict(group.exploded) if group.exploded else None
@@ -1119,6 +1129,20 @@ def effective_material(group):
     if owner is not None and owner is not group:
         return getattr(owner, "material", None) or None
     return None
+
+
+def definition_name(group) -> str:
+    """The name of ``group``'s definition — what the copies of a component
+    share (issue #199) — falling back to the copy's own name when none was
+    ever given apart."""
+    return getattr(group, "definition", None) or group.name or ""
+
+
+def has_own_name(group) -> bool:
+    """Whether this copy was named on its own («Puerta izquierda»), not
+    merely wearing its definition's name («Puerta»)."""
+    d = getattr(group, "definition", None)
+    return bool(d) and bool(group.name) and group.name != d
 
 
 def edit_label(group) -> str:

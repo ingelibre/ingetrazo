@@ -4348,5 +4348,9 @@
  "Push/Pull bases kept with Ctrl stay sound and cracked results are refused (#1155).": "Las bases que se conservan con Ctrl en Empujar/Tirar quedan sanas y se rechazan los resultados agrietados (#1155).",
  "Camera roll with a 3D mouse (#1406).": "Giro de cámara con un ratón 3D (#1406).",
  "A preference to swap orbit and pan on the middle button (#467).": "Una preferencia para intercambiar órbita y desplazar en el botón central (#467).",
- "IFC export writes the project north, the site location and the owning application (#1498).": "La exportación IFC escribe el norte del proyecto, la ubicación del sitio y la aplicación propietaria (#1498)."
+ "IFC export writes the project north, the site location and the owning application (#1498).": "La exportación IFC escribe el norte del proyecto, la ubicación del sitio y la aplicación propietaria (#1498).",
+ "Instance:": "Instancia:",
+ "Definition:": "Definición:",
+ "The name every copy of this component shares — Enter renames it for all of them; a copy named on its own keeps its name": "El nombre que comparten todas las copias de este componente; Enter lo cambia en todas, y una copia con nombre propio conserva el suyo",
+ "The name of this copy alone — Enter keeps it": "El nombre de esta copia sola; Enter lo guarda"
 }
