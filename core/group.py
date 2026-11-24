@@ -487,7 +487,7 @@ def _merged_placements(group, placements=None) -> Mesh:
         for e in src.edges:
             epts.append((e.a.x(), e.a.y(), e.a.z()))
             epts.append((e.b.x(), e.b.y(), e.b.z()))
-            edge_flags.append((e.soft, e.curve, None, e.hidden,
+            edge_flags.append((e.soft, e.curve, e.layer, e.hidden,
                                copy.deepcopy(e.material) if e.material else None))
         for f in src.faces:
             holes = f.holes or []
@@ -644,7 +644,12 @@ def _append_mesh(dst, src) -> None:
         nf.interior = f.interior
     for e in src.edges:
         if not e.faces:
-            dst.add_edge(e.a, e.b)
+            ne = dst.add_edge(e.a, e.b)
+            ne.soft = e.soft
+            ne.curve = e.curve
+            ne.layer = e.layer
+            ne.hidden = e.hidden
+            ne.material = copy.deepcopy(e.material) if e.material else None
 
 
 def np_affine(m):
@@ -714,7 +719,7 @@ def transformed_mesh(src: Mesh, m) -> Mesh:
     vobjs, inverse = new.bulk_weld(pts)
     emap = None
     if src.edges:
-        flags = [(e.soft, e.curve, None, e.hidden,
+        flags = [(e.soft, e.curve, e.layer, e.hidden,
                   copy.deepcopy(e.material) if e.material else None) for e in src.edges]
         emap = new.add_edges_welded(
             vobjs, inverse[0:n_edge_pts:2], inverse[1:n_edge_pts:2], flags)
@@ -755,6 +760,7 @@ def _transformed_mesh_walk(src: Mesh, m) -> Mesh:
                 continue
         ne.soft = e.soft
         ne.curve = e.curve
+        ne.layer = e.layer
         if e.material:
             ne.material = copy.deepcopy(e.material)
     new.resplit_curves()
