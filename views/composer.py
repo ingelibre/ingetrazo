@@ -773,14 +773,17 @@ def dxf_groups_by_layer(drawing, view_layer: str, hidden_lines: bool,
         weight = style[2] if len(style) > 2 and not suffix else None
         if suffix == "-CORTE":
             linetype = "continuous"
-        if linetype in DXF_LINETYPES:
+        pattern = style[4] if len(style) > 4 else ()
+        if linetype in DXF_LINETYPES or not pattern:
+            # A continuous line type of the document's own (a colour of its
+            # own, no dashes) is the CAD's CONTINUOUS: nothing to declare.
             groups.append((tag + suffix, drawing.segs[ids],
-                           DXF_LINETYPES[linetype], rgb, None, weight))
+                           DXF_LINETYPES.get(linetype, "CONTINUOUS"), rgb,
+                           None, weight))
             continue
         # The document's own line type: declared in the file, by its name,
         # its pattern in drawing units as the standard ones are (paper mm
         # at 1:100 — the CAD's line type scale adapts it).
-        pattern = style[4] if len(style) > 4 else ()
         name = re.sub(r"[^A-Za-z0-9_]+", "_",
                       linetype.split(":", 1)[-1]).upper()[:31] or "OWN"
         from core.layers import file_dashes

@@ -2227,12 +2227,14 @@ class LineTypeDialog(QDialog):
         grid.addWidget(self.name_edit, 0, 1, 1, 2)
         # 3. Pieces, typed or added.
         grid.addWidget(caption(tr("Pieces (mm)")), 1, 0)
+        # ``[]``: a continuous line of its own (#1465) — empty pieces.
         self.pattern_edit = QLineEdit(
-            ", ".join(f"{v:g}" for v in (pattern or (6.0, -1.5, 0.0, -1.5))),
+            ", ".join(f"{v:g}" for v in (
+                pattern if pattern is not None else (6.0, -1.5, 0.0, -1.5))),
             self)
         self.pattern_edit.setToolTip(tr(
             "Millimetres on paper, separated by commas: a dash (6), a gap "
-            "(-1.5), a dot (0)"))
+            "(-1.5), a dot (0). Empty or with no gap: a continuous line"))
         grid.addWidget(self.pattern_edit, 1, 1, 1, 2)
         quick = QHBoxLayout()
         quick.setSpacing(4)
@@ -2245,10 +2247,15 @@ class LineTypeDialog(QDialog):
             b.setStyleSheet(css)
             b.clicked.connect(lambda _c=False, v=value: self._append(v))
             quick.addWidget(b)
-        clear = QPushButton(tr("Clear"), self)
-        clear.setStyleSheet(css)
-        clear.clicked.connect(lambda: self.pattern_edit.setText(""))
-        quick.addWidget(clear)
+        # Empty pieces are a continuous line (#1465): the button that
+        # empties them says so — and starts a new pattern all the same.
+        self.continuous_button = QPushButton(tr("Continuous"), self)
+        self.continuous_button.setStyleSheet(css)
+        self.continuous_button.setToolTip(tr(
+            "A continuous line, with no gaps (empties the pieces)"))
+        self.continuous_button.clicked.connect(
+            lambda: self.pattern_edit.setText(""))
+        quick.addWidget(self.continuous_button)
         quick.addStretch(1)
         grid.addLayout(quick, 2, 1, 1, 2)
         # 4. Words along it.
@@ -2379,7 +2386,7 @@ class LineTypeDialog(QDialog):
                 ";", ",").split(",") if v.strip()]
         except ValueError:
             return None
-        return L.clean_pattern(nums)
+        return L.clean_pattern(nums, continuous=True)
 
     def result_text(self) -> tuple:
         """The words to write along the line and their height (mm); an
@@ -2391,10 +2398,17 @@ class LineTypeDialog(QDialog):
         pattern = self.result_pattern()
         ok = pattern is not None and bool(self.name())
         self.buttons.button(QDialogButtonBox.Ok).setEnabled(ok)
-        self.problem.setText("" if pattern is not None else tr(
-            "Use dashes and gaps: at least one piece drawn (≥ 0) and one gap "
-            "(< 0)"))
-        self.problem.setVisible(pattern is None)
+        # Under the line: what is wrong in red, or that it is continuous.
+        if pattern is None:
+            note, ink = tr("Numbers in mm separated by commas, with at least "
+                           "one piece drawn (≥ 0)"), "#c0392b"
+        elif not pattern:
+            note, ink = tr("A continuous line, with no gaps"), "palette(mid)"
+        else:
+            note, ink = "", "#c0392b"
+        self.problem.setText(note)
+        self.problem.setStyleSheet(f"font-size: 8pt; color: {ink};")
+        self.problem.setVisible(bool(note))
         w, h = self.PREVIEW
         dpr = self.devicePixelRatioF()
         px = QPixmap(int(w * dpr), int(h * dpr))
@@ -3763,14 +3777,14 @@ class LayersPanel(QWidget):
         being edited, renamed, its layers following — and give it to the
         layers ``names``. Returns its key, or ``None`` for a pattern that
         cannot be drawn."""
-        pattern = L.clean_pattern(pattern)
+        pattern = L.clean_pattern(pattern, continuous=True)
         name = (name or "").strip()[:64]
         if pattern is None or not name:
             return None
         scene = self._scene()
         own = dict(getattr(scene, "line_types", None) or {})
         drawn, spec = L.with_text(pattern, text, text_size)
-        drawn = L.clean_pattern(drawn)
+        drawn = L.clean_pattern(drawn, continuous=True)
         if drawn is None:
             return None
         if replaces and replaces != name:
@@ -3800,14 +3814,55 @@ class LayersPanel(QWidget):
             self.add_line_type(dlg.name(), dlg.result_pattern(), names,
                                words, size, color=dlg.result_color())
 
+    def free_line_type_name(self, base: str) -> str:
+        """``base`` with the first number after it that no line type of
+        the document has: «Continuous 2», «Continuous 3»…"""
+        own = getattr(self._scene(), "line_types", None) or {}
+        base = (base or tr("My line")).strip()[:60]
+        n = 2
+        while f"{base} {n}" in own:
+            n += 1
+        return f"{base} {n}"
+
+    def duplicate_line_type(self, key, names=()) -> None:
+        """«Duplicate…» on any line type, built-in or the document's own:
+        the editor with a copy filled in under a free name, so two layers
+        can have the same line in colours of their own — a continuous line
+        black on one, blue on the other (#1465). On OK the copy is kept and
+        given to the layers ``names``."""
+        scene = self._scene()
+        if key in L.LINETYPES:
+            label = tr(dict(self.LINETYPE_LABELS).get(key, "Continuous"))
+            pieces, words, size = (list(L.file_dashes(L.LINETYPES[key])),
+                                   "", 2.5)
+        else:
+            name = str(key)[len(L.CUSTOM_LINETYPE):]
+            entry = (getattr(scene, "line_types", None) or {}).get(name)
+            if not isinstance(entry, dict):
+                return
+            label = name
+            pieces = entry.get("pieces")
+            if pieces is None:
+                pieces = entry.get("pattern") or []
+            words, size = entry.get("text", ""), entry.get("text_size", 2.5)
+        dlg = LineTypeDialog(self, name=self.free_line_type_name(label),
+                             pattern=list(pieces), text=words, text_size=size,
+                             color=L.linetype_color(key, scene))
+        if dlg.exec() and dlg.result_pattern() is not None:
+            words, size = dlg.result_text()
+            self.add_line_type(dlg.name(), dlg.result_pattern(), names,
+                               words, size, color=dlg.result_color())
+
     def edit_line_type(self, name: str) -> None:
         """«Edit…» on one of the document's line types: the editor with it
         filled in; on OK, it changes (and its layers with it)."""
         entry = (getattr(self._scene(), "line_types", None) or {}).get(name)
         if not isinstance(entry, dict):
             return
+        pieces = entry.get("pieces")
         dlg = LineTypeDialog(self, name=name,
-                             pattern=entry.get("pieces") or entry["pattern"],
+                             pattern=pieces if pieces is not None
+                             else entry.get("pattern") or [],
                              text=entry.get("text", ""),
                              text_size=entry.get("text_size", 2.5),
                              editing=True, color=entry.get("color"))
@@ -4979,7 +5034,9 @@ class LayersPanel(QWidget):
                 pick=lambda k=key: self._line_picked(menu, names, k),
                 colour=L.linetype_color(key, self._scene()),
                 actions=((tr("Colour…"),
-                          lambda k=key: self.ask_linetype_colour(k)),)))
+                          lambda k=key: self.ask_linetype_colour(k)),
+                         (tr("Duplicate…"),
+                          lambda k=key: self.duplicate_line_type(k, names)))))
             menu.addAction(a)
         scene = self._scene()
 
@@ -5016,9 +5073,13 @@ class LayersPanel(QWidget):
                               lambda n=name: self.edit_line_type(n)),
                              (tr("Colour…"),
                               lambda k=key: self.ask_linetype_colour(k)),
+                             (tr("Duplicate…"),
+                              lambda k=key: self.duplicate_line_type(
+                                  k, names)),
                              (tr("Delete"),
                               lambda n=name: self.delete_line_type(n)))))
-                a.setToolTip(tr("Right-click to edit, colour or delete it"))
+                a.setToolTip(tr("Right-click to edit, colour, duplicate or "
+                                "delete it"))
                 menu.addAction(a)
         if picker:
             self._line_panel_parts(menu, names, own, kept, closing)
