@@ -415,9 +415,9 @@ def save_ifc(scene, path, project_name: str = "IngeTrazo project", *,
         building = w.add("IFCBUILDING", _s(guid("building")), "$", "'Building'", "$",
                          "$", f"#{placement}", "$", "$", ".ELEMENT.",
                          "$", "$", "$")
-        # Ignore objects the element-writing loop will skip, and preserve
+        # Ignore objects the element-writing loop skips (same test), and preserve
         # the original STEP order when no exported object names a storey.
-        named = {_storey_of(obj) for obj in objects if obj["faces"]} - {_DEFAULT_STOREY}
+        named = {_storey_of(obj) for obj in objects if object_faces(obj)} - {_DEFAULT_STOREY}
         if not named:
             storey = w.add("IFCBUILDINGSTOREY", _s(guid("storey")), "$", "'Storey'", "$",
                            "$", f"#{placement}", "$", "$", ".ELEMENT.", "0.")
