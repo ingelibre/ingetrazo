@@ -4349,5 +4349,10 @@
  "Push/Pull bases kept with Ctrl stay sound and cracked results are refused (#1155).": "밀기/당기기에서 Ctrl로 남긴 밑면이 온전하게 유지되고 균열이 생긴 결과는 거부됩니다 (#1155).",
  "Camera roll with a 3D mouse (#1406).": "3D 마우스로 카메라 롤 (#1406).",
  "A preference to swap orbit and pan on the middle button (#467).": "가운데 버튼의 궤도 회전과 이동을 바꾸는 설정 (#467).",
- "IFC export writes the project north, the site location and the owning application (#1498).": "IFC 내보내기가 프로젝트 북쪽, 대지 위치, 소유 응용 프로그램을 기록합니다 (#1498)."
+ "IFC export writes the project north, the site location and the owning application (#1498).": "IFC 내보내기가 프로젝트 북쪽, 대지 위치, 소유 응용 프로그램을 기록합니다 (#1498).",
+ "Automatic (follows the theme)": "자동(테마에 따름)",
+ "Icon line colour:": "아이콘 선 색상:",
+ "Colour of the lines of the icons in the toolbars, menus and panels. «Automatic» uses the theme's grey, light on the dark themes and dark on the light ones. Applies at once.": "도구 모음, 메뉴, 패널 아이콘의 선 색상입니다. '자동'은 테마의 회색을 사용합니다(어두운 테마에서는 밝게, 밝은 테마에서는 어둡게). 즉시 적용됩니다.",
+ "Icon size": "아이콘 크기",
+ "Apply the changes and keep Preferences open, to try several options one after another.": "환경설정을 닫지 않고 변경 사항을 적용하여 여러 옵션을 차례로 시험해 볼 수 있습니다."
 }

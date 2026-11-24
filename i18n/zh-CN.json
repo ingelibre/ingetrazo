@@ -4349,5 +4349,10 @@
  "Push/Pull bases kept with Ctrl stay sound and cracked results are refused (#1155).": "推/拉中用 Ctrl 保留的底面保持完好，出现裂缝的结果会被拒绝 (#1155)。",
  "Camera roll with a 3D mouse (#1406).": "用 3D 鼠标横滚相机 (#1406)。",
  "A preference to swap orbit and pan on the middle button (#467).": "在中键上交换环绕和平移的偏好设置 (#467)。",
- "IFC export writes the project north, the site location and the owning application (#1498).": "IFC 导出写入项目北向、场地位置和所属应用程序 (#1498)。"
+ "IFC export writes the project north, the site location and the owning application (#1498).": "IFC 导出写入项目北向、场地位置和所属应用程序 (#1498)。",
+ "Automatic (follows the theme)": "自动（跟随主题）",
+ "Icon line colour:": "图标线条颜色：",
+ "Colour of the lines of the icons in the toolbars, menus and panels. «Automatic» uses the theme's grey, light on the dark themes and dark on the light ones. Applies at once.": "工具栏、菜单和面板中图标线条的颜色。“自动”使用主题的灰色：深色主题中为浅色，浅色主题中为深色。立即生效。",
+ "Icon size": "图标大小",
+ "Apply the changes and keep Preferences open, to try several options one after another.": "应用更改并保持首选项打开，以便逐一尝试多个选项。"
 }

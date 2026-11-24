@@ -4351,5 +4351,10 @@
  "Push/Pull bases kept with Ctrl stay sound and cracked results are refused (#1155).": "Les bases que es conserven amb Ctrl a Empènyer/Estirar queden sanes i es rebutgen els resultats esquerdats (#1155).",
  "Camera roll with a 3D mouse (#1406).": "Gir de càmera amb un ratolí 3D (#1406).",
  "A preference to swap orbit and pan on the middle button (#467).": "Una preferència per intercanviar òrbita i desplaçament al botó central (#467).",
- "IFC export writes the project north, the site location and the owning application (#1498).": "L'exportació IFC escriu el nord del projecte, la ubicació del lloc i l'aplicació propietària (#1498)."
+ "IFC export writes the project north, the site location and the owning application (#1498).": "L'exportació IFC escriu el nord del projecte, la ubicació del lloc i l'aplicació propietària (#1498).",
+ "Automatic (follows the theme)": "Automàtic (segons el tema)",
+ "Icon line colour:": "Color del traç de les icones:",
+ "Colour of the lines of the icons in the toolbars, menus and panels. «Automatic» uses the theme's grey, light on the dark themes and dark on the light ones. Applies at once.": "Color de les línies de les icones de les barres, els menús i els panells. «Automàtic» fa servir el gris del tema: clar als temes foscos i fosc als clars. S'aplica a l'instant.",
+ "Icon size": "Mida de les icones",
+ "Apply the changes and keep Preferences open, to try several options one after another.": "Aplica els canvis sense tancar Preferències, per provar diverses opcions una rere l'altra."
 }
