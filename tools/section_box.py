@@ -8,7 +8,9 @@ Flow:
   around the whole model when nothing is selected. So the button always
   means what it looks like; an existing box is taken up by selecting it (a
   click on an edge, its row in the Browser), and the switch beside the tool
-  turns one on without editing it.
+  turns one on without editing it. A model keeps as many boxes as it
+  needs, one cutting at a time: «Show all section boxes» draws the others
+  in grey, to see them and click one (#1552).
 - Each face carries a GRIP at its centre: a round dot with a short double
   arrow along the face's normal. Press and drag the grip — or the face
   itself — (or click, move, click) to slide the face
@@ -18,7 +20,8 @@ Flow:
   that far, the way the drag goes (a negative number turns it round).
 - The grips also show on a box selected with Select: dragging one picks up
   this tool and moves that face.
-- Esc puts a face being dragged back. The box is an object like a section
+- Esc puts a face being dragged back. Enter or Tab ends the editing: the
+  box keeps cutting, its grips go away and Select comes back. The box is an object like a section
   plane: select it, right-click it or find it in the Browser to switch its
   cut, its frame and its fill; Delete takes it away.
 """
@@ -55,12 +58,24 @@ _CORNERS = frozenset({"endpoint", "midpoint", "intersection", "center",
 _ORANGE = QColor(243, 115, 41)
 
 
-def place_box(viewport, fit_selection: bool = True) -> bool:
-    """Put a NEW section box around the selection (``fit_selection``) or
-    the whole model, named and cutting — the other boxes stop — as one
-    undo step, and select it: its grips are out, and picking the tool again
-    goes on with it instead of making another. Returns whether one was
-    placed: an empty model has nothing to box."""
+def the_box(scene):
+    """The section box a «fit» acts on: the one selected, else the one
+    cutting, else the last made — or ``None``."""
+    picked = [e for e in scene.selection if isinstance(e, SectionBox)]
+    if picked:
+        return picked[-1]
+    return scene.active_section_box() or (
+        scene.section_boxes[-1] if scene.section_boxes else None)
+
+
+def place_box(viewport, fit_selection: bool = True,
+              new: bool = True) -> bool:
+    """A section box around the selection (``fit_selection``) or the whole
+    model, cutting and with its frame, as one undo step, selected (its
+    grips out). ``new``: a NEW box, named, the others switched off. Not
+    ``new``: the box there is (:func:`the_box`) fitted there instead —
+    its name, fill and identity stay — and a new one only with none.
+    Returns whether a box was placed: an empty model has nothing to box."""
     scene = viewport.scene
     lo = hi = None
     if fit_selection and _fit_targets(scene):
@@ -69,9 +84,18 @@ def place_box(viewport, fit_selection: bool = True) -> bool:
         lo, hi = scene.bounds()
     if lo is None:
         return False
-    box = SectionBox.around(lo, hi)
-    box.name = next_box_name(scene.section_boxes)
-    viewport.history.execute(section_box_added(scene, box))
+    fitted = SectionBox.around(lo, hi)
+    box = None if new else the_box(scene)
+    if box is None:
+        fitted.name = next_box_name(scene.section_boxes)
+        viewport.history.execute(section_box_added(scene, fitted))
+        box = fitted
+    else:
+        state = box.copy()
+        state.lo, state.hi = fitted.lo, fitted.hi
+        state.active, state.hidden = True, False
+        if not state.same_as(box):
+            viewport.history.execute(section_box_changed(scene, box, state))
     scene.select([box])
     return True
 
@@ -228,9 +252,12 @@ class SectionBoxTool(Tool):
                 viewport.flash_status(tr("Nothing to put a section box "
                                          "around yet"), 4000)
                 return
-        elif not box.active:
+        elif not box.active or box.hidden:
+            # Edited, it cuts and its frame shows: a hidden frame has no
+            # face to drag (Edit Section Box from the Browser).
             on = box.copy()
             on.active = True
+            on.hidden = False
             viewport.history.execute(section_box_changed(scene, box, on))
         # A box is placed to be SEEN: cuts and frames switched off come
         # back on, as for a new section plane.
@@ -272,9 +299,42 @@ class SectionBoxTool(Tool):
         if self.drag_face is not None:
             self._commit(vp)                      # the second click
             return
-        face = self._pick_face(vp, ctx.screen.x(), ctx.screen.y())
+        # A grey box's EDGE first (Show all section boxes): that one cuts
+        # now and the tool goes on with it. Before the faces of the box that
+        # cuts — a box inside it lies all over them, and a thin edge is the
+        # deliberate target (#1552). Its own grips still win.
+        sx, sy = ctx.screen.x(), ctx.screen.y()
+        live = _live(vp)
+        on_grip = live is not None and pick_arrow(vp, live, sx, sy) is not None
+        pick = getattr(vp, "pick_section_box", None)
+        other = pick(sx, sy) if pick and not on_grip else None
+        if other is not None and other is not live:
+            self.take_up(vp, other)
+            return
+        face = self._pick_face(vp, sx, sy)
         if face is not None:
-            self.begin_drag(vp, face, ctx.screen.x(), ctx.screen.y())
+            self.begin_drag(vp, face, sx, sy)
+
+    def on_double_click(self, ctx: ToolContext) -> None:
+        """A double click on a grey box: the first click already took it
+        up (:meth:`on_click`); the second has nothing more to do."""
+
+    def take_up(self, viewport, box) -> None:
+        """Go on with ``box``: it cuts (the others stop) and its frame
+        shows, one undo step, selected with its grips out."""
+        self._end_drag(viewport, keep=False)
+        scene = viewport.scene
+        if not box.active or box.hidden:
+            on = box.copy()
+            on.active, on.hidden = True, False
+            viewport.history.execute(section_box_changed(scene, box, on))
+        scene.select([box])
+        self.hover_face = None
+        window = viewport.window() if hasattr(viewport, "window") else None
+        sync = getattr(window, "_sync_section_menu", None)
+        if callable(sync):
+            sync()
+        viewport.update()
 
     def begin_drag(self, viewport, face: int, sx: float, sy: float) -> None:
         """Start sliding ``face`` from the press at (sx, sy) — a click on
@@ -317,6 +377,41 @@ class SectionBoxTool(Tool):
 
     def on_cancel(self, viewport) -> None:
         self._end_drag(viewport, keep=False)
+        viewport.update()
+
+    # ---- Done with the box: Enter or Tab ------------------------------------
+    #: The keys that end the editing: the box keeps cutting as it stands,
+    #: its grips go away and Select comes back.
+    DONE_KEYS = (Qt.Key_Return, Qt.Key_Enter, Qt.Key_Tab)
+
+    def claims_key(self, key: int, modifiers) -> bool:
+        """Tab, taken before Qt moves the focus with it. Enter is not
+        claimed: a distance typed while dragging reads it first."""
+        return key == Qt.Key_Tab and not modifiers & (
+            Qt.ControlModifier | Qt.AltModifier)
+
+    def on_key(self, viewport, key: int, modifiers) -> bool:
+        if key not in self.DONE_KEYS:
+            return False
+        self.finish(viewport)
+        return True
+
+    def finish(self, viewport) -> None:
+        """Stop editing the box: a face being dragged stays where it is,
+        the box keeps cutting, it is deselected (no grips) and the Select
+        tool comes back."""
+        if self.drag_face is not None:
+            self._commit(viewport)
+        scene = viewport.scene
+        boxes = [e for e in scene.selection if isinstance(e, SectionBox)]
+        for box in boxes:
+            scene.selection.discard(box)
+        if boxes:
+            scene.bump_view()
+        window = viewport.window() if hasattr(viewport, "window") else None
+        activate = getattr(window, "_activate_tool", None)
+        if callable(activate):
+            activate("select")
         viewport.update()
 
     # ---- Live readout and overlay -------------------------------------------

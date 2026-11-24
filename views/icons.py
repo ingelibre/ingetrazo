@@ -512,6 +512,61 @@ def _section_box_cut(p, ink):
     p.restore()
 
 
+def _section_box_frame(p, ink):
+    # The box's frame as a switch: what it keeps faint, the frame itself
+    # drawn solid in the accent with a grip on its front face.
+    p.save()
+    p.setPen(Qt.NoPen)
+    p.setBrush(QColor(ink.red(), ink.green(), ink.blue(), 70))
+    p.drawRect(QRectF(14, 24, 13, 11))
+    p.restore()
+    pen = _Pen(_accent(), 2.6)
+    pen.setCapStyle(Qt.RoundCap)
+    pen.setJoinStyle(Qt.RoundJoin)
+    p.save()
+    p.setPen(pen)
+    p.setBrush(Qt.NoBrush)
+    front = QRectF(8, 18, 22, 22)
+    back = front.translated(10, -10)
+    p.drawLine(back.topLeft(), back.topRight())
+    p.drawLine(back.topRight(), back.bottomRight())
+    p.drawLine(back.bottomRight(), front.bottomRight())
+    for x, y in ((8, 18), (30, 18)):
+        p.drawLine(QPointF(x, y), QPointF(x + 10, y - 10))
+    p.drawRect(front)
+    p.restore()
+    p.save()
+    p.setPen(_Pen(QColor(255, 255, 255), 1.4))
+    p.setBrush(_accent())
+    p.drawEllipse(QPointF(19, 29), 3.6, 3.6)
+    p.restore()
+
+
+def _section_boxes_all(p, ink):
+    # Every box at a glance: two in grey behind, the one that cuts in the
+    # accent in front.
+    def _box(x, y, s, pen):
+        p.save()
+        p.setPen(pen)
+        p.setBrush(Qt.NoBrush)
+        front = QRectF(x, y, s, s)
+        d = s * 0.4
+        p.drawRect(front)
+        p.drawLine(QPointF(x, y), QPointF(x + d, y - d))
+        p.drawLine(QPointF(x + s, y), QPointF(x + s + d, y - d))
+        p.drawLine(QPointF(x + s, y + s), QPointF(x + s + d, y + s - d))
+        p.drawLine(QPointF(x + d, y - d), QPointF(x + s + d, y - d))
+        p.drawLine(QPointF(x + s + d, y - d), QPointF(x + s + d, y + s - d))
+        p.restore()
+
+    grey = _Pen(QColor(ink.red(), ink.green(), ink.blue(), 170), 2.2,
+                Qt.DashLine)
+    _box(21, 11, 17, grey)
+    accent = _Pen(_accent(), 2.6)
+    accent.setJoinStyle(Qt.RoundJoin)
+    _box(6, 23, 17, accent)
+
+
 def _section_planes(p, ink):
     quad = QPolygonF(_SECTION_FRAME)
     dash = _Pen(QColor(ink.red(), ink.green(), ink.blue(), 110), 1.8,
@@ -3008,6 +3063,8 @@ _DRAW = {
     "guide_point": _guide_point,
     "section": _section, "section_box": _section_box,
     "section_box_cut": _section_box_cut,
+    "section_box_frame": _section_box_frame,
+    "section_boxes_all": _section_boxes_all,
     "terrain_grid": _terrain_grid, "terrain_deform": _terrain_deform,
     "terrain_stamp": _terrain_stamp, "terrain_drape": _terrain_drape,
     "terrain_contours": _terrain_contours, "terrain_points": _terrain_points,

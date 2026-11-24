@@ -413,6 +413,29 @@ def test_the_box_cuts_the_view_and_fills_its_face(shown):
     assert abs(c.redF() - fill[0]) < 0.08 and abs(c.blueF() - fill[2]) < 0.08
 
 
+def test_a_removed_box_gives_the_whole_model_back_on_screen(shown):
+    """#1552 in pixels: the box cuts, is removed, and the model shows whole
+    again — not still cut by the planes the frame before left set."""
+    vp = shown.viewport
+    sc = vp.scene
+    vp.camera.set_view("front")
+    vp.camera.fit_to(V(-2, -2, -1), V(6, 6, 4))
+    vp.repaint()
+    _app.processEvents()
+    outside = V(3, 0, 1)
+    whole = _pixel(vp, outside)
+    box = _put(sc, SectionBox(V(-1, -1, -1), V(2, 5, 3)))  # keeps x < 2
+    sc.version += 1
+    vp.repaint()
+    _app.processEvents()
+    assert _pixel(vp, outside) != whole                  # cut away
+    shown._on_remove_section_box(box)
+    for _ in range(2):                                   # and the next one
+        vp.repaint()
+        _app.processEvents()
+        assert _pixel(vp, outside) == whole
+
+
 # ---- Round 2: the way the typed distance goes, arrows, the box as an object
 
 def test_a_typed_distance_goes_the_way_the_drag_goes(boxed):
@@ -741,24 +764,27 @@ def test_several_boxes_are_saved_with_their_names_and_the_one_cutting(
     assert [x.uid for x in back.section_boxes] == [a.uid, b.uid]
 
 
-def test_the_tool_makes_a_new_box_around_a_selection_and_edits_a_picked_one(
+def test_the_tool_makes_a_new_box_around_a_selection_and_keeps_the_first(
         boxed):
+    """Geometry selected, the tool puts a NEW box around it: several boxes
+    in a model, each showing its part, one cutting at a time."""
     vp = boxed.viewport
     sc = vp.scene
     boxed._activate_tool("section_box")                  # the whole model
     first = sc.active_section_box()
     assert sc.section_boxes == [first] and first.name
     boxed._activate_tool("select")
-    sc.select(sc.groups or list(sc.mesh.faces)[:1])      # some geometry
+    sc.select(list(sc.mesh.faces)[:1])                   # the floor, z = 0
     boxed._activate_tool("section_box")                  # a NEW box
-    assert len(sc.section_boxes) == 2
     second = sc.active_section_box()
-    assert second is not first and not first.active
-    assert second.name != first.name
+    assert sc.section_boxes == [first, second]
+    assert second.hi.z() < 1 and first.hi.z() > 2        # each its own
+    assert not first.active and second.name != first.name
+    assert second in sc.selection                        # its grips out
     boxed._activate_tool("select")
     sc.select([first])
     boxed._activate_tool("section_box")                  # edit the picked
-    assert len(sc.section_boxes) == 2
+    assert sc.section_boxes == [first, second]
     assert sc.active_section_box() is first
 
 
@@ -904,7 +930,7 @@ def test_a_box_that_is_off_draws_nothing_and_cannot_be_picked(boxed):
     assert vp._section_boxes_shown() == []
 
 
-def test_the_notice_says_which_box_cuts_and_goes_back_to_the_whole_model(boxed):
+def test_the_notice_is_short_in_the_corner_and_goes_back_to_the_whole_model(boxed):
     from PySide6.QtCore import QEvent
     from PySide6.QtGui import QMouseEvent
     vp = boxed.viewport
@@ -916,7 +942,11 @@ def test_the_notice_says_which_box_cuts_and_goes_back_to_the_whole_model(boxed):
     sc.select([box])
     boxed._activate_tool("section_box")
     rect, text = vp._section_box_chip()
-    assert "Planta" in text
+    # Short, in the bottom-right corner, off the model (#1552).
+    from core.i18n import tr
+    assert text == tr("Section Box") + "  ✕"
+    assert rect.right() <= vp.width() and rect.bottom() <= vp.height()
+    assert rect.left() > vp.width() * 0.5 and rect.top() > vp.height() * 0.5
     c = rect.center()
     depth = len(vp.history.undo_stack)
     QApplication.sendEvent(vp, QMouseEvent(
@@ -947,16 +977,365 @@ def test_the_toolbar_button_switches_the_box_on_and_off(boxed):
     assert sc.active_section_box() is None and sc.section_boxes == [box]
 
 
-def test_a_new_box_from_the_browser_with_nothing_selected_boxes_the_model(boxed):
-    sc = boxed.viewport.scene
-    first = SectionBox(V(0, 0, 0), V(1, 1, 1), name="First")
-    sc.section_boxes[:] = [first]
+# ---- #1552: a removed box leaves no cut behind ----------------------------------
+
+class _FakeGL:
+    """What ``_set_section_clip`` asks of GL, written down."""
+
+    def __init__(self):
+        self.enabled = set()
+
+    def glEnable(self, cap):
+        self.enabled.add(cap)
+
+    def glDisable(self, cap):
+        self.enabled.discard(cap)
+
+
+class _FakeProgram:
+    def __init__(self):
+        self.values = {}
+
+    def setUniformValue(self, loc, value):
+        self.values[loc] = value
+
+
+def _fake_clip_state(vp):
+    """``vp`` drawing into a fake GL and program — no context needed."""
+    vp._gl, vp._program = _FakeGL(), _FakeProgram()
+    vp._loc_clip_planes = [f"plane{i}" for i in range(7)]
+    vp._loc_clip_count = "count"
+    return vp._gl, vp._program
+
+
+def test_switching_the_cut_off_clears_it_once_the_box_is_gone(boxed):
+    """The program keeps its uniforms and GL its enables between frames:
+    the box's six planes set while it cut must go when the cut is
+    switched off with no box left — they cut the model on until the file
+    was opened again (#1552)."""
+    from views.viewport._support import GL_CLIP_DISTANCE0
+    vp = boxed.viewport
+    gl, prog = _fake_clip_state(vp)
+    box = SectionBox(V(0, 0, 0), V(4, 4, 1))
+    vp._clip_vecs = [object()] * len(box.faces())        # the box cuts
+    vp._set_section_clip(True)
+    assert prog.values["count"] == 6 and len(gl.enabled) == 6
+    vp._clip_vecs = []                                   # removed: no cut
+    vp._set_section_clip(False)
+    assert prog.values["count"] == 0
+    assert not gl.enabled & {GL_CLIP_DISTANCE0 + i for i in range(7)}
+    vp._set_section_clip(True)                           # nothing to cut
+    assert prog.values["count"] == 0 and not gl.enabled
+
+
+def test_the_drag_previews_leave_the_cut_off_for_what_comes_after(boxed):
+    """The cursor's cues, the rubber band and the axes come after the
+    drag's previews: they are not the model and the cut must be off for
+    them. It was left on, every frame (the axes and the sky cut by the box
+    while it cut, and its planes kept once it was gone)."""
+    vp = boxed.viewport
+    gl, prog = _fake_clip_state(vp)
+    vp._clip_vecs = [object()] * 6
+    vp._set_section_clip(True)
+    vp._draw_preview_faces = lambda: None
+    vp._draw_groups_preview = lambda mvp: None
+    vp._draw_previews_after(None)
+    assert prog.values["count"] == 0 and not gl.enabled
+
+
+def test_the_toolbar_button_makes_no_box_when_there_is_none(boxed):
+    """The button is a switch (its label: «Cut with a section box»). With
+    no box it springs back off and makes none: the one it made, round the
+    whole model and with the removed box's name, read as the removed box
+    coming back (#1552). The Section Box tool still places one."""
+    vp = boxed.viewport
+    sc = vp.scene
+    act = boxed._act_section_box
+    act.setChecked(True)
+    assert sc.section_boxes == [] and not act.isChecked()
+    assert cut_planes(sc) == []
+    boxed._activate_tool("section_box")                  # the tool: a box
+    box = sc.active_section_box()
+    assert box is not None and act.isChecked()
+    boxed._on_remove_section_box(box)
+    assert sc.section_boxes == [] and not act.isChecked()
+    assert cut_planes(sc) == []
+    act.setChecked(True)                                 # nothing comes back
+    assert sc.section_boxes == [] and not act.isChecked()
+
+
+def test_the_frame_button_hides_and_shows_the_cutting_box_frame(boxed):
+    """Sections ▸ «Show the section box frame»: the frame of the box that
+    cuts goes and comes back, one undo step each; the cut stays. Greyed
+    out with no box cutting; it follows undo and the box's own menu."""
+    vp = boxed.viewport
+    sc = vp.scene
+    frame = boxed._act_section_box_frame
+    assert frame in boxed.toolbars["sections"].actions()
+    boxed._sync_section_box_actions()
+    assert not frame.isEnabled()                          # nothing cuts
+    box = _put(sc, SectionBox(V(0, 0, 0), V(4, 4, 1)))
+    sc.version += 1
+    boxed._act_section_box.setChecked(True)               # it cuts
+    assert frame.isEnabled() and frame.isChecked()
+    assert vp._section_boxes_shown() == [box]
+    depth = len(vp.history.undo_stack)
+    frame.setChecked(False)                               # hide the frame
+    assert box.hidden and box.active and len(cut_planes(sc)) == 6
+    assert vp._section_boxes_shown() == []
+    assert len(vp.history.undo_stack) == depth + 1
+    vp.history.undo()                                     # back: the button too
+    vp.notify_scene_changed()                             # as Edit ▸ Undo does
+    assert not box.hidden and frame.isChecked()
+    boxed._set_section_box(box, hidden=True)              # its right-click
+    assert not frame.isChecked()
+    frame.setChecked(True)                                # show it again
+    assert not box.hidden and vp._section_boxes_shown() == [box]
+    boxed._act_section_box.setChecked(False)              # no cut: greyed
+    assert not frame.isEnabled() and not frame.isChecked()
+
+
+def test_the_frame_button_brings_the_planes_view_back_and_puts_the_tool_away(
+        boxed):
+    vp = boxed.viewport
+    sc = vp.scene
+    frame = boxed._act_section_box_frame
+    boxed._activate_tool("section_box")                   # a box, editing
+    box = sc.active_section_box()
+    frame.setChecked(False)                               # no frame to drag
+    assert vp.active_tool is boxed._tools["select"] and box.hidden
+    boxed._set_section_visibility("show_section_planes", False)
+    boxed._sync_section_box_actions()
+    frame.setChecked(True)                                # every frame was off
+    assert sc.show_section_planes and not box.hidden
+    assert boxed._act_show_splanes.isChecked()
+    boxed._set_section_box(box, hidden=True)
+    sc.select([box])
+    boxed._activate_tool("section_box")                   # Edit Section Box
+    assert not box.hidden and frame.isChecked()
+
+
+@pytest.mark.parametrize("key", [Qt.Key_Return, Qt.Key_Enter, Qt.Key_Tab])
+def test_enter_or_tab_ends_the_editing_and_the_box_keeps_cutting(boxed, key):
+    """Enter or Tab: done with the box. It keeps cutting as it stands, its
+    grips go (deselected) and Select comes back. Tab reaches the tool
+    before Qt moves the focus with it."""
+    from PySide6.QtTest import QTest
+    vp = boxed.viewport
+    sc = vp.scene
+    boxed._activate_tool("section_box")
+    box = sc.active_section_box()
+    assert box in sc.selection
+    QTest.keyClick(vp, key)
+    assert vp.active_tool is boxed._tools["select"]
+    assert box not in sc.selection
+    assert sc.active_section_box() is box and len(cut_planes(sc)) == 6
+
+
+def test_tab_mid_drag_keeps_the_face_where_it_is_in_one_step(boxed):
+    from PySide6.QtTest import QTest
+    vp = boxed.viewport
+    sc = vp.scene
+    box = _put(sc, SectionBox(V(0, 0, 0), V(4, 4, 2)))
+    sc.select([box])
+    boxed._activate_tool("section_box")
+    tool = vp.active_tool
+    depth = len(vp.history.undo_stack)
+    tool.on_click(_ctx(vp, V(4, 2, 1)))                  # the +X face
+    tool.on_hover(_ctx(vp, V(3, 2, 1)))                  # 1 m in
+    QTest.keyClick(vp, Qt.Key_Tab)
+    assert vp.active_tool is boxed._tools["select"]
+    assert box.hi.x() == pytest.approx(3, abs=1e-3) and box.active
+    assert len(vp.history.undo_stack) == depth + 1
+
+
+def test_enter_after_a_typed_distance_sets_it_and_goes_on_editing(boxed):
+    """Enter first reads a distance typed while dragging: the face moves by
+    it and the tool stays out. A second Enter, nothing typed, is done."""
+    from PySide6.QtTest import QTest
+    vp = boxed.viewport
+    sc = vp.scene
+    box = _put(sc, SectionBox(V(0, 0, 0), V(4, 4, 2)))
+    sc.select([box])
+    boxed._activate_tool("section_box")
+    tool = vp.active_tool
+    tool.on_click(_ctx(vp, V(4, 2, 1)))                  # the +X face
+    QTest.keyClicks(vp, "0.5")
+    QTest.keyClick(vp, Qt.Key_Return)
+    assert box.hi.x() == pytest.approx(4.5)
+    assert vp.active_tool is tool
+    QTest.keyClick(vp, Qt.Key_Return)
+    assert vp.active_tool is boxed._tools["select"]
+    assert box.hi.x() == pytest.approx(4.5) and box.active
+
+
+def test_the_browser_adds_a_box_and_fit_keeps_the_same_box(boxed):
+    """The Browser's New Section Box: another box round the whole model —
+    or the selection — the others kept, switched off. «Fit the box to the
+    whole model» grows the SAME box instead: name, fill and uid stay, one
+    undo step."""
+    vp = boxed.viewport
+    sc = vp.scene
+    small = SectionBox(V(0, 0, 0), V(1, 1, 1), name="Detalle")
+    small.fill = {"pattern": "cross"}
+    sc.section_boxes[:] = [small]
+    sc.version += 1
     panel = boxed.project_browser.outliner
-    panel.new_section_box()
-    assert len(sc.section_boxes) == 2
-    made = sc.active_section_box()
-    assert made is not first and not first.active
-    assert made.hi.x() > 4 and made.lo.x() < 0           # the whole cube
+    panel.new_section_box()                              # another, bigger
+    big = sc.active_section_box()
+    assert sc.section_boxes == [small, big] and not small.active
+    assert big.hi.x() > 4 and big.lo.x() < 0             # the whole cube
+    assert big.name != small.name
+    assert vp.active_tool is boxed._tools["section_box"]
+    boxed._activate_tool("select")
+    sc.select(list(sc.mesh.faces)[:1])                   # the floor
+    panel.new_section_box()                              # round the floor
+    floor = sc.active_section_box()
+    assert sc.section_boxes == [small, big, floor] and floor.hi.z() < 1
+    uid = small.uid
+    depth = len(vp.history.undo_stack)
+    boxed.project_browser.outliner._fit_box_to_model(small)
+    assert sc.section_boxes == [small, big, floor]       # no new box
+    assert small.hi.x() > 4 and sc.active_section_box() is small
+    assert (small.name, small.uid, small.fill) == ("Detalle", uid,
+                                                   {"pattern": "cross"})
+    assert len(vp.history.undo_stack) == depth + 1
+    vp.history.undo()
+    assert small.hi.x() == pytest.approx(1)
+
+
+def test_a_double_click_on_a_grey_box_makes_it_cut(boxed):
+    """With every box shown, a double click on a grey one makes it the box
+    that cuts — with Select, and with the Section Box tool out (a new box
+    just made): there the click used to look at the cutting box only."""
+    from PySide6.QtCore import QPoint
+    from PySide6.QtTest import QTest
+    vp = boxed.viewport
+    sc = vp.scene
+    vp.resize(800, 600)
+    cut = SectionBox(V(0, 0, 0), V(4, 4, 1), name="Planta")
+    big = SectionBox(V(-1, -1, -1), V(5, 5, 3), active=False, name="Todo")
+    sc.section_boxes[:] = [cut, big]
+    sc.version += 1
+    boxed._act_show_all_section_boxes.setChecked(True)
+    px = vp._world_to_pixel(V(5, 2, 3))                  # an edge of «Todo»
+    at = QPoint(int(round(px[0])), int(round(px[1])))
+    assert vp.pick_section_box(px[0], px[1]) is big
+    QTest.mouseDClick(vp, Qt.LeftButton, Qt.NoModifier, at)   # with Select
+    assert sc.active_section_box() is big and not cut.active
+    boxed._activate_tool("select")
+    sc.select([cut])
+    boxed._activate_tool("section_box")                  # «Planta» edited
+    assert sc.active_section_box() is cut
+    tool = vp.active_tool
+    depth = len(vp.history.undo_stack)
+    tool.on_click(_ctx(vp, V(5, 2, 3)))                  # the grey one
+    tool.on_double_click(_ctx(vp, V(5, 2, 3)))
+    assert sc.active_section_box() is big and big in sc.selection
+    assert vp.active_tool is tool and tool.drag_face is None
+    assert len(vp.history.undo_stack) == depth + 1       # one step
+    assert sc.section_boxes == [cut, big]                # no new box
+
+
+def test_a_box_inside_the_cutting_one_is_reached_by_its_edge_or_enter(boxed):
+    """Boxes inside boxes: with the big one cutting and its tool out, the
+    grey box inside lies all over its faces — a click on the inner box's
+    EDGE takes that one up (the big box's grips still drag the big box).
+    With Select, the inner box picked and Enter: it cuts, the tool out;
+    Enter again is done, the cut stays."""
+    from PySide6.QtTest import QTest
+    vp = boxed.viewport
+    sc = vp.scene
+    big = SectionBox(V(-1, -1, -1), V(5, 5, 3), name="Todo")
+    inner = SectionBox(V(1, 1, 0), V(3, 3, 1.5), active=False,
+                       name="Detalle")
+    sc.section_boxes[:] = [big, inner]
+    sc.version += 1
+    boxed._act_show_all_section_boxes.setChecked(True)
+    sc.select([big])
+    boxed._activate_tool("section_box")
+    tool = vp.active_tool
+    edge = V(3, 2, 1.5)                                  # inner's top edge
+    tool.on_click(_ctx(vp, edge))
+    assert sc.active_section_box() is inner and tool.drag_face is None
+    tool.on_cancel(vp)
+    boxed._activate_tool("select")
+    sc.select([big])                                     # back to the big one
+    boxed._activate_tool("section_box")
+    assert sc.active_section_box() is big
+    boxed._activate_tool("select")
+    sc.select([inner])                                   # e.g. in the Browser
+    QTest.keyClick(vp, Qt.Key_Return)
+    assert sc.active_section_box() is inner and not big.active
+    assert vp.active_tool is boxed._tools["section_box"]
+    QTest.keyClick(vp, Qt.Key_Return)                    # done
+    assert vp.active_tool is boxed._tools["select"]
+    assert sc.active_section_box() is inner
+    assert sc.section_boxes == [big, inner]              # no new box
+
+
+def test_the_sections_bar_is_in_three_groups(boxed):
+    """Sections: the tools | what every cut shares (cut, fill, frames) |
+    the section box's own (cut with it, its frame, all boxes)."""
+    acts = boxed.toolbars["sections"].actions()
+    tools = boxed._tool_actions
+    order = []
+    for a in acts:
+        if a.isSeparator():
+            if order and order[-1] != "|":
+                order.append("|")
+            continue
+        for key, name in ((tools["section"], "plane"),
+                          (tools["section_box"], "box"),
+                          (boxed._act_show_scuts, "cuts"),
+                          (boxed._act_section_fill, "fill"),
+                          (boxed._act_show_splanes, "frames"),
+                          (boxed._act_section_box, "box_cut"),
+                          (boxed._act_section_box_frame, "box_frame"),
+                          (boxed._act_show_all_section_boxes, "all")):
+            if a is key:
+                order.append(name)
+    assert order == ["plane", "box", "|", "cuts", "fill", "frames", "|",
+                     "box_cut", "box_frame", "all"]
+
+
+def test_show_all_draws_the_other_boxes_in_grey_to_pick_one(boxed):
+    """Sections ▸ «Show all section boxes»: every box of the model on
+    screen, the ones that do not cut in grey, and a click on one picks it —
+    without the Browser. A way of looking: no undo step, and an exported
+    picture leaves the grey ones out."""
+    vp = boxed.viewport
+    sc = vp.scene
+    act = boxed._act_show_all_section_boxes
+    assert act in boxed.toolbars["sections"].actions()
+    cut = SectionBox(V(0, 0, 0), V(4, 4, 1), name="Planta")
+    off = SectionBox(V(-1, -1, -1), V(5, 5, 3), active=False, name="Todo")
+    sc.section_boxes[:] = [cut, off]
+    sc.version += 1
+    assert vp._section_boxes_shown() == [cut]            # only the one
+    depth = len(vp.history.undo_stack)
+    act.setChecked(True)
+    assert vp._section_boxes_shown() == [cut, off]       # the other, grey
+    assert vp._section_boxes_shown(show_all=False) == [cut]  # a picture
+    assert len(vp.history.undo_stack) == depth
+    corner = vp._world_to_pixel(V(5, -1, 3))             # an edge of «Todo»
+    edge = vp._world_to_pixel(V(5, 2, 3))
+    assert vp.pick_section_box(*edge) is off
+    assert corner is not None
+    sc.select([off])
+    boxed._activate_tool("section_box")                  # edit the grey one
+    assert sc.active_section_box() is off and not cut.active
+    assert sc.section_boxes == [cut, off]
+    boxed._activate_tool("select")
+    boxed._sync_section_box_actions()
+    assert act.isChecked()                               # the view stays
+    boxed._set_section_visibility("show_section_planes", False)
+    act.setChecked(False)
+    act.setChecked(True)                                 # brings them back
+    assert sc.show_section_planes
+    act.setChecked(False)
+    sc.clear_selection()
+    assert vp._section_boxes_shown() == [off]            # the one cutting
 
 
 def test_the_planes_frames_step_aside_while_a_box_cuts(boxed):

@@ -534,8 +534,11 @@ class SelectTool(Tool):
             viewport.begin_group_edit(entity)
             return
         if isinstance(entity, SectionBox):
-            # Double-clicking the section box takes up its tool: its faces
-            # and arrows to drag.
+            # Double-clicking the section box takes up its tool on THAT box:
+            # it cuts, its faces and arrows to drag. Selected first — a grey
+            # one (Show all section boxes) not yet picked made the tool put a
+            # new box in instead (#1552).
+            viewport.scene.select([entity])
             window = viewport.window() if hasattr(viewport, "window") \
                 else None
             activate = getattr(window, "_activate_tool", None)
@@ -810,6 +813,21 @@ class SelectTool(Tool):
             # the face under the cursor.
             erase_entities(viewport, list(viewport.scene.selection))
             return True
+        if key in (Qt.Key_Return, Qt.Key_Enter):
+            # A section box selected: Enter makes it the one that cuts, with
+            # its tool out — as a double click does; Enter again is done.
+            # The way to a box inside another, picked by its edge or in the
+            # Browser (#1552).
+            boxes = [e for e in viewport.scene.selection
+                     if isinstance(e, SectionBox)]
+            if boxes:
+                viewport.scene.select([boxes[-1]])
+                window = viewport.window() if hasattr(viewport, "window") \
+                    else None
+                activate = getattr(window, "_activate_tool", None)
+                if callable(activate):
+                    activate("section_box")
+                    return True
         return False
 
 

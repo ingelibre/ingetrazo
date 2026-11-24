@@ -1107,6 +1107,14 @@ class InteractionMixin:
         if ev.type() == QEvent.ShortcutOverride and self._tool_claims_key(ev):
             ev.accept()
             return True
+        # Tab moves the focus before keyPressEvent ever sees it: a tool that
+        # takes it (the Section Box's «done») gets it first.
+        if (ev.type() == QEvent.KeyPress
+                and ev.key() in (Qt.Key_Tab, Qt.Key_Backtab)
+                and self._tool_claims_key(ev)):
+            self.keyPressEvent(ev)
+            ev.accept()
+            return True
         # Zoom takes the lens typed in the box (35mm, 60deg): digits, and
         # once a digit is in, the unit's letters and the space, before the
         # window's shortcuts (Space is Select, letters are tools).

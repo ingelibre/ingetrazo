@@ -11,7 +11,8 @@ from PySide6.QtGui import (QColor, QFont, QFontMetrics, QPainter, QPen,
 from core.i18n import tr
 from core.style import xray_enabled
 from core.triangulate import plane_axes
-from views.viewport._support import (_active_cut, GL_LINES, GL_TRIANGLES,
+from views.viewport._support import (_active_cut, _MAX_CUT_PLANES,
+                                     GL_LINES, GL_TRIANGLES,
                                      GL_CLIP_DISTANCE0, GL_POLYGON_OFFSET_FILL,
                                      _point_to_segment_distance_2d)
 
@@ -25,12 +26,15 @@ class SectionPlaneMixin:
         (``gl_ClipDistance`` in basic.vert). ``skip`` leaves that plane (or
         those, a tuple) out: what is drawn IN a cut plane (its fill, its
         thick lines) is clipped by the others only — a box face's fill stops
-        at the box. No-op when nothing cuts."""
+        at the box.
+
+        Off is always off, cut or none: the program keeps its uniforms and
+        GL its enables from frame to frame, so a section box removed while
+        they were set went on cutting the model with its old planes
+        (#1552). With nothing to cut, on is off too."""
         vecs = getattr(self, "_clip_vecs", None)
-        if not vecs:
-            return
         skips = skip if isinstance(skip, tuple) else (skip,)
-        if on:
+        if on and vecs:
             for i, v in enumerate(vecs):
                 self._program.setUniformValue(self._loc_clip_planes[i], v)
                 if i in skips:
@@ -40,7 +44,7 @@ class SectionPlaneMixin:
             self._program.setUniformValue(self._loc_clip_count, len(vecs))
         else:
             self._program.setUniformValue(self._loc_clip_count, 0)
-            for i in range(len(vecs)):
+            for i in range(_MAX_CUT_PLANES):
                 self._gl.glDisable(GL_CLIP_DISTANCE0 + i)
 
     def _section_cut_active(self):
@@ -175,19 +179,29 @@ class SectionPlaneMixin:
                     out.append((a, b))
         return out
 
-    def _section_boxes_shown(self) -> list:
+    def _section_boxes_shown(self, show_all: bool = True) -> list:
         """The section boxes on screen: the one that CUTS (unless its frame
         is switched off) and one selected, to see where it stands. A box
         that does nothing draws nothing: with none cutting, the model looks
-        as if there were no boxes at all. View ▸ Section Planes hides them
-        as it hides the planes' frames."""
+        as if there were no boxes at all — unless «Show all section boxes»
+        is on (``show_all_section_boxes``; ``show_all`` False leaves it out,
+        for an exported picture): then every other box shows too, in grey,
+        to see what there is and pick one (#1552). View ▸ Section Planes
+        hides them all as it hides the planes' frames."""
         if not getattr(self.scene, "show_section_planes", True):
             return []
         cuts = getattr(self.scene, "show_section_cuts", True)
         selection = self.scene.selection
-        return [b for b in getattr(self.scene, "section_boxes", ())
-                if not getattr(b, "hidden", False)
-                and ((b.active and cuts) or b in selection)]
+        every = show_all and getattr(self, "show_all_section_boxes", False)
+        shown = []
+        for b in getattr(self.scene, "section_boxes", ()):
+            cutting = b.active and cuts
+            if cutting or b in selection:
+                if not getattr(b, "hidden", False):
+                    shown.append(b)
+            elif every:
+                shown.append(b)                 # grey: it does not cut
+        return shown
 
     def _box_covers_plane(self, plane) -> bool:
         """While a section box cuts, the section planes' frames step aside:
@@ -201,26 +215,34 @@ class SectionPlaneMixin:
         return callable(active) and active() is not None
 
     def _section_box_chip(self):
-        """``(rect, text)`` of the notice at the top of the view while a box
-        cuts — what is cutting, and the one click back to the whole model
-        — or ``None``."""
+        """``(rect, text)`` of the notice in the bottom-right corner while a
+        box cuts — that the model is cut, and the one click back to the
+        whole model — or ``None``. Short and out of the way: it used to sit
+        on top of the model, with the box's name and «Show the whole
+        model» spelt out. It stays the one sign of a cut with the box's
+        frame hidden (#1552)."""
         if not getattr(self.scene, "show_section_cuts", True):
             return None
         box = self.scene.active_section_box()
         if box is None:
             return None
-        text = "{}  —  {}  ✕".format(
-            tr("Section box: {name}", name=box.name or tr("Section Box")),
-            tr("Show the whole model"))
+        text = "{}  ✕".format(tr("Section Box"))
+        font = self._section_box_chip_font()
         from PySide6.QtGui import QPaintDevice
-        font = QFont()
-        font.setPointSize(9)
-        font.setBold(True)
         fm = (QFontMetrics(font, self) if isinstance(self, QPaintDevice)
               else QFontMetrics(font))
-        w = fm.horizontalAdvance(text) + 24.0
-        return QRectF((self.width() - w) * 0.5, 10.0, w, fm.height() + 10.0), \
-            text
+        w = fm.horizontalAdvance(text) + 18.0
+        h = fm.height() + 8.0
+        margin = 12.0
+        return QRectF(self.width() - w - margin, self.height() - h - margin,
+                      w, h), text
+
+    @staticmethod
+    def _section_box_chip_font() -> QFont:
+        font = QFont()
+        font.setPointSize(8)
+        font.setBold(True)
+        return font
 
     def _press_on_box_chip(self, ev) -> bool:
         """A click on the section box's notice: back to the whole model."""
@@ -238,9 +260,7 @@ class SectionPlaneMixin:
         if chip is None:
             return
         rect, text = chip
-        font = QFont()
-        font.setPointSize(9)
-        font.setBold(True)
+        font = self._section_box_chip_font()
         painter.save()
         painter.setRenderHint(QPainter.Antialiasing, True)
         painter.setFont(font)
@@ -268,9 +288,10 @@ class SectionPlaneMixin:
         Section Planes, as the planes' frames are."""
         from tools.section_box import SectionBoxTool, draw_arrows
         tool = self.active_tool
-        for box in self._section_boxes_shown():
+        cuts = getattr(self.scene, "show_section_cuts", True)
+        for box in self._section_boxes_shown(show_all=handles):
             selected = box in self.scene.selection
-            col = (QColor(243, 115, 41) if box.active
+            col = (QColor(243, 115, 41) if box.active and cuts
                    else QColor(150, 155, 162))
             width = (2.0 if box.active else 1.4) + (1.2 if selected else 0.0)
             painter.save()
