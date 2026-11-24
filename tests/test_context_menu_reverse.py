@@ -159,7 +159,7 @@ def test_align_view_in_nested_transformed_component(ventana, monkeypatch):
     _MenuSinModal.abiertos.clear()
     monkeypatch.setattr(mw, "QMenu", _MenuSinModal)
     ventana.viewport.contextMenuEvent(
-        QContextMenuEvent(QContextMenuEvent.Mouse, pos, pos))
+        QContextMenuEvent(QContextMenuEvent.Keyboard, pos, pos))
     assert face in scene.selection
     next(a for a in _MenuSinModal.abiertos[-1].actions()
          if a.text() == "Align View").trigger()
