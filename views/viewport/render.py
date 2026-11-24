@@ -219,6 +219,9 @@ class RenderMixin:
             self._gl.glVertexAttrib4f(li[3], 0.0, 0.0, 0.0, 1.0)
         # Solid-colour by default; the textured-face pass flips this on.
         self._program.setUniformValue(self._loc_use_tex, 0)
+        # No cut until a model pass asks for one: whatever the last frame
+        # left set (a removed section box's six planes) cuts nothing now.
+        self._set_section_clip(False)
         self._program.setUniformValue(self._loc_stipple, 0)
         self._program.setUniformValue(self._loc_tex, 0)  # sampler → unit 0
         self._program.setUniformValue(self._loc_use_vcolor, 0)
@@ -1263,7 +1266,8 @@ class RenderMixin:
         self._set_section_clip(False)
         self._draw_preview_faces()
         self._draw_groups_preview(mvp)
-        self._set_section_clip(True)
+        # The cut stays off: what the frame draws next (the cursor's cues,
+        # the rubber band, the axes) is not model geometry (#1552).
 
     def _frame_cache_key(self, mvp, w, h, style, mode):
         """What the model this frame draws depends on, when a pointer move

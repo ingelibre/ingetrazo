@@ -1519,8 +1519,9 @@ class MainWindow(QMainWindow):
         self._icon_actions.append((self._act_eyedropper, "eyedropper"))
 
         # The Sections toolbar carries the three usual display toggles next
-        # to the tool: Display Section Planes / Cuts / Fill. Created here
-        # (the menubar builds later and reuses the same actions).
+        # to the tools: Section Cuts / Fill / Planes, then the section box's
+        # own. Created here (the menubar builds later and reuses the same
+        # actions).
         sec_tb = self.toolbars["sections"]
         sec_tb.addSeparator()
 
@@ -1535,11 +1536,9 @@ class MainWindow(QMainWindow):
             sec_tb.addAction(act)
             return act
 
-        self._act_show_splanes = _sec_toggle(
-            "section_planes", tr("Section Planes"),
-            tr("Show the section planes themselves; the cut they make "
-               "stays either way."),
-            lambda on: self._set_section_visibility("show_section_planes", on))
+        # Three groups (#1552): the tools; what every cut shares — cut or
+        # not, its fill, the frames — most used first; then the section
+        # box's own three, after a separator of their own.
         self._act_show_scuts = _sec_toggle(
             "section_cuts", tr("Section Cuts"),
             tr("Cut the model open at its active section planes; off, the "
@@ -1549,6 +1548,12 @@ class MainWindow(QMainWindow):
             "section_fill", tr("Section Fill"),
             tr("Fill the cut faces of a section with a solid colour."),
             lambda on: self._set_style_field("section_fill", on))
+        self._act_show_splanes = _sec_toggle(
+            "section_planes", tr("Section Planes"),
+            tr("Show the section planes themselves; the cut they make "
+               "stays either way."),
+            lambda on: self._set_section_visibility("show_section_planes", on))
+        sec_tb.addSeparator()
         # The section box's cut on and off: a button beside the tool (which
         # makes and edits boxes) and Camera ▸ Section Box — the same action.
         # Away: Tools ▸ Remove Section Box.
@@ -1563,12 +1568,44 @@ class MainWindow(QMainWindow):
             "Keep only what lies inside the section box; off, the box stays "
             "and the model shows whole."))
         self._act_section_box.toggled.connect(self._on_toggle_section_box)
+        # Its frame on and off, beside it: the box that cuts keeps cutting
+        # either way (the same as «Show the frame» on its right-click).
+        self._act_section_box_frame = QAction(
+            tool_icon("section_box_frame"), tr("Show the section box frame"),
+            self)
+        self._act_section_box_frame.setCheckable(True)
+        self._act_section_box_frame.setToolTip(
+            tr("Show the section box frame"))
+        self._act_section_box_frame.setStatusTip(tr(
+            "Show or hide the frame of the section box that cuts; the cut "
+            "stays either way."))
+        self._icon_actions.append((self._act_section_box_frame,
+                                   "section_box_frame"))
+        sec_tb.addAction(self._act_section_box_frame)
+        self._act_section_box_frame.toggled.connect(
+            self._on_toggle_section_box_frame)
         self._act_remove_section_box = QAction(
             tr("Remove Section Box"), self)
         self._act_remove_section_box.setStatusTip(tr(
             "Take the section box away; the model shows whole again."))
         self._act_remove_section_box.triggered.connect(
             self._on_remove_section_box)
+        # Every box of the model at a glance: the ones that do not cut, in
+        # grey, to see what there is and click one — without the Browser.
+        self._act_show_all_section_boxes = QAction(
+            tool_icon("section_boxes_all"), tr("Show all section boxes"),
+            self)
+        self._act_show_all_section_boxes.setCheckable(True)
+        self._act_show_all_section_boxes.setToolTip(
+            tr("Show all section boxes"))
+        self._act_show_all_section_boxes.setStatusTip(tr(
+            "Draw every section box of the model, the ones that do not cut "
+            "in grey: click one to pick it."))
+        self._icon_actions.append((self._act_show_all_section_boxes,
+                                   "section_boxes_all"))
+        sec_tb.addAction(self._act_show_all_section_boxes)
+        self._act_show_all_section_boxes.toggled.connect(
+            self._on_toggle_show_all_section_boxes)
 
         # 3D Text opens a dialog (it's a one-shot action, not a checkable tool),
         # so it gets its own button on the Annotate bar next to the 2D Text tool.
@@ -2316,6 +2353,7 @@ class MainWindow(QMainWindow):
         camera_menu.addAction(self._act_show_scuts)
         camera_menu.addAction(self._act_section_fill)
         camera_menu.addAction(self._act_section_box)
+        camera_menu.addAction(self._act_section_box_frame)
         camera_menu.aboutToShow.connect(self._sync_section_box_actions)
 
         # View ▸ Hidden Objects / Hidden Geometry: what Hide put
@@ -5921,17 +5959,23 @@ class MainWindow(QMainWindow):
 
     def _on_toggle_section_box(self, on: bool) -> None:
         """Camera ▸ Section Box: a box cuts or none does, one undo step.
-        On, the box selected (or the last one) cuts; with no box yet, one
-        is put in (the tool's way)."""
+        On, the box selected (or the last one) cuts. It is a switch, as its
+        label says, and makes no box: with none, it springs back off and the
+        status bar points to the Section Box tool. A box made here, round the
+        whole model and named as the one just removed, read as the removed
+        box coming back (#1552)."""
         scene = self.viewport.scene
         if not on:
             self._show_whole_model()
             return
         box = self._picked_box()
         if box is None:
-            from tools.section_box import place_box
-            place_box(self.viewport, fit_selection=True)
-        elif not box.active:
+            self._sync_section_box_actions()       # back off, no signal
+            self.viewport.flash_status(
+                tr("No section box: place one with the Section Box tool"),
+                4000)
+            return
+        if not box.active:
             self._set_section_box(box, active=True)
         if not getattr(scene, "show_section_cuts", True):
             self._set_section_visibility("show_section_cuts", True)
@@ -5949,6 +5993,37 @@ class MainWindow(QMainWindow):
         if active is not None:
             self._set_section_box(active, active=False)
         self._sync_section_box_actions()
+        self.viewport.update()
+
+    def _on_toggle_section_box_frame(self, on: bool) -> None:
+        """Show or hide the frame of the box that cuts, one undo step; the
+        cut stays. Hidden while the Section Box tool is out, the tool puts
+        itself away: there would be nothing to see to drag. Shown while
+        View ▸ Section Planes hides every frame, that comes back on too."""
+        scene = self.viewport.scene
+        box = scene.active_section_box()
+        if box is None:
+            self._sync_section_box_actions()       # back off, no signal
+            return
+        if not on and self.viewport.active_tool is self._tools.get(
+                "section_box"):
+            self._activate_tool("select")
+        self._set_section_box(box, hidden=not on)
+        if on and not getattr(scene, "show_section_planes", True):
+            self._set_section_visibility("show_section_planes", True)
+            self._sync_section_menu()
+        self._sync_section_box_actions()
+        self.viewport.update()
+
+    def _on_toggle_show_all_section_boxes(self, on: bool) -> None:
+        """Every section box drawn — the ones that do not cut in grey, to
+        pick one — or only the one that cuts. A way of looking, not a change
+        to the model: no undo step, nothing saved."""
+        self.viewport.show_all_section_boxes = bool(on)
+        if on and not getattr(self.viewport.scene, "show_section_planes",
+                              True):
+            self._set_section_visibility("show_section_planes", True)
+            self._sync_section_menu()
         self.viewport.update()
 
     def _on_remove_section_box(self, box=None) -> None:
@@ -6000,6 +6075,21 @@ class MainWindow(QMainWindow):
             act.blockSignals(True)
             act.setChecked(scene.active_section_box() is not None)
             act.blockSignals(False)
+        every = getattr(self, "_act_show_all_section_boxes", None)
+        if every is not None:
+            every.blockSignals(True)
+            every.setChecked(bool(getattr(self.viewport,
+                                          "show_all_section_boxes", False)))
+            every.blockSignals(False)
+        frame = getattr(self, "_act_section_box_frame", None)
+        if frame is not None:
+            cutting = scene.active_section_box()
+            frame.setEnabled(cutting is not None)
+            frame.blockSignals(True)
+            frame.setChecked(
+                cutting is not None and not cutting.hidden
+                and getattr(scene, "show_section_planes", True))
+            frame.blockSignals(False)
         rem = getattr(self, "_act_remove_section_box", None)
         if rem is not None:
             rem.setEnabled(bool(scene.section_boxes))

@@ -2581,6 +2581,9 @@ class OutlinerPanel(QWidget):
                            lambda: self.set_section_mode(box, "both"))
         menu.addAction(tr("Edit Section Box"), lambda: QTimer.singleShot(
             0, lambda: self._edit_box(box)))
+        menu.addAction(tr("Fit the box to the whole model"),
+                       lambda: QTimer.singleShot(
+                           0, lambda: self._fit_box_to_model(box)))
         menu.addSeparator()
         if box.active:
             act = menu.addAction(tr("Show the frame"), lambda: (
@@ -2595,20 +2598,33 @@ class OutlinerPanel(QWidget):
         menu.addAction(tr("Remove Section Box"),
                        lambda: self._window._on_remove_section_box(box))
 
+    def _fit_box_to_model(self, box) -> None:
+        """``box`` around the whole model again — the same box, one undo
+        step — with the tool out to adjust it."""
+        from tools.section_box import place_box
+        scene = self._scene()
+        scene.select([box])
+        place_box(self._window.viewport, fit_selection=False, new=False)
+        self._window._activate_tool("section_box")
+        self.refresh()
+
     def _edit_box(self, box) -> None:
         """Take up the Section Box tool on ``box``: it cuts, its grips out."""
         self._scene().select([box])
         self._window._activate_tool("section_box")
 
     def new_section_box(self) -> None:
-        """A new box around what is selected, else around the whole model,
-        with the tool out to adjust it."""
+        """A NEW box — around the geometry selected, else around the whole
+        model — cutting, the others kept and switched off, with the tool out
+        to adjust it."""
         from tools.section_box import _fit_targets, place_box
         scene = self._scene()
-        if not _fit_targets(scene):
+        around_selection = bool(_fit_targets(scene))
+        if not around_selection:
             scene.clear_selection()
-            place_box(self._window.viewport, fit_selection=False)
-        self._window._activate_tool("section_box")
+        if place_box(self._window.viewport, fit_selection=around_selection,
+                     new=True):
+            self._window._activate_tool("section_box")
         self.refresh()
 
     def rename_box(self, box) -> bool:
