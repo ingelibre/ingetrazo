@@ -260,6 +260,19 @@ class PreferencesDialog(QDialog):
             "control can show what changed; its images go to a folder beside "
             "the document (Name.assets) that travels with it."))
         form.addRow(tr("Save format"), self._save_format)
+        # The template File > New starts from (File > Save As Template...).
+        from core import templates as _templates
+        self._template_default = QComboBox()
+        self._template_default.addItem(tr("None (blank document)"), "")
+        for _p in _templates.list_templates():
+            self._template_default.addItem(_templates.read_info(_p)["name"], str(_p))
+        _cur = _templates.default_template()
+        _i = self._template_default.findData(str(_cur)) if _cur else 0
+        self._template_default.setCurrentIndex(max(_i, 0))
+        self._template_default.setToolTip(tr(
+            "The template that File \u25b8 New starts from. Save one with "
+            "File \u25b8 Save As Template\u2026"))
+        form.addRow(tr("Default template"), self._template_default)
 
         self._undo_steps = QSpinBox()
         self._undo_steps.setRange(0, 5000)
@@ -1122,6 +1135,10 @@ class PreferencesDialog(QDialog):
                 _units.remember_new_document_units(chosen)
         from views.units_start_dialog import set_ask_at_start
         set_ask_at_start(self._units_at_start.isChecked())
+        from core import templates as _templates
+        from pathlib import Path as _Path
+        _tpl = self._template_default.currentData()
+        _templates.set_default_template(_Path(_tpl) if _tpl else None)
 
         # Language: same contract as the menu (persists; applies on restart).
         # Reverting a still-pending change back to the running language just
