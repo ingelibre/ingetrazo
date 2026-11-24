@@ -513,14 +513,10 @@ def _section_box_cut(p, ink):
 
 
 def _section_box_frame(p, ink):
-    # The box's frame as a switch: what it keeps faint, the frame itself
-    # drawn solid in the accent with a grip on its front face.
-    p.save()
-    p.setPen(Qt.NoPen)
-    p.setBrush(QColor(ink.red(), ink.green(), ink.blue(), 70))
-    p.drawRect(QRectF(14, 24, 13, 11))
-    p.restore()
-    pen = _Pen(_accent(), 2.6)
+    # The box's frame as a switch: the frame itself solid, in the ink (it
+    # follows the icon line colour), with the grip of its front face as the
+    # one accent dot — apart from the Section Box tool, all in the accent.
+    pen = _Pen(ink, 2.6)
     pen.setCapStyle(Qt.RoundCap)
     pen.setJoinStyle(Qt.RoundJoin)
     p.save()
