@@ -25,9 +25,22 @@ class SectionPlaneMixin:
         (``gl_ClipDistance`` in basic.vert). ``skip`` leaves that plane (or
         those, a tuple) out: what is drawn IN a cut plane (its fill, its
         thick lines) is clipped by the others only — a box face's fill stops
-        at the box. No-op when nothing cuts."""
+        at the box. When nothing cuts it only clears what the frame before
+        left set (see below)."""
         vecs = getattr(self, "_clip_vecs", None)
         if not vecs:
+            # The program keeps its uniforms from one frame to the next. A cut
+            # the frame before left set (``u_clip_count``) would go on cutting
+            # the faces drawn first in this one — which is what unticking the
+            # section that cuts, or View ▸ Section Cuts, showed: the model
+            # stayed cut until something repainted it a second time. The first
+            # pass of the frame clears it (and the clip distances enabled).
+            left = getattr(self, "_clip_left_on", 0)
+            if left:
+                self._program.setUniformValue(self._loc_clip_count, 0)
+                for i in range(left):
+                    self._gl.glDisable(GL_CLIP_DISTANCE0 + i)
+                self._clip_left_on = 0
             return
         skips = skip if isinstance(skip, tuple) else (skip,)
         if on:
@@ -38,6 +51,7 @@ class SectionPlaneMixin:
                 else:
                     self._gl.glEnable(GL_CLIP_DISTANCE0 + i)
             self._program.setUniformValue(self._loc_clip_count, len(vecs))
+            self._clip_left_on = len(vecs)
         else:
             self._program.setUniformValue(self._loc_clip_count, 0)
             for i in range(len(vecs)):
