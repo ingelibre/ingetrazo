@@ -6773,6 +6773,11 @@ class MainWindow(QMainWindow):
                 # Join Segments, its inverse: a line drawn in pieces
                 # back to one line.
                 menu.addAction(tr("Join Segments"), self._on_join_segments)
+                ids = {getattr(e, "curve", None) for e in loose_edges}
+                if len(ids) > 1 or None in ids:
+                    # Weld Edges, Explode Curve's inverse: segments in a
+                    # row become one curve, every point kept.
+                    menu.addAction(tr("Weld Edges"), self._on_weld_edges)
         # Lines (#831): an invisible one — a curved surface's soft seam or
         # a hidden line, picked while Camera ▸ Hidden Geometry shows it
         # dotted — is made visible again; a visible one hides (it joins
@@ -7307,7 +7312,7 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage(
             tr("Divided into {n} segments", n=n), 3000)
 
-    @_repeatable("Join Segments")
+    @_repeatable("Explode Curve")
     def _on_explode_curve(self) -> None:
         """Explode Curve: the selected curves become plain segments, in one
         undo step; the geometry does not move."""
@@ -7322,6 +7327,24 @@ class MainWindow(QMainWindow):
         self.viewport.history.execute(cmd)
         self.statusBar().showMessage(
             tr("{n} curves exploded into segments", n=cmd.curves), 3000)
+        self.viewport.update()
+
+    @_repeatable("Weld Edges")
+    def _on_weld_edges(self) -> None:
+        """Weld Edges: the selected segments, chain by chain, become one
+        curve each, in one undo step; the geometry does not move."""
+        from core.history import WeldEdgesCommand
+        scene = self.viewport.scene
+        alive = set(scene.mesh.edges)
+        edges = [e for e in scene.selection if isinstance(e, Edge)
+                 and e in alive]
+        cmd = WeldEdgesCommand(edges)
+        if not self.viewport.history.execute(cmd):
+            self.statusBar().showMessage(
+                tr("No connected edges to weld."), 3000)
+            return
+        self.statusBar().showMessage(
+            tr("{n} curves welded", n=cmd.curves), 3000)
         self.viewport.update()
 
     def _on_join_segments(self) -> None:

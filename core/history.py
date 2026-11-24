@@ -2691,6 +2691,63 @@ class ExplodeCurvesCommand(Command):
         scene.version += 1
 
 
+class WeldEdgesCommand(Command):
+    """Weld Edges, the inverse of Explode Curve: loose segments drawn one
+    after another become one curve, picked, moved and offset whole like a
+    circle or an arc. Every point stays where it is (Join Segments is the
+    one that drops points). The edges are walked into chains the way
+    :meth:`Mesh.resplit_curves` would cut them anyway — at a fork, or where
+    other geometry meets them in their plane — and each chain of two or
+    more edges gets a curve id of its own. Undo gives every edge its id
+    back."""
+
+    def __init__(self, edges) -> None:
+        self.edges = list(edges)
+        self._ids: list = []
+        self.curves = 0
+
+    def do(self, scene) -> None:
+        mesh = scene.mesh
+        alive = set(mesh.edges)
+        chosen = [e for e in dict.fromkeys(self.edges) if e in alive]
+        if len(chosen) < 2:
+            raise CommandRejected("No connected edges to weld.")
+        mine = set(chosen)
+        # The curves the chosen edges leave: what stays of them is cut
+        # into its own contours again, as after any other edit.
+        old = {e.curve for e in chosen if e.curve is not None}
+        self._ids = [(e, e.curve) for e in mesh.edges
+                     if e in mine or e.curve in old]
+        before = dict(self._ids)
+        cid = mesh.next_curve_id()
+        for e in chosen:
+            e.curve = cid
+        mesh.resplit_curves(only={cid})
+        runs: dict = {}
+        for e in chosen:
+            runs.setdefault(e.curve, []).append(e)
+        self.curves = 0
+        for run in runs.values():
+            if len(run) > 1:
+                self.curves += 1
+            else:                      # a lone edge: nothing to weld it to
+                run[0].curve = before[run[0]]
+        if not self.curves:
+            raise CommandRejected("No connected edges to weld.")
+        if old:
+            mesh.resplit_curves(only=old)
+        mesh._chunk_dirty = True
+        mesh._mut_serial += 1
+        scene.version += 1
+
+    def undo(self, scene) -> None:
+        for e, cid in self._ids:
+            e.curve = cid
+        scene.mesh._chunk_dirty = True
+        scene.mesh._mut_serial += 1
+        scene.version += 1
+
+
 class AddSceneCommand(Command):
     """A saved scene into the list — a new one, or a copy (Duplicate) —
     at ``index`` (``None``: at the end), with the rest of its folder;
