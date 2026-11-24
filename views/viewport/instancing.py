@@ -178,7 +178,7 @@ class InstancingMixin:
             return (id(g), id(m), serial,
                     tuple(xf.data()) if xf is not None else None,
                     g.layer, bool(g.billboard), bool(g.hidden),
-                    bool(getattr(g, "locked", False)),
+                    bool(getattr(g, "locked", False)), g.shadow_flags,
                     _material_sig(getattr(g, "material", None)))
 
         pv = getattr(self, "_preview_groups", None) or ()
@@ -551,7 +551,7 @@ class InstancingMixin:
         ctx = self.scene.edit_group
 
         def walk(node, world, dentro=None, hidden=False, forced=forced,
-                 inherited=None, paint=None):
+                 inherited=None, paint=None, shadow_flags=group.shadow_flags):
             """``dentro`` = the first-level child of the open context this
             subtree hangs from, or ``None`` outside it. ``paint`` = the
             nearest painted container above the subtree.
@@ -588,6 +588,9 @@ class InstancingMixin:
                 # Hide on an object takes its whole subtree along, and a
                 # hidden child stays hidden inside a visible parent.
                 proxy.hidden = hidden or bool(child.hidden)
+                flags = shadow_flags | child.shadow_flags
+                proxy.casts_shadows = not bool(flags & 1)
+                proxy.receives_shadows = not bool(flags & 2)
                 # An unpainted piece wears the nearest painted container
                 # above it, at any depth and whatever is open (#1101):
                 # reading it off ``owner`` — the object a click selects —
@@ -615,7 +618,7 @@ class InstancingMixin:
                             kid_forced = proxy.layer
                     walk(child, m,
                          child if (ctx is not None and node is ctx) else dentro,
-                         proxy.hidden, kid_forced, proxy.layer, proxy.material)
+                         proxy.hidden, kid_forced, proxy.layer, proxy.material, flags)
 
         walk(group, getattr(group, "xform", None), hidden=bool(group.hidden),
              paint=getattr(group, "material", None) or above)
@@ -807,6 +810,8 @@ class InstancingMixin:
             batch = _InstanceBatch(groups[i] for i in idx.tolist())
             batch.idx = idx
             batch.mats = mats
+            batch.no_receive = any(not g.receives_shadows for g in batch)
+            batch.no_cast = any(not g.casts_shadows for g in batch)
             out[(id(mesh), _material_sig(paint), mirrored)] = (
                 mesh, paint, batch, mirrored)
         memos[planes is None] = (pool, keep, out, pvkey)
@@ -1538,16 +1543,26 @@ class InstancingMixin:
             self._gl.glDepthMask(GL_FALSE)
         # The prototype's tones were baked for ITS orientation (#482).
         self._program.setUniformValue(self._loc_reshade, 1)
+        receiving_overrides = getattr(self, "_frame_shadow", None) is not None
         if mode in ("shaded", "textures") and _lean_instanced() and not xray:
-            self._draw_instanced_faces_lean(by_proto, mode, extra)
-            by_proto = {}
+            regular = {key: row for key, row in by_proto.items()
+                       if not receiving_overrides or not row[2].no_receive}
+            self._draw_instanced_faces_lean(regular, mode, extra)
+            by_proto = {key: row for key, row in by_proto.items() if key not in regular}
         for mesh, paint, groups, mirrored in by_proto.values():
             entry = self._proto_view(self._ensure_proto_draw(mesh, paint),
                                      mirrored)
             self._front_face(mirrored)
-            for lote, fade in self._instanced_batches(groups):
-                if not lote:
-                    continue
+            batches = self._instanced_batches(groups)
+            if receiving_overrides and groups.no_receive:
+                batches = [(part, fade, disabled)
+                           for lote, fade in batches
+                           for disabled in (False, True)
+                           if (part := [g for g in lote if g.receives_shadows != disabled])]
+            else:
+                batches = [(lote, fade, False) for lote, fade in batches if lote]
+            for lote, fade, disabled in batches:
+                self._program.setUniformValue(self._loc_instance_no_receive, int(disabled))
                 n = self._update_inst_matrices(entry, lote)
                 self._program.setUniformValue1f(self._loc_fade, fade)
                 if entry["vcol_count"]:
@@ -1616,6 +1631,7 @@ class InstancingMixin:
                     entry["dback_vao"].release()
                     self._gl.glDisable(GL_CULL_FACE)
         self._front_face(False)
+        self._program.setUniformValue(self._loc_instance_no_receive, 0)
         self._program.setUniformValue(self._loc_reshade, 0)
         self._program.setUniformValue1f(self._loc_fade, 0.0)
         if xray:

@@ -5301,6 +5301,26 @@ class LockCommand(Command):
         scene.version += 1
 
 
+class GroupShadowCommand(Command):
+    """Set one shadow property on selected placements, independently of their meshes."""
+
+    def __init__(self, groups, *, casting: bool, enabled: bool) -> None:
+        self._groups = list(groups)
+        self._field = "casts_shadows" if casting else "receives_shadows"
+        self._enabled = enabled
+
+    def do(self, scene) -> None:
+        self._previous = [getattr(g, self._field) for g in self._groups]
+        for group in self._groups:
+            setattr(group, self._field, self._enabled)
+        scene.version += 1
+
+    def undo(self, scene) -> None:
+        for group, value in zip(self._groups, self._previous):
+            setattr(group, self._field, value)
+        scene.version += 1
+
+
 class MakeComponentOfCommand(Command):
     """Make Component over a selection that holds groups (or groups and
     loose geometry): ONE component containing them, each still a group
