@@ -8,7 +8,7 @@ import sys
 import time as _time_mod
 from typing import Optional
 from PySide6.QtCore import QEvent, Qt, QPointF
-from PySide6.QtGui import QVector3D
+from PySide6.QtGui import QContextMenuEvent, QGuiApplication, QVector3D
 from core.i18n import tr
 from tools.base import Tool
 from tools.select import selection_mode
@@ -46,7 +46,8 @@ class InteractionMixin:
         before their own refresh (night of 19-11: opening a group, the
         layer counts and the in-model lists landed ~0.2 s inside the first
         orbit, or the first stroke of a line, in the Plaza)."""
-        if getattr(self, "_middle_drag_active", False):
+        if (getattr(self, "_middle_drag_active", False)
+                or getattr(self, "_right_drag_active", False)):
             return True
         now = _time_mod.monotonic()
         for t in (getattr(self, "_cam_moved_t", None),
@@ -251,12 +252,24 @@ class InteractionMixin:
                     return o + d * ((span[0] + span[1]) * 0.5)
         return QVector3D(self.camera.target)
 
+    def _begin_camera_drag(self, pos, *, pan: bool) -> None:
+        self._last_pos = pos.toPoint()
+        self._pan_mode = pan
+        self._orbit_pivot = self._orbit_pivot_at(pos.x(), pos.y())
+        self._pan_depth = self._depth_of(self._orbit_pivot)
+        from views.icons import tool_cursor
+        cur = tool_cursor("pan" if pan else "orbit")
+        if cur is not None:
+            self.setCursor(cur)
+
     def _end_camera_drag(self) -> None:
         """Forget a camera drag in progress (orbit, pan or zoom by drag)."""
         self._last_pos = None
         self._orbit_pivot = None
         self._pan_mode = False
         self._middle_drag_active = False
+        self._right_drag_active = False
+        self._right_drag_start = None
         if self.nav_mode is not None:
             self._apply_nav_cursor()
         else:
@@ -265,9 +278,7 @@ class InteractionMixin:
     def _set_middle_drag_pan_mode(self, shift: bool) -> None:
         """Switch an active MMB drag between orbit and pan.
 
-        ``shift`` is whether Shift is held. Which of the two the bare drag
-        does is a preference (PR #467, Preferences ▸ "Middle-button drag
-        pans"), so Shift flips it from there instead of meaning pan.
+        Shift temporarily switches away from the configured middle-button action.
         """
         if not self._middle_drag_active or self.nav_mode is not None:
             return
@@ -301,6 +312,8 @@ class InteractionMixin:
         self._orbit_pivot = None
         self._pan_mode = False
         self._middle_drag_active = False
+        self._right_drag_active = False
+        self._right_drag_start = None
         if mode is not None:
             self._apply_nav_cursor()      # orbit / pan / magnifier icons
         else:
@@ -408,17 +421,23 @@ class InteractionMixin:
         super().dropEvent(ev)
 
     def contextMenuEvent(self, ev) -> None:
-        """Right-click: select what's under the cursor and open
-        a context menu of actions relevant to the current selection."""
+        # Qt can generate a mouse context event on press or release,
+        # depending on the platform. Only our click recognizer opens it.
+        ev.accept()
+        if ev.reason() != QContextMenuEvent.Mouse:
+            self._show_context_menu(ev.pos(), ev.globalPos())
+
+    def _show_context_menu(self, pos, global_pos) -> None:
+        """Select what's under the cursor and show the relevant actions."""
         win = self.window()
         # A tool with its own right-click menu (Position Texture: Done /
         # Reset / Flip / Rotate) takes the click instead.
         hook = getattr(self.active_tool, "context_menu", None)
-        if callable(hook) and hook(self, ev.globalPos()):
+        if callable(hook) and hook(self, global_pos):
             return
         if not hasattr(win, "show_viewport_context_menu"):
             return
-        x, y = ev.pos().x(), ev.pos().y()
+        x, y = pos.x(), pos.y()
         # Where the menu was opened, for entries that act at the cursor
         # (Texture ▸ Position puts its pins on the tile under it).
         self._context_pixel = (x, y)
@@ -430,7 +449,7 @@ class InteractionMixin:
         # A locked group the same way: it can no longer be selected, and
         # its Unlock lives here (#782).
         win.show_viewport_context_menu(
-            ev.globalPos(), locked_image=under if under is not picked else None,
+            global_pos, locked_image=under if under is not picked else None,
             locked_group=self.pick_locked_group(x, y))
 
     def mousePressEvent(self, ev) -> None:
@@ -441,6 +460,8 @@ class InteractionMixin:
         self._input_t = _time_mod.monotonic()   # P0: input→paint latency
         self._hand_t = self._input_t            # see view_busy
         self._input_serial = getattr(self, "_input_serial", 0) + 1
+        if self._right_drag_active:
+            return
         # Wheel held, then left pressed: the orbit turns into a pan for as
         # long as both are held (an alternative to Shift+wheel-drag).
         if (ev.button() == Qt.LeftButton and self._last_pos is not None
@@ -457,24 +478,20 @@ class InteractionMixin:
         if (ev.button() in (Qt.LeftButton, Qt.RightButton)
                 and self.nav_mode is None and self._look_drag is None
                 and callable(getattr(self.active_tool, "on_look", None))):
+            self._right_drag_start = None
             self._begin_look(ev)
             return
+        if ev.button() == Qt.RightButton:
+            if (ev.buttons() == Qt.RightButton and self._last_pos is None
+                    and self._look_drag is None):
+                self._right_drag_start = ev.position()
+            return
+        self._right_drag_start = None
         if ev.button() == Qt.MiddleButton:
-            self._last_pos = ev.position().toPoint()
-            # Shift swaps the drag between orbit and pan; which one is the
-            # bare drag is a preference (Preferences ▸ General).
-            self._pan_mode = (bool(ev.modifiers() & Qt.ShiftModifier)
-                              != self._middle_drag_pans)
             self._middle_drag_active = True
-            self._orbit_pivot = self._orbit_pivot_at(
-                ev.position().x(), ev.position().y())
-            self._pan_depth = self._depth_of(self._orbit_pivot)
-            # While the wheel-drag lasts, the pointer becomes the
-            # orbit (or pan) icon; the tool cursor comes back on release.
-            from views.icons import tool_cursor
-            cur = tool_cursor("pan" if self._pan_mode else "orbit")
-            if cur is not None:
-                self.setCursor(cur)
+            self._begin_camera_drag(
+                ev.position(), pan=(bool(ev.modifiers() & Qt.ShiftModifier)
+                                    != self._middle_drag_pans))
             return
         # Nav buttons: left-drag orbits/pans the camera.
         # Hold Shift while orbiting to pan temporarily (matches MMB+Shift).
@@ -713,6 +730,17 @@ class InteractionMixin:
                 self._look_move(ev)
                 return
             self._end_look()                    # the tool changed mid-drag
+        if not ev.buttons() & Qt.RightButton:
+            self._right_drag_start = None
+            if self._right_drag_active:
+                self._end_camera_drag()
+        if self._right_drag_start is not None:
+            if not self._right_drag_exceeds_threshold(ev.position()):
+                return
+            self._begin_camera_drag(self._right_drag_start,
+                                    pan=not self._middle_drag_pans)
+            self._right_drag_start = None
+            self._right_drag_active = True
         if self._last_pos is not None and ev.buttons() == Qt.NoButton:
             # A camera drag with no button held: its release never reached
             # us (a Windows mouse or touchpad driver, a click on another
@@ -729,7 +757,7 @@ class InteractionMixin:
             dx = p.x() - self._last_pos.x()
             dy = p.y() - self._last_pos.y()
             self._last_pos = p
-            if self.nav_mode == "zoom":
+            if self.nav_mode == "zoom" and not self._right_drag_active:
                 self.camera.zoom(-dy * 0.035)        # drag up = zoom in
             elif self._pan_mode:
                 self.camera.pan(dx, dy, self.height(),
@@ -865,9 +893,25 @@ class InteractionMixin:
     # Below this many pixels of drag, a left press/release is a click, not a box.
     BOX_DRAG_THRESHOLD_PX = 4.0
 
+    def _right_drag_exceeds_threshold(self, pos) -> bool:
+        return ((pos - self._right_drag_start).manhattanLength()
+                >= QGuiApplication.styleHints().startDragDistance())
+
     def mouseReleaseEvent(self, ev) -> None:
         if self._look_drag is not None and ev.button() == self._look_drag[0]:
             self._end_look()
+            return
+        if ev.button() == Qt.RightButton:
+            if self._right_drag_active:
+                self._end_camera_drag()
+            elif self._right_drag_start is not None:
+                click = not self._right_drag_exceeds_threshold(ev.position())
+                self._right_drag_start = None
+                if click:
+                    self._show_context_menu(ev.position().toPoint(),
+                                            ev.globalPosition().toPoint())
+            return
+        if self._right_drag_active:
             return
         if self._screen_drag and ev.button() == Qt.LeftButton:
             self._screen_drag = False
@@ -877,14 +921,7 @@ class InteractionMixin:
             self.update()
             return
         if ev.button() == Qt.MiddleButton:
-            self._last_pos = None
-            self._orbit_pivot = None
-            self._pan_mode = False
-            self._middle_drag_active = False
-            if self.nav_mode is not None:
-                self._apply_nav_cursor()
-            else:
-                self._apply_tool_cursor()
+            self._end_camera_drag()
             return
         if ev.button() == Qt.LeftButton and self._left_pan_restore is not None:
             # The left button of a wheel+left pan: still on the wheel, the
@@ -1374,6 +1411,9 @@ class InteractionMixin:
     def focusOutEvent(self, ev) -> None:
         """Focus gone means the Alt release will land somewhere else, so the
         claim on it lapses (issue #26)."""
+        self._right_drag_start = None
+        if self._right_drag_active:
+            self._end_camera_drag()
         self._alt_tap = False
         self._alt_down = False        # its release will not reach us either
         self._ctrl_alone = False      # nor will Ctrl's
