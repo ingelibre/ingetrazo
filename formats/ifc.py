@@ -219,7 +219,7 @@ def _write_owner_history(w: _Writer, stamp) -> int:
                  ".NOTDEFINED.", "$", "$", "$", str(int(stamp.timestamp())))
 
 
-_DEFAULT_STOREY = ("", "Storey", 0.0)
+_DEFAULT_STOREY = ((), "Storey", 0.0)
 
 
 def _storey_of(obj) -> tuple:
@@ -247,8 +247,12 @@ def _storey_of(obj) -> tuple:
     if not math.isfinite(elevation):
         elevation = 0.0
     ident = storey.get("id")
-    key = ident.strip() if isinstance(ident, str) and ident.strip() else name.strip()
-    return (key, name.strip(), float(elevation))
+    # An id and an unrelated storey's display name are different identities.
+    if isinstance(ident, str) and ident.strip():
+        key = ("id", ident.strip())
+    else:
+        key = ("name", name.strip())
+    return (key, name.strip(), elevation)
 
 
 def _write_storeys(w, guid, building, base_placement, members) -> None:
@@ -260,9 +264,9 @@ def _write_storeys(w, guid, building, base_placement, members) -> None:
         ident, name, elevation = key
         # the default storey keeps its usual GlobalIds; an id given to two
         # storeys of different name or elevation must not give them one
-        parts = (ident,) if ident else ()
+        parts = ident
         if parts in seen:
-            parts = (ident, name, repr(elevation))
+            parts = ident + (name, repr(elevation))
         seen.add(parts)
         origin = w.add("IFCCARTESIANPOINT", f"(0.,0.,{_f(elevation)})")
         axis = w.add("IFCAXIS2PLACEMENT3D", f"#{origin}", "$", "$")

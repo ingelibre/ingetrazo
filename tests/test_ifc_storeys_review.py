@@ -48,3 +48,38 @@ def test_an_integer_elevation_outside_float_range_falls_back_to_zero(tmp_path, e
     _add(scene, "IfcWall", "Wall", 0.0, {"name": "Ground", "elevation": elevation})
     model = _export(tmp_path, scene)
     assert model.by_type("IfcBuildingStorey")[0].Elevation == 0.0
+
+
+def test_a_storey_id_and_another_storeys_name_have_distinct_identity_domains(tmp_path):
+    def building(name):
+        scene = _scene()
+        _add(scene, "IfcWall", "By id", 0.0, {"name": name, "elevation": 0, "id": "Level"})
+        _add(scene, "IfcWall", "By name", 0.0, {"name": "Level", "elevation": 0})
+        return scene
+
+    original = _export(tmp_path, building("A"), "original.ifc")
+    renamed = _export(tmp_path, building("Z"), "renamed.ifc")
+    before = next(s for s in original.by_type("IfcBuildingStorey") if s.Name == "A")
+    after = next(s for s in renamed.by_type("IfcBuildingStorey") if s.Name == "Z")
+    assert before.GlobalId == after.GlobalId
+
+
+def test_named_and_unnamed_spaces_aggregate_without_guid_collisions(tmp_path):
+    from ifcopenshell.util.element import get_aggregate
+
+    scene = _scene()
+    _add(scene, "IfcSpace", "Default room", 0)
+    upper = _add(
+        scene,
+        "IfcSpace",
+        "Upper room",
+        3.2,
+        {"name": "Upper", "elevation": 3.2, "id": "same-as-group"},
+    )
+    upper.uid = "same-as-group"
+    model = _export(tmp_path, scene)
+    rooms = {s.Name: s for s in model.by_type("IfcSpace")}
+    assert get_aggregate(rooms["Default room"]).Name == "Storey"
+    assert get_aggregate(rooms["Upper room"]).Name == "Upper"
+    identifiers = [root.GlobalId for root in model.by_type("IfcRoot")]
+    assert len(identifiers) == len(set(identifiers))
