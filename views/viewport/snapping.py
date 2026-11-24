@@ -1075,6 +1075,13 @@ class SnappingMixin:
                 continue                # the section box leaves it out
             near.append(_SnapEdge(QVector3D(gp.position),
                                   QVector3D(gp.position)))
+        # The scanned point under the cursor, the same way: the trace lands
+        # exactly on the measured surface.
+        cloud_snap = getattr(self, "_point_cloud_snap", None)
+        if px is not None and cloud_snap is not None:
+            hit = cloud_snap(px, py)
+            if hit is not None:
+                near.append(_SnapEdge(QVector3D(hit), QVector3D(hit)))
         # The rest of the model's loose geometry — the root mesh drawn faded
         # around an open group / component — is a reference too.
         # Its edges are filtered one by one (each carries its own layer and

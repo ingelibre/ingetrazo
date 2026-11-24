@@ -271,6 +271,10 @@ class Scene:
     # reason: hundreds of thousands of reconstruction triangles are reference
     # geometry to trace over, never topology-engine geometry (invariant #4).
     photo_mesh: object | None = None
+    # Point clouds (laser scans, photogrammetric clouds —
+    # ``georef.pointcloud.PointCloud``). Display-only like the photo mesh:
+    # millions of points to trace over, never topology (invariant #4).
+    point_clouds: list = field(default_factory=list)
     # BIM "active class" (tag-as-you-draw): while set, faces created by the
     # drawing tools are stamped with this tag ({"id", "class", "name"}) at
     # commit time. Runtime UI mode — never serialised.
@@ -903,6 +907,7 @@ class Scene:
                 or self.saved_views or self.compositions
                 or self.scene_folders or self.sheet_folders
                 or self.image_planes or self.plugin_data
+                or self.point_clouds
                 or self.kept_components or self.section_planes
                 or self.section_boxes
                 or self.materials or self.animation.to_dict()
@@ -923,6 +928,7 @@ class Scene:
             self.geo_points.clear()
             self.guides.clear()
             self.image_planes.clear()
+            self.point_clouds.clear()
             self.saved_views.clear()
             self.scene_folders = []
             self.scene_folder_parents = {}

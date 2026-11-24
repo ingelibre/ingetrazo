@@ -100,7 +100,7 @@ PLAIN_JSON_LAYOUT = "plain-json"
 _ASSETS_SUFFIX = ".assets"
 #: The sub-folders of an assets folder the writer owns (and may prune): the
 #: container's member prefixes for textures and the photogrammetric survey.
-_ASSET_DIRS = ("textures", "survey")
+_ASSET_DIRS = ("textures", "survey", "pointclouds")
 _ZIP_MAGIC = b"PK\x03\x04"
 _DOC_ENTRY = "document.json"
 _TEX_PREFIX = "textures/"
@@ -1127,6 +1127,14 @@ def _save_document(scene, path, *, large, stream=None, thumbnail=None,
         meta, survey_blobs = pack_mesh(survey)
         payload["photo_mesh"] = meta
         blobs.update(survey_blobs)
+    # Point clouds travel inside the document for the same reason.
+    clouds = getattr(scene, "point_clouds", None)
+    if clouds:
+        from georef.pointcloud import pack_clouds
+        meta, cloud_blobs = pack_clouds(clouds)
+        if meta:
+            payload["point_clouds"] = meta
+            blobs.update(cloud_blobs)
     if plain:
         return _write_plain_json(path, payload, blobs, missing)
     embedded = len(blobs)
@@ -1653,6 +1661,22 @@ def _unpack_photo_mesh(payload: dict, archive):
     return unpack_mesh(meta, read_blob)
 
 
+def _unpack_point_clouds(payload: dict, archive) -> list:
+    """The stored point clouds; an empty list when the document has none."""
+    meta = payload.get("point_clouds")
+    if not meta:
+        return []
+    from georef.pointcloud import unpack_clouds
+
+    def read_blob(member: str) -> bytes:
+        try:
+            return archive.read(member)
+        except KeyError:
+            return b""
+
+    return unpack_clouds(meta, read_blob)
+
+
 def load_into(scene, path: Path, progress=None) -> None:
     """Replace ``scene`` contents with what's stored at ``path``.
 
@@ -1782,6 +1806,7 @@ def _load_into_inner(scene, path: Path, progress=None) -> None:
         path, pump=(lambda: tick(0.1, "Reading the document…"))
         if progress is not None else None)
     survey = None
+    clouds: list = []
     geom: dict = {}
     try:
         if archive is not None:
@@ -1794,6 +1819,7 @@ def _load_into_inner(scene, path: Path, progress=None) -> None:
             # Rebuilt here, while the archive is still open — it closes below
             # and the survey's blobs live inside it.
             survey = _unpack_photo_mesh(data.get("scene", {}), archive)
+            clouds = _unpack_point_clouds(data.get("scene", {}), archive)
         elif isinstance(data.get("assets"), str):
             # The plain-JSON layout: the same members, from the folder
             # beside the document instead of from inside it. Only the
@@ -1802,6 +1828,7 @@ def _load_into_inner(scene, path: Path, progress=None) -> None:
             tick(0.2, "Unpacking textures…")
             _unpack_textures(data.get("scene", {}), folder)
             survey = _unpack_photo_mesh(data.get("scene", {}), folder)
+            clouds = _unpack_point_clouds(data.get("scene", {}), folder)
     finally:
         if archive is not None:
             archive.close()
@@ -1832,6 +1859,7 @@ def _load_into_inner(scene, path: Path, progress=None) -> None:
     scene.saved_layout = ("json" if data.get("layout") == PLAIN_JSON_LAYOUT
                           else None)
     scene.photo_mesh = survey
+    scene.point_clouds = clouds
     scene.tile_layer = None
     # The writer leaves a block out when it holds the default (no planes,
     # nothing hidden, no own scales…), so what the file does not bring is
