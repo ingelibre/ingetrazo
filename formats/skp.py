@@ -549,6 +549,11 @@ def _apply_payload_inner(scene, payload, progress=None, *, consume=False) -> str
         g.xform = xf
         # A .skp GROUP stays a group: only a component definition is one.
         g.component = bool(pr.get("component", True))
+        if g.component and pr.get("name"):
+            # The definition's name stays apart from the copy's (#199):
+            # ten «Puerta» copies named «Puerta izquierda», «Puerta
+            # derecha»… keep both.
+            g.definition = pr["name"]
         if layer:
             g.layer = layer
         if depth < 32:      # a malformed file must not spin

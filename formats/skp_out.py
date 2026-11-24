@@ -379,7 +379,9 @@ def _split_containers(scene):
         children = [(_register(c), c) for c in _kids(g)]
         children += [(_register_figure(c), c) for c in _figures(g)]
         idx = index_of[key] = len(defs)
-        defs.append({"name": g.name, "mesh": g.mesh, "children": children})
+        # The definition's own name (#199), the copy's when it has none.
+        defs.append({"name": getattr(g, "definition", None) or g.name,
+                     "mesh": g.mesh, "children": children})
         return idx
 
     classic, roots = [], []

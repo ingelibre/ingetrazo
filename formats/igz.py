@@ -855,6 +855,10 @@ def _save_document(scene, path, *, large, stream=None, thumbnail=None,
             # "Group 7". Older readers ignore the key.
             if getattr(g, "name", None):
                 entry["name"] = g.name
+            if getattr(g, "definition", None):
+                # The definition's name, apart from this copy's own
+                # (#199); older readers ignore it and show the copy's.
+                entry["definition"] = str(g.definition)
             axes = getattr(g, "axes", None)
             if axes is not None:
                 # A classic group's own axes (issue #44), column-major like
@@ -1979,6 +1983,8 @@ def _load_into_inner(scene, path: Path, progress=None) -> None:
             vals = [float(x) for x in raw["axes"]]
             group.axes = QMatrix4x4(*[vals[col * 4 + row] for row in range(4)
                                       for col in range(4)])
+        if raw.get("definition"):
+            group.definition = str(raw["definition"])
         if raw.get("layer"):
             group.layer = raw["layer"]
         if raw.get("ifc"):

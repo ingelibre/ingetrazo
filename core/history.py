@@ -4823,6 +4823,7 @@ class MakeUniqueCommand(Command):
         self._images = None
         self._axes = None
         self._component = True
+        self._definition = None
 
     def do(self, scene) -> None:
         self._proto = self.group.mesh
@@ -4832,10 +4833,21 @@ class MakeUniqueCommand(Command):
         self._axes = self.group.axes
         self._component = self.group.component
         self._name = self.group.name
+        self._definition = getattr(self.group, "definition", None)
         if self._rename and self.group.name:
+            from core.group import has_own_name
             from core.kept_components import names_in_use, numbered_name
             taken = names_in_use(scene, skip=self.group)
-            if self.group.name in taken:
+            own = has_own_name(self.group)
+            if self._definition:
+                # A definition of its own, so a name of its own (#199):
+                # «Puerta» → «Puerta #2»; a copy that only wore it follows.
+                if self._definition in taken:
+                    self.group.definition = numbered_name(self._definition,
+                                                          taken)
+                if not own:
+                    self.group.name = self.group.definition
+            if (own or not self._definition) and self.group.name in taken:
                 self.group.name = numbered_name(self.group.name, taken)
         self.group.make_unique()
         scene.version += 1
@@ -4848,6 +4860,7 @@ class MakeUniqueCommand(Command):
         self.group.axes = self._axes
         self.group.component = self._component
         self.group.name = self._name
+        self.group.definition = self._definition
         scene.version += 1
 
 
@@ -4865,8 +4878,8 @@ class ReplaceComponentCommand(Command):
     Targets that already share ``source``'s definition, and anything that is
     not a component instance, are left alone."""
 
-    _SHARED = ("mesh", "children", "images", "name", "axes", "component",
-               "text3d", "ifc", "ext", "billboard", "exploded")
+    _SHARED = ("mesh", "children", "images", "name", "definition", "axes",
+               "component", "text3d", "ifc", "ext", "billboard", "exploded")
 
     def __init__(self, targets, source) -> None:
         self.source = source
@@ -4877,7 +4890,7 @@ class ReplaceComponentCommand(Command):
 
     def do(self, scene) -> None:
         import copy
-        from core.group import copy_group
+        from core.group import copy_group, definition_name, has_own_name
         from PySide6.QtGui import QMatrix4x4
         src = self.source
         self._before = [{k: getattr(g, k) for k in self._SHARED}
@@ -4889,7 +4902,11 @@ class ReplaceComponentCommand(Command):
             g.children = [copy_group(c, _in_definition=True)
                           for c in (src.children or ())]
             g.images = list(getattr(src, "images", None) or ())
-            g.name = src.name
+            # A copy named on its own («Puerta izquierda») keeps that name:
+            # it is still that piece, now of another definition (#199).
+            if not has_own_name(g):
+                g.name = src.name
+            g.definition = definition_name(src) or None
             g.axes = QMatrix4x4(src.axes) if src.axes is not None else None
             g.component = True
             g.text3d = dict(src.text3d) if src.text3d else None
@@ -5657,14 +5674,65 @@ class RenameGroupCommand(Command):
         self.group = group
         self.name = name
         self.old: Optional[str] = None
+        self._pinned: list = []
 
     def do(self, scene) -> None:
         self.old = self.group.name
+        self._pinned = []
+        if (getattr(self.group, "is_component", lambda: False)()
+                and not getattr(self.group, "definition", None)):
+            # Naming ONE copy of a component that never had a definition
+            # name apart (#199): the old name stays the definition's, for
+            # every copy, so the others keep reading «Puerta» and this one
+            # becomes «Puerta izquierda» OF «Puerta».
+            from core.purge import iter_groups
+            mesh = self.group.mesh
+            sharing = [g for g in iter_groups(getattr(scene, "groups", None))
+                       if g.mesh is mesh and g.is_component()]
+            sharing += [t for t in getattr(scene, "kept_components", None)
+                        or () if t.mesh is mesh]
+            if self.group not in sharing:
+                sharing.append(self.group)
+            for g in sharing:
+                if not getattr(g, "definition", None) and self.old:
+                    g.definition = self.old
+                    self._pinned.append(g)
         self.group.name = self.name
         scene.version += 1
 
     def undo(self, scene) -> None:
         self.group.name = self.old
+        for g in self._pinned:
+            g.definition = None
+        self._pinned = []
+        scene.version += 1
+
+
+class RenameDefinitionCommand(Command):
+    """Give a component's DEFINITION a new name (issue #199): every copy in
+    ``targets`` — the ones sharing it, placed, nested or kept — takes it,
+    and a copy that only wore the old one (not named on its own) takes it
+    as its name too. «Puerta izquierda» stays «Puerta izquierda»."""
+
+    def __init__(self, targets, name: str) -> None:
+        self.targets = list(targets)
+        self.name = name
+        self._before: list = []
+
+    def do(self, scene) -> None:
+        from core.group import has_own_name
+        self._before = [(g.name, getattr(g, "definition", None))
+                        for g in self.targets]
+        for g in self.targets:
+            if not has_own_name(g):
+                g.name = self.name
+            g.definition = self.name
+        scene.version += 1
+
+    def undo(self, scene) -> None:
+        for g, (name, definition) in zip(self.targets, self._before):
+            g.name = name
+            g.definition = definition
         scene.version += 1
 
 

@@ -100,7 +100,12 @@ def names_in_use(scene, skip=None) -> set:
     from core.purge import iter_groups
     groups = list(iter_groups(getattr(scene, "groups", None)))
     groups += list(getattr(scene, "kept_components", None) or ())
-    return {g.name for g in groups if g is not skip and g.name}
+    names = {g.name for g in groups if g is not skip and g.name}
+    # And the definitions' (#199): a copy made unique must not take the
+    # name another component's copies share.
+    names |= {g.definition for g in groups
+              if g is not skip and getattr(g, "definition", None)}
+    return names
 
 
 def numbered_name(name: str, taken) -> str:

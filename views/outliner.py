@@ -45,7 +45,7 @@ from PySide6.QtWidgets import (QAbstractItemView, QApplication, QDialog,
                                QFrame)
 
 from core import outliner
-from core.group import Group
+from core.group import Group, has_own_name
 from core.i18n import tr
 from core.section import SectionBox, SectionPlane
 from views.icons import mark_pixmap
@@ -888,6 +888,28 @@ class MaterialPopup(QFrame):
         self.show()
 
 
+def _row_name(g) -> str:
+    """The Name cell: the copy's own name and, when it has one apart from
+    its component's, the definition's after it — «roble ‹Puerta›» (#199),
+    so a copy named on its own still says what it is a copy of."""
+    name = g.name or tr("Unnamed group")
+    if g.is_component() and has_own_name(g):
+        name += f" ‹{g.definition}›"
+    return name
+
+
+class _NameCellDelegate(QStyledItemDelegate):
+    """The Name cell edits the copy's own name alone: the «‹Puerta›» the
+    cell shows after it is the definition's (#199), not part of it."""
+
+    def setEditorData(self, editor, index) -> None:
+        group = index.data(Qt.UserRole)
+        if isinstance(group, Group) and hasattr(editor, "setText"):
+            editor.setText(group.name or "")
+            return
+        super().setEditorData(editor, index)
+
+
 class _MaterialCellDelegate(QStyledItemDelegate):
     """The Material cell with a small ▾ at its right end: the handle that
     opens the material panel. Pressing it does not select the row — the
@@ -1250,6 +1272,8 @@ class OutlinerPanel(QWidget):
         # columns can be dragged to another order, which is remembered;
         # Window ▸ Panels ▸ Restore default panels puts them back.
         self.tree.setTreePosition(COL_NAME)
+        self._name_delegate = _NameCellDelegate(self.tree)
+        self.tree.setItemDelegateForColumn(COL_NAME, self._name_delegate)
         self._material_delegate = _MaterialCellDelegate(self.tree)
         self.tree.setItemDelegateForColumn(COL_MATERIAL,
                                            self._material_delegate)
@@ -1733,7 +1757,7 @@ class OutlinerPanel(QWidget):
             if custom else ""
         copies = (str(counts.get(id(g.mesh), 1)) if g.is_component()
                   else "")
-        return (g.name or tr("Unnamed group"),
+        return (_row_name(g),
                 custom["type"] if custom else self._type_text(g, counts),
                 outliner.layer_name(g), self._kind(g), bool(g.hidden),
                 id(g) in opened, bool(getattr(g, "locked", False)),
@@ -4303,6 +4327,14 @@ class OutlinerPanel(QWidget):
             self._window.viewport.history.execute(
                 RenameGroupCommand(group, name))
             self._window.viewport.update()
+        # The editor held the copy's name alone: the cell shows the
+        # definition's after it again (#199) — the row's remembered state
+        # already says so, so the refresh would not put it back.
+        self._updating = True
+        try:
+            item.setText(COL_NAME, _row_name(group))
+        finally:
+            self._updating = False
         self.refresh()
 
     def _on_context_menu(self, pos) -> None:
