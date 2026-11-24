@@ -1695,7 +1695,8 @@ def test_the_line_type_list_ends_with_custom_and_its_tools(win):
     assert texts.index("Borde") > texts.index("Custom line types")
     assert menu.actions()[-1].isEnabled()
     assert panel.item_for("A").toolTip(4 + 3) == "Borde" or True
-    assert panel.add_line_type("Mal", [5, 5], ["A"]) is None
+    # No gap is a continuous line of its own (#1465); all gap is no line.
+    assert panel.add_line_type("Mal", [-5, -5], ["A"]) is None
 
 
 def test_the_panel_imports_and_exports_line_type_files(win, tmp_path):
@@ -1718,7 +1719,7 @@ def test_the_editor_draws_as_it_is_typed_and_refuses_a_bad_pattern():
     dlg = LineTypeDialog(None, name="Borde", pattern=[6, -1.5])
     ok = dlg.buttons.button(QDialogButtonBox.Ok)
     assert ok.isEnabled() and dlg.result_pattern() == [6.0, -1.5]
-    dlg.pattern_edit.setText("5, 5")              # no gap: not a line type
+    dlg.pattern_edit.setText("-5, -5")            # all gap: not a line type
     assert not ok.isEnabled() and dlg.problem.text()
     dlg.pattern_edit.setText("")
     for b in dlg.findChildren(type(ok)):

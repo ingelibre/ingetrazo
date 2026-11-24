@@ -133,6 +133,11 @@ def clean_line_text(entry, pattern) -> dict | None:
     return {"text": text, "text_size": round(size, 3), "text_at": at}
 
 
+#: A continuous line type of the document's own that writes words along
+#: it: the run of line between two of them, in paper mm.
+CONTINUOUS_TEXT_RUN = 20.0
+
+
 def with_text(pattern, text: str, size: float = 2.5) -> tuple:
     """``pattern`` (pieces, dash > 0, gap < 0) with ``text`` in it: room
     as wide as the words and a margin each side, added to its last gap (or
@@ -142,7 +147,8 @@ def with_text(pattern, text: str, size: float = 2.5) -> tuple:
     if not text:
         return list(pattern), None
     room = text_width(text, size) + 2.0 * max(0.6, 0.4 * float(size))
-    out = list(pattern)
+    # A continuous line with words: a long run of line between them.
+    out = list(pattern) or [CONTINUOUS_TEXT_RUN]
     if out and out[-1] < 0:
         out[-1] = round(out[-1] - room, 3)     # the last gap, widened
     else:
@@ -378,10 +384,15 @@ def file_dashes(drawn) -> tuple:
     return tuple(v if i % 2 == 0 else -v for i, v in enumerate(drawn))
 
 
-def clean_pattern(raw) -> list | None:
+def clean_pattern(raw, continuous: bool = False) -> list | None:
     """A dash pattern as typed or read from a file, kept sane: finite
     numbers in mm, at most a few dozen pieces, something drawn and
-    something left blank; ``None`` when there is no such pattern."""
+    something left blank; ``None`` when there is no such pattern.
+
+    ``continuous``: a line type of the document's own may also be a
+    continuous line — no pieces, or only drawn ones — given back as ``[]``,
+    so two layers can each have a continuous line in a colour of its own
+    (issue #1465). All gap is never a line."""
     import math
     if not isinstance(raw, (list, tuple)):
         return None
@@ -394,6 +405,8 @@ def clean_pattern(raw) -> list | None:
         if not math.isfinite(v) or abs(v) > 1000.0:
             return None
         out.append(round(v, 4))
+    if continuous and not any(v < 0 for v in out):
+        return []                      # a continuous line of its own
     if not out or sum(abs(v) for v in out) < 0.05:
         return None
     if not any(v < 0 for v in out) or not any(v >= 0 for v in out):
@@ -1498,14 +1511,14 @@ def load_line_types(scene, raw) -> int:
     for name, entry in list(raw.items())[:500]:
         if not (isinstance(name, str) and name and isinstance(entry, dict)):
             continue
-        pattern = clean_pattern(entry.get("pattern"))
+        pattern = clean_pattern(entry.get("pattern"), continuous=True)
         if pattern is None:
             continue
         label = entry.get("label")
         own[name[:64]] = {"label": label[:120] if isinstance(label, str)
                           else name[:64], "pattern": pattern}
         own[name[:64]].update(clean_line_text(entry, pattern) or {})
-        pieces = clean_pattern(entry.get("pieces"))
+        pieces = clean_pattern(entry.get("pieces"), continuous=True)
         if pieces is not None:
             own[name[:64]]["pieces"] = pieces
         colour = clean_line_colour(entry.get("color"))

@@ -942,8 +942,10 @@ def _save_document(scene, path, *, large, stream=None, thumbnail=None,
                     **{k: (list(e[k]) if k == "color" else e[k])
                        for k in ("text", "text_size", "text_at", "pieces",
                                  "color") if k in e})
+            # An empty pattern is a continuous line of its own (#1465).
             for n, e in own_lines.items()
-            if isinstance(e, dict) and e.get("pattern")}
+            if isinstance(e, dict)
+            and isinstance(e.get("pattern"), (list, tuple))}
     if getattr(scene, "linetype_colors", None):
         payload["linetype_colors"] = {
             k: [round(float(c), 4) for c in v]
