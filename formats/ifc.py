@@ -406,15 +406,16 @@ def save_ifc(scene, path, project_name: str = "IngeTrazo project", *,
         building = w.add("IFCBUILDING", _s(guid("building")), "$", "'Building'", "$",
                          "$", f"#{placement}", "$", "$", ".ELEMENT.",
                          "$", "$", "$")
-        w.add("IFCRELAGGREGATES", _s(guid("project-site")), "$", "$", "$",
-              f"#{project}", f"(#{site})")
-        w.add("IFCRELAGGREGATES", _s(guid("site-building")), "$", "$", "$",
-              f"#{site}", f"(#{building})")
-        # A tag may name its storey; one storey per name, else one "Storey".
+        # Preserve the original STEP order without named storeys.
         named = {_storey_of(obj) for obj in objects} - {_DEFAULT_STOREY}
         if not named:
             storey = w.add("IFCBUILDINGSTOREY", _s(guid("storey")), "$", "'Storey'", "$",
                            "$", f"#{placement}", "$", "$", ".ELEMENT.", "0.")
+        w.add("IFCRELAGGREGATES", _s(guid("project-site")), "$", "$", "$",
+              f"#{project}", f"(#{site})")
+        w.add("IFCRELAGGREGATES", _s(guid("site-building")), "$", "$", "$",
+              f"#{site}", f"(#{building})")
+        if not named:
             w.add("IFCRELAGGREGATES", _s(guid("building-storey")), "$", "$", "$",
                   f"#{building}", f"(#{storey})")
     members = {}                    # named storeys: key -> [(element, is_space)]
