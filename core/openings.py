@@ -357,17 +357,90 @@ def _frame(group):
     return QMatrix4x4(f) if f is not None else QMatrix4x4()
 
 
+#: Length of the arrow that shows the way a hole is cut (metres).
+ARROW_LENGTH = 0.5
+#: The sides of a component that can be flush with the wall, as the normal
+#: that comes out of the wall in the component's own axes.
+PLANE_SIDES = {
+    "front": (0.0, -1.0, 0.0), "back": (0.0, 1.0, 0.0),
+    "left": (-1.0, 0.0, 0.0), "right": (1.0, 0.0, 0.0),
+    "top": (0.0, 0.0, 1.0), "bottom": (0.0, 0.0, -1.0),
+}
+_OPPOSITE = {"front": "back", "back": "front", "left": "right",
+             "right": "left", "top": "bottom", "bottom": "top"}
+
+
+def side_of(group) -> Optional[str]:
+    """The side of ``group`` chosen as its cut plane, or None for the base
+    plane (local ``z = 0``, the blue axis out of the wall)."""
+    plane = _entry(group).get("plane")
+    if isinstance(plane, dict):
+        n = plane.get("n")
+        for name, v in PLANE_SIDES.items():
+            if isinstance(n, (list, tuple)) and len(n) == 3 and all(
+                    abs(float(a) - b) < 1e-6 for a, b in zip(n, v)):
+                return name
+    return None
+
+
+def _distance_out(group, n) -> float:
+    """How far the component reaches along ``n`` (its own axes): where its
+    face on that side is."""
+    from core.group import iter_placements
+    inv, ok = _frame(group).inverted()
+    if not ok:
+        return 0.0
+    nv = QVector3D(*n)
+    best = float("-inf")
+    for g, m in iter_placements(group):
+        pts = [v for f in g.mesh.faces for v in f.vertices]
+        pts += [p for e in g.mesh.edges for p in (e.a, e.b)]
+        for p in pts:
+            q = inv.map(m.map(p) if m is not None else QVector3D(p))
+            best = max(best, QVector3D.dotProduct(q, nv))
+    return best if best != float("-inf") else 0.0
+
+
+def _plane_frame(group):
+    """The matrix of the axes the footprint is taken in: the component's own
+    frame, or — with a chosen side — the plane flush with the wall (x along
+    the wall, y up it, z out of it)."""
+    from PySide6.QtGui import QMatrix4x4
+    frame = _frame(group)
+    plane = _entry(group).get("plane")
+    if not isinstance(plane, dict) or side_of(group) is None:
+        return frame
+    nv = QVector3D(*plane["n"]).normalized()
+    if abs(nv.z()) < 0.9:
+        x = QVector3D.crossProduct(QVector3D(0, 0, 1), nv).normalized()
+    else:
+        x = QVector3D(1, 0, 0)
+    y = QVector3D.crossProduct(nv, x).normalized()
+    c = nv * float(plane.get("d", 0.0))
+    return frame * QMatrix4x4(x.x(), y.x(), nv.x(), c.x(),
+                              x.y(), y.y(), nv.y(), c.y(),
+                              x.z(), y.z(), nv.z(), c.z(),
+                              0, 0, 0, 1)
+
+
 def footprint(group) -> Optional[list]:
     """The opening's outline in world coordinates, counter-clockwise seen
-    from the blue axis, or None when the component has nothing to cut with.
+    from the blue axis of its plane, or None when the component has nothing
+    to cut with.
 
-    The outer loop of the largest face lying on the component's base plane;
-    with none there, the rectangle it covers on that plane."""
+    The plane is the component's base plane (local ``z = 0``) or, when the
+    component has chosen one (:func:`side_of`), the plane of that side. The
+    outline is the outer loop of the largest face lying on it; with none
+    there, the rectangle the component covers on it. A plane whose entry
+    says ``"outline": "box"`` always takes the rectangle: a component made of
+    parts (a frame's bars) has no single face that is its outline."""
     from core.group import iter_placements
-    frame = _frame(group)
+    frame = _plane_frame(group)
     inv, ok = frame.inverted()
     if not ok:
         return None
+    plane = _entry(group).get("plane")
+    use_faces = not (isinstance(plane, dict) and plane.get("outline") == "box")
     best, best_area = None, 0.0
     lo = [float("inf")] * 2
     hi = [float("-inf")] * 2
@@ -378,7 +451,8 @@ def footprint(group) -> Optional[list]:
             for p in local:
                 lo[0], lo[1] = min(lo[0], p.x()), min(lo[1], p.y())
                 hi[0], hi[1] = max(hi[0], p.x()), max(hi[1], p.y())
-            if all(abs(p.z()) < _PLANE_EPS for p in local) and len(local) >= 3:
+            if (use_faces and len(local) >= 3
+                    and all(abs(p.z()) < _PLANE_EPS for p in local)):
                 area = abs(_area2d([(p.x(), p.y()) for p in local]))
                 if area > best_area:
                     best, best_area = local, area
@@ -396,6 +470,16 @@ def footprint(group) -> Optional[list]:
     if _area2d([(p.x(), p.y()) for p in flat]) < 0:
         flat.reverse()
     return [frame.map(p) for p in flat]
+
+
+def direction(group):
+    """``(point, unit vector)`` in world coordinates: the middle of the
+    component's opening on the wall's face and the way its hole is cut (into
+    the wall), or None — what the arrow over a selected component shows."""
+    a = footprint(group)
+    if not a:
+        return None
+    return _centroid(a), -_normal(a)
 
 
 # ---- Where it cuts -----------------------------------------------------------
@@ -1708,6 +1792,49 @@ class SetCutOpeningCommand(Command):
         for g, ext in self._before or ():
             g.ext = copy.deepcopy(ext) if ext else None
         scene.version += 1
+
+
+class SetCutPlaneCommand(Command):
+    """Choose the side of each container that is flush with the wall (or,
+    with ``side`` None, go back to the base plane). The hole it had is marked
+    out of date, so the history's follow-up closes it and cuts the new one in
+    the same step; the container is marked «Cut opening» too."""
+
+    keeps_paint = True
+    keeps_groups = True
+
+    def __init__(self, groups, side: Optional[str]) -> None:
+        self.groups = list(groups)
+        self.side = side
+        self._before = None
+
+    def do(self, scene) -> None:
+        self._before = [(g, _copy_ext(g)) for g in self.groups]
+        for g in self.groups:
+            entry = dict(_entry(g))
+            entry["on"] = True
+            if self.side is None:
+                entry.pop("plane", None)
+            else:
+                n = PLANE_SIDES[self.side]
+                entry["plane"] = {"n": list(n), "d": _distance_out(g, n)}
+            made_rec = entry.get("made")
+            if isinstance(made_rec, dict):
+                entry["made"] = dict(made_rec, xf=None)
+            set_ext_entry(g, entry)
+        scene.version += 1
+
+    def undo(self, scene) -> None:
+        for g, ext in self._before or ():
+            g.ext = copy.deepcopy(ext) if ext else None
+        scene.version += 1
+
+
+def flipped_side(group) -> Optional[str]:
+    """The side opposite to ``group``'s chosen one; the base plane's opposite
+    is the component's bottom (local ``-z``), as the blue axis reversed."""
+    cur = side_of(group)
+    return _OPPOSITE[cur] if cur else "bottom"
 
 
 def cutting_targets(scene, selection) -> list:

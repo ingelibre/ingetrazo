@@ -5486,6 +5486,31 @@ class MainWindow(QMainWindow):
                     "blue axis coming out of the face"), 6000)
         self.viewport.update()
 
+    def set_cut_plane(self, side) -> None:
+        """Choose which side of the selected windows and doors (and of every
+        copy) is flush with the wall: the hole is cut from that side, into
+        the wall. ``side`` None goes back to the base plane; "flip" reverses
+        the one each has."""
+        from core.openings import (SetCutPlaneCommand, cutting_targets,
+                                   flipped_side, made)
+        scene = self.viewport.scene
+        targets = cutting_targets(scene, scene.selection)
+        if not targets:
+            return
+        history = self.viewport.history
+        if side == "flip":
+            side = flipped_side(targets[0])
+        history.execute(SetCutPlaneCommand(targets, side))
+        if history.last_error:
+            self.viewport.flash_status(
+                tr("Operation failed and was undone: {err}",
+                   err=history.last_error), 8000)
+        elif not any((made(g) or {}).get("a") for g in targets):
+            self.viewport.flash_status(tr(
+                "No face under it to cut: that side has to be flush with "
+                "the wall's face"), 6000)
+        self.viewport.update()
+
     def _on_scale_dialog(self, group) -> None:
         tool = self._tools["scale_manager"]
         tool.target = group
@@ -6871,6 +6896,22 @@ class MainWindow(QMainWindow):
                     "wall when there is one behind, and moves it with it"))
                 act.triggered.connect(
                     lambda on: self.set_cut_opening(bool(on)))
+                from core.openings import PLANE_SIDES, side_of
+                plane_menu = menu.addMenu(tr("Cut Plane"))
+                chosen = {side_of(g) for g in targets}
+                labels = (("front", tr("Front (−Y)")), ("back", tr("Back (+Y)")),
+                          ("left", tr("Left (−X)")), ("right", tr("Right (+X)")),
+                          ("top", tr("Top (+Z)")), ("bottom", tr("Bottom (−Z)")))
+                for key, label in (("", tr("Base plane (blue axis)")),) + labels:
+                    item = plane_menu.addAction(label)
+                    item.setCheckable(True)
+                    item.setChecked(chosen == {key or None})
+                    item.triggered.connect(
+                        lambda _c=False, k=key: self.set_cut_plane(k or None))
+                plane_menu.addSeparator()
+                plane_menu.addAction(
+                    tr("Flip Cut Direction"),
+                    lambda: self.set_cut_plane("flip"))
             scale_one = groups[0] if len(groups) == 1 and len(sel) == 1 else None
             scale_act = menu.addAction(
                 tr("Scale…"), lambda: self._on_scale_dialog(scale_one))
