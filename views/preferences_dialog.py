@@ -1265,16 +1265,14 @@ class PreferencesDialog(QDialog):
                 if callable(update):
                     update()
 
-        level = int(self._soft_level.currentData())
-        soft = level if self._soft_shadows.isChecked() else 0
-        st.setValue("display/soft_shadows", soft)
-        st.setValue("display/soft_shadows_level", level)
-        for vp in viewports:
-            if getattr(vp, "_soft_shadows", None) != soft:
-                vp._soft_shadows = soft
-                update = getattr(vp, "update", None)
-                if callable(update):
-                    update()
+        # The same switch as the Shadows dropdown's (#1587), which follows.
+        from views.viewport._support import set_soft_shadows
+        set_soft_shadows(viewports, self._soft_shadows.isChecked(),
+                         int(self._soft_level.currentData()), st)
+        refresh_soft = getattr(getattr(self._window, "shadows_panel", None),
+                               "refresh_soft_shadows", None)
+        if callable(refresh_soft):
+            refresh_soft()
 
         px = int(self._icon_px.currentData())
         from views.icons import toolbar_icon_px
