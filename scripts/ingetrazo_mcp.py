@@ -390,7 +390,7 @@ TOOLS += [
         "name": "export_file",
         "description": ("Export the model by the file's extension "
                         "(absolute path): .ifc (BIM-tagged objects), .glb, "
-                        ".dae, .stl (unit, default mm), .obj, .dxf (the "
+                        ".usdz, .usda, .dae, .stl (unit, default mm), .obj, .dxf (the "
                         "view's lines). Sheets: export_pdf; pictures: "
                         "screenshot, export_view, render_sheet."),
         "inputSchema": {
