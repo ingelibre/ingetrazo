@@ -26,10 +26,13 @@ def vp():
     return view
 
 
-def pinch(vp, value, at=CENTRE):
+def pinch(vp, value, at=CENTRE, local=None):
+    """A pinch with the pointer at ``at`` in the viewport. ``local`` is the
+    position the event itself reports, when it is not ``at`` (macOS)."""
+    local = at if local is None else local
     QApplication.sendEvent(vp, QNativeGestureEvent(
         Qt.ZoomNativeGesture, QPointingDevice.primaryPointingDevice(), 2,
-        at, at, at, value, QPointF(), 0))
+        local, local, vp.mapToGlobal(at), value, QPointF(), 0))
 
 
 def notch(vp, dy, at=CENTRE):
@@ -68,6 +71,22 @@ def test_the_point_under_the_fingers_stays_put(vp):
     for _ in range(10):
         pinch(vp, 0.04, at)
     assert vp.camera.distance < d0 * 0.75          # it did zoom
+    px = vp._world_to_pixel(focus)
+    assert px is not None
+    assert px[0] == pytest.approx(at.x(), abs=0.5)
+    assert px[1] == pytest.approx(at.y(), abs=0.5)
+
+
+def test_the_point_under_the_pointer_stays_put_when_the_event_is_window_relative(vp):
+    """macOS hands the pinch's position() in the top-level window's
+    coordinates: inside the main window it was off by the toolbars and the
+    left panel (+36, +104 px in a real session), so the zoom pinned a point
+    below and right of the pointer. The screen position is the right one."""
+    at = QPointF(160, 90)
+    focus = vp._world_under_cursor(at.x(), at.y())
+    assert focus is not None
+    for _ in range(10):
+        pinch(vp, 0.04, at, local=at + QPointF(36, 104))
     px = vp._world_to_pixel(focus)
     assert px is not None
     assert px[0] == pytest.approx(at.x(), abs=0.5)
