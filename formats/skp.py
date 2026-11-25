@@ -431,15 +431,14 @@ def _apply_payload_inner(scene, payload, progress=None, *, consume=False) -> str
                             attrs["mat"] = remap[attrs["mat"]]
 
     # The file's layers (.skp tags) join the scene's layer list, keeping
-    # their visibility — layers already present are left untouched (a re-import
-    # must not flip what the user toggled).
+    # their visibility and colour — layers already present are left untouched
+    # (a re-import must not replace the user's display settings).
     if payload.get("layers"):
         from core.layers import Layer
         known = {ly.name for ly in scene.layers}
         for raw in payload["layers"]:
             if raw.get("name") and raw["name"] not in known:
-                scene.layers.append(Layer(raw["name"],
-                                          visible=raw.get("visible", True)))
+                scene.layers.append(Layer.from_dict(raw))
                 known.add(raw["name"])
 
     # The file's saved scenes become saved views (camera + hidden layers);

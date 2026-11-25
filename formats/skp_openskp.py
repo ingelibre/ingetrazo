@@ -1345,7 +1345,7 @@ def _merge_equal_protos(protos):
 
 
 def file_layer_records(model):
-    """The file's layers (tags) as ``[{"name", "visible"}]`` — Scene-level,
+    """The file's tags with visibility and RGB/RGBA colour — Scene-level,
     so the importer can register them even when nothing sits on one yet.
     The model's default layer never travels (it IS IngeTrazo's default).
 
@@ -1358,6 +1358,12 @@ def file_layer_records(model):
     screenshots). ``visible`` is still honoured if a future library grows
     it, but ``hidden`` is what decides today.
     """
+    # VFF tag materials are kept in materials, not materials_by_id (the
+    # latter only joins paints used on geometry). Despite its name,
+    # OpenSKP's Material.transparency is already an opacity in 0..1.
+    tag_materials = {mat.name[6:]: mat
+                     for mat in getattr(model, "materials", []) or []
+                     if getattr(mat, "name", "").startswith("Layer_")}
     out = []
     for ly in getattr(model, "layers", []) or []:
         name = getattr(ly, "name", "")
@@ -1368,7 +1374,15 @@ def file_layer_records(model):
             visible = not bool(ly.hidden)
         else:
             visible = bool(getattr(ly, "visible", True))
-        out.append({"name": name, "visible": visible})
+        record = {"name": name, "visible": visible}
+        rgb = [getattr(ly, "color_" + c, None) for c in "rgb"]
+        if all(c is not None for c in rgb):
+            color = [c / 255.0 for c in rgb]
+            opacity = getattr(tag_materials.get(name), "transparency", 1.0)
+            if opacity < 0.99995:
+                color.append(float(opacity))
+            record["color"] = color
+        out.append(record)
     return out
 
 
