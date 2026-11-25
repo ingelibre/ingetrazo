@@ -981,6 +981,8 @@ def _save_document(scene, path, *, large, stream=None, thumbnail=None,
             {"a": [d.a.x(), d.a.y(), d.a.z()],
              "b": [d.b.x(), d.b.y(), d.b.z()],
              "offset": [d.offset.x(), d.offset.y(), d.offset.z()],
+             **({"label_outside": True} if getattr(d, "label_outside", False) else {}),
+             **({"kind": d.kind} if getattr(d, "kind", None) else {}),
              **({"axis": d.axis} if getattr(d, "axis", None) else {}),
              **({"layer": d.layer} if getattr(d, "layer", None) else {}),
              **({"text": d.text} if getattr(d, "text", None) else {})}
@@ -2077,7 +2079,8 @@ def _load_into_inner(scene, path: Path, progress=None) -> None:
         dim = Dimension(
             QVector3D(*raw["a"]), QVector3D(*raw["b"]),
             QVector3D(*raw["offset"]), layer=raw.get("layer") or None,
-            text=raw.get("text") or None, axis=raw.get("axis") or None)
+            text=raw.get("text") or None, axis=raw.get("axis") or None,
+            kind=raw.get("kind"), label_outside=raw.get("label_outside", False))
         dim.bind(scene)         # the vertex at that spot is the one snapped to
         scene.dimensions.append(dim)
 

@@ -1,11 +1,13 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2026 Marco Sumari Tellez and IngeTrazo contributors.
-"""Dimension tool (D): place a static linear dimension.
+"""Dimension tool (D): place a linear or circular dimension.
 
-Three clicks, the classic way:
+For a point-to-point dimension:
 1. first endpoint (snapped to geometry),
 2. second endpoint (snapped),
 3. move to slide the dimension line off the measured segment, click to place.
+
+A segment of a tagged circular contour starts a diameter dimension.
 
 While placing, the rubber band previews the extension + dimension lines and the
 value label shows the live measurement. The committed dimension lives in
@@ -29,8 +31,7 @@ class DimensionTool(AxisMagnet, Tool):
     name = "Dimension"
     shortcut = "D"
     description = (
-        "Place a dimension that shows the distance between two "
-        "points.")
+        "Dimension two points, an edge, a circle or a circular arc.")
 
     def magnet_on(self) -> bool:
         # The second endpoint is a direction from the first (issue #50:
@@ -50,6 +51,7 @@ class DimensionTool(AxisMagnet, Tool):
         # froze: ``(unit offset direction, axis)``.
         self._free: tuple[QVector3D, str | None] | None = None
         self._hold: tuple[QVector3D, str | None] | None = None
+        self._curve = self._hover_curve = self._circular_preview = None
 
     # ---- Lifecycle ----------------------------------------------------------
     def on_activate(self, viewport) -> None:
@@ -86,9 +88,43 @@ class DimensionTool(AxisMagnet, Tool):
         would lock."""
         return self.b is not None
 
+    def _curve_at(self, ctx: ToolContext):
+        if getattr(ctx.snap, "kind", None) == "endpoint":
+            return None
+        pick = getattr(ctx.viewport, "pick_visible_edge", None)
+        edge = pick(ctx.screen.x(), ctx.screen.y()) if pick is not None else None
+        if getattr(edge, "curve", None) is None:
+            return None
+        from core.curve_segments import read_curve
+        return read_curve(ctx.viewport.scene.mesh, edge)
+
+    def _circular_dimension(self, ctx: ToolContext) -> Dimension:
+        shape = self._curve
+        point = ctx.viewport._ray_hit_plane(
+            (ctx.screen.x(), ctx.screen.y()), (shape.center, shape.normal))
+        direction = shape.u
+        if point is not None:
+            delta = point - shape.center
+            if delta.lengthSquared() > 1e-12:
+                angle = math.atan2(QVector3D.dotProduct(delta, shape.v),
+                                   QVector3D.dotProduct(delta, shape.u)) % math.tau
+                if not shape.closed and angle > shape.sweep:
+                    angle = shape.sweep if angle - shape.sweep < math.tau - angle else 0.0
+                direction = shape.u * math.cos(angle) + shape.v * math.sin(angle)
+        return Dimension(shape.center, shape.center + direction * shape.radius,
+                         QVector3D(), kind="diameter")
+
+    def curve_highlight_lines(self):
+        shape = self._curve if self._curve is not None else self._hover_curve
+        return [(edge.a, edge.b) for edge in shape.edges] if shape is not None else []
+
     def on_hover(self, ctx: ToolContext) -> None:
         self._vp = ctx.viewport
         self.hover_point = self._frontal(ctx, ctx.world)
+        if self._curve is not None:
+            self._circular_preview = self._circular_dimension(ctx)
+            return
+        self._hover_curve = self._curve_at(ctx) if self.a is None else None
         if self.b is not None and not self._shift_held():
             self._free = Dimension.placement_for_cursor(
                 self.a, self.b, self.hover_point)
@@ -96,7 +132,17 @@ class DimensionTool(AxisMagnet, Tool):
     def on_click(self, ctx: ToolContext) -> None:
         p = ctx.world
         self._vp = ctx.viewport
+        if self._curve is not None:
+            ctx.viewport.history.execute(AddDimensionCommand(self._circular_dimension(ctx)))
+            self._reset()
+            ctx.viewport.update()
+            return
         if self.a is None:
+            self._curve = self._curve_at(ctx)
+            if self._curve is not None:
+                self._circular_preview = self._circular_dimension(ctx)
+                ctx.viewport.update()
+                return
             # 17.10.26 BastelBaus: clicking on an edge directly creates
             #                      the dimension from both corners of the edge
             edge = getattr(ctx.snap, "edge", None)
@@ -135,6 +181,8 @@ class DimensionTool(AxisMagnet, Tool):
 
     # ---- Live preview -------------------------------------------------------
     def rubber_band_lines(self):
+        if self._circular_preview is not None:
+            return [self._circular_preview.line_points()]
         if self.hover_point is None:
             return []
         if self.a is not None and self.b is None:
@@ -145,6 +193,9 @@ class DimensionTool(AxisMagnet, Tool):
         return []
 
     def value_label(self):
+        if self._circular_preview is not None:
+            dim = self._circular_preview
+            return dim.display_text(dim.label()), dim.midpoint()
         if self.hover_point is None or self.a is None:
             return None
         if self.b is None:
@@ -207,6 +258,7 @@ class DimensionTool(AxisMagnet, Tool):
         return lv * t, None
 
     def _reset(self) -> None:
+        self._curve = self._hover_curve = self._circular_preview = None
         self.a = None
         self.b = None
         self.start_point = None

@@ -6645,6 +6645,34 @@ class MainWindow(QMainWindow):
                            self.repeat_last_command)
             menu.addSeparator()
 
+        if len(sel) == 1:
+            entity = next(iter(sel))
+            if isinstance(entity, Dimension) and entity.kind is not None:
+                from core.history import ChangeCircularDimensionCommand
+
+                def change_dimension(kind, label_outside):
+                    if (kind, label_outside) != (entity.kind, entity.label_outside):
+                        self.viewport.history.execute(
+                            ChangeCircularDimensionCommand(entity, kind, label_outside))
+                        self.viewport.update()
+
+                types = menu.addMenu(tr("Dimension type"))
+                for kind, title in (("diameter", tr("Diameter")), ("radius", tr("Radius"))):
+                    action = types.addAction(title)
+                    action.setCheckable(True)
+                    action.setChecked(entity.kind == kind)
+                    action.triggered.connect(
+                        lambda checked=False, k=kind: change_dimension(k, entity.label_outside))
+
+                positions = menu.addMenu(tr("Text position"))
+                for outside, title in ((False, tr("Centered")), (True, tr("Outside"))):
+                    action = positions.addAction(title)
+                    action.setCheckable(True)
+                    action.setChecked(entity.label_outside == outside)
+                    action.triggered.connect(
+                        lambda checked=False, o=outside: change_dimension(entity.kind, o))
+                menu.addSeparator()
+
         if locked_image is not None and locked_image not in sel:
             name = getattr(locked_image, "name", "") or tr("image")
             menu.addAction(tr("Unlock image “{name}”", name=name),

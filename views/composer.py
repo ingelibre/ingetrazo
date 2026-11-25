@@ -11710,14 +11710,16 @@ class ComposerWindow(QMainWindow):
                 if not scene.entity_visible(dim):
                     continue
                 ap, bp = dim.line_points()
-                a, b = pt(dim.a), pt(dim.b)
                 a2, b2 = pt(ap), pt(bp)
-                out.append(("line", a[0], a[1], a2[0], a2[1]))
-                out.append(("line", b[0], b[1], b2[0], b2[1]))
+                for start, end in dim.extension_segments(ap, bp):
+                    out.append(("line", *pt(start), *pt(end)))
                 out.append(("line", a2[0], a2[1], b2[0], b2[1]))
                 ang = math.atan2(b2[1] - a2[1], b2[0] - a2[0])
                 ends = style.get("ends", "arrow") or "arrow"
-                for (x, y), heading in ((a2, ang), (b2, ang + math.pi)):
+                tips = ((a2, ang), (b2, ang + math.pi))
+                if getattr(dim, "kind", None) == "radius":
+                    tips = tips[1:]
+                for (x, y), heading in tips:
                     if ends == "tick":                # oblique ticks
                         t, k = 1.6, oblique_tick_angle(ang)
                         out.append(("line",
@@ -11731,8 +11733,14 @@ class ComposerWindow(QMainWindow):
                 text = (dim.display_text(measured)
                         if hasattr(dim, "display_text") else measured)
                 deg = readable_deg(b2[0] - a2[0], b2[1] - a2[1])
-                out.append(("text", (a2[0] + b2[0]) / 2, (a2[1] + b2[1]) / 2,
-                            deg, text, size))
+                tx, ty = pt(dim.label_point())
+                if dim.label_outside:
+                    side = -1 if b2[0] < a2[0] else 1
+                    landing = tx + side * size * 1.5
+                    out.append(("line", tx, ty, landing, ty))
+                    tx = landing + side * size * (0.5 + len(text) * 0.3)
+                    deg = 0
+                out.append(("text", tx, ty, deg, text, size))
             for lab in getattr(scene, "text_labels", []) or []:
                 if not scene.entity_visible(lab):
                     continue

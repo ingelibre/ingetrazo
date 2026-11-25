@@ -274,14 +274,18 @@ class Dimension:
 
     def __init__(self, a: QVector3D, b: QVector3D, offset: QVector3D,
                  layer: str | None = None, text: str | None = None,
-                 axis: str | None = None) -> None:
+                 axis: str | None = None, kind: str | None = None,
+                 label_outside: bool = False) -> None:
         self._a = QVector3D(a)
         self._b = QVector3D(b)
         #: displacement from the a–b segment to the dimension line
         self.offset = QVector3D(offset)
         #: ``None`` = aligned; ``"x"``/``"y"``/``"z"`` = linear along that
         #: world axis (see the module docstring).
-        self.axis = axis if axis in _AXIS_VECTORS else None
+        # Circular dimensions store the centre and a point on the true curve.
+        self.kind = kind if kind in ("radius", "diameter") else None
+        self.label_outside = label_outside is True and self.kind is not None
+        self.axis = axis if self.kind is None and axis in _AXIS_VECTORS else None
         #: Layer (tag) the annotation lives on; ``None`` = default
         #: layer. Scenes hide layers, so a plan scene can show a clean model
         #: and an "Anotaciones" layer can carry the cotas and leader texts.
@@ -396,6 +400,8 @@ class Dimension:
         drafter snapped to)."""
         self._scene = scene
         self._holds = {"a": [], "b": []}
+        if self.kind is not None:
+            return
         self._hold("a", resolve_vertex_anchor(scene, self._a))
         self._hold("b", resolve_vertex_anchor(scene, self._b))
 
@@ -429,6 +435,8 @@ class Dimension:
     def display_text(self, measured: str) -> str:
         """What the annotation shows: the custom text with ``<>`` swapped
         for the formatted measurement, or the measurement itself."""
+        if self.kind is not None:
+            measured = ("R" if self.kind == "radius" else "⌀") + measured
         if self.text:
             return self.text.replace("<>", measured)
         return measured
@@ -436,6 +444,8 @@ class Dimension:
     def value(self) -> float:
         """Measured length (metres): the segment's, or — linear — its extent
         along the axis."""
+        if self.kind == "diameter":
+            return 2.0 * (self.b - self.a).length()
         frame = _linear_frame(self.a, self.b, self.axis)
         if frame is not None:
             return abs(QVector3D.dotProduct(self.b - self.a, frame[0]))
@@ -478,6 +488,10 @@ class Dimension:
         the offset. Linear: each endpoint pushed along the extension
         direction until both sit on one line parallel to the axis — the one
         through ``a + offset``."""
+        if self.kind == "radius":
+            return self.a, self.b
+        if self.kind == "diameter":
+            return 2.0 * self.a - self.b, self.b
         frame = _linear_frame(self.a, self.b, self.axis)
         if frame is not None:
             _u, e = frame
@@ -490,6 +504,18 @@ class Dimension:
     def midpoint(self) -> QVector3D:
         ap, bp = self.line_points()
         return (ap + bp) * 0.5
+
+    def label_point(self) -> QVector3D:
+        if self.label_outside:
+            return self.b + (self.b - self.a) * 0.25
+        return self.midpoint()
+
+    def extension_segments(self, ap, bp):
+        if self.kind is None:
+            return ((self.a, ap), (self.b, bp))
+        if self.label_outside:
+            return ((bp, self.label_point()),)
+        return ()
 
     def ends_riding(self, group_ids) -> tuple:
         """Which endpoints (``"a"``, ``"b"``) hold a vertex placed by one of
