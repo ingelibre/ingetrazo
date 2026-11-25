@@ -62,6 +62,9 @@ class _Archive:
     def read_object(self, r, expect=None):
         return 0, None, None
 
+    def _read_clayer_line_style(self, r):
+        pass    # OpenSKP ≥ Nov 2026 reads a tag's line style here
+
     def _skip_clayer_colour_ext(self, r):
         pass
 
