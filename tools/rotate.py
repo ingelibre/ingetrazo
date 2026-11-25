@@ -362,7 +362,15 @@ class RotateTool(ProtractorBase):
         else:
             degs = [deg * float(k) for k in range(1, count + 1)]
         viewport.history.undo()
-        cmd = last["build"](degs)
+        cmd = None
+        if last.get("live"):
+            # Groups only: the fan stays live — one container that
+            # remembers the count and the angle, editable in Entity Info.
+            from core.array import make_array, rotate_recipe
+            cmd = make_array(viewport, last["live"], rotate_recipe(
+                last["center"], last["axis"], deg, count, mode))
+        if cmd is None:
+            cmd = last["build"](degs)
         if cmd is None:
             self._last = None
             return False
@@ -704,7 +712,16 @@ class RotateTool(ProtractorBase):
                 # and after a COPY «3x» / «/3» fan it into a polar array.
                 self._last = {"cmd": cmd, "build": build, "deg": float(deg),
                               "copy": copy,
-                              "sign": -1.0 if deg < 0 else 1.0}
+                              "sign": -1.0 if deg < 0 else 1.0,
+                              # Groups and nothing else: «3x» makes a
+                              # live polar array of them (core/array.py).
+                              "live": (list(self._groups)
+                                       if copy and not (self._sel_faces
+                                                        or self._sel_edges
+                                                        or self._moved_guides)
+                                       else None),
+                              "center": QVector3D(self.start_point),
+                              "axis": QVector3D(self._axis())}
         self._reset()
         apply = getattr(viewport, "_apply_tool_cursor", None)
         if apply is not None:

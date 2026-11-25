@@ -4352,5 +4352,22 @@
  "Push/Pull bases kept with Ctrl stay sound and cracked results are refused (#1155).": "ຖານທີ່ຮັກສາໄວ້ດ້ວຍ Ctrl ໃນການດັນ/ດຶງ ຍັງສົມບູນ ແລະ ຜົນທີ່ແຕກຮ້າວຈະຖືກປະຕິເສດ (#1155).",
  "Camera roll with a 3D mouse (#1406).": "ໝຸນກ້ອງດ້ວຍເມົາສ໌ 3 ມິຕິ (#1406).",
  "A preference to swap orbit and pan on the middle button (#467).": "ຕົວເລືອກສະຫຼັບການໂຄຈອນ ແລະ ການເລື່ອນໃນປຸ່ມກາງ (#467).",
- "IFC export writes the project north, the site location and the owning application (#1498).": "ການສົ່ງອອກ IFC ຂຽນທິດເໜືອຂອງໂຄງການ, ທີ່ຕັ້ງຂອງສະຖານທີ່ ແລະ ແອັບພລິເຄຊັນເຈົ້າຂອງ (#1498)."
+ "IFC export writes the project north, the site location and the owning application (#1498).": "ການສົ່ງອອກ IFC ຂຽນທິດເໜືອຂອງໂຄງການ, ທີ່ຕັ້ງຂອງສະຖານທີ່ ແລະ ແອັບພລິເຄຊັນເຈົ້າຂອງ (#1498).",
+ "Array": "ອາເຣ",
+ "Copies:": "ສຳເນົາ:",
+ "Repeat": "ເຮັດຊ້ຳ",
+ "Total:": "ລວມ:",
+ "How many copies the array has, the original not counted — they are laid out again from the original": "ຈຳນວນສຳເນົາໃນອາເຣ ບໍ່ນັບຕົ້ນສະບັບ — ຈັດວາງໃໝ່ຈາກຕົ້ນສະບັບ",
+ "Repeat: every copy one step further (3x). Divide: the copies share the step out (/3)": "ເຮັດຊ້ຳ: ແຕ່ລະສຳເນົາຫ່າງອອກໄປໜຶ່ງຂັ້ນ (3x). ແບ່ງສ່ວນ: ສຳເນົາແບ່ງຂັ້ນກັນ (/3)",
+ "The whole angle the copies share": "ມຸມທັງໝົດທີ່ສຳເນົາແບ່ງກັນ",
+ "The angle from one copy to the next": "ມຸມຈາກສຳເນົາໜຶ່ງໄປຫາສຳເນົາຖັດໄປ",
+ "The whole distance the copies share": "ໄລຍະທັງໝົດທີ່ສຳເນົາແບ່ງກັນ",
+ "The distance from one copy to the next": "ໄລຍະຈາກສຳເນົາໜຶ່ງໄປຫາສຳເນົາຖັດໄປ",
+ "Full turn": "ຄົບຮອບ",
+ "Spreads the original and its copies evenly all the way round (360°)": "ກະຈາຍຕົ້ນສະບັບ ແລະ ສຳເນົາເທົ່າໆກັນອ້ອມຮອບ (360°)",
+ "{n} in all": "ທັງໝົດ {n}",
+ "Copy made: type 3x + Enter for 3 more, or /3 to divide the distance.": "ສຳເນົາແລ້ວ: ພິມ 3x + Enter ເພື່ອເພີ່ມອີກ 3, ຫຼື /3 ເພື່ອແບ່ງໄລຍະ.",
+ "Copy made: type 3x + Enter for 3 more, or /3 to divide the angle.": "ສຳເນົາແລ້ວ: ພິມ 3x + Enter ເພື່ອເພີ່ມອີກ 3, ຫຼື /3 ເພື່ອແບ່ງມຸມ.",
+ "{n} in all, {m} removed": "ທັງໝົດ {n}, ລຶບອອກ {m}",
+ "Changing a field lays every copy out again, the removed ones too": "ການປ່ຽນຊ່ອງໃດໜຶ່ງຈະຈັດວາງສຳເນົາທັງໝົດໃໝ່ ລວມທັງທີ່ລຶບອອກ"
 }

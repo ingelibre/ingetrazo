@@ -4352,5 +4352,22 @@
  "Push/Pull bases kept with Ctrl stay sound and cracked results are refused (#1155).": "Основите, запазени с Ctrl при избутване, остават здрави, а напуканите резултати се отхвърлят (#1155).",
  "Camera roll with a 3D mouse (#1406).": "Накланяне на камерата с 3D мишка (#1406).",
  "A preference to swap orbit and pan on the middle button (#467).": "Настройка за размяна на орбита и панорамиране на средния бутон (#467).",
- "IFC export writes the project north, the site location and the owning application (#1498).": "Експортът в IFC записва севера на проекта, местоположението на терена и приложението собственик (#1498)."
+ "IFC export writes the project north, the site location and the owning application (#1498).": "Експортът в IFC записва севера на проекта, местоположението на терена и приложението собственик (#1498).",
+ "Array": "Масив",
+ "Copies:": "Копия:",
+ "Repeat": "Повтаряне",
+ "Total:": "Общо:",
+ "How many copies the array has, the original not counted — they are laid out again from the original": "Колко копия има масивът, без оригинала — подреждат се наново от оригинала",
+ "Repeat: every copy one step further (3x). Divide: the copies share the step out (/3)": "Повтаряне: всяко копие една стъпка по-нататък (3x). Разделяне: копията си поделят стъпката (/3)",
+ "The whole angle the copies share": "Целият ъгъл, който копията си поделят",
+ "The angle from one copy to the next": "Ъгълът от едно копие до следващото",
+ "The whole distance the copies share": "Цялото разстояние, което копията си поделят",
+ "The distance from one copy to the next": "Разстоянието от едно копие до следващото",
+ "Full turn": "Пълен оборот",
+ "Spreads the original and its copies evenly all the way round (360°)": "Разпределя оригинала и копията му равномерно по целия кръг (360°)",
+ "{n} in all": "Общо: {n}",
+ "Copy made: type 3x + Enter for 3 more, or /3 to divide the distance.": "Копието е готово: въведете 3x + Enter за още 3 или /3, за да разделите разстоянието.",
+ "Copy made: type 3x + Enter for 3 more, or /3 to divide the angle.": "Копието е готово: въведете 3x + Enter за още 3 или /3, за да разделите ъгъла.",
+ "{n} in all, {m} removed": "Общо: {n}, премахнати: {m}",
+ "Changing a field lays every copy out again, the removed ones too": "Промяна на поле подрежда наново всички копия, и премахнатите"
 }

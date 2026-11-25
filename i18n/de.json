@@ -4349,5 +4349,22 @@
  "Push/Pull bases kept with Ctrl stay sound and cracked results are refused (#1155).": "Mit Strg beibehaltene Basen bei Drücken/Ziehen bleiben intakt und rissige Ergebnisse werden abgelehnt (#1155).",
  "Camera roll with a 3D mouse (#1406).": "Kamerarollen mit einer 3D-Maus (#1406).",
  "A preference to swap orbit and pan on the middle button (#467).": "Eine Einstellung, um Orbit und Schwenken auf der mittleren Taste zu tauschen (#467).",
- "IFC export writes the project north, the site location and the owning application (#1498).": "Der IFC-Export schreibt Projektnord, Standort und die besitzende Anwendung (#1498)."
+ "IFC export writes the project north, the site location and the owning application (#1498).": "Der IFC-Export schreibt Projektnord, Standort und die besitzende Anwendung (#1498).",
+ "Array": "Reihe",
+ "Copies:": "Kopien:",
+ "Repeat": "Wiederholen",
+ "Total:": "Gesamt:",
+ "How many copies the array has, the original not counted — they are laid out again from the original": "Wie viele Kopien die Reihe hat, ohne das Original — sie werden vom Original aus neu angeordnet",
+ "Repeat: every copy one step further (3x). Divide: the copies share the step out (/3)": "Wiederholen: jede Kopie einen Schritt weiter (3x). Teilen: die Kopien teilen sich den Schritt (/3)",
+ "The whole angle the copies share": "Der ganze Winkel, den sich die Kopien teilen",
+ "The angle from one copy to the next": "Der Winkel von einer Kopie zur nächsten",
+ "The whole distance the copies share": "Der ganze Abstand, den sich die Kopien teilen",
+ "The distance from one copy to the next": "Der Abstand von einer Kopie zur nächsten",
+ "Full turn": "Voller Kreis",
+ "Spreads the original and its copies evenly all the way round (360°)": "Verteilt das Original und seine Kopien gleichmäßig über den ganzen Kreis (360°)",
+ "{n} in all": "{n} insgesamt",
+ "Copy made: type 3x + Enter for 3 more, or /3 to divide the distance.": "Kopie erstellt: 3x + Eingabe für 3 weitere, oder /3, um den Abstand zu teilen.",
+ "Copy made: type 3x + Enter for 3 more, or /3 to divide the angle.": "Kopie erstellt: 3x + Eingabe für 3 weitere, oder /3, um den Winkel zu teilen.",
+ "{n} in all, {m} removed": "{n} insgesamt, {m} entfernt",
+ "Changing a field lays every copy out again, the removed ones too": "Ändert man ein Feld, werden alle Kopien neu angeordnet, auch die entfernten"
 }

@@ -4352,5 +4352,22 @@
  "Push/Pull bases kept with Ctrl stay sound and cracked results are refused (#1155).": "ฐานที่คงไว้ด้วย Ctrl ในการดัน/ดึงยังสมบูรณ์ และผลลัพธ์ที่แตกร้าวจะถูกปฏิเสธ (#1155)",
  "Camera roll with a 3D mouse (#1406).": "หมุนกล้องรอบแกนมุมมองด้วยเมาส์ 3 มิติ (#1406)",
  "A preference to swap orbit and pan on the middle button (#467).": "ตัวเลือกสลับการโคจรและการเลื่อนบนปุ่มกลาง (#467)",
- "IFC export writes the project north, the site location and the owning application (#1498).": "การส่งออก IFC เขียนทิศเหนือของโครงการ ตำแหน่งที่ตั้ง และแอปพลิเคชันเจ้าของ (#1498)"
+ "IFC export writes the project north, the site location and the owning application (#1498).": "การส่งออก IFC เขียนทิศเหนือของโครงการ ตำแหน่งที่ตั้ง และแอปพลิเคชันเจ้าของ (#1498)",
+ "Array": "อาร์เรย์",
+ "Copies:": "สำเนา:",
+ "Repeat": "ทำซ้ำ",
+ "Total:": "รวม:",
+ "How many copies the array has, the original not counted — they are laid out again from the original": "จำนวนสำเนาในอาร์เรย์ ไม่นับต้นฉบับ — จัดวางใหม่จากต้นฉบับ",
+ "Repeat: every copy one step further (3x). Divide: the copies share the step out (/3)": "ทำซ้ำ: แต่ละสำเนาห่างออกไปหนึ่งช่วง (3x) แบ่ง: สำเนาแบ่งช่วงกัน (/3)",
+ "The whole angle the copies share": "มุมทั้งหมดที่สำเนาแบ่งกัน",
+ "The angle from one copy to the next": "มุมจากสำเนาหนึ่งไปยังสำเนาถัดไป",
+ "The whole distance the copies share": "ระยะทั้งหมดที่สำเนาแบ่งกัน",
+ "The distance from one copy to the next": "ระยะจากสำเนาหนึ่งไปยังสำเนาถัดไป",
+ "Full turn": "เต็มรอบ",
+ "Spreads the original and its copies evenly all the way round (360°)": "กระจายต้นฉบับและสำเนาเท่า ๆ กันรอบวง (360°)",
+ "{n} in all": "ทั้งหมด {n}",
+ "Copy made: type 3x + Enter for 3 more, or /3 to divide the distance.": "คัดลอกแล้ว: พิมพ์ 3x + Enter เพื่อเพิ่มอีก 3 หรือ /3 เพื่อแบ่งระยะ",
+ "Copy made: type 3x + Enter for 3 more, or /3 to divide the angle.": "คัดลอกแล้ว: พิมพ์ 3x + Enter เพื่อเพิ่มอีก 3 หรือ /3 เพื่อแบ่งมุม",
+ "{n} in all, {m} removed": "ทั้งหมด {n} ลบออก {m}",
+ "Changing a field lays every copy out again, the removed ones too": "การเปลี่ยนช่องใดจะจัดวางสำเนาทั้งหมดใหม่ รวมทั้งที่ลบออก"
 }

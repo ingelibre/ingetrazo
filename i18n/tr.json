@@ -4348,5 +4348,22 @@
   "Push/Pull bases kept with Ctrl stay sound and cracked results are refused (#1155).": "İt/Çek'te Ctrl ile korunan tabanlar sağlam kalır ve çatlak sonuçlar reddedilir (#1155).",
   "Camera roll with a 3D mouse (#1406).": "3B fare ile kamera yuvarlanması (#1406).",
   "A preference to swap orbit and pan on the middle button (#467).": "Orta düğmede yörünge ile kaydırmayı değiştirme tercihi (#467).",
-  "IFC export writes the project north, the site location and the owning application (#1498).": "IFC dışa aktarımı proje kuzeyini, arsa konumunu ve sahip uygulamayı yazar (#1498)."
+  "IFC export writes the project north, the site location and the owning application (#1498).": "IFC dışa aktarımı proje kuzeyini, arsa konumunu ve sahip uygulamayı yazar (#1498).",
+  "Array": "Dizi",
+  "Copies:": "Kopyalar:",
+  "Repeat": "Tekrarla",
+  "Total:": "Toplam:",
+  "How many copies the array has, the original not counted — they are laid out again from the original": "Dizide kaç kopya olduğu, asıl hariç — asıldan yeniden yerleştirilirler",
+  "Repeat: every copy one step further (3x). Divide: the copies share the step out (/3)": "Tekrarla: her kopya bir adım ileride (3x). Böl: kopyalar adımı paylaşır (/3)",
+  "The whole angle the copies share": "Kopyaların paylaştığı açının tamamı",
+  "The angle from one copy to the next": "Bir kopyadan sonrakine açı",
+  "The whole distance the copies share": "Kopyaların paylaştığı mesafenin tamamı",
+  "The distance from one copy to the next": "Bir kopyadan sonrakine mesafe",
+  "Full turn": "Tam tur",
+  "Spreads the original and its copies evenly all the way round (360°)": "Aslı ve kopyalarını tüm tura (360°) eşit dağıtır",
+  "{n} in all": "Toplam {n}",
+  "Copy made: type 3x + Enter for 3 more, or /3 to divide the distance.": "Kopya yapıldı: 3 tane daha için 3x + Enter, mesafeyi bölmek için /3 yazın.",
+  "Copy made: type 3x + Enter for 3 more, or /3 to divide the angle.": "Kopya yapıldı: 3 tane daha için 3x + Enter, açıyı bölmek için /3 yazın.",
+  "{n} in all, {m} removed": "Toplam {n}, {m} kaldırıldı",
+  "Changing a field lays every copy out again, the removed ones too": "Bir alanı değiştirmek, kaldırılanlar dahil tüm kopyaları yeniden yerleştirir"
 }

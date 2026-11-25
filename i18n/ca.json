@@ -4351,5 +4351,22 @@
  "Push/Pull bases kept with Ctrl stay sound and cracked results are refused (#1155).": "Les bases que es conserven amb Ctrl a Empènyer/Estirar queden sanes i es rebutgen els resultats esquerdats (#1155).",
  "Camera roll with a 3D mouse (#1406).": "Gir de càmera amb un ratolí 3D (#1406).",
  "A preference to swap orbit and pan on the middle button (#467).": "Una preferència per intercanviar òrbita i desplaçament al botó central (#467).",
- "IFC export writes the project north, the site location and the owning application (#1498).": "L'exportació IFC escriu el nord del projecte, la ubicació del lloc i l'aplicació propietària (#1498)."
+ "IFC export writes the project north, the site location and the owning application (#1498).": "L'exportació IFC escriu el nord del projecte, la ubicació del lloc i l'aplicació propietària (#1498).",
+ "Array": "Matriu",
+ "Copies:": "Còpies:",
+ "Repeat": "Repeteix",
+ "Total:": "Total:",
+ "How many copies the array has, the original not counted — they are laid out again from the original": "Quantes còpies té la matriu, sense comptar l'original — es tornen a col·locar a partir de l'original",
+ "Repeat: every copy one step further (3x). Divide: the copies share the step out (/3)": "Repeteix: cada còpia un pas més enllà (3x). Divideix: les còpies es reparteixen el pas (/3)",
+ "The whole angle the copies share": "L'angle sencer que es reparteixen les còpies",
+ "The angle from one copy to the next": "L'angle d'una còpia a la següent",
+ "The whole distance the copies share": "La distància sencera que es reparteixen les còpies",
+ "The distance from one copy to the next": "La distància d'una còpia a la següent",
+ "Full turn": "Volta completa",
+ "Spreads the original and its copies evenly all the way round (360°)": "Reparteix l'original i les seves còpies per igual en tota la volta (360°)",
+ "{n} in all": "{n} en total",
+ "Copy made: type 3x + Enter for 3 more, or /3 to divide the distance.": "Còpia feta: escriu 3x + Retorn per a 3 més, o /3 per dividir la distància.",
+ "Copy made: type 3x + Enter for 3 more, or /3 to divide the angle.": "Còpia feta: escriu 3x + Retorn per a 3 més, o /3 per dividir l'angle.",
+ "{n} in all, {m} removed": "{n} en total, {m} tretes",
+ "Changing a field lays every copy out again, the removed ones too": "En canviar un camp es tornen a col·locar totes les còpies, també les tretes"
 }

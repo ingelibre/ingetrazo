@@ -4349,5 +4349,22 @@
  "Push/Pull bases kept with Ctrl stay sound and cracked results are refused (#1155).": "밀기/당기기에서 Ctrl로 남긴 밑면이 온전하게 유지되고 균열이 생긴 결과는 거부됩니다 (#1155).",
  "Camera roll with a 3D mouse (#1406).": "3D 마우스로 카메라 롤 (#1406).",
  "A preference to swap orbit and pan on the middle button (#467).": "가운데 버튼의 궤도 회전과 이동을 바꾸는 설정 (#467).",
- "IFC export writes the project north, the site location and the owning application (#1498).": "IFC 내보내기가 프로젝트 북쪽, 대지 위치, 소유 응용 프로그램을 기록합니다 (#1498)."
+ "IFC export writes the project north, the site location and the owning application (#1498).": "IFC 내보내기가 프로젝트 북쪽, 대지 위치, 소유 응용 프로그램을 기록합니다 (#1498).",
+ "Array": "배열",
+ "Copies:": "사본:",
+ "Repeat": "반복",
+ "Total:": "합계:",
+ "How many copies the array has, the original not counted — they are laid out again from the original": "배열의 사본 수, 원본은 제외 — 원본에서 다시 배치됩니다",
+ "Repeat: every copy one step further (3x). Divide: the copies share the step out (/3)": "반복: 사본마다 한 단계씩 더 멀리 (3x). 분할: 사본이 단계를 나눠 가집니다 (/3)",
+ "The whole angle the copies share": "사본이 나눠 갖는 전체 각도",
+ "The angle from one copy to the next": "한 사본에서 다음 사본까지의 각도",
+ "The whole distance the copies share": "사본이 나눠 갖는 전체 거리",
+ "The distance from one copy to the next": "한 사본에서 다음 사본까지의 거리",
+ "Full turn": "한 바퀴",
+ "Spreads the original and its copies evenly all the way round (360°)": "원본과 사본을 한 바퀴(360°)에 고르게 배치합니다",
+ "{n} in all": "모두 {n}개",
+ "Copy made: type 3x + Enter for 3 more, or /3 to divide the distance.": "복사됨: 3x + Enter로 3개 더, /3으로 거리를 나눕니다.",
+ "Copy made: type 3x + Enter for 3 more, or /3 to divide the angle.": "복사됨: 3x + Enter로 3개 더, /3으로 각도를 나눕니다.",
+ "{n} in all, {m} removed": "모두 {n}개, {m}개 제거됨",
+ "Changing a field lays every copy out again, the removed ones too": "항목을 바꾸면 제거한 것까지 모든 사본을 다시 배치합니다"
 }

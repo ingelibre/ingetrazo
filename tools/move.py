@@ -873,7 +873,15 @@ class MoveTool(Tool):
         else:
             deltas = [delta * float(k) for k in range(1, count + 1)]
         viewport.history.undo()
-        cmd = last["build"](deltas)
+        cmd = None
+        if last.get("live"):
+            # Groups only: the array stays live — one container that
+            # remembers the count and the step, editable in Entity Info.
+            from core.array import make_array, move_recipe
+            cmd = make_array(viewport, last["live"],
+                             move_recipe(delta, count, mode))
+        if cmd is None:
+            cmd = last["build"](deltas)
         if cmd is None:
             self._last = None
             return False
@@ -1387,7 +1395,14 @@ class MoveTool(Tool):
                 viewport.history.execute(cmd)
                 # Right after the copy, "3x" / "/3" make an array.
                 self._last = {"cmd": cmd, "build": build,
-                              "delta": QVector3D(delta)}
+                              "delta": QVector3D(delta),
+                              # Groups and nothing else: «3x» makes a
+                              # live array of them (core/array.py).
+                              "live": (list(self._groups)
+                                       if not (self._sel_faces
+                                               or self._sel_edges
+                                               or self._moved_guides)
+                                       else None)}
             self._reset()
             viewport.update()
             return

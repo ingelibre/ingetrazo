@@ -644,6 +644,10 @@ class Scene:
         # has just become the world's.
         from core.explode import rotate_offsets
         rotate_offsets(group, xform)
+        if getattr(group, "array", None):
+            # So does a live array's step (core/array.py).
+            from core.array import rebase_frame
+            rebase_frame(group, xform)
         if getattr(group, "images", None):
             group.images = [image.transformed(xform)
                             for image in group.images]
