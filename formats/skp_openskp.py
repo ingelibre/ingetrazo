@@ -1929,7 +1929,15 @@ def _adapt_inner(model, name: str, skp_path=None, *, consume=False):
         payload["materials"] = materials
     file_layers = file_layer_records(model)
     if file_layers:
+        placements = {ly.name: getattr(ly, "folder", None)
+                      for ly in getattr(model, "layers", []) or []}
+        for raw in file_layers:
+            folder = placements.get(raw["name"])
+            if isinstance(folder, str) and folder:
+                raw["folder"] = folder
         payload["layers"] = file_layers
+    if getattr(model, "layer_folders", None):
+        payload["layer_folders"] = [dict(f) for f in model.layer_folders]
     # The file's saved scenes (camera + hidden layers), inches → metres.
     scenes = []
     for pg in getattr(model, "pages", []) or []:
@@ -2050,6 +2058,7 @@ def _parse_raw(openskp, openskp_compat, path):
     try:
         model = openskp.SkpFile.open(str(path)).parse()
         openskp_compat.resolve_face_layers(model)   # tag ids → names (#700)
+        openskp_compat.resolve_layer_folders(model)   # VFF tag hierarchy
         openskp_compat.resolve_vff_annotations(model)   # dims/texts (#1226)
     finally:
         if enabled:

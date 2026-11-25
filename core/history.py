@@ -4359,12 +4359,15 @@ class SnapshotImport(Command):
         ("guides", "added_guides", "removed_guides"),
         # the sheet browser's folders (core.sheet_folders)
         ("sheet_folders", "added_sheet_folders", "removed_sheet_folders"),
+        ("layer_folders", "added_layer_folders", "removed_layer_folders"),
     )
 
     def __init__(self, mutate) -> None:
         self.mutate = mutate
         self.before: Optional[dict] = None
         self.after: Optional[dict] = None
+        self._folder_parents_before = None
+        self._folder_parents_after = None
         for _, added, removed in self._TRACKED:
             setattr(self, added, [])
             setattr(self, removed, [])
@@ -4373,6 +4376,7 @@ class SnapshotImport(Command):
     def changed(self) -> bool:
         """Whether the run did anything undo would have to revert."""
         return (self.before != self.after
+                or self._folder_parents_before != self._folder_parents_after
                 or any(getattr(self, added) or getattr(self, removed)
                        for _, added, removed in self._TRACKED))
 
@@ -4381,6 +4385,7 @@ class SnapshotImport(Command):
         if self.after is None:
             lists_before = {name: list(getattr(scene, name))
                             for name, _, _ in self._TRACKED}
+            self._folder_parents_before = dict(scene.folder_parents)
             self.before = m.capture_state()
             try:
                 self.mutate(scene)
@@ -4390,8 +4395,10 @@ class SnapshotImport(Command):
                 # Slice assignment preserves references held by scripting scopes.
                 for name, items in lists_before.items():
                     getattr(scene, name)[:] = items
+                scene.folder_parents = dict(self._folder_parents_before)
                 raise
             self.after = m.capture_state()
+            self._folder_parents_after = dict(scene.folder_parents)
             for name, added, removed in self._TRACKED:
                 before, now = lists_before[name], getattr(scene, name)
                 setattr(self, added, [x for x in now if x not in before])
@@ -4399,6 +4406,7 @@ class SnapshotImport(Command):
                                         if x not in now])
         else:
             m.restore_state(self.after)
+            scene.folder_parents = dict(self._folder_parents_after)
             for name, added, removed in self._TRACKED:
                 items = getattr(scene, name)
                 for _, x in getattr(self, removed):
@@ -4414,6 +4422,8 @@ class SnapshotImport(Command):
     def undo(self, scene) -> None:
         if self.before is not None:
             scene.mesh.restore_state(self.before)
+        if self._folder_parents_before is not None:
+            scene.folder_parents = dict(self._folder_parents_before)
         for name, added, removed in self._TRACKED:
             items = getattr(scene, name)
             for x in getattr(self, added):

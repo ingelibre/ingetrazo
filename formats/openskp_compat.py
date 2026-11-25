@@ -76,6 +76,11 @@ their owning definition or the model root (marked ``vff_recovered``).
 A text whose connection type the reader cannot resolve (e.g. type 4)
 keeps its label position but no anchor.
 
+**Tag folders in VFF files.** The reader returns the flat layer list but
+drops the layer manager's 9B3A folder tree. :func:`resolve_layer_folders`
+recovers it from the parse's retained input, including nested and empty
+folders, tag assignments and inherited hidden state.
+
 All patches are detected by BEHAVIOUR, not by version: once the upstream
 reader carries ``_connection_paths`` the first is left alone, the second
 only touches a face layer that is still a number, the anchor and list
@@ -267,6 +272,93 @@ def resolve_face_layers(model) -> int:
             face.layer = "" if name in _DEFAULT_TAGS else name
             changed += 1
     return changed
+
+
+def resolve_layer_folders(model) -> int:
+    """Recover VFF tag folders from the parse's own model bytes.
+
+    The layer manager's 9B3A record holds an unnamed root folder (803E).
+    Each folder has a UTF-8 name (813E), child folders (833E), length-prefixed
+    tag ids (843E), and its hidden byte (823E). These fields were checked
+    against nested, empty, duplicate-named and hidden folders saved by SketchUp.
+    Only the small F801 layer-manager block is read, without rebuilding the
+    model's geometry tree. Call before resolve_vff_annotations frees its input.
+    """
+    inputs = getattr(_parse_tables, "vff", None)
+    if not inputs:
+        return 0                     # classic files have no tag folders
+    from openskp import _core
+    from core.layers import unique_name
+
+    data = inputs[0]
+    headers = _core._flat_headers(data, 0, len(data))
+    if len(headers) == 1 and headers[0][0] == "F401":
+        _, off, size = headers[0]
+        headers = _core._flat_headers(data, off + 6, off + 6 + size)
+    root = None
+    for tag, off, size in headers:
+        if tag != "F801":
+            continue
+        manager = _core._tlv_find(
+            _core._tlv_items(data[off + 6:off + 6 + size]), 0x3A98)
+        folders = _core._tlv_find(_core._tlv_items(manager) or [], 0x3A9B) \
+            if manager is not None else None
+        if folders is not None:
+            root = _core._tlv_find(_core._tlv_items(folders), 0x3E80)
+            break
+    if root is None:
+        return 0
+
+    records, assignments, hidden_tags = [], {}, set()
+    names = set()
+    table = getattr(_parse_tables, "layers", None) or {}
+
+    def visit(raw, parent=None, hidden=False, depth=0):
+        if depth > 64 or len(records) >= 10000:
+            return
+        fields = _core._tlv_items(raw) or []
+        name = (_core._tlv_find(fields, 0x3E81) or b"").decode(
+            "utf8", errors="replace")
+        flag = _core._tlv_find(fields, 0x3E82)
+        hidden = hidden or bool(flag and flag[0] == 1)
+        if name:
+            if name in names:
+                name = unique_name(names, name)
+            names.add(name)
+            record = {"name": name}
+            if parent:
+                record["parent"] = parent
+            records.append(record)
+        else:
+            name = parent             # the unnamed root is not a UI folder
+        ids = _core._tlv_find(fields, 0x3E84) or b""
+        offset = 0
+        while offset < len(ids):
+            size = ids[offset]
+            if not 1 <= size <= 8 or offset + 1 + size > len(ids):
+                break
+            layer = table.get(int.from_bytes(ids[offset + 1:offset + 1 + size],
+                                             "little"))
+            if layer:
+                assignments[layer] = name
+                if hidden:
+                    hidden_tags.add(layer)
+            offset += 1 + size
+        children = _core._tlv_find(fields, 0x3E83) or b""
+        for tag, child in _core._tlv_items(children) or []:
+            if tag == 0x3E80:
+                visit(child, name, hidden, depth + 1)
+
+    visit(root)
+    # Break the recursive closure's cycle: no model bytes wait for cyclic GC.
+    visit = None
+    model.layer_folders = records
+    for layer in getattr(model, "layers", []) or []:
+        if layer.name in assignments:
+            layer.folder = assignments[layer.name]
+        if layer.name in hidden_tags:
+            layer.hidden = True
+    return len(records)
 
 
 def _keep_vff_annotation_inputs() -> bool:

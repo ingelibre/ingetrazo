@@ -26,6 +26,7 @@ def test_raw_parse_pauses_collection_and_restores_state(initially_enabled,
     openskp = SimpleNamespace(SkpFile=SimpleNamespace(open=lambda p: File()))
     compat = SimpleNamespace(
         resolve_face_layers=lambda m: seen.append(("layers", m, gc.isenabled())),
+        resolve_layer_folders=lambda m: seen.append(("folders", m, gc.isenabled())),
         resolve_vff_annotations=lambda m: seen.append(("vff", m, gc.isenabled())))
     try:
         (gc.enable if initially_enabled else gc.disable)()
@@ -36,6 +37,7 @@ def test_raw_parse_pauses_collection_and_restores_state(initially_enabled,
         else:
             assert adapter._parse_raw(openskp, compat, "sample.skp") is model
             assert seen == [("parse", False), ("layers", model, False),
+                            ("folders", model, False),
                             ("vff", model, False)]
         assert gc.isenabled() is initially_enabled
     finally:

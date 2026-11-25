@@ -430,6 +430,22 @@ def _apply_payload_inner(scene, payload, progress=None, *, consume=False) -> str
                         if attrs.get("mat") in remap:
                             attrs["mat"] = remap[attrs["mat"]]
 
+    # Register folders before their layers, including empty folders. Existing
+    # folders keep the hierarchy the user chose before this import.
+    if payload.get("layer_folders"):
+        from core.layers import folders_of, move_folder
+        known_folders = set(folders_of(scene))
+        added_folders = set()
+        for raw in payload["layer_folders"]:
+            name = raw.get("name")
+            if isinstance(name, str) and name and name not in known_folders:
+                scene.layer_folders.append(name)
+                known_folders.add(name)
+                added_folders.add(name)
+        for raw in payload["layer_folders"]:
+            if raw.get("name") in added_folders and raw.get("parent"):
+                move_folder(scene, raw["name"], raw["parent"])
+
     # The file's layers (.skp tags) join the scene's layer list, keeping
     # their visibility — layers already present are left untouched (a re-import
     # must not flip what the user toggled).
@@ -438,8 +454,7 @@ def _apply_payload_inner(scene, payload, progress=None, *, consume=False) -> str
         known = {ly.name for ly in scene.layers}
         for raw in payload["layers"]:
             if raw.get("name") and raw["name"] not in known:
-                scene.layers.append(Layer(raw["name"],
-                                          visible=raw.get("visible", True)))
+                scene.layers.append(Layer.from_dict(raw))
                 known.add(raw["name"])
 
     # The file's saved scenes become saved views (camera + hidden layers);
