@@ -114,6 +114,84 @@ def _probe_hypot(mod):
     return None
 
 
+_world_boxes = None
+
+
+def qt_world_boxes():
+    """Return the world-box kernel if it reproduces the installed Qt build."""
+    import core._native as me
+
+    global _world_boxes
+    kernel = getattr(me.native, "qt_world_boxes", None)
+    if kernel is None:
+        return None
+    if _world_boxes is None or _world_boxes[0] is not kernel:
+        _world_boxes = (kernel, None)
+        try:
+            if _probe_world_boxes(kernel):
+                _world_boxes = (kernel, kernel)
+        except Exception:                  # noqa: BLE001 — optional acceleration
+            pass
+    return _world_boxes[1]
+
+
+def _probe_world_boxes(kernel):
+    import numpy as np
+    from PySide6.QtGui import QMatrix4x4 as Matrix, QVector3D as Vec
+
+    identity = Matrix()
+    translated = Matrix()
+    translated.translate(3.25, -2.5, 1.75)
+    scaled = Matrix(translated)
+    scaled.scale(-1.25, .75, 1.5)
+    planar = Matrix(scaled)
+    planar.rotate(31., 0., 0., 1.)
+    rotated = Matrix(scaled)
+    rotated.rotate(27., .25, .5, 1.)
+    general = Matrix(*rotated.copyDataTo())
+    normal = (.375, -1.125, .625, 1.375, .75, 2.25)
+    cases = [(m, normal) for m in (identity, translated, scaled, planar, rotated, general)]
+
+    def affine(first_row):
+        return Matrix(*first_row, 0., 1., 0., .25, 0., 0., 1., .5, 0., 0., 0., 1.)
+
+    # A fused multiply-add can change the nonzero result of these cancellations.
+    a, b, offset = 1. + 2.**-23, 1. - 2.**-23, 2.**-45
+    fused = affine((a, -1., 0., offset))
+    optimized = Matrix(fused)
+    optimized.optimize()
+    diagonal = Matrix()
+    diagonal.translate(2.**-24 - 1., .25, .5)
+    diagonal.scale(a, 1., 1.)
+    cases.extend((m, p + p) for m, p in (
+        (fused, (b, 1., 1.)), (optimized, (b, 1., 1.)),
+        (affine((-1., a, 0., offset)), (1., b, 1.)),
+        (affine((-1., 0., a, offset)), (1., .5, b)),
+        (diagonal, (b, .75, 2.)),
+        (affine((2.**120, -2.**120, 1., .25)), (1., 1., 1.)),
+        (identity, (2.**-144, 2.**-142, 2.**-140)),
+    ))
+    count = len(cases)
+    perspective = Matrix()
+    perspective.perspective(45., 1., .1, 100.)
+    cases.extend(((identity, (-0., .25, .5, 0., .75, 1.)), (perspective, normal)))
+    local = np.asarray([box for _, box in cases], dtype=np.float32)
+    mats = np.asarray([m.data() for m, _ in cases], dtype=np.float32)
+    boxes, supported = kernel(local, mats)
+    if (boxes.shape != local.shape or boxes.dtype != np.float32
+            or supported.shape != (len(cases),) or supported.dtype != np.bool_
+            or not supported[:count].all() or supported[count:].any()):
+        return False
+
+    expected = []
+    for (matrix, _), (lx, ly, lz, hx, hy, hz) in zip(cases[:count], local.tolist()):
+        points = (matrix.map(Vec(x, y, z)).toTuple()
+                  for x in (lx, hx) for y in (ly, hy) for z in (lz, hz))
+        axes = tuple(zip(*points))
+        expected.append((*map(min, axes), *map(max, axes)))
+    return boxes[:count].tobytes() == np.asarray(expected, np.float32).tobytes()
+
+
 #: How many starts in a row with the engine on are still under way: a
 #: start adds one, the first drawn frame puts it back to 0. A start that
 #: finds FAILED_STARTS of them never drawn turns the engine off

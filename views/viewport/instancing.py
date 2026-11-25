@@ -5,9 +5,10 @@ from __future__ import annotations
 
 from itertools import compress as _compress
 
-from PySide6.QtGui import QVector2D, QVector3D, QVector4D
+from PySide6.QtGui import QMatrix4x4, QVector2D, QVector3D, QVector4D
 from PySide6.QtOpenGL import QOpenGLBuffer, QOpenGLVertexArrayObject
 from core.group import Group
+from views.viewport.chunks import ChunkCacheMixin
 from core.style import effective_back_color, xray_enabled
 from core.materials import material_sig as _material_sig
 from views.viewport._support import (_NO_INSTANCING, _NO_BACK_TINT, GL_FLOAT,
@@ -693,6 +694,9 @@ class InstancingMixin:
                     min(p.z() for p in pts)),
                    (max(p.x() for p in pts), max(p.y() for p in pts),
                     max(p.z() for p in pts)))
+        return self._cache_placement_frame(g, m, key, box, cache)
+
+    def _cache_placement_frame(self, g, m, key, box, cache):
         inv, ok = m.inverted()
         if len(cache) > 4 * max(64, len(getattr(self, "_inst_pool", (0, ()))[1]
                                          if getattr(self, "_inst_pool", None)
@@ -933,6 +937,80 @@ class InstancingMixin:
                 (id(g) in pv for g in groups), bool, count=len(groups)))
         return memo[2]
 
+    _MOVED_BOX_METHODS = (_placement_bbox, _placement_frame, _proto_base_chunk,
+                          ChunkCacheMixin._group_chunk)
+
+    def _moved_box_kernel(self):
+        from views.viewport import Viewport
+
+        if (type(self) is not Viewport or self.scene.edit_group is not None
+                or getattr(self, "_verts_preview", None)):
+            return None
+        methods = (self._placement_bbox, self._placement_frame,
+                   self._proto_base_chunk, self._group_chunk)
+        if any(getattr(bound, "__func__", None) is not stock
+               for bound, stock in zip(methods, self._MOVED_BOX_METHODS)):
+            return None
+        from core import _native
+        return _native.qt_world_boxes()
+
+    def _moved_box_source(self, group, prepared):
+        if type(group) is not Group or type(group.xform) is not QMatrix4x4:
+            return None
+        owner = group.owner
+        if owner is not None and type(owner) is not Group:
+            return None
+        paint = group.material or (owner.material if owner is not None else None)
+        layer = group.layer or (owner.layer if owner is not None else None)
+        if layer is not None and type(layer) is not str:
+            return None
+        key = (id(group.mesh), _material_sig(paint), layer)
+        if key not in prepared and len(prepared) < 256:
+            base = self._proto_base_chunk(group.mesh, _paint_of(self, group))
+            box = base.get("bbox")
+            # Round to Qt's float32 coordinates before mapping the endpoints.
+            prepared[key] = ((base.get("uid"), QVector3D(*box[0]).toTuple()
+                              + QVector3D(*box[1]).toTuple()) if box else None)
+        return prepared.get(key)
+
+    def _batch_moved_bounds(self, pool, moved, matrices, kernel):
+        import numpy as np
+
+        groups, codes, protos = pool[1], pool[4], pool[5]
+        prepared = {}
+        sources, local = [], []
+        indices = moved.tolist()
+        unknown = (np.nan,) * 6
+        for i in indices:
+            g = groups[i]
+            if (g.xform.determinant() < 0.0) != protos[int(codes[i])][2]:
+                return None
+            source = self._moved_box_source(g, prepared)
+            sources.append(source)
+            local.append(source[1] if source is not None else unknown)
+        boxes, supported = kernel(np.asarray(local, dtype=np.float32), matrices)
+        cache = getattr(self, "_placement_frames", None)
+        if cache is None:
+            cache = self._placement_frames = {}
+        lows, highs = [], []
+        for i, source, row, valid in zip(indices, sources, boxes.tolist(), supported.tolist()):
+            g = groups[i]
+            if valid:
+                m = g.xform
+                key = (source[0], tuple(m.data()))
+                hit = cache.get(id(g))
+                if hit is not None and hit[0] == key:
+                    box = hit[1][0]
+                else:
+                    box = (tuple(row[:3]), tuple(row[3:]))
+                    self._cache_placement_frame(g, m, key, box, cache)
+            else:
+                box = self._placement_bbox(g)
+            low, high = box or ((-np.inf,) * 3, (np.inf,) * 3)
+            lows.append(low)
+            highs.append(high)
+        return lows, highs
+
     def _inst_pool_moved(self, pool, key):
         """The instanced pool ``pool`` brought up to ``key`` when only
         placement matrices changed in between: the rows that moved get
@@ -946,10 +1024,24 @@ class InstancingMixin:
         _k, groups, lo, hi, codes_a, protos, mats, by_code = pool
         if not groups:
             return (key,) + tuple(pool[1:])
+        kernel = self._moved_box_kernel() if len(groups) >= 64 else None
+        if kernel is not None:
+            hist = getattr(self, "_epoch_hist", None) or {}
+            previous, current = hist.get(old[0]), hist.get(key[0])
+            if previous is None or current is None or previous[2:] != current[2:]:
+                return None
+            # Nested proxy matrices are composed by the live placement walk.
+            self._placements()
         now = np.array([g.xform.data() for g in groups],
                        dtype=np.float32).reshape(-1, 16)
         moved = np.flatnonzero((now != mats).any(axis=1))
         lo, hi = lo.copy(), hi.copy()
+        if kernel is not None and len(moved) >= 64:
+            bounds = self._batch_moved_bounds(pool, moved, now[moved], kernel)
+            if bounds is None:
+                return None
+            lo[moved], hi[moved] = bounds
+            return (key, groups, lo, hi, codes_a, protos, now, by_code)
         for i in moved.tolist():
             g = groups[i]
             if (g.xform.determinant() < 0.0) != protos[int(codes_a[i])][2]:
