@@ -640,6 +640,33 @@ def _write_geometry(arrays, table, layer_table, sink: dict) -> dict:
     return meta
 
 
+def _plan_vertex_indices(corners, vertex_count):
+    """Vertex IDs in first-use order and their int32 indices on disk."""
+    import numpy as np
+
+    count = len(corners)
+    if vertex_count > count:
+        # A file can carry many vertices these edges and rings never use.
+        _, first, inverse = np.unique(corners, return_index=True,
+                                      return_inverse=True)
+        order = np.argsort(first, kind="stable")
+        rank = np.empty(len(order), dtype=np.int32)
+        rank[order] = np.arange(len(order), dtype=np.int32)
+        return corners[first[order]], rank[inverse.reshape(-1)]
+
+    first = np.full(vertex_count, count, dtype=np.intp)
+    np.minimum.at(first, corners, np.arange(count, dtype=np.intp))
+    # Mark first uses in traversal order. The last slot absorbs unused IDs.
+    is_first = np.zeros(count + 1, dtype=bool)
+    is_first[first] = True
+    del first
+    order = corners[is_first[:-1]]
+    del is_first
+    rank = np.empty(vertex_count, dtype=np.int32)
+    rank[order] = np.arange(len(order), dtype=np.int32)
+    return order, rank[corners]
+
+
 def _pack_plan(mesh, plan, sink: dict) -> dict:
     """:func:`_pack_geometry` of the mesh a deferred ``mesh`` would build
     (``plan``, core.lazy_mesh), from its arrays: the same point numbering,
@@ -677,13 +704,8 @@ def _pack_plan(mesh, plan, sink: dict) -> dict:
             sizes = sizes[keep_ring]
     corners = np.concatenate([plan.edges.reshape(-1), corners_v]) \
         if len(plan.edges) else corners_v
-    _u, first, inverse = np.unique(corners, return_index=True,
-                                   return_inverse=True)
-    order = np.argsort(first, kind="stable")
-    rank = np.empty_like(order)
-    rank[order] = np.arange(len(order))
-    index = rank[inverse.reshape(-1)].astype(np.int32)
-    pos = plan.pos[corners[first[order]]].astype(np.float32).reshape(-1, 3)
+    order, index = _plan_vertex_indices(corners, len(plan.pos))
+    pos = plan.pos[order].astype(np.float32).reshape(-1, 3)
     if not np.isfinite(pos).all():
         raise NonFiniteDocumentError("geometry")
     # The attribute table, renumbered in the order faces first use it.

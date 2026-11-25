@@ -162,6 +162,22 @@ def test_faces_sharing_attributes_do_not_share_the_dicts(tmp_path, binary):
     assert texs[1]["sw"] == 1.0                   # …leaves the others alone
 
 
+@pytest.mark.parametrize("vertex_count, traversal, first_use, indices", [
+    (0, [], [], []),
+    (7, [], [], []),
+    (7, [6, 1, 6, 4, 1, 4, 6, 4], [6, 1, 4], [0, 1, 0, 2, 1, 2, 0, 2]),
+    (100, [99, 5, 99, 5, 0], [99, 5, 0], [0, 1, 0, 1, 2]),
+])
+def test_deferred_geometry_indices_keep_first_use_order(vertex_count, traversal,
+                                                        first_use, indices):
+    import numpy as np
+
+    order, index = igz._plan_vertex_indices(np.asarray(traversal, np.int32), vertex_count)
+
+    assert order.tolist() == first_use
+    assert index.dtype == np.int32 and index.tolist() == indices
+
+
 def test_two_saves_are_byte_identical(tmp_path, binary):
     scene = _scene(tmp_path)
     igz.save_scene(scene, tmp_path / "a.igz")
