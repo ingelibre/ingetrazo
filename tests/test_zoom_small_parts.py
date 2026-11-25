@@ -120,6 +120,55 @@ def test_one_notch_out_keeps_the_small_part_in_sight():
     assert (cam.eye() - V(0, 0, 0)).length() < 0.02
 
 
+def test_cursor_zoom_reads_model_size_only_when_retreating():
+    from PySide6.QtCore import QPointF
+    from views.viewport import Viewport
+
+    stub = _stub(MIN_DISTANCE, 20.0)
+    focus = V(0.0, 0.0, 0.0)
+    stub.camera.target = focus
+    stub.scene = SimpleNamespace(version=0)
+    stub._world_under_cursor = lambda *_: focus
+    measured = []
+    stub._model_diag = lambda: measured.append(True) or 20.0
+    stub._zoom_out_step = lambda: Viewport._zoom_out_step(stub)
+    pos = QPointF(100.0, 200.0)
+
+    for steps in (1.0, 0.0, 0.25):
+        Viewport._zoom_at(stub, steps, pos)
+    assert measured == []
+    eye = stub.camera.eye()
+    Viewport._zoom_at(stub, -0.25, pos, floor_share=0.25)
+    assert measured == [True]
+    assert (stub.camera.eye() - eye).length() == pytest.approx(0.05, abs=1e-6)
+
+
+def test_zoom_out_diagonal_cache_follows_box_arrays():
+    import numpy as np
+    from views.viewport import Viewport
+
+    table = (None, np.zeros((1, 3)), np.array([[3.0, 4.0, 0.0]]))
+    scene = SimpleNamespace(version=1, bounds=lambda: (V(), V(0, 0, 12)))
+    stub = SimpleNamespace(scene=scene, _pick_lazy_table=lambda: table)
+    diagonal = Viewport._model_diag
+
+    assert diagonal(stub) == 5.0
+    memo = stub._zoom_diag_memo
+    assert diagonal(stub) == 5.0 and stub._zoom_diag_memo is memo
+
+    scene._bounds_cache = (scene.version,)
+    assert diagonal(stub) == 12.0 and stub._zoom_diag_memo is memo
+    scene.version += 1
+    table = (None, table[1], np.array([[0.0, 0.0, 8.0]]))
+    assert diagonal(stub) == 8.0
+    assert memo[1]() is None
+
+    memo = stub._zoom_diag_memo
+    table = None
+    assert memo[0]() is None and memo[1]() is None
+    assert diagonal(stub) == 12.0
+
+
 def test_preview_cut_follows_the_near_plane_only_up_close():
     from views.viewport import Viewport
     clip = Viewport._clip_w
