@@ -322,7 +322,8 @@ class EdgeRenderer:
             if markers:
                 self._sync_markers(mvp, width, height, style, mode)
             self.vector("u_fade_color", style.background if fade_color is None else fade_color)
-            plane = getattr(vp, "_clip_vec", None)
+            vecs = getattr(vp, "_clip_vecs", None) or []
+            plane = vecs[0] if vecs else None
             self.program.setUniformValue(self.loc("u_style_ground_clip"),
                                          getattr(vp, "_style_ground_clip", QVector4D()))
             self.integer("u_clip_enable", plane is not None)

@@ -434,7 +434,7 @@ def test_clipped_ends_get_neither_markers_nor_extended_profile_caps(drawing):
     from PySide6.QtGui import QVector4D
     vp, render, _renderer = drawing
     _line(vp)
-    vp._clip_vec = QVector4D(1, 0, 0, 0)
+    vp._clip_vecs = [QVector4D(1, 0, 0, 0)]
     mask = _ink(render(_style(profiles=True, profile_width=4, profile_cap="round_extended",
                               endpoints=True, endpoint_type="square", endpoint_size=20)))
     assert not mask[:, :WIDTH // 2 - 1].any()
@@ -574,7 +574,7 @@ def test_near_plane_and_section_clipping_leave_no_spurious_lines(drawing):
     vp, render, _renderer = drawing
     _line(vp)
     from PySide6.QtGui import QVector4D
-    vp._clip_vec = QVector4D(1, 0, 0, 0)
+    vp._clip_vecs = [QVector4D(1, 0, 0, 0)]
     image = render(_style(extensions=True, extension_length=20))
     mask = _ink(image)
     assert not mask[:, :WIDTH // 2 - 1].any()
