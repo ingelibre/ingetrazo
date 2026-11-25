@@ -599,6 +599,10 @@ chunks.Viewport = Viewport
 geo.Viewport = Viewport
 shadows.Viewport = Viewport
 
+# Stock methods whose inputs are shared during a dense outline update.
+_OUTLINE_FRAME_METHODS = (Viewport._placement_frame, Viewport._proto_base_chunk,
+                          Viewport._group_chunk)
+
 #: Every part of the package; __init__ last, as it holds the least.
 _PARTS = (_support, interaction, value_input, snapping, picking, occlusion, projection, group_edit, clipboard, overlay, sections, render, instancing, billboards, chunks, image_planes, geo, shadows, gl_setup)
 
