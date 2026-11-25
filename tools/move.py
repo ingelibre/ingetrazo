@@ -89,6 +89,10 @@ def gather_targets(ctx: ToolContext):
     return groups, _dedup(positions)
 
 
+#: The most edges a Ctrl-copy's ghost draws one by one.
+GHOST_EDGES = 4000
+
+
 def groups_ghost_segments(groups) -> list:
     """Every edge of ``groups`` as a world segment: the wireframe a Ctrl-copy
     previews. A component's geometry lives in the placements it holds, so the
@@ -97,15 +101,94 @@ def groups_ghost_segments(groups) -> list:
     asked for: on the first click of a plain move it built the whole group,
     seconds and gigabytes on a big one (#1092)."""
     from core.group import iter_placements
+    from core.lazy_mesh import plan_of
+
+    def edge_count(mesh):
+        plan = plan_of(mesh)
+        return len(mesh.edges) if plan is None else len(plan.edges)
+
+    pieces = [list(iter_placements(g)) for g in groups]
+    if sum(edge_count(pg.mesh) for ps in pieces for pg, _m in ps) > GHOST_EDGES:
+        return _big_ghost(pieces)
     segments = []
-    for group in groups:
-        for pg, xf in iter_placements(group):
+    for placements in pieces:
+        for pg, xf in placements:
             for e in pg.mesh.edges:
                 a, b = QVector3D(e.a), QVector3D(e.b)
                 if xf is not None:
                     a, b = xf.map(a), xf.map(b)
                 segments.append((a, b))
     return segments
+
+
+def _big_ghost(pieces) -> list:
+    """The ghost of more than ``GHOST_EDGES`` edges: the hard ones alone
+    (neither soft nor hidden) or, when they still are too many or a piece
+    has none, each group's box — one box for hundreds of groups. Every line is
+    painted again on each frame: a frame of 468 702 edges took sixteen
+    seconds (#1583). A mesh not built yet stays so."""
+    import numpy as np
+    from core.group import np_affine
+    from core.lazy_mesh import plan_of
+    meshes: dict = {}
+
+    def read(mesh):
+        """``(corners, hard edges as an (N, 2, 3) array)``, once per mesh."""
+        hit = meshes.get(id(mesh))
+        if hit is None:
+            plan = plan_of(mesh)
+            if plan is not None:
+                pts = plan.pos
+                hard = pts[plan.edges[~(plan.soft | plan.hidden)]]
+            else:
+                pts = np.array([v.position.toTuple() for v in mesh.vertices],
+                               dtype=np.float64).reshape((-1, 3))
+                hard = np.array([(e.a.toTuple(), e.b.toTuple())
+                                 for e in mesh.edges
+                                 if not (e.soft or e.hidden)],
+                                dtype=np.float64).reshape((-1, 2, 3))
+            lo, hi = ((pts.min(axis=0), pts.max(axis=0)) if len(pts)
+                      else (None, None))
+            hit = meshes[id(mesh)] = (lo, hi, hard)
+        return hit
+
+    def mapped(pts, m):
+        if m is None:
+            return pts
+        rot, trans = np_affine(m)
+        return pts @ rot.T + trans
+
+    def corners(lo, hi):
+        return np.array([(x, y, z) for x in (lo[0], hi[0])
+                         for y in (lo[1], hi[1]) for z in (lo[2], hi[2])])
+
+    hard = [len(read(pg.mesh)[2]) for ps in pieces for pg, _m in ps
+            if read(pg.mesh)[0] is not None]
+    if min(hard, default=0) > 0 and sum(hard) <= GHOST_EDGES:
+        ends = np.concatenate([
+            mapped(read(pg.mesh)[2].reshape((-1, 3)), m)
+            for ps in pieces for pg, m in ps]).reshape((-1, 2, 3))
+        return [(QVector3D(*a), QVector3D(*b)) for a, b in ends.tolist()]
+    boxes = []
+    for placements in pieces:
+        root = placements[0][1]               # the box turns with its group
+        inverse, ok = root.inverted() if root is not None else (None, True)
+        if not ok:
+            root = inverse = None
+        ends = []
+        for pg, m in placements:
+            lo, hi, _hard = read(pg.mesh)
+            if lo is not None:
+                ends.append(mapped(mapped(corners(lo, hi), m), inverse))
+        if ends:
+            ends = np.concatenate(ends)
+            boxes.append(mapped(corners(ends.min(axis=0), ends.max(axis=0)), root))
+    if len(boxes) * 12 > GHOST_EDGES:
+        ends = np.concatenate(boxes)
+        boxes = [corners(ends.min(axis=0), ends.max(axis=0))]
+    sides = [(i, i ^ bit) for bit in (1, 2, 4) for i in range(8) if not i & bit]
+    return [(QVector3D(*box[i]), QVector3D(*box[k]))
+            for box in (b.tolist() for b in boxes) for i, k in sides]
 
 
 def gather_dimensions(ctx: ToolContext, groups, verts) -> dict:
