@@ -273,24 +273,28 @@ pub fn segment_hits<'py>(py: Python<'py>, ends: numpy::PyReadonlyArray3<'py, f32
 
 /// ``QMatrix4x4::map(QVector4D(x, y, z, 1))`` row ``r`` for the column-major
 /// ``m`` (``QMatrix4x4.data()``): Qt's float32 sum, left to right, of
-/// ``v[c] * m[c][r]`` — or, with ``fma``, each term after the first fused
-/// into the running sum (a compiler contracting Qt's expression). The
-/// ``1 * m[3][r]`` term is ``m[3][r]`` exactly either way.
+/// ``v[c] * m[c][r]`` — or a compiler contracting Qt's expression, as
+/// ``fma`` says: 0 none; 1 each term after the first fused into the running
+/// sum; 2 as Clang contracts ``x*a + y*b + …`` (Qt on macOS arm64): the
+/// first product fused over the second's, ``fma(x, a, y*b)``, then the rest
+/// as in 1 — what Qt's ``QMatrix4x4::map`` gives there, bit for bit. The
+/// ``1 * m[3][r]`` term is ``m[3][r]`` exactly in every form.
 #[inline]
-fn qt_map_row(p: [f32; 3], m: &[f32; 16], r: usize, fma: bool) -> f32 {
-    if fma {
-        let s = p[1].mul_add(m[4 + r], p[0] * m[r]);
-        let s = p[2].mul_add(m[8 + r], s);
-        return 1.0f32.mul_add(m[12 + r], s);
-    }
-    p[0] * m[r] + p[1] * m[4 + r] + p[2] * m[8 + r] + 1.0f32 * m[12 + r]
+fn qt_map_row(p: [f32; 3], m: &[f32; 16], r: usize, fma: u8) -> f32 {
+    let s = match fma {
+        0 => return p[0] * m[r] + p[1] * m[4 + r] + p[2] * m[8 + r] + 1.0f32 * m[12 + r],
+        2 => p[0].mul_add(m[r], p[1] * m[4 + r]),
+        _ => p[1].mul_add(m[4 + r], p[0] * m[r]),
+    };
+    let s = p[2].mul_add(m[8 + r], s);
+    1.0f32.mul_add(m[12 + r], s)
 }
 
 /// ``Viewport._pixel_projector``'s ``world_to_pixel`` for one point: Qt's
 /// float32 map, then Python's float arithmetic on the four components.
 /// None where Python returns None (``clip.w() <= 0``).
 #[inline]
-fn qt_pixel(p: [f32; 3], m: &[f32; 16], fma: bool, w: f64, h: f64) -> Option<(f64, f64)> {
+fn qt_pixel(p: [f32; 3], m: &[f32; 16], fma: u8, w: f64, h: f64) -> Option<(f64, f64)> {
     let cw = qt_map_row(p, m, 3, fma) as f64;
     if cw <= 0.0 {
         return None;
@@ -313,7 +317,7 @@ fn qt_pixel(p: [f32; 3], m: &[f32; 16], fma: bool, w: f64, h: f64) -> Option<(f6
 #[pyo3(signature = (pts, mvp, w, h, cx, cy, r2, fma))]
 #[allow(clippy::too_many_arguments, clippy::type_complexity)]
 pub fn qt_px_near<'py>(py: Python<'py>, pts: PyReadonlyArray2<'py, f32>, mvp: Vec<f32>,
-                       w: f64, h: f64, cx: f64, cy: f64, r2: f64, fma: bool)
+                       w: f64, h: f64, cx: f64, cy: f64, r2: f64, fma: u8)
     -> PyResult<(Bound<'py, PyArray1<f64>>, Bound<'py, PyArray1<f64>>,
                  Bound<'py, PyArray1<bool>>, Bound<'py, PyArray1<i64>>)> {
     let v = pts.as_array();
@@ -398,7 +402,7 @@ fn arr(v: V3) -> [f32; 3] {
 /// Whether the pixel of ``p`` is within ``r2`` (squared, widened) of the
 /// cursor, as ``qt_px_near`` decides it.
 #[inline]
-fn px_within(p: V3, m: &[f32; 16], fma: bool, w: f64, h: f64, cx: f64, cy: f64,
+fn px_within(p: V3, m: &[f32; 16], fma: u8, w: f64, h: f64, cx: f64, cy: f64,
              r2: f64) -> bool {
     match qt_pixel(arr(p), m, fma, w, h) {
         Some((x, y)) => {
@@ -483,7 +487,7 @@ pub fn snap_ext_maybe<'py>(py: Python<'py>, ends: numpy::PyReadonlyArray3<'py, f
                            draw: (f32, f32, f32), start: (f32, f32, f32), screen: bool,
                            cand: (f32, f32, f32), plane: Option<(f32, f32, f32)>,
                            mvp: Vec<f32>, w: f64, h: f64, cx: f64, cy: f64, r2: f64,
-                           fma: bool, hypot: &str) -> PyResult<Bound<'py, PyArray1<i64>>> {
+                           fma: u8, hypot: &str) -> PyResult<Bound<'py, PyArray1<i64>>> {
     let hy = crate::hypot_of(hypot)?;
     let segs = ends_of(&ends)?;
     let m = mat16(&mvp)?;
@@ -542,7 +546,7 @@ pub fn snap_ext_maybe<'py>(py: Python<'py>, ends: numpy::PyReadonlyArray3<'py, f
 pub fn snap_line_hits<'py>(py: Python<'py>, ends: numpy::PyReadonlyArray3<'py, f32>,
                            start: (f32, f32, f32), u: (f32, f32, f32),
                            draw: Option<(f32, f32, f32)>, on_start: bool, mvp: Vec<f32>,
-                           w: f64, h: f64, cx: f64, cy: f64, r2: f64, fma: bool,
+                           w: f64, h: f64, cx: f64, cy: f64, r2: f64, fma: u8,
                            hypot: &str) -> PyResult<Bound<'py, PyArray1<i64>>> {
     let hy = crate::hypot_of(hypot)?;
     let segs = ends_of(&ends)?;
@@ -582,7 +586,7 @@ pub fn snap_line_hits<'py>(py: Python<'py>, ends: numpy::PyReadonlyArray3<'py, f
 #[allow(clippy::too_many_arguments)]
 pub fn snap_feet_near<'py>(py: Python<'py>, refs: PyReadonlyArray2<'py, f32>,
                            start: (f32, f32, f32), adir: (f32, f32, f32), mvp: Vec<f32>,
-                           w: f64, h: f64, cx: f64, cy: f64, r2: f64, fma: bool, both: bool,
+                           w: f64, h: f64, cx: f64, cy: f64, r2: f64, fma: u8, both: bool,
                            hypot: &str) -> PyResult<Bound<'py, PyArray1<i64>>> {
     let hy = crate::hypot_of(hypot)?;
     let rv = refs.as_array();
@@ -612,4 +616,23 @@ pub fn snap_feet_near<'py>(py: Python<'py>, refs: PyReadonlyArray2<'py, f32>,
         out
     });
     Ok(PyArray1::from_vec(py, out))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::qt_map_row;
+
+    #[test]
+    fn clang_contraction_matches_arm64_qt_map() {
+        // QMatrix4x4::map(QVector4D(p, 1)).x() in the macOS arm64 PySide6
+        // 6.11.2 wheel, for a column whose first two products cancel: Qt
+        // gives 2^-13, the sum fused after its first term gives 0.
+        let p = [0xc4953f19u32, 0x46091390, 0x4636d69c].map(f32::from_bits);
+        let mut m = [0.0f32; 16];
+        for (i, bits) in [(0, 0xbfc82b78u32), (4, 0xbebc7088), (8, 0), (12, 0x44aa3537)] {
+            m[i] = f32::from_bits(bits);
+        }
+        assert_eq!(qt_map_row(p, &m, 0, 2).to_bits(), 0x39000000);
+        assert_eq!(qt_map_row(p, &m, 0, 1).to_bits(), 0);
+    }
 }
