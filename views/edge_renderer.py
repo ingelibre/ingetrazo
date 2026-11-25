@@ -322,12 +322,16 @@ class EdgeRenderer:
             if markers:
                 self._sync_markers(mvp, width, height, style, mode)
             self.vector("u_fade_color", style.background if fade_color is None else fade_color)
-            plane = getattr(vp, "_clip_vec", None)
             self.program.setUniformValue(self.loc("u_style_ground_clip"),
                                          getattr(vp, "_style_ground_clip", QVector4D()))
-            self.integer("u_clip_enable", plane is not None)
-            self.program.setUniformValue(self.loc("u_clip_plane"),
-                                           plane if plane is not None else QVector4D())
+            # Every section cut, as the faces get them: the active plane and
+            # the active box's six faces (views/viewport/render.py). The
+            # single _clip_vec read here before the section box is gone, and
+            # styled edges kept drawing what a cut hides.
+            planes = list(getattr(vp, "_clip_vecs", None) or ())[:7]
+            self.integer("u_clip_count", len(planes))
+            for index, plane in enumerate(planes):
+                self.program.setUniformValue(self.loc(f"u_clip_planes[{index}]"), plane)
             self.number("u_scale", scale)
             gl.glDisable(GL_CULL_FACE)
             # Coverage antialiasing must preserve an opaque framebuffer's

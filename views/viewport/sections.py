@@ -25,23 +25,30 @@ class SectionPlaneMixin:
         (``gl_ClipDistance`` in basic.vert). ``skip`` leaves that plane (or
         those, a tuple) out: what is drawn IN a cut plane (its fill, its
         thick lines) is clipped by the others only — a box face's fill stops
-        at the box. No-op when nothing cuts."""
-        vecs = getattr(self, "_clip_vecs", None)
-        if not vecs:
+        at the box. When nothing cuts, it only clears what a former cut left
+        on: a frame that ended with the cut on (a plane since switched off)
+        kept cutting the faces with it, while styled edges drew it all."""
+        vecs = getattr(self, "_clip_vecs", None) or []
+        left_on = getattr(self, "_clip_distances_on", 0)
+        if not vecs and not left_on:
             return
         skips = skip if isinstance(skip, tuple) else (skip,)
-        if on:
+        if on and vecs:
             for i, v in enumerate(vecs):
                 self._program.setUniformValue(self._loc_clip_planes[i], v)
                 if i in skips:
                     self._gl.glDisable(GL_CLIP_DISTANCE0 + i)
                 else:
                     self._gl.glEnable(GL_CLIP_DISTANCE0 + i)
+            for i in range(len(vecs), left_on):
+                self._gl.glDisable(GL_CLIP_DISTANCE0 + i)
             self._program.setUniformValue(self._loc_clip_count, len(vecs))
+            self._clip_distances_on = len(vecs)
         else:
             self._program.setUniformValue(self._loc_clip_count, 0)
-            for i in range(len(vecs)):
+            for i in range(max(len(vecs), left_on)):
                 self._gl.glDisable(GL_CLIP_DISTANCE0 + i)
+            self._clip_distances_on = 0
 
     def _section_cut_active(self):
         return _active_cut(self.scene)

@@ -32,9 +32,11 @@ uniform vec3 u_color;
 uniform vec3 u_axis0;
 uniform vec3 u_axis1;
 uniform vec3 u_axis2;
-uniform vec4 u_clip_plane;
+// The section cuts, as in basic.vert: the active plane, then the six faces
+// of the active box; the kept side of each is dot(plane, world) >= 0.
+uniform vec4 u_clip_planes[7];
+uniform int u_clip_count;
 uniform mat4 u_plane_to_clip;
-uniform int u_clip_enable;
 uniform vec4 u_style_ground_clip;
 out float g_ground_distance;
 uniform int u_hidden;
@@ -81,6 +83,10 @@ bool clip_segment(inout vec4 a, inout vec4 b, inout vec3 wa, inout vec3 wb,
     return true;
 }
 
+float clip_distance(int index, vec3 world) {
+    return index < u_clip_count ? dot(vec4(world, 1.0), u_clip_planes[index]) : 1.0;
+}
+
 void corner(vec4 center, vec3 world, vec2 shift, float along, float side) {
     g_ground_distance = dot(vec4(world, 1.0), u_style_ground_clip);
     gl_Position = center + vec4(shift * 2.0 / u_viewport * center.w, 0.0, 0.0);
@@ -90,7 +96,15 @@ void corner(vec4 center, vec3 world, vec2 shift, float along, float side) {
         // longer quad and lets adjacent faces cut translucent blocks into it.
         gl_Position.z = (line_depth_start + along * line_depth_step) * center.w;
     }
-    gl_ClipDistance[0] = u_clip_enable == 1 ? dot(vec4(world, 1.0), u_clip_plane) : 1.0;
+    // The viewport switches on one clip distance per cut (_set_section_clip):
+    // write every one, or the unwritten ones cut the stroke at random.
+    gl_ClipDistance[0] = clip_distance(0, world);
+    gl_ClipDistance[1] = clip_distance(1, world);
+    gl_ClipDistance[2] = clip_distance(2, world);
+    gl_ClipDistance[3] = clip_distance(3, world);
+    gl_ClipDistance[4] = clip_distance(4, world);
+    gl_ClipDistance[5] = clip_distance(5, world);
+    gl_ClipDistance[6] = clip_distance(6, world);
     g_pixel = vec2(along, side);
     g_length = line_length;
     g_width = line_width;
@@ -111,7 +125,8 @@ void main() {
     vec3 wa = edge[0].world, wb = edge[1].world;
     if (u_marker_pass == 1) {
         if (a.w <= 1e-7 || a.z + a.w < 0.0) return;
-        if (u_clip_enable == 1 && dot(vec4(wa, 1.0), u_clip_plane) < 0.0) return;
+        for (int i = 0; i < u_clip_count; i++)
+            if (dot(vec4(wa, 1.0), u_clip_planes[i]) < 0.0) return;
         float r = u_endpoint_size * u_scale * 0.5 + 0.5;
         line_length = 1.0; line_width = vec2(1.0);
         line_limits = vec2(0.0); line_caps = vec2(0.0); line_cap = 0;
@@ -137,8 +152,12 @@ void main() {
     if (edge[0].info.x > 0.5 && !(u_profiles == 1 && profile)) return;
     if (u_edges == 0 && !(u_profiles == 1 && profile)) return;
     bvec2 cut = bvec2(false);
-    if (u_clip_enable == 1 && !clip_segment(a, b, wa, wb,
-            dot(vec4(wa, 1.0), u_clip_plane), dot(vec4(wb, 1.0), u_clip_plane), cut)) return;
+    // Cut the segment at each section plane: an end cut there gets no
+    // extension, cap overhang or endpoint mark.
+    for (int i = 0; i < u_clip_count; i++) {
+        if (!clip_segment(a, b, wa, wb, dot(vec4(wa, 1.0), u_clip_planes[i]),
+                          dot(vec4(wb, 1.0), u_clip_planes[i]), cut)) return;
+    }
     if (!clip_segment(a, b, wa, wb, a.z + a.w, b.z + b.w, cut)) return;
     if (a.w <= 1e-7 || b.w <= 1e-7) return;
     line_caps = vec2(cut.x ? 0.0 : 1.0, cut.y ? 0.0 : 1.0);
