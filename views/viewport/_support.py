@@ -159,12 +159,12 @@ class _SnapEdge:
     marks the degenerate one that carries a circle's centre."""
 
     __slots__ = ("a", "b", "center", "component_origin", "arc_midpoint",
-                 "guide", "in_group", "context", "group", "figure")
+                 "guide", "in_group", "context", "group", "figure", "placement")
 
     def __init__(self, a, b, center: bool = False, component_origin: bool = False,
                  arc_midpoint: bool = False, guide: bool = False,
                  in_group: bool = False, context=None, group=None,
-                 figure: bool = False) -> None:
+                 figure: bool = False, placement=None) -> None:
         self.a = a
         self.b = b
         self.figure = figure                       # a face-me figure's feet
@@ -175,6 +175,7 @@ class _SnapEdge:
         self.in_group = in_group                   # magenta point inferences
         self.context = context                     # "group" / "component" for the tip
         self.group = group                         # the top-level owner, when known
+        self.placement = placement
 
 
 def _copy_snap_edge(e: _SnapEdge) -> _SnapEdge:
@@ -222,8 +223,10 @@ def _group_pseudo_edge(idx, i: int) -> _SnapEdge:
     else:
         is_comp = getattr(owner, "is_instance", None)
         context = "component" if (is_comp is not None and is_comp()) else "group"
+    places = getattr(idx, "gedge_places", None)
     return _SnapEdge(QVector3D(*idx.gedge_a[i]), QVector3D(*idx.gedge_b[i]),
-                     in_group=True, context=context, group=owner)
+                     in_group=True, context=context, group=owner,
+                     placement=places[g] if places else owner)
 
 
 # OpenGL constants — kept as literals so we don't depend on PyOpenGL.

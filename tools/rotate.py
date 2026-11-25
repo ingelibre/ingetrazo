@@ -607,7 +607,7 @@ class RotateTool(ProtractorBase):
             end()
         self._vp_preview = False
 
-    def _make_builder(self):
+    def _make_builder(self, scene=None):
         """A closure that builds the commit command for a given angle — kept
         by the hot-retype window so the rotation can be redone at a new angle
         after the tool has reset."""
@@ -636,7 +636,10 @@ class RotateTool(ProtractorBase):
                     m = rotation_matrix(start, axis, deg)
                     for group in groups:
                         g = copy_group(group)  # instance → sibling instance
-                        cmds.append(InsertGroupCommand(g))
+                        from core.section import copy_scoped_sections
+                        planes = copy_scoped_sections(getattr(scene, "section_planes", ()),
+                                                       group, g)
+                        cmds.append(InsertGroupCommand(g, planes))
                         cmds.append(RotateGroupCommand(g, start, axis, deg))
                     for gd in guides:
                         cmds.append(AddGuideCommand(copied_guide(gd, m)))
@@ -694,7 +697,7 @@ class RotateTool(ProtractorBase):
         self._revert_preview(viewport)
         self._end_vp_preview(viewport)
         if abs(deg) > 1e-9:
-            build = self._make_builder()
+            build = self._make_builder(viewport.scene)
             copy = self._copy
             cmd = build([deg])
             if cmd is not None:

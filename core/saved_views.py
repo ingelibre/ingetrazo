@@ -184,13 +184,11 @@ class SavedView:
             else:
                 scene.display_style = style
         if self.section is not None:
-            uid = self.section.get("active")
-            target = None
-            for sp in getattr(scene, "section_planes", []):
-                if sp.uid == uid:
-                    target = sp
-                    break
-            scene.set_active_section(target)
+            uids = self.section.get("active_uids")
+            if not isinstance(uids, list):
+                uids = [self.section.get("active")]
+            for plane in getattr(scene, "section_planes", ()):
+                plane.active = plane.uid in uids
             scene.show_section_planes = bool(
                 self.section.get("planes_shown", True))
             scene.show_section_cuts = bool(
@@ -352,6 +350,9 @@ def section_state(scene) -> dict:
         "planes_shown": getattr(scene, "show_section_planes", True),
         "cuts_shown": getattr(scene, "show_section_cuts", True),
     }
+    active = [plane.uid for plane in getattr(scene, "section_planes", ()) if plane.active]
+    if len(active) > 1 or (active and state["active"] is None):
+        state["active_uids"] = active
     active_box = getattr(scene, "active_section_box", None)
     box = active_box() if callable(active_box) else None
     if box is not None:

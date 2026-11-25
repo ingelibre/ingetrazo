@@ -216,9 +216,14 @@ class PasteTool(Tool):
                 material=edge_materials[index] if index < len(edge_materials) else None))
         # Each stamp builds FRESH group copies from the clipboard templates
         # (instances stay siblings of the same prototype).
-        pasted_groups = [copy_group(g, off)
-                         for g in self._clip.get("groups", ())]
-        commands.extend(InsertGroupCommand(g) for g in pasted_groups)
+        from core.section import copy_scoped_sections
+        pasted_groups = []
+        planes = self._clip.get("section_planes", ())
+        for template in self._clip.get("groups", ()):
+            clone = copy_group(template, off)
+            pasted_groups.append(clone)
+            commands.append(InsertGroupCommand(
+                clone, copy_scoped_sections(planes, template, clone, off)))
         if len(commands) == 1:
             return False        # only the prune guard: nothing to stamp
         # The scratch preview ends BEFORE the stamp: the pasted groups enter

@@ -108,6 +108,7 @@ class SectionPlaneTool(Tool):
         # A new plane is placed to be SEEN: cuts and planes switched off
         # come back on (@pacaeiro, #62: «user sees immediately the result»).
         sc = viewport.scene
+        plane.owner_uid = getattr(getattr(sc, "edit_group", None), "uid", None)
         if not (getattr(sc, "show_section_cuts", True)
                 and getattr(sc, "show_section_planes", True)):
             from core.modeling_style import set_modeling_visibility

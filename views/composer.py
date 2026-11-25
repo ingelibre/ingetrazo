@@ -14123,8 +14123,7 @@ class ComposerWindow(QMainWindow):
         keep_lens = (cam.lens_dict() if hasattr(cam, "lens_dict") else None)
         keep_sensor = getattr(cam, "sensor", None)
         keep_section = (
-            scene.active_section() if hasattr(scene, "active_section")
-            else None,
+            tuple((plane, plane.active) for plane in getattr(scene, "section_planes", ())),
             getattr(scene, "show_section_planes", True),
             getattr(scene, "show_section_cuts", True))
         # The section box too: a scene brings its own (or none) to cut,
@@ -14197,7 +14196,8 @@ class ComposerWindow(QMainWindow):
                 ly.visible = visible
             scene._bounds_cache = None
             if hasattr(scene, "set_active_section"):
-                scene.set_active_section(keep_section[0])
+                for plane, active in keep_section[0]:
+                    plane.active = active
                 scene.show_section_planes = keep_section[1]
                 scene.show_section_cuts = keep_section[2]
             if hasattr(scene, "set_active_section_box"):

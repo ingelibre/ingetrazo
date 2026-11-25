@@ -9,6 +9,7 @@ from PySide6.QtCore import Qt, QPointF, QRectF
 from PySide6.QtGui import (QColor, QFont, QFontMetrics, QPainter, QPen,
                            QVector3D, QVector4D)
 from core.i18n import tr
+from core.section import ScopedSectionCut, active_scoped_cut, active_scoped_planes
 from core.style import xray_enabled
 from core.triangulate import plane_axes
 from views.viewport._support import (_active_cut, GL_LINES, GL_TRIANGLES,
@@ -51,7 +52,16 @@ class SectionPlaneMixin:
         projected onto the plane, with a margin (the plane object is sized
         to the model)."""
         u, v = plane_axes(sp.normal)
-        lo, hi = self.scene.bounds()
+        if getattr(sp, "owner_uid", None) is None:
+            lo, hi = self.scene.bounds()
+        else:
+            scope = ScopedSectionCut(self.scene, sp.owner_uid, sp.point, sp.normal,
+                                     world_pose=True)
+            bounds = [self._group_chunk(g).get("bbox") for g in self._placements()
+                      if scope.applies_to(g) and self.scene.entity_visible(g)]
+            bounds = [bb for bb in bounds if bb is not None]
+            lo = QVector3D(*(min(bb[0][i] for bb in bounds) for i in range(3))) if bounds else None
+            hi = QVector3D(*(max(bb[1][i] for bb in bounds) for i in range(3))) if bounds else None
         if lo is None:
             half_u = half_v = 1.5
             cu = cv = 0.0
@@ -391,8 +401,23 @@ class SectionPlaneMixin:
                     del reaches[k]
                 reach = reaches[ident] = PlaneReach(
                     idx.tri_v0, idx.tri_e1, idx.tri_e2, n)
+            visible = idx.ent_vis
+            if getattr(sp, "owner_uid", None) is not None:
+                import numpy as np
+                from views.viewport._support import _entity_owner
+
+                scope = active_scoped_cut(self.scene, sp)
+                visible = np.zeros(len(idx.entities), dtype=bool)
+                if scope is not None and scope.placements:
+                    for ent in np.flatnonzero(idx.ent_vis):
+                        row = idx.ent_place_idx[ent]
+                        placement = (idx.ent_placements[row] if row >= 0
+                                     else _entity_owner(idx.entities, ent))
+                        if placement is None and idx.ent_loose[ent]:
+                            placement = self.scene.edit_group
+                        visible[ent] = scope.applies_to(placement)
             segs, rows = cut_chords(idx.tri_v0, idx.tri_e1, idx.tri_e2, n, o,
-                                    idx.ent_vis[idx.tri_ent], rows=True,
+                                    visible[idx.tri_ent], rows=True,
                                     reach=reach)
             if segs is not None:
                 sc = self.scene
@@ -548,9 +573,25 @@ class SectionPlaneMixin:
         memo[ident] = (sign, fills)
         return fills
 
-    def _draw_section_arrays(self, arr, rgb, mode) -> None:
+    def _scoped_cap_bytes(self, values, arity, plane):
+        raw = values.reshape(-1).astype("float32").tobytes()
+        owner = getattr(plane, "owner_uid", None)
+        for other in getattr(self, "_overflow_cut_planes", ()):
+            if other is not plane:
+                cut = ScopedSectionCut(self.scene, None, other.point, other.normal)
+                raw = cut.clip_draw_primitives(raw, 3, arity)
+        if owner is not None:
+            for other in active_scoped_planes(self.scene):
+                if other is not plane and other.owner_uid == owner:
+                    cut = ScopedSectionCut(self.scene, owner, other.point, other.normal,
+                                           world_pose=True)
+                    if cut.placements:
+                        raw = cut.clip_draw_primitives(raw, 3, arity)
+        return raw
+
+    def _draw_section_arrays(self, arr, rgb, mode, plane=None) -> None:
         """One colour of the cut's fill: triangles or lines, world space."""
-        raw = arr.reshape(-1).astype("float32").tobytes()
+        raw = self._scoped_cap_bytes(arr, 3 if mode == GL_TRIANGLES else 2, plane)
         self._section_vbo.bind()
         self._section_vbo.allocate(raw, len(raw))
         self._section_vbo.release()
@@ -558,8 +599,7 @@ class SectionPlaneMixin:
         self._program.setUniformValue(
             self._loc_back_color, QVector4D(rgb[0], rgb[1], rgb[2], 1.0))
         self._section_vao.bind()
-        per = 3 if mode == GL_TRIANGLES else 2
-        self._gl.glDrawArrays(mode, 0, len(arr) * per)
+        self._gl.glDrawArrays(mode, 0, len(raw) // 12)
         self._section_vao.release()
 
     def _draw_layer_fills(self, fc, sp=None, i=None) -> None:
@@ -570,18 +610,19 @@ class SectionPlaneMixin:
         fills = self._section_layer_fills(fc, sp)
         if not fills:
             return
-        if i is None:
+        if (i is None and getattr(sp, "owner_uid", None) is None
+                and sp not in getattr(self, "_overflow_cut_planes", ())):
             self._set_section_clip(False)
         else:
             self._set_section_clip(True, skip=i)
         self._gl.glEnable(GL_POLYGON_OFFSET_FILL)
         self._gl.glPolygonOffset(2.0, 2.0)
         for tris, rgb, _lines, _ink in fills:
-            self._draw_section_arrays(tris, rgb, GL_TRIANGLES)
+            self._draw_section_arrays(tris, rgb, GL_TRIANGLES, sp)
         self._gl.glDisable(GL_POLYGON_OFFSET_FILL)
         for _tris, _rgb, lines, ink in fills:
             if lines is not None and len(lines):
-                self._draw_section_arrays(lines, ink, GL_LINES)
+                self._draw_section_arrays(lines, ink, GL_LINES, sp)
         self._set_section_clip(True)
 
     def _section_hatch(self, spacing: float, cross: bool, sp=None):
@@ -620,12 +661,15 @@ class SectionPlaneMixin:
         Every cut is filled — the active plane and each face of the section
         box — each clipped by the others, so a box face's fill ends at the
         box and the plane's at the box too."""
-        if not getattr(self, "_clip_vecs", None):
+        scoped = active_scoped_planes(self.scene) + list(getattr(self, "_overflow_cut_planes", ()))
+        if not getattr(self, "_clip_vecs", None) and not scoped:
             return
         if mode in ("wireframe", "xray") or xray_enabled(style):
             return
         for i, sp in enumerate(self._clip_planes):
             self._draw_one_section_fill(i, sp, style)
+        for plane in scoped:
+            self._draw_one_section_fill(None, plane, style)
         self._set_section_clip(True)
 
     def _draw_one_section_fill(self, i, sp, style) -> None:
@@ -646,7 +690,7 @@ class SectionPlaneMixin:
         # it draws (the other cuts still clip it), nudged a hair behind so
         # the thick cut lines drawn later win the depth test.
         self._set_section_clip(True, skip=i)
-        raw = tris.reshape(-1).astype("float32").tobytes()
+        raw = self._scoped_cap_bytes(tris, 3, sp)
         self._section_vbo.bind()
         self._section_vbo.allocate(raw, len(raw))
         self._section_vbo.release()
@@ -660,13 +704,13 @@ class SectionPlaneMixin:
         self._program.setUniformValue(
             self._loc_back_color, QVector4D(base[0], base[1], base[2], 1.0))
         self._section_vao.bind()
-        self._gl.glDrawArrays(GL_TRIANGLES, 0, len(tris) * 3)
+        self._gl.glDrawArrays(GL_TRIANGLES, 0, len(raw) // 12)
         self._section_vao.release()
         self._gl.glDisable(GL_POLYGON_OFFSET_FILL)
         if pattern in ("hatch", "cross"):
             lines = self._section_hatch(spacing, pattern == "cross", sp)
             if lines is not None and len(lines):
-                raw = lines.reshape(-1).astype("float32").tobytes()
+                raw = self._scoped_cap_bytes(lines, 2, sp)
                 self._section_vbo.bind()
                 self._section_vbo.allocate(raw, len(raw))
                 self._section_vbo.release()
@@ -675,7 +719,7 @@ class SectionPlaneMixin:
                     self._loc_back_color,
                     QVector4D(fc[0], fc[1], fc[2], 1.0))
                 self._section_vao.bind()
-                self._gl.glDrawArrays(GL_LINES, 0, len(lines) * 2)
+                self._gl.glDrawArrays(GL_LINES, 0, len(raw) // 12)
                 self._section_vao.release()
 
     def _draw_section_cut_edges(self) -> None:
@@ -685,7 +729,8 @@ class SectionPlaneMixin:
         lines stop at the box). Then the same line where two cuts meet in
         the material — a box's corner — which no edge of the model draws.
         Skipped when cuts are hidden."""
-        if not getattr(self, "_clip_vecs", None):
+        scoped = active_scoped_planes(self.scene) + list(getattr(self, "_overflow_cut_planes", ()))
+        if not getattr(self, "_clip_vecs", None) and not scoped:
             return
         import numpy as np
         planes = self._clip_planes
@@ -695,6 +740,14 @@ class SectionPlaneMixin:
             self._set_section_clip(True, skip=i)
             self._draw_cut_quads(self._section_cut_segments(sp), normals[i],
                                  sp)
+        for plane in scoped:
+            self._set_section_clip(True)
+            n = np.asarray(plane.normal.toTuple(), dtype=np.float64)
+            segs = self._section_cut_segments(plane)
+            if segs is not None:
+                raw = self._scoped_cap_bytes(segs, 2, plane)
+                clipped = np.frombuffer(raw, dtype=np.float32).reshape(-1, 2, 3)
+                self._draw_cut_quads(clipped.astype(np.float64), n, plane)
         for i, a in enumerate(planes):
             for j in range(i + 1, len(planes)):
                 segs = self._cut_corner_segments(a, planes[j])

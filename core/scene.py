@@ -495,13 +495,14 @@ class Scene:
         return {g.uid: g for g in iter_groups(self.groups)}
 
     # ---- Sections (section planes) -------------------------------------------
+    def active_sections(self):
+        """Every active plane on a visible layer, in document order."""
+        return [sp for sp in self.section_planes
+                if sp.active and self._layer_state(sp)[0]]
+
     def active_section(self):
-        """The section plane currently cutting the model, or ``None``."""
-        for sp in self.section_planes:
-            if sp.active:
-                # A plane on a hidden layer cuts nothing (#316).
-                return sp if self._layer_state(sp)[0] else None
-        return None
+        """First visible cut, for tools that operate on a single plane."""
+        return next(iter(self.active_sections()), None)
 
     def active_section_box(self):
         """The section box cutting the model now, or ``None``."""

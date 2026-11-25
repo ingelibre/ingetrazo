@@ -163,8 +163,12 @@ class RenderMixin:
         # (core.section.cut_planes), world-space; the kept side of each is
         # where dot(n, p - origin) <= 0. Applies to model geometry only —
         # sky, axes, terrain, previews and overlays stay uncut.
-        from core.section import cut_planes
-        self._clip_planes = cut_planes(self.scene)[:_MAX_CUT_PLANES]
+        from core.section import active_scoped_cut, cut_planes
+        planes = cut_planes(self.scene)
+        self._clip_planes = planes[:_MAX_CUT_PLANES]
+        self._overflow_cut_planes = planes[_MAX_CUT_PLANES:]
+        self._frame_scoped_cut = active_scoped_cut(
+            self.scene, world_planes=self._overflow_cut_planes)
         self._clip_vecs = [
             QVector4D(-sp.normal.x(), -sp.normal.y(), -sp.normal.z(),
                       QVector3D.dotProduct(sp.normal, sp.point))

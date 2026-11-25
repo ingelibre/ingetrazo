@@ -67,7 +67,7 @@ def test_plane_side_flip_and_roundtrip():
 
 # ---- Scene + commands -------------------------------------------------------
 
-def test_place_activates_and_keeps_one_active():
+def test_place_activates_each_plane_independently():
     scene = Scene()
     hist = History(scene)
     a = SectionPlane(V(0, 0, 1), V(0, 0, 1))
@@ -75,13 +75,12 @@ def test_place_activates_and_keeps_one_active():
     hist.execute(PlaceSectionPlaneCommand(a))
     assert scene.active_section() is a        # placing = active cut
     hist.execute(PlaceSectionPlaneCommand(b))
-    assert scene.active_section() is b        # one active per context
-    assert a.active is False
+    assert scene.active_sections() == [a, b]
     assert hist.undo()
     assert scene.section_planes == [a]
     assert scene.active_section() is a        # previous active restored
 
-    hist.execute(SetActiveSectionCommand(None))
+    hist.execute(SetActiveSectionCommand(a, False))
     assert scene.active_section() is None
     assert hist.undo()
     assert scene.active_section() is a

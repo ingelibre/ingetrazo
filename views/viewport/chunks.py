@@ -316,17 +316,46 @@ class ChunkCacheMixin:
         return (n.normalized() if n.length() > 1e-9
                 else QVector3D(0.0, 0.0, 1.0))
 
+    def _section_draw_key(self):
+        scope = getattr(self, "_frame_scoped_cut", None)
+        if scope is None or not scope.key:
+            return None
+        return scope.key
+
+    def _draws_instanced(self, group):
+        scope = getattr(self, "_frame_scoped_cut", None)
+        return ((scope is None or not scope.applies_to(group))
+                and self._instanced_eligible(group))
+
+    def _scoped_draw_chunk(self, group, chunk, *, edges_only=False):
+        scope = getattr(self, "_frame_scoped_cut", None)
+        if scope is None or not scope.applies_to(group):
+            return chunk
+        clipped = dict(chunk)
+        if edges_only:
+            clipped["edges"] = scope.clip_draw_primitives(chunk["edges"], 3, 2, group)
+            return clipped
+        for key, stride in (("dback", 3), ("vcol", 6), ("back_vcol", 6), ("fvcol", 6)):
+            if chunk.get(key):
+                clipped[key] = scope.clip_draw_primitives(chunk[key], stride, 3, group)
+        for key, stride in (("by_texture", 5), ("back_tex", 5), ("ttex", 5),
+                            ("back_ttex", 5), ("tcol", 6), ("back_tcol", 6)):
+            if chunk.get(key):
+                clipped[key] = {material: scope.clip_draw_primitives(raw, stride, 3, group)
+                                for material, raw in chunk[key].items()}
+        return clipped
+
     def _static_draw_groups(self, groups):
         """Of ``groups`` (the placements in draw order), the ones the
         consolidated passes draw — visible, not face-me, not instanced —
         in the same order. Kept while only matrices move (a Move: see
         ``_epoch_only_matrices``), which change none of the three."""
         epoch_of = getattr(self, "_placements_epoch", None)   # stub VPs in tests
-        if epoch_of is None:
+        if epoch_of is None or self._section_draw_key() is not None:
             return [g for g in groups
                     if self.scene.entity_visible(g)
                     and not getattr(g, "billboard", False)
-                    and not self._instanced_eligible(g)]
+                    and not self._draws_instanced(g)]
         epoch = epoch_of()
         ids = tuple(map(id, groups))
         memo = getattr(self, "_static_groups_memo", None)
@@ -403,13 +432,16 @@ class ChunkCacheMixin:
         selected_color = tuple(getattr(self._view_style(), "modeling_colors",
                                        {}).get("selected", ()))
         layer_look = _layer_look_sig(self.scene)
+        section_key = self._section_draw_key()
         if _cache_ver(self) == self._edges_version \
                 and tint == getattr(self, "_edges_front_tint", None) \
                 and selected_color == getattr(self, "_selection_style_color", ()) \
-                and layer_look == getattr(self, "_edges_layer_look", None):
+                and layer_look == getattr(self, "_edges_layer_look", None) \
+                and section_key == getattr(self, "_edges_section_key", None):
             return
         self._selection_style_color = selected_color
         self._edges_layer_look = layer_look
+        self._edges_section_key = section_key
         self._edges_front_tint = tint
         _st0 = _time_mod.perf_counter() if _PERF else 0.0
 
@@ -515,11 +547,15 @@ class ChunkCacheMixin:
                     e.a.x(), e.a.y(), e.a.z(),
                     e.b.x(), e.b.y(), e.b.z(),
                 ])
-        edge_parts = [all_loose.tobytes()]
+        loose_raw = all_loose.tobytes()
+        scope = getattr(self, "_frame_scoped_cut", None)
+        if scope is not None and scope.world_cuts:
+            loose_raw = scope.clip_draw_primitives(loose_raw, 3, 2, None)
+        edge_parts = [loose_raw]
         # Per-chunk draw spans (vertices) for frustum culling: the loose
         # block always draws (bbox None); each group's block carries its
         # chunk's world AABB.
-        loose_n = len(all_loose) // 3
+        loose_n = len(loose_raw) // 12
         edge_spans = [(None, 0, loose_n)]
         pv = getattr(self, "_preview_groups", None) or ()
         # The group half (every placement's hard edges, in draw order) is
@@ -527,7 +563,7 @@ class ChunkCacheMixin:
         # Move drag — re-uses it whole instead of walking 1 300 chunks.
         epoch_of = getattr(self, "_placements_epoch", None)     # stub VPs in tests
         gkey = (epoch_of() if epoch_of is not None else _cache_ver(self),
-                hide_rest, tuple(sorted(pv)))
+                hide_rest, tuple(sorted(pv)), section_key)
         # The group being edited goes LAST, so the surroundings occupy a
         # contiguous head the fade pass can draw in one go (and, since
         # nothing outside the group can change while you are in it, a head
@@ -569,8 +605,8 @@ class ChunkCacheMixin:
             for g in groups:
                 if (self.scene.entity_visible(g)
                         and not getattr(g, "billboard", False)
-                        and not self._instanced_eligible(g)):
-                    ch = self._group_chunk(g)
+                        and not self._draws_instanced(g)):
+                    ch = self._scoped_draw_chunk(g, self._group_chunk(g), edges_only=True)
                     n = len(ch["edges"]) // 12
                     if id(g) in pv:
                         # A mover keeps its place as zeros (see _pv_hole).
@@ -787,6 +823,20 @@ class ChunkCacheMixin:
                         bucket_face(face)
             finally:
                 self._tex_keys_now = None
+        scope = getattr(self, "_frame_scoped_cut", None)
+        loose = self._scoped_draw_chunk(None, {
+            "vcol": vcol.tobytes(), "dback": dback_loose.tobytes(),
+            "by_texture": {key: raw.tobytes() for key, raw in by_texture.items()},
+        }) if scope is not None and scope.world_cuts else None
+        if loose is not None:
+            def clip_world(raw, stride):
+                return scope.clip_draw_primitives(raw, stride, 3, None)
+            back_vcol_parts = [clip_world(raw, 6) for raw in back_vcol_parts]
+            fcull_vcol_parts = [clip_world(raw, 6) for raw in fcull_vcol_parts]
+            for runs, stride in ((tcol_runs, 6), (ttex_runs, 5), (back_tex_runs, 5),
+                                 (back_tcol_runs, 6), (back_ttex_runs, 5)):
+                for key, parts in runs.items():
+                    runs[key] = [clip_world(raw, stride) for raw in parts]
         group_face_spans: list = []   # (bbox, start-within-groups, count)
         gface_start = 0
         dback_parts: list = []        # default-back tint, per group chunk
@@ -851,7 +901,7 @@ class ChunkCacheMixin:
                 self._edit_split_db = dback_start  # same rule, same moment
             if (not self.scene.entity_visible(g)
                     or getattr(g, "billboard", False)
-                    or self._instanced_eligible(g)):
+                    or self._draws_instanced(g)):
                 continue
             if id(g) in pv_faces:
                 # A mover leaves the buffers as zeros of its own size, not
@@ -900,6 +950,7 @@ class ChunkCacheMixin:
                 continue
             if chunk is None:
                 chunk = self._group_chunk(g)
+            chunk = self._scoped_draw_chunk(g, chunk)
             sl.sizes.update(
                 f=len(chunk["vcol"]), d=len(chunk.get("dback") or b""),
                 t={p: len(r) for p, r in chunk["by_texture"].items()},
@@ -947,11 +998,14 @@ class ChunkCacheMixin:
         # Kept as a part LIST (not one concatenated blob) so the upload can
         # tell which pieces changed; the trailing runs below append to it.
         subj_raw = subj_vcol.tobytes()
-        all_face_parts = [vcol.tobytes()] + face_parts + [subj_raw]
+        if scope is not None and scope.applies_to(self.scene.edit_group):
+            subj_raw = scope.clip_draw_primitives(subj_raw, 6, 3, self.scene.edit_group)
+        loose_face_raw = loose["vcol"] if loose is not None else vcol.tobytes()
+        all_face_parts = [loose_face_raw] + face_parts + [subj_raw]
         self._faces_count = sum(len(p) for p in all_face_parts) // 24
         # Loose faces sit at the front of the VBO and always draw; group spans
         # follow them, and a bucketed subject block closes the buffer.
-        loose_n = len(vcol) // 6
+        loose_n = len(loose_face_raw) // 24
         self._face_spans = ([(None, 0, loose_n)]
                             + [(bb, loose_n + s, n)
                                for bb, s, n in group_face_spans])
@@ -1017,9 +1071,11 @@ class ChunkCacheMixin:
         # Default-back tint buffer: loose head, group chunks, bucketed
         # subject tail — the same shape as the faces buffer, so the fade
         # split and the frustum spans read the same way.
-        db_loose_raw = dback_loose.tobytes()
+        db_loose_raw = loose["dback"] if loose is not None else dback_loose.tobytes()
         db_loose_n = len(db_loose_raw) // 12
         db_subj_raw = subj_dback.tobytes()
+        if scope is not None and scope.applies_to(self.scene.edit_group):
+            db_subj_raw = scope.clip_draw_primitives(db_subj_raw, 3, 3, self.scene.edit_group)
         db_parts = [db_loose_raw] + dback_parts + [db_subj_raw]
         self._dback_spans = ([(None, 0, db_loose_n)]
                              + [(bb, db_loose_n + st, n)
@@ -1047,13 +1103,16 @@ class ChunkCacheMixin:
                                  + list(subj_by_texture)):
             run_start = start
             run_parts: list = []
-            parts = ([(by_texture[key].tobytes(), None, False)]
+            parts = ([(loose["by_texture"][key] if loose is not None else by_texture[key].tobytes(), None, False)]
                      if key in by_texture else [])
             parts += group_texture.get(key, [])
             # A bucketed subject's textured faces are the subject too, so the
             # fade pass must not wash them out with the surroundings.
             if key in subj_by_texture:
-                parts.append((subj_by_texture[key].tobytes(), None, True))
+                raw = subj_by_texture[key].tobytes()
+                if scope is not None and scope.applies_to(self.scene.edit_group):
+                    raw = scope.clip_draw_primitives(raw, 5, 3, self.scene.edit_group)
+                parts.append((raw, None, True))
             for raw, bb, subj in parts:
                 tex_parts.append(raw)
                 n = len(raw) // 20
@@ -1132,7 +1191,7 @@ class ChunkCacheMixin:
                 frozenset(map(id, sup)) if sup else None,
                 bool(getattr(sc, "show_hidden_objects", False)),
                 bool(getattr(sc, "show_hidden_geometry", False)),
-                getattr(self, "_edges_front_tint", None))
+                getattr(self, "_edges_front_tint", None), self._section_draw_key())
 
     def _sync_selection_buffers(self) -> None:
         """The selection's highlight buffers (``_sync_edges``)."""

@@ -11,6 +11,7 @@ from core.group import Group
 from core.mesh import Face
 from core.snap import SnapResult, _AXIS_VECTORS
 from tools.base import ToolContext
+from core.section import active_scoped_cut
 from views.viewport._support import (_NO_SNAP_FAST, _active_cut, _SnapEdge,
                                      _copy_snap_edge, _snap_context_of,
                                      _group_pseudo_edge, _LOOSE_SNAP_CAP,
@@ -634,7 +635,8 @@ class SnappingMixin:
                 owner = self._owner_of(groups[i])
                 out.append((dd, _SnapEdge(
                     QVector3D(*aa), QVector3D(*bb), in_group=True,
-                    context=_snap_context_of(self, groups[i]), group=owner)))
+                    context=_snap_context_of(self, groups[i]), group=owner,
+                    placement=groups[i])))
         out.sort(key=lambda de: de[0])        # stable: the fixed ones first
         return out[:cap]
 
@@ -665,7 +667,8 @@ class SnappingMixin:
             for i in near[np.argsort(d[near], kind="stable")]:
                 cands.append((float(d[i]), QVector3D(*idx.gedge_a[i]),
                               QVector3D(*idx.gedge_b[i]), float(t[i]),
-                              idx.gedge_groups[int(idx.gedge_gi[i])]))
+                              idx.gedge_groups[int(idx.gedge_gi[i])],
+                              idx.gedge_places[int(idx.gedge_gi[i])]))
         table = self._pick_lazy_table()
         rows = self._footprint_need(table, float(px), float(py), best)
         if len(rows):
@@ -694,10 +697,14 @@ class SnappingMixin:
                 for k, i in enumerate(pl.tolist()):
                     cands.append((float(d[k]), QVector3D(*a[k]),
                                   QVector3D(*b[k]), float(t[k]),
-                                  self._owner_of(groups[i])))
+                                  self._owner_of(groups[i]), groups[i]))
         cands.sort(key=lambda c: c[0])         # stable: the fixed ones first
-        for dd, a, b, t, owner in cands:
-            if not self._is_occluded(a + (b - a) * t):
+        scope = active_scoped_cut(self.scene)
+        for dd, a, b, t, owner, placement in cands:
+            p = a + (b - a) * t
+            if scope is not None and scope.hidden(p, placement):
+                continue
+            if not self._is_occluded(p):
                 return dd, owner
         return best, None
 
@@ -1016,6 +1023,20 @@ class SnappingMixin:
                 if seg is not None:
                     lines.append(_SnapEdge(*seg))
         near = self._nearby_group_edges(px, py) if px is not None else []
+        scope = active_scoped_cut(self.scene)
+        if scope is not None:
+            from views.viewport._support import _copy_snap_edge
+
+            clipped = []
+            for edge in near:
+                segment = scope.clip_segment(edge.a, edge.b, getattr(edge, "placement", None))
+                if segment is None:
+                    continue
+                if segment != (edge.a, edge.b):
+                    edge = _copy_snap_edge(edge)
+                    edge.a, edge.b = segment
+                clipped.append(edge)
+            near = clipped
         # What a transform tool is dragging must not attract snaps (the
         # entities in motion stay out of inference; issue #19): the
         # tool names the edges/groups in motion and they are dropped here.
@@ -1087,7 +1108,7 @@ class SnappingMixin:
                 edges, _edges_snappable(self.scene, edges)) if ok]
         big = (px is not None
                and (len(self.scene.edges) + len(outer)) > _LOOSE_SNAP_CAP)
-        if not lines and not near and not circles and sp is None \
+        if not lines and not near and not circles and sp is None and scope is None \
                 and not big and not outer and excl is None \
                 and not _snap_dropped_loose(self):
             return self.scene
@@ -1108,6 +1129,17 @@ class SnappingMixin:
             loose = [e for e in loose if id(e) not in excl[0]]
         if sp is not None:
             loose = [e for e in loose if _kept(e)]
+        if scope is not None:
+            group = getattr(self.scene, "edit_group", None)
+            if scope.applies_to(group):
+                outside_ids = {id(edge) for edge in outer}
+                clipped = []
+                for edge in loose:
+                    placement = None if id(edge) in outside_ids else group
+                    segment = scope.clip_segment(edge.a, edge.b, placement)
+                    if segment is not None:
+                        clipped.append(edge if segment == (edge.a, edge.b) else _SnapEdge(*segment))
+                loose = clipped
         if outer:
             # The ScreenTip must say these are outside the open context:
             # a real Edge carries no context of its own.

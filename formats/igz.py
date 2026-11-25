@@ -2124,12 +2124,6 @@ def _load_into_inner(scene, path: Path, progress=None) -> None:
         from core.section import SectionPlane
         scene.section_planes = [SectionPlane.from_dict(r)
                                 for r in raw_planes]
-        # One active cut max: keep the FIRST marked active.
-        seen_active = False
-        for sp in scene.section_planes:
-            if sp.active and seen_active:
-                sp.active = False
-            seen_active = seen_active or sp.active
     raw_boxes = payload.get("section_boxes")
     if isinstance(raw_boxes, list):
         from core.section import SectionBox

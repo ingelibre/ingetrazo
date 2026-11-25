@@ -2219,17 +2219,14 @@ class AddGuideCommand(Command):
 
 
 class PlaceSectionPlaneCommand(Command):
-    """Place a section plane. The new plane immediately becomes
-    the ACTIVE cut of the context; undo restores the previous one."""
+    """Place and activate a plane without changing other cuts."""
 
     def __init__(self, plane) -> None:
         self.plane = plane
-        self._prev_active = None
 
     def do(self, scene) -> None:
-        self._prev_active = scene.active_section()
         scene.section_planes.append(self.plane)
-        scene.set_active_section(self.plane)
+        self.plane.active = True
         scene.selection.clear()
         scene.selection.add(self.plane)
         scene.bump_sections()
@@ -2238,9 +2235,6 @@ class PlaceSectionPlaneCommand(Command):
         if self.plane in scene.section_planes:
             scene.section_planes.remove(self.plane)
         scene.selection.discard(self.plane)
-        prev = self._prev_active
-        scene.set_active_section(
-            prev if prev in scene.section_planes else None)
         scene.bump_sections()
 
 
@@ -2283,29 +2277,24 @@ class ReverseSectionPlaneCommand(Command):
 
 
 class SetActiveSectionCommand(Command):
-    """Make ``plane`` the active cut (or ``None`` to deactivate) — the
-    Active Cut toggle / double-click."""
+    """Set one plane's cut without changing other planes."""
 
-    def __init__(self, plane) -> None:
+    def __init__(self, plane, active) -> None:
         self.plane = plane
-        self._prev = None
+        self.active = bool(active)
+        self._prev = plane.active
 
     def do(self, scene) -> None:
-        self._prev = scene.active_section()
-        scene.set_active_section(self.plane)
+        self.plane.active = self.active
         scene.bump_sections()
 
     def undo(self, scene) -> None:
-        prev = self._prev
-        scene.set_active_section(
-            prev if prev in scene.section_planes else None)
+        self.plane.active = self._prev
         scene.bump_sections()
 
 
 class SetSectionModeCommand(Command):
-    """One section plane's mode, from the Browser: whether it CUTS
-    (it becomes the active cut — or none is) and whether its FRAME shows.
-    Cut and frame, cut only, frame only, or off — one undo step."""
+    """Set one plane's cut and frame visibility in one undo step."""
 
     def __init__(self, plane, cut: bool, frame: bool) -> None:
         self.plane = plane
@@ -2314,22 +2303,15 @@ class SetSectionModeCommand(Command):
         self._prev = None
 
     def do(self, scene) -> None:
-        self._prev = (scene.active_section(),
-                      bool(getattr(self.plane, "hidden", False)))
-        if self.cut:
-            scene.set_active_section(self.plane)
-        elif self.plane.active:
-            scene.set_active_section(None)
+        self._prev = (self.plane.active, self.plane.hidden)
+        self.plane.active = self.cut
         self.plane.hidden = not self.frame
         if self.plane.hidden:
             scene.selection.discard(self.plane)
         scene.bump_sections()
 
     def undo(self, scene) -> None:
-        active, hidden = self._prev
-        scene.set_active_section(
-            active if active in scene.section_planes else None)
-        self.plane.hidden = hidden
+        self.plane.active, self.plane.hidden = self._prev
         scene.bump_sections()
 
 
@@ -2634,13 +2616,13 @@ class CreatePlanCommand(Command):
         #: False: the plane is already in the model (a view of an existing
         #: cut) — it is made the active cut, not added.
         self.add_plane = add_plane
-        self._prev_active = None
+        self._prev_active = False
 
     def do(self, scene) -> None:
-        self._prev_active = scene.active_section()
+        self._prev_active = self.plane.active
         if self.add_plane:
             scene.section_planes.append(self.plane)
-        scene.set_active_section(self.plane)
+        self.plane.active = True
         scene.saved_views.append(self.view)
         if self.sheet is not None:
             scene.compositions.append(self.sheet)
@@ -2653,9 +2635,7 @@ class CreatePlanCommand(Command):
             scene.saved_views.remove(self.view)
         if self.add_plane and self.plane in scene.section_planes:
             scene.section_planes.remove(self.plane)
-        prev = self._prev_active
-        scene.set_active_section(
-            prev if prev in scene.section_planes else None)
+        self.plane.active = self._prev_active
         scene.selection.discard(self.plane)
         scene.version += 1
 
@@ -3639,8 +3619,10 @@ class FlipGroupsCommand(Command):
         self.axis = QVector3D(axis)
 
     def _flip(self, scene) -> None:
+        from core.section import carry_scoped_sections
         m = mirror_matrix(self.centre, self.axis)
         for g in self._groups:
+            carry_scoped_sections(scene, g, m)
             if getattr(g, "xform", None) is not None:
                 g.xform = m * g.xform
                 continue
@@ -3758,8 +3740,10 @@ class RotateGroupCommand(Command):
         self._after: Optional[dict] = None
 
     def do(self, scene) -> None:
+        from core.section import carry_scoped_sections
+        m = rotation_matrix(self.center, self.axis, self.degrees)
+        carry_scoped_sections(scene, self.group, m)
         if getattr(self.group, "xform", None) is not None:
-            m = rotation_matrix(self.center, self.axis, self.degrees)
             self.group.xform = m * self.group.xform
             scene.version += 1
             return
@@ -3771,7 +3755,6 @@ class RotateGroupCommand(Command):
             return
         self._before = gmesh.capture_state()
         self._axes_before = self.group.axes
-        m = rotation_matrix(self.center, self.axis, self.degrees)
         for v in list(gmesh.vertices):
             gmesh.move_vertex(v, m.map(v.position) - v.position)
         from core.group import _remap_uvws, carry_axes
@@ -3782,8 +3765,10 @@ class RotateGroupCommand(Command):
         scene.version += 1
 
     def undo(self, scene) -> None:
+        from core.section import carry_scoped_sections
+        m = rotation_matrix(self.center, self.axis, -self.degrees)
+        carry_scoped_sections(scene, self.group, m)
         if getattr(self.group, "xform", None) is not None:
-            m = rotation_matrix(self.center, self.axis, -self.degrees)
             self.group.xform = m * self.group.xform
             scene.version += 1
             return
@@ -3883,9 +3868,11 @@ class ScaleGroupCommand(Command):
         self._after: Optional[dict] = None
 
     def do(self, scene) -> None:
+        from core.section import carry_scoped_sections
+        m = scale_matrix(self.center, self.factor, self.axes)
+        carry_scoped_sections(scene, self.group, m)
         if getattr(self.group, "xform", None) is not None:
-            self.group.xform = scale_matrix(
-                self.center, self.factor, self.axes) * self.group.xform
+            self.group.xform = m * self.group.xform
             scene.version += 1
             return
         gmesh = self.group.mesh
@@ -3896,7 +3883,6 @@ class ScaleGroupCommand(Command):
             return
         self._before = gmesh.capture_state()
         self._axes_before = self.group.axes
-        m = scale_matrix(self.center, self.factor, self.axes)
         for v in list(gmesh.vertices):
             gmesh.move_vertex(v, m.map(v.position) - v.position)
         from core.group import _remap_uvws, carry_axes
@@ -3907,10 +3893,11 @@ class ScaleGroupCommand(Command):
         scene.version += 1
 
     def undo(self, scene) -> None:
+        from core.section import carry_scoped_sections
+        m = scale_matrix(self.center, invert_scale_factor(self.factor), self.axes)
+        carry_scoped_sections(scene, self.group, m)
         if getattr(self.group, "xform", None) is not None:
-            self.group.xform = scale_matrix(
-                self.center, invert_scale_factor(self.factor),
-                self.axes) * self.group.xform
+            self.group.xform = m * self.group.xform
             scene.version += 1
             return
         if self._before is not None:
@@ -5011,8 +4998,9 @@ class InsertGroupCommand(Command):
 
     keeps_groups = True
 
-    def __init__(self, group) -> None:
+    def __init__(self, group, section_planes=()) -> None:
         self.group = group
+        self.section_planes = tuple(section_planes)
         self._owner: Optional[list] = None
 
     @staticmethod
@@ -5039,6 +5027,8 @@ class InsertGroupCommand(Command):
         else:
             owner = scene.groups
         owner.append(self.group)
+        if self.section_planes:
+            scene.section_planes.extend(self.section_planes)
         self._owner = owner
         scene.selection.clear()
         scene.selection.add(self.group)
@@ -5048,6 +5038,10 @@ class InsertGroupCommand(Command):
         owner = self._owner if self._owner is not None else scene.groups
         if self.group in owner:
             owner.remove(self.group)
+        for plane in self.section_planes:
+            if plane in scene.section_planes:
+                scene.section_planes.remove(plane)
+            scene.selection.discard(plane)
         scene.selection.discard(self.group)
         scene.version += 1
 
@@ -5749,6 +5743,8 @@ class MoveGroupCommand(Command):
             _remap_uvws(self.group.mesh, t)   # the texture travels along
             from core.group import carry_axes
             carry_axes(self.group, t)         # and its axes (#44)
+        from core.section import carry_scoped_sections
+        carry_scoped_sections(scene, self.group, t)
         scene.version += 1
 
     def do(self, scene) -> None:

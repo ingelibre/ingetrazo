@@ -6163,7 +6163,7 @@ class MainWindow(QMainWindow):
             return
         plane = planes[0]
         self.viewport.history.execute(
-            SetActiveSectionCommand(None if plane.active else plane))
+            SetActiveSectionCommand(plane, not plane.active))
         self.viewport.update()
 
     def _on_align_view_to_section(self) -> None:

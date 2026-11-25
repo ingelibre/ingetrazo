@@ -142,7 +142,9 @@ class FlipTool(Tool):
             m = mirror_matrix(centre, n)
             for g in groups:
                 copy = copy_group(g)
-                cmds.append(InsertGroupCommand(copy))
+                from core.section import copy_scoped_sections
+                planes = copy_scoped_sections(viewport.scene.section_planes, g, copy)
+                cmds.append(InsertGroupCommand(copy, planes))
                 cmds.append(FlipGroupsCommand([copy], centre, n))
             id_map: dict[int, int] = {}
             for f in faces:

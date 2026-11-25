@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 from PySide6.QtGui import QVector3D, QVector4D
+from core.section import active_scoped_planes
 from core.style import base_face_mode, xray_enabled, sees_through_faces
 from views.viewport._support import (_active_cut, GL_FLOAT,
                                      GL_DEPTH_BUFFER_BIT, GL_READ_FRAMEBUFFER,
@@ -141,6 +142,17 @@ class OcclusionMixin:
             return True
         if sees_through_faces(self._effective_style()):
             return False
+        if active_scoped_planes(self.scene):
+            origin = self.camera.eye()
+            delta = world - origin
+            distance = delta.length()
+            if distance < 1e-9:
+                return False
+            direction = delta / distance
+            idx = self._pick_index(near=("ray", origin, direction, distance))
+            hits = self._face_hits(idx, origin, direction, "vis")
+            self._drop_past_cut(hits, origin, direction)
+            return hits is not None and bool((hits.t < distance - 1e-3).any())
         if (sp is None and hasattr(self, "_lazy_native")
                 and self._lazy_native() is not None):
             # Every lazy placement, unbaked, through the batched pass.
@@ -231,7 +243,8 @@ class OcclusionMixin:
                else None)
         if nat is None or not hasattr(nat[0], "first_clear"):
             return None
-        if _active_cut(self.scene) is not None or not _qv_hypot3():
+        if (_active_cut(self.scene) is not None
+                or active_scoped_planes(self.scene) or not _qv_hypot3()):
             return None
         if sees_through_faces(self._effective_style()):
             return 0                     # nothing hides anything
@@ -260,7 +273,7 @@ class OcclusionMixin:
         placements the index bakes around the cursor)."""
         if not _OCCLUSION_MEMO:
             return None
-        if _active_cut(self.scene) is not None:
+        if _active_cut(self.scene) is not None or active_scoped_planes(self.scene):
             return None
         nat = (self._lazy_native() if hasattr(self, "_lazy_native")
                else None)
@@ -296,7 +309,8 @@ class OcclusionMixin:
             worlds = arr
         else:
             worlds = list(worlds)
-        if len(worlds) and _active_cut(self.scene) is not None:
+        if len(worlds) and (_active_cut(self.scene) is not None
+                            or active_scoped_planes(self.scene)):
             if arr is not None:
                 worlds = [QVector3D(*p) for p in arr.tolist()]
             return [self._is_occluded(w) for w in worlds]   # the cut first (#384)
