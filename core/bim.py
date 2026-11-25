@@ -94,7 +94,7 @@ def next_object_id(scene) -> int:
     for mesh in (scene.loose_mesh, *_group_meshes(scene)):
         for attrs in face_attrs(mesh):
             tag = attrs.get("ifc")
-            if tag and isinstance(tag.get("id"), int):
+            if isinstance(tag, dict) and isinstance(tag.get("id"), int):
                 top = max(top, tag["id"])
     return top + 1
 
@@ -134,6 +134,36 @@ def tag_group(group, ifc_class: str, name: str) -> None:
 
 def untag_group(group) -> None:
     group.ifc = None
+
+
+def _dict_tag(tag, owner=None) -> dict | None:
+    """``tag`` as a dict: scripts assign ``ifc`` freely, and a bare class
+    name must not stop the panel, the takeoff or the export (#1527)."""
+    if isinstance(tag, dict):
+        return tag
+    from formats.igz import _ifc_json
+    return _ifc_json(tag, owner)
+
+
+def _tagged(faces) -> dict:
+    """``{id: (tag, faces)}`` of the tagged ``faces``; a tag that is not a
+    dict is made one."""
+    by_id: dict = {}
+    for f in faces:
+        tag = f.attrs.get("ifc")
+        if tag and not isinstance(tag, dict):
+            tag = f.attrs["ifc"] = _dict_tag(tag)
+        if tag:
+            by_id.setdefault(tag.get("id"), (tag, []))[1].append(f)
+    return by_id
+
+
+def _by_tag_id(item) -> tuple:
+    """Sort key of :func:`_tagged`'s items: ids are numbers, but for those a
+    script wrote."""
+    k = item[0]
+    return (0, k, "") if isinstance(k, (int, float)) else (
+        (0, 0, "") if not k else (1, 0, str(k)))
 
 
 def face_set_area(faces) -> float:
@@ -278,12 +308,7 @@ def _face_tags_in(mesh, memo, seen) -> dict:
         seen.add(key)
         if key in memo:
             return {}
-    by_id: dict = {}
-    if _holds_face_tags(mesh):
-        for f in mesh.faces:
-            tag = f.attrs.get("ifc")
-            if tag:
-                by_id.setdefault(tag.get("id"), (tag, []))[1].append(f)
+    by_id = _tagged(mesh.faces) if _holds_face_tags(mesh) else {}
     if key is not None and not by_id:
         memo[key] = True
     return by_id
@@ -314,13 +339,8 @@ def collect_objects(scene, memo: dict | None = None) -> list[dict]:
     edit re-measures only what it touched (#857: 238 rebar bars took 25 s
     each time); entries no longer in the model are dropped from it."""
     out: list[dict] = []
-    by_id: dict = {}
-    for f in scene.loose_mesh.faces:
-        tag = f.attrs.get("ifc")
-        if tag:
-            by_id.setdefault(tag.get("id"), (tag, []))[1].append(f)
-    for obj_id, (tag, faces) in sorted(by_id.items(),
-                                       key=lambda kv: kv[0] or 0):
+    for obj_id, (tag, faces) in sorted(
+            _tagged(scene.loose_mesh.faces).items(), key=_by_tag_id):
         out.append({
             "key": ("faces", obj_id),
             "class": tag.get("class", ""),
@@ -332,13 +352,15 @@ def collect_objects(scene, memo: dict | None = None) -> list[dict]:
     seen = set()
     for g, base in _placed_groups(scene.groups):
         tag = getattr(g, "ifc", None)
+        if tag and not isinstance(tag, dict):
+            tag = g.ifc = _dict_tag(tag, g.name)
         if not tag:
             found = _face_tags_in(g.mesh, memo, seen)
             if not found:
                 continue            # most groups: no matrix to compose
             m = _compose(base, getattr(g, "xform", None))
-            for obj_id, (ftag, faces) in sorted(
-                    found.items(), key=lambda kv: kv[0] or 0):
+            for obj_id, (ftag, faces) in sorted(found.items(),
+                                                key=_by_tag_id):
                 if m is not None:
                     faces = _moved_faces(faces, m)
                 out.append({

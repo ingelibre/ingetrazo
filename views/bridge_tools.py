@@ -316,6 +316,7 @@ class BridgeTools:
         BIM tag. With several of that name, the first, and how many."""
         from core.layers import layer_of
         from core.outliner import world_bounds
+        from formats.igz import _ifc_json
         if not name and not id:
             raise ValueError("give the object's name or id")
         groups = self._groups([name] if name else None, [id] if id else None)
@@ -336,7 +337,8 @@ class BridgeTools:
             "faces": len(g.mesh.faces), "edges": len(g.mesh.edges),
             "children": [{"name": c.name, "id": c.uid}
                          for c in getattr(g, "children", None) or []][:200],
-            "bim": dict(g.ifc) if getattr(g, "ifc", None) else None,
+            "bim": _ifc_json(g.ifc, g.name) if getattr(g, "ifc", None)
+            else None,
         }
 
     def _tool_list_layers(self) -> dict:
