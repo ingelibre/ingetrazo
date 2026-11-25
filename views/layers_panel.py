@@ -2653,6 +2653,27 @@ class _LayerTree(SideTree):
     #: shortcut.
     DELETE_KEY = True
 
+    def editing(self) -> bool:
+        return self.state() == QAbstractItemView.EditingState
+
+    def closeEditor(self, editor, hint) -> None:     # noqa: N802 — Qt override
+        super().closeEditor(editor, hint)
+        # On the next turn: Tab has opened the next name's editor by now.
+        QTimer.singleShot(0, self._panel, self._panel._refresh_waited)
+
+    def finish_editing(self) -> None:
+        """Take the name being typed and close its editor: the action that
+        follows rebuilds the rows at once (a button or a header click does
+        not always move the focus)."""
+        if not self.editing():
+            return
+        for editor in self.viewport().findChildren(
+                QLineEdit, options=Qt.FindDirectChildrenOnly):
+            if not editor.isHidden():
+                self.commitData(editor)
+                self.closeEditor(editor, QStyledItemDelegate.NoHint)
+        self._panel._just_made = None
+
     def target_folder(self, pos) -> str | None:
         """The folder a drop at `pos` (viewport coordinates) files into."""
         item = self.itemAt(pos)
@@ -2719,6 +2740,10 @@ class LayersPanel(QWidget):
         self._window = window
         self._updating = False
         self._told_outline = None
+        #: What an open name editor holds back — ``"rebuild"`` or
+        #: ``"check"`` — and the rows renamed since the last rebuild.
+        self._waiting: str | None = None
+        self._renamed: dict[tuple, str] = {}
         self._collapsed: set[str] = set()
         self._counts: dict[str, int] = {}
         self._counted_version = None
@@ -2988,6 +3013,11 @@ class LayersPanel(QWidget):
         """Rebuild the tree from the document, keeping the selection, the
         folded folders and the filter; the counts follow a moment later
         (one walk of the model, not one per edit)."""
+        if self.tree.editing():
+            self._waiting = "rebuild"       # never under an open name editor
+            return
+        self._waiting = None
+        self._renamed.clear()
         # This rebuild covers whatever the deferred one was waiting for.
         timer = getattr(self, "_refresh_timer", None)
         if timer is not None and timer.isActive():
@@ -3112,6 +3142,7 @@ class LayersPanel(QWidget):
         """Eye or padlock header: every layer shown or hidden, locked or
         unlocked (all of them hidden or locked → all back). Any other
         header: sort by it, twice to turn the order."""
+        self.tree.finish_editing()
         scene = self._scene()
         names = [ly.name for ly in scene.layers]
         if col == COL_EYE:
@@ -4373,7 +4404,9 @@ class LayersPanel(QWidget):
     def _on_item_changed(self, item, column) -> None:
         if self._updating or column != COL_NAME:
             return
-        kind, old = self._key(item)
+        kind, old = key = self._key(item)
+        # Renamed already, the rebuild still waiting (Tab, then back).
+        old = self._renamed.get(key, old)
         new = item.text(COL_NAME).strip()
         scene = self._scene()
         if new and new != old and self._just_made == (kind, old):
@@ -4383,9 +4416,11 @@ class LayersPanel(QWidget):
                 if old in self._collapsed:
                     self._collapsed.discard(old)
                     self._collapsed.add(new)
-                L.rename_folder(scene, old, new)
+                done = L.rename_folder(scene, old, new)
             else:
-                L.rename_layer(scene, old, new)
+                done = L.rename_layer(scene, old, new)
+            if done:
+                self._renamed[key] = new
         QTimer.singleShot(0, self._touch)       # not while the editor closes
 
     #: QSettings key of «New layers start hidden in the existing scenes».
@@ -4418,6 +4453,7 @@ class LayersPanel(QWidget):
     def add_layer(self, folder: str | None = None, edit: bool = True) -> str:
         """A new layer — inside the selected folder, or ``folder`` — with
         its name open for typing. Returns its name."""
+        self.tree.finish_editing()
         scene = self._scene()
         folder = folder or self._selected_folder()
         name = L.unique_name([ly.name for ly in scene.layers], tr("Layer"))
@@ -4432,6 +4468,7 @@ class LayersPanel(QWidget):
     def add_folder(self, parent: str | None = None, edit: bool = True) -> str:
         """A new folder — inside the selected folder, or ``parent`` — with
         its name open for typing. Returns its name."""
+        self.tree.finish_editing()
         scene = self._scene()
         parent = parent or self._selected_folder()
         name = L.add_folder(scene, tr("Folder"), parent)
@@ -5315,7 +5352,8 @@ class LayersPanel(QWidget):
         rows are rebuilt on the next turn instead, a burst of changes
         paying one rebuild. A window not shown yet (scripts, tests)
         refreshes at once, as before."""
-        if self.tree.state() == QAbstractItemView.EditingState:
+        if self.tree.editing():
+            self._waiting = self._waiting or "check"
             return                          # never under an open name editor
         if self._window.isVisible() and not self.isVisible():
             self._stale = True
@@ -5333,6 +5371,9 @@ class LayersPanel(QWidget):
         change of the model, the counts — the filter too: «Selection» shows
         the layers of what is picked — when the rows are what they were;
         otherwise the tree is rebuilt."""
+        if self.tree.editing():
+            self._waiting = self._waiting or "check"
+            return
         if (self._signature() == getattr(self, "_drawn_signature", None)
                 and self.tree.topLevelItemCount()):
             self._mark_selection()
@@ -5341,6 +5382,16 @@ class LayersPanel(QWidget):
                 self._count_timer.start(300)
             return
         self.refresh()
+
+    def _refresh_waited(self) -> None:
+        """The name editor closed: what it held back."""
+        if self._waiting is None or self.tree.editing():
+            return
+        what, self._waiting = self._waiting, None
+        if what == "rebuild":
+            self.refresh()
+        else:
+            self.on_scene_changed()
 
     def _signature(self) -> tuple:
         return (layers_signature(self._scene()), tuple(self._isolated))
