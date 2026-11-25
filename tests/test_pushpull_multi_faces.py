@@ -328,6 +328,91 @@ def test_ctrl_copy_stacks_on_every_face():
     assert len(_faces_at_z(scene, 5.0)) == 2
 
 
+# ---- #1638: touching faces preview the commit, not the naive sweeps --------
+
+def _start_multi_drag(scene, lead):
+    """Activate with the scene's current selection and start a drag on
+    ``lead`` — the state a mouse move finds, without the move itself."""
+    vp = _StubViewport(scene, pick=lead)
+    tool = PushPullTool()
+    tool.on_activate(vp)
+    tool.on_hover(_ctx(vp))
+    tool.on_click(_ctx(vp))
+    return tool, vp
+
+
+def _mesh_points(scene):
+    return {(round(v.position.x(), 3), round(v.position.y(), 3),
+             round(v.position.z(), 3)) for v in scene.mesh.vertices}
+
+
+def test_touching_faces_preview_the_commit_not_the_sweeps():
+    """#1638: every face of a cube pushed out at once. The overlay showed
+    six separate bumps (a cross) while the commit merges them into a bigger
+    cube. The drag now stages the commit, so the corner is filled while
+    dragging — and the release keeps exactly that shape."""
+    scene = Scene()
+    _box(scene, 0.0, 2.0)
+    scene.select(list(scene.faces))
+    top = _faces_at_z(scene, 2.0)[0]
+
+    tool, vp = _start_multi_drag(scene, top)
+    assert tool._extras_touch()
+    tool.extrusion = 0.58
+    tool._show_drag_preview(vp)
+
+    # The staged model itself, not an overlay: the corner cube is filled.
+    assert not tool.preview_faces()
+    assert (2.58, 2.58, 2.58) in _mesh_points(scene)
+    assert (-0.58, -0.58, -0.58) in _mesh_points(scene)
+    tool.on_click(_ctx(vp))                    # the release
+    assert len(scene.faces) == 6               # a bigger cube, not a cross
+    assert is_closed(scene.mesh)
+    assert len(vp.history.undo_stack) == 1     # one undo step, as before
+    assert vp.history.undo() is True
+    assert len(_faces_at_z(scene, 2.0)) == 1
+
+
+def test_touching_faces_restage_at_a_new_distance():
+    """Several normals, no single slide: the stage is exact only at its own
+    distance, so moving the cursor stages anew instead of sliding the
+    corner along one normal."""
+    scene = Scene()
+    _box(scene, 0.0, 2.0)
+    scene.select(list(scene.faces))
+    top = _faces_at_z(scene, 2.0)[0]
+
+    tool, vp = _start_multi_drag(scene, top)
+    tool.extrusion = 0.58
+    tool._show_drag_preview(vp)
+    assert (2.58, 2.58, 2.58) in _mesh_points(scene)
+    tool.extrusion = 1.0
+    tool._show_drag_preview(vp)
+    assert (3.0, 3.0, 3.0) in _mesh_points(scene)
+    assert (2.58, 2.58, 2.58) not in _mesh_points(scene)
+    tool.on_click(_ctx(vp))
+    assert (3.0, 3.0, 3.0) in _mesh_points(scene)
+    assert is_closed(scene.mesh)
+
+
+def test_separate_solids_still_preview_as_an_overlay():
+    """Faces that do not touch keep the overlay: their sweeps never merge,
+    so it stays right — and stays cheap."""
+    scene = _two_boxes()
+    a, b = _faces_at_z(scene, 3.0)
+    scene.select([a, b])
+
+    tool, vp = _start_multi_drag(scene, a)
+    assert not tool._extras_touch()
+    tool.extrusion = 2.0
+    tool._show_drag_preview(vp)
+
+    assert len(tool.preview_faces()) == 10
+    assert len(_faces_at_z(scene, 3.0)) == 2   # the model is not touched
+    tool.on_cancel(vp)
+    assert len(_faces_at_z(scene, 3.0)) == 2
+
+
 # ---- A face that cannot go the whole way stays where it was ----------------
 
 def _box(scene, x0, height, size=2.0):
