@@ -96,43 +96,49 @@ def collect_geometry(scene, layers: bool = False):
     def eat_mesh(mesh, visible=lambda _e: True, owner=DEFAULT_LAYER,
                  owners=None):
         windings = {}
+        normals = {}
+
+        def normal_of(face):
+            normal = normals.get(face)
+            if normal is None:
+                normal = normals[face] = face.normal()
+            return normal
+
         for i, face in enumerate(mesh.faces):
             _progress.tick()
             if not visible(face):
                 continue
-            own = layer_of(face)
-            tag = own if own != DEFAULT_LAYER else (
-                owners[i] if owners is not None else owner)
-            for a, b, c in face.triangulate():
-                tri_l.append(tag)
-                tris.append(((a.x(), a.y(), a.z()),
-                             (b.x(), b.y(), b.z()),
-                             (c.x(), c.y(), c.z())))
+            face_tris = face.triangulate()
+            if layers:
+                own = layer_of(face)
+                tag = own if own != DEFAULT_LAYER else (
+                    owners[i] if owners is not None else owner)
+                tri_l.extend([tag] * len(face_tris))
+            for a, b, c in face_tris:
+                tris.append((a.toTuple(), b.toTuple(), c.toTuple()))
         for e in mesh.edges:
-            if not visible(e):
+            if not visible(e) or getattr(e, "hidden", False):
                 continue
-            p0 = (e.v0.position.x(), e.v0.position.y(), e.v0.position.z())
-            p1 = (e.v1.position.x(), e.v1.position.y(), e.v1.position.z())
-            if getattr(e, "hidden", False):
-                continue
-            own = layer_of(e)
-            tag = own if own != DEFAULT_LAYER else owner
+            p0, p1 = e.v0.position.toTuple(), e.v1.position.toTuple()
+            if layers:
+                own = layer_of(e)
+                tag = own if own != DEFAULT_LAYER else owner
             if getattr(e, "soft", False):
                 fs = [f for f in e.faces if visible(f)]
                 if not fs:
                     continue
-                na = fs[0].normal()
-                nb = fs[1].normal() if len(fs) > 1 else None
-                if nb is not None:
-                    nb *= edge_normal_sign(e, windings)
-                soft.append((p0, p1,
-                             (na.x(), na.y(), na.z()),
-                             None if nb is None
-                             else (nb.x(), nb.y(), nb.z())))
-                soft_l.append(tag)
+                na = normal_of(fs[0])
+                # The winding sign belongs to this edge, not the cached face.
+                nb = (normal_of(fs[1]) * edge_normal_sign(e, windings)
+                      if len(fs) > 1 else None)
+                soft.append((p0, p1, na.toTuple(),
+                             None if nb is None else nb.toTuple()))
+                if layers:
+                    soft_l.append(tag)
             else:
                 hard.append((p0, p1))
-                hard_l.append(tag)
+                if layers:
+                    hard_l.append(tag)
 
     eat_mesh(scene.loose_mesh, visible=scene.entity_visible)
     for g in scene.groups:
@@ -160,7 +166,7 @@ def collect_geometry(scene, layers: bool = False):
             if len(owners) != len(mesh.faces):
                 owners = None     # never mis-tag on a miscount
         eat_mesh(mesh, visible=lambda e: not scene.entity_hidden(e),
-                 owner=layer_of(g), owners=owners)
+                 owner=layer_of(g) if layers else DEFAULT_LAYER, owners=owners)
     if layers:
         return tris, hard, soft, hard_l, soft_l, tri_l
     return tris, hard, soft
