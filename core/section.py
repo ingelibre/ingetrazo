@@ -547,6 +547,30 @@ class ScopedSectionCut:
         return np.concatenate(kept).astype(np.float32, copy=False).tobytes()
 
 
+def copy_scoped_sections(planes, source, target, delta=None):
+    """Copy a subtree's sections onto the corresponding fresh placement IDs."""
+    scoped = [plane for plane in planes if plane.owner_uid is not None]
+    if not scoped:
+        return []
+    from copy import deepcopy
+    from core.group import iter_placements
+
+    owners = {old.uid: new.uid for (old, _), (new, _) in
+              zip(iter_placements(source), iter_placements(target), strict=True)}
+    copied = []
+    for plane in scoped:
+        owner = owners.get(plane.owner_uid)
+        if owner is None:
+            continue
+        point = plane.point if delta is None else plane.point + delta
+        new = SectionPlane(point, plane.normal, name=plane.name, symbol=plane.symbol,
+                           active=plane.active, hidden=plane.hidden)
+        new.owner_uid, new.layer = owner, plane.layer
+        new.fill = deepcopy(plane.fill)
+        copied.append(new)
+    return copied
+
+
 def carry_scoped_sections(scene, group, matrix):
     """Carry section planes owned by a group or its descendants."""
     scoped = [plane for plane in scene.section_planes if plane.owner_uid is not None]

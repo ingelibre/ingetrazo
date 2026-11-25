@@ -50,6 +50,7 @@ def encode(clip: dict) -> bytes:
         if attrs:
             face.attrs = dict(attrs)
     scene.groups.extend(clip.get("groups", ()))
+    scene.section_planes.extend(clip.get("section_planes", ()))
     # Paint travels inside the embedded .igz, so a textured edge carries
     # its image too, without changing the legacy clipboard edge tuples.
     edge_materials = clip.get("edge_materials", ())
@@ -110,6 +111,9 @@ def decode(data: bytes) -> dict | None:
             g.component = False       # a group still (issue #90)
     out = {"faces": faces, "edges": edges, "groups": list(scene.groups),
            "ref": QVector3D(*head["ref"])}
+    if scene.section_planes:
+        out["section_planes"] = [plane for plane in scene.section_planes
+                                 if plane.owner_uid is not None]
     from core.mesh import edge_material_key
     materials = {edge_material_key(edge.a, edge.b): edge.material
                  for edge in scene.mesh.edges if edge.material}

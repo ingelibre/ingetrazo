@@ -3619,8 +3619,10 @@ class FlipGroupsCommand(Command):
         self.axis = QVector3D(axis)
 
     def _flip(self, scene) -> None:
+        from core.section import carry_scoped_sections
         m = mirror_matrix(self.centre, self.axis)
         for g in self._groups:
+            carry_scoped_sections(scene, g, m)
             if getattr(g, "xform", None) is not None:
                 g.xform = m * g.xform
                 continue
@@ -4996,8 +4998,9 @@ class InsertGroupCommand(Command):
 
     keeps_groups = True
 
-    def __init__(self, group) -> None:
+    def __init__(self, group, section_planes=()) -> None:
         self.group = group
+        self.section_planes = tuple(section_planes)
         self._owner: Optional[list] = None
 
     @staticmethod
@@ -5024,6 +5027,8 @@ class InsertGroupCommand(Command):
         else:
             owner = scene.groups
         owner.append(self.group)
+        if self.section_planes:
+            scene.section_planes.extend(self.section_planes)
         self._owner = owner
         scene.selection.clear()
         scene.selection.add(self.group)
@@ -5033,6 +5038,10 @@ class InsertGroupCommand(Command):
         owner = self._owner if self._owner is not None else scene.groups
         if self.group in owner:
             owner.remove(self.group)
+        for plane in self.section_planes:
+            if plane in scene.section_planes:
+                scene.section_planes.remove(plane)
+            scene.selection.discard(plane)
         scene.selection.discard(self.group)
         scene.version += 1
 

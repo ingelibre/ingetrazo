@@ -91,6 +91,12 @@ class ClipboardMixin:
             drop(old_clip)
         self.clipboard = {"faces": face_data, "edges": edge_data,
                           "groups": group_data, "ref": ref}
+        from core.section import copy_scoped_sections
+        planes = [plane for original, template in zip(groups, group_data)
+                  for plane in copy_scoped_sections(
+                      getattr(self.scene, "section_planes", ()), original, template)]
+        if planes:
+            self.clipboard["section_planes"] = planes
         edge_materials = [copy.deepcopy(edge.material) for edge in edges]
         if any(edge_materials):
             self.clipboard["edge_materials"] = edge_materials

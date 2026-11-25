@@ -1215,6 +1215,7 @@ class MoveTool(Tool):
 
         def build(deltas):
             from core.edits import touching_segments
+            from core.section import copy_scoped_sections
             from core.geometry import Edge as GeomEdge, Face as GeomFace
             deltas = list(deltas)
             cmds: list = []
@@ -1244,7 +1245,9 @@ class MoveTool(Tool):
                 for group in groups:
                     clone = copy_group(group, d)
                     copied_groups.append(clone)
-                    cmds.append(InsertGroupCommand(clone))
+                    planes = copy_scoped_sections(getattr(scene, "section_planes", ()),
+                                                   group, clone, d)
+                    cmds.append(InsertGroupCommand(clone, planes))
                 for g in guides:
                     clone = copied_guide(g, m)
                     copied_guides.append(clone)
