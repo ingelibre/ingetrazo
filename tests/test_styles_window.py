@@ -220,8 +220,8 @@ def test_refresh_keeps_navigation_and_does_not_rewrite_loaded_values(editor):
 
 
 def test_return_in_editor_does_not_open_unrelated_dialogs(editor, monkeypatch):
+    from PySide6.QtWidgets import QVBoxLayout, QWidget
     from views import tray
-    from views.styles_window import StylesWindow
 
     _window, panel = editor
     opened = []
@@ -237,7 +237,8 @@ def test_return_in_editor_does_not_open_unrelated_dialogs(editor, monkeypatch):
 
     monkeypatch.setattr(tray._prompts, "get_text", save_prompt)
     monkeypatch.setattr(QMessageBox, "question", delete_prompt)
-    dialog = StylesWindow(None, panel)
+    dialog = QWidget()
+    QVBoxLayout(dialog).addWidget(panel)
     try:
         panel._tabs.setCurrentIndex(1)
         panel._edit_buttons[0].click()
@@ -252,55 +253,3 @@ def test_return_in_editor_does_not_open_unrelated_dialogs(editor, monkeypatch):
     finally:
         panel.setParent(None)
         dialog.close()
-
-
-def test_toolbar_opens_one_modeless_resizable_styles_window(style_library):
-    from views.main_window import MainWindow
-
-    window = MainWindow()
-    try:
-        toolbar = window.findChild(QToolBar, "panels_toolbar")
-        assert toolbar is not None
-        button = window.findChild(QToolButton, "styles_button")
-        assert button is not None and button.menu() is None
-        other_buttons = [widget for action in toolbar.actions()
-                         if isinstance(widget := toolbar.widgetForAction(action), QToolButton)
-                         and widget is not button]
-        # Fog, Shadows and Dimension style keep their drop-down panels.
-        assert len(other_buttons) == 3
-        assert all(widget.menu() is not None for widget in other_buttons)
-
-        button.click()
-        QApplication.processEvents()
-        dialog = window._styles_window
-        assert isinstance(dialog, QDialog)
-        assert dialog.isVisible() and not dialog.isModal()
-        assert dialog.isAncestorOf(window.styles_panel)
-        original = dialog.size()
-        dialog.resize(original.width() + 100, original.height() + 80)
-        assert dialog.width() > original.width()
-        assert dialog.height() > original.height()
-
-        # The same style controls stay live while the window remains open.
-        panel = window.styles_panel
-        panel._tabs.setCurrentIndex(1)
-        assert window._act_style_edges.isChecked()
-        window._act_style_edges.setChecked(False)
-        assert not panel._edges.isChecked()
-        assert not window.viewport.scene.display_style.edges
-        panel._xray.setChecked(True)
-        assert window.viewport.scene.display_style.face_mode == "textures"
-        assert window.viewport.scene.display_style.xray
-        assert not window.viewport.scene.display_style.edges
-        assert dialog.isVisible()
-        dialog.close()
-        assert not dialog.isVisible()
-        button.click()
-        assert window._styles_window is dialog and dialog.isVisible()
-        assert panel._tabs.currentIndex() == 1
-        assert not panel._edges.isChecked()
-    finally:
-        if window._styles_window is not None:
-            window._styles_window.close()
-        window._saved_version = window.viewport.scene.version
-        window.close()

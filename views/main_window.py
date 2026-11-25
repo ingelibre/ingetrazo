@@ -288,6 +288,34 @@ class _IconTabStyle(QProxyStyle):
 DOCK_TAB_ICON_PX = 20
 
 
+def _temporary_tab_icon(icon):
+    """The tab icon of a tray open for a while: its own, a little smaller,
+    inside a dashed frame in the accent colour."""
+    from PySide6.QtGui import QColor, QIcon, QPainter, QPen, QPixmap
+    from PySide6.QtCore import QRectF
+    from views.theme import accent_color
+    out = QIcon()
+    for scale in (1, 2):
+        px = DOCK_TAB_ICON_PX * scale
+        pm = QPixmap(px, px)
+        pm.fill(Qt.transparent)
+        p = QPainter(pm)
+        p.setRenderHint(QPainter.Antialiasing)
+        inset = round(px * 0.2)
+        icon.paint(p, inset, inset, px - 2 * inset, px - 2 * inset)
+        pen = QPen(QColor(accent_color()), 1.2 * scale)
+        pen.setStyle(Qt.CustomDashLine)
+        pen.setDashPattern([2.0, 1.6])
+        p.setPen(pen)
+        p.setBrush(Qt.NoBrush)
+        half = pen.widthF() / 2
+        p.drawRoundedRect(QRectF(half, half, px - 2 * half, px - 2 * half),
+                          3 * scale, 3 * scale)
+        p.end()
+        out.addPixmap(pm)
+    return out
+
+
 class _DockTitleTab(QTabBar):
     """The tab of a side tray alone on its side, as the tabs Qt draws when
     trays share a side — so it still has a tab to drag to the other side,
@@ -350,7 +378,31 @@ class _DockHeader(QWidget):
         font = self.label.font()
         font.setBold(True)
         self.label.setFont(font)
-        row.addWidget(self.label, 1)
+        row.addWidget(self.label)
+        # Open for a while (MainWindow.show_tray_temporarily): «Pin» keeps
+        # it, ✕ closes it — and it closes by itself when left.
+        self.temporary = window.tray_is_temporary(dock)
+        self.pin = self.close_button = None
+        row.addStretch(1)
+        if self.temporary:
+            from PySide6.QtWidgets import QToolButton
+            self.pin = QToolButton(self)
+            self.pin.setObjectName("dock_header_pin")
+            self.pin.setText(tr("Pin"))
+            self.pin.setToolTip(tr("Keep this panel: it stays in the "
+                                   "sidebar from now on."))
+            self.pin.setAutoRaise(True)
+            self.pin.clicked.connect(
+                lambda: window.pin_temporary_tray(dock))
+            row.addWidget(self.pin)
+            self.close_button = QToolButton(self)
+            self.close_button.setObjectName("dock_header_close")
+            self.close_button.setText("✕")
+            self.close_button.setToolTip(tr("Close this panel"))
+            self.close_button.setAutoRaise(True)
+            self.close_button.clicked.connect(
+                lambda: window.end_temporary_tray(dock))
+            row.addWidget(self.close_button)
         self.options = None
         if alone:
             self.options = window._panel_options_button(self, dock)
@@ -1266,6 +1318,12 @@ class MainWindow(QMainWindow):
         from views.tray import ScenesDock
         self.scenes_dock = ScenesDock(self)
         self.tray.scenes = self.scenes_dock.panel
+        # Styles: a tab too, closed until enabled in the panels list; the
+        # Styles button opens it for a while (_on_styles). It was a window
+        # of its own.
+        from views.tray import StylesDock, StylesPanel
+        self.styles_panel = StylesPanel(self)
+        self.styles_dock = StylesDock(self, self.styles_panel)
         self._lay_out_trays()
         # The tabs show only an icon each (the name is their tooltip): the
         # name heads the panel instead, in place of the dock's own title
@@ -1276,7 +1334,8 @@ class MainWindow(QMainWindow):
                           (self.georef_tray, "panel_terrain"),
                           (self.project_browser, "panel_browser"),
                           (self.layers_dock, "layers_panel"),
-                          (self.scenes_dock, "scenes_thumbs")):
+                          (self.scenes_dock, "scenes_thumbs"),
+                          (self.styles_dock, "styles")):
             self.set_dock_icon(dock, key)
             dock.setTitleBarWidget(QWidget(dock))
         self.tray.raise_()
@@ -1290,13 +1349,10 @@ class MainWindow(QMainWindow):
         self.toolbars["layers"] = layers_tb
         self.layers_toolbar = LayersToolbar(self, layers_tb)
 
-        # Styles stays open in its own window while the user models.
+        # Styles opens its sidebar tab (for a while, when it is closed).
         # Fog (#1139), Shadows and Dimension style remain toolbar dropdowns.
         from PySide6.QtWidgets import QToolButton, QWidgetAction
-        from views.tray import (DimensionStylePanel, FogPanel, ShadowsPanel,
-                                StylesPanel)
-        self.styles_panel = StylesPanel(self)
-        self._styles_window = None
+        from views.tray import DimensionStylePanel, FogPanel, ShadowsPanel
         self.fog_panel = FogPanel(self)
         self.shadows_panel = ShadowsPanel(self)
         self.dimstyle_panel = DimensionStylePanel(self)
@@ -1338,14 +1394,18 @@ class MainWindow(QMainWindow):
         self.profile_dock.hide()
 
     def _on_styles(self) -> None:
-        """Open or bring back the same modeless Styles window."""
-        if self._styles_window is None:
-            from views.styles_window import StylesWindow
-            self._styles_window = StylesWindow(self, self.styles_panel)
+        """The Styles button: the Styles tab in front. Enabled in the
+        panels list, it is simply brought forward; closed, it opens for a
+        while (show_tray_temporarily) — and a second click, with it in
+        front, closes it again."""
+        dock = self.styles_dock
         self.styles_panel.refresh()
-        self._styles_window.show()
-        self._styles_window.raise_()
-        self._styles_window.activateWindow()
+        if self.tray_is_temporary(dock) and self._tray_in_front(dock):
+            self.end_temporary_tray(dock)
+        elif dock.isHidden():
+            self.show_tray_temporarily(dock)
+        else:
+            self._show_tray(dock)
 
     def _new_toolbar(self, title: str, object_name: str) -> QToolBar:
         """A separate, independently draggable/floatable icons-only toolbar
@@ -1740,7 +1800,7 @@ class MainWindow(QMainWindow):
         for dock in self._sidebar_docks():
             key = dock.property("icon_key")
             if key:
-                dock.setWindowIcon(tool_icon(str(key)))
+                self.set_dock_icon(dock, str(key))
         from PySide6.QtWidgets import QDockWidget, QToolButton
         from views.icons import letter_icon
         for dock in self.findChildren(QDockWidget):
@@ -2628,7 +2688,11 @@ class MainWindow(QMainWindow):
     #: Panels): the specialised workspaces. Properties, the Browser and
     #: the bundled AI and Render tabs open. An extension may
     #: ask the same for a panel of its own (``add_panel(start_hidden=True)``).
-    DEFAULT_HIDDEN_TRAYS = frozenset({"tray_bim", "tray_georef"})
+    DEFAULT_HIDDEN_TRAYS = frozenset({"tray_bim", "tray_georef", "tray_styles"})
+    #: Built-in trays younger than some saved choices that start closed
+    #: there too, the first time they are seen — as an extension's panel
+    #: that asks to start hidden: Styles, opened for a while by its button.
+    _NEW_HIDDEN_TRAYS = frozenset({"tray_styles"})
 
     def _show_default_trays(self, st) -> None:
         """The trays open at start-up as the user left them in Window ▸
@@ -2663,7 +2727,9 @@ class MainWindow(QMainWindow):
     #: follows on a first run, nearest first: Layers after the Browser,
     #: Scenes after Layers (#1158).
     _NEW_TRAYS = (("layers_dock", ("project_browser",)),
-                  ("scenes_dock", ("layers_dock", "project_browser")))
+                  ("scenes_dock", ("layers_dock", "project_browser")),
+                  ("styles_dock", ("georef_tray", "bim_tray", "scenes_dock",
+                                   "layers_dock", "project_browser")))
 
     def _seat_new_trays(self) -> None:
         """A tab younger than the saved layout (Layers, Scenes) goes in its
@@ -2751,7 +2817,7 @@ class MainWindow(QMainWindow):
         once any is opened or closed there, the whole choice is saved and
         kept. An extension panel that asks to start hidden starts hidden
         the first time it is seen, whenever it is installed."""
-        asked = set(getattr(self, "_start_hidden", ()))
+        asked = set(getattr(self, "_start_hidden", ())) | self._NEW_HIDDEN_TRAYS
         if not st.contains("ui/hidden_trays"):
             return set(self.DEFAULT_HIDDEN_TRAYS) | asked
         raw = st.value("ui/hidden_trays", []) or []
@@ -2763,6 +2829,8 @@ class MainWindow(QMainWindow):
         return {str(x) for x in raw} | (asked - {str(k) for k in known})
 
     def _remember_tray_choice(self, dock, shown: bool) -> None:
+        # Chosen in the panels list: no longer open just for a while.
+        self._set_temporary(dock, False)
         st = QSettings()
         hidden = self._hidden_tray_names(st)
         if shown:
@@ -2786,7 +2854,8 @@ class MainWindow(QMainWindow):
     #: Properties first, the model's tree next, then the workspaces.
     def _default_tray_order(self) -> list:
         return [self.tray, self.project_browser, self.layers_dock,
-                self.scenes_dock, self.bim_tray, self.georef_tray]
+                self.scenes_dock, self.bim_tray, self.georef_tray,
+                self.styles_dock]
 
     def _lay_out_trays(self) -> None:
         """The trays in their factory place: every one on the right, tabbed
@@ -2840,6 +2909,7 @@ class MainWindow(QMainWindow):
         # stacks a tray under the others for a moment, and their heights —
         # a header each — added up past a short window, which grew.
         for d in self._sidebar_docks():
+            self._set_temporary(d, False)
             d.hide()
         self._lay_out_trays()
         hidden = self._hidden_tray_names(st)
@@ -2873,7 +2943,9 @@ class MainWindow(QMainWindow):
             act = menu.addAction(dock.windowTitle())
             act.setStatusTip(tr("Show or hide this tab of the side tray."))
             act.setCheckable(True)
-            act.setChecked(not dock.isHidden())
+            # Open just for a while is not enabled: ticking it keeps it.
+            act.setChecked(not dock.isHidden()
+                           and not self.tray_is_temporary(dock))
             act.triggered.connect(
                 lambda on, d=dock: self.set_tray_shown(d, on, area))
         menu.addSeparator()
@@ -2894,16 +2966,98 @@ class MainWindow(QMainWindow):
                 and self.dockWidgetArea(dock) != area:
             self.move_dock(dock, area)
         elif shown:
-            act = getattr(self, "_act_sidebar", None)
-            if act is not None and not act.isChecked():
-                act.setChecked(True)
-            if self._floats(dock):
-                self._float_window().show()
-            dock.show()
-            dock.raise_()
+            self._show_tray(dock)
         else:
             dock.hide()
         self._remember_tray_choice(dock, shown)
+
+    def _show_tray(self, dock) -> None:
+        """One tray tab on screen and in front, unfolding the sidebar (or
+        bringing back the floating panels) it is in. Nothing remembered."""
+        act = getattr(self, "_act_sidebar", None)
+        if act is not None and not act.isChecked():
+            act.setChecked(True)
+        if self._floats(dock):
+            self._float_window().show()
+        dock.show()
+        dock.raise_()
+
+    # ---- Trays open for a while -------------------------------------------
+    # A closed tray its button opens (Styles): on screen while it is
+    # worked in, never kept in the panels list nor at the next start. Its
+    # tab has a dashed frame and its header says so, with «Pin» to keep it
+    # (enabled in the panels list) and ✕ to close it. Any tray can be
+    # opened this way — an extension's too.
+
+    def tray_is_temporary(self, dock) -> bool:
+        return bool(dock.property("ingetrazo_temporary"))
+
+    def _tray_in_front(self, dock) -> bool:
+        return dock.isVisible() and not dock.visibleRegion().isEmpty()
+
+    def show_tray_temporarily(self, dock) -> None:
+        """Open a closed tray tab for a while, in front; the tab that was in
+        front comes back when it closes. One that is enabled (open in the
+        panels list) is only brought forward."""
+        if not dock.isHidden() and not self.tray_is_temporary(dock):
+            self._show_tray(dock)
+            return
+        if not self.tray_is_temporary(dock):
+            area = self.dockWidgetArea(dock)
+            self._temporary_prev = next(
+                (d for d in self._sidebar_docks()
+                 if d is not dock and self.dockWidgetArea(d) == area
+                 and self._tray_in_front(d)), None)
+        self._set_temporary(dock, True)
+        if not dock.property("ingetrazo_temporary_watched"):
+            dock.setProperty("ingetrazo_temporary_watched", True)
+            dock.visibilityChanged.connect(
+                lambda on, d=dock: on or QTimer.singleShot(
+                    0, self, lambda: self._left_temporary_tray(d)))
+        self._show_tray(dock)
+
+    def _left_temporary_tray(self, dock) -> None:
+        """A tray open for a while closes as soon as it is left: another
+        tab of its group comes in front (Marco, 25-11: «se oculta en el
+        momento de que dejo de usarlo»). Folded away, or the window
+        minimised, it is not left: it comes back with them."""
+        from shiboken6 import isValid
+        if not isValid(dock) or not self.tray_is_temporary(dock) \
+                or dock.isHidden() or self._tray_in_front(dock):
+            return
+        mates = [d for d in self._sidebar_docks()
+                 if d is not dock and d in self.tabifiedDockWidgets(dock)]
+        if any(self._tray_in_front(d) for d in mates):
+            self.end_temporary_tray(dock, give_back=False)
+
+    def end_temporary_tray(self, dock, give_back: bool = True) -> None:
+        """Close a tray opened for a while; the tab that was in front
+        before it comes back (``give_back``) — not when another one was
+        chosen."""
+        if not self.tray_is_temporary(dock):
+            return
+        self._set_temporary(dock, False)
+        dock.hide()
+        prev = getattr(self, "_temporary_prev", None)
+        self._temporary_prev = None
+        from shiboken6 import isValid
+        if give_back and prev is not None and isValid(prev) \
+                and not prev.isHidden():
+            prev.raise_()
+
+    def pin_temporary_tray(self, dock) -> None:
+        """Keep a tray opened for a while: enabled in the panels list, it
+        stays open from now on, the next start too."""
+        self.set_tray_shown(dock, True)
+
+    def _set_temporary(self, dock, on: bool) -> None:
+        if self.tray_is_temporary(dock) == on:
+            return
+        dock.setProperty("ingetrazo_temporary", on)
+        key = dock.property("icon_key")
+        if key:
+            self.set_dock_icon(dock, str(key))
+        QTimer.singleShot(0, self, self._style_dock_tabs)
 
     def _show_all_trays(self) -> None:
         for dock in self._sidebar_docks():
@@ -2949,6 +3103,7 @@ class MainWindow(QMainWindow):
                             getattr(self, "project_browser", None),
                             getattr(self, "layers_dock", None),
                             getattr(self, "scenes_dock", None),
+                            getattr(self, "styles_dock", None),
                             *getattr(self, "_extension_docks", ()),
                             # Camera from Photo's tab, only while it is
                             # there (show_photo_dock): never kept as one.
@@ -3297,6 +3452,8 @@ class MainWindow(QMainWindow):
         if isinstance(icon, str):
             dock.setProperty("icon_key", icon)
             icon = tool_icon(icon)
+        if self.tray_is_temporary(dock):
+            icon = _temporary_tab_icon(icon)
         dock.setWindowIcon(icon)
 
     def _settle_tab_icons(self) -> None:
@@ -3396,7 +3553,8 @@ class MainWindow(QMainWindow):
                             for o in self.tabifiedDockWidgets(d))
             current = d.titleBarWidget()
             if not isinstance(current, _DockHeader) \
-                    or (current.tab is not None) != alone:
+                    or (current.tab is not None) != alone \
+                    or current.temporary != self.tray_is_temporary(d):
                 header = _DockHeader(self, d, alone)
                 if header.tab is not None:
                     self._add_panels_button(header.tab)
