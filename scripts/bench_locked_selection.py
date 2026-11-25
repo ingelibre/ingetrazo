@@ -35,7 +35,7 @@ def main():
         parser.error("groups, boxes-per-group and frames must be positive")
     sys.path.insert(0, str(args.source.resolve()))
     os.environ.setdefault("QT_QPA_PLATFORM", "windows" if sys.platform == "win32" else "xcb")
-    os.environ.pop("INGETRAZO_RUST", None)
+    os.environ["INGETRAZO_RUST"] = "0"
     with tempfile.TemporaryDirectory(prefix="ingetrazo-locked-bench-",
                                      ignore_cleanup_errors=True) as data:
         os.environ["XDG_DATA_HOME"] = data

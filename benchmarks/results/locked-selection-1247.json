@@ -1,0 +1,230 @@
+{
+  "date": "2026-11-25",
+  "scope": "Synthetic model, not the maintainer's Plaza project. Same Windows machine and script; 30 warm paint and orbit frames per scenario. Previous PR is based on 0.6.1; corrected PR includes upstream 0.6.3.2. First-frame costs are reported separately.",
+  "results": {
+    "upstream": {
+      "label": "upstream",
+      "commit": "78defb95ef6f94a00ed192c35ed15c9529292d88",
+      "platform": "Windows-11-10.0.26300-SP0",
+      "python": "3.12.10",
+      "qt": "6.11.2",
+      "engine": "Python",
+      "groups": 1035,
+      "faces": 49680,
+      "device_pixel_ratio": 1.0,
+      "scenarios": {
+        "none": {
+          "first_frame": {
+            "median_ms": 2915.214,
+            "max_ms": 2915.214,
+            "samples": 1
+          },
+          "paint": {
+            "median_ms": 1.752,
+            "max_ms": 2.413,
+            "samples": 30
+          },
+          "orbit": {
+            "median_ms": 6.897,
+            "max_ms": 7.411,
+            "samples": 30
+          }
+        },
+        "all_ordinary": {
+          "first_frame": {
+            "median_ms": 501.749,
+            "max_ms": 501.749,
+            "samples": 1
+          },
+          "paint": {
+            "median_ms": 1.772,
+            "max_ms": 2.194,
+            "samples": 30
+          },
+          "orbit": {
+            "median_ms": 7.533,
+            "max_ms": 9.873,
+            "samples": 30
+          }
+        }
+      },
+      "select_all": {
+        "median_ms": 3.684,
+        "max_ms": 16.1,
+        "samples": 3
+      }
+    },
+    "previous_pr": {
+      "label": "previous-pr",
+      "commit": "511a020d37a1553f03da500a550bc39e5f735704",
+      "platform": "Windows-11-10.0.26300-SP0",
+      "python": "3.12.10",
+      "qt": "6.11.2",
+      "engine": "Python",
+      "groups": 1035,
+      "faces": 49680,
+      "device_pixel_ratio": 1.0,
+      "scenarios": {
+        "none": {
+          "first_frame": {
+            "median_ms": 2734.04,
+            "max_ms": 2734.04,
+            "samples": 1
+          },
+          "paint": {
+            "median_ms": 1.298,
+            "max_ms": 10.476,
+            "samples": 30
+          },
+          "orbit": {
+            "median_ms": 2.44,
+            "max_ms": 2.995,
+            "samples": 30
+          }
+        },
+        "all_ordinary": {
+          "first_frame": {
+            "median_ms": 4785.794,
+            "max_ms": 4785.794,
+            "samples": 1
+          },
+          "paint": {
+            "median_ms": 6.909,
+            "max_ms": 13.784,
+            "samples": 30
+          },
+          "orbit": {
+            "median_ms": 722.5,
+            "max_ms": 775.757,
+            "samples": 30
+          }
+        },
+        "one_locked": {
+          "first_frame": {
+            "median_ms": 131.873,
+            "max_ms": 131.873,
+            "samples": 1
+          },
+          "paint": {
+            "median_ms": 7.738,
+            "max_ms": 11.287,
+            "samples": 30
+          },
+          "orbit": {
+            "median_ms": 3.759,
+            "max_ms": 20.213,
+            "samples": 30
+          }
+        },
+        "all_with_one_locked": {
+          "first_frame": {
+            "median_ms": 825.542,
+            "max_ms": 825.542,
+            "samples": 1
+          },
+          "paint": {
+            "median_ms": 0.921,
+            "max_ms": 1.266,
+            "samples": 30
+          },
+          "orbit": {
+            "median_ms": 714.327,
+            "max_ms": 756.359,
+            "samples": 30
+          }
+        }
+      },
+      "select_all": {
+        "median_ms": 1.963,
+        "max_ms": 3.528,
+        "samples": 3
+      }
+    },
+    "corrected": {
+      "label": "corrected",
+      "commit": "7176cbb73e7eb843a6d1835d0d734a29189f08ae",
+      "platform": "Windows-11-10.0.26300-SP0",
+      "python": "3.12.10",
+      "qt": "6.11.2",
+      "engine": "Python",
+      "groups": 1035,
+      "faces": 49680,
+      "device_pixel_ratio": 1.0,
+      "scenarios": {
+        "none": {
+          "first_frame": {
+            "median_ms": 3166.23,
+            "max_ms": 3166.23,
+            "samples": 1
+          },
+          "paint": {
+            "median_ms": 1.838,
+            "max_ms": 2.711,
+            "samples": 30
+          },
+          "orbit": {
+            "median_ms": 7.58,
+            "max_ms": 8.888,
+            "samples": 30
+          }
+        },
+        "all_ordinary": {
+          "first_frame": {
+            "median_ms": 528.447,
+            "max_ms": 528.447,
+            "samples": 1
+          },
+          "paint": {
+            "median_ms": 1.809,
+            "max_ms": 2.611,
+            "samples": 30
+          },
+          "orbit": {
+            "median_ms": 8.299,
+            "max_ms": 23.889,
+            "samples": 30
+          }
+        },
+        "one_locked": {
+          "first_frame": {
+            "median_ms": 95.069,
+            "max_ms": 95.069,
+            "samples": 1
+          },
+          "paint": {
+            "median_ms": 1.818,
+            "max_ms": 2.895,
+            "samples": 30
+          },
+          "orbit": {
+            "median_ms": 7.329,
+            "max_ms": 9.032,
+            "samples": 30
+          }
+        },
+        "all_with_one_locked": {
+          "first_frame": {
+            "median_ms": 126.279,
+            "max_ms": 126.279,
+            "samples": 1
+          },
+          "paint": {
+            "median_ms": 1.734,
+            "max_ms": 4.115,
+            "samples": 30
+          },
+          "orbit": {
+            "median_ms": 7.967,
+            "max_ms": 9.214,
+            "samples": 30
+          }
+        }
+      },
+      "select_all": {
+        "median_ms": 3.605,
+        "max_ms": 17.645,
+        "samples": 3
+      }
+    }
+  }
+}
