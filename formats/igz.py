@@ -335,6 +335,26 @@ def _face_json(f) -> dict:
     return entry
 
 
+def _ifc_json(tag, owner: str | None = None) -> dict | None:
+    """A BIM tag as a dict (core/bim.py). Scripts assign ``ifc`` freely: a
+    bare class name becomes a tag of that class, and what cannot be one is
+    left out (``None``) instead of failing the whole save (#1527)."""
+    if isinstance(tag, dict):
+        return dict(tag)
+    import logging
+    if isinstance(tag, str) and tag.strip():
+        fixed = {"class": tag.strip(), "name": owner or ""}
+    else:
+        try:
+            fixed = dict(tag)
+        except (TypeError, ValueError):
+            fixed = None
+    logging.getLogger(__name__).warning(
+        "BIM tag of %r is %s, not a dict: %s", owner or "a face",
+        type(tag).__name__, "left out" if fixed is None else f"saved as {fixed}")
+    return fixed
+
+
 def _face_attrs_json(f) -> dict:
     """Everything a face stores besides its loops — the part a format-3
     geometry block keeps as JSON, in a table shared by equal faces."""
@@ -354,7 +374,9 @@ def _face_attrs_json(f) -> dict:
         entry["layer"] = layer
     ifc = get("ifc")
     if ifc is not None:
-        entry["ifc"] = dict(ifc)
+        ifc = _ifc_json(ifc)
+        if ifc is not None:
+            entry["ifc"] = ifc
     opacity = get("opacity")
     if opacity is not None:
         entry["opacity"] = float(opacity)
@@ -863,7 +885,9 @@ def _save_document(scene, path, *, large, stream=None, thumbnail=None,
             if getattr(g, "layer", None) is not None:
                 entry["layer"] = g.layer
             if getattr(g, "ifc", None):
-                entry["ifc"] = dict(g.ifc)
+                tag = _ifc_json(g.ifc, g.name)
+                if tag is not None:
+                    entry["ifc"] = tag
             if getattr(g, "billboard", False):
                 # True = legacy textured-quad face-me; "mesh" = imported
                 # silhouette whose real geometry turns toward the camera.
