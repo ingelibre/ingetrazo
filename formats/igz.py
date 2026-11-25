@@ -354,7 +354,9 @@ def _face_attrs_json(f) -> dict:
         entry["layer"] = layer
     ifc = get("ifc")
     if ifc is not None:
-        entry["ifc"] = dict(ifc)
+        # A plain string is a class name, as on groups (issue #1527):
+        # dict("IfcWall") would fail the whole save.
+        entry["ifc"] = {"class": ifc} if isinstance(ifc, str) else dict(ifc)
     opacity = get("opacity")
     if opacity is not None:
         entry["opacity"] = float(opacity)

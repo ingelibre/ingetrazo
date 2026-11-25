@@ -3,6 +3,7 @@
 """BIM tagging layer: tag → live quantities → CSV takeoff → persistence."""
 from __future__ import annotations
 
+import pytest
 from PySide6.QtCore import QPointF, Qt
 from PySide6.QtGui import QVector3D
 
@@ -139,6 +140,32 @@ def test_group_tag_and_igz_round_trip(tmp_path):
     assert classes["IfcColumn"]["name"] == "C-1"
     assert classes["IfcColumn"]["volume"] is not None      # group still solid
     assert classes["IfcSlab"]["volume"] is None
+
+
+def test_string_group_ifc_is_normalised_and_saves(tmp_path):
+    """A string Group.ifc normalises to a tag dict instead of breaking save (#1527)."""
+    scene = Scene()
+    vp = _Vp(scene)
+    _wall(scene, vp)
+    vp.history.execute(MakeGroupCommand(list(scene.mesh.faces),
+                                        list(scene.mesh.edges)))
+    group = scene.groups[0]
+    group.ifc = "IfcPipeSegment"
+    assert group.ifc == {"class": "IfcPipeSegment"}
+    with pytest.raises(TypeError):
+        group.ifc = ["IfcPipeSegment"]
+    # A string ifc on a loose face is normalised the same way on save.
+    slab = scene.mesh.add_face([V(10, 0), V(12, 0), V(12, 2), V(10, 2)])
+    slab.attrs["ifc"] = "IfcSlab"
+
+    p = tmp_path / "str-ifc.igz"
+    igz.save_scene(scene, p)
+    scene2 = Scene()
+    igz.load_into(scene2, p)
+    assert scene2.groups[0].ifc == {"class": "IfcPipeSegment"}
+    assert any(
+        f.attrs.get("ifc") == {"class": "IfcSlab"} for f in scene2.mesh.faces
+    )
 
 
 def test_wall_class_quantities_are_the_budget_measures():

@@ -77,7 +77,7 @@ def document_name_scope(names):
 
 
 class Group:
-    __slots__ = ("mesh", "name", "layer", "ifc", "billboard", "xform",
+    __slots__ = ("mesh", "name", "layer", "_ifc", "billboard", "xform",
                  "children", "owner", "context", "text3d", "hidden", "uid",
                  "material", "axes", "component", "exploded",
                  "explode_offset", "ext", "locked", "images", "source")
@@ -190,6 +190,26 @@ class Group:
         # visible in every style (including Wireframe), as images in a model should.
         # Coordinates are local to ``xform`` exactly like this group's mesh.
         self.images: list = []
+
+    @property
+    def ifc(self) -> dict | None:
+        """BIM tag ({"class": "IfcWall", "name": ...}) or None — see core/bim.py."""
+        return self._ifc
+
+    @ifc.setter
+    def ifc(self, value: dict | str | None) -> None:
+        # A plain string (e.g. set from the Python console) is normalised
+        # to a tag dict, so it cannot break a later save with
+        # "dictionary update sequence element #0 has length 1" (issue #1527).
+        if value is None or isinstance(value, dict):
+            self._ifc = value
+        elif isinstance(value, str):
+            self._ifc = {"class": value}
+        else:
+            raise TypeError(
+                "Group.ifc must be a dict, an IFC class name string, "
+                f"or None, not {type(value).__name__}"
+            )
 
     def is_component(self) -> bool:
         """A component instance, as the user knows it — not merely a group
