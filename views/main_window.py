@@ -5401,14 +5401,13 @@ class MainWindow(QMainWindow):
             # issue #90) — it used to make one component per group, or
             # refuse outright when loose geometry came along.
             from core.history import MakeComponentOfCommand
-            name, ok = _prompts.get_text(
-                self, tr("Make Component"), tr("Component name:"),
-                text=tr("Component #{n}", n=count))
+            name, face_camera, ok = self._component_creation_options(tr("Component #{n}", n=count))
             if not ok:
                 return
             self._execute_make(MakeComponentOfCommand(
                 faces, edges, groups,
-                name=name.strip() or tr("Component #{n}", n=count)))
+                name=name.strip() or tr("Component #{n}", n=count),
+                face_camera=face_camera))
             self.viewport.update()
             self.statusBar().showMessage(tr(
                 "Component created — copies will share its definition"), 4000)
@@ -5424,13 +5423,11 @@ class MainWindow(QMainWindow):
                 self.viewport.flash_status(tr("It is a component already"))
                 return
             from core.history import GroupToComponentCommand
-            name, ok = _prompts.get_text(
-                self, tr("Make Component"), tr("Component name:"),
-                text=g.name or tr("Component"))
+            name, face_camera, ok = self._component_creation_options(g.name or tr("Component"))
             if not ok:
                 return
             self._execute_make(
-                GroupToComponentCommand(g, name.strip() or None))
+                GroupToComponentCommand(g, name.strip() or None, face_camera))
             self.viewport.update()
             self.statusBar().showMessage(tr(
                 "Component created — copies will share its definition"), 4000)
@@ -5439,17 +5436,36 @@ class MainWindow(QMainWindow):
             self.viewport.flash_status(
                 tr("Select the geometry for the component first"))
             return
-        name, ok = _prompts.get_text(
-            self, tr("Make Component"), tr("Component name:"),
-            text=tr("Component #{n}", n=count))
+        name, face_camera, ok = self._component_creation_options(tr("Component #{n}", n=count))
         if not ok:
             return
         self._execute_make(MakeGroupCommand(
             faces, edges, component=True,
-            name=name.strip() or tr("Component #{n}", n=count)))
+            name=name.strip() or tr("Component #{n}", n=count),
+            face_camera=face_camera))
         self.viewport.update()
         self.statusBar().showMessage(tr(
             "Component created — copies will share its definition"), 4000)
+
+    def _component_creation_options(self, suggested):
+        from PySide6.QtWidgets import (QCheckBox, QDialog, QDialogButtonBox,
+                                       QFormLayout, QLineEdit)
+        dialog = QDialog(self)
+        dialog.setWindowTitle(tr("Make Component"))
+        form = QFormLayout(dialog)
+        name = QLineEdit(suggested, dialog)
+        name.selectAll()
+        form.addRow(tr("Component name:"), name)
+        face_camera = QCheckBox(tr("Always face camera"), dialog)
+        face_camera.setToolTip(tr("Turn about the component's blue axis as the camera moves."))
+        form.addRow(face_camera)
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel, dialog)
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        form.addRow(buttons)
+        name.setFocus()
+        ok = dialog.exec() == QDialog.Accepted
+        return name.text(), face_camera.isChecked(), ok
 
     @_repeatable("Make Unique")
     def _on_make_unique(self) -> None:

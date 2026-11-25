@@ -155,10 +155,10 @@ def test_the_offered_component_name_is_the_first_free_number(monkeypatch):
         scene.selection.update(scene.mesh.faces)
         offered = {}
 
-        def ask(_parent, _title, _label, text="", **_k):
+        def ask(text):
             offered["text"] = text
-            return "", False                      # cancel: nothing made
-        monkeypatch.setattr(prompts, "get_text", ask)
+            return "", False, False               # cancel: nothing made
+        monkeypatch.setattr(win, "_component_creation_options", ask)
         win._on_make_component()
         assert offered["text"] == tr("Component #{n}", n=2)
     finally:

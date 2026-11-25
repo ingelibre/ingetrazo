@@ -80,7 +80,7 @@ class Group:
     __slots__ = ("mesh", "name", "layer", "ifc", "billboard", "xform",
                  "children", "owner", "context", "text3d", "hidden", "uid",
                  "material", "axes", "component", "exploded",
-                 "explode_offset", "ext", "locked", "images", "source")
+                 "explode_offset", "ext", "locked", "images", "source", "face_camera")
 
     def __init__(self, mesh: Mesh | None = None, name: str | None = None) -> None:
         self.mesh = mesh if mesh is not None else Mesh()
@@ -92,6 +92,7 @@ class Group:
         # Face-me billboard: the group's textured quad rotates
         # around its vertical anchor axis to face the camera every frame.
         self.billboard = False
+        self.face_camera = False
         # 3D text (core/text3d.py): the parameters this container was
         # generated from — text, font, height… — so it can be re-edited and
         # laid out again in place. ``None`` on every other group.
@@ -837,6 +838,7 @@ def copy_group(group, delta=None, _in_definition=False):
     g.layer = group.layer
     g.ifc = dict(group.ifc) if group.ifc else None
     g.billboard = group.billboard
+    g.face_camera = group.face_camera
     g.text3d = dict(group.text3d) if group.text3d else None
     g.ext = copy.deepcopy(group.ext) if getattr(group, "ext", None) else None
     g.hidden = group.hidden

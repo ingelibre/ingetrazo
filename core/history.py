@@ -4516,12 +4516,14 @@ class MakeGroupCommand(Command):
     Snapshot undo (geometry crosses meshes — too tangled for a per-op inverse)."""
 
     def __init__(self, faces: Iterable[Face], edges: Iterable[Edge],
-                 component: bool = False, name: str | None = None) -> None:
+                 component: bool = False, name: str | None = None,
+                 face_camera: bool = False) -> None:
         # ``component=True`` builds the fresh mesh in LOCAL coordinates
         # (origin at the selection's min corner) and hands back an INSTANCE
         # (Group with an xform) — Make Component: copies of it
         # share the definition through the existing prototype machinery.
         self._component = component
+        self._face_camera = face_camera
         self._name = name
         faces = list(faces)
         # Attrs (colour, texture, layer, IFC tag) must travel into the group's
@@ -4633,6 +4635,7 @@ class MakeGroupCommand(Command):
             if e is not None:
                 stamp_edge_flags(e, flags)
         group = Group(gmesh, name=self._name)
+        group.face_camera = self._component and self._face_camera
         if self._component:
             from PySide6.QtGui import QMatrix4x4
             if rot is not None:
@@ -4970,9 +4973,10 @@ class GroupToComponentCommand(Command):
     to feed Make Component ground the loose-mesh machinery for minutes
     (piscina report); this is the door that was missing."""
 
-    def __init__(self, group, name=None) -> None:
+    def __init__(self, group, name=None, face_camera=False) -> None:
         self.group = group
         self._name = name
+        self._face_camera = face_camera
         self._old_name = None
 
     def do(self, scene) -> None:
@@ -4980,6 +4984,8 @@ class GroupToComponentCommand(Command):
         self._old_name = self.group.name
         self._old_xform = self.group.xform
         self._old_component = self.group.component
+        self._old_face_camera = self.group.face_camera
+        self.group.face_camera = self._face_camera
         if self.group.xform is None:
             self.group.xform = QMatrix4x4()
         # A group of groups already carries a matrix: it only changes what
@@ -4992,6 +4998,7 @@ class GroupToComponentCommand(Command):
     def undo(self, scene) -> None:
         self.group.xform = self._old_xform
         self.group.component = self._old_component
+        self.group.face_camera = self._old_face_camera
         self.group.name = self._old_name
         scene.version += 1
 
@@ -5307,7 +5314,8 @@ class MakeComponentOfCommand(Command):
     inside — not one component per group (Marco, 24-09, with issue #90).
     It is Make Group's container, made a component."""
 
-    def __init__(self, faces, edges, groups, name=None) -> None:
+    def __init__(self, faces, edges, groups, name=None, face_camera=False) -> None:
+        self._face_camera = face_camera
         self._nest = MakeNestedGroupCommand(faces, edges, groups, name=name)
 
     @property
@@ -5317,6 +5325,7 @@ class MakeComponentOfCommand(Command):
     def do(self, scene) -> None:
         self._nest.do(scene)
         self._nest.container.component = True
+        self._nest.container.face_camera = self._face_camera
         scene.version += 1
 
     def undo(self, scene) -> None:

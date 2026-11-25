@@ -864,6 +864,8 @@ def _save_document(scene, path, *, large, stream=None, thumbnail=None,
                 entry["layer"] = g.layer
             if getattr(g, "ifc", None):
                 entry["ifc"] = dict(g.ifc)
+            if g.face_camera:
+                entry["face_camera"] = True
             if getattr(g, "billboard", False):
                 # True = legacy textured-quad face-me; "mesh" = imported
                 # silhouette whose real geometry turns toward the camera.
@@ -1983,6 +1985,7 @@ def _load_into_inner(scene, path: Path, progress=None) -> None:
             group.layer = raw["layer"]
         if raw.get("ifc"):
             group.ifc = dict(raw["ifc"])
+        group.face_camera = raw.get("face_camera") is True
         if raw.get("billboard"):
             group.billboard = raw["billboard"]   # True | "mesh"
         if isinstance(raw.get("text3d"), dict):

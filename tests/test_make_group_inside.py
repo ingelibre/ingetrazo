@@ -146,12 +146,12 @@ def test_make_component_inside_an_open_group():
         muro, a, b = _open_wall(win)
         scene.selection.clear()
         scene.selection.update(list(scene.mesh.faces))
-        orig = prompts.get_text
-        prompts.get_text = lambda *a_, text="", **k: ("Ladrillo", True)
+        orig = win._component_creation_options
+        win._component_creation_options = lambda _: ("Ladrillo", False, True)
         try:
             win._on_make_component()
         finally:
-            prompts.get_text = orig
+            win._component_creation_options = orig
         comps = [g for g in muro.children if g.is_component()]
         assert [g.name for g in comps] == ["Ladrillo"]
         assert scene.groups == [muro]
@@ -242,12 +242,12 @@ def test_the_browser_makes_a_component_of_one_row():
         a = Group(_quad(), name="A")
         scene.groups.append(a)
         panel = _browser(win)
-        orig = prompts.get_text
-        prompts.get_text = lambda *a_, text="", **k: ("Pieza", True)
+        orig = win._component_creation_options
+        win._component_creation_options = lambda _: ("Pieza", False, True)
         try:
             panel.make_from_rows([a], "component")
         finally:
-            prompts.get_text = orig
+            win._component_creation_options = orig
         assert scene.groups[0].is_component()
         assert scene.groups[0].name == "Pieza"
     finally:

@@ -1132,6 +1132,17 @@ class SnappingMixin:
         is cached per scene version instead: it is recomputed on any
         change, and ``placement_points`` makes that one matrix multiply
         per placement."""
+        if getattr(group, "face_camera", False):
+            displayed = next((place for place in self._placements()
+                              if place.uid == group.uid), group)
+            if displayed is not group:
+                # The selected object retains its authored transform; the box
+                # is drawn from the pose the viewport uses for its geometry.
+                from copy import copy
+
+                posed = copy(group)
+                posed.xform = displayed.xform
+                return self._compute_obb(posed)
         kids = getattr(group, "children", None)
         if kids or getattr(group, "images", None):
             cache = getattr(self, "_container_obb", None)
