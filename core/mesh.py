@@ -269,6 +269,27 @@ def stamp_edge_flags(edge, flags) -> None:
         setattr(edge, name, value)
 
 
+def _newell_normal(loop: list[Vertex]) -> QVector3D:
+    """Accumulate Newell's area-weighted normal in double precision."""
+    if not loop:
+        return QVector3D()
+
+    first_x, first_y, first_z = loop[0].position.toTuple()
+    x0, y0, z0 = first_x, first_y, first_z
+    nx = ny = nz = 0.0
+    for i in range(1, len(loop)):
+        x1, y1, z1 = loop[i].position.toTuple()
+        nx += (y0 - y1) * (z0 + z1)
+        ny += (z0 - z1) * (x0 + x1)
+        nz += (x0 - x1) * (y0 + y1)
+        x0, y0, z0 = x1, y1, z1
+
+    # Close the loop with the coordinates already read for its first vertex.
+    return QVector3D(nx + (y0 - first_y) * (z0 + first_z),
+                     ny + (z0 - first_z) * (x0 + first_x),
+                     nz + (x0 - first_x) * (y0 + first_y))
+
+
 class Face:
     """A planar polygon: an outer ``loop`` of shared vertices, plus optional
     inner ``hole_loops``. Geometry is derived from the vertices' positions, so
@@ -322,18 +343,7 @@ class Face:
         computes in float64 from the same vertices (Marco's pool: every
         horizontal countertop, floor and slab of the .skp). Doubles make
         a constant-z face exactly vertical, like the writer's own plane."""
-        loop = self.loop
-        count = len(loop)
-        nx = ny = nz = 0.0
-        for i in range(count):
-            curr = loop[i].position
-            nxt = loop[(i + 1) % count].position
-            x0, y0, z0 = curr.x(), curr.y(), curr.z()
-            x1, y1, z1 = nxt.x(), nxt.y(), nxt.z()
-            nx += (y0 - y1) * (z0 + z1)
-            ny += (z0 - z1) * (x0 + x1)
-            nz += (x0 - x1) * (y0 + y1)
-        return QVector3D(nx, ny, nz)
+        return _newell_normal(self.loop)
 
     def normal(self) -> QVector3D:
         if len(self.loop) < 3:
@@ -370,19 +380,8 @@ class Face:
             return 0.0
         area = self.area()
         for hole in self.hole_loops:
-            count = len(hole)
-            if count < 3:
-                continue
-            nx = ny = nz = 0.0
-            for i in range(count):
-                curr = hole[i].position
-                nxt = hole[(i + 1) % count].position
-                x0, y0, z0 = curr.x(), curr.y(), curr.z()
-                x1, y1, z1 = nxt.x(), nxt.y(), nxt.z()
-                nx += (y0 - y1) * (z0 + z1)
-                ny += (z0 - z1) * (x0 + x1)
-                nz += (x0 - x1) * (y0 + y1)
-            area -= 0.5 * QVector3D(nx, ny, nz).length()
+            if len(hole) >= 3:
+                area -= 0.5 * _newell_normal(hole).length()
         return max(area, 0.0)
 
     def centroid(self) -> QVector3D:
