@@ -401,7 +401,7 @@ def _distance_out(group, n) -> float:
     return best if best != float("-inf") else 0.0
 
 
-def _plane_frame(group):
+def _plane_frame(group, depth: Optional[float] = None):
     """The matrix of the axes the footprint is taken in: the component's own
     frame, or — with a chosen side — the plane flush with the wall (x along
     the wall, y up it, z out of it)."""
@@ -416,14 +416,14 @@ def _plane_frame(group):
     else:
         x = QVector3D(1, 0, 0)
     y = QVector3D.crossProduct(nv, x).normalized()
-    c = nv * float(plane.get("d", 0.0))
+    c = nv * float(plane.get("d", 0.0) if depth is None else depth)
     return frame * QMatrix4x4(x.x(), y.x(), nv.x(), c.x(),
                               x.y(), y.y(), nv.y(), c.y(),
                               x.z(), y.z(), nv.z(), c.z(),
                               0, 0, 0, 1)
 
 
-def footprint(group) -> Optional[list]:
+def footprint(group, depth: Optional[float] = None) -> Optional[list]:
     """The opening's outline in world coordinates, counter-clockwise seen
     from the blue axis of its plane, or None when the component has nothing
     to cut with.
@@ -433,9 +433,12 @@ def footprint(group) -> Optional[list]:
     outline is the outer loop of the largest face lying on it; with none
     there, the rectangle the component covers on it. A plane whose entry
     says ``"outline": "box"`` always takes the rectangle: a component made of
-    parts (a frame's bars) has no single face that is its outline."""
+    parts (a frame's bars) has no single face that is its outline.
+
+    ``depth`` takes a chosen side's plane that far along its normal instead
+    of at its stored distance (:func:`find_host`)."""
     from core.group import iter_placements
-    frame = _plane_frame(group)
+    frame = _plane_frame(group, depth)
     inv, ok = frame.inverted()
     if not ok:
         return None
@@ -476,7 +479,12 @@ def direction(group):
     """``(point, unit vector)`` in world coordinates: the middle of the
     component's opening on the wall's face and the way its hole is cut (into
     the wall), or None — what the arrow over a selected component shows."""
-    a = footprint(group)
+    rec = made(group)
+    if side_of(group) and rec and rec.get("a") and rec.get("host") is None:
+        # Where the hole really is: the wall's face may be behind a sill.
+        a = [QVector3D(*p) for p in rec["a"]]
+    else:
+        a = footprint(group)
     if not a:
         return None
     return _centroid(a), -_normal(a)
@@ -1354,13 +1362,71 @@ def _near(box, points, pad) -> bool:
     return True
 
 
+def _depths(group) -> list:
+    """The other depths a chosen side's wall face may be at, the likeliest
+    first: the component's own origin, then every level its corners lie on,
+    from the outermost in. A window rarely ends flat on the wall: a sill, a
+    trim or a handle sticks out a few millimetres past the face it was drawn
+    against."""
+    from core.group import iter_placements
+    side = side_of(group)
+    inv, ok = _frame(group).inverted()
+    if side is None or not ok:
+        return []
+    nv = QVector3D(*PLANE_SIDES[side])
+    levels = set()
+    for g, m in iter_placements(group):
+        for v in g.mesh.vertices:
+            p = v.position
+            q = inv.map(m.map(p) if m is not None else QVector3D(p))
+            levels.add(round(QVector3D.dotProduct(q, nv), 5))
+    if not levels:
+        return []
+    lo, hi = min(levels), max(levels)
+    stored = float(_entry(group)["plane"].get("d", 0.0))
+    out = []
+    for d in [0.0] + sorted(levels, reverse=True):
+        if (lo - _PLANE_EPS <= d <= hi + _PLANE_EPS
+                and all(abs(d - x) > _PLANE_EPS for x in [stored] + out)):
+            out.append(d)
+    return out
+
+
+def _from_outside(host, prism) -> bool:
+    """Whether the prism enters its wall from outside: through it, or into a
+    face looking the way the plane does. A face looking the other way is met
+    from inside the wall, and only that skin would be cut."""
+    if prism.get("b") is not None:
+        return True
+    face = _host_face(host.mesh, prism["a"])
+    return face is not None and QVector3D.dotProduct(
+        face.normal(), _normal(prism["a"])) > 0
+
+
 def find_host(scene, group):
     """``(host, prism in the host mesh's coordinates)`` for what ``group``
     would cut where it stands: the loose geometry first, then the other
-    containers of the context. ``(None, None)`` when it sits on no face."""
+    containers of the context. ``(None, None)`` when it sits on no face.
+
+    With a chosen side, when nothing lies at its stored distance the other
+    depths of the component are tried (:func:`_depths`)."""
     a = footprint(group)
-    if a is None:
-        return None, None
+    if a is not None:
+        found = _host_for(scene, group, a)
+        if found[0] is not None:
+            return found
+    for depth in _depths(group):
+        a = footprint(group, depth)
+        if a is None:
+            continue
+        found = _host_for(scene, group, a)
+        if found[0] is not None and _from_outside(*found):
+            return found
+    return None, None
+
+
+def _host_for(scene, group, a):
+    """The host and prism the footprint ``a`` of ``group`` cuts, if any."""
     loose = _Host(scene, None)
     prism = plan_in(loose.mesh, a)
     if prism is not None:

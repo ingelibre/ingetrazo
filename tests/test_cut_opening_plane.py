@@ -137,6 +137,27 @@ def test_the_base_plane_is_unchanged_when_none_is_chosen():
     assert openings.flipped_side(g) == "bottom"
 
 
+def test_a_sill_sticking_out_does_not_keep_it_from_cutting(model):
+    scene, history = model
+    g = _upright_window()
+    # A sill 5 mm in front of the wall's face: the component's outermost
+    # point is not where the wall is.
+    g.mesh.add_face([V(1.0, -0.005, 0.9), V(2.0, -0.005, 0.9),
+                     V(2.0, -0.005, 0.95), V(1.0, -0.005, 0.95)])
+    history.execute(InsertGroupCommand(g))
+    _choose(history, scene, g, "front")
+    assert len(scene.mesh.faces) == 10 and _closed(scene.mesh)
+    assert all(abs(p[1]) < 1e-5 for p in openings.made(g)["a"])   # on the face
+    centre, n = openings.direction(g)
+    assert abs(centre.y()) < 1e-5 and n.y() > 0.99
+    # Flipped, only the wall's skin could be met from inside: nothing is cut.
+    _choose(history, scene, g, "back")
+    assert len(scene.mesh.faces) == 6
+    assert not any(f.hole_loops for f in scene.mesh.faces)
+    _choose(history, scene, g, "front")
+    assert len(scene.mesh.faces) == 10
+
+
 # ---- the window: the menu's command and the arrow ------------------------------
 @pytest.fixture
 def win(tmp_path, monkeypatch):
