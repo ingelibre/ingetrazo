@@ -94,6 +94,64 @@ def test_the_outline_is_the_one_asked_afresh(vp, monkeypatch):
     assert len(seen) > 2 and all(seen)          # the outline changes, and is
 
 
+def test_dense_outline_refresh_matches_a_rebuilt_table(vp):
+    import numpy as np
+    from PySide6.QtGui import QMatrix4x4
+    from core.group import Group
+    from core.history import MoveGroupCommand
+    from tests.test_move_incremental_passes import _prisma
+
+    meshes = [_prisma(8, r=0.5 + i / 32) for i in range(16)]
+    children = [Group(meshes[i % len(meshes)]) for i in range(1031)]
+    for i, child in enumerate(children):
+        child.xform = QMatrix4x4()
+        child.xform.translate(i % 41, i // 41, i % 3 - 1.)
+        if i % 3 == 0:
+            child.xform.rotate(i % 37, 0., 0., 1.)
+        if i % 11 == 0:
+            child.xform.scale(-.75, 1.25, 1.)
+        if i % 17 == 0:
+            child.material = {"color": (.23, .47, .52)}
+    parent = Group()
+    parent.material = {"color": (.12, .18, .22)}
+    parent.adopt(children)
+    vp.scene.groups[:] = [parent]
+    vp.scene.version += 1
+    eye = V(-3., 8., 12.)
+    groups = vp._placements()
+    table, rest = vp._silhouette_table(groups)
+    assert not rest
+
+    def snapshot(entries):
+        return tuple((np.asarray(t["xf"], np.float64).tobytes(),
+                          *(t[key].tobytes() for key in ("fwd", "inv", "lo", "hi")))
+                         for t in entries)
+
+    command = MoveGroupCommand(parent, V(.125, -.375, .625))
+    for apply in (lambda: vp.history.execute(command), vp.history.undo):
+        assert apply()
+        groups = vp._placements()
+        moved, rest = vp._silhouette_table(groups)
+        assert not rest and moved is table
+        actual = vp._instanced_silhouettes(groups, eye, None)
+        memo = vp._sil_table
+        vp._sil_table = None
+        try:
+            fresh, rest = vp._silhouette_table(groups)
+            assert not rest and fresh is not table
+            assert snapshot(moved) == snapshot(fresh)
+            assert actual == vp._instanced_silhouettes(groups, eye, None)
+        finally:
+            vp._sil_table = memo
+
+    # One valid changed row followed by a singular row must leave the table intact.
+    before = snapshot(table), tuple(t["rev"] for t in table)
+    table[0]["groups"][0].xform.translate(.5, 0., 0.)
+    table[-1]["groups"][-1].xform.scale(0., 0., 0.)
+    assert not vp._sil_table_moved(table, [])
+    assert before == (snapshot(table), tuple(t["rev"] for t in table))
+
+
 def test_an_edit_shows_in_the_next_outline(vp):
     before = _outline(vp, fresh=False)
     g = next(g for g in vp.scene.groups if g.name == "G1")   # not curved

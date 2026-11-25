@@ -2771,6 +2771,31 @@ class RenderMixin:
         self._sil_table = (key, table, rest)
         return table, rest
 
+    def _can_share_outline_prototype(self):
+        if self.scene.edit_group is not None or getattr(self, "_verts_preview", None):
+            return False
+        from views.viewport import Viewport, _OUTLINE_FRAME_METHODS
+        if type(self) is not Viewport:
+            return False
+        methods = (self._placement_frame, self._proto_base_chunk, self._group_chunk)
+        return all(getattr(bound, "__func__", None) is stock
+                   for bound, stock in zip(methods, _OUTLINE_FRAME_METHODS))
+
+    def _outline_prototype(self, group, bases):
+        """Resolve a current bake once per appearance in this table entry."""
+        owner = group.owner if type(group) is Group else None
+        if type(group) is not Group or (owner is not None and type(owner) is not Group):
+            return None
+        layer = group.layer or (owner.layer if owner is not None else None)
+        if layer is not None and type(layer) is not str:
+            return None
+        paint = group.material or (owner.material if owner is not None else None)
+        key = (id(group.mesh), _material_sig(paint), layer)
+        base = bases.get(key)
+        if base is None and len(bases) < 256:
+            base = bases[key] = self._proto_base_chunk(group.mesh, _paint_of(self, group))
+        return base
+
     def _sil_table_moved(self, table, rest) -> bool:
         """Bring the rows of the silhouette table whose placement's matrix
         changed up to date, in place; ``False`` (nothing touched that
@@ -2779,25 +2804,42 @@ class RenderMixin:
         for g in rest:
             if getattr(g, "xform", None) is not None:
                 return False      # a singular matrix may not be one now
+        share_prototype = False
         todo = []
         for t in table:
+            groups = t["groups"]
+            bases = {} if share_prototype and len(groups) > 1 else None
             xf = t["xf"]
-            for j, g in enumerate(t["groups"]):
+            for j, g in enumerate(groups):
                 d = tuple(g.xform.data())
                 if d != xf[j]:
-                    box, inv = self._placement_frame(g)
+                    if len(todo) == 64:
+                        share_prototype = self._can_share_outline_prototype()
+                        if share_prototype and len(groups) > 1:
+                            bases = {}
+                    base = (self._outline_prototype(g, bases)
+                            if bases is not None and type(g.xform) is QMatrix4x4 else None)
+                    box, inv = (self._placement_frame(g, base, d)
+                                if base is not None else self._placement_frame(g))
                     if inv is None:
                         return False
                     todo.append((t, j, d, box, inv))
         inf = float("inf")
-        for t, j, d, box, inv in todo:
-            t["fwd"][j] = np.array(d, np.float64).reshape(4, 4, order="F")[:3]
-            t["inv"][j] = (np.array(inv.data(), np.float64)
-                           .reshape(4, 4, order="F")[:3])
-            t["lo"][j] = box[0] if box else (-inf, -inf, -inf)
-            t["hi"][j] = box[1] if box else (inf, inf, inf)
-            t["xf"][j] = d
-            t["rev"] += 1
+        # Qt reports column-major matrices. Preserve the table's three rows
+        # while converting a bounded group of matrices at a time.
+        for offset in range(0, len(todo), 1024):
+            rows = todo[offset:offset + 1024]
+            fwd = np.asarray([row[2] for row in rows], np.float64)
+            inv = np.asarray([row[4].data() for row in rows], np.float64)
+            fwd = fwd.reshape(-1, 4, 4).swapaxes(1, 2)[:, :3]
+            inv = inv.reshape(-1, 4, 4).swapaxes(1, 2)[:, :3]
+            for (t, j, d, box, _), forward, inverse in zip(rows, fwd, inv):
+                t["fwd"][j] = forward
+                t["inv"][j] = inverse
+                t["lo"][j] = box[0] if box else (-inf, -inf, -inf)
+                t["hi"][j] = box[1] if box else (inf, inf, inf)
+                t["xf"][j] = d
+                t["rev"] += 1
         return True
 
     def _instanced_silhouettes(self, groups, eye, planes, skip=()):

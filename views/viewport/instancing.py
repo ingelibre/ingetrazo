@@ -668,15 +668,16 @@ class InstancingMixin:
         was 21 000 baked copies of geometry the instanced pass never uses."""
         return self._placement_frame(g)[0]
 
-    def _placement_frame(self, g):
+    def _placement_frame(self, g, base=None, matrix_data=None):
         """``(world bbox, inverse matrix)`` of an instanced placement,
         cached per placement and keyed on its matrix and its prototype's
         bake: the silhouette pass asks for both for every placement at up
         to 12 Hz, and working them out in Python each time cost ~7 ms a
         pass on the plaza's 1 359 placements (release check, 30-09)."""
-        base = self._proto_base_chunk(g.mesh, _paint_of(self, g))
+        if base is None:
+            base = self._proto_base_chunk(g.mesh, _paint_of(self, g))
         m = g.xform
-        key = (base.get("uid"), tuple(m.data()))
+        key = (base.get("uid"), tuple(m.data()) if matrix_data is None else matrix_data)
         cache = getattr(self, "_placement_frames", None)
         if cache is None:
             cache = self._placement_frames = {}
