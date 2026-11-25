@@ -1,0 +1,5 @@
+# Optional independently checked Türkiye delivery packages.
+# The base application and ordinary IFC/PDF export do not require these.
+ifcopenshell>=0.8.3,<1
+pypdf>=6.1,<7
+# Also configure the official veraPDF CLI JAR (Java required) in the dialog.

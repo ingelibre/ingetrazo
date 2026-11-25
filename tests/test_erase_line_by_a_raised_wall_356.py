@@ -105,7 +105,7 @@ def test_erasing_the_line_under_a_fin_reunites_the_floor():
     hist.execute(EraseSelectionCommand([edge]))
     floors = [f for f in scene.mesh.faces if abs(f.normal().z()) > 0.99]
     assert len(floors) == 1 and abs(floors[0].area() - 2.0) < 1e-6
-    # The fin lost its foot: it no longer closes, so it goes, like SketchUp.
+    # The fin lost its foot: it no longer closes, so it goes.
     assert len(scene.mesh.faces) == 1
 
 

@@ -45,7 +45,11 @@ def _stub(scene):
     for name in dir(Viewport):
         if name.startswith("__") or hasattr(vp, name):
             continue
-        attr = Viewport.__dict__.get(name)
+        # Viewport's own members, whichever of its mixins holds them
+        # (views/viewport/, #901) — never the Qt base's.
+        attr = next((k.__dict__[name] for k in Viewport.__mro__
+                     if k.__module__.startswith("views.viewport")
+                     and name in k.__dict__), None)
         if isinstance(attr, types.FunctionType):
             setattr(vp, name, attr.__get__(vp))
         elif isinstance(attr, staticmethod):

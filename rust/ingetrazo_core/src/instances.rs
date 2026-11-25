@@ -12,6 +12,8 @@
 //! tests' tolerances. Only what may matter is baked; the exact tests run
 //! on it as before, so their results are the same.
 
+use rayon::prelude::*;
+
 const LEAF: usize = 8;
 
 #[derive(Clone, Copy)]
@@ -38,49 +40,120 @@ pub struct Proto {
     enodes: Vec<Node>,
 }
 
+/// Past this many boxes, a BVH range is split in parallel.
+const PAR_MIN: usize = 8192;
+
 /// A BVH over ``n`` boxes ``blo``/``bhi`` (centres ``cen``): its nodes,
-/// grown well past rounding, and the order the leaves index.
+/// grown well past rounding, and the order the leaves index. The ranges of
+/// two children are disjoint, so the tree is the same however many threads
+/// split it; only where each node lies in the array may change, and every
+/// walk goes by ``left`` and ``left + 1``. (A big model's first query built
+/// its prototypes one after another: 2.4 s of the first Line hover, #1092.)
 fn build_bvh(blo: &[[f64; 3]], bhi: &[[f64; 3]], cen: &[[f64; 3]]) -> (Vec<u32>, Vec<Node>) {
     let n = blo.len();
     let mut order: Vec<u32> = (0..n as u32).collect();
-    let mut nodes = Vec::new();
     if n == 0 {
-        return (order, nodes);
+        return (order, Vec::new());
     }
-    nodes.push(Node { lo: [0.0; 3], hi: [0.0; 3], start: 0, end: n as u32, left: 0, leaf: true });
+    let nodes = bvh_range(&mut order, 0, blo, bhi, cen);
+    (order, nodes)
+}
+
+/// The box and the centres' box of ``order``'s rows.
+fn range_bounds(order: &[u32], blo: &[[f64; 3]], bhi: &[[f64; 3]], cen: &[[f64; 3]])
+                -> ([f64; 3], [f64; 3], [f64; 3], [f64; 3]) {
+    let empty = ([f64::INFINITY; 3], [f64::NEG_INFINITY; 3],
+                 [f64::INFINITY; 3], [f64::NEG_INFINITY; 3]);
+    let one = |(mut lo, mut hi, mut clo, mut chi): ([f64; 3], [f64; 3], [f64; 3], [f64; 3]),
+               r: usize| {
+        for k in 0..3 {
+            lo[k] = lo[k].min(blo[r][k]);
+            hi[k] = hi[k].max(bhi[r][k]);
+            clo[k] = clo[k].min(cen[r][k]);
+            chi[k] = chi[k].max(cen[r][k]);
+        }
+        (lo, hi, clo, chi)
+    };
+    if order.len() < PAR_MIN {
+        return order.iter().fold(empty, |acc, &r| one(acc, r as usize));
+    }
+    order.par_chunks(PAR_MIN)
+        .map(|c| c.iter().fold(empty, |acc, &r| one(acc, r as usize)))
+        .reduce(|| empty, |(a0, a1, a2, a3), (b0, b1, b2, b3)| {
+            let mut out = (a0, a1, a2, a3);
+            for k in 0..3 {
+                out.0[k] = a0[k].min(b0[k]);
+                out.1[k] = a1[k].max(b1[k]);
+                out.2[k] = a2[k].min(b2[k]);
+                out.3[k] = a3[k].max(b3[k]);
+            }
+            out
+        })
+}
+
+/// Where a range is cut: its longest axis of centres, at the median.
+fn split_range(order: &mut [u32], cen: &[[f64; 3]], clo: [f64; 3], chi: [f64; 3]) -> usize {
+    let mut axis = 0;
+    for k in 1..3 {
+        if chi[k] - clo[k] > chi[axis] - clo[axis] {
+            axis = k;
+        }
+    }
+    let mid = order.len() / 2;
+    order.select_nth_unstable_by(mid, |&x, &y| {
+        cen[x as usize][axis].partial_cmp(&cen[y as usize][axis])
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    mid
+}
+
+/// The tree over ``order`` (rows ``base``.. of the whole order), its root
+/// first and each node's children side by side.
+fn bvh_range(order: &mut [u32], base: usize, blo: &[[f64; 3]], bhi: &[[f64; 3]],
+             cen: &[[f64; 3]]) -> Vec<Node> {
+    let n = order.len();
+    if n >= PAR_MIN {
+        let (lo, hi, clo, chi) = range_bounds(order, blo, bhi, cen);
+        let (glo, ghi) = grown(lo, hi);
+        let mid = split_range(order, cen, clo, chi);
+        let (ol, or) = order.split_at_mut(mid);
+        let (mut left, mut right) = rayon::join(
+            || bvh_range(ol, base, blo, bhi, cen),
+            || bvh_range(or, base + mid, blo, bhi, cen));
+        let (nl, nr) = (left.len(), right.len());
+        // [root, L root, R root, the rest of L, the rest of R].
+        let mut nodes = Vec::with_capacity(1 + nl + nr);
+        nodes.push(Node { lo: glo, hi: ghi, start: base as u32, end: (base + n) as u32,
+                          left: 1, leaf: false });
+        for v in left.iter_mut() {
+            if !v.leaf {
+                v.left += 2;
+            }
+        }
+        for v in right.iter_mut() {
+            if !v.leaf {
+                v.left += nl as u32 + 1;
+            }
+        }
+        nodes.push(left[0]);
+        nodes.push(right[0]);
+        nodes.extend_from_slice(&left[1..]);
+        nodes.extend_from_slice(&right[1..]);
+        return nodes;
+    }
+    let mut nodes = vec![Node { lo: [0.0; 3], hi: [0.0; 3], start: 0, end: n as u32, left: 0,
+                                leaf: true }];
     let mut stack = vec![0usize];
     while let Some(ni) = stack.pop() {
         let (s, e) = (nodes[ni].start as usize, nodes[ni].end as usize);
-        let mut lo = [f64::INFINITY; 3];
-        let mut hi = [f64::NEG_INFINITY; 3];
-        let mut clo = [f64::INFINITY; 3];
-        let mut chi = [f64::NEG_INFINITY; 3];
-        for &r in &order[s..e] {
-            let r = r as usize;
-            for k in 0..3 {
-                lo[k] = lo[k].min(blo[r][k]);
-                hi[k] = hi[k].max(bhi[r][k]);
-                clo[k] = clo[k].min(cen[r][k]);
-                chi[k] = chi[k].max(cen[r][k]);
-            }
-        }
+        let (lo, hi, clo, chi) = range_bounds(&order[s..e], blo, bhi, cen);
         let (glo, ghi) = grown(lo, hi);
         nodes[ni].lo = glo;
         nodes[ni].hi = ghi;
         if e - s <= LEAF {
             continue;
         }
-        let mut axis = 0;
-        for k in 1..3 {
-            if chi[k] - clo[k] > chi[axis] - clo[axis] {
-                axis = k;
-            }
-        }
-        let mid = s + (e - s) / 2;
-        order[s..e].select_nth_unstable_by(mid - s, |&x, &y| {
-            cen[x as usize][axis].partial_cmp(&cen[y as usize][axis])
-                .unwrap_or(std::cmp::Ordering::Equal)
-        });
+        let mid = s + split_range(&mut order[s..e], cen, clo, chi);
         let left = nodes.len() as u32;
         nodes.push(Node { lo: [0.0; 3], hi: [0.0; 3], start: s as u32, end: mid as u32, left: 0, leaf: true });
         nodes.push(Node { lo: [0.0; 3], hi: [0.0; 3], start: mid as u32, end: e as u32, left: 0, leaf: true });
@@ -89,7 +162,11 @@ fn build_bvh(blo: &[[f64; 3]], bhi: &[[f64; 3]], cen: &[[f64; 3]]) -> (Vec<u32>,
         stack.push(left as usize);
         stack.push(left as usize + 1);
     }
-    (order, nodes)
+    for v in nodes.iter_mut() {
+        v.start += base as u32;
+        v.end += base as u32;
+    }
+    nodes
 }
 
 /// Whether the box ``lo``/``hi``, placed by ``m`` and seen through ``mvp``,
@@ -179,68 +256,8 @@ impl Proto {
         } else {
             (Vec::new(), Vec::new())
         };
-        let mut p = Proto { v0, e1, e2, order: (0..n as u32).collect(), nodes: Vec::new(), edges,
-                            eorder, enodes };
-        if n == 0 {
-            return p;
-        }
-        p.nodes.push(Node { lo: [0.0; 3], hi: [0.0; 3], start: 0, end: n as u32, left: 0, leaf: true });
-        let mut stack = vec![0usize];
-        while let Some(ni) = stack.pop() {
-            let (s, e) = (p.nodes[ni].start as usize, p.nodes[ni].end as usize);
-            let mut lo = [f64::INFINITY; 3];
-            let mut hi = [f64::NEG_INFINITY; 3];
-            let mut clo = [f64::INFINITY; 3];
-            let mut chi = [f64::NEG_INFINITY; 3];
-            for &r in &p.order[s..e] {
-                let r = r as usize;
-                for k in 0..3 {
-                    lo[k] = lo[k].min(tlo[r][k]);
-                    hi[k] = hi[k].max(thi[r][k]);
-                    clo[k] = clo[k].min(cen[r][k]);
-                    chi[k] = chi[k].max(cen[r][k]);
-                }
-            }
-            // Grown well past any rounding: a box only ever skips triangles
-            // the margin-ed test below would refuse anyway.
-            let mut ext = 0.0f64;
-            let mut big = 0.0f64;
-            for k in 0..3 {
-                ext = ext.max(hi[k] - lo[k]);
-                big = big.max(lo[k].abs()).max(hi[k].abs());
-            }
-            let m = 1e-6 + 1e-6 * big + 1e-4 * ext;
-            let mut glo = [lo[0] - m, lo[1] - m, lo[2] - m];
-            let mut ghi = [hi[0] + m, hi[1] + m, hi[2] + m];
-            if !(glo.iter().chain(ghi.iter()).all(|v| v.is_finite())) {
-                glo = [f64::NEG_INFINITY; 3];
-                ghi = [f64::INFINITY; 3];
-            }
-            p.nodes[ni].lo = glo;
-            p.nodes[ni].hi = ghi;
-            if e - s <= LEAF {
-                continue;
-            }
-            let mut axis = 0;
-            for k in 1..3 {
-                if chi[k] - clo[k] > chi[axis] - clo[axis] {
-                    axis = k;
-                }
-            }
-            let mid = s + (e - s) / 2;
-            p.order[s..e].select_nth_unstable_by(mid - s, |&x, &y| {
-                cen[x as usize][axis].partial_cmp(&cen[y as usize][axis])
-                    .unwrap_or(std::cmp::Ordering::Equal)
-            });
-            let left = p.nodes.len() as u32;
-            p.nodes.push(Node { lo: [0.0; 3], hi: [0.0; 3], start: s as u32, end: mid as u32, left: 0, leaf: true });
-            p.nodes.push(Node { lo: [0.0; 3], hi: [0.0; 3], start: mid as u32, end: e as u32, left: 0, leaf: true });
-            p.nodes[ni].leaf = false;
-            p.nodes[ni].left = left;
-            stack.push(left as usize);
-            stack.push(left as usize + 1);
-        }
-        p
+        let (order, nodes) = build_bvh(&tlo, &thi, &cen);
+        Proto { v0, e1, e2, order, nodes, edges, eorder, enodes }
     }
 
     pub fn n_tris(&self) -> usize {

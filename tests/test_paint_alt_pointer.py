@@ -18,7 +18,29 @@ from PySide6.QtWidgets import QApplication, QMenuBar  # noqa: E402
 if QApplication.instance() is None:
     QApplication([])
 
+import pytest  # noqa: E402
+
 from views.viewport import Viewport  # noqa: E402
+
+
+@pytest.fixture(autouse=True)
+def _only_this_test_s_viewports():
+    """The Alt watcher tells every live viewport, and the first one in
+    Paint takes the tap. A MainWindow an earlier file left alive (they are
+    never destroyed, see scripts/pytest_batches.py) still in Paint took it
+    and toggled ITS eyedropper button instead: the tap test failed in a
+    batch and passed alone (Windows round 0.6.2). Each test hears only the
+    viewports it builds; the others come back after it."""
+    import weakref
+
+    from views.viewport import _AltWatch
+    Viewport(None)                      # the watcher exists from here on
+    watch = _AltWatch._instance
+    kept = watch._viewports
+    watch._viewports = weakref.WeakSet()
+    yield
+    for vp in kept:
+        watch._viewports.add(vp)
 
 
 def _paint_viewport():

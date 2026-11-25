@@ -371,15 +371,53 @@ def test_864_step_pushed_back(d):
     _solid_ok(scene, vp, v0, -area * d)
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "#864 (PR, design decision for Marco): a step pushed flush merges the "
-    "two front faces; the contact line is not kept, so the half cannot be "
-    "pushed again on its own"))
+def _bbox(loop):
+    """The (x0, z0, x1, z1) box of a loop on a y-plane, to the millimetre."""
+    return (round(min(p.x() for p in loop), 3),
+            round(min(p.z() for p in loop), 3),
+            round(max(p.x() for p in loop), 3),
+            round(max(p.z() for p in loop), 3))
+
+
+def _on_y(mesh, y):
+    """The faces lying on the plane y = ``y``, as sorted (outer box, hole
+    boxes) — which regions the plane is split into, and which nest."""
+    return sorted(
+        (_bbox(g.vertices), sorted(_bbox(h) for h in g.holes))
+        for g in mesh.faces
+        if abs(abs(g.normal().normalized().y()) - 1) < 1e-3
+        and abs(g.centroid().y() - y) < 1e-4)
+
+
+# Marco, 19-11 (#864, @hamzah1985): a face pushed until it is flush with a
+# neighbour keeps its outline instead of merging into it, as the reference
+# program does — checked on the mini PC: the L step, a rectangle sunk into a
+# wall and brought back, and one pushed right through.
+
 def test_864_step_pushed_flush_keeps_its_outline():
     scene, _h = _lsolid()
     f = _face(scene.mesh, (3, -1, 1), (0, 1, 0))
     T._push(scene, f, _toward(f, (0, 1, 0), 1.0))
-    _face(scene.mesh, (3, 0, 1), (0, 1, 0))
+    assert _on_y(scene.mesh, 0) == [((0, 0, 2, 2), []), ((2, 0, 4, 2), [])]
+    # ... so that half is pushed out again on its own.
+    half = _face(scene.mesh, (3, 0, 1), (0, 1, 0))
+    v0, area = signed_volume(scene.mesh), half.area()
+    vp = T._push(scene, half, _toward(half, (0, 1, 0), -0.5))
+    _solid_ok(scene, vp, v0, area * 0.5)
+    assert _on_y(scene.mesh, 0) == [((0, 0, 2, 2), [])]
+
+
+def test_864_step_flush_undo_and_redo():
+    scene, _h = _lsolid()
+    f = _face(scene.mesh, (3, -1, 1), (0, 1, 0))
+    vp = T._push(scene, f, _toward(f, (0, 1, 0), 1.0))
+    after = (_on_y(scene.mesh, 0), len(scene.mesh.faces))
+    assert vp.history.undo()
+    assert _on_y(scene.mesh, 0) == [((0, 0, 2, 2), [])]
+    assert _on_y(scene.mesh, -1) == [((2, 0, 4, 2), [])]
+    assert vp.history.redo()
+    assert (_on_y(scene.mesh, 0), len(scene.mesh.faces)) == after
+    assert is_closed(scene.mesh) and _fins(scene.mesh) == 0
 
 
 def test_864_box_up_and_down():
@@ -434,6 +472,84 @@ def test_864_window_through():
     w = _face(scene.mesh, (2, 0, 1.5), (0, 1, 0))
     vp = T._push(scene, w, _toward(w, (0, 1, 0), 1.0))
     _solid_ok(scene, vp, v0, -2.0)
+    # A clean opening: both faces of the wall hold the window as a hole, and
+    # nothing is left inside it (no cap, no sliver along the far face).
+    wall = [((0, 0, 6, 3), [(1, 1, 3, 2)])]
+    assert _on_y(scene.mesh, 0) == wall
+    assert _on_y(scene.mesh, 1) == wall
+    assert len(scene.mesh.faces) == 6 + 4
+
+
+_WALL_ONLY = ((0, 0, 6, 3), [])
+_WINDOW = (1, 1, 3, 2)
+
+
+@pytest.mark.parametrize("d", [0.3, 0.5, 1.0 - 1e-3, -0.5])
+def test_864_window_back_flush_stays_its_own_face(d):
+    """Sunk into the wall (or pulled out of it) and brought back flush: the
+    window is still a face of its own, and the wall holds it as a hole."""
+    scene, _h = _walled()
+    v0 = signed_volume(scene.mesh)
+    w = _face(scene.mesh, (2, 0, 1.5), (0, 1, 0))
+    T._push(scene, w, _toward(w, (0, 1, 0), d))
+    w = _face(scene.mesh, (2, d, 1.5), (0, 1, 0))
+    vp = T._push(scene, w, _toward(w, (0, 1, 0), -d))
+    _solid_ok(scene, vp, v0, 0.0)
+    assert _on_y(scene.mesh, 0) == [((0, 0, 6, 3), [_WINDOW]), (_WINDOW, [])]
+    assert _on_y(scene.mesh, 1) == [_WALL_ONLY]
+    assert len(scene.mesh.faces) == 7
+
+
+def test_864_window_back_flush_undo_and_redo():
+    scene, _h = _walled()
+    w = _face(scene.mesh, (2, 0, 1.5), (0, 1, 0))
+    T._push(scene, w, _toward(w, (0, 1, 0), 0.3))
+    sunk = (_on_y(scene.mesh, 0.3), len(scene.mesh.faces),
+            round(signed_volume(scene.mesh), 6))
+    w = _face(scene.mesh, (2, 0.3, 1.5), (0, 1, 0))
+    vp = T._push(scene, w, _toward(w, (0, 1, 0), -0.3))
+    back = (_on_y(scene.mesh, 0), len(scene.mesh.faces))
+    for _ in range(2):
+        assert vp.history.undo()
+        assert (_on_y(scene.mesh, 0.3), len(scene.mesh.faces),
+                round(signed_volume(scene.mesh), 6)) == sunk
+        assert vp.history.redo()
+        assert (_on_y(scene.mesh, 0), len(scene.mesh.faces)) == back
+        assert is_closed(scene.mesh) and _fins(scene.mesh) == 0
+
+
+_PANE = (1.5, 1.25, 2.5, 1.75)
+
+
+def _framed():
+    """The wall with a window, and a pane drawn inside it: the window is a
+    frame (a face with the pane as its hole)."""
+    scene, hist = _walled()
+    _draw(scene, hist, [V(1.5, 0, 1.25), V(2.5, 0, 1.25), V(2.5, 0, 1.75),
+                        V(1.5, 0, 1.75)])
+    assert _on_y(scene.mesh, 0) == [
+        ((0, 0, 6, 3), [_WINDOW]), (_WINDOW, [_PANE]), (_PANE, [])]
+    return scene, hist
+
+
+@pytest.mark.parametrize("d", [0.3, -0.4])
+def test_864_frame_with_a_hole_back_flush(d):
+    """The pushed face has a hole: its inner rim is its outline too. Back
+    flush, the frame, the pane inside it and the wall around it are three
+    faces again — and the wall keeps the hole (the frame's outer rim)."""
+    scene, _h = _framed()
+    v0 = signed_volume(scene.mesh)
+    frame = next(g for g in scene.mesh.faces
+                 if g.holes and _bbox(g.vertices) == _WINDOW)
+    T._push(scene, frame, _toward(frame, (0, 1, 0), d))
+    assert (_WINDOW, [_PANE]) in _on_y(scene.mesh, d)
+    frame = next(g for g in scene.mesh.faces
+                 if g.holes and _bbox(g.vertices) == _WINDOW)
+    vp = T._push(scene, frame, _toward(frame, (0, 1, 0), -d))
+    _solid_ok(scene, vp, v0, 0.0)
+    assert _on_y(scene.mesh, 0) == [
+        ((0, 0, 6, 3), [_WINDOW]), (_WINDOW, [_PANE]), (_PANE, [])]
+    assert len(scene.mesh.faces) == 8
 
 
 # ---- #789: a box lengthened with Ctrl, then pushed back --------------------
@@ -452,9 +568,6 @@ def test_789_box_lengthened_with_ctrl():
     assert signed_volume(scene.mesh) == pytest.approx(v0 + area, abs=1e-6)
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "#789: pushing the end back across the Ctrl division is refused "
-    "(«would break the solid»); the interior partition guard"))
 def test_789_end_pushed_back_across_the_division():
     scene, _h = _boxed(0, 0, 0, 2, 1, 1)
     end = _face(scene.mesh, (2, 0.5, 0.5), (1, 0, 0))

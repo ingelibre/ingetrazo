@@ -94,7 +94,8 @@ def test_profiles():
     assert units.profile_of({"length": "mm", "precision": 0,
                              "decimal": ","}) == "millimetric"
     assert units.profile_of({"length": "ft-in-frac", "precision": 2}) == "imperial"
-    assert units.profile_of({"length": "cm", "precision": 1}) == "custom"
+    assert units.profile_of({"length": "cm", "precision": 1}) == "centimetric"
+    assert units.profile_of({"length": "cm", "precision": 0}) == "custom"
     assert units.profile_of({"length": "m", "precision": 2,
                              "area": "ha"}) == "custom"
     out = units.with_profile({"length": "cm", "precision": 1, "area": "ha",

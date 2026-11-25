@@ -8,6 +8,8 @@ only read the loose faces and the top-level groups, so both objects
 vanished from them while the Browser still showed the class."""
 from __future__ import annotations
 
+import pytest
+
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QMatrix4x4
 from PySide6.QtGui import QVector3D as V
@@ -192,3 +194,66 @@ def test_the_bim_panel_lists_and_picks_grouped_objects():
     finally:
         win._saved_version = win.viewport.scene.version
         win.close()
+
+
+def _panel_rows(panel) -> list:
+    from PySide6.QtWidgets import QTreeWidgetItemIterator
+    items = []
+    it = QTreeWidgetItemIterator(panel.tree)
+    while it.value() is not None:
+        items.append(it.value())
+        it += 1
+    return items
+
+
+def test_picking_a_bim_row_keeps_the_folded_groups_folded():
+    from views.main_window import MainWindow
+    win = MainWindow()
+    try:
+        scene = win.viewport.scene
+        h = win.viewport.history
+        col = _group(scene, h, _box(scene))
+        tag_group(col, "IfcColumn", "C-1")
+        outer = _nest(scene, h, [col])
+        faces = _box(scene, 5.0)
+        tag_faces(faces, "IfcWall", "Muro", next_object_id(scene))
+        wall = _group(scene, h, faces)
+        panel = win.bim_tray.bim
+        panel.refresh()
+
+        def group_row(g):
+            (row,) = [i for i in _panel_rows(panel)
+                      if isinstance(i.data(0, Qt.UserRole), int)
+                      and i.data(0, Qt.UserRole) < 0
+                      and panel._containers[-i.data(0, Qt.UserRole) - 1] is g]
+            return row
+        group_row(wall).setExpanded(False)
+        rows = {i.text(1): i for i in _panel_rows(panel) if i.text(1)}
+        # Picking the column opens «outer»: the list is rebuilt.
+        panel._on_pick_object(rows["C-1"], 0)
+        assert scene.edit_group is outer
+        panel.refresh()
+        assert not group_row(wall).isExpanded()
+        assert group_row(outer).isExpanded()
+    finally:
+        win._saved_version = win.viewport.scene.version
+        win.close()
+
+
+def test_the_panels_takeoff_measures_a_scaled_group_in_world_space():
+    """PR #1125 moved the takeoff into ``object_metrado``; it reads the
+    world-space faces (PR #984), not the definition's: a column scaled ×2
+    is eight times the concrete."""
+    from core.bim import collect_objects, object_metrado
+    from core.scene import Scene
+    from core.history import History
+    scene = Scene()
+    col = _group(scene, History(scene), _box(scene, 0.0, (0.4, 0.4, 3.0)))
+    tag_group(col, "IfcColumn", "C-1")
+    (obj,) = collect_objects(scene)
+    assert object_metrado(obj)[0] == pytest.approx(0.48)
+    m = QMatrix4x4()
+    m.scale(2.0)
+    col.xform = m
+    (obj,) = collect_objects(scene)
+    assert object_metrado(obj) == (pytest.approx(0.48 * 8), "m3")

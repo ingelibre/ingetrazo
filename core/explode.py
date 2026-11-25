@@ -88,6 +88,12 @@ def apply_explode(container, factor: float, mode: str = "outward",
         old = _offset_of(kid)
         step = QMatrix4x4()
         step.translate(target - old if target is not None else old * -1.0)
+        if kid.xform is None:
+            # A plain group moves by a matrix of its own from now on, and a
+            # group with a matrix reads as a component unless it says it is
+            # not: every wall of an exploded building came back a component,
+            # whose parts can no longer be grouped or exploded (#1375).
+            kid.component = False
         kid.xform = step * (kid.xform if kid.xform is not None
                             else QMatrix4x4())
         kid.explode_offset = ((target.x(), target.y(), target.z())

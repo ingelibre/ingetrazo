@@ -5,7 +5,9 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import re
 import sys
+import time
 from pathlib import Path
 
 from PySide6.QtCore import (QEvent, QObject, QPoint, QRunnable, Qt,
@@ -18,14 +20,20 @@ from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QDialog,
+    QFileDialog,
     QFrame,
     QGridLayout,
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QListWidget,
+    QListWidgetItem,
     QMessageBox,
+    QInputDialog,
+    QProgressBar,
     QPushButton,
     QScrollArea,
+    QSpacerItem,
     QSizePolicy,
     QTabWidget,
     QToolButton,
@@ -38,6 +46,7 @@ from core.i18n import current_language, tr
 from core.extension_manager import (
     Extension,
     ExtensionManagerError,
+    MAX_DOWNLOAD_BYTES,
     bundled_extensions,
     compatible_with_current,
     display_name,
@@ -50,13 +59,16 @@ from core.extension_manager import (
     is_extension_enabled,
     is_reviewed,
     installation_conflict,
+    load_extension_sources,
     load_cached_catalog,
+    normalize_extension_source,
     refresh_catalog,
     remove_hand_installed,
     replace_hand_installed,
     restart_required,
     retired_extensions,
     set_extension_enabled,
+    save_extension_sources,
     tested_version_is_old,
     uninstall_extension,
 )
@@ -69,6 +81,15 @@ _SCREENSHOT_BASE = (
 #: The same files through the website (Cloudflare-cached), as its own
 #: extensions page shows them: the second try when GitHub fails.
 _SCREENSHOT_MIRROR = "https://ingetrazo.com/extensiones-img/"
+#: The catalog's small copies (512 × 320, 10–40 KB) of the screenshots,
+#: what a card shows: the full screenshot, up to 600 KB, was fetched to
+#: be shown at 256 × 160 (#1296). Same two sources.
+_THUMB_BASE = (
+    "https://raw.githubusercontent.com/ingelibre/"
+    "ingetrazo-extensions/main/thumbs/")
+_THUMB_MIRROR = "https://ingetrazo.com/extensiones-img/thumbs/"
+#: Where the downloaded small copies are kept, beside the screenshots.
+_THUMB_CACHE_DIR = "catalog-thumbs"
 #: A screenshot that failed is asked for again on its own — before, it
 #: stayed «Preview unavailable» until the list was scrolled (caza 2).
 _SCREENSHOT_RETRIES = 3
@@ -89,8 +110,14 @@ _THUMBS_DIR = "thumbs"
 #: and the next opening find them ready.
 _PREFETCH_DELAY_MS = 150
 _PREFETCH_BATCH = 4
+#: Once the visible cards are in, the images not yet on disk are fetched
+#: in the background, this many at a time, so scrolling finds them ready.
+_PREFETCH_DOWNLOADS = 3
 _ROW_MAX_HEIGHT = 300
 _ROW_MAX_WIDTH = 660
+_RENDER_BATCH_SIZE = 3
+_RENDER_BATCH_INTERVAL_MS = 1
+_CARD_OVERSCAN_ROWS = 1
 #: The width a column of cards asks for: two at the usual size, three on a
 #: maximised Full HD window, more on a wider one — no empty band at the
 #: right (Marco, 09-10).
@@ -149,8 +176,6 @@ _CARD_RULES = {
 _CARD_STYLE = "".join(f"{_ROW}{selector} {{ {rule} }}"
                       for selector, rule in _CARD_RULES.items())
 
-
-
 #: The catalog's fixed tags (tools/catalog.py TAGS), named as the web page
 #: names them; an unknown tag falls back to its own words.
 _TAG_LABELS = {
@@ -173,12 +198,19 @@ def _screenshot_key(source: Path) -> tuple | None:
 def _tag_label(tag: str) -> str:
     return tr(_TAG_LABELS.get(tag, tag.replace("-", " ").title()))
 
+
 class _CatalogWorker(QObject):
     completed = Signal(object, object)
 
+    def __init__(self, sources: list[dict[str, str]]) -> None:
+        super().__init__()
+        self.sources = sources
+
     def refresh(self) -> None:
         try:
-            self.completed.emit(refresh_catalog(), None)
+            snapshot = (refresh_catalog(self.sources) if self.sources
+                        else refresh_catalog())
+            self.completed.emit(snapshot, None)
         except (ExtensionManagerError, OSError) as exc:
             self.completed.emit(None, exc)
         except Exception as exc:
@@ -187,9 +219,9 @@ class _CatalogWorker(QObject):
 
 
 class _CatalogTask(QRunnable):
-    def __init__(self) -> None:
+    def __init__(self, sources: list[dict[str, str]] | None = None) -> None:
         super().__init__()
-        self.signals = _CatalogWorker()
+        self.signals = _CatalogWorker(sources or [])
 
     def run(self) -> None:
         self.signals.refresh()
@@ -208,13 +240,18 @@ class ExtensionManagerDialog(QDialog):
             "background: palette(window); }")
         self._extensions: list[Extension] = []
         self._reviewed: dict[str, dict] = {}
+        self._custom_sources = load_extension_sources()
         self._catalog_snapshot = None
         self._catalog_worker = None
         startup_state = getattr(parent, "_extension_startup_state", None)
         self._startup_state = (startup_state if startup_state is not None
                                else extension_startup_state())
+        self._restart_candidates = set(self._startup_state)
+        self._restart_requested = False
         self._requested_images: set[str] = set()
         self._image_failures: dict[str, int] = {}
+        #: When a failed picture may be asked for again in the background.
+        self._retry_at: dict[str, float] = {}
         # Screenshots already decoded and scaled, by extension id: a card
         # built again (a filter, an install) is born with its image instead
         # of «Preview unavailable» and then the picture (#555).
@@ -231,10 +268,19 @@ class ExtensionManagerDialog(QDialog):
         self._prefetch_timer.setSingleShot(True)
         self._prefetch_timer.setInterval(_PREFETCH_DELAY_MS)
         self._prefetch_timer.timeout.connect(self._prefetch_screenshots)
+        self._initial_load_timer = QTimer(self)
+        self._initial_load_timer.setSingleShot(True)
+        self._initial_load_timer.setInterval(100)
+        self._initial_load_timer.timeout.connect(self._load)
         self._waiting_first_paint = _HIDE_UNTIL_PAINTED
         if self._waiting_first_paint:
             self.setWindowOpacity(0.0)
         self._network = QNetworkAccessManager(self)
+        self._pending_install: tuple[Extension, bool] | None = None
+        self._active_install_reply = None
+        self._install_cancelled = False
+        self._install_download_error: str | None = None
+        self._retry_install_request: tuple[Extension, bool] | None = None
         self._pages: dict[str, dict] = {}
 
         layout = QVBoxLayout(self)
@@ -247,10 +293,39 @@ class ExtensionManagerDialog(QDialog):
         self._catalog_info.setStyleSheet(
             "color: palette(text); font-size: 11px")
         header.addWidget(self._catalog_info)
+        self._restart_button = QPushButton(tr("Restart to apply changes"))
+        self._restart_button.clicked.connect(self._request_restart)
+        self._restart_button.setVisible(False)
+        header.addWidget(self._restart_button)
+        self._sources_button = QPushButton(tr("Sources…"))
+        self._sources_button.clicked.connect(self._manage_sources)
+        header.addWidget(self._sources_button)
         self._refresh = QPushButton(tr("Refresh"))
         self._refresh.clicked.connect(self._load)
         header.addWidget(self._refresh)
         layout.addLayout(header)
+
+        self._install_status = QLabel()
+        self._install_status.setWordWrap(False)
+        self._install_status.setSizePolicy(QSizePolicy.Ignored,
+                                           QSizePolicy.Fixed)
+        self._install_progress = QProgressBar()
+        self._install_progress.setFixedWidth(110)
+        self._install_progress.setTextVisible(True)
+        self._install_cancel = QPushButton(tr("Cancel download"))
+        self._install_cancel.clicked.connect(self._cancel_install_download)
+        self._install_retry = QPushButton(tr("Retry"))
+        self._install_retry.clicked.connect(self._retry_install)
+        progress_row = QHBoxLayout()
+        progress_row.setContentsMargins(0, 0, 0, 0)
+        progress_row.setSpacing(6)
+        progress_row.addWidget(self._install_status, 1)
+        progress_row.addWidget(self._install_progress)
+        progress_row.addWidget(self._install_cancel)
+        progress_row.addWidget(self._install_retry)
+        self._install_progress_widget = QWidget()
+        self._install_progress_widget.setLayout(progress_row)
+        self._install_progress_widget.hide()
 
         intro = QLabel(tr(
             "Tools the community adds to IngeTrazo. All are free software "
@@ -267,13 +342,15 @@ class ExtensionManagerDialog(QDialog):
         footer = QHBoxLayout()
         warning = QLabel(tr(
             "Extensions are Python code. Only install extensions you trust."))
-        warning.setWordWrap(True)
+        warning.setWordWrap(False)
+        warning.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Fixed)
+        warning.setToolTip(warning.text())
         footer.addWidget(warning, 1)
+        footer.addWidget(self._install_progress_widget, 2)
         close = QPushButton(tr("Close"))
         close.clicked.connect(self.accept)
         footer.addWidget(close)
         layout.addLayout(footer)
-        self._load()
 
     def _build_page(self, key: str) -> QWidget:
         page = QWidget()
@@ -360,7 +437,8 @@ class ExtensionManagerDialog(QDialog):
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.verticalScrollBar().valueChanged.connect(
-            self._images_timer.start)
+            lambda _value, page_key=key:
+            self._schedule_visible_cards(page_key))
         cards = QWidget()
         cards.setStyleSheet(_CARD_STYLE)
         grid = QGridLayout(cards)
@@ -373,6 +451,10 @@ class ExtensionManagerDialog(QDialog):
         scroll.setWidget(cards)
         scroll.viewport().installEventFilter(self)   # columns follow width
         page_layout.addWidget(scroll, 1)
+        render_timer = QTimer(page)
+        render_timer.setSingleShot(True)
+        render_timer.timeout.connect(lambda page_key=key:
+                                     self._render_batch(page_key))
 
         self._pages[key] = {
             "search": search,
@@ -389,8 +471,18 @@ class ExtensionManagerDialog(QDialog):
             "cards": cards,
             "grid": grid,
             "image_labels": {},
+            "rows": {},
+            "hand_rows": {},
+            "retired_rows": {},
+            "render_timer": render_timer,
+            "render_items": [],
+            "render_index": 0,
+            "pending_indices": [],
+            "failed_indices": set(),
+            "items_ready": False,
             "shown": 0,
             "total": 0,
+            "dirty": True,
         }
         return page
 
@@ -398,16 +490,98 @@ class ExtensionManagerDialog(QDialog):
         if self._catalog_worker is not None:
             return
         cached = load_cached_catalog()
-        if cached is not None:
+        if cached is not None and self._catalog_snapshot is None:
             self._apply_catalog(cached)
-        elif not self._extensions:
+        elif cached is None and not self._extensions:
             self._catalog_info.setText(tr("Loading extension catalog…"))
+        self._catalog_info.setToolTip("")
         self._refresh.setEnabled(False)
-        worker = _CatalogTask()
+        self._sources_button.setEnabled(False)
+        worker = _CatalogTask(list(self._custom_sources))
         worker.signals.completed.connect(
             self._catalog_loaded, Qt.QueuedConnection)
         self._catalog_worker = worker
         QThreadPool.globalInstance().start(worker)
+
+    def _manage_sources(self) -> None:
+        source_dialog = QDialog(self)
+        source_dialog.setWindowTitle(tr("Extension sources"))
+        source_dialog.setMinimumWidth(640)
+        layout = QVBoxLayout(source_dialog)
+        entries = QListWidget()
+        sources = [dict(source) for source in self._custom_sources]
+
+        def append_source(source: dict[str, str]) -> None:
+            if source in sources:
+                QMessageBox.information(
+                    source_dialog, tr("Extension sources"),
+                    tr("That source has already been added."))
+                return
+            sources.append(source)
+            kind = (tr("Catalog") if source["kind"] == "catalog"
+                    else tr("Local folder"))
+            item = QListWidgetItem(f"{kind} — {source['location']}")
+            item.setData(Qt.UserRole, source)
+            entries.addItem(item)
+
+        for source in sources:
+            kind = (tr("Catalog") if source["kind"] == "catalog"
+                    else tr("Local folder"))
+            item = QListWidgetItem(f"{kind} — {source['location']}")
+            item.setData(Qt.UserRole, source)
+            entries.addItem(item)
+        layout.addWidget(entries)
+        actions = QHBoxLayout()
+        add_catalog = QPushButton(tr("Add catalog URL"))
+        add_folder = QPushButton(tr("Add local folder"))
+        remove = QPushButton(tr("Remove selected"))
+        actions.addWidget(add_catalog)
+        actions.addWidget(add_folder)
+        actions.addWidget(remove)
+        actions.addStretch(1)
+        done = QPushButton(tr("Done"))
+        actions.addWidget(done)
+        layout.addLayout(actions)
+
+        def add_catalog_source() -> None:
+            url, accepted = QInputDialog.getText(
+                source_dialog, tr("Add catalog URL"),
+                tr("HTTPS URL to the catalog.json file:"))
+            if not accepted:
+                return
+            try:
+                append_source(normalize_extension_source("catalog", url))
+            except ExtensionManagerError as exc:
+                QMessageBox.warning(source_dialog, tr("Extension sources"),
+                                    str(exc))
+
+        def add_folder_source() -> None:
+            folder = QFileDialog.getExistingDirectory(
+                source_dialog, tr("Choose extension source folder"))
+            if not folder:
+                return
+            try:
+                append_source(normalize_extension_source("folder", folder))
+            except ExtensionManagerError as exc:
+                QMessageBox.warning(source_dialog, tr("Extension sources"),
+                                    str(exc))
+
+        def remove_source() -> None:
+            row = entries.currentRow()
+            if row < 0:
+                return
+            entries.takeItem(row)
+            sources.pop(row)
+
+        add_catalog.clicked.connect(add_catalog_source)
+        add_folder.clicked.connect(add_folder_source)
+        remove.clicked.connect(remove_source)
+        done.clicked.connect(source_dialog.accept)
+        source_dialog.exec()
+        if sources != self._custom_sources:
+            self._custom_sources = sources
+            save_extension_sources(sources)
+            self._load()
 
     def _apply_catalog(self, snapshot) -> None:
         previous = self._catalog_snapshot
@@ -415,20 +589,37 @@ class ExtensionManagerDialog(QDialog):
         if (previous is not None
                 and snapshot.extensions == previous.extensions
                 and snapshot.reviewed == previous.reviewed):
-            # The refresh brought the catalog already on screen (the usual
-            # case: the cached copy shows first): only the date changes.
-            # Rebuilding both pages repainted the whole window (#555).
             self._show_count(self._active_page_key())
             return
-        self._extensions = self._with_bundled(snapshot.extensions)
+
+        previous_extensions = self._extensions
+        previous_reviewed = self._reviewed
+        extensions = self._with_bundled(snapshot.extensions)
+        previous_by_id = {extension.id: extension
+                          for extension in previous_extensions}
+        current_by_id = {extension.id: extension for extension in extensions}
+        changed_ids = {
+            ident for ident in previous_by_id.keys() | current_by_id.keys()
+            if previous_by_id.get(ident) != current_by_id.get(ident)
+        }
+        for ident in previous_by_id.keys() & current_by_id.keys():
+            if (is_reviewed(previous_by_id[ident], previous_reviewed)
+                    != is_reviewed(current_by_id[ident], snapshot.reviewed)):
+                changed_ids.add(ident)
+        old_tags = {tag for extension in previous_extensions
+                    for tag in extension.tags}
+        new_tags = {tag for extension in extensions for tag in extension.tags}
+        catalog_changed = (extensions != previous_extensions
+                           or bool(changed_ids))
+        self._extensions = extensions
         self._reviewed = snapshot.reviewed
+        has_update_dates = any(
+            extension.updated_at for extension in self._extensions)
         for key in self._pages:
             recent_index = self._pages[key]["sort"].findData("recent")
             if recent_index >= 0:
                 recent_item = self._pages[key]["sort"].model().item(
                     recent_index)
-                has_update_dates = any(
-                    extension.updated_at for extension in self._extensions)
                 recent_item.setEnabled(has_update_dates)
             else:
                 recent_item = None
@@ -438,20 +629,35 @@ class ExtensionManagerDialog(QDialog):
                     tr("The catalog does not include per-extension update "
                        "dates."),
                     Qt.ToolTipRole)
-            self._populate_tags(key)
+            if catalog_changed:
+                for ident in changed_ids:
+                    self._discard_cached_rows(key, ident)
+                if (old_tags != new_tags
+                        or not self._pages[key]["tags_group"].buttons()):
+                    self._populate_tags(key)
+                self._pages[key]["dirty"] = True
+        key = self._active_page_key()
+        if self._pages[key]["dirty"]:
             self._render_page(key)
+        else:
+            self._show_count(key)
 
     def _catalog_loaded(self, snapshot, error) -> None:
         self._catalog_worker = None
         self._refresh.setEnabled(True)
+        self._sources_button.setEnabled(True)
         if snapshot is not None:
+            self._catalog_info.setToolTip("\n".join(snapshot.source_errors))
             self._apply_catalog(snapshot)
         elif self._catalog_snapshot is None:
+            self._catalog_info.setToolTip(str(error))
             # Offline with no cached catalog: what ships with IngeTrazo
             # still installs from here.
             self._extensions = self._with_bundled([])
             for key in self._pages:
-                self._render_page(key)
+                self._populate_tags(key)
+                self._pages[key]["dirty"] = True
+            self._render_page(self._active_page_key())
             self._catalog_info.setText(
                 tr("Could not load extensions: {error}", error=str(error)))
         else:
@@ -534,11 +740,47 @@ class ExtensionManagerDialog(QDialog):
             item = grid.takeAt(0)
             widget = item.widget()
             if widget is not None:
-                # Out of the layout is not off the screen: until deleteLater
-                # runs, the old card would be painted under the new ones.
                 widget.hide()
-                widget.deleteLater()
-        page["image_labels"].clear()
+        for row in page["rows"].values():
+            row.hide()
+        for row in page["hand_rows"].values():
+            row.hide()
+        for row in page["retired_rows"].values():
+            row.hide()
+
+    def _discard_cached_rows(self, key: str, ident: str | None = None) -> None:
+        page = self._pages[key]
+        page["render_timer"].stop()
+        page["render_items"] = []
+        page["render_index"] = 0
+        page["pending_indices"] = []
+        page["items_ready"] = False
+        if ident is None:
+            rows = list(page["rows"].values())
+            page["rows"].clear()
+            page["image_labels"].clear()
+        else:
+            row = page["rows"].pop(ident, None)
+            rows = [row] if row is not None else []
+            page["image_labels"].pop(ident, None)
+        if ident is None:
+            hand_rows = list(page["hand_rows"].values())
+            page["hand_rows"].clear()
+            retired_rows = list(page["retired_rows"].values())
+            page["retired_rows"].clear()
+        else:
+            hand_rows = []
+            retired_rows = [
+                row for path, row in list(page["retired_rows"].items())
+                if path.name == ident
+            ]
+            for path in list(page["retired_rows"]):
+                if path.name == ident:
+                    del page["retired_rows"][path]
+        page["pending_indices"] = []
+        for row in rows + hand_rows + retired_rows:
+            row.hide()
+            row.deleteLater()
 
     def _filtered_extensions(self, key: str | None = None) -> list[Extension]:
         key = key or self._active_page_key()
@@ -595,31 +837,160 @@ class ExtensionManagerDialog(QDialog):
     def _render_page(self, key: str, *_args) -> None:
         page = self._pages[key]
         cards = page["cards"]
-        # One repaint for the whole swap, not one per card taken out and
-        # put in: on Windows the half-built page showed as a flash (#555).
         cards.setUpdatesEnabled(False)
         try:
+            page["render_timer"].stop()
+            page["pending_indices"] = []
+            page["render_index"] = 0
+            page["failed_indices"].clear()
             self._clear_cards(key)
             extensions = self._filtered_extensions(key)
-            language = current_language()
-            rows = [self._card(self._make_row, extension, language, cards, key)
-                    for extension in extensions]
             unknown = self._hand_only(key) if key == "installed" else []
-            rows += [self._card(self._make_hand_row, path, cards)
-                     for path in unknown]
             retired = self._retired(key) if key == "installed" else []
-            rows += [self._card(self._make_retired_row, path, cards)
-                     for path in retired]
-            self._place_cards(key, [row for row in rows if row is not None])
+            items = ([("extension", extension) for extension in extensions]
+                     + [("hand", path) for path in unknown]
+                     + [("retired", path) for path in retired])
+            page["render_items"] = items
+            page["items_ready"] = True
+            page["dirty"] = True
+            page["shown"] = len(items)
+            page["total"] = (
+                sum(installed_info(e.id) is not None
+                    or installation_conflict(e.id)
+                    for e in self._extensions)
+                + len(self._hand_only(key, filtered=False))
+                + len(self._retired(key, filtered=False))
+                if key == "installed" else len(self._extensions))
+            self._install_card_placeholders(key)
         finally:
             cards.setUpdatesEnabled(True)
-        page["shown"] = len(extensions) + len(unknown) + len(retired)
-        page["total"] = (sum(installed_info(e.id) is not None
-                             or installation_conflict(e.id)
-                             for e in self._extensions)
-                         + len(self._hand_only(key, filtered=False))
-                         + len(self._retired(key, filtered=False))
-                         if key == "installed" else len(self._extensions))
+        self._schedule_visible_cards(key)
+
+    def _render_batch(self, key: str) -> None:
+        page = self._pages[key]
+        items = page["render_items"]
+        pending = page["pending_indices"]
+        indices = pending[:_RENDER_BATCH_SIZE]
+        del pending[:len(indices)]
+        columns = self._columns(key)
+        grid = page["grid"]
+        for index in indices:
+            if index in page["failed_indices"]:
+                continue
+            kind, item = items[index]
+            if kind == "extension":
+                row = page["rows"].get(item.id)
+                if row is None:
+                    row = self._card(
+                        self._make_row, item, current_language(),
+                        page["cards"], key)
+                    if row is None:
+                        page["failed_indices"].add(index)
+                        continue
+                    page["rows"][item.id] = row
+            elif kind == "hand":
+                row = page["hand_rows"].get(item)
+                if row is None:
+                    row = self._card(
+                        self._make_hand_row, item, page["cards"])
+                    if row is None:
+                        page["failed_indices"].add(index)
+                        continue
+                    page["hand_rows"][item] = row
+            else:
+                row = page["retired_rows"].get(item)
+                if row is None:
+                    row = self._card(
+                        self._make_retired_row, item, page["cards"])
+                    if row is None:
+                        page["failed_indices"].add(index)
+                        continue
+                    page["retired_rows"][item] = row
+            cell = grid.itemAtPosition(index // columns, index % columns)
+            if cell is not None and cell.widget() is not row:
+                grid.removeItem(cell)
+            if cell is None or cell.widget() is not row:
+                grid.addWidget(row, index // columns, index % columns)
+            row.show()
+        page["columns"] = columns
+        if pending:
+            page["render_timer"].start(_RENDER_BATCH_INTERVAL_MS)
+            return
+        page["render_index"] = 0
+        if page["dirty"]:
+            self._finish_page_render(key, page)
+        elif key == self._active_page_key():
+            self._images_timer.start()
+
+    def _install_card_placeholders(self, key: str) -> None:
+        page = self._pages[key]
+        grid = page["grid"]
+        columns = self._columns(key)
+        for column in range(max(columns, grid.columnCount())):
+            grid.setColumnStretch(column, 1 if column < columns else 0)
+        for index in range(len(page["render_items"])):
+            grid.addItem(
+                QSpacerItem(0, _ROW_MAX_HEIGHT, QSizePolicy.Minimum,
+                            QSizePolicy.Fixed),
+                index // columns, index % columns)
+        page["columns"] = columns
+
+    def _visible_card_indices(self, key: str) -> list[int]:
+        page = self._pages[key]
+        items = page["render_items"]
+        if not items:
+            return []
+        columns = self._columns(key)
+        viewport = page["scroll"].viewport()
+        if viewport.height() <= 0:
+            initial_rows = 2 + _CARD_OVERSCAN_ROWS
+            return list(range(min(len(items), initial_rows * columns)))
+
+        row_height = _ROW_MAX_HEIGHT + page["grid"].verticalSpacing()
+        scroll_top = page["scroll"].verticalScrollBar().value()
+        total_rows = (len(items) + columns - 1) // columns
+        first_row = max(
+            0, scroll_top // row_height - _CARD_OVERSCAN_ROWS)
+        last_row = min(
+            total_rows - 1,
+            (scroll_top + viewport.height()) // row_height
+            + _CARD_OVERSCAN_ROWS)
+        start = first_row * columns
+        end = min(len(items), (last_row + 1) * columns)
+        return list(range(start, end))
+
+    def _schedule_visible_cards(self, key: str) -> None:
+        page = self._pages[key]
+        if not page["items_ready"]:
+            return
+        if not page["render_items"]:
+            if page["dirty"]:
+                self._finish_page_render(key, page)
+            if key == self._active_page_key():
+                self._images_timer.start()
+            return
+
+        columns = self._columns(key)
+        grid = page["grid"]
+        pending = []
+        for index in self._visible_card_indices(key):
+            if index in page["failed_indices"]:
+                continue
+            cell = grid.itemAtPosition(index // columns, index % columns)
+            if cell is None or cell.widget() is None:
+                pending.append(index)
+        page["pending_indices"] = pending
+        page["render_index"] = 0
+        if pending:
+            page["render_timer"].start(0)
+        elif page["dirty"]:
+            self._finish_page_render(key, page)
+        elif key == self._active_page_key():
+            self._images_timer.start()
+
+    def _finish_page_render(self, key: str, page: dict) -> None:
+        page["dirty"] = False
+        page["rendered"] = True
         if key == self._active_page_key():
             self._show_count(key)
             self._images_timer.start()
@@ -643,38 +1014,40 @@ class ExtensionManagerDialog(QDialog):
                shown=page["shown"], total=page["total"])
             + self._catalog_status_suffix())
 
+    def _sync_restart_button(self, ident: str | None = None) -> None:
+        if ident is not None:
+            self._restart_candidates.add(ident)
+        self._restart_button.setVisible(any(
+            restart_required(candidate, self._startup_state)
+            for candidate in self._restart_candidates))
+
+    def _request_restart(self) -> None:
+        self._restart_requested = True
+        self.accept()
+
     def _columns(self, key: str) -> int:
         """How many columns of cards fit the page's width."""
         width = self._pages[key]["scroll"].viewport().width()
         return max(1, width // _COLUMN_WIDTH)
 
-    def _place_cards(self, key: str, rows: list) -> None:
-        """Lay the cards out in as many columns as fit, in order."""
-        grid = self._pages[key]["grid"]
-        columns = self._columns(key)
-        for column in range(max(columns, grid.columnCount())):
-            grid.setColumnStretch(column, 1 if column < columns else 0)
-        for index, row in enumerate(rows):
-            grid.addWidget(row, index // columns, index % columns)
-        self._pages[key]["columns"] = columns
-
     def eventFilter(self, obj, event) -> bool:
-        # A wider or narrower card area: the same cards, in the columns
-        # that fit now — moved, not rebuilt (their images stay).
+        # Reflow lightweight placeholders, then materialize the new viewport.
         if event.type() == QEvent.Resize:
             for key, page in getattr(self, "_pages", {}).items():
                 if (obj is page["scroll"].viewport()
                         and self._columns(key) != page.get("columns")):
-                    grid = page["grid"]
-                    rows = [grid.itemAt(i).widget()
-                            for i in range(grid.count())]
-                    for row in rows:
-                        grid.removeWidget(row)
-                    self._place_cards(key, rows)
+                    self._clear_cards(key)
+                    self._install_card_placeholders(key)
+                    self._schedule_visible_cards(key)
         return super().eventFilter(obj, event)
 
     def showEvent(self, event) -> None:
         super().showEvent(event)
+        if not self._initial_load_timer.isActive():
+            self._initial_load_timer.start()
+        key = self._active_page_key()
+        if self._pages[key]["render_items"]:
+            self._schedule_visible_cards(key)
         self._images_timer.start()
         if self._waiting_first_paint:
             # Never left invisible, whatever happens to the first paint.
@@ -691,13 +1064,18 @@ class ExtensionManagerDialog(QDialog):
         self.setWindowOpacity(1.0)
 
     def _on_tab_changed(self, _index: int) -> None:
-        # Both pages are rebuilt whenever what they show changes (catalog,
-        # install, enable, their own filters), so a tab change only shows
-        # the other one. Rebuilding it here, on every switch, was the
-        # flash between the two tabs (#555).
         key = self._active_page_key()
-        self._show_count(key)
+        if self._pages[key]["dirty"]:
+            self._render_page(key)
+        else:
+            self._show_count(key)
         self._images_timer.start()
+
+    def _invalidate_pages(self, ident: str | None = None) -> None:
+        for key, page in self._pages.items():
+            self._discard_cached_rows(key, ident)
+            page["dirty"] = True
+        self._render_page(self._active_page_key())
 
     def _make_row(self, extension: Extension, language: str,
                   parent: QWidget, page_key: str) -> QWidget:
@@ -715,7 +1093,7 @@ class ExtensionManagerDialog(QDialog):
         row = QWidget(parent)
         row.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         row.setMinimumWidth(400)
-        row.setMaximumHeight(_ROW_MAX_HEIGHT)
+        row.setFixedHeight(_ROW_MAX_HEIGHT)
         row.setMaximumWidth(_ROW_MAX_WIDTH)
         row.setObjectName("extensionRow")
         row_layout = QVBoxLayout(row)
@@ -757,7 +1135,7 @@ class ExtensionManagerDialog(QDialog):
         # The catalog's check only admits https:// — enforced here too, so
         # a tampered cache cannot hand the browser a file:// or app link.
         repository.setEnabled(extension.repository.startswith("https://"))
-        if extension.bundled:
+        if extension.bundled or not extension.repository.startswith("https://"):
             # Hide only: setVisible(True) here, before the button is in the
             # card, made it a window of its own and showed it — on Windows
             # 43 little windows flashed while the manager was built, ~0.8 s
@@ -771,9 +1149,15 @@ class ExtensionManagerDialog(QDialog):
         tags_row = FlowLayout(spacing=5)
         for tag in extension.tags:
             chip = QLabel(_tag_label(tag))
-            chip.setWordWrap(True)
-            chip.setMaximumWidth(_IMAGE_SIZE[0])
             chip.setObjectName("extChip")
+            # One line, and a new row when it does not fit: only a tag
+            # wider than the card wraps inside its chip. Word wrap on every
+            # chip let Qt size each one narrow (its wrapped guess), so a
+            # short tag broke in two with room to spare, and the chips
+            # crowded onto one row with some fonts (macOS).
+            chip.ensurePolished()           # its style sheet's padding
+            chip.setWordWrap(chip.sizeHint().width() > _IMAGE_SIZE[0])
+            chip.setMaximumWidth(_IMAGE_SIZE[0])
             tags_row.addWidget(chip)
         image_column.addLayout(tags_row)
         license_label = QLabel(
@@ -801,6 +1185,11 @@ class ExtensionManagerDialog(QDialog):
             badge.setObjectName("extBadge")
             version_row.addWidget(badge, 0, Qt.AlignTop)
         details.addLayout(version_row)
+        if extension.source_name:
+            source_label = QLabel(
+                tr("Source: {name}", name=extension.source_name))
+            source_label.setObjectName("extSource")
+            details.addWidget(source_label)
 
         title_row = QHBoxLayout()
         title = QLabel(display_name(extension, language))
@@ -875,8 +1264,10 @@ class ExtensionManagerDialog(QDialog):
             if compatible:
                 replace = QPushButton(
                     tr("Replace with the version included with IngeTrazo")
-                    if extension.bundled
-                    else tr("Replace with the catalog version"))
+                    if extension.bundled else
+                    tr("Replace with the local source version")
+                    if extension.local_path else
+                    tr("Replace with the catalog version"))
                 replace.clicked.connect(
                     lambda _checked=False, e=extension: self._replace(e))
                 actions.addWidget(replace)
@@ -890,7 +1281,8 @@ class ExtensionManagerDialog(QDialog):
             install = QPushButton(
                 tr("Update") if update_available
                 else tr("Up to date") if managed
-                else tr("Install") if extension.bundled
+                else tr("Install") if (extension.bundled
+                                       or extension.local_path)
                 else tr("Download"))
             install.setEnabled(not current and (managed or not conflict))
             install.clicked.connect(
@@ -937,8 +1329,13 @@ class ExtensionManagerDialog(QDialog):
             return ""
         date = snapshot.fetched_at.replace("T", " ").replace("+00:00", " UTC")
         if snapshot.from_cache:
-            return tr(" · Cached catalog from {date}", date=date)
-        return tr(" · Refreshed {date}", date=date)
+            suffix = tr(" · Cached catalog from {date}", date=date)
+        else:
+            suffix = tr(" · Refreshed {date}", date=date)
+        if snapshot.source_errors:
+            suffix += tr(" · {count} sources unavailable",
+                         count=len(snapshot.source_errors))
+        return suffix
 
     def _show_load_error(self, extension: Extension, failure: dict) -> None:
         error = failure.get("error", tr("Unknown extension loading error"))
@@ -963,16 +1360,87 @@ class ExtensionManagerDialog(QDialog):
         open_url(user_log_dir())
 
 
+    @staticmethod
+    def _remote_image(extension: Extension) -> tuple[str, str, str] | None:
+        """The file a card's picture is fetched as, and its two sources:
+        the catalog's small copy when it has one, else the screenshot."""
+        if extension.thumb:
+            return extension.thumb, _THUMB_BASE, _THUMB_MIRROR
+        if extension.screenshot:
+            return extension.screenshot, _SCREENSHOT_BASE, _SCREENSHOT_MIRROR
+        return None
+
     def _screenshot_cache(self, extension: Extension) -> Path | None:
-        if not extension.screenshot:
-            return None
         if extension.bundled:
+            if not extension.screenshot:
+                return None
             # Shipped beside the extension: read from disk, never fetched.
             local = Path(extension.screenshot)
             return local if local.is_file() else None
+        remote = self._remote_image(extension)
+        if remote is None:
+            return None
         base = Path(QStandardPaths.writableLocation(
-            QStandardPaths.AppLocalDataLocation))
-        return base / "extension-screenshots" / extension.screenshot
+            QStandardPaths.AppLocalDataLocation)) / "extension-screenshots"
+        if extension.thumb:
+            base = base / _THUMB_CACHE_DIR
+        name = remote[0]
+        if extension.screenshot_sha:
+            # The print in the name: a new picture under the same name is
+            # another file, fetched again (#1296).
+            path = Path(name)
+            name = f"{path.stem}-{extension.screenshot_sha}{path.suffix}"
+        return base / name
+
+    def _forget_old_copies(self, extension: Extension, cache: Path) -> None:
+        """Remove the copies of this extension's picture kept under an
+        older print (or none), and their scaled card images."""
+        remote = self._remote_image(extension)
+        if remote is None or not extension.screenshot_sha:
+            return
+        name = Path(remote[0])
+        pattern = re.compile(re.escape(name.stem) + r"(-[0-9a-f]{16})?"
+                             + re.escape(name.suffix))
+        try:
+            olds = [p for p in cache.parent.iterdir()
+                    if p != cache and pattern.fullmatch(p.name)]
+        except OSError:
+            return
+        for old in olds:
+            for path in (old, self._thumb_path(old)):
+                try:
+                    path.unlink(missing_ok=True)
+                except OSError:
+                    log.warning("could not remove old extension image %s",
+                                path, exc_info=True)
+
+    def _request_image(self, extension: Extension, cache: Path) -> bool:
+        """Ask for a card's picture unless it is on its way or out of
+        tries; GitHub first, then the website, alternating."""
+        if extension.id in self._requested_images:
+            return False
+        failures = self._image_failures.get(extension.id, 0)
+        if failures > _SCREENSHOT_RETRIES:
+            return False
+        remote = self._remote_image(extension)
+        if remote is None:
+            return False
+        name, primary, mirror = remote
+        self._requested_images.add(extension.id)
+        url = (mirror if failures % 2 else primary) + name
+        if failures % 2 and not extension.thumb and extension.screenshot_sha:
+            # The website's cache keeps an old screenshot under its name;
+            # the print asks for this one.
+            url += f"?v={extension.screenshot_sha}"
+        request = QNetworkRequest(QUrl(url))
+        request.setAttribute(
+            QNetworkRequest.RedirectPolicyAttribute,
+            QNetworkRequest.NoLessSafeRedirectPolicy)
+        reply = self._network.get(request)
+        reply.finished.connect(
+            lambda extension=extension, target=cache, r=reply:
+            self._screenshot_finished(extension, target, r))
+        return True
 
     def _load_visible_images(self, *_args) -> None:
         page = self._active_page()
@@ -985,7 +1453,8 @@ class ExtensionManagerDialog(QDialog):
         visible = page["scroll"].viewport().rect()
         for extension in self._filtered_extensions():
             label = page["image_labels"].get(extension.id)
-            if label is None or extension.id in self._screenshots:
+            if (label is None or not label.isVisible()
+                    or extension.id in self._screenshots):
                 continue
             label_rect = label.geometry()
             label_rect.moveTopLeft(label.mapTo(
@@ -998,24 +1467,12 @@ class ExtensionManagerDialog(QDialog):
             if cache.is_file():
                 self._set_screenshot(extension.id, cache)
                 continue
-            if extension.id in self._requested_images:
-                continue
-            failures = self._image_failures.get(extension.id, 0)
-            if failures > _SCREENSHOT_RETRIES:
-                continue
-            self._requested_images.add(extension.id)
-            base = _SCREENSHOT_MIRROR if failures % 2 else _SCREENSHOT_BASE
-            request = QNetworkRequest(QUrl(base + extension.screenshot))
-            request.setAttribute(
-                QNetworkRequest.RedirectPolicyAttribute,
-                QNetworkRequest.NoLessSafeRedirectPolicy)
-            reply = self._network.get(request)
-            reply.finished.connect(
-                lambda ident=extension.id, target=cache, r=reply:
-                self._screenshot_finished(ident, target, r))
+            self._request_image(extension, cache)
         self._prefetch_timer.start()
 
-    def _screenshot_finished(self, ident: str, cache: Path, reply) -> None:
+    def _screenshot_finished(self, extension: Extension, cache: Path,
+                             reply) -> None:
+        ident = extension.id
         self._requested_images.discard(ident)
         try:
             data = bytes(reply.readAll())
@@ -1027,8 +1484,10 @@ class ExtensionManagerDialog(QDialog):
                          ident, reply.errorString())
                 self._retry_screenshot(ident)
                 return
-            image = QPixmap()
-            if not image.loadFromData(data):
+            # Decoded once: the same image is checked here and scaled for
+            # the card (#1296: it was decoded twice on the UI thread).
+            full = QImage()
+            if not full.loadFromData(data):
                 log.warning("invalid screenshot image for extension %s", ident)
                 self._retry_screenshot(ident)
                 return
@@ -1036,35 +1495,50 @@ class ExtensionManagerDialog(QDialog):
             temporary = cache.with_suffix(cache.suffix + ".part")
             temporary.write_bytes(data)
             temporary.replace(cache)
-            self._set_screenshot(ident, cache, data)
+            self._forget_old_copies(extension, cache)
+            self._set_screenshot(ident, cache, decoded=full)
         except OSError:
             log.warning("could not cache extension screenshot %s",
                         ident, exc_info=True)
         finally:
             reply.deleteLater()
+            if self.isVisible():
+                self._prefetch_timer.start()
 
     def _retry_screenshot(self, ident: str) -> None:
         """Ask again, a little later and from the other source, while the
         tries last; the visible cards are looked at again then."""
         failures = self._image_failures.get(ident, 0) + 1
         self._image_failures[ident] = failures
+        delay = _SCREENSHOT_RETRY_MS * failures
+        self._retry_at[ident] = time.monotonic() + delay / 1000
         if failures <= _SCREENSHOT_RETRIES:
-            QTimer.singleShot(_SCREENSHOT_RETRY_MS * failures, self,
-                              self._images_timer.start)
+            QTimer.singleShot(delay, self, self._images_timer.start)
 
     def _prefetch_screenshots(self) -> None:
         """Scale a few more of the screenshots already on disk, off
-        screen; again a moment later while any is left."""
+        screen, and fetch a few of those not on disk yet (the cards in
+        the order shown first); again a moment later while any is left."""
         if not self.isVisible():
             return
         done = 0
-        for extension in self._extensions:
+        missing = []
+        # The cards of the page in view, in the order shown, come first.
+        order = {ident: index for index, ident in enumerate(
+            self._active_page()["image_labels"])}
+        ordered = sorted(self._extensions,
+                         key=lambda e: order.get(e.id, len(order)))
+        for extension in ordered:
             if (extension.id in self._screenshots
                     or extension.id in self._unreadable_shots):
                 continue
             cache = self._screenshot_cache(extension)
-            if cache is None or not cache.is_file():
-                continue          # downloaded only when its card is seen
+            if cache is None:
+                continue
+            if not cache.is_file():
+                if not extension.bundled:
+                    missing.append((extension, cache))
+                continue
             if done == _PREFETCH_BATCH:
                 self._prefetch_timer.start()
                 return
@@ -1072,6 +1546,13 @@ class ExtensionManagerDialog(QDialog):
             if extension.id not in self._screenshots:
                 self._unreadable_shots.add(extension.id)
             done += 1
+        now = time.monotonic()
+        for extension, cache in missing:
+            if len(self._requested_images) >= _PREFETCH_DOWNLOADS:
+                break
+            if self._retry_at.get(extension.id, 0) > now:
+                continue           # its retry timer asks again later
+            self._request_image(extension, cache)
 
     @staticmethod
     def _thumb_path(source: Path) -> Path:
@@ -1092,7 +1573,11 @@ class ExtensionManagerDialog(QDialog):
         self._screenshots[extension.id] = pixmap
         return pixmap
 
-    def _scaled_image(self, source: Path, data: bytes | None) -> QImage | None:
+    def _scaled_image(self, source: Path,
+                      decoded: QImage | None = None) -> QImage | None:
+        """The card image for ``source``: from this run's memory, the
+        scaled copy on disk, or scaled from the picture — ``decoded`` when
+        it was just downloaded and decoded, read from ``source`` if not."""
         key = _screenshot_key(source)
         if key is None:
             return None
@@ -1102,20 +1587,22 @@ class ExtensionManagerDialog(QDialog):
         thumb = self._thumb_path(source)
         image = QImage()
         try:
-            fresh = thumb.stat().st_mtime_ns >= key[1]
+            fresh = (decoded is None
+                     and thumb.stat().st_mtime_ns >= key[1])
         except OSError:
             fresh = False
         if not (fresh and image.load(str(thumb)) and not image.isNull()):
-            full = QImage()
-            try:
-                if data is None:
+            full = decoded
+            if full is None:
+                full = QImage()
+                try:
                     data = source.read_bytes()
-            except OSError:
-                log.warning("could not read extension screenshot cache %s",
-                            source, exc_info=True)
-                return None
-            if not full.loadFromData(data):
-                return None
+                except OSError:
+                    log.warning("could not read extension screenshot cache %s",
+                                source, exc_info=True)
+                    return None
+                if not full.loadFromData(data):
+                    return None
             image = full.scaled(
                 *_IMAGE_SIZE, Qt.KeepAspectRatioByExpanding,
                 Qt.SmoothTransformation)
@@ -1131,8 +1618,8 @@ class ExtensionManagerDialog(QDialog):
         return image
 
     def _set_screenshot(self, ident: str, source: Path,
-                        data: bytes | None = None) -> None:
-        image = self._scaled_image(source, data)
+                        decoded: QImage | None = None) -> None:
+        image = self._scaled_image(source, decoded)
         if image is None:
             return
         scaled = QPixmap.fromImage(image)
@@ -1173,24 +1660,211 @@ class ExtensionManagerDialog(QDialog):
         return answer == QMessageBox.Yes
 
     def _install(self, extension: Extension) -> None:
+        if self._pending_install is not None:
+            return
         if not self._confirm_unreviewed(extension):
             return
-        try:
-            install_extension(
-                extension, confirm_manual_copies=lambda paths:
-                self._confirm_manual_copies(extension, paths),
-                catalog_ids=[e.id for e in self._extensions])
-        except (ExtensionManagerError, OSError) as exc:
-            QMessageBox.warning(self, tr("Extension manager"), str(exc))
+        self._begin_install(extension)
+
+    def _begin_install(self, extension: Extension, replace: bool = False) -> None:
+        if self._pending_install is not None:
             return
-        QMessageBox.information(
-            self, tr("Extension installed"),
-            tr("«{name}» is installed. Restart IngeTrazo to load it.",
-               name=display_name(extension, current_language())))
-        for key in self._pages:
-            self._render_page(key)
+        self._pending_install = (extension, replace)
+        self._retry_install_request = (extension, replace)
+        self._install_cancelled = False
+        self._install_download_error = None
+        self._set_install_actions_enabled(False)
+        if extension.bundled or extension.local_path:
+            self._show_install_progress(
+                tr("Installing «{name}»…",
+                   name=display_name(extension, current_language())),
+                indeterminate=True)
+            QTimer.singleShot(
+                0, lambda: self._finish_install(extension, replace, None))
+            return
+
+        self._show_install_progress(
+            tr("Connecting to download «{name}»…",
+               name=display_name(extension, current_language())),
+            indeterminate=True, cancellable=True)
+        request = QNetworkRequest(QUrl(extension.download))
+        request.setRawHeader(b"User-Agent", b"IngeTrazo")
+        request.setAttribute(
+            QNetworkRequest.RedirectPolicyAttribute,
+            QNetworkRequest.NoLessSafeRedirectPolicy)
+        reply = self._network.get(request)
+        self._active_install_reply = reply
+        reply.downloadProgress.connect(
+            lambda received, total, r=reply:
+            self._extension_download_progress(r, received, total))
+        reply.finished.connect(
+            lambda r=reply: self._extension_download_finished(r))
+
+    def _show_install_progress(self, message: str, *, indeterminate: bool,
+                               cancellable: bool = False,
+                               retry: bool = False) -> None:
+        self._install_status.setText(message)
+        self._install_status.setToolTip(message)
+        if indeterminate:
+            self._install_progress.setRange(0, 0)
+        else:
+            self._install_progress.setRange(0, 100)
+            if retry:
+                self._install_progress.setValue(0)
+        self._install_cancel.setVisible(cancellable)
+        self._install_cancel.setEnabled(cancellable)
+        self._install_retry.setVisible(retry)
+        self._install_progress_widget.show()
+
+    def _extension_download_progress(self, reply, received: int,
+                                     total: int) -> None:
+        if reply is not self._active_install_reply:
+            return
+        if received > MAX_DOWNLOAD_BYTES or total > MAX_DOWNLOAD_BYTES:
+            self._install_download_error = tr(
+                "The extension download exceeds the {size} MB size limit.",
+                size=MAX_DOWNLOAD_BYTES // (1024 * 1024))
+            reply.abort()
+            return
+        if total > 0:
+            self._install_progress.setRange(0, 100)
+            self._install_progress.setValue(min(100, received * 100 // total))
+            message = tr(
+                "Downloading extension… {received} of {total} MB",
+                received=f"{received / 1048576:.1f}",
+                total=f"{total / 1048576:.1f}")
+        else:
+            self._install_progress.setRange(0, 0)
+            message = tr("Downloading extension… {received} MB",
+                         received=f"{received / 1048576:.1f}")
+        self._install_status.setText(message)
+        self._install_status.setToolTip(message)
+
+    def _extension_download_finished(self, reply) -> None:
+        if reply is not self._active_install_reply:
+            reply.deleteLater()
+            return
+        self._active_install_reply = None
+        extension, replace = self._pending_install
+        try:
+            if self._install_cancelled:
+                self._fail_install(tr("Download cancelled. You can retry."),
+                                   retry=True)
+                return
+            if self._install_download_error:
+                self._fail_install(self._install_download_error, retry=True)
+                return
+            status = reply.attribute(
+                QNetworkRequest.HttpStatusCodeAttribute)
+            if (reply.error() != QNetworkReply.NetworkError.NoError
+                    or status is None or not 200 <= int(status) < 300):
+                detail = reply.errorString()
+                if status is not None:
+                    detail = tr("HTTP {status}: {detail}",
+                                status=status, detail=detail)
+                self._fail_install(
+                    tr("Download failed: {detail}. You can retry.",
+                       detail=detail), retry=True)
+                return
+            if reply.url().scheme().lower() != "https":
+                self._fail_install(
+                    tr("The download redirected to a non-HTTPS address."),
+                    retry=True)
+                return
+            data = bytes(reply.readAll())
+            if len(data) > MAX_DOWNLOAD_BYTES:
+                self._fail_install(
+                    tr("The extension download exceeds the {size} MB size "
+                       "limit.", size=MAX_DOWNLOAD_BYTES // (1024 * 1024)),
+                    retry=True)
+                return
+            self._show_install_progress(
+                tr("Installing «{name}»…",
+                   name=display_name(extension, current_language())),
+                indeterminate=True)
+            QTimer.singleShot(
+                0, lambda payload=data:
+                self._finish_install(extension, replace, payload))
+        finally:
+            reply.deleteLater()
+
+    def _finish_install(self, extension: Extension, replace: bool,
+                        downloaded_data: bytes | None) -> None:
+        try:
+            confirm = lambda paths: self._confirm_manual_copies(
+                extension, paths)
+            catalog_ids = [item.id for item in self._extensions]
+            if replace:
+                if downloaded_data is None:
+                    replace_hand_installed(
+                        extension, confirm_manual_copies=confirm,
+                        catalog_ids=catalog_ids)
+                else:
+                    replace_hand_installed(
+                        extension, confirm_manual_copies=confirm,
+                        catalog_ids=catalog_ids,
+                        downloaded_data=downloaded_data)
+            elif downloaded_data is None:
+                install_extension(
+                    extension, confirm_manual_copies=confirm,
+                    catalog_ids=catalog_ids)
+            else:
+                install_extension(
+                    extension, confirm_manual_copies=confirm,
+                    catalog_ids=catalog_ids,
+                    downloaded_data=downloaded_data)
+        except (ExtensionManagerError, OSError) as exc:
+            self._fail_install(
+                tr("Could not install «{name}»: {error}. You can retry.",
+                   name=display_name(extension, current_language()),
+                   error=exc), retry=True)
+            return
+        self._pending_install = None
+        self._retry_install_request = None
+        self._set_install_actions_enabled(True)
+        self._show_install_progress(
+            tr("«{name}» is installed. Restart IngeTrazo to apply it.",
+               name=display_name(extension, current_language())),
+            indeterminate=False)
+        self._install_progress.setRange(0, 100)
+        self._install_progress.setValue(100)
+        self._sync_restart_button(extension.id)
+        self._invalidate_pages(extension.id)
+
+    def _fail_install(self, message: str, *, retry: bool) -> None:
+        self._pending_install = None
+        self._active_install_reply = None
+        self._set_install_actions_enabled(True)
+        self._show_install_progress(message, indeterminate=False, retry=retry)
+
+    def _cancel_install_download(self) -> None:
+        reply = self._active_install_reply
+        if reply is None:
+            return
+        self._install_cancelled = True
+        self._install_cancel.setEnabled(False)
+        reply.abort()
+
+    def _retry_install(self) -> None:
+        request = self._retry_install_request
+        if request is None:
+            return
+        self._retry_install_request = None
+        self._begin_install(*request)
+
+    def _set_install_actions_enabled(self, enabled: bool) -> None:
+        action_labels = {
+            tr("Install"), tr("Update"), tr("Replace"), tr("Uninstall"),
+            tr("Enable"), tr("Disable")}
+        for page in self._pages.values():
+            for button in page["cards"].findChildren(QPushButton):
+                if button.text() in action_labels:
+                    button.setEnabled(enabled)
+        self._restart_button.setEnabled(enabled)
 
     def _uninstall(self, extension: Extension) -> None:
+        if self._pending_install is not None:
+            return
         answer = QMessageBox.question(
             self, tr("Uninstall extension"),
             tr("Uninstall «{name}»? Its files will be removed.",
@@ -1207,8 +1881,8 @@ class ExtensionManagerDialog(QDialog):
             self, tr("Extension uninstalled"),
             tr("«{name}» is uninstalled. Restart IngeTrazo to apply the "
                "change.", name=display_name(extension, current_language())))
-        for key in self._pages:
-            self._render_page(key)
+        self._sync_restart_button(extension.id)
+        self._invalidate_pages(extension.id)
 
     # ---- Extensions that left the catalog ------------------------------
     # The manager installed them, so it can disable and uninstall them: the
@@ -1261,6 +1935,8 @@ class ExtensionManagerDialog(QDialog):
         return row
 
     def _toggle_retired(self, ident: str) -> None:
+        if self._pending_install is not None:
+            return
         enabled = not is_extension_enabled(ident)
         try:
             set_extension_enabled(ident, enabled)
@@ -1272,10 +1948,14 @@ class ExtensionManagerDialog(QDialog):
             tr("«{name}» is {state}. Restart IngeTrazo for the change to "
                "take effect.", name=ident,
                state=tr("enabled") if enabled else tr("disabled")))
+        self._sync_restart_button(ident)
         for key in self._pages:
+            self._discard_cached_rows(key, ident)
             self._render_page(key)
 
     def _uninstall_retired(self, ident: str) -> None:
+        if self._pending_install is not None:
+            return
         answer = QMessageBox.question(
             self, tr("Uninstall extension"),
             tr("Uninstall «{name}»? Its files will be removed.", name=ident),
@@ -1291,7 +1971,9 @@ class ExtensionManagerDialog(QDialog):
             self, tr("Extension uninstalled"),
             tr("«{name}» is uninstalled. Restart IngeTrazo to apply the "
                "change.", name=ident))
+        self._sync_restart_button(ident)
         for key in self._pages:
+            self._discard_cached_rows(key, ident)
             self._render_page(key)
 
     # ---- Extensions installed by hand ----------------------------------
@@ -1316,6 +1998,7 @@ class ExtensionManagerDialog(QDialog):
         row.setObjectName("extensionRow")
         row.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         row.setMinimumWidth(400)
+        row.setFixedHeight(_ROW_MAX_HEIGHT)
         row.setMaximumWidth(_ROW_MAX_WIDTH)
         layout = QVBoxLayout(row)
         layout.setContentsMargins(10, 10, 10, 8)
@@ -1354,6 +2037,8 @@ class ExtensionManagerDialog(QDialog):
                 return
 
     def _uninstall_hand(self, path, name: str) -> None:
+        if self._pending_install is not None:
+            return
         answer = QMessageBox.question(
             self, tr("Uninstall extension"),
             tr("«{name}» was installed by hand. Uninstalling sets it aside "
@@ -1372,10 +2057,11 @@ class ExtensionManagerDialog(QDialog):
             self, tr("Extension uninstalled"),
             tr("«{name}» is set aside as {folder}. Restart IngeTrazo to "
                "apply the change.", name=name, folder=aside.name))
-        for key in self._pages:
-            self._render_page(key)
+        self._invalidate_pages(name)
 
     def _replace(self, extension: Extension) -> None:
+        if self._pending_install is not None:
+            return
         if not self._confirm_unreviewed(extension):
             return
         name = display_name(extension, current_language())
@@ -1387,28 +2073,19 @@ class ExtensionManagerDialog(QDialog):
                 "included version can then be disabled and uninstalled from "
                 "here.", name=name) if extension.bundled else
              tr("Replace the copy of «{name}» installed by hand with the "
-                "catalog version? The copy is set aside (renamed with a dot "
-                "in front), not deleted, and the catalog version can then be "
-                "updated, disabled and uninstalled from here.", name=name)),
+                "{source} version? The copy is set aside (renamed with a dot "
+                "in front), not deleted, and the installed version can then be "
+                "updated, disabled and uninstalled from here.", name=name,
+                source=tr("local source") if extension.local_path
+                else tr("catalog"))),
             QMessageBox.Yes | QMessageBox.No, QMessageBox.Yes)
         if answer != QMessageBox.Yes:
             return
-        try:
-            replace_hand_installed(
-                extension, confirm_manual_copies=lambda paths:
-                self._confirm_manual_copies(extension, paths),
-                catalog_ids=[e.id for e in self._extensions])
-        except (ExtensionManagerError, OSError) as exc:
-            QMessageBox.warning(self, tr("Extension manager"), str(exc))
-            return
-        QMessageBox.information(
-            self, tr("Extension installed"),
-            tr("«{name}» is installed. Restart IngeTrazo to load it.",
-               name=name))
-        for key in self._pages:
-            self._render_page(key)
+        self._begin_install(extension, replace=True)
 
     def _toggle(self, extension: Extension) -> None:
+        if self._pending_install is not None:
+            return
         enabled = not is_extension_enabled(extension.id)
         try:
             set_extension_enabled(extension.id, enabled)
@@ -1421,5 +2098,5 @@ class ExtensionManagerDialog(QDialog):
             tr("«{name}» is {state}. Restart IngeTrazo for the change to "
                "take effect.", name=display_name(extension, current_language()),
                state=action))
-        for key in self._pages:
-            self._render_page(key)
+        self._sync_restart_button(extension.id)
+        self._invalidate_pages(extension.id)

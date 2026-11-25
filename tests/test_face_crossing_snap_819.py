@@ -3,7 +3,7 @@
 """Where two faces cross with no edge between them, the cursor snaps to
 the crossing (#819, @xcd-droid).
 
-A box sunk into the floor, a beam through a wall: SketchUp offers
+A box sunk into the floor, a beam through a wall: users expect
 «Intersection» along the line where the two faces meet; IngeTrazo only
 said «On face», so a line could not start exactly on it."""
 from __future__ import annotations
@@ -163,7 +163,7 @@ def test_the_probes_either_side_are_baked_before_any_is_asked(monkeypatch):
                 seq.append("bake")
             return real_mat(near)
 
-        def front(x, y):
+        def front(x, y, *a):
             seq.append("ask")
             return real_front(x, y)
         px = vp._world_to_pixel(V(0.5, 0.0, 0.0))

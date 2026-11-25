@@ -18,15 +18,15 @@ from views.script_fonts import apply_script_font, script_font_for
 
 _app = QApplication.instance() or QApplication([])
 
-WINDOWS_FONTS = ["Segoe UI", "Leelawadee UI", "Noto Sans Lao", "Arial"]
+WINDOWS_FONTS = ["Noto Sans Lao", "Segoe UI", "Leelawadee UI", "Arial"]
 
 
 def test_lao_on_windows_takes_leelawadee_ui():
-    assert script_font_for("lo", WINDOWS_FONTS, "win32") == "Leelawadee UI"
+    assert script_font_for("lo", WINDOWS_FONTS, "win32") == "Noto Sans Lao"
 
 
-def test_lao_on_windows_without_leelawadee_takes_the_next():
-    assert script_font_for("lo", ["Segoe UI", "Noto Sans Lao"],
+def test_lao_on_windows_without_noto_takes_the_next():
+    assert script_font_for("lo", [ "Noto Sans Lao", "Segoe UI",],
                            "win32") == "Noto Sans Lao"
     assert script_font_for("lo", ["Segoe UI", "Lao UI"], "win32") == "Lao UI"
 
@@ -46,8 +46,8 @@ def test_other_languages_change_nothing(lang):
 
 
 def test_region_tags_read_as_their_language():
-    assert script_font_for("lo-LA", WINDOWS_FONTS, "win32") == "Leelawadee UI"
-    assert script_font_for("lo_LA", WINDOWS_FONTS, "win32") == "Leelawadee UI"
+    assert script_font_for("lo-LA", WINDOWS_FONTS, "win32") == "Noto Sans Lao"
+    assert script_font_for("lo_LA", WINDOWS_FONTS, "win32") == "Noto Sans Lao"
 
 
 @pytest.fixture
@@ -95,3 +95,4 @@ def test_startup_hook_runs_with_the_language(app_font, monkeypatch, tmp_path):
     finally:
         main.i18n.set_language("en")
     assert seen == ["lo"]
+    

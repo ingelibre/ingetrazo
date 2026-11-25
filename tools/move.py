@@ -35,9 +35,9 @@ from core.group import Group, copy_group, transformed_attrs
 from core.i18n import tr
 from core.mesh import Edge, Face, Mesh
 from core.dimension import Dimension
-from core.guide import Guide
+from core.guide import Guide, is_guide
 from core.history import (AddEdgeCommand, AddFaceCommand, AddGuideCommand,
-                          Command, CompoundCommand,
+                          Command, CommandRejected, CompoundCommand,
                           InsertGroupCommand, MoveGroupCommand,
                           MoveDimensionsCommand, MoveGuidesCommand,
                           MoveTextLabelsCommand, MoveVerticesCommand)
@@ -87,6 +87,25 @@ def gather_targets(ctx: ToolContext):
         elif isinstance(ent, Face):
             positions.extend(ent.vertices)
     return groups, _dedup(positions)
+
+
+def groups_ghost_segments(groups) -> list:
+    """Every edge of ``groups`` as a world segment: the wireframe a Ctrl-copy
+    previews. A component's geometry lives in the placements it holds, so the
+    ghost has to swing the whole subtree — the top-level mesh of an imported
+    component is often empty. It reads every mesh, so it waits until a copy is
+    asked for: on the first click of a plain move it built the whole group,
+    seconds and gigabytes on a big one (#1092)."""
+    from core.group import iter_placements
+    segments = []
+    for group in groups:
+        for pg, xf in iter_placements(group):
+            for e in pg.mesh.edges:
+                a, b = QVector3D(e.a), QVector3D(e.b)
+                if xf is not None:
+                    a, b = xf.map(a), xf.map(b)
+                segments.append((a, b))
+    return segments
 
 
 def gather_dimensions(ctx: ToolContext, groups, verts) -> dict:
@@ -143,7 +162,7 @@ def gather_guides(ctx: ToolContext) -> list[Guide]:
     guide wins over the face or group behind it. To move something else
     from a point on a guide, select it first."""
     viewport = ctx.viewport
-    guides = [g for g in viewport.scene.selection if isinstance(g, Guide)]
+    guides = [g for g in viewport.scene.selection if is_guide(g)]
     if guides or viewport.scene.selection:
         return guides
     pick = getattr(viewport, "pick_guide", None)
@@ -174,8 +193,16 @@ def guide_ghost_segments(guides, reach: float) -> list:
     return out
 
 
-def copied_guide(guide, m: QMatrix4x4) -> Guide:
-    """A new guide: ``guide`` carried by the transform ``m``."""
+def copied_guide(guide, m: QMatrix4x4):
+    """A new guide: ``guide`` carried by the transform ``m``. A circle stays
+    a circle — centre mapped, plane normal rotated, radius kept — instead of
+    collapsing into a guide line (Ctrl+copy of a guide circle, #238)."""
+    from core.guide import GuideCircle
+    if getattr(guide, "is_circle", False):
+        return GuideCircle(m.map(guide.center),
+                           m.mapVector(guide.normal),
+                           guide.radius,
+                           layer=getattr(guide, "layer", None))
     return Guide(m.map(guide.point),
                  None if guide.direction is None
                  else m.mapVector(guide.direction),
@@ -276,40 +303,23 @@ def rotation_grips(obb, eye: QVector3D) -> list:
     return out
 
 
-def _loop_key(points) -> frozenset:
-    """A loop's corners, whatever its start and winding."""
-    return frozenset((round(p.x(), 6), round(p.y(), 6), round(p.z(), 6))
-                     for p in points)
-
-
 class _PlannedWhenRun(Command):
     """Drawn edges planned when the command RUNS, not when it is built:
     by then the copied faces before it in the same compound are in the
     model, so the Line tool's planner splits the faces the edges land on
     without laying another face over the copied ones (#379). Redo
-    replays the same plan.
+    replays the same plan. Supplied faces are kept verbatim: empty cycles,
+    including holes and open internal rims, must stay empty (#1087)."""
 
-    ``open_loops`` are the copied faces' holes: the planner closes every
-    loop it traces, and a hole's rim is one, so a frame copied with its
-    opening came out with the opening faced over on both sides. A copy
-    keeps open what the original had open."""
-
-    def __init__(self, segments, open_loops=()) -> None:
+    def __init__(self, segments) -> None:
         self._segments = list(segments)
-        self._open = set(open_loops)
         self._cmd = None
 
     def do(self, scene) -> None:
         if self._cmd is None:
             from core.edits import build_add_edges
-            from core.history import SnapshotCompound
             self._cmd = build_add_edges(scene, self._segments,
-                                        detect_faces=True)
-            if self._open and isinstance(self._cmd, SnapshotCompound):
-                self._cmd.inner = [
-                    c for c in self._cmd.inner
-                    if not (isinstance(c, AddFaceCommand)
-                            and _loop_key(c.vertices) in self._open)]
+                                        preserve_faces=True, plane_rebuild=True)
         self._cmd.do(scene)
 
     def undo(self, scene) -> None:
@@ -317,9 +327,167 @@ class _PlannedWhenRun(Command):
             self._cmd.undo(scene)
 
 
+def _copied_edges(mesh, segments):
+    """Resolve copied strokes after welding and splitting, using incidence.
+
+    A copied edge may now be several edges, or reuse an existing one. Walk
+    only its collinear chain rather than scanning the whole model per edge.
+    """
+    picked = set()
+    for a, b in segments:
+        start, end = mesh.vertex_at(a), mesh.vertex_at(b)
+        if start is None or end is None or start is end:
+            continue
+        ab = b - a
+        length2 = ab.lengthSquared()
+        if length2 < 1e-18:
+            continue
+        todo, seen = [start], {start}
+        while todo:
+            vertex = todo.pop()
+            for edge in vertex.edges:
+                other = edge.v1 if edge.v0 is vertex else edge.v0
+                if other is not start and other is not end:
+                    p = other.position
+                    t = QVector3D.dotProduct(p - a, ab) / length2
+                    if not 0 <= t <= 1 or (p - (a + ab * t)).length() > 1e-4:
+                        continue
+                picked.add(edge)
+                if other not in seen:
+                    seen.add(other)
+                    todo.append(other)
+    return picked
+
+
+class _MoveCopiesCommand(CompoundCommand):
+    """Select the entire copy/array; undo restores the source selection."""
+
+    def __init__(self, commands, groups, guides, faces, segments) -> None:
+        super().__init__(commands)
+        self._groups = groups
+        self._guides = guides
+        self._faces = faces
+        self._segments = segments
+        self._before_selection = None
+        self._context = None
+
+    def do(self, scene) -> None:
+        before = set(scene.selection)
+        scene.selection = set(before)
+        try:
+            super().do(scene)
+        except CommandRejected:
+            # A late refusal may already have inserted (and undone) groups,
+            # whose commands each replace the selection.
+            scene.selection = before
+            scene.bump_view()
+            raise
+        if self._before_selection is None:
+            self._before_selection = before
+            self._context = scene.edit_group
+        if scene.edit_group is not self._context:
+            # History can replay this mesh after its group was closed.
+            # Its contents must not become a selection in the outer model.
+            scene.selection = before
+            scene.bump_view()
+            return
+        picked = set(self._groups) | set(self._guides)
+        if self._faces:
+            live = set(scene.mesh.faces)
+            picked.update(cmd.face for cmd in self._faces if cmd.face in live)
+        picked.update(_copied_edges(scene.mesh, self._segments))
+        scene.selection = picked
+        scene.bump_view()
+
+    def undo(self, scene) -> None:
+        picked = (self._before_selection if scene.edit_group is self._context
+                  else set(scene.selection))
+        super().undo(scene)
+        scene.selection = set(picked or ())
+        scene.bump_view()
+
+
+
+def begin_verts_preview_for(begin, verts, groups):
+    """``begin`` (a viewport's ``begin_verts_preview``) for ``verts``, and
+    for the objects ``groups`` grabbed with them when there are any — a
+    mixed drag previews both or neither (None: the live drag stays).
+    Move, Rotate and Scale share it."""
+    if groups:
+        return begin(verts, list(groups))
+    return begin(verts)
+
+
+def faces_on_verts(tool) -> set:
+    """``id`` of every face with a corner on one of ``tool._verts`` —
+    what a vertex drag bends or carries. Kept per grabbed list: the snap
+    asks several times a frame."""
+    verts = tool._verts
+    memo = getattr(tool, "_faces_on_memo", None)
+    if memo is not None and memo[0] is verts:
+        return memo[1]
+    out = {id(f) for v in verts for e in getattr(v, "edges", ())
+           for f in e.faces}
+    tool._faces_on_memo = (verts, out)
+    return out
+
+
+class _MovedFaces:
+    """The faces a vertex drag stretches (``shown``, mesh faces), each
+    corner in ``moving`` (vertex ids) moved by ``d`` — or, given ``m`` (a
+    Rotate's ``QMatrix4x4``), placed at ``m.map`` of where it is: what
+    :meth:`MoveTool.preview_faces` (and Rotate's) draws. A sequence of
+    ``core.geometry.Face`` built on first walk — as the tools always built
+    them — while ``moved_parts`` hands the viewport what its engine bakes
+    them from without (``Viewport._bake_preview_moved_native``)."""
+
+    __slots__ = ("shown", "moving", "paint", "d", "m", "_faces")
+
+    def __init__(self, shown, moving, paint, d, m=None) -> None:
+        self.shown = shown
+        self.moving = moving
+        self.paint = paint
+        self.d = d
+        self.m = m
+        self._faces = None
+
+    @property
+    def moved_parts(self):
+        return self.shown, self.moving, self.paint, self.d, self.m
+
+    def faces(self) -> list:
+        out = self._faces
+        if out is None:
+            from core.geometry import Face as GeomFace
+            from core.materials import effective_attrs
+            d, m, moving, paint = self.d, self.m, self.moving, self.paint
+            if m is not None:
+                def at(v):
+                    return m.map(v.position) if id(v) in moving else v.position
+            else:
+                def at(v):
+                    return v.position + d if id(v) in moving else v.position
+            out = self._faces = [GeomFace(
+                [at(v) for v in f.loop],
+                [[at(v) for v in h] for h in f.hole_loops],
+                attrs=effective_attrs(f.attrs, paint) or None)
+                for f in self.shown]
+        return out
+
+    def __len__(self) -> int:
+        return len(self.shown)
+
+    def __iter__(self):
+        return iter(self.faces())
+
+    def __getitem__(self, i):
+        return self.faces()[i]
+
+
 class MoveTool(Tool):
     name = "Move"
     shortcut = "M"
+    option_copies = True
     description = (
         "Move the selection, or what you click, to a new place; Ctrl "
         "leaves a copy behind.")
@@ -357,6 +525,8 @@ class MoveTool(Tool):
         self._groups: list[Group] = []         # whole groups being moved
         self._splanes: list = []               # section planes being moved
         self._images: list = []                # reference images being moved
+        # The wall grabbed windows and doors slide on (#1272), or None.
+        self._glide = None
         self._labels: list[TextLabel] = []     # leader texts whose label moves
         self._moved_guides: list[Guide] = []         # construction guides being moved
         self._dims: dict = {}                  # dimension → "line" | "rigid"
@@ -366,6 +536,7 @@ class MoveTool(Tool):
         self._sel_faces: list = []             # loose geometry copy mode duplicates
         self._sel_edges: list = []
         self._base_segments: list = []         # wireframe for the copy preview
+        self._groups_ghost_due = False
         self._last: dict | None = None         # the copy just made, for "3x" / "/3"
         # Rotation grips (issue #115): the group they sit on, the grips,
         # the one under the cursor, and — once one is taken — the Rotate
@@ -515,6 +686,11 @@ class MoveTool(Tool):
             # (or onto) a coincident vertex never drags the innocent one along.
             self._verts = verts
             self._vp_preview = False
+            self._glide = self._glide_plane(viewport)
+            if self._glide is not None:
+                from core.i18n import tr
+                viewport.flash_status(tr(
+                    "Sliding on the wall: hold Alt to move it freely"), 4000)
             if (self._groups and not self._verts and not self._positions):
                 # Groups-only drag: viewport-side preview — the caches
                 # freeze and the movers render from one-time scratch VBOs
@@ -524,9 +700,80 @@ class MoveTool(Tool):
                 if begin is not None:
                     begin(self._groups)
                     self._vp_preview = True
+            elif self._verts:
+                # Vertices of a big open group, or of the big loose model —
+                # with objects grabbed too, or not (a mixed drag: the
+                # objects ride the same offset, ~0.3 s a frame re-walking
+                # the loose model before, 21-11). Either all of it previews
+                # or none of it does: the live drag stays for the whole.
+                # The same viewport-side preview — the rest of the mesh
+                # baked once, what rides the drag drawn at the offset, the
+                # faces it stretches drawn moved here (preview_faces). A
+                # frame re-baked the whole open group before (~0.4 s, night
+                # of 18-11), or re-walked the whole loose model (~0.33 s
+                # for 6 400 faces, 21-11).
+                begin = getattr(viewport, "begin_verts_preview", None)
+                got = (begin_verts_preview_for(begin, self._verts, self._groups)
+                       if begin is not None else None)
+                if got is not None:
+                    self._bent_faces, _e, self._bent_paint = got
+                    self._vp_preview = True
             self._gather_copy_entities(ctx)
             return
-        self._commit(viewport, ctx.world - self.grab)
+        self._commit(viewport, self._glided(ctx) - self.grab)
+
+    # ---- Sliding on the wall (#1272) ------------------------------------------
+    def _glide_plane(self, viewport):
+        """``(point, normal)`` of the wall the grabbed windows and doors cut
+        — they slide on it instead of flying off with the cursor — or None.
+        Only when everything grabbed is a «Cut opening» container that sits
+        on a wall now, all of them on parallel walls."""
+        if (not self._groups or self._positions or self._labels
+                or self._moved_guides or self._dims or self._splanes
+                or self._images):
+            return None
+        from core import openings
+        normal = None
+        for g in self._groups:
+            rec = openings.made(g)
+            if not openings.wants_opening(g) or not rec or not rec.get("a"):
+                return None
+            fp = openings.footprint(g)
+            if fp is None:
+                return None
+            n = openings._normal(fp)
+            if normal is None:
+                normal = n
+            elif abs(QVector3D.dotProduct(n, normal)) < 0.999:
+                return None
+        return QVector3D(self.grab), normal
+
+    def _glided(self, ctx: ToolContext) -> QVector3D:
+        """The cursor's point, read on the wall the windows slide on: the
+        line of sight through the snapped point meets the wall's plane. Alt
+        held, or nothing sliding: the point as it is."""
+        glide = getattr(self, "_glide", None)
+        if glide is None or (ctx.modifiers & Qt.AltModifier):
+            return ctx.world
+        origin, n = glide
+        p = QVector3D(ctx.world)
+        cam = getattr(ctx.viewport, "camera", None)
+        direction = None
+        if cam is not None:
+            try:
+                if getattr(cam, "perspective", True):
+                    direction = p - cam.eye()
+                else:
+                    direction = cam.target - cam.eye()
+            except Exception:
+                direction = None
+        off = QVector3D.dotProduct(origin - p, n)
+        if direction is not None and direction.length() > 1e-9:
+            d = direction.normalized()
+            along = QVector3D.dotProduct(d, n)
+            if abs(along) > 0.05:
+                return p + d * (off / along)
+        return p + n * off          # looking along the wall: straight onto it
 
     def on_hover(self, ctx: ToolContext) -> None:
         if self._grip_rot is not None:
@@ -534,9 +781,10 @@ class MoveTool(Tool):
             return
         if self.start_point is None:
             self._track_grips(ctx)
-        self.hover_point = ctx.world
+        world = self._glided(ctx) if self.grab is not None else ctx.world
+        self.hover_point = world
         if self.grab is not None and not self._copy:
-            self._apply_preview(ctx.viewport, ctx.world - self.grab)
+            self._apply_preview(ctx.viewport, world - self.grab)
         ctx.viewport.update()
 
     def value_is_unitless(self) -> bool:
@@ -657,12 +905,40 @@ class MoveTool(Tool):
         if self.grab is None or self.hover_point is None:
             return []
         segments = [(self.grab, self.hover_point)]
+        if self._copy:
+            self._fill_groups_ghost()
         if self._copy and self._base_segments:
             # Copy mode: the original stays put — preview the translated
             # COPY as a wireframe at the cursor offset.
             d = self.hover_point - self.grab
             segments.extend((a + d, b + d) for a, b in self._base_segments)
         return segments
+
+    def preview_faces(self):
+        """Mid vertex drag (see begin_verts_preview): the faces it
+        stretches, drawn where they are going — with their own look. A
+        :class:`_MovedFaces`, made once per offset: the viewport's engine
+        bakes it from arrays packed at the grab, and only Python's bake
+        walks the faces it builds."""
+        bent = getattr(self, "_bent_faces", None)
+        if not bent or not getattr(self, "_vp_preview", False):
+            return []
+        # Copy mode: the original stays — the bent faces where they are
+        # (the offset is parked at zero), or they left a hole in the model.
+        d = self._preview_delta
+        key = (id(bent), d.x(), d.y(), d.z())
+        memo = getattr(self, "_moved_memo", None)
+        if memo is not None and memo[0] == key and memo[1] is bent:
+            return memo[2]
+        parts = getattr(self, "_moved_parts", None)
+        if parts is None or parts[0] is not bent:
+            shown = [f for f in bent if not f.attrs.get("hidden")]
+            parts = self._moved_parts = (
+                bent, shown, frozenset(id(v) for v in self._verts))
+        out = _MovedFaces(parts[1], parts[2],
+                          getattr(self, "_bent_paint", None), QVector3D(d))
+        self._moved_memo = (key, bent, out)
+        return out
 
     def value_label(self):
         if self._grip_rot is not None:
@@ -885,20 +1161,19 @@ class MoveTool(Tool):
             return None
         return viewport.scene.mesh.vertex_at(snap.point)
 
+    def _fill_groups_ghost(self) -> None:
+        """The grabbed groups' wireframe, first thing in the copy preview."""
+        if self._groups_ghost_due:
+            self._groups_ghost_due = False
+            self._base_segments[:0] = groups_ghost_segments(self._groups)
+
     def _gather_copy_entities(self, ctx: ToolContext) -> None:
         """The faces/edges copy mode duplicates, and the wireframe segments
         the copy preview carries (group wireframe, or the loose selection).
         Mirrors RotateTool._gather_copy_entities."""
         viewport = ctx.viewport
         self._sel_faces, self._sel_edges, self._base_segments = [], [], []
-        from core.group import iter_placements
-        for group in self._groups:
-            for pg, xf in iter_placements(group):
-                for e in pg.mesh.edges:
-                    a, b = QVector3D(e.a), QVector3D(e.b)
-                    if xf is not None:
-                        a, b = xf.map(a), xf.map(b)
-                    self._base_segments.append((a, b))
+        self._groups_ghost_due = True     # asked of only when copying (#1092)
         cam = getattr(viewport, "camera", None)
         reach = max(float(getattr(cam, "distance", 10.0)), 1e-3)
         self._base_segments.extend(guide_ghost_segments(self._moved_guides, reach))
@@ -929,61 +1204,69 @@ class MoveTool(Tool):
         one copy per offset. Kept by the array window so ``3x`` / ``/3`` can
         re-lay the copies after the tool has reset.
 
-        Plain copied edges go through the same edge planner as the Line
-        tool, so a copy laid across a face splits it and one crossing an
-        edge cuts it there, as users expect (Lefteris Schetakis, #177).
-        Faces are stamped FIRST: the planner then finds their loops closed
-        and does not add a second face over them."""
+        Stamp the supplied topology verbatim. Only edges touching geometry
+        outside their copy need the intersection planner (#177, #379).
+        Replanning the copy against itself split imported faces and invented
+        floors across empty rims, depending on selection order (#1087)."""
         groups = list(self._groups)
         faces = list(self._sel_faces)
         edges = list(self._sel_edges)
         guides = list(self._moved_guides)
 
-        # Edges that bound a copied face travel with it the old way: the
-        # planner runs before the faces are stamped and would lay a second
-        # face over their loop.
-        def _k(p):
-            return (round(p.x(), 6), round(p.y(), 6), round(p.z(), 6))
-        face_sides = set()
-        for f in faces:
-            for lp in (list(f.vertices), *[list(h) for h in f.holes]):
-                for i in range(len(lp)):
-                    a, b = _k(lp[i]), _k(lp[(i + 1) % len(lp)])
-                    face_sides.add((a, b) if a <= b else (b, a))
-
-        def _bounds_a_face(e):
-            a, b = _k(e.a), _k(e.b)
-            return ((a, b) if a <= b else (b, a)) in face_sides
-
         def build(deltas):
+            from core.edits import touching_segments
+            from core.geometry import Edge as GeomEdge, Face as GeomFace
+            deltas = list(deltas)
             cmds: list = []
-            plain: list = []
-            bound: list = []
-            open_loops: set = set()
+            copied_groups, copied_guides, copied_faces, copied_segments = [], [], [], []
+            # Other array members are outside this copy too. Build their
+            # geometric views before execution, so array order is irrelevant.
+            copies = []
             for d in deltas:
+                ef = [GeomEdge(e.a + d, e.b + d) for e in edges]
+                ff = [GeomFace([v + d for v in f.vertices],
+                               [[v + d for v in h] for h in f.holes]) for f in faces]
+                copies.append((ef, ff))
+            for index, d in enumerate(deltas):
+                planned = []
+                if scene is not None:
+                    outside_edges, outside_faces = list(scene.edges), list(scene.faces)
+                    for j, (ef, ff) in enumerate(copies):
+                        if j != index:
+                            outside_edges.extend(ef)
+                            outside_faces.extend(ff)
+                    hard = [(e.a + d, e.b + d) for e in edges
+                            if e.curve is None and not e.soft]
+                    planned = touching_segments(hard, outside_edges, outside_faces)
+                planned_keys = {(_key(a), _key(b)) for a, b in planned}
                 m = QMatrix4x4()
                 m.translate(d)
                 for group in groups:
-                    cmds.append(InsertGroupCommand(copy_group(group, d)))
+                    clone = copy_group(group, d)
+                    copied_groups.append(clone)
+                    cmds.append(InsertGroupCommand(clone))
                 for g in guides:
-                    cmds.append(AddGuideCommand(copied_guide(g, m)))
+                    clone = copied_guide(g, m)
+                    copied_guides.append(clone)
+                    cmds.append(AddGuideCommand(clone))
                 for f in faces:
-                    for h in f.holes:
-                        open_loops.add(_loop_key([v + d for v in h]))
-                    cmds.append(AddFaceCommand(
+                    cmd = AddFaceCommand(
                         [v + d for v in f.vertices],
                         holes=[[v + d for v in h] for h in f.holes] or None,
                         auto=False,
                         attrs=transformed_attrs(f.attrs, m),
-                    ))
+                        interior=f.interior,
+                    )
+                    copied_faces.append(cmd)
+                    cmds.append(cmd)
                 id_map: dict[int, int] = {}
                 for e in edges:
+                    copied_segments.append((e.a + d, e.b + d))
                     curve = getattr(e, "curve", None)
                     soft = getattr(e, "soft", False)
                     if scene is not None and curve is None and not soft:
-                        (bound if _bounds_a_face(e) else plain).append(
-                            (e.a + d, e.b + d))
-                        continue
+                        if (_key(e.a + d), _key(e.b + d)) in planned_keys:
+                            continue
                     # Soft edges and curves keep their flags on the copy.
                     if curve is not None and curve not in id_map:
                         id_map[curve] = Mesh.next_curve_id()
@@ -991,20 +1274,12 @@ class MoveTool(Tool):
                         e.a + d, e.b + d,
                         soft=soft or None,
                         curve=id_map.get(curve)))
-            if plain:
-                from core.edits import build_add_edges
-                cmds.append(build_add_edges(scene, plain, detect_faces=True))
-            if bound:
-                # The edges of a copied face go through the same planner,
-                # but planned once the faces are stamped: planned now, it
-                # would lay a second face over their loop, and sent the old
-                # way they never split the face they land on — the edge of
-                # a piece copied 1 cm down left its neighbour's face whole
-                # (#379, after #177).
-                cmds.append(_PlannedWhenRun(bound, open_loops))
+                if planned:
+                    cmds.append(_PlannedWhenRun(planned))
             if not cmds:
                 return None
-            return cmds[0] if len(cmds) == 1 else CompoundCommand(cmds)
+            return _MoveCopiesCommand(cmds, copied_groups, copied_guides,
+                                      copied_faces, copied_segments)
 
         return build
 
@@ -1034,7 +1309,14 @@ class MoveTool(Tool):
             sp.point = sp.point + step
         for im in self._images:
             im.origin = im.origin + step
-        viewport.scene.version += 1
+        if self._splanes and not (self._groups or self._verts or self._labels
+                                  or self._moved_guides or self._dims
+                                  or self._images):
+            # Only section planes ride the drag: no face moved, so nothing
+            # built from the model is thrown away on each pointer move.
+            viewport.scene.bump_sections()
+        else:
+            viewport.scene.version += 1
 
     def _apply_preview(self, viewport, target_delta: QVector3D) -> None:
         """Live-deform the scene so the current offset is ``target_delta`` from
@@ -1163,9 +1445,14 @@ class MoveTool(Tool):
         self._dims = {}
         self._splanes = []
         self._images = []
+        self._glide = None
         self._preview_delta = QVector3D(0.0, 0.0, 0.0)
         self._sel_faces = []
         self._sel_edges = []
         self._base_segments = []
+        self._groups_ghost_due = False
         self._vp_preview = False
+        self._bent_faces = []
+        self._moved_parts = None
+        self._moved_memo = None
         self._copy = False      # the Ctrl modifier arms ONE operation

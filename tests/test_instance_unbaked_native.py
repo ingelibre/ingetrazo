@@ -162,7 +162,8 @@ def _hidden_by(v0, e1, e2, o, d, limit):
     dd = d[None, :]
     p = np.cross(dd[:, None, :], e2[None, :, :])
     det = np.einsum("nj,rnj->rn", e1, p)
-    ok = np.abs(det) > 1e-6
+    from views.viewport import _occlusion_det_ok
+    ok = _occlusion_det_ok(det, dd, e1, e2)      # small det: its size (#1294)
     inv = np.where(ok, 1.0 / np.where(ok, det, 1.0), 0.0)
     u = np.einsum("nj,rnj->rn", s, p) * inv
     v = (dd @ q.T) * inv

@@ -427,10 +427,12 @@ FRACTION_LABELS = ('1"', '1/4"', '1/16"', '1/32"', '1/64"')
 #: separator is the reader's, not the profile's, and stays as it is.
 PROFILES = {
     "metric": {"length": "m", "precision": 2},
+    "centimetric": {"length": "cm", "precision": 1},
     "millimetric": {"length": "mm", "precision": 0},
     "imperial": {"length": "ft-in-frac", "precision": 2},
 }
-PROFILE_LABELS = {"metric": "Metric (m, cm)", "millimetric": "Millimetric (mm)",
+PROFILE_LABELS = {"metric": "Metric (m)", "centimetric": "Centimetric (cm)",
+                  "millimetric": "Millimetric (mm)",
                   "imperial": "Imperial (ft-in)", "custom": "Custom"}
 
 
@@ -825,6 +827,8 @@ def parse(text: str, kind: str = "length", unit: str | None = None) -> Parsed:
     :data:`UNIT_CHOICES`), or the document's when ``unit`` is None. A unit
     of another kind is refused with a message: ``5 m²`` is not a length."""
     raw = plain_marks(text) if isinstance(text, str) else ""
+    if raw.lstrip().startswith("="):
+        return parse_expression(raw, kind, unit)
     offset = len(raw) - len(raw.lstrip())
     t = re.sub(r"\s+", " ", raw.strip().lower().translate(_MARKS))
     if not t:
@@ -889,6 +893,160 @@ def parse(text: str, kind: str = "length", unit: str | None = None) -> Parsed:
         total += num * row.factor
         previous = row.code
     return Parsed(value=sign * total)
+
+
+#: A fraction that carries its unit is ONE measurement inside a calculation:
+#: ``=3/4"+1"`` adds three quarters of an inch, it does not divide 3 by 4".
+_EXPR_FRACTION = re.compile(r"\d+(?: +\d+)?/\d+ *(?:[^\W\d_]+|[\"'°])")
+
+
+class _ExprError(Exception):
+    def __init__(self, message: str, position: int) -> None:
+        super().__init__(message)
+        self.message, self.position = message, position
+
+
+def _expr_tokens(text: str, base: int) -> list:
+    """``(kind, text, position)``: an operator or a parenthesis, or ``"q"``
+    with one measurement as typed (``1.20m``, ``5'3"``, ``45``)."""
+    tokens = []
+    i = 0
+    while i < len(text):
+        c = text[i]
+        if c.isspace():
+            i += 1
+            continue
+        if c in "+-*/()":
+            tokens.append((c, c, base + i))
+            i += 1
+            continue
+        m = _EXPR_FRACTION.match(text, i)
+        if m is not None:
+            tokens.append(("q", m.group(0), base + i))
+            i = m.end()
+            continue
+        j = i
+        while j < len(text) and text[j] not in "+-*/()":
+            j += 1
+        tokens.append(("q", text[i:j].rstrip(), base + i))
+        i = j
+    return tokens
+
+
+def parse_expression(text: str, kind: str = "length",
+                     unit: str | None = None) -> Parsed:
+    """A calculation typed after ``=`` (#630): ``=1.25*2+2.45/2``,
+    ``=(3-0.15*2)/4``, ``=1.20m+35cm``, ``=2*45cm``.
+
+    ``+ - * /`` and parentheses, with the usual precedence. Each measurement
+    may carry its unit, as in :func:`parse`; a number without one is in the
+    field's unit — unless it multiplies or divides a measurement, where it
+    is the plain number it reads as (``=2*45cm`` is 90 cm, not 2 m × 45
+    cm). Two measurements cannot be multiplied (that is an area, not a
+    length), and a measurement divided by another is a plain number. Read
+    by a small parser of its own: nothing typed is ever run as code."""
+    raw = plain_marks(text) if isinstance(text, str) else ""
+    start = len(raw) - len(raw.lstrip())
+    body = raw.strip()[1:].translate(_MARKS)
+    end = start + len(raw.strip())
+    tokens = _expr_tokens(body, start + 1)
+    if not tokens:
+        return Parsed(error="Type a calculation after =", position=start + 1)
+    pos = 0
+
+    def peek():
+        return tokens[pos] if pos < len(tokens) else None
+
+    def take():
+        nonlocal pos
+        pos += 1
+        return tokens[pos - 1]
+
+    def measurement(txt, where):
+        if not re.search(r"[^\d\s./]", txt):
+            v = _number(txt)
+            if v is None:
+                raise _ExprError("Not a number", where)
+            return v, False
+        r = parse(txt, kind, unit)
+        if not r.ok:
+            raise _ExprError(r.error, where + r.position)
+        return r.value, True
+
+    def as_unit(v, has_unit):
+        return v if has_unit else v * _bare_factor(kind, unit)
+
+    def factor():
+        tok = peek()
+        if tok is None:
+            raise _ExprError("A number is missing", end)
+        if tok[0] in "+-":
+            take()
+            v, has_unit = factor()
+            return (-v if tok[0] == "-" else v), has_unit
+        if tok[0] == "(":
+            take()
+            v = expression()
+            close = peek()
+            if close is None or close[0] != ")":
+                raise _ExprError("A parenthesis is not closed", tok[2])
+            take()
+            return v
+        if tok[0] == "q":
+            take()
+            return measurement(tok[1], tok[2])
+        raise _ExprError("A number is missing", tok[2])
+
+    def term():
+        a, au = factor()
+        while peek() is not None and peek()[0] in "*/":
+            op = take()
+            b, bu = factor()
+            if op[0] == "*":
+                if au and bu:
+                    raise _ExprError(
+                        "Two measurements can't be multiplied: one must be "
+                        "a plain number", op[2])
+                a, au = a * b, au or bu
+            else:
+                if b == 0:
+                    raise _ExprError("Division by zero", op[2])
+                if bu and not au:
+                    raise _ExprError(
+                        "A plain number can't be divided by a measurement",
+                        op[2])
+                a, au = a / b, au and not bu
+        return a, au
+
+    def expression():
+        a, au = term()
+        while peek() is not None and peek()[0] in "+-":
+            op = take()
+            b, bu = term()
+            if au != bu:
+                a, b, au = as_unit(a, au), as_unit(b, bu), True
+            a = a + b if op[0] == "+" else a - b
+        return a, au
+
+    try:
+        value, has_unit = expression()
+        tok = peek()
+        if tok is not None:
+            raise _ExprError("A parenthesis closes nothing" if tok[0] == ")"
+                             else "An operator is missing", tok[2])
+    except _ExprError as e:
+        return Parsed(error=e.message, position=e.position)
+    except (OverflowError, RecursionError):
+        return Parsed(error="Not a number", position=start)
+    value = as_unit(value, has_unit)
+    if not math.isfinite(value) or abs(value) > MAX_TYPED:
+        return Parsed(error="Not a number", position=start)
+    return Parsed(value=value)
+
+
+def is_expression(text: str) -> bool:
+    """Whether ``text`` is a calculation (it starts with ``=``, #630)."""
+    return isinstance(text, str) and text.lstrip().startswith("=")
 
 
 def parse_length_field(field: str):

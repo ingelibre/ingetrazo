@@ -198,8 +198,9 @@ def test_a_new_cota_is_born_iso_whatever_the_document_or_memory_say(
     """Only ISO is on offer for now (Marco, 2026-09-20: «hagamos las ISO
     por ahora… en posición de texto sé restrictivo»): a new cota is born
     ``above`` even if the document carries the German standard or the
-    remembered style of the last cota says otherwise — and the panel's
-    text-position menu holds nothing else."""
+    remembered style of the last cota says otherwise. The panel's
+    text-position menu offers ISO and, for a cota whose upper side is
+    taken, «below» — nothing outside a standard."""
     from views.composer import ComposerWindow
     from views.main_window import MainWindow
     monkeypatch.setattr(ComposerWindow, "render_frame", lambda self, f: None)
@@ -216,7 +217,7 @@ def test_a_new_cota_is_born_iso_whatever_the_document_or_memory_say(
         assert comp._new_cota((0.0, 0.0), (40.0, 0.0), 0.0).text_pos == "above"
         keys = [comp.cota_text_pos.itemData(i)
                 for i in range(comp.cota_text_pos.count())]
-        assert keys == ["above"]
+        assert keys == ["above", "below"]
         # …and the model's dimension-style panel offers no standard switch.
         from views.tray import DimensionStylePanel
         assert not hasattr(DimensionStylePanel(win), "_norma")

@@ -16,6 +16,13 @@ the swept edges are hidden, not erased — still one undo step. Only edges and
 objects can hide, so a hide stroke ignores guides/dimensions/paths rather
 than deleting what the gesture promised to keep.
 
+Ctrl held at press starts a SOFTEN stroke and Ctrl+Shift a MAKE VISIBLE
+one (#831): the swept edges turn soft (the faces either side read as one
+curved surface, shaded round), or draw again — soft seams hardened,
+hidden lines unhidden — one undo step. A make-visible stroke reaches the
+soft edges, drawn or not; edges behind the model stay out, as for
+erasing.
+
 A group or component under the cursor is erased WHOLE, as users expect
 (@pacaeiro, issue #46: «ERASE tool cannot erase Groups nor Components,
 only raw edges and faces»); its box marks the stroke, and Shift hides it.
@@ -26,7 +33,7 @@ from PySide6.QtCore import Qt
 
 from core.dimension import Dimension
 from core.group import Group
-from core.guide import Guide
+from core.guide import Guide, is_guide
 from core.history import (
     CompoundCommand,
     DeleteDimensionsCommand,
@@ -35,8 +42,10 @@ from core.history import (
     DeleteGuidesCommand,
     DeleteTextLabelsCommand,
     EraseSelectionCommand,
+    make_edges_visible_command,
     HideCommand,
     HideEdgesCommand,
+    SoftenEdgesCommand,
 )
 from core.mesh import Edge
 from core.textlabel import TextLabel
@@ -56,6 +65,8 @@ class EraserTool(Tool):
     def __init__(self) -> None:
         self._stroke = False
         self._hide = False       # Shift at press: hide the stroke, don't erase
+        # Ctrl at press: soften the stroke (True); Ctrl+Shift: harden (False)
+        self._soften: bool | None = None
         self.marked: set = set()
 
     # ---- Lifecycle ----------------------------------------------------------
@@ -70,7 +81,10 @@ class EraserTool(Tool):
         """Press: start a stroke and mark whatever is under the cursor. The
         modifier latches here — a whole stroke is one gesture, erase or hide."""
         self._stroke = True
-        self._hide = bool(ctx.modifiers & Qt.ShiftModifier)
+        shift = bool(ctx.modifiers & Qt.ShiftModifier)
+        ctrl = bool(ctx.modifiers & Qt.ControlModifier)
+        self._soften = (not shift) if ctrl else None
+        self._hide = shift and not ctrl
         self._mark(ctx.viewport, ctx.screen.x(), ctx.screen.y())
         ctx.viewport.update()
 
@@ -102,6 +116,19 @@ class EraserTool(Tool):
             return
         edges = [m for m in marked if isinstance(m, Edge)]
         groups = [m for m in marked if isinstance(m, Group)]
+        if self._soften is True:
+            edges = [e for e in edges if not e.soft]
+            if edges:
+                viewport.history.execute(SoftenEdgesCommand(edges, soft=True))
+            viewport.update()
+            return
+        if self._soften is False:
+            # Make visible: soft seams harden, hidden lines come back.
+            cmd = make_edges_visible_command(edges)
+            if cmd is not None:
+                viewport.history.execute(cmd)
+            viewport.update()
+            return
         if self._hide:
             edges = [e for e in edges if not getattr(e, "hidden", False)]
             groups = [g for g in groups if not getattr(g, "hidden", False)]
@@ -115,7 +142,7 @@ class EraserTool(Tool):
                     cmds[0] if len(cmds) == 1 else CompoundCommand(cmds))
             viewport.update()
             return
-        guides = [m for m in marked if isinstance(m, Guide)]
+        guides = [m for m in marked if is_guide(m)]
         dims = [m for m in marked if isinstance(m, Dimension)]
         paths = [m for m in marked if isinstance(m, GeoPath)]
         labels = [m for m in marked if isinstance(m, TextLabel)]
@@ -151,6 +178,10 @@ class EraserTool(Tool):
                 segs.extend(self._group_box_segments(m))
             elif isinstance(m, Guide):
                 segs.append(m.segment())
+            elif getattr(m, "is_circle", False):
+                pts = m.sample_points(24)
+                segs.extend((pts[i], pts[(i + 1) % len(pts)])
+                            for i in range(len(pts)))
             elif isinstance(m, Dimension):
                 segs.append(m.line_points())
             elif isinstance(m, GeoPath):
@@ -179,23 +210,30 @@ class EraserTool(Tool):
         return [(c[i], c[j]) for i, j in pairs]
 
     @staticmethod
-    def _pick(viewport, sx: float, sy: float):
+    def _pick(viewport, sx: float, sy: float, with_soft: bool = False):
         """Only an edge the user can see: a stroke across a face took the
-        edges behind it too (#663), as Select stopped doing in #71."""
+        edges behind it too (#663), as Select stopped doing in #71. A
+        harden stroke (``with_soft``) also reaches the soft edges a curved
+        surface does not draw."""
         pick = getattr(viewport, "pick_visible_edge", None)
-        return (pick or viewport.pick_edge)(sx, sy)
+        if pick is None:
+            return viewport.pick_edge(sx, sy)
+        if with_soft:
+            return pick(sx, sy, with_soft=True)
+        return pick(sx, sy)
 
     def _mark(self, viewport, sx: float, sy: float) -> None:
         self._viewport = viewport
         pick_label = getattr(viewport, "pick_text_label", None)
-        if pick_label is not None and not self._hide:
+        edge_only = self._hide or self._soften is not None
+        if pick_label is not None and not edge_only:
             # The text block overdraws all geometry, so the glyphs outrank
             # every 3D pick — the same order as Select.
             label = pick_label(sx, sy, rect_only=True)
             if label is not None:
                 self.marked.add(label)
                 return
-        edge = self._pick(viewport, sx, sy)
+        edge = self._pick(viewport, sx, sy, with_soft=self._soften is False)
         if edge is not None:
             # A curve is one entity: marking a segment marks its contour.
             for e in viewport.scene.mesh.curve_edges(edge):
@@ -205,6 +243,8 @@ class EraserTool(Tool):
         # (issue #46). From inside a group, its own content is the loose
         # part and pick_group answers None, so nothing changes there.
         pick_group = getattr(viewport, "pick_group", None)
+        if self._soften is not None:
+            return          # only edges soften or harden
         group = pick_group(sx, sy) if pick_group is not None else None
         if group is not None:
             self.marked.add(group)
@@ -231,5 +271,6 @@ class EraserTool(Tool):
     def _reset(self) -> None:
         self._stroke = False
         self._hide = False
+        self._soften = None
         self.marked = set()
         self._viewport = None

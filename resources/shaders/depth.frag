@@ -8,6 +8,12 @@
 // alpha, so the caster discards like the render pass does.
 uniform sampler2D u_tex;
 uniform int u_use_texture;
+// The constant and the most of the slope term, in the map's depth units
+// (0..1 over its depth range): the viewport sets them from METRES, so a
+// map 1 300 m deep (a plaza with its orthophoto) does not push every
+// shadow a metre and a half off its base (19-11).
+uniform float u_bias_const;
+uniform float u_bias_slope_max;
 
 in vec2 v_uv;
 out vec4 fragColor;
@@ -24,7 +30,7 @@ void main() {
     // per-texel depth slope; clamped so extreme grazing cannot detach a
     // shadow visibly.
     float slope = max(abs(dFdx(d)), abs(dFdy(d)));
-    d = min(d + min(slope * 2.0, 0.01) + 0.0004, 0.999999);
+    d = min(d + min(slope * 2.0, u_bias_slope_max) + u_bias_const, 0.999999);
     vec3 e = fract(vec3(1.0, 255.0, 65025.0) * d);
     e.xy -= e.yz * (1.0 / 255.0);
     fragColor = vec4(e, 1.0);

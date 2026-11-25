@@ -113,10 +113,10 @@ def test_cota_labels_can_carry_a_background():
         # sample the background strip just above the label's text box,
         # where no glyph reaches (offset 1 mm, text 4 mm; «above» puts the
         # BASELINE 1 mm over the line, so its box top is an ascent higher)
-        from views.composer import text_baseline_rect_mm
+        from views.composer import text_baseline_rect_mm, text_cap_rect_mm
         top = {"above": 50 + text_baseline_rect_mm(4.0, -1.0).top(),
                "centered": 50 - 4.0 * 0.65,
-               "below": 50 + 1.0}[pos]
+               "below": 50 + text_cap_rect_mm(4.0, 1.0).top()}[pos]
         x = int((20 + 40) * 2)
         assert img.pixel(x, int((top - 0.2) * 2)) & 0xFFFFFF == 0xFFE08A, pos
     ca = CotaAngularItem(ax_mm=40, ay_mm=0, bx_mm=0, by_mm=-40, radius_mm=20,

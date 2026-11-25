@@ -94,5 +94,6 @@ def test_the_message_keeps_to_its_share_of_the_bar():
     assert bar._msg.width() >= 700
     bar.resize(200, 28)
     app.processEvents()
-    assert bar._msg.maximumWidth() == 120       # never squeezed to nothing
+    # never squeezed to nothing (the bar keeps «Model»'s width at least)
+    assert bar._msg.maximumWidth() == max(120, int(bar.width() * bar.MESSAGE_SHARE))
     bar.close()

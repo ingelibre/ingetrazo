@@ -254,12 +254,9 @@ def sun_toward(scene) -> Optional[tuple]:
         when = sh.when_utc(lon, year=_dt.date.today().year)
     except ValueError:
         return None
-    d = sun.sun_direction(lat, lon, when)
+    d = sun.turn_sun_to_model(scene, sun.sun_direction(lat, lon, when))
     if d is None:
         return None
-    if datum is not None and getattr(datum, "north", 0.0):
-        x, y = datum.grid_to_local_xy(d[0], d[1])
-        d = (x, y, d[2])
     return tuple(float(v) for v in d)
 
 

@@ -33,14 +33,69 @@ later refinement). Both joins are guarded, so PyPI 0.2.0 still imports (uncolour
 """
 from __future__ import annotations
 
+from collections import OrderedDict
+from contextvars import ContextVar
 from pathlib import Path
 
 from PySide6.QtGui import QMatrix4x4, QVector3D
 
 from core.texture import fit_uv_affine, projection_basis
+from formats.skp_consumption import SoftSegments
+from formats.skp_coordinates import PointRows as _PointRows
 
 _INCH = 0.0254          # .skp internal unit → metres
 _MAX_DEPTH = 32         # guard against pathological instance nesting
+# How many objects, in the whole model, the copies of definitions shared
+# INSIDE a component may add when they are kept as its children instead of
+# being flattened into it. Outer levels are kept first; a part repeated
+# beyond what is left flattens into what holds it, as before.
+_NESTED_KEEP_BUDGET = 1500
+
+_GEOMETRY_CACHE_BYTES = 64 * 1024 * 1024
+_geometry_cache = ContextVar("skp_geometry_cache", default=None)
+
+
+class _GeometryCache:
+    """Bound adapter-owned derived geometry for one adaptation.
+
+    Eviction drops only our cached reference; callers currently reading the
+    geometry keep their local references. Raw definition geometry is untouched.
+    """
+
+    def __init__(self, limit):
+        self.limit = limit
+        self.entries = OrderedDict()
+        self.size = 0
+
+    def remember(self, definition, attribute, value, size):
+        key = (id(definition), attribute)
+        previous = self.entries.pop(key, None)
+        if previous is not None:
+            self.size -= previous[3]
+        self.entries[key] = (definition, attribute, value, size)
+        self.size += size
+        while self.size > self.limit:
+            self._evict()
+
+    def _evict(self):
+        _key, (definition, attribute, value, size) = self.entries.popitem(last=False)
+        self.size -= size
+        if getattr(definition, attribute, None) is value:
+            delattr(definition, attribute)
+
+    def clear(self):
+        while self.entries:
+            self._evict()
+
+
+def _remember_geometry(definition, attribute, value, size):
+    try:
+        setattr(definition, attribute, value)
+    except AttributeError:  # __slots__ definition: skip the cache
+        return
+    cache = _geometry_cache.get()
+    if cache is not None:
+        cache.remember(definition, attribute, value, size)
 
 
 def _ring_raw(defn, loop):
@@ -109,6 +164,99 @@ def _matrix(m) -> QMatrix4x4:
         0.0, 0.0, 0.0, 1.0)
 
 
+def _placements_by_definition(model):
+    """{definition id: [world matrix, ...]} — every placement of every
+    definition, composed over the model's instance tree. The matrices
+    map definition-local metres to world metres (see :func:`_matrix`)."""
+    out = {}
+
+    def walk(defn, parent, depth):
+        if defn is None or depth > _MAX_DEPTH:
+            return
+        for inst in getattr(defn, "instances", None) or []:
+            local = getattr(inst, "matrix", None)
+            if not local:
+                continue
+            world = parent * _matrix(local)
+            ref = getattr(inst, "ref_idx", None)
+            out.setdefault(ref, []).append(world)
+            walk((getattr(model, "definitions", None) or {}).get(ref),
+                 world, depth + 1)
+
+    walk(getattr(model, "root", None), QMatrix4x4(), 0)
+    return out
+
+
+def _cross3(a, b):
+    return (a[1] * b[2] - a[2] * b[1],
+            a[2] * b[0] - a[0] * b[2],
+            a[0] * b[1] - a[1] * b[0])
+
+
+def _dimension_entry(dm, world=None):
+    """One payload dimension (metres, world space) for an OpenSKP
+    dimension; ``world`` lifts a definition-local one by one placement
+    of its definition.
+
+    The offset leaves as a VECTOR when the dimension's constraint axis
+    is known (VFF files, via openskp_compat): with N the plane normal
+    (``plane_x``, stored in 5BCF) and X the plane's x axis (``normal``,
+    stored in 5BD0), the grammar upstream resolved (openskp#481) is
+    ``(N × X) · offset`` for axis 1 and ``−X · offset`` for axis 2.
+    Without an axis the scalar + stored axis go out as before and the
+    consumer keeps its historical reading of them."""
+    a = [c * _INCH for c in dm.a]
+    b = [c * _INCH for c in dm.b]
+    offset = float(getattr(dm, "offset", 0.0) or 0.0) * _INCH
+    frame_x = getattr(dm, "normal", None)      # 5BD0 — the plane's X axis
+    plane_n = getattr(dm, "plane_x", None)     # 5BCF — the plane's normal
+    axis = getattr(dm, "vff_axis", None)
+    ov = None
+    if axis in (1, 2) and plane_n and frame_x:
+        d = _cross3(plane_n, frame_x) if axis == 1 \
+            else tuple(-c for c in frame_x)
+        ov = [c * offset for c in d]
+    if world is not None:
+        a = list(world.map(QVector3D(*a)).toTuple())
+        b = list(world.map(QVector3D(*b)).toTuple())
+        if ov is not None:
+            ov = list(world.mapVector(QVector3D(*ov)).toTuple())
+    entry = {"a": a, "b": b, "text": getattr(dm, "text", "") or ""}
+    if ov is not None:
+        entry["offset_vector"] = ov
+    else:
+        entry["offset"] = offset
+        if frame_x:
+            n = [float(c) for c in frame_x]
+            if world is not None:
+                n = list(world.mapVector(QVector3D(*n)).toTuple())
+            entry["normal"] = n
+    return entry
+
+
+def _text_entry(tx, world=None):
+    """One payload leader text (metres, world space) for an OpenSKP text;
+    ``world`` lifts a definition-local one by one placement. A text
+    whose anchor did not resolve still shows at its label position."""
+    pt = getattr(tx, "point", None)
+    lp = getattr(tx, "label_point", None)
+    if pt is None and lp is None:
+        return None
+    anchor = pt if pt is not None else lp
+    entry = {"anchor": [c * _INCH for c in anchor],
+             "text": (getattr(tx, "text", "") or "").strip(),
+             "hidden": bool(getattr(tx, "hidden", False))}
+    if lp is not None and pt is not None:
+        entry["label"] = [c * _INCH for c in lp]
+    if world is not None:
+        entry["anchor"] = list(world.map(QVector3D(*entry["anchor"]))
+                               .toTuple())
+        if "label" in entry:
+            entry["label"] = list(world.map(QVector3D(*entry["label"]))
+                                  .toTuple())
+    return entry
+
+
 def _texture_dir(skp_path) -> Path:
     """Directory for a ``.skp``'s extracted texture images, inside the app's
     own cache (``core.texture.texture_cache_root()``) — importing must never
@@ -148,6 +296,42 @@ def _texture_dir(skp_path) -> Path:
 from core.texture import colorize_image as _colorize_image  # noqa: E402
 from core.texture import hls_to_rgb as _hls_to_rgb  # noqa: E402,F401
 from core.texture import rgb_to_hls as _rgb_to_hls  # noqa: E402,F401
+
+
+# Keep only compressed results, not source images or full-resolution arrays.
+# Imports may run in workers; protect accounting, not the expensive transform.
+from collections import OrderedDict  # noqa: E402
+from threading import Lock  # noqa: E402
+
+_COLORIZE_CACHE_LIMIT = 32 * 1024 * 1024
+_colorize_cache = OrderedDict()
+_colorize_cache_lock = Lock()
+
+
+def _cached_colorize(data, color, ctype):
+    """Reuse exact colourized bytes across materials and repeated imports."""
+    import hashlib
+
+    try:
+        key = (hashlib.sha256(data).digest(), tuple(color[:3]), ctype)
+        with _colorize_cache_lock:
+            cached = _colorize_cache.get(key)
+            if cached is not None:
+                _colorize_cache.move_to_end(key)
+                return cached
+    except (TypeError, ValueError):
+        return _colorize_image(data, color, ctype)
+    result = _colorize_image(data, color, ctype)
+    # The transform returns its input on failure. Retrying must remain possible.
+    if result is not data and len(result) <= _COLORIZE_CACHE_LIMIT:
+        with _colorize_cache_lock:
+            _colorize_cache[key] = result
+            _colorize_cache.move_to_end(key)
+            size = sum(len(value) for value in _colorize_cache.values())
+            while size > _COLORIZE_CACHE_LIMIT or len(_colorize_cache) > 128:
+                _, removed = _colorize_cache.popitem(last=False)
+                size -= len(removed)
+    return result
 
 
 def _needs_tint(data, declared_rgb) -> bool:
@@ -251,7 +435,7 @@ def _material_attrs(model, skp_path):
                 # guard skips materials whose declared colour already IS the
                 # image average (the legacy colourized flag is greedy —
                 # e.g. geolocation snapshots would go greyscale otherwise).
-                data = _colorize_image(
+                data = _cached_colorize(
                     data, getattr(mat, "color", (128, 128, 128)),
                     getattr(mat, "colorize_type", 0))
                 safe = f"{mid}_{safe or 'material.png'}"
@@ -417,16 +601,17 @@ def _defn_geom(defn):
         meta.append((face, s0, s1, hs))
     pos_m = np.asarray(flat, dtype=np.float64).reshape(-1, 3) * _INCH
     geom = (pos_m, flat, meta)
-    try:
-        defn._geom = geom
-    except AttributeError:          # __slots__ definition: skip the cache
-        pass
+    # Estimate Python tuple/list metadata conservatively without traversing
+    # every coordinate again. Float objects themselves belong to the source.
+    size = pos_m.nbytes + 96 * len(flat) + 256 * len(meta)
+    size += 128 * sum(len(item[3]) for item in meta)
+    _remember_geometry(defn, "_geom", geom, size)
     return geom
 
 
 def _world_points(pos_m, xform):
     """``pos_m`` (local metres) transformed by the QMatrix4x4 ``xform``, as a
-    list of ``[x, y, z]`` lists. Float32-quantized so the payload carries the
+    sequence of ``[x, y, z]`` rows. Float32-quantized so the payload carries the
     same values a ``Vertex`` will store — welding and soft-edge matching key
     on those."""
     import numpy as np
@@ -435,7 +620,7 @@ def _world_points(pos_m, xform):
     else:
         m = np.array(xform.data(), dtype=np.float64).reshape(4, 4, order="F")
         world = pos_m @ m[:3, :3].T + m[:3, 3]
-    return world.astype(np.float32).astype(np.float64).tolist()
+    return _PointRows(world.astype(np.float32))
 
 
 def _face_entry(face, wl, raw_l, s0, s1, holes_sl, attr_map,
@@ -621,11 +806,35 @@ def _face_boxes(defn):
                              count=len(meta))
         boxes = (np.minimum.reduceat(pos_m, starts, axis=0),
                  np.maximum.reduceat(pos_m, starts, axis=0))
-    try:
-        defn._face_boxes = boxes
-    except AttributeError:
-        pass
+    _remember_geometry(defn, "_face_boxes", boxes,
+                       sum(array.nbytes for array in boxes))
     return boxes
+
+
+def _image_geometry_bounds(defn):
+    """A conservative local box, without resolving any face rings.
+
+    Every resolved ring corner comes from this vertex table. Unused vertices
+    can only enlarge the box. Invalid/non-finite unused coordinates must not
+    reject valid faces: in that case leave the existing face test in charge.
+    The caller caches only six floats per definition for this image query.
+    """
+    import numpy as np
+
+    vertices = getattr(defn, "vertices", {})
+    if not vertices or not getattr(defn, "faces", None):
+        return None
+    try:
+        points = np.fromiter(
+            (c for v in vertices.values() for c in (v.x, v.y, v.z)),
+            dtype=np.float64, count=3 * len(vertices)).reshape(-1, 3)
+        points *= _INCH
+        lo, hi = points.min(axis=0), points.max(axis=0)
+    except (AttributeError, TypeError, ValueError, OverflowError):
+        return None
+    if not (np.isfinite(lo).all() and np.isfinite(hi).all()):
+        return None
+    return lo, hi
 
 
 def _rests_on_a_face(roots, by_id, quad) -> bool:
@@ -675,26 +884,47 @@ def _rests_on_a_face(roots, by_id, quad) -> bool:
                 inside = not inside
         return inside
 
+    bounds = {}
+
     def walk(defn, m, depth, stack):
         if depth > _MAX_DEPTH or id(defn) in stack:
             return False
         stack = stack | {id(defn)}
-        lo, hi = _face_boxes(defn)
-        if len(lo):
-            inv = np.linalg.inv(m)
-            c = inv[:3, :3] @ centre + inv[:3, 3]
-            # The tolerance in this frame: a scaled-down copy needs more.
-            s = min(np.linalg.norm(m[:3, :3], axis=0).min(), 1.0) or 1.0
-            tol = _GLUE_TOL / s
-            hit = np.nonzero(np.all((lo - tol <= c) & (c <= hi + tol),
-                                    axis=1))[0]
-            if len(hit):
-                pos_m, _raw, meta = _defn_geom(defn)
-                for k in hit:
-                    _f, s0, s1, _hs = meta[k]
-                    world = pos_m[s0:s1] @ m[:3, :3].T + m[:3, 3]
-                    if on_face(world):
-                        return True
+        oid = id(defn)
+        if oid not in bounds:
+            bounds[oid] = _image_geometry_bounds(defn)
+        box = bounds[oid]
+        test_faces = True
+        if box is not None:
+            try:
+                inv = np.linalg.inv(m)
+            except np.linalg.LinAlgError:
+                # Preserve the old behavior for singular placements: an empty
+                # resolved mesh need not invert, a nonempty one still raises.
+                pass
+            else:
+                c = inv[:3, :3] @ centre + inv[:3, 3]
+                s = min(np.linalg.norm(m[:3, :3], axis=0).min(), 1.0) or 1.0
+                tol = _GLUE_TOL / s
+                lo, hi = box
+                test_faces = bool(np.all((lo - tol <= c) & (c <= hi + tol)))
+        if test_faces:
+            lo, hi = _face_boxes(defn)
+            if len(lo):
+                inv = np.linalg.inv(m)
+                c = inv[:3, :3] @ centre + inv[:3, 3]
+                # The tolerance in this frame: a scaled-down copy needs more.
+                s = min(np.linalg.norm(m[:3, :3], axis=0).min(), 1.0) or 1.0
+                tol = _GLUE_TOL / s
+                hit = np.nonzero(np.all((lo - tol <= c) & (c <= hi + tol),
+                                        axis=1))[0]
+                if len(hit):
+                    pos_m, _raw, meta = _defn_geom(defn)
+                    for k in hit:
+                        _f, s0, s1, _hs = meta[k]
+                        world = pos_m[s0:s1] @ m[:3, :3].T + m[:3, 3]
+                        if on_face(world):
+                            return True
         for ins in getattr(defn, "instances", []):
             child = by_id.get(getattr(ins, "ref_idx", None))
             if child is None or getattr(child, "is_image", False) or \
@@ -708,6 +938,70 @@ def _rests_on_a_face(roots, by_id, quad) -> bool:
 
     return any(walk(r, np.eye(4), 0, frozenset()) for r in roots)
 
+
+
+def _image_use_key(child, placed, inherited):
+    import struct
+    return id(child), struct.pack("=16f", *placed.data()), inherited
+
+
+def _image_billboard_flags(roots, by_id, attr_map, proto_ids):
+    """Finish image attachment tests before an owned model loses geometry.
+
+    Called only after FlatGeometry proves the reachable graph is acyclic and
+    within the census depth limit. Follow the same world matrix/material chain
+    as _collect and, through a prototype, as _expand_images: the keys are the
+    exact matrices the image step composes, once per placement. Face-camera
+    subtrees flatten their own images and never run these attachment tests.
+    Only the booleans survive, not the source model or derived face geometry.
+    """
+    flags = {}
+    has_image: dict = {}
+
+    def holds_image(definition):
+        """Whether anything below ``definition`` is tested: most prototypes
+        hold no image, and their placements need no walking."""
+        oid = id(definition)
+        if oid not in has_image:
+            has_image[oid] = False
+            has_image[oid] = any(
+                getattr(child, "is_image", False)
+                or (not getattr(child, "always_faces_camera", False)
+                    and holds_image(child))
+                for ins in getattr(definition, "instances", ())
+                if (child := by_id.get(getattr(ins, "ref_idx", None))) is not None)
+        return has_image[oid]
+
+    def walk(definition, xform, inherited, world=None, top=False):
+        for ins in getattr(definition, "instances", ()):
+            child = by_id.get(getattr(ins, "ref_idx", None))
+            if child is None:
+                continue
+            matrix = _matrix(ins.matrix)
+            placed = matrix if top else xform * matrix
+            material = getattr(ins, "material_id", None)
+            inh = material if top else material or inherited
+            if getattr(child, "is_image", False):
+                seen = placed if world is None else world * placed
+                key = _image_use_key(child, seen, inh)
+                if key not in flags:
+                    faces = _image_quad_faces(child, seen, attr_map, inh)
+                    tex = next((a["texture"]["path"] for _o, _h, a in faces
+                                if a and "texture" in a), None)
+                    flags[key] = bool(tex and _image_has_cutout(tex)
+                                      and not _rests_on_a_face(roots, by_id, faces[0][0]))
+            elif getattr(child, "always_faces_camera", False) \
+                    or not holds_image(child):
+                continue
+            elif getattr(child, "id", None) in proto_ids:
+                walk(child, QMatrix4x4(), inh,
+                     placed if world is None else world * placed)
+            else:
+                walk(child, placed, inh, world)
+
+    for root in roots:
+        walk(root, QMatrix4x4(), None, top=True)
+    return flags
 
 def _soft_edge_segments(defn, xform, out) -> None:
     """Append the transformed endpoint pairs of ``defn``'s soft/smooth/
@@ -733,11 +1027,18 @@ def _soft_edge_segments(defn, xform, out) -> None:
             pairs.append((va.x, va.y, va.z))
             pairs.append((vb.x, vb.y, vb.z))
         arr = np.asarray(pairs, dtype=np.float64).reshape(-1, 3) * _INCH
-        try:
-            defn._soft_arr = arr
-        except AttributeError:      # __slots__ definition: just skip the cache
-            pass
+        _remember_geometry(defn, "_soft_arr", arr, arr.nbytes)
     if not len(arr):
+        return
+    if isinstance(out, SoftSegments):
+        # Same arithmetic and final quantization as _world_points, without
+        # expanding the endpoint array into millions of Python floats.
+        if xform.isIdentity():
+            world = arr
+        else:
+            m = np.array(xform.data(), dtype=np.float64).reshape(4, 4, order="F")
+            world = arr @ m[:3, :3].T + m[:3, 3]
+        out.add(world.astype(np.float32))
         return
     wl = _world_points(arr, xform)
     for i in range(0, len(wl), 2):
@@ -797,7 +1098,8 @@ def _loose_edge_segments(defn, xform, out) -> None:
 def _collect(defn, xform, by_id, attr_map, out, depth, stack,
              proto_ids=frozenset(), proto_uses=None, inherited=None,
              image_uses=None, edges_out=None, layer=None,
-             layer_uses=None, group_layer=None, loose_out=None) -> None:
+             layer_uses=None, group_layer=None, loose_out=None,
+             release=None) -> None:
     """Append ``(outer, holes, attrs)`` faces for ``defn`` (transformed by
     ``xform``) and, recursively, for every definition its instances place.
 
@@ -840,6 +1142,10 @@ def _collect(defn, xform, by_id, attr_map, out, depth, stack,
         _soft_edge_segments(defn, xform, edges_out)
     if loose_out is not None:
         _loose_edge_segments(defn, xform, loose_out)
+    if release is not None:
+        release(defn)
+        # No raw face/flattening locals need to survive child recursion.
+        del pos_m, raw_l, meta
     for ins in getattr(defn, "instances", []):
         rid = getattr(ins, "ref_idx", None)
         child = by_id.get(rid)
@@ -881,7 +1187,8 @@ def _collect(defn, xform, by_id, attr_map, out, depth, stack,
             continue
         _collect(child, placed, by_id, attr_map, out, depth + 1, stack,
                  proto_ids, proto_uses, child_inherited, image_uses,
-                 edges_out, child_layer, layer_uses, group_layer, loose_out)
+                 edges_out, child_layer, layer_uses, group_layer, loose_out,
+                 release)
 
 
 def _subtree_polys(defn, by_id, memo, stack) -> int:
@@ -1104,7 +1411,28 @@ def _is_empty_model(model, skp_path, legacy_era: bool) -> bool:
     return bool((px == px[0]).all())
 
 
-def _adapt(model, name: str, skp_path=None):
+def _adapt(model, name: str, skp_path=None, *, consume=False):
+    """Adapt with a bounded temporary geometry cache, including on failure."""
+    import gc
+
+    enabled = gc.isenabled()
+    cache = _GeometryCache(_GEOMETRY_CACHE_BYTES)
+    token = _geometry_cache.set(cache)
+    gc.disable()
+    try:
+        if consume:
+            return _adapt_inner(model, name, skp_path, consume=True)
+        return _adapt_inner(model, name, skp_path)
+    finally:
+        try:
+            cache.clear()
+            _geometry_cache.reset(token)
+        finally:
+            if enabled:
+                gc.enable()
+
+
+def _adapt_inner(model, name: str, skp_path=None, *, consume=False):
     """An ``SkpModel`` → a payload ``{"backend", "groups", "protos"}`` or
     ``None`` when it yields no geometry (the seam reports it as unreadable).
 
@@ -1120,6 +1448,9 @@ def _adapt(model, name: str, skp_path=None):
     Definitions with faces that nothing instances are library entries not
     placed in the model — they are not part of the visible model, so we skip
     them.
+    ``consume=True`` transfers raw geometry ownership to this adaptation.
+    Geometry is discarded after its last prototype use; a failed consumed
+    adaptation must be reparsed. The default leaves caller models reusable.
     ``skp_path`` anchors where extracted texture images land; the material
     joins are guarded so PyPI 0.2.0 still imports (uncoloured)."""
     from formats.dae import _INST_MIN_POLYS, _INST_MIN_SAVED
@@ -1219,8 +1550,8 @@ def _adapt(model, name: str, skp_path=None):
     # circle and a rectangle — arrives as nested groups instead of flattened
     # into the outermost one. A ``cnt == 1`` definition is placed exactly
     # once, so promoting it can only keep it inside its parent, never pull it
-    # out next to it. Shared definitions below the sharing thresholds still
-    # flatten into what holds them, as before.
+    # out next to it. Shared definitions below the sharing thresholds are
+    # kept further down, when every placement sits in a prototype (#1328).
     #
     # Tagged placements inside are no reason to flatten any more: a
     # prototype's children carry their own tag, so hiding it hides them
@@ -1257,6 +1588,7 @@ def _adapt(model, name: str, skp_path=None):
     # Which definitions the file places as GROUPS, not components (see
     # openskp_compat): they import as groups.
     from formats import openskp_compat
+    openskp_compat.note_model_kinds(model)
     single_groups = {did for did in openskp_compat.group_definitions()
                      if uses.get(did) == 1}
     # A COMPONENT copied side by side at the top level is a component however
@@ -1287,6 +1619,76 @@ def _adapt(model, name: str, skp_path=None):
                 continue
             proto_ids.add(cid)
 
+    # A definition shared INSIDE a component keeps its place there too.
+    # ``_promote_nested`` above only goes down through definitions placed
+    # once, so a component holding two copies of a sub-assembly — each with
+    # its brackets, bolts and washers, none big enough for the sharing
+    # thresholds — arrived as ONE mesh named after the outermost component:
+    # the whole tree melted into it. Every definition whose placements ALL
+    # sit inside prototypes becomes a prototype too, outer levels first, so
+    # it stays a child of what holds it (never pulled out next to it). The
+    # budget keeps a tiny part repeated thousands of times flattened.
+    parents: dict = {}
+    for r in roots:
+        for ins in getattr(r, "instances", []):
+            c = by_id.get(getattr(ins, "ref_idx", None))
+            if c is not None:
+                parents.setdefault(getattr(c, "id", None), set()).add(None)
+    for did in uses:
+        d = by_id.get(did)
+        for ins in getattr(d, "instances", []) if d is not None else ():
+            c = by_id.get(getattr(ins, "ref_idx", None))
+            if c is not None:
+                parents.setdefault(getattr(c, "id", None), set()).add(did)
+    budget = _NESTED_KEEP_BUDGET
+    grew = True
+    while grew and budget > 0:
+        # Rounds until nothing more joins: a part placed in two prototypes
+        # qualifies only once both of them have.
+        grew = False
+        level = list(proto_ids)
+        seen = set(level)
+        while level and budget > 0:
+            nxt: list = []
+            for pid in level:
+                p = by_id.get(pid)
+                for ins in getattr(p, "instances", []) if p is not None \
+                        else ():
+                    c = by_id.get(getattr(ins, "ref_idx", None))
+                    cid = getattr(c, "id", None)
+                    if c is None or cid in seen:
+                        continue
+                    seen.add(cid)
+                    nxt.append(cid)
+                    if cid in proto_ids or getattr(c, "is_image", False) \
+                            or getattr(c, "always_faces_camera", False):
+                        continue
+                    if not parents.get(cid, {None}) <= proto_ids:
+                        continue        # placed somewhere that flattens
+                    n = uses.get(cid, 0)
+                    if n < 1 or n > budget:
+                        continue
+                    proto_ids.add(cid)
+                    budget -= n
+                    grew = True
+            level = nxt
+
+    # An owned model may drop raw geometry as it is copied, but images are
+    # placed last, after every prototype exists. So settle each image's
+    # attachment test first and keep what that last step still reads. A graph
+    # the census cannot prove safe keeps all of its geometry.
+    release_flat = None
+    image_flags = None
+    keep_images = frozenset()
+    if consume:
+        from formats.skp_consumption import FlatGeometry, image_stage_geometry
+        keep_images = image_stage_geometry(by_id)
+        flat = FlatGeometry(by_id, proto_ids, uses, roots, _MAX_DEPTH,
+                            keep_images)
+        if flat.proved:
+            image_flags = _image_billboard_flags(roots, by_id, attr_map, proto_ids)
+            release_flat = flat.release
+
     groups: list = []
     proto_uses: dict = {}
     image_uses: list = []
@@ -1305,7 +1707,7 @@ def _adapt(model, name: str, skp_path=None):
         lines: list = []
         _loose_edge_segments(r, ident, lines)
         if loose or lines:
-            loose_edges: list = []
+            loose_edges = SoftSegments()
             _soft_edge_segments(r, ident, loose_edges)
             groups.append({"name": name, "faces": loose,
                            "soft_edges": loose_edges, "loose_edges": lines})
@@ -1329,12 +1731,12 @@ def _adapt(model, name: str, skp_path=None):
                     (placed, lay, ins_name))
                 continue
             sub: list = []
-            sub_edges: list = []
+            sub_edges = SoftSegments()
             sub_lines: list = []
             _collect(child, placed, by_id, attr_map, sub, 0, set(),
                      proto_ids, proto_uses, inh, image_uses, sub_edges,
                      layer_uses=layer_uses, group_layer=lay,
-                     loose_out=sub_lines)
+                     loose_out=sub_lines, release=release_flat)
             if sub or sub_lines:
                 # The name the user gave the group or copy, else its
                 # definition's («Group#3» is all a .skp names a group).
@@ -1357,10 +1759,10 @@ def _adapt(model, name: str, skp_path=None):
         child, placed, inh, lay = layer_uses[i]
         i += 1
         sub = []
-        sub_edges = []
+        sub_edges = SoftSegments()
         _collect(child, placed, by_id, attr_map, sub, 0, set(),
                  proto_ids, proto_uses, inh, image_uses, sub_edges,
-                 layer_uses=layer_uses, group_layer=lay)
+                 layer_uses=layer_uses, group_layer=lay, release=release_flat)
         if sub:
             groups.append({"name": getattr(child, "name", None) or name,
                            "faces": sub, "soft_edges": sub_edges,
@@ -1377,6 +1779,13 @@ def _adapt(model, name: str, skp_path=None):
     # done inside a component: the hedge in piscina.igz is 4480 + 5120 faces
     # placed 48 times, and it arrived as 230400 real ones, twenty-four times
     # over, for the element that is 89% of that model.
+    # Count every inherited-material variant before releasing anything: a
+    # child may be flattened into several prototypes or shared by parents.
+    consumer = None
+    if image_flags is not None:
+        from formats.skp_consumption import PrototypeGeometry
+        consumer = PrototypeGeometry(by_id, proto_ids, proto_uses, roots,
+                                     _MAX_DEPTH, keep_images)
     protos: list = []
     index_of: dict = {}
 
@@ -1393,13 +1802,15 @@ def _adapt(model, name: str, skp_path=None):
         idx = index_of[key] = len(protos)
         protos.append(None)
         local: list = []
-        local_edges: list = []
+        local_edges = SoftSegments()
         local_lines: list = []
         local_images: list = []
         child_uses: dict = {}
         _collect(d, QMatrix4x4(), by_id, attr_map, local, 0, set(),
                  proto_ids, child_uses, inh, local_images,
                  edges_out=local_edges, loose_out=local_lines)
+        if consumer is not None:
+            consumer.release(key)
         children: list = []
         for (cid, cinh), places in child_uses.items():
             ci = _build_proto(cid, cinh)
@@ -1474,10 +1885,12 @@ def _adapt(model, name: str, skp_path=None):
                         if a and "texture" in a), None)
             # A cut-out turns to face the camera — unless it is stuck on a
             # face, like a logo on a device (#429): the file has no face-me
-            # flag for images, SketchUp never turns one.
-            billboard = bool(tex and _image_has_cutout(tex)
-                             and not _rests_on_a_face(roots, by_id,
-                                                      faces[0][0]))
+            # flag for images, and they are never turned.
+            if image_flags is not None:
+                billboard = image_flags[_image_use_key(child, placed, inh)]
+            else:
+                billboard = bool(tex and _image_has_cutout(tex)
+                                 and not _rests_on_a_face(roots, by_id, faces[0][0]))
         else:
             faces = []
             _collect(child, placed, by_id, attr_map, faces, 0, set(),
@@ -1496,6 +1909,10 @@ def _adapt(model, name: str, skp_path=None):
     # holds nothing but one placement — and a wholly empty entry simply
     # places nothing.
     protos = _merge_equal_protos(protos)
+    # Recursive helpers keep their closure cells alive until cyclic GC.
+    # Drop this private index now: applying the payload disables GC while
+    # constructing the scene, and must not retain the raw model alongside it.
+    by_id.clear()
 
     payload = {"backend": "openskp", "groups": groups, "protos": protos}
     if not groups and not any(e["faces"] or e["children"]
@@ -1531,40 +1948,59 @@ def _adapt(model, name: str, skp_path=None):
         })
     if scenes:
         payload["scenes"] = scenes
-    # Linear dimensions (.skp dimension entities), inches → metres. Endpoints
-    # come in world space for model-root dimensions (the common case).
+    # Linear dimensions (.skp dimension entities), inches → metres. Model
+    # dimensions are world space; the ones openskp_compat moved onto a
+    # definition (#1226) are definition-local, so each placement of that
+    # definition contributes a world-space copy.
     dims = []
     for dm in getattr(model, "dimensions", []) or []:
         if getattr(dm, "a", None) is None or getattr(dm, "b", None) is None:
             continue
-        dims.append({
-            "a": [c * _INCH for c in dm.a],
-            "b": [c * _INCH for c in dm.b],
-            "offset": getattr(dm, "offset", 0.0) * _INCH,
-            "normal": list(dm.normal) if getattr(dm, "normal", None) else None,
-            "text": getattr(dm, "text", "") or "",
-        })
+        dims.append(_dimension_entry(dm))
+    placements = None
+    for did, defn in (getattr(model, "definitions", None) or {}).items():
+        owned = [dm for dm in (getattr(defn, "dimensions", None) or [])
+                 if getattr(dm, "vff_owned", False)
+                 and getattr(dm, "a", None) is not None
+                 and getattr(dm, "b", None) is not None]
+        if not owned:
+            continue
+        if placements is None:
+            placements = _placements_by_definition(model)
+        for world in placements.get(did, []):
+            dims.extend(_dimension_entry(dm, world) for dm in owned)
     if dims:
         payload["dimensions"] = dims
     # Leader texts (.skp text entities), inches → metres. Only free
     # (point-anchored) texts carry a resolved anchor; model-root texts are
-    # world space.
+    # world space. The texts openskp_compat recovered from VFF records
+    # (#1226) may sit on a definition — placed per instance like its
+    # dimensions — and one whose anchor did not resolve still shows at
+    # its label position.
     texts = []
     root_def = getattr(model, "root", None)
     for tx in (getattr(root_def, "texts", []) or []) if root_def else []:
-        pt = getattr(tx, "point", None)
-        body = (getattr(tx, "text", "") or "").strip()
-        if pt is None or not body:
+        if getattr(tx, "point", None) is None \
+                and not getattr(tx, "vff_recovered", False):
             continue
-        entry = {
-            "anchor": [c * _INCH for c in pt],
-            "text": body,
-            "hidden": bool(getattr(tx, "hidden", False)),
-        }
-        lp = getattr(tx, "label_point", None)
-        if lp is not None:
-            entry["label"] = [c * _INCH for c in lp]
-        texts.append(entry)
+        if not (getattr(tx, "text", "") or "").strip():
+            continue
+        entry = _text_entry(tx)
+        if entry:
+            texts.append(entry)
+    for did, defn in (getattr(model, "definitions", None) or {}).items():
+        recovered = [tx for tx in (getattr(defn, "texts", None) or [])
+                     if getattr(tx, "vff_recovered", False)
+                     and (getattr(tx, "text", "") or "").strip()]
+        if not recovered:
+            continue
+        if placements is None:
+            placements = _placements_by_definition(model)
+        for world in placements.get(did, []):
+            for tx in recovered:
+                entry = _text_entry(tx, world)
+                if entry:
+                    texts.append(entry)
     if texts:
         payload["texts"] = texts
     # The file's style back-face colour (our upstream PR openskp#10): adopt it
@@ -1588,8 +2024,34 @@ def parse(path, progress=None):
     openskp_compat.reset_group_definitions()
     if progress is not None:
         progress(0.1, "Parsing .skp (OpenSKP)…")
-    model = openskp.SkpFile.open(str(path)).parse()
-    openskp_compat.resolve_face_layers(model)   # tag ids → names (#700)
+    model = _parse_raw(openskp, openskp_compat, path)
     if progress is not None:
         progress(0.6, "Building geometry…")
-    return _adapt(model, Path(path).stem, skp_path=path)
+    # This model is private to this parse. Direct _adapt callers keep the
+    # reusable-model default; only the owned parse hands its geometry over.
+    return _adapt(model, Path(path).stem, skp_path=path, consume=True)
+
+
+def _parse_raw(openskp, openskp_compat, path):
+    """Run OpenSKP's eager parse with the cyclic garbage collector paused.
+
+    The parse builds tens of millions of small objects (vertices, edges, loops,
+    faces) that are all kept alive by the model, so every automatic generation
+    scan walks a growing graph and frees nothing. Reference counting still
+    runs; only the automatic cyclic scans are deferred until the parse returns,
+    and the caller's collector state is restored on every exit. Peak memory is
+    unchanged because nothing built here is garbage before the model exists.
+    Space_AsBuilt_Track.skp (442 MB): raw parse 95.9 s -> 61.8 s on the same
+    interpreter, max RSS 8.24 -> 8.51 GB.
+    """
+    import gc
+    enabled = gc.isenabled()
+    gc.disable()
+    try:
+        model = openskp.SkpFile.open(str(path)).parse()
+        openskp_compat.resolve_face_layers(model)   # tag ids → names (#700)
+        openskp_compat.resolve_vff_annotations(model)   # dims/texts (#1226)
+    finally:
+        if enabled:
+            gc.enable()
+    return model

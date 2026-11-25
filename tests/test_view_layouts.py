@@ -178,6 +178,173 @@ def test_zoom_extents_frames_every_view_shown(win):
         assert vp.camera.target.x() > 30
 
 
+def test_zoom_selection_frames_every_view_shown(win):
+    """Zoom Selection, like Zoom Extents, frames the selection in every view
+    shown, not only in the Perspective one."""
+    scene = win.viewport.scene
+    scene.mesh.add_face(
+        [V(0, 0, 0), V(1, 0, 0), V(1, 1, 0), V(0, 1, 0)])
+    far = scene.mesh.add_face(
+        [V(100, 100, 0), V(110, 100, 0), V(110, 110, 0), V(100, 110, 0)])
+    scene.version += 1
+    win.set_view_layout("four")
+    scene.selection.clear()
+    scene.selection.add(far)
+    before = [V(vp.camera.target) for vp in _grid(win).extras()]
+    win._on_zoom_selection()
+    assert win.viewport.camera.target.x() > 90
+    for vp, old in zip(_grid(win).extras(), before):
+        assert old.x() < 20
+        assert vp.camera.target.x() > 90, "the selection, in this view too"
+
+
+# ---- each view its own style (Styles menu, Alt+X, Styles panel) -------------
+def _cell_of(win, vp):
+    return next(c for c in _grid(win).cells if c.viewport is vp)
+
+
+def _mode(vp):
+    # X-ray is a flag over the face mode since #1218: read it as the
+    # mode it used to be, which is what these views compare.
+    from core.style import base_face_mode, xray_enabled
+    style = vp._effective_style()
+    return "xray" if xray_enabled(style) else base_face_mode(style)
+
+
+def test_a_style_picked_in_one_view_stays_in_that_view(win):
+    """Wireframe picked with the Top view active draws in the Top view only:
+    the window's view and the other views keep the style they had."""
+    from core.style import style_by_name
+    win.set_view_layout("four")
+    top, *others = _grid(win).extras()
+    _grid(win).set_active_cell(_cell_of(win, top))
+    win._apply_display_style(style_by_name("Wireframe"))
+    assert _mode(top) == "wireframe"
+    assert win.viewport.scene.display_style.face_mode != "wireframe"
+    assert _mode(win.viewport) != "wireframe"
+    for vp in others:
+        assert _mode(vp) != "wireframe", "only the view it was picked in"
+
+
+def test_a_style_picked_in_the_windows_view_leaves_the_others_alone(win):
+    """Shaded in the window's view (Perspective): the scene's style changes,
+    every other view keeps what it showed — the one never touched too."""
+    from core.style import style_by_name
+    win.set_view_layout("four")
+    top, front, _right = _grid(win).extras()
+    front_mode = _mode(front)
+    _grid(win).set_active_cell(_cell_of(win, top))
+    win._apply_display_style(style_by_name("Wireframe"))
+    _grid(win).set_active_cell(_cell_of(win, win.viewport))
+    win._apply_display_style(style_by_name("Shaded"))
+    assert win.viewport.scene.display_style.face_mode == "shaded"
+    assert _mode(front) == front_mode != "shaded"
+    assert _mode(top) == "wireframe"
+    win._set_style_field("edges", False)
+    assert front._effective_style().edges
+
+
+def test_a_style_switch_in_one_view_copies_the_style_first(win):
+    """Edges off with Front active: Front's own copy changes, the scene's
+    style (the window's view, saved with the file) does not."""
+    win.set_view_layout("four")
+    front = _grid(win).extras()[1]
+    assert win.viewport.scene.display_style.edges
+    _grid(win).set_active_cell(_cell_of(win, front))
+    win._set_style_field("edges", False)
+    assert front.view_style is not win.viewport.scene.display_style
+    assert not front._effective_style().edges
+    assert win.viewport.scene.display_style.edges
+
+
+def test_xray_goes_in_and_out_in_the_active_view_alone(win):
+    from core.style import style_by_name
+    win.set_view_layout("four")
+    top = _grid(win).extras()[0]
+    _grid(win).set_active_cell(_cell_of(win, top))
+    win._apply_display_style(style_by_name("Hidden line"))
+    win._toggle_xray()
+    assert _mode(top) == "xray"
+    assert _mode(win.viewport) != "xray"
+    win._toggle_xray()
+    assert _mode(top) == "hidden_line", "back to the style it left"
+    assert _mode(win.viewport) != "hidden_line"
+
+
+def test_the_style_menu_shows_the_style_of_the_view_clicked(win):
+    from core.style import style_by_name
+    win.set_view_layout("four")
+    top = _grid(win).extras()[0]
+    _grid(win).set_active_cell(_cell_of(win, top))
+    win._apply_display_style(style_by_name("Wireframe"))
+    assert win._style_actions["Wireframe"].isChecked()
+    _grid(win).set_active_cell(_cell_of(win, win.viewport))
+    assert not win._style_actions["Wireframe"].isChecked()
+    assert win._style_actions[
+        win.viewport.scene.display_style.name].isChecked()
+    _grid(win).set_active_cell(_cell_of(win, top))
+    assert win._style_actions["Wireframe"].isChecked()
+    win.set_view_layout("single")           # one view: the window's style
+    assert not win._style_actions["Wireframe"].isChecked()
+
+
+def test_the_styles_panel_edits_the_active_view(win):
+    win.set_view_layout("four")
+    right = _grid(win).extras()[2]
+    _grid(win).set_active_cell(_cell_of(win, right))
+    panel = win.styles_panel
+    panel.refresh()
+    panel._mode.setCurrentIndex(panel._mode.findData("monochrome"))
+    panel._apply_edits()
+    assert _mode(right) == "monochrome"
+    assert win.viewport.scene.display_style.face_mode != "monochrome"
+
+
+def test_each_view_keeps_its_style_in_the_project_state(win):
+    from core.style import style_by_name
+    win.set_view_layout("four")
+    grid = _grid(win)
+    top = grid.extras()[0]
+    grid.set_active_cell(_cell_of(win, top))
+    win._apply_display_style(style_by_name("Wireframe"))
+    state = grid.state()
+    grid.restore(None)
+    assert top.view_style is None
+    grid.restore(state)
+    assert _mode(top) == "wireframe"
+    old = [(view, cam) for view, cam, *_rest in state]
+    grid.restore(old)                        # a state from before styles
+    assert top.view_style is None
+
+
+def _enter(vp):
+    QApplication.sendEvent(vp, QEnterEvent(QPointF(5, 5), QPointF(5, 5),
+                                           QPointF(5, 5)))
+
+
+def test_an_extra_view_shows_the_nav_modes_pointer(win):
+    """Zoom Window (or Orbit, Pan) picked: the magnifier shows in every
+    view the pointer comes into, and the tool's pointer comes back after."""
+    from PySide6.QtCore import Qt
+    win.show()
+    win.set_view_layout("four")
+    QApplication.processEvents()
+    win._activate_tool("select")
+    for vp in _grid(win).extras():
+        _enter(vp)
+        assert vp.cursor().shape() != Qt.BitmapCursor   # the arrow
+    win._activate_nav("zoom_window")
+    for vp in _grid(win).extras():
+        _enter(vp)
+        assert vp.nav_mode == "zoom_window"
+        assert vp.cursor().shape() == Qt.BitmapCursor, "the magnifier"
+    win._activate_tool("select")
+    for vp in _grid(win).extras():
+        _enter(vp)
+        assert vp.nav_mode is None
+        assert vp.cursor().shape() != Qt.BitmapCursor, "the arrow again"
+
+
 def test_a_views_name_is_a_small_label_over_its_corner(win):
     win.show()
     win.set_view_layout("four")
@@ -203,15 +370,19 @@ def test_the_labels_menu_says_maximize_or_restore(win):
     def entry():
         header.menu().aboutToShow.emit()
         return header.menu().actions()[0]               # first of all
-    assert entry().text() == tr("Maximize") + "\tCtrl+Space"
-    assert header.menu().actions()[1].isSeparator()
+    # The keys as this platform writes them: «Ctrl+Space», «⌘Space» on macOS.
+    from PySide6.QtGui import QKeySequence
+    keys = "\t" + QKeySequence("Ctrl+Space").toString(QKeySequence.NativeText)
+    assert entry().text() == tr("Maximize") + keys
     assert entry().shortcut().isEmpty(), "the window's action holds the key"
     entry().trigger()
     assert _shown(win) == [2] and _grid(win).active_cell() is _grid(win).cells[2]
-    assert entry().text() == tr("Restore") + "\tCtrl+Space"
+    assert entry().text() == tr("Restore") + keys
     entry().trigger()
     assert _shown(win) == [0, 1, 2, 3]
-    assert len(header.menu().actions()) == 10, "the views, once"
+    # Maximize, Style, Perspective, the eight views, Lock view and
+    # Composition Guides, with three separators.
+    assert len(header.menu().actions()) == 16, "the views, once"
 
 
 def test_a_double_click_on_the_label_maximizes_nothing(win):
@@ -517,6 +688,36 @@ def test_nothing_moves_until_the_square_is_released(win):
     assert len(grid.divider_guide.lines) == 3, "the three lines of the block"
     _send(grid.cross, QEvent.MouseButtonRelease,
           grid.mapToGlobal(at) + QPoint(70, -50))
+
+
+def _guides_meet(grid):
+    """The row guides end at the column guide: no stub left over from where
+    the crossing was."""
+    column, *rows = [line for line, _stuck in grid.divider_guide.lines]
+    x = column.x1()
+    for row in rows:
+        end = min((row.x1(), row.x2()), key=lambda e: abs(e - x))
+        assert abs(end - x) <= grid.columns.handle(1).thickness(), (
+            f"row guide ends at {end}, the column guide is at {x}")
+    return rows
+
+
+@pytest.mark.parametrize("layout", ["four", "three", "three_mirror"])
+def test_the_squares_guide_draws_the_views_as_they_will_be(win, layout):
+    from PySide6.QtCore import QEvent, QPoint
+    grid = _four(win)
+    win.set_view_layout(layout)
+    QApplication.processEvents()
+    at = grid.crossings()[0]
+    _cross_drag(grid, QPoint(60, 30), release=False)
+    rows = _guides_meet(grid)
+    assert len(rows) == (2 if layout == "four" else 1)
+    _send(grid.cross, QEvent.MouseButtonRelease,
+          grid.mapToGlobal(at) + QPoint(60, 30))
+    _cross_drag(grid, QPoint(-90, -20), release=False)
+    _guides_meet(grid)
+    _send(grid.cross, QEvent.MouseButtonRelease,
+          grid.mapToGlobal(grid.cross.centre()))
 
 
 def test_the_square_lines_up_two_halves_that_had_parted(win):
@@ -913,3 +1114,408 @@ def test_changing_layout_keeps_the_extra_views_caches(win, monkeypatch):
     win.set_view_layout("two")
     win.set_view_layout("three")
     assert made == []
+
+
+# ---- each view its own projection ------------------------------------------
+def test_a_projection_picked_in_one_view_stays_in_that_view(win):
+    """The projection buttons and Shift+P change the active view's camera,
+    not the window's view nor the others."""
+    win.set_view_layout("four")
+    grid = _grid(win)
+    top, front, _right = grid.extras()
+    main_mode = win.viewport.camera.projection_mode()
+    front_mode = front.camera.projection_mode()
+    grid.set_active_cell(_cell_of(win, top))
+    win._projection_actions["perspective"].trigger()
+    assert top.camera.projection_mode() == "perspective"
+    assert win.viewport.camera.projection_mode() == main_mode
+    assert front.camera.projection_mode() == front_mode
+    win._toggle_projection()                       # Shift+P
+    assert top.camera.projection_mode() == "parallel"
+    assert win.viewport.camera.projection_mode() == main_mode
+
+
+def test_the_projection_buttons_show_the_view_clicked(win):
+    win.set_view_layout("four")
+    grid = _grid(win)
+    top = grid.extras()[0]
+    grid.set_active_cell(_cell_of(win, win.viewport))
+    win._projection_actions["two_point"].trigger()
+    grid.set_active_cell(_cell_of(win, top))
+    assert win._projection_actions[
+        top.camera.projection_mode()].isChecked()
+    assert not win._projection_actions["two_point"].isChecked()
+    grid.set_active_cell(_cell_of(win, win.viewport))
+    assert win._projection_actions["two_point"].isChecked()
+
+
+def test_field_of_view_changes_the_active_view(win):
+    win.set_view_layout("four")
+    grid = _grid(win)
+    top = grid.extras()[0]
+    grid.set_active_cell(_cell_of(win, top))
+    win._set_projection("perspective")
+    before = win.viewport.camera.fov_deg
+    assert win.set_field_of_view(80.0)
+    assert top.camera.fov_deg == 80.0
+    assert win.viewport.camera.fov_deg == before
+
+
+# ---- a scene from the active view ------------------------------------------
+def test_a_new_scene_takes_the_active_views_camera_and_style(win):
+    """«+ Scene» with the Top view active keeps what the Top view shows:
+    its camera, its projection and its own style."""
+    from core.style import style_by_name
+    win.set_view_layout("four")
+    grid = _grid(win)
+    top = grid.extras()[0]
+    grid.set_active_cell(_cell_of(win, top))
+    win._apply_display_style(style_by_name("Wireframe"))
+    from views.tray import ScenesPanel
+    panel = next(p for p in win.findChildren(ScenesPanel))
+    panel._on_add()
+    view = win.viewport.scene.saved_views[-1]
+    assert view.pitch == top.camera.pitch
+    assert view.pitch != win.viewport.camera.pitch
+    assert view.perspective == top.camera.perspective
+    assert view.style["face_mode"] == "wireframe"
+    # Update, from the window's view: its camera and the scene's style.
+    grid.set_active_cell(_cell_of(win, win.viewport))
+    panel.update_view(view)
+    assert view.pitch == win.viewport.camera.pitch
+    assert view.style["face_mode"] == \
+        win.viewport.scene.display_style.face_mode
+
+
+def test_a_scene_shows_in_the_active_view(win):
+    """A scene made in the Top view, picked with Front active, shows in
+    Front: its camera and its style become Front's own; the window's view
+    and the scene's style are left as they were."""
+    from core.style import style_by_name
+    from views.tray import ScenesPanel
+    win.set_view_layout("four")
+    grid = _grid(win)
+    top, front, _right = grid.extras()
+    grid.set_active_cell(_cell_of(win, top))
+    win._apply_display_style(style_by_name("Wireframe"))
+    panel = next(p for p in win.findChildren(ScenesPanel))
+    panel._on_add()
+    view = win.viewport.scene.saved_views[-1]
+    main_pitch = win.viewport.camera.pitch
+    main_mode = win.viewport.scene.display_style.face_mode
+    grid.set_active_cell(_cell_of(win, front))
+    assert front.camera.pitch != view.pitch
+    panel.show_view(view)
+    assert front.camera.pitch == view.pitch
+    assert _mode(front) == "wireframe"
+    assert win._style_actions["Wireframe"].isChecked()
+    assert win.viewport.camera.pitch == main_pitch
+    assert win.viewport.scene.display_style.face_mode == main_mode
+    # The window's view active: there, as before — and the other views
+    # keep their camera and their style.
+    right = grid.extras()[2]
+    right_mode, right_pitch = _mode(right), right.camera.pitch
+    grid.set_active_cell(_cell_of(win, win.viewport))
+    panel.show_view(view)
+    assert win.viewport.camera.pitch == view.pitch
+    assert win.viewport.scene.display_style.face_mode == "wireframe"
+    assert _mode(right) == right_mode != "wireframe"
+    assert right.camera.pitch == right_pitch
+
+
+# ---- the view's label: same in every view, readable, Style, Lock view -------
+def _menu(header):
+    """The label's menu as it opens, by text (separators left out)."""
+    header.menu().aboutToShow.emit()
+    return {a.text(): a for a in header.menu().actions()
+            if not a.isSeparator()}
+
+
+def _pose(cam):
+    t = cam.target
+    return (t.x(), t.y(), t.z(), cam.distance, cam.yaw, cam.pitch,
+            cam.perspective, cam.fov_deg)
+
+
+def test_every_view_shows_its_label_the_same_way(win):
+    """The window's view (Perspective) and the three made with the grid:
+    one label each, same sheet, same height, same corner, same note."""
+    win.show()
+    win.set_view_layout("four")
+    QApplication.processEvents()
+    heads = [c.header for c in _grid(win).cells]
+    assert all(h.isVisible() for h in heads)
+    assert {h.objectName() for h in heads} == {"viewChip"}
+    assert len({h.styleSheet() for h in heads}) == 1
+    assert len({h.height() for h in heads}) == 1
+    assert {(h.x(), h.y()) for h in heads} == {(2, 2)}
+    assert len({h.toolTip() for h in heads}) == 1
+
+
+@pytest.mark.parametrize("rgb, black", [
+    ((245, 245, 245), True), ((184, 188, 194), True),     # White, Light grey
+    ((255, 255, 255), True), ((220, 220, 220), True),
+    ((243, 115, 41), False), ((53, 132, 228), False),     # orange, blue
+    ((46, 160, 67), False), ((224, 27, 36), False),
+    ((145, 65, 172), False), ((229, 165, 10), False),
+    ((42, 93, 143), False), ((0, 0, 0), False),
+])
+def test_text_on_a_light_background_is_black(rgb, black):
+    from PySide6.QtGui import QColor
+    from views.theme import text_on
+    want = QColor(0, 0, 0) if black else QColor(255, 255, 255)
+    assert text_on(QColor(*rgb)) == want
+
+
+@pytest.mark.parametrize("accent, text", [
+    ("white", "#000000"), ("light_grey", "#000000"), ("orange", "#ffffff")])
+def test_the_active_label_writes_black_on_a_light_accent(win, monkeypatch,
+                                                         accent, text):
+    from views import theme
+    monkeypatch.setattr(theme, "saved_accent", lambda: accent)
+    assert theme.tokens()["accent_text"] == text
+    win.set_view_layout("four")
+    theme._restyle()                      # what a change of accent does
+    grid = _grid(win)
+    grid.set_active_cell(grid.cells[3])
+    for cell in grid.cells:
+        assert f"color: {text};" in cell.header.styleSheet()
+
+
+def test_the_labels_menu_offers_the_styles(win):
+    from core.i18n import tr
+    from core.style import BUILTIN_STYLES
+    win.set_view_layout("four")
+    entries = _menu(_grid(win).cells[0].header)
+    assert tr("Style") in entries
+    sub = entries[tr("Style")].menu()
+    sub.aboutToShow.emit()
+    names = [a.text() for a in sub.actions()]
+    assert names == [tr(p.name) for p in BUILTIN_STYLES]
+    assert sum(a.isChecked() for a in sub.actions()) == 1
+
+
+def test_a_style_picked_from_a_label_stays_in_that_view(win):
+    """Wireframe from Top's label: Top draws in Wireframe and becomes the
+    view worked in, its menu marks it; the window's view and the others
+    keep theirs."""
+    from core.i18n import tr
+    win.set_view_layout("four")
+    grid = _grid(win)
+    top_cell = grid.cells[0]
+    top, *others = grid.extras()
+    sub = _menu(top_cell.header)[tr("Style")].menu()
+    sub.aboutToShow.emit()
+    next(a for a in sub.actions() if a.text() == tr("Wireframe")).trigger()
+    assert _mode(top) == "wireframe"
+    assert grid.active_cell() is top_cell
+    assert win._style_actions["Wireframe"].isChecked()
+    assert _mode(win.viewport) != "wireframe"
+    for vp in others:
+        assert _mode(vp) != "wireframe"
+    sub.aboutToShow.emit()
+    checked = [a.text() for a in sub.actions() if a.isChecked()]
+    assert checked == [tr("Wireframe")]
+
+
+def test_lock_view_is_in_the_menu_and_marks_the_label(win):
+    from core.i18n import tr
+    win.set_view_layout("four")
+    cell = _grid(win).cells[3]                       # Right
+    lock = _menu(cell.header)[tr("Lock view")]
+    assert lock.isCheckable() and not lock.isChecked()
+    lock.trigger()
+    assert cell.is_locked()
+    assert cell.header.text() == tr("{name} (locked)", name=tr("Right"))
+    assert _menu(cell.header)[tr("Lock view")].isChecked()
+    _menu(cell.header)[tr("Lock view")].trigger()
+    assert not cell.is_locked()
+    assert cell.header.text() == tr("Right")
+
+
+def test_the_locked_label_in_spanish():
+    import json
+    from core.i18n import _I18N_DIR
+    es = json.loads((_I18N_DIR / "es.json").read_text(encoding="utf-8"))
+    label = es["{name} (locked)"].format(name=es["Right"])
+    assert label == "Derecha (bloqueada)"
+    assert es["Lock view"] == "Bloquear vista"
+
+
+def test_a_locked_view_keeps_its_camera(win):
+    """Orbit, pan, zoom, a standard view, Zoom Extents, a scene: the locked
+    view stays where it was; the others still move."""
+    from core.saved_views import SavedView
+    win.set_view_layout("four")
+    grid = _grid(win)
+    cell = grid.cells[3]
+    free = grid.cells[0].viewport.camera
+    cam = cell.viewport.camera
+    cell.set_locked(True)
+    before, free_before = _pose(cam), _pose(free)
+    for c in (cam, free):
+        c.orbit(40, 25, 600)
+        c.pan(30, 10, 600)
+        c.zoom(3)
+        c.set_view("top")
+    grid.fit_box(V(100, 100, 0), V(110, 110, 5))
+    assert _pose(cam) == before
+    assert _pose(free) != free_before
+    view = SavedView.__new__(SavedView)
+    view.target, view.distance, view.yaw, view.pitch = (5, 5, 5), 9, 1, .5
+    view.fov_deg, view.perspective, view.two_point = 30, False, False
+    view.lens = {}
+    view.apply_camera(cam)                           # a scene's camera
+    assert _pose(cam) == before
+    cell.set_locked(False)
+    cam.zoom(3)
+    assert _pose(cam) != before, "free again"
+
+
+def test_a_locked_view_offers_no_other_view_and_keeps_its_name(win):
+    from core.i18n import tr
+    from views.multi_view import VIEWS
+    win.set_view_layout("four")
+    grid = _grid(win)
+    cell = grid.cells[2]                             # Front
+    cell.set_locked(True)
+    entries = _menu(cell.header)
+    for _key, label in VIEWS:
+        assert not entries[tr(label)].isEnabled()
+    assert entries[tr("Lock view")].isEnabled()
+    win.set_view_layout("three_mirror")              # suggests other views
+    win.set_view_layout("four")
+    assert cell.view == "front"
+    assert cell.header.text() == tr("{name} (locked)", name=tr("Front"))
+
+
+def test_the_windows_view_can_be_locked_too(win):
+    """The window's own view (Perspective) locks like the others: Zoom
+    Extents leaves it where it was."""
+    from core.i18n import tr
+    win.set_view_layout("four")
+    cell = _grid(win).cells[1]
+    assert cell.viewport is win.viewport
+    _menu(cell.header)[tr("Lock view")].trigger()
+    before = _pose(win.viewport.camera)
+    win.viewport.camera.fit_box(V(100, 100, 0), V(110, 110, 5))
+    assert _pose(win.viewport.camera) == before
+    assert cell.header.text() == tr("{name} (locked)",
+                                    name=tr("Perspective"))
+
+
+def test_the_lock_is_kept_in_the_project_state(win):
+    win.set_view_layout("four")
+    grid = _grid(win)
+    right = grid.cells[3]
+    right.set_locked(True)
+    pose = _pose(right.viewport.camera)
+    state = grid.state()
+    grid.restore(None)
+    assert not right.is_locked()
+    right.viewport.camera.zoom(4)
+    grid.restore(state)
+    assert right.is_locked()
+    assert _pose(right.viewport.camera) == pose, "its camera, then locked"
+    grid.restore([(view, cam, style) for view, cam, style, *_r in state])
+    assert not right.is_locked(), "a state from before the lock: free"
+
+
+def test_a_locked_camera_still_follows_the_views_size():
+    from core.camera import OrbitCamera
+    cam = OrbitCamera()
+    cam.locked = True
+    cam.set_aspect(800, 400)
+    assert cam.aspect == 2.0
+    cam.distance = 99.0
+    assert cam.distance != 99.0
+
+
+# ---- the label's menu order: Maximize, Style, Perspective, views, Lock -------
+def _submenu(header, title):
+    header.menu().aboutToShow.emit()
+    act = next(a for a in header.menu().actions()
+               if a.menu() is not None and a.text() == title)
+    act.menu().aboutToShow.emit()
+    return act
+
+
+def test_style_and_perspective_come_right_under_maximize(win):
+    from core.i18n import tr
+    from views.multi_view import VIEWS
+    win.set_view_layout("four")
+    header = _grid(win).cells[0].header
+    header.menu().aboutToShow.emit()
+    acts = header.menu().actions()
+    assert acts[1].menu() is not None and acts[1].text() == tr("Style")
+    assert acts[2].menu() is not None and acts[2].text() == tr("Perspective")
+    assert acts[3].isSeparator()
+    assert [a.text() for a in acts[4:12]] == [tr(l) for _k, l in VIEWS]
+    assert acts[12].isSeparator()
+    assert acts[13].text() == tr("Lock view")
+
+
+def test_the_perspective_menu_offers_the_projections(win):
+    from core.i18n import tr
+    win.set_view_layout("four")
+    top = _grid(win).cells[0]                       # Top: parallel
+    sub = _submenu(top.header, tr("Perspective")).menu()
+    names = [a.text() for a in sub.actions()]
+    assert names == [tr("Parallel Projection"), tr("Perspective"),
+                     tr("Two-Point Perspective")]
+    checked = [a.text() for a in sub.actions() if a.isChecked()]
+    assert checked == [tr("Parallel Projection")]
+
+
+def test_a_projection_picked_from_a_label_stays_in_that_view(win):
+    """Two-point from Top's label: Top in two-point and the view worked in,
+    the projection buttons show it; the other views keep theirs."""
+    from core.i18n import tr
+    win.set_view_layout("four")
+    grid = _grid(win)
+    top = grid.cells[0]
+    others = {c.index: c.viewport.camera.projection_mode()
+              for c in grid.cells[1:]}
+    sub = _submenu(top.header, tr("Perspective")).menu()
+    next(a for a in sub.actions()
+         if a.text() == tr("Two-Point Perspective")).trigger()
+    assert top.viewport.camera.projection_mode() == "two_point"
+    assert grid.active_cell() is top
+    assert win._projection_actions["two_point"].isChecked()
+    for cell in grid.cells[1:]:
+        assert cell.viewport.camera.projection_mode() == others[cell.index]
+    sub = _submenu(top.header, tr("Perspective")).menu()
+    checked = [a.text() for a in sub.actions() if a.isChecked()]
+    assert checked == [tr("Two-Point Perspective")]
+
+
+def test_a_locked_view_offers_no_other_projection(win):
+    from core.i18n import tr
+    win.set_view_layout("four")
+    cell = _grid(win).cells[3]
+    cell.set_locked(True)
+    act = _submenu(cell.header, tr("Perspective"))
+    assert not act.isEnabled()
+    before = cell.viewport.camera.projection_mode()
+    cell.pick_projection("perspective")
+    assert cell.viewport.camera.projection_mode() == before
+
+
+def test_the_active_label_has_a_grey_edge_not_a_black_one(win):
+    """A thin edge round the active label, mid grey (not black), so that a
+    White or Light grey label still stands out on a white sky; the others
+    keep an invisible one of the same width, so all are the same size."""
+    from PySide6.QtGui import QColor
+    from views.multi_view import _CHIP
+    win.set_view_layout("four")
+    grid = _grid(win)
+    grid.set_active_cell(grid.cells[2])
+    sheets = {c.header.styleSheet() for c in grid.cells}
+    assert len(sheets) == 1
+    assert "border: 1px solid transparent;" in _CHIP
+    edge = _CHIP.split('[active="true"]')[1].split("border-color:")[1]
+    rgb = [int(v) for v in edge.split("rgb(")[1].split(")")[0].split(",")]
+    grey = QColor(*rgb)
+    assert grey.saturation() < 20, "a grey"
+    assert 110 <= grey.lightness() <= 190, "mid grey: neither black nor white"
+    assert len({c.header.height() for c in grid.cells}) == 1

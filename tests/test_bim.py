@@ -82,6 +82,23 @@ def test_open_face_set_has_area_but_no_volume():
     assert face_set_volume([f]) is None
 
 
+def test_volume_holds_far_from_the_origin():
+    # #1221: the tetrahedron sum ran from the world origin in single
+    # precision, so a solid's volume degraded with its distance from the
+    # origin (+0.5 % at 300 m, -73 % at 3 km for a column in the report).
+    # The same wall must read the same volume wherever it stands; the
+    # tolerance only grows with the float32 spacing of the positions
+    # themselves at that magnitude.
+    expected = 4.0 * 0.25 * 2.6
+    for x0, tol in [(300.0, 1e-6), (3000.0, 1e-4), (30000.0, 1e-3)]:
+        scene = Scene()
+        vp = _Vp(scene)
+        _wall(scene, vp, x0=x0)                     # 4.0 × 0.25 × 2.6 wall
+        vol = face_set_volume(scene.mesh.faces)
+        assert vol is not None
+        assert abs(vol - expected) < tol, (x0, vol)
+
+
 def test_two_objects_and_csv_takeoff():
     scene = Scene()
     vp = _Vp(scene)

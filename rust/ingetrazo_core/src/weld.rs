@@ -9,8 +9,32 @@
 //! squared distance.
 
 use std::collections::HashMap;
+use std::hash::{BuildHasherDefault, Hasher};
 
 type Cell = (i64, i64, i64);
+
+/// Multiply-and-rotate over the cell's three integers: these maps hold a few
+/// million small keys and are never walked, so their order cannot reach the
+/// result. The standard hasher was half the weld (#1092). A file crafted to
+/// collide would only open slowly.
+#[derive(Default)]
+struct CellHasher(u64);
+
+impl Hasher for CellHasher {
+    fn write(&mut self, bytes: &[u8]) {
+        for &b in bytes {
+            self.write_i64(b as i64);
+        }
+    }
+    fn write_i64(&mut self, v: i64) {
+        self.0 = (self.0.rotate_left(5) ^ v as u64).wrapping_mul(0x517c_c1b7_2722_0a95);
+    }
+    fn finish(&self) -> u64 {
+        self.0 ^ (self.0 >> 29)
+    }
+}
+
+type CellMap<V> = HashMap<Cell, V, BuildHasherDefault<CellHasher>>;
 
 /// ``(vertex positions as float32, point → vertex, the point each vertex
 /// was made at)``, vertices in the order bulk_weld's vertex list holds
@@ -18,7 +42,7 @@ type Cell = (i64, i64, i64);
 pub fn weld(pos: &[[f32; 3]], scale: f64, tol2: f64) -> (Vec<[f32; 3]>, Vec<i64>, Vec<i64>) {
     let n = pos.len();
     let mut cell_of: Vec<Cell> = Vec::with_capacity(n);
-    let mut index: HashMap<Cell, usize> = HashMap::with_capacity(n);
+    let mut index: CellMap<usize> = CellMap::with_capacity_and_hasher(n, Default::default());
     let mut cells: Vec<Cell> = Vec::new();
     let mut first: Vec<usize> = Vec::new();
     let mut point_cell: Vec<usize> = Vec::with_capacity(n);
@@ -57,7 +81,7 @@ pub fn weld(pos: &[[f32; 3]], scale: f64, tol2: f64) -> (Vec<[f32; 3]>, Vec<i64>
     let mut vpos: Vec<[f32; 3]> = Vec::new();
     let mut origin: Vec<i64> = Vec::new();
     let mut cell_vid = vec![-1i64; nu];
-    let mut registry: HashMap<Cell, usize> = HashMap::new();
+    let mut registry: CellMap<usize> = CellMap::default();
     for u in 0..nu {
         if !candidate[u] {
             cell_vid[u] = vpos.len() as i64;

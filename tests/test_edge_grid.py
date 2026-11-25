@@ -221,3 +221,53 @@ def test_few_segments_stay_in_numpy(monkeypatch):
     a = np.random.default_rng(0).uniform(0, 100, (4, 50))
     eg.segment_distances(*a, np.ones(50, bool), 10.0, 10.0)
     assert not called
+
+
+@pytest.mark.parametrize("seed", range(8))
+def test_the_cells_are_sorted_stably_with_small_and_big_views(seed):
+    """The keys sort as 16 bits when the view has few enough cells (night
+    of 19-11): the same order as the 64-bit stable sort — by cell, and in
+    segment order inside a cell."""
+    rng = np.random.default_rng(seed)
+    n = 3000
+    ax = rng.uniform(-200, 1300, n)
+    ay = rng.uniform(-200, 900, n)
+    bx = ax + rng.normal(0, 40, n)
+    by = ay + rng.normal(0, 40, n)
+    ok = rng.random(n) > 0.05
+    w, h = (1035, 699) if seed % 2 else (12000, 9000)
+    g = EdgeGrid(ax, ay, bx, by, ok, w, h, 48.0)
+    assert (np.diff(g.keys) >= 0).all()
+    same = np.diff(g.keys) == 0
+    assert (np.diff(g.ids)[same] > 0).all()
+
+
+def test_a_warmed_grid_answers_the_first_hover_as_the_second_would(monkeypatch):
+    """Push/Pull bins the edges right after its click (night of 19-11): the
+    very first hover reads the grid, and gets the distances the full pass
+    gives for every edge it can matter for."""
+    import views.viewport as vv
+    from views.viewport import Viewport
+    rng = np.random.default_rng(21)
+    proj = _segments(rng, Viewport.GEDGE_GRID_MIN + 500)
+    vp = _StubVP(proj)
+    Viewport.warm_edge_grid(vp)
+    slot = vp._gedge_grid_cache
+    assert slot[0] is proj and slot[1] is not None
+    Viewport.warm_edge_grid(vp)                # once per projection
+    assert vp._gedge_grid_cache[1] is slot[1]
+    for px, py in zip(rng.uniform(0, W, 20), rng.uniform(0, H, 20)):
+        vp._gedge_dist_cache = None
+        d = Viewport._gedge_dist(vp, px, py)
+        full = segment_distances(*proj, px, py)
+        near = full < 48.0
+        np.testing.assert_array_equal(d[near], full[near])
+        assert not (d[~near] < 48.0).any()
+    # A few edges, or the kill switch: nothing is built.
+    small = _StubVP(_segments(rng, 10))
+    Viewport.warm_edge_grid(small)
+    assert getattr(small, "_gedge_grid_cache", None) is None
+    monkeypatch.setattr(vv, "_NO_SNAP_FAST", True)
+    off = _StubVP(proj)
+    Viewport.warm_edge_grid(off)
+    assert getattr(off, "_gedge_grid_cache", None) is None

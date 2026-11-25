@@ -16,18 +16,29 @@ Face modes (Face Styles):
 - ``monochrome``  Flat default front/back colours, no materials — the
                   reversed-face checker.
 - ``wireframe``   Edges only, no faces (nothing occludes).
-- ``xray``        Everything translucent, edges always visible — the ones
-                  behind a face washed toward the background.
+X-ray is an independent overlay: it keeps the face mode and makes faces
+transparent while allowing inference through them. Legacy ``face_mode=xray``
+documents load as textured faces with this overlay enabled.
 
-Deferred (documented, not lost): back edges, depth cue, extensions,
-endpoints, jitter, watermarks, per-material edge colour.
+Deferred (documented, not lost): jitter.
 """
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
+from core.watermark import Watermark, load_watermarks
+from core.modeling_style import load_modeling_colors, load_modeling_visibility
 
 FACE_MODES = ("textures", "shaded", "hidden_line", "monochrome",
-              "wireframe", "xray")
+              "wireframe")
+EDGE_COLOR_MODES = ("same", "material", "axis")
+PROFILE_CAPS = ("butt", "round", "square", "round_extended")
+ENDPOINT_TYPES = ("default", "round", "square", "triangle")
+EDGE_WIDTH_RANGE = (1, 20)
+EDGE_LENGTH_RANGE = (1, 50)
+EDGE_EXTENSION_RANGE = (-50, 50)
+TRANSPARENCY_QUALITIES = ("faster", "nicer")
+XRAY_OPACITY_RANGE = (20, 80)
 
 #: The soft warm white of the faces that wear no material in the shaded
 #: modes — the matte cardstock of an architecture model. The style's Front
@@ -50,6 +61,22 @@ class Style:
     # (issue #234). Off in every preset.
     back_edges: bool = False
     edge_color: tuple = (0.13, 0.17, 0.23)
+    # Distances and widths are logical screen pixels, independent of zoom.
+    profile_width: int = 1
+    profile_cap: str = "butt"
+    depth_cue: bool = False
+    depth_cue_width: int = 4
+    extensions: bool = False
+    extension_length: int = 3
+    endpoints: bool = False
+    endpoint_length: int = 3
+    endpoint_type: str = "default"
+    endpoint_size: int = 6
+    dashes: bool = True
+    edge_color_mode: str = "same"
+    material_transparency: bool = True
+    transparency_quality: str = "faster"
+    xray_opacity: int = 60
     # The faces' front colour: every face in Hidden line and Monochrome,
     # and the faces wearing no material in the other modes (issue #776).
     front_color: tuple = (1.0, 1.0, 1.0)
@@ -60,10 +87,12 @@ class Style:
     back_color: tuple | None = None
     background: tuple = (0.90, 0.91, 0.92)
     sky: bool = True
-    # The sky/ground backdrop tones (drawn when ``sky`` is on; with it off
-    # the flat ``background`` shows instead). Defaults match the viewport's
-    # historical constants, so old documents look identical.
+    # The sky/horizon/ground backdrop tones (drawn when ``sky`` is on; with it
+    # off the flat ``background`` shows instead). ``None`` keeps the exact
+    # historical two-haze gradient; picking a horizon colour opts into the new
+    # horizon-anchored gradient.
     sky_color: tuple = (0.925, 0.935, 0.945)
+    horizon_color: tuple | None = None
     ground_color: tuple = (0.815, 0.820, 0.815)
     # Section Fill: paint the cut-through areas of solids.
     # Lives in the STYLE, with the other modeling settings.
@@ -75,15 +104,44 @@ class Style:
     ambient_occlusion: bool = False
     ao_distance: float = 0.5
     ao_intensity: float = 1.0
+    # Fog: a depth fade measured along the camera's view direction. Distance
+    # and thickness are absolute model distances (metres internally), so the
+    # fog volume follows the camera instead of sticking to the model's box.
+    fog_enabled: bool = False
+    fog_distance: float = 10.0
+    fog_thickness: float = 10.0
+    fog_color: tuple = (0.74, 0.76, 0.78)
+    fog_use_background: bool = False
     # Colour by layer: faces draw in their layer's colour (core.layers
     # .layer_color) instead of their material — the shaded, textured and
     # X-ray modes. Off in every preset; a scene remembers it with the style.
     color_by_layer: bool = False
+    # The layers' line types on their edges in the model too, not only on
+    # the sheets: dashed where the line type is, in its colour where it has
+    # one (a gas line yellow). On unless a style says otherwise.
+    model_linetypes: bool = True
+    xray: bool = False
+    # None preserves the historical combined sky/ground backdrop. An explicit
+    # value opts into independent ground controls without changing old files.
+    ground: bool | None = None
+    ground_transparency: int = 0
+    ground_from_below: bool = True
+    watermarks: list[Watermark] = field(default_factory=list)
+    watermarks_visible: bool = True
+    modeling_colors: dict = field(default_factory=dict)
+    modeling_visibility: dict = field(default_factory=dict)
+    show_guides: bool = True
+    section_cut_width: float = 2.5
+
+    def __post_init__(self):
+        if self.face_mode == "xray":
+            self.face_mode = "textures"
+            self.xray = True
 
     def to_dict(self) -> dict:
         out = {
             "name": self.name,
-            "face_mode": self.face_mode,
+            "face_mode": base_face_mode(self),
             "edges": self.edges,
             "profiles": self.profiles,
             "back_edges": self.back_edges,
@@ -100,30 +158,107 @@ class Style:
             "ambient_occlusion": self.ambient_occlusion,
             "ao_distance": self.ao_distance,
             "ao_intensity": self.ao_intensity,
+            "fog_enabled": self.fog_enabled,
+            "fog_distance": self.fog_distance,
+            "fog_thickness": self.fog_thickness,
+            "fog_color": list(self.fog_color),
+            "fog_use_background": self.fog_use_background,
         }
         if self.color_by_layer:
             out["color_by_layer"] = True
+        if not self.model_linetypes:
+            out["model_linetypes"] = False
+        if xray_enabled(self):
+            out["xray"] = True
+        if self.watermarks:
+            out["watermarks"] = [mark.to_dict() for mark in self.watermarks]
+        if not self.watermarks_visible:
+            out["watermarks_visible"] = False
+        if self.modeling_colors:
+            out["modeling_colors"] = {key: list(color) for key, color in self.modeling_colors.items()}
+        if self.modeling_visibility:
+            out["modeling_visibility"] = dict(self.modeling_visibility)
+        # Keep old/default styles byte-for-byte compatible. New fields are
+        # optional, including the values of currently disabled effects.
+        defaults = {"profile_width": 1, "profile_cap": "butt", "depth_cue": False,
+                    "depth_cue_width": 4, "extensions": False,
+                    "extension_length": 3, "endpoints": False,
+                    "endpoint_length": 3, "endpoint_type": "default",
+                    "endpoint_size": 6, "dashes": True,
+                    "edge_color_mode": "same", "material_transparency": True,
+                    "transparency_quality": "faster", "xray_opacity": 60,
+                    "ground": None, "ground_transparency": 0,
+                    "ground_from_below": True, "show_guides": True,
+                    "section_cut_width": 2.5}
+        for attr, default in defaults.items():
+            value = getattr(self, attr)
+            if value != default:
+                out[attr] = value
+        # Missing means the legacy gradient. Keeping that state implicit makes
+        # new/default documents and styles saved by older versions render
+        # exactly as before; an explicitly picked white remains distinguishable.
+        if self.horizon_color is not None:
+            out["horizon_color"] = list(self.horizon_color)
         return out
 
     @classmethod
     def from_dict(cls, raw: dict) -> "Style":
         mode = raw.get("face_mode", "textures")
+        legacy_xray = mode == "xray"
+        if legacy_xray:
+            mode = "textures"
         if mode not in FACE_MODES:
             mode = "textures"
         d = cls()
         return cls(
             name=raw.get("name", d.name),
             face_mode=mode,
+            xray=bool(raw.get("xray", legacy_xray)),
             edges=bool(raw.get("edges", d.edges)),
             profiles=bool(raw.get("profiles", d.profiles)),
             back_edges=bool(raw.get("back_edges", d.back_edges)),
             edge_color=tuple(raw.get("edge_color", d.edge_color)),
+            profile_width=_pixel_value(raw.get("profile_width"), d.profile_width,
+                                       EDGE_WIDTH_RANGE),
+            profile_cap=(raw.get("profile_cap")
+                         if raw.get("profile_cap") in PROFILE_CAPS else d.profile_cap),
+            depth_cue=bool(raw.get("depth_cue", d.depth_cue)),
+            depth_cue_width=_pixel_value(raw.get("depth_cue_width"), d.depth_cue_width,
+                                         EDGE_WIDTH_RANGE),
+            extensions=bool(raw.get("extensions", d.extensions)),
+            extension_length=_pixel_value(raw.get("extension_length"), d.extension_length,
+                                          EDGE_EXTENSION_RANGE),
+            endpoints=bool(raw.get("endpoints", d.endpoints)),
+            endpoint_length=_pixel_value(raw.get("endpoint_length"), d.endpoint_length,
+                                         EDGE_LENGTH_RANGE),
+            endpoint_type=(raw.get("endpoint_type")
+                           if raw.get("endpoint_type") in ENDPOINT_TYPES else d.endpoint_type),
+            endpoint_size=_pixel_value(raw.get("endpoint_size"), d.endpoint_size,
+                                       EDGE_LENGTH_RANGE),
+            dashes=bool(raw.get("dashes", d.dashes)),
+            edge_color_mode=(raw.get("edge_color_mode")
+                             if raw.get("edge_color_mode") in EDGE_COLOR_MODES else "same"),
+            material_transparency=bool(raw.get("material_transparency", d.material_transparency)),
+            transparency_quality=(raw.get("transparency_quality")
+                                  if raw.get("transparency_quality") in TRANSPARENCY_QUALITIES
+                                  else d.transparency_quality),
+            xray_opacity=_pixel_value(raw.get("xray_opacity"), d.xray_opacity, XRAY_OPACITY_RANGE),
             front_color=tuple(raw.get("front_color", d.front_color)),
             back_color=_opt_rgb(raw.get("back_color")),
             background=tuple(raw.get("background", d.background)),
             sky=bool(raw.get("sky", d.sky)),
             sky_color=tuple(raw.get("sky_color", d.sky_color)),
+            horizon_color=_opt_rgb(raw.get("horizon_color")),
             ground_color=tuple(raw.get("ground_color", d.ground_color)),
+            ground=(bool(raw["ground"]) if raw.get("ground") is not None else None),
+            ground_transparency=_pixel_value(raw.get("ground_transparency"), 0, (0, 100)),
+            ground_from_below=bool(raw.get("ground_from_below", True)),
+            watermarks=load_watermarks(raw.get("watermarks")),
+            watermarks_visible=bool(raw.get("watermarks_visible", True)),
+            modeling_colors=load_modeling_colors(raw.get("modeling_colors")),
+            modeling_visibility=load_modeling_visibility(raw.get("modeling_visibility")),
+            show_guides=bool(raw.get("show_guides", True)),
+            section_cut_width=_clamped(raw.get("section_cut_width"), 2.5, (1, 20)),
             section_fill=bool(raw.get("section_fill", d.section_fill)),
             section_fill_color=tuple(raw.get("section_fill_color",
                                              d.section_fill_color)),
@@ -133,7 +268,16 @@ class Style:
                                  AO_DISTANCE_RANGE),
             ao_intensity=_clamped(raw.get("ao_intensity"), d.ao_intensity,
                                   AO_INTENSITY_RANGE),
+            fog_enabled=bool(raw.get("fog_enabled", d.fog_enabled)),
+            fog_distance=_clamped(raw.get("fog_distance"), d.fog_distance,
+                                  FOG_DISTANCE_RANGE),
+            fog_thickness=_clamped(raw.get("fog_thickness"), d.fog_thickness,
+                                   FOG_THICKNESS_RANGE),
+            fog_color=_rgb(raw.get("fog_color"), d.fog_color),
+            fog_use_background=bool(raw.get("fog_use_background",
+                                            d.fog_use_background)),
             color_by_layer=bool(raw.get("color_by_layer", False)),
+            model_linetypes=raw.get("model_linetypes") is not False,
         )
 
     def copy(self) -> "Style":
@@ -143,6 +287,35 @@ class Style:
 #: The ambient occlusion controls' ranges (metres; plain factor).
 AO_DISTANCE_RANGE = (0.01, 50.0)
 AO_INTENSITY_RANGE = (0.0, 2.0)
+
+#: Fog controls in metres from the camera. 40 km covers the camera's maximum
+#: working reach without tying the effect to its clipping-plane safety margin.
+FOG_DISTANCE_RANGE = (0.0, 40000.0)
+FOG_THICKNESS_RANGE = (0.01, 40000.0)
+
+
+def _pixel_value(raw, default: int, bounds: tuple) -> int:
+    return round(_clamped(raw, default, bounds))
+
+
+def xray_enabled(style) -> bool:
+    """Also accept legacy direct assignments from scripts and extensions."""
+    return bool(getattr(style, "xray", False) or getattr(style, "face_mode", None) == "xray")
+
+
+def base_face_mode(style) -> str:
+    mode = getattr(style, "face_mode", "textures")
+    return "textures" if mode == "xray" else mode
+
+
+def sees_through_faces(style) -> bool:
+    return xray_enabled(style) or base_face_mode(style) == "wireframe"
+
+
+def ground_enabled(style) -> bool:
+    """Resolve the legacy combined backdrop or the independent ground toggle."""
+    ground = getattr(style, "ground", None)
+    return bool(style.sky if ground is None else ground)
 
 
 def _clamped(raw, default: float, bounds: tuple) -> float:
@@ -160,7 +333,7 @@ def _clamped(raw, default: float, bounds: tuple) -> float:
 def _opt_rgb(raw) -> tuple | None:
     """An optional RGB from a dict: ``None`` (or anything malformed — an
     old or hand-edited document must never break the style) stays
-    ``None``, i.e. automatic."""
+    ``None``, i.e. automatic/legacy behaviour."""
     if raw is None:
         return None
     try:
@@ -168,6 +341,18 @@ def _opt_rgb(raw) -> tuple | None:
     except (TypeError, ValueError):
         return None
     return rgb[:3] if len(rgb) >= 3 else None
+
+
+def _rgb(raw, default: tuple) -> tuple:
+    """A finite RGB triplet clamped to 0..1, or ``default`` when a
+    hand-edited style contains malformed colour data."""
+    try:
+        rgb = tuple(float(c) for c in raw)
+    except (TypeError, ValueError):
+        return default
+    if len(rgb) < 3 or any(not math.isfinite(c) for c in rgb[:3]):
+        return default
+    return tuple(min(max(c, 0.0), 1.0) for c in rgb[:3])
 
 
 def effective_back_color(style, scene=None) -> tuple:
@@ -214,7 +399,7 @@ BUILTIN_STYLES: list[Style] = [
           background=(1.0, 1.0, 1.0), sky=False),
     Style(name="Wireframe", face_mode="wireframe",
           background=(1.0, 1.0, 1.0), sky=False),
-    Style(name="X-ray", face_mode="xray"),
+    Style(name="X-ray", xray=True),
 ]
 
 

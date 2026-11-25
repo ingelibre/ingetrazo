@@ -128,6 +128,11 @@ def import_document_as_component(dst_scene, src_scene, name: str):
     comp = component_from_scene(src_scene, name)
     if comp is None:
         return None
+    # Import is a new placement, even when the same .igz is inserted twice.
+    # Keep source document/group identities out of the destination's objects.
+    from core.group import new_uid
+    for group, _matrix in iter_placements(comp):
+        group.uid = new_uid()
     merge_materials(getattr(src_scene, "materials", {}) or {},
                     dst_scene.materials, comp)
     ensure_layers(dst_scene, comp)

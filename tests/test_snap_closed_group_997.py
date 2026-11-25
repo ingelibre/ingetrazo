@@ -54,7 +54,8 @@ def test_corners_edges_and_faces_of_a_closed_group_snap():
         snap = vp._snap_at(px[0], px[1] + 2, Qt.NoModifier)
         assert snap.kind == "midpoint"
         assert (snap.point - mid).length() < 1e-6
-        top = V(0.4, 0.6, 1)
+        # Clear of the face's middle, which is the «Face center» snap.
+        top = V(0.25, 0.5, 1)
         px = vp._world_to_pixel(top)
         snap = vp._snap_at(*px, Qt.NoModifier)
         assert snap.kind == "on_face"

@@ -5,11 +5,14 @@ localhost, transactionally, and the MCP layer frames it for Claude."""
 from __future__ import annotations
 
 import json
+import math
 import os
 import socket
 import sys
 import threading
 from pathlib import Path, PurePosixPath
+
+import pytest
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
@@ -21,9 +24,11 @@ if QApplication.instance() is None:
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 
 
-def _rpc(sock, tool, args=None):
+def _rpc(sock, tool, args=None, ids=None):
+    # #892: every request but list_documents names its window and document.
     sock.sendall((json.dumps(
-        {"id": 1, "tool": tool, "args": args or {}}) + "\n").encode())
+        {"id": 1, "tool": tool, "args": args or {}, **(ids or {})})
+        + "\n").encode())
     buf = b""
     while b"\n" not in buf:
         chunk = sock.recv(65536)
@@ -37,13 +42,15 @@ def _ask(bridge, tool, args=None):
     events — the bridge executes on the Qt main thread via a queued signal."""
     app = QApplication.instance()
     out: dict = {}
+    ids = {"instance_id": bridge.instance_id,
+           "document_id": bridge._document_id()}
 
     def worker():
         s = socket.socket()
         s.settimeout(10.0)
         s.connect(("127.0.0.1", bridge.port))
         try:
-            out["reply"] = _rpc(s, tool, args)
+            out["reply"] = _rpc(s, tool, args, ids)
         finally:
             s.close()
 
@@ -198,16 +205,23 @@ def test_a_call_arriving_inside_a_running_one_is_refused():
     win = MainWindow()
     try:
         bridge = _Bridge(win.viewport)
+        bridge.start()
         bridge._busy = True
-        job = {"req": {"id": 7, "tool": "query_model"}, "done": _t.Event(),
-               "reply": None}
+        # #892: a job names its window and document, from a running bridge.
+        req = {"id": 7, "tool": "query_model",
+               "instance_id": bridge.instance_id,
+               "document_id": bridge._document_id()}
+        job = {"req": req, "done": _t.Event(), "reply": None,
+               "stop": bridge._stop}
         bridge._run_on_main(job)
         assert job["done"].is_set() and job["reply"]["ok"] is False
         assert "previous call" in job["reply"]["error"]
         bridge._busy = False
+        job["done"].clear()
         bridge._run_on_main(job)
-        assert job["reply"]["ok"] is True
+        assert job["reply"]["ok"] is True, job["reply"]
     finally:
+        bridge.stop()
         win._saved_version = win.viewport.scene.version
         win.close()
 
@@ -228,8 +242,16 @@ def test_mcp_server_protocol_and_bridge_down_message(monkeypatch):
     assert mcp.handle({"jsonrpc": "2.0",
                        "method": "notifications/initialized"}) is None
 
+    # #892: without a document the client refuses before any socket...
     call = mcp.handle({"jsonrpc": "2.0", "id": 3, "method": "tools/call",
                        "params": {"name": "query_model", "arguments": {}}})
+    result = call["result"]
+    assert result["isError"] is True
+    assert "list_documents" in result["content"][0]["text"]
+    # ...and with one whose bridge is down, it says to enable the bridge.
+    call = mcp.handle({"jsonrpc": "2.0", "id": 4, "method": "tools/call",
+                       "params": {"name": "query_model",
+                                  "arguments": {"document_id": "a:b"}}})
     result = call["result"]
     assert result["isError"] is True
     assert "AI bridge" in result["content"][0]["text"]
@@ -411,3 +433,93 @@ def test_a_web_page_cannot_run_code_through_the_bridge(monkeypatch):
     finally:
         win._saved_version = win.viewport.scene.version
         win.close()
+
+
+def test_screenshot_aims_a_one_shot_camera_and_gives_the_users_back(monkeypatch):
+    """``view``/``fit`` let the agent look at the model from a standard
+    view without moving the camera the USER is looking through."""
+    from plugins.ai_bridge import _Bridge
+    from views.main_window import MainWindow
+    monkeypatch.setenv("INGETRAZO_AI_PORT", "0")
+    win = MainWindow()
+    try:
+        win.show()                   # a GL context where there is one
+        for _ in range(10):
+            QApplication.processEvents()
+        vp = win.viewport
+        bridge = _Bridge(vp)
+        bridge.start()
+        assert _ask(bridge, "run_python", {"code": (
+            "extrude([(0,0),(4,0),(4,3),(0,3)], 0, 2.5, name='Caja')")})["ok"]
+
+        cam = vp.camera
+        before = (cam.target.x(), cam.target.y(), cam.target.z(),
+                  cam.distance, cam.yaw, cam.pitch, cam.perspective,
+                  cam.aspect)
+        seen = {}
+        real_render = vp.render_image
+
+        def spy(w, h, **kw):
+            seen.update(yaw=cam.yaw, pitch=cam.pitch, aspect=cam.aspect,
+                        perspective=cam.perspective)
+            return real_render(w, h, **kw)
+
+        monkeypatch.setattr(vp, "render_image", spy)
+        reply = _ask(bridge, "screenshot",
+                     {"width": 800, "height": 400, "view": "top", "fit": True})
+        # The camera was aimed for the shot (top view, parallel, 2:1)…
+        # (where there is GL to render with: main's bridge refuses first
+        # without it, and then there is nothing to aim).
+        if seen:
+            assert seen["pitch"] == pytest.approx(math.radians(90.0))
+            assert seen["aspect"] == pytest.approx(2.0)
+            assert seen["perspective"] is False
+        # …and given back whether or not this machine could render it.
+        after = (cam.target.x(), cam.target.y(), cam.target.z(),
+                 cam.distance, cam.yaw, cam.pitch, cam.perspective,
+                 cam.aspect)
+        assert after == before
+        if reply["ok"]:
+            assert Path(reply["result"]["path"]).is_file()
+        else:
+            assert "OpenGL" in reply["error"]
+
+        reply = _ask(bridge, "screenshot", {"view": "sideways"})
+        assert reply["ok"] is False and "unknown view" in reply["error"]
+        bridge.stop()
+    finally:
+        win._saved_version = win.viewport.scene.version
+        win.close()
+
+
+def test_mcp_server_negotiates_the_revision_and_annotates_its_tools():
+    import ingetrazo_mcp as mcp
+
+    def init(version):
+        return mcp.handle({"jsonrpc": "2.0", "id": 1, "method": "initialize",
+                           "params": {"protocolVersion": version}})
+
+    # A client's own revision is answered in kind; an unknown one gets ours.
+    for version in mcp.PROTOCOLS:
+        assert init(version)["result"]["protocolVersion"] == version
+    assert init("2099-01-01")["result"]["protocolVersion"] == mcp.PROTOCOL
+    assert mcp.PROTOCOL == mcp.PROTOCOLS[0] == max(mcp.PROTOCOLS)
+
+    tools = {t["name"]: t for t in mcp.handle(
+        {"jsonrpc": "2.0", "id": 2, "method": "tools/list"})["result"]["tools"]}
+    # Looking is safe to auto-approve; running code is not.
+    assert tools["query_model"]["annotations"]["readOnlyHint"] is True
+    assert tools["screenshot"]["annotations"]["readOnlyHint"] is True
+    assert tools["run_python"]["annotations"]["destructiveHint"] is True
+    assert all("annotations" in t for t in tools.values())
+    # Every name the annotations list is a real tool: a rename (open_file
+    # became open_document with #1494) must not leave a stale entry.
+    assert set(mcp._READ_ONLY) | set(mcp._DESTRUCTIVE) <= set(tools)
+    for tool in ("open_document", "save_document", "shutdown"):
+        assert tools[tool]["annotations"]["destructiveHint"] is True
+
+    # The schema offers exactly the views the bridge accepts.
+    from views.bridge_tools import STANDARD_VIEWS
+    from core.camera import OrbitCamera
+    view_enum = tools["screenshot"]["inputSchema"]["properties"]["view"]["enum"]
+    assert set(view_enum) == set(STANDARD_VIEWS) == set(OrbitCamera._STANDARD_VIEWS)

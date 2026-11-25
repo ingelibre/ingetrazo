@@ -29,6 +29,8 @@ ROOT = Path(SPECPATH).resolve()
 datas = [
     ('resources/shaders/*.vert',   'resources/shaders'),
     ('resources/shaders/*.frag',   'resources/shaders'),
+    # edges.geom: missing from 0.6.3, the view went blank with line types (#1541).
+    ('resources/shaders/*.geom',   'resources/shaders'),
     # Render with Blender (#181): the script Blender runs on the job.
     ('resources/blender/*.py',     'resources/blender'),
     ('resources/icons/*.png',      'resources/icons'),
@@ -36,6 +38,7 @@ datas = [
     ('resources/icons/mimetypes/*.ico', 'resources/icons/mimetypes'),
     ('resources/mime/*.xml',       'resources/mime'),
     ('resources/colors/*.json',    'resources/colors'),
+    ('resources/bim/*.json',       'resources/bim'),
     ('resources/textures/*.png',   'resources/textures'),
     ('resources/textures/library.json', 'resources/textures'),
     # Factory window layout (Marco's toolbar arrangement, harvested
@@ -124,6 +127,9 @@ hiddenimports = [
     'PySide6.QtOpenGL',
     'PySide6.QtOpenGLWidgets',
     'PySide6.QtNetwork',        # tile/DEM fetch (georef)
+    # Export ▸ Scenes as Video (.mkv): Qt Multimedia writes the file with
+    # its own ffmpeg plugin; imported inside functions (views/video_export).
+    'PySide6.QtMultimedia',
     # Lazily imported project modules (inside functions) — listed for safety.
     'core.text3d',
     'core.textlabel',
@@ -151,6 +157,8 @@ import importlib.util as _ilu
 hiddenimports += ['core._native']
 if _ilu.find_spec('ingetrazo_core') is not None:
     hiddenimports += ['ingetrazo_core']
+if sys.platform == 'darwin':
+    hiddenimports += ['hid', 'views.ndof_hid', 'views.ndof_macos']
 hiddenimports += [
     # The bundled plugins import these at RUN time, so static analysis never
     # sees them and they were left out: the AI assistant died on load with
@@ -267,6 +275,16 @@ for _sp in site.getsitepackages() + [site.getusersitepackages()]:
         _earcut_libs += [(str(f), '.') for f in _sib.iterdir() if f.is_file()]
         break
 print('spec: mapbox_earcut native files: %d' % len(_earcut_libs))
+
+# Cocoa wrappers borrow interfaces owned by Qt's accessibility caches.
+# Ship the validated native ownership fix as a binary so PyInstaller
+# processes and signs the library with the rest of the macOS bundle.
+if sys.platform == 'darwin':
+    _cocoa_fix = ROOT / 'build' / 'macos' / 'libingetrazo_cocoa_accessibility.dylib'
+    if not _cocoa_fix.is_file():
+        raise SystemExit('Build the Cocoa accessibility fix first: '
+                         'python -m core.macos_accessibility')
+    _earcut_libs.append((str(_cocoa_fix), 'resources/native'))
 
 excludes = [
     'tkinter',

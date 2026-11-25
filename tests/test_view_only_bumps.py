@@ -68,7 +68,12 @@ def _fake_gl(vp):
         sent[slot] = len(b"".join(parts))
         return sent[slot]
     vp._upload_vbo = fake_upload
-    src = open(vpmod.__file__, encoding="utf-8").read()
+    # One file, or the package of one module per job (#901): all of it.
+    from pathlib import Path
+    here = Path(vpmod.__file__)
+    src = "\n".join(p.read_text(encoding="utf-8") for p in (
+        sorted(here.parent.glob("*.py")) if here.name == "__init__.py"
+        else [here]))
     for name in set(re.findall(r"self\.(_\w+_vbo)\b", src)):
         if not hasattr(vp, name):
             setattr(vp, name, None)

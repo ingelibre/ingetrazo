@@ -11,8 +11,9 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from pathlib import Path  # noqa: E402
 
+import pytest  # noqa: E402
 from PySide6.QtGui import QColor  # noqa: E402
-from PySide6.QtWidgets import QApplication, QColorDialog  # noqa: E402
+from PySide6.QtWidgets import QApplication, QColorDialog, QDialog  # noqa: E402
 
 _app = QApplication.instance() or QApplication([])
 ROOT = Path(__file__).resolve().parents[1]
@@ -30,6 +31,55 @@ def test_the_picker_asks_for_qts_own_dialog(monkeypatch):
                         staticmethod(fake))
     assert color_dialog.get_color(QColor(0, 0, 0)).red() == 10
     assert seen["options"] == QColorDialog.ColorDialogOption.DontUseNativeDialog
+
+
+def test_the_picker_keeps_positional_options_positional(monkeypatch):
+    from views import color_dialog
+    seen = {}
+
+    def fake(*args, **kwargs):
+        seen["args"] = args
+        seen["kwargs"] = kwargs
+        return QColor(10, 20, 30)
+
+    monkeypatch.setattr(color_dialog.QColorDialog, "getColor", fake)
+    color_dialog.get_color(QColor(0, 0, 0), None, "Colour",
+                           QColorDialog.ColorDialogOption.NoButtons)
+    assert len(seen["args"]) == 4 and "options" not in seen["kwargs"]
+    assert seen["args"][3] & \
+        QColorDialog.ColorDialogOption.DontUseNativeDialog
+
+
+def test_alpha_uses_the_opacity_slider_and_keeps_qts_own_dialog(monkeypatch):
+    from views import color_dialog
+    seen = []
+
+    def fake_exec(dialog):
+        seen.append(dialog)
+        dialog.setCurrentColor(QColor(10, 20, 30))
+        dialog.opacity_slider.setValue(25)
+        return QDialog.DialogCode.Accepted
+
+    monkeypatch.setattr(color_dialog._OpacityColorDialog, "exec", fake_exec)
+    alpha = QColorDialog.ColorDialogOption.ShowAlphaChannel
+    picked = color_dialog.get_color(QColor(0, 0, 0, 128), options=alpha)
+    assert seen and picked.alphaF() == pytest.approx(0.25, abs=0.01)
+    dialog = seen[0]
+    assert dialog.testOption(
+        QColorDialog.ColorDialogOption.DontUseNativeDialog)
+    assert not dialog.testOption(alpha)       # replaced by the percent row
+
+
+def test_opacity_slider_and_number_stay_in_sync():
+    from views.color_dialog import _OpacityColorDialog
+    dialog = _OpacityColorDialog(QColor(20, 120, 200, 64))
+    assert dialog.opacity_slider.value() == dialog.opacity_spin.value() == 25
+    assert dialog.opacity_spin.suffix() == " %"
+    dialog.opacity_spin.setValue(37)
+    assert dialog.opacity_slider.value() == 37
+    dialog.opacity_slider.setValue(62)
+    assert dialog.opacity_spin.value() == 62
+    assert "qlineargradient" in dialog.opacity_slider.styleSheet()
 
 
 def test_no_panel_opens_the_desktops_picker_directly():
@@ -56,3 +106,22 @@ def test_a_menu_entrys_description_shows_in_the_status_bar():
     finally:
         w._saved_version = w.viewport.scene.version
         w.close()
+
+
+def test_the_picker_opens_on_the_colour_being_edited(monkeypatch):
+    # On a desktop with a native colour dialog (xcb + a platform theme) the
+    # constructor hands the colour to the native helper, and switching to
+    # Qt's own widgets afterwards dropped it: the picker opened on white
+    # with the fields at 0. Offscreen has no helper, so the switch is
+    # simulated by an options change that forgets the colour.
+    from views.color_dialog import _OpacityColorDialog
+    real = QColorDialog.setOptions
+
+    def forgetful(self, options):
+        real(self, options)
+        self.setCurrentColor(QColor(255, 255, 255))
+
+    monkeypatch.setattr(QColorDialog, "setOptions", forgetful)
+    dialog = _OpacityColorDialog(QColor(40, 120, 200, 128))
+    assert dialog.currentColor().getRgb()[:3] == (40, 120, 200)
+    assert dialog.picked_color().alpha() in (127, 128)

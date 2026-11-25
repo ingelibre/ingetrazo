@@ -47,7 +47,8 @@ from core.arrangement import (
 )
 from core.mesh import _key as _vkey
 from core.orient import (
-    _face_components,
+    _component_arrays,
+    _flood_components,
     _face_triangles,
     _pack_lists,
     ray_parity_outside,
@@ -74,8 +75,9 @@ class RebuildCache:
     entry."""
 
     __slots__ = ("tris", "norm", "cent", "token", "_packed", "_comp",
-                 "_comp_token", "seed_faces", "_scope", "_scope_token",
-                 "dropped")
+                 "_comp_arrays", "_comp_token", "seed_faces", "_scope",
+                 "_scope_token", "dropped", "_part", "_part_token",
+                 "_part_next", "_part_live")
 
     def __init__(self) -> None:
         #: Outlines (3D segment pairs) of the strips a rebuild found inside
@@ -91,7 +93,14 @@ class RebuildCache:
         self.token = 0
         self._packed: tuple = (None, None, None)
         self._comp: Optional[dict] = None
+        self._comp_arrays: Optional[tuple] = None
         self._comp_token = -1
+        #: Labels of SOME components (those of the faces asked about), for
+        #: the current ``token``: see :meth:`components_of`.
+        self._part: dict = {}
+        self._part_token = -1
+        self._part_next = 0
+        self._part_live: Optional[set] = None
         #: The operation's own faces. Their components are the only solids a
         #: rebuild may touch, so every whole-mesh scan narrows to them.
         self.seed_faces: set = set()
@@ -102,9 +111,34 @@ class RebuildCache:
         """Face → edge-connected component label, recomputed when the mesh
         changes."""
         if self._comp is None or self._comp_token != self.token:
-            self._comp = _face_components(mesh)
+            arrays = _component_arrays(mesh)
+            self._comp = dict(zip(arrays[0], arrays[3].tolist()))
+            self._comp_arrays = arrays
             self._comp_token = self.token
         return self._comp
+
+    def components_of(self, mesh, roots) -> dict:
+        """Face → component label for every face of the components of
+        ``roots`` (the ones in the mesh) — and of any asked before since the
+        mesh last changed. Labels are only names: they match each other,
+        not :meth:`components`'.
+
+        Found by flooding from the roots (:func:`_flood_components`) — the
+        union-find of
+        :meth:`components` walked every edge of the group, eleven times for
+        one push in a 9 674-face group of the Plaza whose pushed solid held
+        ~320 faces (night of 19-11)."""
+        if self._part_token != self.token:
+            self._part = {}
+            self._part_token = self.token
+            self._part_next = 0
+            self._part_live = None
+        live = self._part_live
+        if live is None:
+            live = self._part_live = set(mesh.faces)
+        self._part_next = _flood_components(roots, live, self._part,
+                                            self._part_next)
+        return self._part
 
     def scope(self, mesh):
         """``(faces, edges)`` of the solids the operation is working in, or
@@ -125,7 +159,7 @@ class RebuildCache:
             return None
         if self._scope is not None and self._scope_token == self.token:
             return self._scope
-        comp = self.components(mesh)
+        comp = self.components_of(mesh, self.seed_faces)
         live = {comp[f] for f in self.seed_faces if f in comp}
         if not live:
             self._scope, self._scope_token = None, self.token
@@ -134,8 +168,21 @@ class RebuildCache:
         fset = set(faces)
         # An edge belongs to the scope when a face of it does. A faceless edge
         # is plane debris a rebuild may still need to re-trace, so it stays.
-        edges = [e for e in mesh.edges
-                 if not e.faces or any(f in fset for f in e.faces)]
+        # The faces an edge lists in the mesh are all of one component, so
+        # its first one answers — unless that one is gone from the mesh.
+        live_faces = self._part_live
+        edges = []
+        add = edges.append
+        for e in mesh.edges:
+            fs = e.faces
+            if not fs:
+                add(e)
+                continue
+            f0 = fs[0]
+            if f0 in fset:
+                add(e)
+            elif f0 not in live_faces and any(f in fset for f in fs):
+                add(e)
         self._scope = (faces, edges)
         self._scope_token = self.token
         return self._scope
@@ -161,16 +208,19 @@ class RebuildCache:
             self.cent[f] = c
         return c
 
-    def packed(self, mesh, shadowed, want=None):
+    def packed(self, mesh, shadowed, want=None, comp=None):
         """The packed parity triangles of the counted faces (boundary, not
-        shadowed, and — when ``want`` is given — in one of those components),
-        memoised until the mesh changes."""
+        shadowed, and — when ``want`` is given — in one of those components
+        of ``comp``, the labelling they come from: :meth:`components` when
+        not said), memoised until the mesh changes."""
+        part = comp is not None and comp is self._part
         key = (frozenset(shadowed) if shadowed else None,
-               frozenset(want) if want is not None else None)
+               frozenset(want) if want is not None else None, part)
         tok, k, val = self._packed
         if tok == self.token and k == key and val is not None:
             return val
-        comp = self.components(mesh) if want is not None else None
+        if want is not None and comp is None:
+            comp = self.components(mesh)
         val = _pack_lists([
             self.triangles(f) for f in mesh.faces
             if not f.interior and f not in shadowed
@@ -364,12 +414,20 @@ def _union_outline(solid_regions_xy, keep_segs=None) -> list:
     for h in holes:
         hp = _interior_point(h)
         hkeys = frozenset(_key2(p) for p in h)
+        h_area = -_signed_area(h)
         for outer, hl in result:
             if (len(outer) == len(h)
                     and frozenset(_key2(p) for p in outer) == hkeys):
                 # The hole is this outer's *own* outline — a region kept as
                 # its own face (a crease/user-edge split). The hole belongs to
                 # the enclosing face, not to the face it would annihilate.
+                continue
+            if _signed_area(outer) <= h_area + _area_floor(h):
+                # An outer no larger than the hole lies INSIDE it: the hole's
+                # sample point can land in a face kept within the hole (the
+                # inner panel of a framed window: a ring pushed in and back
+                # flush keeps its outline, #864, and the wall's hole went to
+                # the panel in the middle — the wall came out unholed).
                 continue
             if _point_in_polygon(hp, outer):
                 hl.append(h)
@@ -380,7 +438,8 @@ def _union_outline(solid_regions_xy, keep_segs=None) -> list:
 def rebuild_plane(mesh, origin: QVector3D, normal: QVector3D,
                   fresh=(), keep_mode: bool = False,
                   removing: bool = True, op=None,
-                  cache: Optional[RebuildCache] = None) -> Optional[list]:
+                  cache: Optional[RebuildCache] = None,
+                  keep_edges=()) -> Optional[list]:
     """Recompute the solid *boundary* faces of ``mesh`` on the plane
     ``(origin, normal)``.
 
@@ -495,12 +554,15 @@ def rebuild_plane(mesh, origin: QVector3D, normal: QVector3D,
         packed = _pack_lists([t for f, t in _face_triangles(mesh).items()
                               if not f.interior and f not in shadowed])
     else:
-        comp = cache.components(mesh)
+        # Narrowed to the operation's solids, the labels of their components
+        # (and of the fresh faces') are all it reads; else every face's.
+        comp = (cache.components_of(mesh, fresh_set) if scope is not None
+                else cache.components(mesh))
         want = {comp[f] for f in scope_faces
                 if f in comp and _coplanar_on(f, origin, normal, cache)}
         # A push welding a new wall onto a neighbouring solid must see both.
         want |= {comp[f] for f in fresh_set if f in comp}
-        packed = cache.packed(mesh, shadowed, want or None)
+        packed = cache.packed(mesh, shadowed, want or None, comp)
     rng = random.Random(54321)
 
     def _fnormal(f):
@@ -544,6 +606,31 @@ def rebuild_plane(mesh, origin: QVector3D, normal: QVector3D,
     # face covering a both-sides region keeps its partition role.
     old_boundary_polys = _proj_polys(f for f in scope_faces
                                      if f not in fresh_set and not f.interior)
+    # The kept bases of earlier Ctrl-pushes: a strip that would go as inside
+    # the solid (below) but shares an edge with one of them carries that
+    # division on instead — the two cells the slab parts still meet there.
+    # Dropped, the slab was left alone under side faces that dissolved the
+    # crease it stands on, open on three edges, and the guard refused the
+    # push: a box divided with Ctrl, its first part pulled up, then the
+    # second part's top pulled up against it (or the first part's wall
+    # pushed out over it).
+    partition_segs = [
+        (to2d(e.a), to2d(e.b)) for e in scope_edges
+        if any(f.interior and f not in fresh_set for f in e.faces)
+        and _on_plane(e.a, origin, normal) and _on_plane(e.b, origin, normal)]
+
+    def _meets_partition(outer_xy, holes_xy) -> bool:
+        for loop in (outer_xy, *holes_xy):
+            n = len(loop)
+            for i in range(n):
+                a2, b2 = loop[i], loop[(i + 1) % n]
+                if (a2[0] - b2[0]) ** 2 + (a2[1] - b2[1]) ** 2 < _TOL * _TOL:
+                    continue
+                for c2, d2 in partition_segs:
+                    if ((_on_seg2(a2, c2, d2) and _on_seg2(b2, c2, d2))
+                            or (_on_seg2(c2, a2, b2) and _on_seg2(d2, a2, b2))):
+                        return True
+        return False
 
     # Group boundary regions by which side holds the material — each group is
     # unioned separately because its faces wind the other way (outward points
@@ -589,6 +676,9 @@ def rebuild_plane(mesh, origin: QVector3D, normal: QVector3D,
                         _poly_covers(fpoly, ip_xy) and fplus != plus
                         for fpoly, fplus in fresh_polys)
                         for poly, plus in old_boundary_polys)):
+                if partition_segs and _meets_partition(outer_xy, holes_xy):
+                    partitions.append((outer_xy, holes_xy))
+                    continue
                 # The strip is inside the solid now, and so is its outline:
                 # the old crease along its rim (a riser's top edge) is the
                 # op's seam from here on, free to dissolve when the next
@@ -656,7 +746,27 @@ def rebuild_plane(mesh, origin: QVector3D, normal: QVector3D,
         attrs = [f.attrs or {} for f in e.faces]
         return any(a != attrs[0] for a in attrs[1:])
 
-    keep_segs: list = []
+    # Explicit boundaries of the moved cap remain separate selectable
+    # regions when it lands flush with a neighbouring face. These only
+    # constrain the union of surviving regions: they cannot retain a face
+    # classified as empty or recreate a collapsed internal wall.
+    #
+    # Only on the cap's OWN plane — the one plane that carries the whole
+    # rim. A single rim edge also lies on every plane it runs along: a
+    # door's sill lies on the floor. Kept there, it split the floor of a
+    # door pushed through its wall along the far face (a hair off true,
+    # #1076/#1094: 23 faces instead of 22) — that line was never a flush
+    # landing, just the cap's edge grazing another surface. On the cap's
+    # plane a through push or a collapse leaves the region inside the rim
+    # empty, so the rim bounds nothing kept and changes nothing; only a
+    # cap flush with a neighbour that survives there keeps its outline
+    # (Marco, 19-11: #864 goes into 0.6.3, as the reference behaves).
+    keep_segs = ([(to2d(a), to2d(b)) for a, b in keep_edges]
+                 if keep_edges and all(
+                     _on_plane(a, origin, normal)
+                     and _on_plane(b, origin, normal)
+                     for a, b in keep_edges)
+                 else [])
     for e in scope_edges:
         if not (_on_plane(e.a, origin, normal) and _on_plane(e.b, origin, normal)):
             continue
@@ -729,7 +839,8 @@ def _canon_faces(faces_as_loops) -> frozenset:
 def apply_rebuild(mesh, origin: QVector3D, normal: QVector3D,
                   fresh=(), keep_mode: bool = False,
                   removing: bool = True, prune: bool = True,
-                  op=None, cache: Optional[RebuildCache] = None) -> bool:
+                  op=None, cache: Optional[RebuildCache] = None,
+                  keep_edges=()) -> bool:
     """Rebuild one plane of ``mesh`` in place: replace its coplanar faces with the
     deterministic solid faces from :func:`rebuild_plane`, and prune the edges left
     interior to the plane (a dissolved seam) that now border nothing. Returns
@@ -751,7 +862,7 @@ def apply_rebuild(mesh, origin: QVector3D, normal: QVector3D,
     keeps no inverse of its own."""
     normal = normal.normalized()
     rebuilt = rebuild_plane(mesh, origin, normal, fresh, keep_mode, removing,
-                            op, cache)
+                            op, cache, keep_edges)
     if rebuilt is None:
         return False
     scope = cache.scope(mesh) if cache is not None else None

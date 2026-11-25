@@ -16,7 +16,8 @@ from PySide6.QtWidgets import QLabel, QMessageBox, QPushButton
 
 from core import extension_manager as manager
 from core.extensions import discover_plugins
-from tests.test_extension_manager import TOOL_SOURCE, _extension
+from tests.test_extension_manager import (
+    TOOL_SOURCE, _extension, _wait_for_page_render)
 from tests.test_extension_manager_hand_installed import (
     _dialog, _hand_package, _rows, _texts)
 
@@ -98,10 +99,12 @@ def test_the_manager_lists_a_retired_extension_and_uninstalls_it(
         assert "Disable" in buttons and "Uninstall" in buttons
         next(b for b in rows[0].findChildren(QPushButton)
              if b.text() == "Disable").click()
+        _wait_for_page_render(dialog, app, "installed")
         assert (folder / ".disabled").is_file()
         assert _loaded(tmp_path) == []
         next(b for b in _rows(dialog)[0].findChildren(QPushButton)
              if b.text() == "Uninstall").click()
+        _wait_for_page_render(dialog, app, "installed")
         app.processEvents()
         assert not folder.exists()
         assert _rows(dialog) == []

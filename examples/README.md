@@ -1,5 +1,7 @@
 # Ejemplos
 
+[Bahasa Indonesia](README.id.md)
+
 Cuatro documentos reales, dibujados con IngeTrazo para la remodelación de la
 plaza de Yanque, distrito de Chichas (Arequipa, 2026) por Marco Sumari Tellez. Ábrelos
 con **Archivo ▸ Abrir** (o doble clic si tienes IngeTrazo instalado); tres
@@ -34,6 +36,18 @@ también para probar las distribuciones de vistas. Es el que sigue el manual
 [`docs/project-tabs.md`](../docs/project-tabs.md). Lo genera
 `pestanas-prueba.py` (`python examples/pestanas-prueba.py` desde la carpeta
 de IngeTrazo).
+
+## IngeTrazo sin ventana, por MCP
+
+`headless-mcp-demo.py` — hace lo que haría un agente de IA en un runner de
+CI, sin nadie delante de la pantalla: arranca el servidor MCP con un
+IngeTrazo sin ventana, construye una casita con `run_python`, pide una
+captura, exporta dos escenas a PNG, guarda el modelo como JSON plano
+(`Casita.igz` + `Casita.assets/`) y lo cierra con `shutdown` (código de
+salida 0). `python examples/headless-mcp-demo.py [carpeta]` desde la carpeta
+de IngeTrazo; necesita pantalla, porque las vistas se dibujan con OpenGL en
+una ventana que no llega a mostrarse. Ver
+[`docs/ai-bridge.md`](../docs/ai-bridge.md) ▸ «Sin ventana».
 
 ## Extensiones
 

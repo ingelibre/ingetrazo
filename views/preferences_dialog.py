@@ -19,8 +19,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import QSettings, Qt
-from PySide6.QtGui import QFontDatabase, QIcon, QPixmap
+from PySide6.QtCore import QRect, QSettings, QSize, Qt, Slot
+from PySide6.QtGui import QFontDatabase, QGuiApplication, QIcon, QPixmap
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -34,6 +34,7 @@ from PySide6.QtWidgets import (
     QInputDialog,
     QMessageBox,
     QPushButton,
+    QScrollArea,
     QSlider,
     QSpinBox,
     QTabWidget,
@@ -50,6 +51,24 @@ from core.i18n import (available_languages, current_language,
                        resolve_language, tr)
 
 
+class _NdofStatusLabel(QLabel):
+    """Track connection status until Qt destroys the receiver widget."""
+
+    def __init__(self, device, parent=None):
+        super().__init__(parent)
+        self._device = device
+        self.refresh()
+        device.status_changed.connect(self.refresh)
+
+    @Slot()
+    def refresh(self):
+        name = self._device.backend_name
+        self.setText(tr("Device driver found: {name}", name=name) if name else tr(
+            "No 3D mouse connection. On Linux start spacenavd; "
+            "on Windows and macOS install the 3Dconnexion driver. "
+            "Connection is retried automatically."))
+
+
 #: The import dialogs' unit vocabularies (must match the dialogs in
 #: main_window — the setting is their preselected answer).
 _OBJ_UNITS = (("m", "Metres"), ("cm", "Centimetres"), ("mm", "Millimetres"),
@@ -64,6 +83,42 @@ _DEFAULTS_NOTE = (
     "Nothing is saved until you press OK. The language, the AI Assistant, "
     "the keyboard shortcuts and the units of the open document stay as "
     "they are.")
+
+
+def graphics_server_applies(platform: str | None = None) -> bool:
+    """Whether choosing the display server means anything here: on Linux."""
+    import sys
+    return (platform or sys.platform).startswith("linux")
+
+
+class _ScrollingPage(QScrollArea):
+    """A Preferences page that scrolls when the dialog is shorter than it
+    (#1336). It still ASKS for its whole size, so on a screen with room
+    the dialog opens as before; only its minimum drops, so the dialog can
+    be made smaller than its tallest page."""
+
+    def __init__(self, page: QWidget) -> None:
+        super().__init__()
+        self.setWidget(page)
+        self.setWidgetResizable(True)
+        self.setFrameShape(QScrollArea.NoFrame)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+
+    def sizeHint(self) -> QSize:
+        hint = self.widget().sizeHint()
+        bar = self.verticalScrollBar().sizeHint().width()
+        return QSize(hint.width() + bar, hint.height())
+
+    def minimumSizeHint(self) -> QSize:
+        # A few rows, in both directions: the dialog opens at its natural
+        # size wherever it fits, so a page only scrolls on a screen too
+        # small for it, or when made smaller by hand.
+        return QSize(320, 120)
+
+
+#: Room left for the window's title bar and frame when the dialog is
+#: fitted to the screen (they are not part of its own geometry).
+_FRAME_ALLOWANCE = 48
 
 
 class PreferencesDialog(QDialog):
@@ -89,9 +144,14 @@ class PreferencesDialog(QDialog):
         self._lang.setCurrentIndex(max(0, self._lang.findData(pending)))
         form.addRow(tr("Language:"), self._lang)
 
-        from views.theme import DARK, LIGHT, SYSTEM, saved_theme
+        from views.theme import (CAMPBELL, DARK, LIGHT, SAND, SLATE,
+                                 SOLARIZED, STUDIO, SYSTEM, saved_theme)
         self._theme = QComboBox()
-        for key, label in ((DARK, tr("Dark")), (LIGHT, tr("Light")),
+        for key, label in ((DARK, tr("Dark")), (SLATE, tr("Slate")),
+                           (STUDIO, tr("Studio")), (SOLARIZED, tr("Solarized")),
+                           (CAMPBELL, tr("Campbell")),
+                           (LIGHT, tr("Light")),
+                           (SAND, tr("Sand")),
                            (SYSTEM, tr("Same as the system"))):
             self._theme.addItem(label, key)
         self._theme.setCurrentIndex(max(0, self._theme.findData(
@@ -177,6 +237,30 @@ class PreferencesDialog(QDialog):
         self._backup.setChecked(str(_gs.value("backup", "1", st)) != "0")
         form.addRow("", self._backup)
 
+        self._thumbnail = QCheckBox(tr("Save a picture of the model in the "
+                                       "document"))
+        self._thumbnail.setToolTip(tr(
+            "A small picture of the first scene (or of the view, when there "
+            "are no scenes), shown by the file manager. Off, a model without "
+            "textures is saved as plain text (JSON)."))
+        self._thumbnail.setChecked(
+            str(_gs.value("save_thumbnail", "1", st)) != "0")
+        form.addRow("", self._thumbnail)
+        # How Save writes the .igz (formats.igz.SAVE_FORMATS).
+        self._save_format = QComboBox()
+        self._save_format.addItem(tr("Automatic (compact)"), "auto")
+        self._save_format.addItem(tr("Plain JSON (for version control)"),
+                                  "json")
+        i = self._save_format.findData(str(_gs.value("save_format", "auto",
+                                                     st)))
+        self._save_format.setCurrentIndex(max(i, 0))
+        self._save_format.setToolTip(tr(
+            "Automatic packs textures and big models into a compact archive. "
+            "Plain JSON always writes readable text, so Git and other version "
+            "control can show what changed; its images go to a folder beside "
+            "the document (Name.assets) that travels with it."))
+        form.addRow(tr("Save format"), self._save_format)
+
         self._undo_steps = QSpinBox()
         self._undo_steps.setRange(0, 5000)
         self._undo_steps.setSpecialValueText(tr("unlimited"))
@@ -204,7 +288,8 @@ class PreferencesDialog(QDialog):
             "Once a day, IngeTrazo asks GitHub for the latest version number. "
             "Nothing about you or your files is sent."))
         self._check_updates.setChecked(auto_enabled(st))
-        self._check_updates.setVisible(not store_managed())
+        # Into the form, or nowhere: setVisible(True) while it had no
+        # parent yet showed it for an instant as a window of its own.
         if not store_managed():
             form.addRow("", self._check_updates)
 
@@ -226,6 +311,12 @@ class PreferencesDialog(QDialog):
         self._invert_orbit.setChecked(str(st.value("nav/invert_orbit_y", "0"))
                                       != "0")
         form.addRow("", self._invert_orbit)
+
+        self._middle_pans = QCheckBox(tr(
+            "Middle-button drag pans (Shift + drag orbits)"))
+        self._middle_pans.setChecked(
+            str(st.value("nav/middle_drag_pans", "0")) != "0")
+        form.addRow("", self._middle_pans)
 
         from tools.walkthrough import look_sensitivity
         self._look_sens = QSpinBox()
@@ -255,6 +346,38 @@ class PreferencesDialog(QDialog):
         self._msaa.setCurrentIndex(max(0, self._msaa.findData(
             msaa_now if msaa_now in (0, 2, 4, 8) else 4)))
         form.addRow(tr("Anti-aliasing (MSAA):"), self._msaa)
+
+        # Soft sun shadows (#1281): off by default, they cost the graphics
+        # card more on every frame while the sun casts shadows.
+        from views.viewport import SOFT_SHADOW_SPREAD
+        row = QHBoxLayout()
+        self._soft_shadows = QCheckBox(tr("Soft sun shadows"))
+        self._soft_shadows.setToolTip(tr(
+            "Shadow edges that soften away from what casts them, as in "
+            "daylight. They cost the graphics card more while the sun casts "
+            "shadows."))
+        row.addWidget(self._soft_shadows)
+        self._soft_level = QComboBox()
+        for level, label in ((1, "Slight"), (2, "Moderate"), (3, "Strong")):
+            self._soft_level.addItem(tr(label), level)
+        try:
+            soft_now = int(st.value("display/soft_shadows", 0))
+        except (TypeError, ValueError):
+            soft_now = 0
+        try:
+            level_now = int(st.value("display/soft_shadows_level", 2))
+        except (TypeError, ValueError):
+            level_now = 2
+        if soft_now in SOFT_SHADOW_SPREAD:
+            level_now = soft_now
+        self._soft_level.setCurrentIndex(max(0, self._soft_level.findData(
+            level_now if level_now in SOFT_SHADOW_SPREAD else 2)))
+        self._soft_shadows.setChecked(soft_now in SOFT_SHADOW_SPREAD)
+        self._soft_shadows.toggled.connect(self._soft_level.setEnabled)
+        self._soft_level.setEnabled(self._soft_shadows.isChecked())
+        row.addWidget(self._soft_level)
+        row.addStretch()
+        form.addRow("", row)
 
         from views.icons import TOOLBAR_ICON_SIZES, toolbar_icon_px
         self._icon_px = QComboBox()
@@ -294,7 +417,15 @@ class PreferencesDialog(QDialog):
             "125 % / 150 % display scale the viewport stutters; X11 "
             "(XWayland) draws smoothly and stays crisp. Takes effect at the "
             "next start."))
-        form.addRow(tr("Graphics server:"), self._platform)
+        # Wayland or X11 is a question only Linux asks: on Windows and
+        # macOS the row spoke of KDE and XWayland to someone with neither
+        # (#1179). The box is still made — reading and saving go through
+        # it — only not shown.
+        if graphics_server_applies():
+            form.addRow(tr("Graphics server:"), self._platform)
+        else:
+            self._platform.setParent(general)
+            self._platform.hide()
 
         # The Rust engine (core._native): on by default, read
         # once at start. Greyed out in a build that does not carry it.
@@ -313,7 +444,7 @@ class PreferencesDialog(QDialog):
                 "different, and report it with the label rust-engine. "
                 "Takes effect at the next start."))
         form.addRow("", self._rust)
-        tabs.addTab(general, tr("General"))
+        tabs.addTab(_ScrollingPage(general), tr("General"))
 
         # ---- 3D mouse (issue #108) -------------------------------------------
         from views.ndof_input import load_settings, shared_input
@@ -336,11 +467,7 @@ class PreferencesDialog(QDialog):
         self._ndof_lock.setChecked(nd.lock_rotation)
         form.addRow("", self._ndof_lock)
         name = shared_input().backend_name
-        status = QLabel(
-            tr("Device driver found: {name}", name=name) if name else tr(
-                "No 3D mouse driver found. On Linux install and start "
-                "«spacenavd»; on Windows the 3Dconnexion driver is enough. "
-                "macOS is not supported yet."))
+        status = _NdofStatusLabel(shared_input(), self)
         status.setWordWrap(True)
         form.addRow("", status)
         # Live reading: nobody on the team has a device, so an owner can say
@@ -382,8 +509,10 @@ class PreferencesDialog(QDialog):
         axis_labels = ("Move left / right", "Move up / down", "Push / pull",
                        "Tilt forward / back", "Twist left / right",
                        "Roll left / right")
+        # One label per entry of ndof.ACTIONS, in its order: zip() stops at
+        # the shorter, and a missing one shifted "Disabled" onto Orbit Z.
         action_labels = ("Pan X", "Pan Y", "Zoom", "Orbit X", "Orbit Y",
-                         "Disabled")
+                         "Orbit Z", "Disabled")
         for axis, axis_label in zip(AXES, axis_labels):
             row = QHBoxLayout()
             action = QComboBox()
@@ -481,7 +610,7 @@ class PreferencesDialog(QDialog):
         self._ndof_load.clicked.connect(self._load_ndof_profile)
         self._ndof_save.clicked.connect(self._save_ndof_profile)
         self._ndof_reset.clicked.connect(self._reset_ndof_profile)
-        tabs.addTab(mouse3d, tr("3D Mouse"))
+        tabs.addTab(_ScrollingPage(mouse3d), tr("3D Mouse"))
 
         # ---- Import ---------------------------------------------------------
         imp = QWidget()
@@ -506,7 +635,7 @@ class PreferencesDialog(QDialog):
         self._coord.setCurrentIndex(max(0, self._coord.findData(
             str(st.value("georef/coord_mode", "geo") or "geo"))))
         form.addRow(tr("Coordinate entry:"), self._coord)
-        tabs.addTab(imp, tr("Import"))
+        tabs.addTab(_ScrollingPage(imp), tr("Import"))
 
         # ---- AI Assistant ---------------------------------------------------
         ia = QWidget()
@@ -546,7 +675,7 @@ class PreferencesDialog(QDialog):
         self._shots = QCheckBox(tr("Send viewport screenshots to the model"))
         self._shots.setChecked(str(st.value("ia/capturas", "1")) != "0")
         form.addRow("", self._shots)
-        tabs.addTab(ia, tr("AI Assistant"))
+        tabs.addTab(_ScrollingPage(ia), tr("AI Assistant"))
 
         # ---- Units (of THIS document) ---------------------------------------
         # Issue #33 (@pacaeiro): «when doing architecture I work in meters
@@ -590,10 +719,11 @@ class PreferencesDialog(QDialog):
         page = QVBoxLayout(un)
         page.addWidget(self._units_panel)
         page.addStretch(1)
-        tabs.addTab(un, tr("Units"))
-        self._units_page = un
+        self._units_page = _ScrollingPage(un)
+        tabs.addTab(self._units_page, tr("Units"))
 
         # ---- Keyboard shortcuts (issue #138) -------------------------------
+        # (Not wrapped: its list already scrolls on its own.)
         from views.shortcuts import ShortcutsPanel
         self._shortcuts = ShortcutsPanel(self._window)
         tabs.addTab(self._shortcuts, tr("Keyboard shortcuts"))
@@ -613,6 +743,22 @@ class PreferencesDialog(QDialog):
         self._defaults_btn.setToolTip(tr(_DEFAULTS_NOTE))
         self._defaults_btn.clicked.connect(self._ask_restore_defaults)
         layout.addWidget(buttons)
+        self._buttons = buttons
+        screen = ((window.screen() if window is not None else None)
+                  or QGuiApplication.primaryScreen())
+        if screen is not None:
+            self.fit_to(screen.availableGeometry())
+
+    def fit_to(self, available: QRect) -> None:
+        """Open no bigger than ``available`` (the screen's free area), so
+        OK and Cancel stay reachable on a short laptop screen (#1336):
+        the pages scroll instead. With room to spare it opens at its
+        natural size, as before."""
+        self.layout().activate()
+        hint = self.sizeHint()
+        self.resize(min(hint.width(), max(available.width(), 1)),
+                    min(hint.height(),
+                        max(available.height() - _FRAME_ALLOWANCE, 1)))
 
     def _refresh_key_env(self, *_args) -> None:
         try:
@@ -913,6 +1059,7 @@ class PreferencesDialog(QDialog):
         self._autosave.setChecked(True)
         self._autosave_min.setValue(5)
         self._backup.setChecked(True)
+        self._thumbnail.setChecked(True)
         self._undo_steps.setValue(200)
         self._ask_section.setChecked(True)
         self._hover_picture.setChecked(True)
@@ -924,6 +1071,8 @@ class PreferencesDialog(QDialog):
         self._look_sens.setValue(DEFAULT_LOOK_SENSITIVITY)
         pick(self._cursor_style, "tool")
         pick(self._msaa, 4)
+        self._soft_shadows.setChecked(False)
+        pick(self._soft_level, 2)
         pick(self._icon_px, default_toolbar_icon_px())
         pick(self._ext_menus, "auto")
         pick(self._platform, AUTO)
@@ -1026,6 +1175,9 @@ class PreferencesDialog(QDialog):
                       st)
         _gs.set_value("autosave_min", self._autosave_min.value(), st)
         _gs.set_value("backup", "1" if self._backup.isChecked() else "0", st)
+        _gs.set_value("save_thumbnail",
+                      "1" if self._thumbnail.isChecked() else "0", st)
+        _gs.set_value("save_format", self._save_format.currentData(), st)
         st.setValue("section/ask_name",
                     "1" if self._ask_section.isChecked() else "0")
         st.setValue("tabs/hover_picture",
@@ -1044,6 +1196,7 @@ class PreferencesDialog(QDialog):
         if self._rust.isEnabled() and rust != str(
                 _gs.value(_native.SETTING, _native.DEFAULT, st)):
             _gs.set_value(_native.SETTING, rust, st)
+            _native.chosen_by_user(st)
             QMessageBox.information(
                 self, tr("Rust engine"),
                 tr("Restart IngeTrazo to switch the engine."))
@@ -1093,6 +1246,10 @@ class PreferencesDialog(QDialog):
         for v in viewports:
             v._invert_orbit_y = self._invert_orbit.isChecked()
 
+        st.setValue("nav/middle_drag_pans",
+                    "1" if self._middle_pans.isChecked() else "0")
+        self._window.viewport._middle_drag_pans = self._middle_pans.isChecked()
+
         # First Person reads it on every look move: nothing to push.
         st.setValue("walk/look_sensitivity", int(self._look_sens.value()))
 
@@ -1104,6 +1261,17 @@ class PreferencesDialog(QDialog):
                 # Void the FBO size so the next paint rebuilds it at the new
                 # sample count (the rebuild happens with the context current).
                 vp._fbo_size = None
+                update = getattr(vp, "update", None)
+                if callable(update):
+                    update()
+
+        level = int(self._soft_level.currentData())
+        soft = level if self._soft_shadows.isChecked() else 0
+        st.setValue("display/soft_shadows", soft)
+        st.setValue("display/soft_shadows_level", level)
+        for vp in viewports:
+            if getattr(vp, "_soft_shadows", None) != soft:
+                vp._soft_shadows = soft
                 update = getattr(vp, "update", None)
                 if callable(update):
                     update()

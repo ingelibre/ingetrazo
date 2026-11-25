@@ -24,6 +24,7 @@ from PySide6.QtGui import (
     QColor,
     QCursor,
     QIcon,
+    QImage,
     QPainter,
     QPainterPath,
     QPen,
@@ -32,17 +33,123 @@ from PySide6.QtGui import (
 )
 from PySide6.QtWidgets import QApplication
 
+# ---- stroke weight ------------------------------------------------------------
+#: How thick the toolbar and menu icons' lines are, against the widths the
+#: drawings below are written with: at 65 % a 3.0 line shows as about 1 px at
+#: the toolbar's 24 px — fine lines, as in a technical program (the user's
+#: choice, 0.6.1; at 100 % they read heavy, 1.5–2 px). The cursors keep the
+#: full weight: they must read over any model in the 3D view.
+ICON_STROKE = 0.65
+#: Icons drawn at full weight all the same: the toolbar's «more tools»
+#: chevron is 16 px on a 12 px button, and thinned it faded to a blank.
+FULL_WEIGHT = frozenset({"overflow_h", "overflow_v"})
+_stroke = 1.0           # in force while a drawing runs (see _weighted)
+
+
+class _Pen(QPen):
+    """A :class:`QPen` whose width is scaled by the stroke in force, so the
+    drawings keep their widths as written and one factor thins them all."""
+
+    def __init__(self, *args):
+        if (len(args) >= 2 and isinstance(args[1], (int, float))
+                and not isinstance(args[1], bool)):
+            args = (args[0], args[1] * _stroke, *args[2:])
+        super().__init__(*args)
+
+    def setWidthF(self, width):
+        super().setWidthF(width * _stroke)
+
+
+class _weighted:
+    """``with _weighted(f):`` — draw with the lines at ``f`` of their
+    written width."""
+
+    def __init__(self, factor: float) -> None:
+        self.factor = factor
+
+    def __enter__(self):
+        global _stroke
+        self._was, _stroke = _stroke, self.factor
+
+    def __exit__(self, *_exc):
+        global _stroke
+        _stroke = self._was
+        return False
+
+
+def screen_dpr() -> float:
+    """The screen's device pixel ratio (1.0 without an application): what a
+    mark drawn at a fixed logical size must be multiplied by to be crisp."""
+    app = QApplication.instance()
+    if app is None:
+        return 1.0
+    # The window's ratio first: on a fractional screen (Wayland at 125 %)
+    # the screen says 2.0 while the windows paint at 1.25, and a mark drawn
+    # at 2.0 is scaled down by a non-whole factor -- blurred.
+    # Native windows, not widgets: walking the top-level widgets met ones
+    # being torn down and crashed.
+    from PySide6.QtGui import QGuiApplication
+    win = QGuiApplication.focusWindow()
+    if win is None:
+        win = next((w for w in QGuiApplication.topLevelWindows()
+                    if w.isVisible()), None)
+    if win is not None:
+        return max(1.0, win.devicePixelRatio())
+    return max(1.0, app.devicePixelRatio())
+
+
+def mark_pixmap(width: int = 18, height: int | None = None) -> QPixmap:
+    """A transparent pixmap of ``width`` x ``height`` logical px at the
+    screen's pixel ratio, for the small marks drawn in logical coordinates
+    (the rows' eye, padlock, swatches). A bare ``QPixmap(18, 18)`` is 18
+    device pixels, which Qt stretches -- blurry -- on a scaled screen."""
+    if height is None:
+        height = width
+    dpr = screen_dpr()
+    pm = QPixmap(round(width * dpr), round(height * dpr))
+    pm.setDevicePixelRatio(dpr)
+    pm.fill(Qt.transparent)
+    return pm
+
+
 _PX = 48          # render size (QIcon scales down; big = crisp on HiDPI)
-_M = 8.0          # margin — drawing happens in [_M, _PX-_M]
+#: Margin of the toolbar and menu icons, in render pixels: each drawing is
+#: written by hand in about the middle two thirds of the canvas, and
+#: :func:`tool_icon` scales it up and centres it until its ink stops this
+#: far from the nearest edge, so the icons fill their buttons and the bars
+#: can stay narrow. The line weight is kept as it was: only the drawing grows.
+_M = 1.0
+#: Optical size, in render pixels: the side of the square every drawing is
+#: matched to by area (:func:`_target_side`). Squares, circles and other
+#: compact shapes stop there; long ones reach the _M margin with their long
+#: side. One number for all, so the bars read as one even row.
+_OPTICAL = 42.0
+#: How much ink a typical drawing lays in its box (alpha over box area,
+#: the median of the toolbar set): an outline. Solid shapes — the select
+#: arrow, the filled house views, Text 3D — carry more and look bigger at
+#: the same size, outline-only ones less; :func:`_ink_factor` shrinks or
+#: grows each by a little so they weigh the same. Clamped, so no icon
+#: strays far from the common size.
+_INK_REF = 0.28
+_INK_RANGE = (0.80, 1.05)
 
 
 def _ink() -> QColor:
-    """Icon ink colour — follows the current palette's text colour so the icons
-    read on light and dark themes alike."""
+    """Icon ink colour — the theme's icon grey: a very light grey on the
+    dark themes and a very dark one on the light, never pure white or
+    black, so the icons read without glare (views/theme.py)."""
+    if QApplication.instance() is not None:
+        from views.theme import icon_ink
+        return icon_ink()
+    return QColor(40, 44, 52)
+
+
+def _text_ink() -> QColor:
+    """The palette's text colour: the cursors keep it, at full contrast
+    over whatever the 3D view shows behind them."""
     app = QApplication.instance()
     if app is not None:
         c = app.palette().windowText().color()
-        # Nudge toward a medium ink so lines aren't harsh pure black.
         return QColor(c.red(), c.green(), c.blue())
     return QColor(40, 44, 52)
 
@@ -53,7 +160,7 @@ def _canvas():
     p = QPainter(pm)
     p.setRenderHint(QPainter.Antialiasing, True)
     ink = _ink()
-    pen = QPen(ink, 3.0)
+    pen = _Pen(ink, 3.0)
     pen.setJoinStyle(Qt.RoundJoin)
     pen.setCapStyle(Qt.RoundStyle if hasattr(Qt, "RoundStyle") else Qt.RoundCap)
     p.setPen(pen)
@@ -117,7 +224,7 @@ def _freehand(p, ink):
 def _guide(p, ink, a, b, dashed: bool = True) -> None:
     """A thin construction line — the diagonal, radius or chord the tool
     is built on — in the ink at 55 %, dashed."""
-    pen = QPen(QColor(ink.red(), ink.green(), ink.blue(), 140), 1.8,
+    pen = _Pen(QColor(ink.red(), ink.green(), ink.blue(), 140), 1.8,
                Qt.DashLine if dashed else Qt.SolidLine)
     pen.setCapStyle(Qt.RoundCap)
     p.save()
@@ -286,7 +393,7 @@ def _center_arc(p, ink):
 def _flip(p, ink):
     # Flip/mirror: two triangles reflected across a dashed axis.
     p.setBrush(Qt.NoBrush)
-    dash = QPen(ink, 2.0, Qt.DashLine)
+    dash = _Pen(ink, 2.0, Qt.DashLine)
     p.save()
     p.setPen(dash)
     p.drawLine(QPointF(24, 8), QPointF(24, 40))
@@ -337,7 +444,7 @@ def _solid_arrow(p, color, x0, y0, x1, y1, w=2.8, head=6.0):
     L = math.hypot(dx, dy) or 1.0
     ux, uy = dx / L, dy / L
     bx, by = x1 - ux * head, y1 - uy * head
-    pen = QPen(color, w)
+    pen = _Pen(color, w)
     pen.setCapStyle(Qt.FlatCap)
     p.save()
     p.setPen(pen)
@@ -357,7 +464,7 @@ _SECTION_FRAME = [QPointF(9, 30), QPointF(26, 39), QPointF(39, 21), QPointF(22, 
 def _section(p, ink):
     p.setBrush(Qt.NoBrush)
     p.drawRect(QRectF(9, 13, 30, 22))
-    pen = QPen(_accent(), 3.0, Qt.DashLine)
+    pen = _Pen(_accent(), 3.0, Qt.DashLine)
     pen.setCapStyle(Qt.RoundCap)
     p.save()
     p.setPen(pen)
@@ -366,16 +473,55 @@ def _section(p, ink):
     _solid_arrow(p, _accent(), 28, 9, 38, 9)                # the side cut away
 
 
+def _section_box(p, ink):
+    # What the box keeps: a block, inside a dashed box in the accent.
+    p.save()
+    p.setPen(Qt.NoPen)
+    p.setBrush(QColor(ink.red(), ink.green(), ink.blue(), 150))
+    p.drawRect(QRectF(15, 24, 12, 10))
+    p.restore()
+    pen = QPen(_accent(), 2.4, Qt.DashLine)
+    pen.setCapStyle(Qt.RoundCap)
+    p.save()
+    p.setPen(pen)
+    p.setBrush(Qt.NoBrush)
+    front = QRectF(8, 18, 22, 22)
+    p.drawRect(front)
+    p.drawRect(front.translated(9, -9))
+    for x, y in ((8, 18), (30, 18), (30, 40), (8, 40)):
+        p.drawLine(QPointF(x, y), QPointF(x + 9, y - 9))
+    p.restore()
+
+
+def _section_box_cut(p, ink):
+    # The box's cut as a switch: a solid block sliced by the box's corner.
+    p.save()
+    p.setPen(Qt.NoPen)
+    p.setBrush(QColor(ink.red(), ink.green(), ink.blue(), 170))
+    p.drawRect(QRectF(9, 19, 20, 20))
+    p.setBrush(_accent())
+    p.drawPolygon(QPolygonF([QPointF(29, 19), QPointF(39, 9),
+                             QPointF(39, 29), QPointF(29, 39)]))
+    p.restore()
+    pen = QPen(ink, 2.4)
+    p.save()
+    p.setPen(pen)
+    p.setBrush(Qt.NoBrush)
+    p.drawLine(QPointF(9, 19), QPointF(19, 9))
+    p.drawLine(QPointF(19, 9), QPointF(39, 9))
+    p.restore()
+
+
 def _section_planes(p, ink):
     quad = QPolygonF(_SECTION_FRAME)
-    dash = QPen(QColor(ink.red(), ink.green(), ink.blue(), 110), 1.8,
+    dash = _Pen(QColor(ink.red(), ink.green(), ink.blue(), 110), 1.8,
                 Qt.DashLine)
     p.save()
     p.setPen(dash)
     p.setBrush(Qt.NoBrush)
     p.drawPolygon(quad)
     p.restore()
-    pen = QPen(ink, 3.0)
+    pen = _Pen(ink, 3.0)
     pen.setCapStyle(Qt.RoundCap)
     p.save()
     p.setPen(pen)
@@ -394,7 +540,7 @@ def _section_cuts(p, ink):
     p.drawLine(QPointF(24, 13), QPointF(39, 13))
     p.drawLine(QPointF(39, 13), QPointF(39, 35))
     p.drawLine(QPointF(39, 35), QPointF(24, 35))
-    pen = QPen(_accent(), 4.0)
+    pen = _Pen(_accent(), 4.0)
     pen.setCapStyle(Qt.RoundCap)
     p.save()
     p.setPen(pen)
@@ -454,7 +600,7 @@ def _pushpull(p, ink):
     p.drawLine(QPointF(cx - half_w, y_top + thick), QPointF(cx, y_top + half_h + thick))
     p.drawLine(QPointF(cx, y_top + half_h + thick), QPointF(cx + half_w, y_top + thick))
     # The arrow: shorter than the first draft, its head still clear of the slab.
-    shaft = QPen(ink, 5.0)
+    shaft = _Pen(ink, 5.0)
     shaft.setCapStyle(Qt.FlatCap)
     p.save()
     p.setPen(shaft)
@@ -474,16 +620,79 @@ def _bridge(p, ink):
     a = [QPointF(6, 25), QPointF(16, 21), QPointF(16, 38), QPointF(6, 42)]
     b = [QPointF(32, 10), QPointF(42, 6), QPointF(42, 23), QPointF(32, 27)]
     p.save()
-    p.setPen(QPen(_accent(), 2.2))
+    p.setPen(_Pen(_accent(), 2.2))
     for pa, pb in zip(a, b):
         p.drawLine(pa, pb)
     p.restore()
     pen = p.pen()
-    pen.setWidthF(2.4)
+    pen.setWidthF(2.4 * _stroke)
     p.setPen(pen)
     p.setBrush(QBrush(QColor(ink.red(), ink.green(), ink.blue(), 50)))
     p.drawPolygon(QPolygonF(a))
     p.drawPolygon(QPolygonF(b))
+
+
+def _make_faces(p, ink):
+    """Make Faces: the edges of a loop, their corners in the accent, and
+    the face they close filled in between; a + for the new face."""
+    pts = [QPointF(4, 28), QPointF(22, 15), QPointF(40, 28), QPointF(22, 41)]
+    acc = _accent()
+    p.save()
+    p.setPen(Qt.NoPen)
+    p.setBrush(QColor(acc.red(), acc.green(), acc.blue(), 130))
+    p.drawPolygon(QPolygonF(pts))
+    p.restore()
+    p.setBrush(Qt.NoBrush)
+    p.drawPolygon(QPolygonF(pts))
+    p.save()
+    p.setPen(QPen(ink, 1.4))
+    p.setBrush(QBrush(acc))
+    for q in pts:
+        p.drawEllipse(q, 3.2, 3.2)
+    p.restore()
+    p.save()
+    plus = QPen(ink, 3.0)
+    plus.setCapStyle(Qt.RoundCap)
+    p.setPen(plus)
+    p.drawLine(QPointF(34, 9), QPointF(44, 9))
+    p.drawLine(QPointF(39, 4), QPointF(39, 14))
+    p.restore()
+
+
+def _make_faces_extrude(p, ink):
+    """Make Faces and Extrude: Make Faces' loop with its corners in the
+    accent, at the bottom, and the solid it rises into: the same outline
+    lifted, joined by its upright edges, and an arrow going up."""
+    lift = 16.0
+    base = [QPointF(4, 36), QPointF(18, 28), QPointF(32, 36), QPointF(18, 44)]
+    top = [QPointF(q.x(), q.y() - lift) for q in base]
+    acc = _accent()
+    p.save()
+    p.setPen(Qt.NoPen)
+    p.setBrush(QColor(acc.red(), acc.green(), acc.blue(), 130))
+    p.drawPolygon(QPolygonF(base))
+    p.restore()
+    p.setBrush(Qt.NoBrush)
+    p.drawPolygon(QPolygonF(base))
+    p.drawPolygon(QPolygonF(top))
+    for a, b in zip(base, top):
+        if a.y() > 30:                       # the hidden back edge stays off
+            p.drawLine(a, b)
+    p.save()
+    p.setPen(QPen(ink, 1.4))
+    p.setBrush(QBrush(acc))
+    for q in base:
+        p.drawEllipse(q, 3.0, 3.0)
+    p.restore()
+    p.save()
+    arrow = QPen(ink, 3.0)
+    arrow.setCapStyle(Qt.RoundCap)
+    arrow.setJoinStyle(Qt.RoundJoin)
+    p.setPen(arrow)
+    p.drawLine(QPointF(40, 22), QPointF(40, 5))
+    p.drawPolyline(QPolygonF([QPointF(35, 10), QPointF(40, 5),
+                              QPointF(45, 10)]))
+    p.restore()
 
 
 def _offset(p, ink):
@@ -496,7 +705,7 @@ def _fillet(p, ink):
     """Fillet: a square corner and the rounded one that replaces it — the
     sharp corner ghosted, the arc in the accent."""
     p.setBrush(Qt.NoBrush)
-    ghost = QPen(ink, 1.6, Qt.DashLine)
+    ghost = _Pen(ink, 1.6, Qt.DashLine)
     p.save()
     p.setPen(ghost)
     p.drawLine(QPointF(12, 24), QPointF(12, 12))
@@ -509,7 +718,7 @@ def _fillet(p, ink):
     path.lineTo(38, 12)
     p.drawPath(path)
     p.save()
-    p.setPen(QPen(_accent(), 3.0))
+    p.setPen(_Pen(_accent(), 3.0))
     arc = QPainterPath()
     arc.moveTo(12, 24)
     arc.quadTo(12, 12, 24, 12)
@@ -533,7 +742,7 @@ def _eyedropper(p, ink):
     like Inkscape's dropper (Marco, 2026-09-14): a slanted
     outlined tube from the tip at the hotspot up to a collar, a solid
     rubber bulb top-right, a drop of the sampled colour at the tip."""
-    pen = QPen(ink, 3.0)
+    pen = _Pen(ink, 3.0)
     pen.setCapStyle(Qt.RoundCap)
     pen.setJoinStyle(Qt.RoundJoin)
     p.save()
@@ -578,13 +787,13 @@ def _paint(p, ink):
     p.setBrush(_accent())
     p.drawPolygon(QPolygonF([left, right, bottom]))
     # Diamond frame (the tilted can).
-    frame = QPen(ink, 3.4)
+    frame = _Pen(ink, 3.4)
     frame.setJoinStyle(Qt.RoundJoin)
     p.setPen(frame)
     p.setBrush(Qt.NoBrush)
     p.drawPolygon(QPolygonF([top, right, bottom, left]))
     # Handle stub at the top-right.
-    handle = QPen(ink, 4.0)
+    handle = _Pen(ink, 4.0)
     handle.setCapStyle(Qt.RoundCap)
     p.setPen(handle)
     p.drawLine(P(10.9, 2.5), P(12.3, 1.3))
@@ -645,7 +854,7 @@ def _dimension_style(p, ink):
     p.drawLine(QPointF(9, 30), QPointF(9, 42))
     p.drawLine(QPointF(39, 30), QPointF(39, 42))
     p.save()
-    pen = QPen(ink, 3.0)
+    pen = _Pen(ink, 3.0)
     pen.setCapStyle(Qt.RoundCap)
     p.setPen(pen)
     p.drawLine(QPointF(40, 8), QPointF(28, 20))            # handle
@@ -680,7 +889,7 @@ def _dimension_radius(p, ink):
     import math as _m
     cx, cy, R = 21.0, 26.0, 14.0
     p.save()
-    p.setPen(QPen(_accent(), 3.2))
+    p.setPen(_Pen(_accent(), 3.2))
     p.setBrush(Qt.NoBrush)
     p.drawEllipse(QPointF(cx, cy), R, R)
     p.restore()
@@ -695,7 +904,7 @@ def _dimension_diameter(p, ink):
     import math as _m
     cx, cy, R = 24.0, 24.0, 14.0
     p.save()
-    p.setPen(QPen(_accent(), 3.2))
+    p.setPen(_Pen(_accent(), 3.2))
     p.setBrush(Qt.NoBrush)
     p.drawEllipse(QPointF(cx, cy), R, R)
     p.restore()
@@ -714,7 +923,7 @@ def _dimension_angular(p, ink):
     a0, a1 = _m.radians(0.0), _m.radians(-58.0)      # the two legs, page y down
     L = 28.0
     p.save()
-    p.setPen(QPen(_accent(), 3.2))
+    p.setPen(_Pen(_accent(), 3.2))
     for a in (a0, a1):
         p.drawLine(QPointF(vx, vy),
                    QPointF(vx + L * _m.cos(a), vy + L * _m.sin(a)))
@@ -722,7 +931,7 @@ def _dimension_angular(p, ink):
     R = 17.0
     rect = QRectF(vx - R, vy - R, 2 * R, 2 * R)
     p.save()
-    p.setPen(QPen(ink, 2.0))
+    p.setPen(_Pen(ink, 2.0))
     p.setBrush(Qt.NoBrush)
     p.drawArc(rect, 0, 58 * 16)                      # QPainter angles: y up
     p.restore()
@@ -778,7 +987,7 @@ def _undo(p, ink):
     p.translate(_PX / 2, _PX / 2)
     p.scale(0.8, 0.8)
     p.translate(-_PX / 2 - 1.5, -_PX / 2)
-    pen = QPen(ink, 2.6 / 0.8)
+    pen = _Pen(ink, 2.6 / 0.8)
     pen.setJoinStyle(Qt.RoundJoin)
     pen.setCapStyle(Qt.RoundCap)
     p.setPen(pen)
@@ -804,7 +1013,7 @@ def _orbit(p, ink):
     cx, cy = 24.0, 25.0
     rx, ry = 15.0, 7.6
     rect = QRectF(cx - rx, cy - ry, 2 * rx, 2 * ry)
-    ring = QPen(ink, 3.0)
+    ring = _Pen(ink, 3.0)
     ring.setJoinStyle(Qt.RoundJoin)
     ring.setCapStyle(Qt.RoundCap)
     # Far side of the ring (top) — drawn first so the sphere hides its middle.
@@ -854,7 +1063,7 @@ def _pan(p, ink):
     P.cubicTo(9.0, 26.5, 12.5, 26.0, 14.5, 28.0)
     P.cubicTo(15.5, 29.5, 16.5, 31.5, 17.5, 33.0)
     P.closeSubpath()
-    pen = QPen(ink, 2.8)
+    pen = _Pen(ink, 2.8)
     pen.setJoinStyle(Qt.RoundJoin)
     pen.setCapStyle(Qt.RoundCap)
     p.save()
@@ -866,9 +1075,9 @@ def _pan(p, ink):
     p.drawPath(P)
     # The gesture — touch arc and double arrow — in the accent (Marco: «la C»).
     r = 7.0
-    p.setPen(QPen(_accent(), 2.4, Qt.SolidLine, Qt.RoundCap))
+    p.setPen(_Pen(_accent(), 2.4, Qt.SolidLine, Qt.RoundCap))
     p.drawArc(QRectF(21.0 - r, 13.5 - r, 2 * r, 2 * r), 20 * 16, 140 * 16)
-    pen = QPen(_accent(), 2.5)
+    pen = _Pen(_accent(), 2.5)
     pen.setCapStyle(Qt.RoundCap)
     pen.setJoinStyle(Qt.RoundJoin)
     p.setPen(pen)
@@ -926,7 +1135,7 @@ def _magnifier(p, ink, cx, cy, r, handle=True):
     p.drawEllipse(QPointF(cx, cy), r, r)
     if handle:
         d = r / math.sqrt(2)
-        grip = QPen(ink, 4.0)
+        grip = _Pen(ink, 4.0)
         grip.setCapStyle(Qt.RoundCap)
         p.save()
         p.setPen(grip)
@@ -1212,7 +1421,7 @@ def _text(p, ink):
     faint = QColor(ink)
     faint.setAlpha(150)
     p.save()
-    p.setPen(QPen(faint, 1.8, Qt.DashLine))
+    p.setPen(_Pen(faint, 1.8, Qt.DashLine))
     p.setBrush(Qt.NoBrush)
     p.drawRect(QRectF(9, 10, 30, 28))
     p.restore()
@@ -1241,7 +1450,7 @@ def _text3d(p, ink):
         off = d * i / n
         p.drawText(QPointF(base.x() + off, base.y() - off), "A")
     # Front face on top.
-    p.setPen(QPen(ink))
+    p.setPen(_Pen(ink))
     p.drawText(base, "A")
 
 
@@ -1275,10 +1484,165 @@ def _comp_norte(p, ink):
     p.drawPolygon(poly)
 
 
+def _terrain_grid(p, ink):
+    """Draw ▸ Terrain ▸ Terrain from Scratch: a patch of ground seen at an
+    angle, two cells a side split into triangles, and its two clicks — the
+    corners — as accent dots, like the Rectangle."""
+    a, b, c, d = (8.0, 33.0), (28.0, 39.0), (40.0, 17.0), (20.0, 11.0)
+
+    def at(u, v):
+        return (a[0] + (b[0] - a[0]) * u + (d[0] - a[0]) * v,
+                a[1] + (b[1] - a[1]) * u + (d[1] - a[1]) * v)
+
+    p.setBrush(Qt.NoBrush)
+    p.drawPolygon(QPolygonF([QPointF(*a), QPointF(*b), QPointF(*c),
+                             QPointF(*d)]))
+    p.drawLine(QPointF(*at(0.5, 0)), QPointF(*at(0.5, 1)))
+    p.drawLine(QPointF(*at(0, 0.5)), QPointF(*at(1, 0.5)))
+    for u, v in ((0, 0), (0.5, 0), (0, 0.5), (0.5, 0.5)):
+        _guide(p, ink, at(u, v), at(u + 0.5, v + 0.5), dashed=False)
+    _dot(p, *a, 2.9)
+    _dot(p, *c, 2.9)
+
+
+def _terrain_deform(p, ink):
+    """Draw ▸ Terrain ▸ Deform Terrain, in section: the level ground
+    (dashed) pushed up into a smooth mound, its top — the click — as an
+    accent dot."""
+    _guide(p, ink, (13, 34), (35, 34))
+    path = QPainterPath(QPointF(5, 34))
+    path.lineTo(QPointF(11, 34))
+    for i in range(1, 25):
+        t = i / 24.0
+        x = 11 + 26 * t
+        path.lineTo(QPointF(x, 34 - 20 * (0.5 - 0.5 * math.cos(2 * math.pi * t))))
+    path.lineTo(QPointF(43, 34))
+    p.setBrush(Qt.NoBrush)
+    p.drawPath(path)
+    _dot(p, 24, 14, 2.9)
+
+
+def _terrain_stamp(p, ink):
+    """Draw ▸ Terrain ▸ Stamp Platform, in section: a hillside with a level
+    platform cut into it — the slope filled below it, cut back above — and
+    the house it is for standing on it in the accent colour."""
+    path = QPainterPath(QPointF(4, 39))
+    path.cubicTo(QPointF(8, 37), QPointF(11, 34), QPointF(14, 31))
+    path.lineTo(QPointF(31, 31))
+    path.lineTo(QPointF(35, 22))
+    path.cubicTo(QPointF(38, 19), QPointF(41, 17), QPointF(44, 16))
+    p.setBrush(Qt.NoBrush)
+    p.drawPath(path)
+    p.save()
+    pen = QPen(p.pen())
+    pen.setColor(_accent())
+    p.setPen(pen)
+    p.drawPolyline(QPolygonF([QPointF(18.5, 31), QPointF(18.5, 21),
+                              QPointF(23, 16), QPointF(27.5, 21),
+                              QPointF(27.5, 31)]))
+    p.restore()
+
+
+def _terrain_drape(p, ink):
+    """Draw ▸ Terrain ▸ Drape, in section: an edge drawn above, dashed
+    guides dropping from its ends, and where they land on the rolling
+    ground — the edge now on it — as accent dots."""
+    p.drawLine(QPointF(10, 10), QPointF(38, 10))
+    _guide(p, ink, (10, 10), (10, 33))
+    _guide(p, ink, (38, 10), (38, 29))
+    path = QPainterPath(QPointF(4, 36))
+    path.cubicTo(QPointF(12, 30), QPointF(18, 40), QPointF(26, 36))
+    path.cubicTo(QPointF(32, 33), QPointF(36, 27), QPointF(44, 30))
+    p.setBrush(Qt.NoBrush)
+    p.drawPath(path)
+    _dot(p, 10, 33, 2.9)
+    _dot(p, 38, 29, 2.9)
+
+
+def _terrain_contours(p, ink):
+    """Draw ▸ Terrain ▸ Terrain from Contours, in section: three contour
+    levels as dashed guides, the ground running smoothly through them, and
+    the points it takes from each level as accent dots."""
+    for y in (34.0, 24.0, 14.0):
+        _guide(p, ink, (6, y), (42, y))
+    path = QPainterPath(QPointF(6, 39))
+    path.cubicTo(QPointF(14, 38), QPointF(16, 30), QPointF(22, 24))
+    path.cubicTo(QPointF(27, 19), QPointF(31, 14), QPointF(42, 12))
+    p.setBrush(Qt.NoBrush)
+    p.drawPath(path)
+    _dot(p, 14.5, 34, 2.9)
+    _dot(p, 22, 24, 2.9)
+    _dot(p, 32.5, 14, 2.9)
+
+
+def _terrain_points(p, ink):
+    """Draw ▸ Terrain ▸ Terrain from Points, in section: survey points at
+    their heights (accent), each on its dashed stake down to the datum, and
+    the ground joining them straight from one to the next."""
+    pts = ((8.0, 28.0), (19.0, 16.0), (30.0, 24.0), (40.0, 12.0))
+    p.drawLine(QPointF(5, 40), QPointF(43, 40))
+    for x, y in pts:
+        _guide(p, ink, (x, y), (x, 40))
+    p.drawPolyline(QPolygonF([QPointF(x, y) for x, y in pts]))
+    for x, y in pts:
+        _dot(p, x, y, 2.9)
+
+
+def _terrain_height(p, ink):
+    """Draw ▸ Terrain ▸ Set Height: a flat contour where it was drawn
+    (dashed), the same line at its height, the arrow between them, and
+    the click on the line as an accent dot."""
+    _guide(p, ink, (6, 38), (42, 38))
+    p.drawLine(QPointF(6, 14), QPointF(42, 14))
+    p.drawLine(QPointF(24, 34), QPointF(24, 21))
+    p.drawPolyline(QPolygonF([QPointF(19.5, 25.5), QPointF(24, 21),
+                              QPointF(28.5, 25.5)]))
+    _dot(p, 24, 14, 2.9)
+
+
+def _north(p, ink):
+    """Tools ▸ North: a compass circle, its arrow in the accent colour
+    pointing up, and the N above it."""
+    p.setBrush(Qt.NoBrush)
+    p.drawEllipse(QPointF(24, 28), 12, 12)
+    p.setBrush(_accent())
+    p.drawPolygon(QPolygonF([QPointF(24, 15), QPointF(28.5, 30),
+                             QPointF(24, 27), QPointF(19.5, 30)]))
+    p.setBrush(Qt.NoBrush)
+    p.drawPolyline(QPolygonF([QPointF(20, 11), QPointF(20, 3),
+                              QPointF(28, 11), QPointF(28, 3)]))
+
+
+def _guide_point(p, ink):
+    """Tools ▸ Guide Point: the dashed cross a guide point is drawn with,
+    its centre dot in the accent colour."""
+    pen = QPen(p.pen())
+    pen.setStyle(Qt.DashLine)
+    pen.setDashPattern([2.0, 1.5])
+    p.save()
+    p.setPen(pen)
+    p.drawLine(QPointF(8, 24), QPointF(40, 24))
+    p.drawLine(QPointF(24, 8), QPointF(24, 40))
+    p.restore()
+    p.setBrush(_accent())
+    p.drawEllipse(QPointF(24, 24), 4.5, 4.5)
+    p.setBrush(Qt.NoBrush)
+
+
 def _comp_leyenda(p, ink):
     for i, y in enumerate((12, 24, 36)):
         p.drawRect(8, y - 3, 6, 6)
         p.drawLine(QPointF(20, y), QPointF(40, y))
+
+
+def _comp_indice(p, ink):
+    """Sheet index: a heading, then rows of name · · · number."""
+    p.drawLine(QPointF(8, 9), QPointF(28, 9))
+    for y in (19, 28, 37):
+        p.drawLine(QPointF(8, y), QPointF(20, y))
+        for x in (24, 29, 34):
+            p.drawPoint(QPointF(x, y))
+        p.drawLine(QPointF(38, y), QPointF(41, y))
 
 
 def _comp_escala(p, ink):
@@ -1337,6 +1701,31 @@ def _refresh(p, ink):
     p.setBrush(ink)
     p.drawPolygon(QPolygonF([QPointF(36, 8), QPointF(39, 18), QPointF(29, 16)]))
     p.drawPolygon(QPolygonF([QPointF(12, 40), QPointF(9, 30), QPointF(19, 32)]))
+
+
+def _tray(p):
+    # An open tray: what a file brings in or takes out.
+    p.setBrush(Qt.NoBrush)
+    p.drawPolyline(QPolygonF([QPointF(9, 28), QPointF(9, 39), QPointF(39, 39),
+                              QPointF(39, 28)]))
+
+
+def _file_import(p, ink):
+    # An arrow coming down into the tray — bring a file in.
+    _tray(p)
+    p.drawLine(QPointF(24, 8), QPointF(24, 29))
+    p.setBrush(ink)
+    p.drawPolygon(QPolygonF([QPointF(16, 22), QPointF(32, 22),
+                             QPointF(24, 32)]))
+
+
+def _file_export(p, ink):
+    # An arrow leaving the tray upwards — write a file out.
+    _tray(p)
+    p.drawLine(QPointF(24, 32), QPointF(24, 14))
+    p.setBrush(ink)
+    p.drawPolygon(QPolygonF([QPointF(16, 18), QPointF(32, 18),
+                             QPointF(24, 8)]))
 
 
 def _export_pdf(p, ink):
@@ -1405,6 +1794,35 @@ def _styles_icon(p, ink):
     p.restore()
 
 
+def _fog_icon(p, ink):
+    # A distant ridge dissolving behind three soft banks of mist.
+    p.save()
+    distant = QColor(ink)
+    distant.setAlpha(95)
+    pen = QPen(distant, 2.0)
+    pen.setJoinStyle(Qt.RoundJoin)
+    p.setPen(pen)
+    p.setBrush(Qt.NoBrush)
+    p.drawPolyline(QPolygonF([QPointF(10, 31), QPointF(20, 20),
+                              QPointF(28, 28), QPointF(35, 17),
+                              QPointF(42, 25)]))
+    for y, left, right, alpha, bend in (
+            (19, 11, 30, 110, -2),
+            (28, 7, 41, 175, 3),
+            (37, 12, 38, 235, -3)):
+        color = QColor(ink)
+        color.setAlpha(alpha)
+        mist_pen = QPen(color, 2.7)
+        mist_pen.setCapStyle(Qt.RoundCap)
+        p.setPen(mist_pen)
+        path = QPainterPath(QPointF(left, y))
+        mid = (left + right) / 2.0
+        path.cubicTo(mid - 5, y + bend, mid + 4, y - bend,
+                     right, y)
+        p.drawPath(path)
+    p.restore()
+
+
 def _shadows_icon(p, ink):
     # A block with its cast shadow, sun rays at the corner.
     p.save()
@@ -1417,7 +1835,7 @@ def _shadows_icon(p, ink):
     p.drawRect(QRectF(16, 20, 16, 16))
     _dot(p, 12, 12, 4.0)
     p.save()
-    pen = QPen(_accent(), 2.4)
+    pen = _Pen(_accent(), 2.4)
     pen.setCapStyle(Qt.RoundCap)
     p.setPen(pen)
     for ang in (200, 245, 290, 335):
@@ -1520,7 +1938,7 @@ def _badge_arrow_in(p, ink) -> None:
     # An arrow coming down into the sheets: onto the active layer.
     _badge_plate(p)
     p.save()
-    pen = QPen(ink, 3.0)
+    pen = _Pen(ink, 3.0)
     pen.setCapStyle(Qt.RoundCap)
     pen.setJoinStyle(Qt.RoundJoin)
     p.setPen(pen)
@@ -1534,7 +1952,7 @@ def _badge_back(p, ink) -> None:
     # A turning arrow, as Undo: back to the previous state.
     _badge_plate(p)
     p.save()
-    pen = QPen(_accent(), 3.0)
+    pen = _Pen(_accent(), 3.0)
     pen.setCapStyle(Qt.RoundCap)
     pen.setJoinStyle(Qt.RoundJoin)
     p.setPen(pen)
@@ -1547,7 +1965,7 @@ def _badge_back(p, ink) -> None:
 def _badge_plus(p, ink) -> None:
     # In the free corner under the sheets: nothing cut out of them.
     p.save()
-    pen = QPen(ink, 3.4)
+    pen = _Pen(ink, 3.4)
     pen.setCapStyle(Qt.RoundCap)
     p.setPen(pen)
     p.drawLine(QPointF(37, 29), QPointF(37, 45))
@@ -1609,7 +2027,7 @@ def _fold_arrows(p, ink, outward: bool) -> None:
     """A line across the middle and an arrow above and below it: pointing
     away (unfold every folder) or toward it (fold them)."""
     p.save()
-    pen = QPen(ink, 3.0)
+    pen = _Pen(ink, 3.0)
     pen.setCapStyle(Qt.RoundCap)
     pen.setJoinStyle(Qt.RoundJoin)
     p.setPen(pen)
@@ -1622,7 +2040,7 @@ def _fold_arrows(p, ink, outward: bool) -> None:
     for tip, base, _s in heads:
         p.drawPolyline(QPolygonF([QPointF(17, base), QPointF(24, tip),
                                   QPointF(31, base)]))
-    accent = QPen(_accent(), 3.4)
+    accent = _Pen(_accent(), 3.4)
     accent.setCapStyle(Qt.RoundCap)
     p.setPen(accent)
     p.drawLine(QPointF(8, 24), QPointF(40, 24))
@@ -1672,7 +2090,7 @@ def _layers_order(p, ink):
     the rows put in the layers' order."""
     p.save()
     _layer_sheets(p, ink, x=4, y=8, s=0.68, fill=True, count=3)
-    pen = QPen(ink, 3.0)
+    pen = _Pen(ink, 3.0)
     pen.setCapStyle(Qt.RoundCap)
     pen.setJoinStyle(Qt.RoundJoin)
     p.setPen(pen)
@@ -1710,6 +2128,40 @@ def _layer_add(p, ink):
     _badge_plus(p, ink)
 
 
+def _scene_add(p, ink):
+    # The Scenes tab's add button: the camera of the Browser's scene rows,
+    # up-left, and the same «+» below (#1158).
+    p.save()
+    p.setBrush(Qt.NoBrush)
+    p.drawRect(QRectF(5, 9, 22, 16))
+    p.drawPolygon(QPolygonF([QPointF(27, 15), QPointF(37, 9),
+                             QPointF(37, 25), QPointF(27, 19)]))
+    p.restore()
+    _badge_plus(p, ink)
+
+
+def _scenes_list(p, ink):
+    # The Scenes tab's view as a list: a small camera and a line, three rows.
+    p.save()
+    p.setBrush(Qt.NoBrush)
+    for y in (9, 21, 33):
+        p.drawRect(QRectF(6, y, 8, 6))
+        p.drawLine(QPointF(19, y + 3), QPointF(42, y + 3))
+    p.restore()
+
+
+def _scenes_thumbs(p, ink):
+    # The Scenes tab's view with pictures: a big picture and a line, twice.
+    p.save()
+    p.setBrush(Qt.NoBrush)
+    for y in (7, 27):
+        p.drawRect(QRectF(5, y, 20, 14))
+        p.drawPolyline(QPolygonF([QPointF(7, y + 12), QPointF(13, y + 6),
+                                  QPointF(17, y + 10), QPointF(23, y + 4)]))
+        p.drawLine(QPointF(29, y + 7), QPointF(43, y + 7))
+    p.restore()
+
+
 def _folder_add(p, ink):
     # The folder of the panel's rows, its tab up-left, in the accent.
     p.save()
@@ -1732,7 +2184,7 @@ def _arr_boxes(p, ink, a: QRectF, b: QRectF, accent_line=None) -> None:
     p.drawRect(a)
     p.drawRect(b)
     if accent_line is not None:
-        pen = QPen(_accent(), 3.0)
+        pen = _Pen(_accent(), 3.0)
         pen.setCapStyle(Qt.RoundCap)
         p.save()
         p.setPen(pen)
@@ -1775,7 +2227,7 @@ def _arr_dist_h(p, ink):
     p.setBrush(Qt.NoBrush)
     for x in (8, 20, 32):
         p.drawRect(QRectF(x, 16, 8, 16))
-    pen = QPen(_accent(), 2.6)
+    pen = _Pen(_accent(), 2.6)
     pen.setCapStyle(Qt.RoundCap)
     p.save()
     p.setPen(pen)
@@ -1788,7 +2240,7 @@ def _arr_dist_v(p, ink):
     p.setBrush(Qt.NoBrush)
     for y in (8, 20, 32):
         p.drawRect(QRectF(16, y, 16, 8))
-    pen = QPen(_accent(), 2.6)
+    pen = _Pen(_accent(), 2.6)
     pen.setCapStyle(Qt.RoundCap)
     p.save()
     p.setPen(pen)
@@ -1810,7 +2262,7 @@ def _arr_group(p, ink):
     p.setBrush(Qt.NoBrush)
     p.drawRect(QRectF(12, 15, 9, 9))
     p.drawRect(QRectF(27, 24, 9, 9))
-    pen = QPen(_accent(), 2.4, Qt.DashLine)
+    pen = _Pen(_accent(), 2.4, Qt.DashLine)
     pen.setCapStyle(Qt.RoundCap)
     p.save()
     p.setPen(pen)
@@ -1823,7 +2275,7 @@ def _arr_ungroup(p, ink):
     p.setBrush(Qt.NoBrush)
     p.drawRect(QRectF(12, 15, 9, 9))
     p.drawRect(QRectF(27, 24, 9, 9))
-    pen = QPen(_accent(), 2.4)
+    pen = _Pen(_accent(), 2.4)
     pen.setCapStyle(Qt.RoundCap)
     p.save()
     p.setPen(pen)
@@ -1848,7 +2300,7 @@ def _arr_lock(p, ink):
 
 def _side_collapse(p, ink):
     # A chevron pointing right: fold the sidebar away (points left to open).
-    pen = QPen(ink, 3.4)
+    pen = _Pen(ink, 3.4)
     pen.setCapStyle(Qt.RoundCap)
     pen.setJoinStyle(Qt.RoundJoin)
     p.save()
@@ -1870,7 +2322,7 @@ def _plus(p, ink):
 
 def _overflow_h(p, ink):
     # Double chevron «»»: the toolbar's hidden tools, on a horizontal bar.
-    pen = QPen(_accent(), 3.4)
+    pen = _Pen(_accent(), 3.4)
     pen.setCapStyle(Qt.RoundCap)
     pen.setJoinStyle(Qt.RoundJoin)
     p.save()
@@ -1883,7 +2335,7 @@ def _overflow_h(p, ink):
 
 def _overflow_v(p, ink):
     # The same, pointing down, for a vertical bar.
-    pen = QPen(_accent(), 3.4)
+    pen = _Pen(_accent(), 3.4)
     pen.setCapStyle(Qt.RoundCap)
     pen.setJoinStyle(Qt.RoundJoin)
     p.save()
@@ -1895,7 +2347,7 @@ def _overflow_v(p, ink):
 
 
 def _side_expand(p, ink):
-    pen = QPen(ink, 3.4)
+    pen = _Pen(ink, 3.4)
     pen.setCapStyle(Qt.RoundCap)
     pen.setJoinStyle(Qt.RoundJoin)
     p.save()
@@ -1906,7 +2358,7 @@ def _side_expand(p, ink):
 
 
 def _rpen(color, width: float) -> QPen:
-    q = QPen(color, width)
+    q = _Pen(color, width)
     q.setCapStyle(Qt.RoundCap)
     q.setJoinStyle(Qt.RoundJoin)
     return q
@@ -1941,6 +2393,98 @@ def _position_camera(p, ink):
     p.setBrush(acc)
     p.drawPolygon(QPolygonF([QPointF(18, 37), QPointF(28, 37),
                              QPointF(23, 44)]))
+
+
+def _camera_settings(p, ink):
+    # Camera Settings: the camera body with its lens in the accent, and
+    # under it two slider lines with their knobs — the camera by numbers.
+    top = QPainterPath()
+    top.moveTo(15, 9)
+    top.lineTo(18, 4)
+    top.lineTo(28, 4)
+    top.lineTo(31, 9)
+    p.setPen(_rpen(ink, 2.6))
+    p.setBrush(Qt.NoBrush)
+    p.drawPath(top)
+    body = QPainterPath()
+    body.addRoundedRect(QRectF(7, 9, 32, 19), 3.5, 3.5)
+    p.setPen(_rpen(ink, 2.8))
+    p.drawPath(body)
+    acc = _accent()
+    p.setPen(_rpen(ink, 2.6))
+    p.setBrush(QColor(acc.red(), acc.green(), acc.blue(), 210))
+    p.drawEllipse(QPointF(23, 18.5), 5.6, 5.6)
+    p.setPen(_rpen(ink, 2.4))
+    p.setBrush(Qt.NoBrush)
+    p.drawLine(QPointF(7, 35), QPointF(39, 35))
+    p.drawLine(QPointF(7, 42), QPointF(39, 42))
+    p.setPen(Qt.NoPen)
+    p.setBrush(acc)
+    p.drawEllipse(QPointF(15, 35), 3.4, 3.4)
+    p.drawEllipse(QPointF(30, 42), 3.4, 3.4)
+
+
+def _photo_frame(p, ink) -> None:
+    """Camera from Photo's photo: the frame of Image's icon, a little
+    larger, in the tools' ink."""
+    p.save()
+    p.setPen(_rpen(ink, 2.6))
+    p.setBrush(Qt.NoBrush)
+    p.drawRoundedRect(QRectF(5, 8, 38, 32), 3.0, 3.0)
+    p.restore()
+
+
+#: The building in the photo: a box seen corner-on, as in Two-Point
+#: Perspective — (top, bottom) of its left, front and right edges.
+_PHOTO_BOX = ((QPointF(12, 19), QPointF(12, 31)),
+              (QPointF(24, 14), QPointF(24, 35)),
+              (QPointF(36, 19), QPointF(36, 31)))
+
+
+def _photo_match(p, ink):
+    # Camera from Photo: a photo of a building corner, drawn as Two-Point
+    # Perspective draws its box — the picture the camera is found from.
+    _photo_frame(p, ink)
+    p.save()
+    p.setPen(_rpen(ink, 2.4))
+    _box(p, ink, *_PHOTO_BOX)
+    p.restore()
+
+
+def _photo_lines(p, ink):
+    # Edit the lines: the corner's edges only, each run on (thin) toward
+    # where it vanishes, with the accent handles the user drags.
+    _photo_frame(p, ink)
+    (lt, lb), (ft, fb), (rt, rb) = _PHOTO_BOX
+    p.save()
+    faint = QColor(ink)
+    faint.setAlpha(140)
+    p.setPen(_rpen(faint, 1.4))
+    for a, b in ((ft, lt), (fb, lb), (ft, rt), (fb, rb)):
+        far = QPointF(b.x() + (b.x() - a.x()) * 0.45,
+                      b.y() + (b.y() - a.y()) * 0.45)
+        p.drawLine(b, far)
+    p.setPen(_rpen(ink, 2.4))
+    for a, b in ((ft, lt), (fb, lb), (ft, rt), (fb, rb), (ft, fb)):
+        p.drawLine(a, b)
+    p.restore()
+    for pt in (lt, lb, rt, rb):
+        _dot(p, pt.x(), pt.y(), r=2.8)
+
+
+def _photo_new(p, ink):
+    # A new photo: the sign at its full size, as its three siblings, and
+    # the «+» on its plate over the frame's corner.
+    _photo_match(p, ink)
+    _badge_plate(p)
+    _badge_plus(p, ink)
+
+
+def _photo_reset(p, ink):
+    # Reset the lines: the lines at their full size, and Undo's arrow on
+    # its plate over the frame's corner.
+    _photo_lines(p, ink)
+    _badge_back(p, ink)
 
 
 def _walk(p, ink):
@@ -2009,7 +2553,7 @@ def _solid_path(*discs):
 def _solid_keep(p, ink, path, alpha: int = 150):
     acc = _accent()
     p.save()
-    pen = QPen(ink, 2.6)
+    pen = _Pen(ink, 2.6)
     pen.setJoinStyle(Qt.RoundJoin)
     p.setPen(pen)
     p.setBrush(QColor(acc.red(), acc.green(), acc.blue(), alpha))
@@ -2021,7 +2565,7 @@ def _dotted(ink, width: float) -> QPen:
     """A faint dashed outline: the part of a solid the result drops."""
     faint = QColor(ink)
     faint.setAlpha(140)
-    pen = QPen(faint, width, Qt.DashLine)
+    pen = _Pen(faint, width, Qt.DashLine)
     pen.setCapStyle(Qt.FlatCap)
     return pen
 
@@ -2040,7 +2584,7 @@ def _solid_outer_shell(p, ink):
     a, b = _solid_path(_DA), _solid_path(_DB)
     _solid_keep(p, ink, a.united(b), 70)
     p.save()
-    p.setPen(QPen(ink, 3.6))
+    p.setPen(_Pen(ink, 3.6))
     p.setBrush(Qt.NoBrush)
     p.drawPath(a.united(b))
     p.restore()
@@ -2113,19 +2657,19 @@ def solid_cursor(state: str):
     arrow.lineTo(7.5, 12)
     arrow.lineTo(13, 12)
     arrow.closeSubpath()
-    p.setPen(QPen(Qt.white, 1.2))
+    p.setPen(_Pen(Qt.white, 1.2))
     p.setBrush(Qt.black)
     p.drawPath(arrow)
     c = QPointF(22, 22)
     if state == "no":
-        p.setPen(QPen(Qt.white, 1.2))
+        p.setPen(_Pen(Qt.white, 1.2))
         p.setBrush(QColor(90, 94, 102))
         p.drawRoundedRect(QRectF(15, 15, 14, 14), 3, 3)
-        p.setPen(QPen(Qt.white, 2.2))
+        p.setPen(_Pen(Qt.white, 2.2))
         p.drawLine(QPointF(18.5, 18.5), QPointF(25.5, 25.5))
         p.drawLine(QPointF(25.5, 18.5), QPointF(18.5, 25.5))
     else:
-        p.setPen(QPen(Qt.white, 1.2))
+        p.setPen(_Pen(Qt.white, 1.2))
         p.setBrush(_accent())
         p.drawEllipse(c, 7.5, 7.5)
         p.setPen(Qt.white)
@@ -2159,7 +2703,269 @@ def _first_person(p, ink):
         p.drawPath(cap)
 
 
+# ---- Side panels (the tabs of the trays) ---------------------------------------
+# A tray tab shows only its icon (the name is its tooltip and heads the
+# panel): one plain picture per panel, in the tools' ink and accent.
+
+def _panel_properties(p, ink):
+    # A sheet of settings: three sliders, their knobs in the accent.
+    p.setBrush(Qt.NoBrush)
+    p.drawRoundedRect(QRectF(9, 8, 30, 32), 4, 4)
+    for y, knob in ((17, 28), (24, 19), (31, 31)):
+        p.drawLine(QPointF(15, y), QPointF(33, y))
+        _dot(p, knob, y, 3.4)
+
+
+def _panel_bim(p, ink):
+    # A building: walls under a pitched roof, a window in the accent and
+    # the door — the model as building elements.
+    p.setBrush(Qt.NoBrush)
+    p.drawPolygon(QPolygonF([QPointF(10, 39), QPointF(10, 19),
+                             QPointF(24, 9), QPointF(38, 19),
+                             QPointF(38, 39)]))
+    _accent_fill(p, QRectF(15, 22, 8, 7), 200)
+    p.drawRect(QRectF(15, 22, 8, 7))
+    p.drawRect(QRectF(27, 27, 7, 12))
+
+
+def _panel_terrain(p, ink):
+    # Two peaks on the ground line, the far one in the accent.
+    far = QPolygonF([QPointF(20, 38), QPointF(31, 15), QPointF(41, 38)])
+    _accent_fill(p, far, 150)
+    p.setBrush(Qt.NoBrush)
+    p.drawPolyline(far)
+    near = QPolygonF([QPointF(7, 38), QPointF(18, 20), QPointF(29, 38)])
+    p.setBrush(QApplication.palette().base().color())
+    p.drawPolygon(near)
+    p.drawLine(QPointF(6, 38.5), QPointF(42, 38.5))
+
+
+def _panel_browser(p, ink):
+    # A tree: the root, its branches and two children, one in the accent
+    # (the selected row).
+    p.setBrush(Qt.NoBrush)
+    p.drawLine(QPointF(14, 17), QPointF(14, 34))
+    p.drawLine(QPointF(14, 23), QPointF(22, 23))
+    p.drawLine(QPointF(14, 34), QPointF(22, 34))
+    p.drawRoundedRect(QRectF(9, 8, 10, 9), 2, 2)
+    p.drawRoundedRect(QRectF(22, 19, 17, 8), 2, 2)
+    p.setBrush(_accent())
+    p.drawRoundedRect(QRectF(22, 30, 17, 8), 2, 2)
+
+
+def _sparkle(p, cx, cy, r, inner):
+    path = QPainterPath()
+    for i in range(8):
+        a = math.pi / 4 * i - math.pi / 2
+        d = r if i % 2 == 0 else inner
+        pt = QPointF(cx + d * math.cos(a), cy + d * math.sin(a))
+        path.moveTo(pt) if i == 0 else path.lineTo(pt)
+    path.closeSubpath()
+    p.drawPath(path)
+
+
+def _panel_ai(p, ink):
+    # Two sparkles: the big one in ink, the small one in the accent.
+    p.setBrush(Qt.NoBrush)
+    _sparkle(p, 20, 27, 13, 4)
+    p.save()
+    p.setPen(Qt.NoPen)
+    p.setBrush(_accent())
+    _sparkle(p, 35, 13, 7, 2.4)
+    p.restore()
+
+
+def _panel_render(p, ink):
+    # A lit sphere: its shade in the accent, the light shining from the
+    # upper right.
+    shade = QPainterPath()
+    shade.addEllipse(QPointF(20, 28), 12, 12)
+    lit = QPainterPath()
+    lit.addEllipse(QPointF(16, 24), 11, 11)
+    _accent_fill(p, shade.subtracted(lit).toFillPolygon(), 170)
+    p.setBrush(Qt.NoBrush)
+    p.drawEllipse(QPointF(20, 28), 12, 12)
+    p.drawEllipse(QPointF(37, 11), 3, 3)
+    for deg in (-135, -90, -45, 0, 45):
+        a = math.radians(deg)
+        dx, dy = math.cos(a), math.sin(a)
+        p.drawLine(QPointF(37 + 6 * dx, 11 + 6 * dy),
+                   QPointF(37 + 8.5 * dx, 11 + 8.5 * dy))
+
+
+def _panel_solid_inspector(p, ink):
+    # A box looked at closely: the magnifier over its corner.
+    _box(p, ink,
+         (QPointF(7, 16), QPointF(7, 31)),
+         (QPointF(18, 21), QPointF(18, 36)),
+         (QPointF(29, 16), QPointF(29, 31)),
+         top=QPointF(18, 11))
+    p.setBrush(QApplication.palette().base().color())
+    p.drawEllipse(QPointF(31, 31), 7, 7)
+    _magnifier(p, ink, 31, 31, 7)
+
+
+def _panel_options(p, ink):
+    # A gear of eight teeth, its hub in the accent: options, not a tab.
+    import math
+    teeth = 8
+    points = []
+    for i in range(teeth):
+        mid = 2 * math.pi * i / teeth
+        for off, radius in ((-0.30, 13.5), (-0.17, 19.0), (0.17, 19.0),
+                            (0.30, 13.5)):
+            points.append(QPointF(24 + radius * math.cos(mid + off),
+                                  24 + radius * math.sin(mid + off)))
+    p.setBrush(Qt.NoBrush)
+    p.drawPolygon(QPolygonF(points))
+    _dot(p, 24, 24, 5.0)
+
+
+def _panel_levels(p, ink):
+    # A building cut through: floor slabs on columns, the level marker
+    # pointing at the middle floor.
+    p.setBrush(Qt.NoBrush)
+    for y in (9, 21, 33):
+        p.drawRect(QRectF(7, y, 26, 4))
+    for x in (11, 29):
+        p.drawLine(QPointF(x, 13), QPointF(x, 21))
+        p.drawLine(QPointF(x, 25), QPointF(x, 33))
+    mark = QPolygonF([QPointF(36, 23), QPointF(42, 19), QPointF(42, 27)])
+    p.save()
+    p.setPen(Qt.NoPen)
+    p.setBrush(_accent())
+    p.drawPolygon(mark)
+    p.restore()
+
+
+def _sheet_layout(p, ink):
+    # A sheet: its drawing frame, a view inside, the title block in the
+    # accent at the bottom right (the composer's Layout tab).
+    p.setBrush(Qt.NoBrush)
+    p.drawRect(QRectF(6, 9, 36, 30))
+    p.drawRect(QRectF(10, 13, 20, 16))
+    p.drawPolyline(QPolygonF([QPointF(12, 26), QPointF(18, 19),
+                              QPointF(22, 23), QPointF(28, 16)]))
+    p.save()
+    p.setPen(Qt.NoPen)
+    p.setBrush(_accent())
+    p.drawRect(QRectF(31, 31, 9, 6))
+    p.restore()
+
+
+def _sheet_items(p, ink):
+    # The sheet's elements as a list: a mark and a line per row, the
+    # picked row in the accent (the composer's Items tab).
+    p.setBrush(Qt.NoBrush)
+    for y in (11, 24):
+        p.drawRect(QRectF(8, y - 3, 7, 7))
+        p.drawLine(QPointF(19, y + 0.5), QPointF(40, y + 0.5))
+    p.save()
+    p.setPen(Qt.NoPen)
+    p.setBrush(_accent())
+    p.drawRect(QRectF(8, 34, 7, 7))
+    p.restore()
+    p.drawLine(QPointF(19, 37.5), QPointF(40, 37.5))
+
+
+def _sheet_views(p, ink):
+    # Two sheets, the front one showing a view (the composer's Views and
+    # sheets tab); the view's sun in the accent.
+    p.setBrush(Qt.NoBrush)
+    p.drawPolyline(QPolygonF([QPointF(12, 10), QPointF(12, 6),
+                              QPointF(42, 6), QPointF(42, 32),
+                              QPointF(38, 32)]))
+    p.drawRect(QRectF(6, 12, 32, 30))
+    p.drawPolyline(QPolygonF([QPointF(9, 37), QPointF(17, 27),
+                              QPointF(23, 33), QPointF(35, 21)]))
+    _dot(p, 15, 19, 3.0)
+
+
+def _sheet_pages(p, ink):
+    # A PDF reader's pages panel: a column of small pages, the open one in
+    # the accent, beside the page itself (the composer's Sheets tab).
+    p.setBrush(Qt.NoBrush)
+    p.drawRect(QRectF(6, 6, 11, 9))
+    p.drawRect(QRectF(6, 33, 11, 9))
+    p.drawRect(QRectF(22, 6, 20, 36))
+    p.drawLine(QPointF(26, 34.5), QPointF(38, 34.5))
+    p.save()
+    p.setPen(Qt.NoPen)
+    p.setBrush(_accent())
+    p.drawRect(QRectF(6, 19.5, 11, 9))
+    p.restore()
+
+
+def _face_mode(p, ink, mode):
+    top = [QPointF(24, 5), QPointF(43, 15), QPointF(24, 25), QPointF(5, 15)]
+    left = [QPointF(5, 15), QPointF(24, 25), QPointF(24, 43), QPointF(5, 33)]
+    right = [QPointF(24, 25), QPointF(43, 15), QPointF(43, 33), QPointF(24, 43)]
+    p.setPen(_rpen(ink, 2))
+    for index, points in enumerate((top, left, right)):
+        fill = QColor(_accent() if mode in ("textures", "shaded") else ink)
+        fill.setAlpha(35 if mode == "xray" else (55 + index * 35))
+        p.setBrush(Qt.NoBrush if mode == "wireframe" else fill)
+        p.drawPolygon(QPolygonF(points))
+        if mode == "monochrome":
+            # A neutral triangle and an accent triangle on each whole face.
+            p.setPen(Qt.NoPen)
+            p.setBrush(_accent())
+            p.drawPolygon(QPolygonF([points[0], points[2], points[3]]))
+            p.setPen(_rpen(ink, 2))
+            p.setBrush(Qt.NoBrush)
+            p.drawPolygon(QPolygonF(points))
+    if mode in ("wireframe", "xray"):
+        pen = _rpen(ink, 1.4)
+        pen.setStyle(Qt.DashLine)
+        p.setPen(pen)
+        for point in (top[0], left[3], right[2]):
+            p.drawLine(QPointF(24, 23), point)
+    if mode == "textures":
+        p.setPen(_rpen(ink, 1.4))
+        for y in (23, 29, 35):
+            p.drawLine(QPointF(27, y + 5), QPointF(40, y - 2))
+    if mode == "monochrome":
+        p.setPen(_rpen(ink, 1.5))
+        for face in (top, left, right):
+            p.drawLine(face[0], face[2])
+
+
+def _edge_cap(p, ink, mode):
+    p.setPen(_rpen(ink, 1.5))
+    for x in (12, 36):
+        p.drawLine(QPointF(x, 8), QPointF(x, 40))
+    p.setPen(Qt.NoPen)
+    p.setBrush(ink)
+    overhang = (4 if mode == 2 else 6) if mode >= 2 else 0
+    rect = QRectF(12 - overhang, 18, 24 + 2 * overhang, 12)
+    if mode % 2:
+        p.drawRoundedRect(rect, 6, 6)
+    else:
+        p.drawRect(rect)
+
+
+def _edge_endpoint(p, ink, mode):
+    p.setPen(_rpen(ink, 3))
+    p.drawLine(QPointF(10, 24), QPointF(40, 24))
+    p.setPen(Qt.NoPen)
+    p.setBrush(ink)
+    if mode == 0:
+        p.drawRect(QRectF(10, 19, 14, 10))
+    elif mode == 1:
+        p.drawEllipse(QPointF(16, 24), 8, 8)
+    elif mode == 2:
+        p.drawRect(QRectF(8, 16, 16, 16))
+    else:
+        p.drawPolygon(QPolygonF([QPointF(16, 15), QPointF(7, 32), QPointF(25, 32)]))
+
+
 _DRAW = {
+    **{"face_" + mode: (lambda p, ink, mode=mode: _face_mode(p, ink, mode))
+       for mode in ("wireframe", "hidden_line", "shaded", "textures", "monochrome", "xray")},
+    **{key: (lambda p, ink, mode=mode: _edge_cap(p, ink, mode))
+       for mode, key in enumerate(("cap_butt", "cap_round", "cap_square", "cap_round_extended"))},
+    **{key: (lambda p, ink, mode=mode: _edge_endpoint(p, ink, mode))
+       for mode, key in enumerate(("endpoint_default", "endpoint_round", "endpoint_square", "endpoint_triangle"))},
     **_SOLID_ICONS,
     "select": _select, "line": _line, "freehand": _freehand,
     "side_collapse": _side_collapse, "plus": _plus,
@@ -2173,17 +2979,20 @@ _DRAW = {
     "rectangle": _rectangle, "rectangle_center": _rectangle_center,
     "image": _image_icon,
     "comp_vista": _comp_vista, "comp_norte": _comp_norte,
-    "comp_leyenda": _comp_leyenda, "comp_escala": _comp_escala,
+    "comp_leyenda": _comp_leyenda, "comp_indice": _comp_indice,
+    "comp_escala": _comp_escala,
     "comp_cajetin": _comp_cajetin, "comp_flecha": _comp_flecha,
     "comp_terreno": _comp_terreno,
     "save": _save, "refresh": _refresh, "export_pdf": _export_pdf,
+    "file_import": _file_import, "file_export": _file_export,
     "print_preview": _print_preview,
     "comp_etiqueta": _comp_etiqueta, "comp_perfil": _comp_perfil,
     "comp_nivel": _comp_nivel, "comp_llamada": _comp_llamada,
     "rotated_rect": _rotated_rect, "circle": _circle, "polygon": _polygon,
     "arc": _arc, "arc3": _arc3, "center_arc": _center_arc, "pie": _pie,
     "rotate": _rotate, "scale": _scale, "flip": _flip, "followme": _followme, "pushpull": _pushpull, "offset": _offset, "fillet": _fillet,
-    "bridge": _bridge,
+    "bridge": _bridge, "make_faces": _make_faces,
+    "make_faces_extrude": _make_faces_extrude,
     "move": _move, "paint": _paint, "eyedropper": _eyedropper,
     "dimension": _dimension, "dimension_chain": _dimension_chain,
     "dimension_radius": _dimension_radius,
@@ -2195,13 +3004,29 @@ _DRAW = {
     "undo": _undo, "redo": _redo,
     "text": _text, "text3d": _text3d,
     "eraser": _eraser, "tape": _tape, "protractor": _protractor,
-    "section": _section,
-    "styles": _styles_icon, "shadows": _shadows_icon,
+    "north": _north,
+    "guide_point": _guide_point,
+    "section": _section, "section_box": _section_box,
+    "section_box_cut": _section_box_cut,
+    "terrain_grid": _terrain_grid, "terrain_deform": _terrain_deform,
+    "terrain_stamp": _terrain_stamp, "terrain_drape": _terrain_drape,
+    "terrain_contours": _terrain_contours, "terrain_points": _terrain_points,
+    "terrain_height": _terrain_height,
+    "styles": _styles_icon, "fog": _fog_icon, "shadows": _shadows_icon,
+    "panel_properties": _panel_properties, "panel_bim": _panel_bim,
+    "panel_terrain": _panel_terrain, "panel_browser": _panel_browser,
+    "panel_ai": _panel_ai, "panel_render": _panel_render,
+    "panel_solid_inspector": _panel_solid_inspector,
+    "panel_levels": _panel_levels, "panel_options": _panel_options,
     "layers_panel": _layers_panel, "layers_make_active": _layers_make_active,
     "layers_isolate": _layers_isolate, "layers_hide": _layers_hide,
     "layers_lock": _layers_lock, "layers_show_all": _layers_show_all,
     "layers_to_active": _layers_to_active,
     "layers_previous": _layers_previous, "layer_add": _layer_add, "folder_add": _folder_add,
+    "scene_add": _scene_add, "scenes_list": _scenes_list,
+    "scenes_thumbs": _scenes_thumbs,
+    "sheet_layout": _sheet_layout, "sheet_items": _sheet_items,
+    "sheet_views": _sheet_views, "sheet_pages": _sheet_pages,
     "layers_filter": _layers_filter, "layers_filter_on": _layers_filter_on,
     "layers_colour": _layers_colour,
     "layers_expand": _layers_expand, "layers_collapse": _layers_collapse,
@@ -2212,6 +3037,9 @@ _DRAW = {
     "section_fill": _section_fill,
     "zoom": _zoom, "zoom_window": _zoom_window,
     "position_camera": _position_camera, "walk": _walk,
+    "camera_settings": _camera_settings,
+    "photo_match": _photo_match, "photo_new": _photo_new,
+    "photo_lines": _photo_lines, "photo_reset": _photo_reset,
     "look_around": _look_around, "first_person": _first_person,
     "four_views": _four_views, "close": _close,
     "zoom_extents": _zoom_extents, "zoom_selection": _zoom_selection,
@@ -2228,14 +3056,137 @@ _DRAW = {
 }
 
 
+def ink_bounds(pm: QPixmap) -> QRectF | None:
+    """The box of the pixels a drawing left on ``pm`` (alpha above a
+    faint antialiasing fringe), in pixel units; None when it is blank."""
+    img = pm.toImage().convertToFormat(QImage.Format_ARGB32)
+    w, h = img.width(), img.height()
+    alpha = bytes(img.constBits())[3::4]          # BGRA in memory
+    stride = img.bytesPerLine() // 4
+    rows = [y for y in range(h)
+            if max(alpha[y * stride:y * stride + w]) > 20]
+    if not rows:
+        return None
+    cols = [x for x in range(w)
+            if any(alpha[y * stride + x] > 20 for y in rows)]
+    return QRectF(cols[0], rows[0], cols[-1] + 1 - cols[0],
+                  rows[-1] + 1 - rows[0])
+
+
+#: key -> (scale, dx, dy) that fits that drawing into the _M margin.
+_fit_cache: dict = {}
+#: key -> its _ink_factor, kept for the tests and for whoever tunes _INK_*.
+_factor_cache: dict = {}
+
+
+def _render(draw, weight: float, fit=None) -> QPixmap:
+    """One drawing on a fresh canvas; ``fit`` = (scale, dx, dy) to apply
+    first, with the lines thinned by the scale so they keep their weight."""
+    scale = fit[0] if fit else 1.0
+    with _weighted(weight / scale):
+        pm, p, ink = _canvas()
+        if fit:
+            p.translate(fit[1], fit[2])
+            p.scale(scale, scale)
+        draw(p, ink)
+        p.end()
+    return pm
+
+
+def ink_density(pm: QPixmap) -> float:
+    """Share of its ink box a drawing covers (0 blank … 1 solid)."""
+    box = ink_bounds(pm)
+    if box is None:
+        return 0.0
+    img = pm.toImage().convertToFormat(QImage.Format_ARGB32)
+    ink = sum(bytes(img.constBits())[3::4]) / 255.0
+    return ink / max(box.width() * box.height(), 1.0)
+
+
+def _ink_factor(density: float) -> float:
+    """Size factor that evens out how heavy a drawing looks: below 1 for
+    solid shapes, a touch above for thin outlines (see _INK_REF)."""
+    if density <= 0:
+        return 1.0
+    lo, hi = _INK_RANGE
+    return max(lo, min(hi, (_INK_REF / density) ** 0.3))
+
+
+def _target_side(w: float, h: float, factor: float = 1.0) -> float:
+    """How long the longer side of a drawing whose ink box is ``w`` × ``h``
+    should end up: as large as gives it the visual size of an _OPTICAL
+    square (the same area), never past the _M margin. A square stops at
+    _OPTICAL, a wide or tall one stretches its long side to the margin —
+    so a level line and a filled square read as the same size instead of
+    the square shouting, as when every drawing touched the margin.
+    ``factor`` is the drawing's :func:`_ink_factor`."""
+    room = _PX - 2 * _M
+    side, other = max(w, h), max(min(w, h), 1.0)
+    return min(room, _OPTICAL * factor * (side / other) ** 0.5)
+
+
+def _fit_for(key: str, draw, weight: float):
+    """The scale and shift that give ``draw`` its optical size
+    (:func:`_target_side`), centred on the canvas. Measured on the drawing
+    as it is, then checked scaled and nudged until it lands (dots grow
+    with the drawing, lines keep their width, so one pass is not exact)."""
+    if key in _fit_cache:
+        return _fit_cache[key]
+    fit = None
+    raw = _render(draw, weight)
+    box = ink_bounds(raw)
+    factor = _ink_factor(ink_density(raw))
+    _factor_cache[key] = factor
+    if box is not None:
+        fit = (1.0, 0.0, 0.0)
+        for _ in range(6):
+            side = max(box.width(), box.height())
+            want = _target_side(box.width(), box.height(), factor)
+            scale = fit[0] * want / side
+            # The ink box of the current fit, back in the drawing's units.
+            cx = (box.center().x() - fit[1]) / fit[0]
+            cy = (box.center().y() - fit[2]) / fit[0]
+            fit = (scale, _PX / 2 - cx * scale, _PX / 2 - cy * scale)
+            box = ink_bounds(_render(draw, weight, fit))
+            if box is None:
+                break
+            side = max(box.width(), box.height())
+            if (abs(side - _target_side(box.width(), box.height(), factor)) <= 1
+                    and box.left() >= _M - 0.5 and box.top() >= _M - 0.5
+                    and box.right() <= _PX - _M + 0.5
+                    and box.bottom() <= _PX - _M + 0.5):
+                break
+    _fit_cache[key] = fit
+    return fit
+
+
 def tool_icon(key: str) -> QIcon:
-    """Programmatic :class:`QIcon` for a tool/nav ``key`` (null if unknown)."""
+    """Programmatic :class:`QIcon` for a tool/nav ``key`` (null if unknown),
+    scaled to fill its canvas but for the _M margin. The «more tools»
+    chevrons keep their own size: they sit on a 12 px button."""
     draw = _DRAW.get(key)
     if draw is None:
         return QIcon()
-    pm, p, ink = _canvas()
-    draw(p, ink)
-    p.end()
+    weight = 1.0 if key in FULL_WEIGHT else ICON_STROKE
+    fit = None if key in FULL_WEIGHT else _fit_for(key, draw, weight)
+    return QIcon(_render(draw, weight, fit))
+
+
+def letter_icon(name: str) -> QIcon:
+    """A panel that brings no icon of its own: its initial in a rounded
+    square, in the tools' ink — so its tab, which shows only an icon,
+    is never blank. Drawn with the weight of the other icons (the frame
+    thinned as theirs, the letter not bold), or it stood out among them."""
+    with _weighted(ICON_STROKE):
+        pm, p, ink = _canvas()
+        p.setBrush(Qt.NoBrush)
+        p.drawRoundedRect(QRectF(9, 9, 30, 30), 6, 6)
+        font = p.font()
+        font.setPixelSize(20)
+        p.setFont(font)
+        letter = next((c for c in name if c.isalnum()), "?").upper()
+        p.drawText(QRectF(9, 9, 30, 30), Qt.AlignCenter, letter)
+        p.end()
     return QIcon(pm)
 
 
@@ -2280,11 +3231,21 @@ _CURSOR_HOTSPOTS = {
     "eraser": (15, 31),             # the middle of the rubber's accent end
     "tape": (10, 28),               # the tape's end hook (now at the left)
     "protractor": (24, 24),         # the protractor's vertex
+    "north": (24, 28),              # the compass centre
+    "guide_point": (24, 24),        # the cross: where the point goes
+    "terrain_grid": (8, 33),        # the first corner
+    "terrain_deform": (24, 14),      # the top of the mound
+    "terrain_stamp": (23, 31),       # the platform, under the house
+    "terrain_drape": (10, 33),       # where the edge lands on the ground
+    "terrain_contours": (22, 24),    # a point on a contour level
+    "terrain_points": (19, 16),      # a survey point
+    "terrain_height": (24, 14),      # the clicked line
     "orbit": (24, 24),              # camera navigation (wheel-drag / modes)
     "pan": (24, 24),
     "zoom": (21, 21),               # the magnifier's lens centre
     "zoom_window": (21, 22),
     "section": (24, 27),            # the plane's centre
+    "section_box": (24, 24),
     "position_camera": (23, 44),    # the marker's tip: where the camera goes
     "walk": (24, 24),
     "look_around": (24, 26),        # the pupil
@@ -2293,27 +3254,30 @@ _CURSOR_HOTSPOTS = {
 
 
 def _pencil(p, ink) -> None:
-    """A pencil pointing up-right, tip at (6, 42) in 48-space."""
+    """Original slim drafting pencil, tip at (6, 42) in 48-space."""
     p.save()
     p.translate(6.0, 42.0)
     p.rotate(-45.0)                 # +x runs up-right along the shaft
-    pen = QPen(ink, 3.0)
+    pen = _Pen(ink, 1.25)
     pen.setJoinStyle(Qt.RoundJoin)
     pen.setCapStyle(Qt.RoundCap)
     p.setPen(pen)
-    p.setBrush(Qt.NoBrush)
-    # Sharpened tip.
-    p.drawPolygon(QPolygonF([QPointF(0.0, 0.0), QPointF(10.0, -5.5),
-                             QPointF(10.0, 5.5)]))
-    # Shaft with a flat butt.
-    p.drawLine(QPointF(10.0, -5.5), QPointF(40.0, -5.5))
-    p.drawLine(QPointF(10.0, 5.5), QPointF(40.0, 5.5))
-    p.drawLine(QPointF(40.0, -5.5), QPointF(40.0, 5.5))
-    # Accent lead at the very tip.
-    p.setPen(Qt.NoPen)
-    p.setBrush(QBrush(_accent()))
-    p.drawPolygon(QPolygonF([QPointF(-0.6, 0.0), QPointF(4.2, -2.4),
-                             QPointF(4.2, 2.4)]))
+    # A narrow faceted barrel, rather than a broad hollow marker outline.
+    accent = _accent()
+    p.setBrush(accent)
+    p.drawPolygon(QPolygonF([QPointF(11, -3), QPointF(37, -3),
+                             QPointF(40, -1.8), QPointF(40, 1.8),
+                             QPointF(37, 3), QPointF(11, 3)]))
+    p.setPen(_Pen(accent.lighter(155), 1.0, Qt.SolidLine, Qt.FlatCap))
+    p.drawLine(QPointF(12, -0.8), QPointF(37.5, -0.8))
+    # Exposed wood and a fine graphite point make the material unambiguous.
+    p.setPen(pen)
+    p.setBrush(QColor(218, 181, 140))
+    p.drawPolygon(QPolygonF([QPointF(4.5, -1.15), QPointF(11, -3),
+                             QPointF(11, 3), QPointF(4.5, 1.15)]))
+    p.setBrush(ink)
+    p.drawPolygon(QPolygonF([QPointF(0, 0), QPointF(4.5, -1.15),
+                             QPointF(4.5, 1.15)]))
     p.restore()
 
 
@@ -2326,12 +3290,12 @@ def _offset_pointer(p, ink) -> None:
                  (12.75, 19.5), (21, 19.5)):
         arrow.lineTo(x, y)
     arrow.closeSubpath()
-    p.setPen(QPen(ink, 1.5, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
+    p.setPen(_Pen(ink, 1.5, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
     p.setBrush(ink)
     p.drawPath(arrow)
     p.translate(15, 15)
     p.scale(0.75, 0.75)
-    p.setPen(QPen(ink, 3.5, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
+    p.setPen(_Pen(ink, 3.5, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
     _offset(p, ink)
     p.restore()
 
@@ -2347,6 +3311,25 @@ def _silhouette(src: QPixmap, color: QColor) -> QPixmap:
     p.fillRect(s.rect(), color)
     p.end()
     return s
+
+
+def cursor_hotspot(hot48, scale: float, dpr: float,
+                   platform: str | None = None) -> tuple[int, int]:
+    """The hotspot to hand QCursor for a cursor drawn at ``dpr``.
+
+    Windows and Wayland read a pixmap cursor's hotspot in logical pixels
+    and scale it with the pixmap themselves. X11 (xcb, which is also any
+    Qt app under XWayland) hands it to the server as it comes, in the
+    pixels of the image: at a scale of 2 the point that drew sat halfway
+    to the pencil's tip, up and to the left of it. There it goes in the
+    image's own pixels."""
+    if platform is None:
+        app = QApplication.instance()
+        platform = app.platformName() if app is not None else ""
+    k = dpr if platform == "xcb" else 1.0
+    top = int(round(_CURSOR_SIZE * k)) - 1
+    return (max(0, min(top, round(hot48[0] * scale * k))),
+            max(0, min(top, round(hot48[1] * scale * k))))
 
 
 def tool_cursor(key: str | None, plus: bool = False) -> QCursor | None:
@@ -2371,11 +3354,11 @@ def tool_cursor(key: str | None, plus: bool = False) -> QCursor | None:
     draw = _DRAW.get(key)
     if hot48 is None or (draw is None and not pencil):
         return None
-    ink = _ink()
+    ink = _text_ink()
     app = QApplication.instance()
     screen = app.primaryScreen() if app is not None else None
     dpr = screen.devicePixelRatio() if screen is not None else 1.0
-    cache_key = (key, bool(plus), ink.rgb(), round(dpr, 2))
+    cache_key = (key, bool(plus), ink.rgb(), _accent().rgb(), round(dpr, 2))
     cached = _cursor_cache.get(cache_key)
     if cached is not None:
         return cached
@@ -2387,7 +3370,7 @@ def tool_cursor(key: str | None, plus: bool = False) -> QCursor | None:
     p = QPainter(art)
     p.setRenderHint(QPainter.Antialiasing, True)
     p.scale(scale, scale)
-    ipen = QPen(ink, 3.0)
+    ipen = _Pen(ink, 3.0)
     ipen.setJoinStyle(Qt.RoundJoin)
     ipen.setCapStyle(Qt.RoundCap)
     p.setPen(ipen)
@@ -2399,7 +3382,7 @@ def tool_cursor(key: str | None, plus: bool = False) -> QCursor | None:
             p.save()
             p.translate(28.0, 28.0)
             p.scale(20.0 / _PX, 20.0 / _PX)
-            bpen = QPen(ink, 4.4)     # thicker: stays readable that small
+            bpen = _Pen(ink, 4.4)     # thicker: stays readable that small
             bpen.setJoinStyle(Qt.RoundJoin)
             bpen.setCapStyle(Qt.RoundCap)
             p.setPen(bpen)
@@ -2412,7 +3395,7 @@ def tool_cursor(key: str | None, plus: bool = False) -> QCursor | None:
     if plus:
         # The guide-mode plus, top-right so it never sits under the
         # hotspot. Drawn before the halo so it gets one too.
-        ppen = QPen(ink, 4.0)
+        ppen = _Pen(ink, 4.0)
         ppen.setCapStyle(Qt.RoundCap)
         p.setPen(ppen)
         p.drawLine(34, 6, 44, 6)
@@ -2435,8 +3418,7 @@ def tool_cursor(key: str | None, plus: bool = False) -> QCursor | None:
     p.drawPixmap(QPointF(0.0, 0.0), art)
     p.end()
 
-    hx = max(0, min(_CURSOR_SIZE - 1, round(hot48[0] * scale)))
-    hy = max(0, min(_CURSOR_SIZE - 1, round(hot48[1] * scale)))
+    hx, hy = cursor_hotspot(hot48, scale, dpr)
     cursor = QCursor(out, hx, hy)
     _cursor_cache[cache_key] = cursor
     return cursor
@@ -2451,14 +3433,16 @@ def tool_cursor(key: str | None, plus: bool = False) -> QCursor | None:
 #: persona que instale el programa»).
 TOOLBAR_ICON_SIZES = ((20, "Small"), (24, "Normal"), (32, "Large"),
                       (40, "Extra large"))
-DEFAULT_TOOLBAR_ICON_PX = 24
+DEFAULT_TOOLBAR_ICON_PX = 20
 
 
 def default_toolbar_icon_px() -> int:
-    """The size a profile that never chose gets: normal (24 px). Large was
+    """The size a profile that never chose gets: small (20 px). Large was
     the default for one release (Marco liked it on his 27" monitor) and
-    looked clumsy on his laptop — «se ven mejor los tamaños normales»
-    (2026-09-14); Preferences keeps 20/24/32/40 for whoever wants more."""
+    looked clumsy on his laptop; normal (24 px) followed. Since the icons
+    fill their buttons (_M) a 20 px icon reads as a 24 px one did and the
+    bars take less room; Preferences keeps 20/24/32/40 for whoever wants
+    more."""
     return DEFAULT_TOOLBAR_ICON_PX
 
 

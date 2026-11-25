@@ -64,3 +64,66 @@ def test_handler_is_searched_in_progid_extension_and_system_associations():
 
 def test_an_upgrade_does_not_take_its_own_progid_as_the_source():
     assert "CompareText(PreviousSkpProgId, SkpProgId) = 0" in _section("Code")
+
+
+# ---- Uninstall hands .skp back (issue #1268) --------------------------------
+
+def test_the_previous_opener_is_read_from_the_root_the_install_writes():
+    """HKCR shows both roots merged; the uninstaller deletes only its own."""
+    code = _section("Code")
+    capture = code[code.index("CurStep = ssInstall"):
+                   code.index("CurStep = ssPostInstall")]
+    assert "RegQueryStringValue(HKA, SkpClassKey, '', PreviousOwnRootProgId)" in capture
+    assert r"SkpClassKey = 'Software\Classes\.skp'" in code
+
+
+def test_it_is_written_down_only_when_skp_is_taken_and_was_someone_elses():
+    code = _section("Code")
+    keep = code[code.index("WizardIsTaskSelected('skpdefault')"):
+                code.index("procedure CurUninstallStepChanged")]
+    assert "CompareText(PreviousOwnRootProgId, SkpProgId) <> 0" in keep
+    assert ("RegWriteStringValue(HKA, SkpOwnKey, PreviousValueName, "
+            "PreviousOwnRootProgId)") in keep
+
+
+def test_uninstall_reads_it_before_the_key_goes_and_writes_it_back_after():
+    code = _section("Code")
+    un = code[code.index("procedure CurUninstallStepChanged"):]
+    assert un.index("usUninstall then") < un.index("usPostUninstall then")
+    before = un[un.index("usUninstall then"):un.index("usPostUninstall then")]
+    after = un[un.index("usPostUninstall then"):]
+    assert "RegQueryStringValue(HKA, SkpOwnKey, PreviousValueName, ProgIdToRestore)" in before
+    assert "RegWriteStringValue(HKA, SkpClassKey, '', ProgIdToRestore)" in after
+
+
+def test_a_choice_made_since_is_left_alone():
+    code = _section("Code")
+    after = code[code.index("usPostUninstall then"):]
+    assert "(Current = '') or (CompareText(Current, SkpProgId) = 0)" in after
+
+
+def test_last_the_programs_offered_for_skp_lend_their_handler():
+    """A copy for one user over the one for the whole machine finds
+    IngeTrazo.skp as the previous ProgID; the other program's ProgID was
+    only a key under .skp and in Explorer's list of what opened .skp, and
+    the previews went (minipc, 11-11)."""
+    code = _section("Code")
+    post = code[code.index("CurStep = ssPostInstall"):
+                code.index("procedure CurUninstallStepChanged")]
+    assert post.index(r"'SystemFileAssociations\.skp'") < post.index(
+        "Found := ReadOpenWithHandler(Clsid)") < post.index("if Found then")
+    fn = code[code.index("function ReadOpenWithHandler"):
+              code.index("procedure CurStepChanged")]
+    assert r"HandlerOfAny(HKCR, '.skp\OpenWithProgids', True, Clsid)" in fn
+    assert r"HandlerOfAny(HKCR, '.skp', False, Clsid)" in fn
+    assert (r"'Software\Microsoft\Windows\CurrentVersion\Explorer"
+            r"\FileExts\.skp\OpenWithProgids'") in fn
+    any_ = code[code.index("function HandlerOfAny"):
+                code.index("function ReadOpenWithHandler")]
+    assert "RegGetValueNames(Root, Key, Names)" in any_
+    assert "RegGetSubkeyNames(Root, Key, Names)" in any_
+    # Never its own ProgID nor a key of .skp's own, and the first wins.
+    assert "CompareText(Names[I], SkpProgId) <> 0" in any_
+    for own in ("OpenWithProgids", "OpenWithList", "ShellEx", "ShellNew"):
+        assert f"CompareText(Names[I], '{own}') <> 0" in any_
+    assert "(not Result)" in any_

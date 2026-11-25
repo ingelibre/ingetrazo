@@ -25,8 +25,13 @@ class SavedView:
                  fov_deg: float = 45.0, perspective: bool = True,
                  two_point: bool = False, hidden_layers=None, style=None, section=None,
                  georef=None, shadows=None, hidden_objects=None,
-                 hidden_shown=None) -> None:
+                 hidden_shown=None, folder=None, lens=None,
+                 photo=None) -> None:
         self.name = name
+        #: The folder of the Scenes tab the scene is filed under, or
+        #: ``None`` at the top (core.scene_folders, #1158). Only organises
+        #: the list: nothing of the view depends on it.
+        self.folder = folder or None
         self.target = tuple(target)
         self.distance = float(distance)
         self.yaw = float(yaw)
@@ -76,29 +81,37 @@ class SavedView:
         #: (``{"objects": bool, "geometry": bool}``); scenes keep
         #: both. ``None`` = hands-off.
         self.hidden_shown = dict(hidden_shown) if hidden_shown else None
+        #: The camera's lens beyond the field of view — frame shift, roll,
+        #: clipping, frame shape (``OrbitCamera.lens_dict``). ``{}`` is an
+        #: ordinary lens, and recalling it takes off whatever lens the view
+        #: had before: every scene stands on its own, like sections.
+        self.lens = dict(lens) if lens else {}
+        #: Camera ▸ Camera from Photo: the photo this scene was matched to
+        #: and the lines laid over it (:class:`core.photo_match.PhotoMatch`),
+        #: or ``None``. Showing the scene shows the photo behind the model
+        #: until the camera moves.
+        self.photo = photo
 
     # ---- Snapshot / recall ---------------------------------------------------
     @classmethod
-    def capture(cls, name: str, scene, camera) -> "SavedView":
-        """Snapshot the live camera and the current layer visibility."""
+    def capture(cls, name: str, scene, camera, style=None) -> "SavedView":
+        """Snapshot the live camera and the current layer visibility.
+        ``style``: the one the view shows when it has its own (one of
+        several views); else the scene's."""
+        if style is None:
+            style = getattr(scene, "display_style", None)
         t = camera.target
         return cls(name, target=(t.x(), t.y(), t.z()),
                    distance=camera.distance, yaw=camera.yaw,
                    pitch=camera.pitch, fov_deg=camera.fov_deg,
                    perspective=camera.perspective,
                    two_point=bool(getattr(camera, "two_point", False)),
+                   lens=(camera.lens_dict()
+                         if hasattr(camera, "lens_dict") else None),
                    hidden_layers=[ly.name for ly in scene.layers
                                   if not ly.visible],
-                   style=(scene.display_style.to_dict()
-                          if getattr(scene, "display_style", None) else None),
-                   section={
-                       "active": (scene.active_section().uid
-                                  if scene.active_section() else None),
-                       "planes_shown": getattr(scene, "show_section_planes",
-                                               True),
-                       "cuts_shown": getattr(scene, "show_section_cuts",
-                                             True),
-                   },
+                   style=style.to_dict() if style else None,
+                   section=section_state(scene),
                    georef=georef_state(scene),
                    shadows=(scene.shadows.to_dict()
                             if getattr(scene, "shadows", None) is not None
@@ -111,14 +124,41 @@ class SavedView:
                        "geometry": bool(getattr(scene, "show_hidden_geometry",
                                                 False))})
 
-    def recapture(self, scene, camera) -> None:
-        """Update this view in place from the live state (keeps the name)."""
-        fresh = SavedView.capture(self.name, scene, camera)
+    def take_camera(self, camera) -> None:
+        """Keep ``camera`` as this scene's camera — and nothing else: the
+        layers, style, section and hidden objects it remembers stay as they
+        are (Camera Settings editing a scene)."""
+        t = camera.target
+        self.target = (t.x(), t.y(), t.z())
+        self.distance = float(camera.distance)
+        self.yaw = float(camera.yaw)
+        self.pitch = float(camera.pitch)
+        self.fov_deg = float(camera.fov_deg)
+        self.perspective = bool(camera.perspective)
+        self.two_point = bool(getattr(camera, "two_point", False))
+        if hasattr(camera, "lens_dict"):
+            self.lens = camera.lens_dict()
+
+    def recapture(self, scene, camera, style=None) -> None:
+        """Update this view in place from the live state (keeps the name
+        and the folder). ``style``: as in :meth:`capture`."""
+        fresh = SavedView.capture(self.name, scene, camera, style)
+        fresh.folder = self.folder
+        # A photo scene stays one: Update keeps the photo and its lines.
+        fresh.photo = self.photo
         self.__dict__.update(fresh.__dict__)
 
-    def apply(self, scene, camera) -> None:
+    def apply(self, scene, camera, put_style=None) -> None:
         """Recall the view: camera first, then the layer-visibility state.
-        The caller bumps ``scene.version`` / repaints (tray convention)."""
+        The caller bumps ``scene.version`` / repaints (tray convention).
+        ``put_style``: where the style goes, for a view with its own (one
+        of several views); else it becomes the scene's."""
+        self.apply_camera(camera)
+        self.apply_state(scene, put_style)
+
+    def apply_camera(self, camera) -> None:
+        """Only the camera, its lens included (a scene transition glides it
+        there first)."""
         from PySide6.QtGui import QVector3D
         camera.target = QVector3D(*self.target)
         camera.distance = self.distance
@@ -127,12 +167,22 @@ class SavedView:
         camera.fov_deg = self.fov_deg
         camera.perspective = self.perspective
         camera.two_point = self.two_point
+        if hasattr(camera, "apply_lens"):
+            camera.apply_lens(self.lens)
+
+    def apply_state(self, scene, put_style=None) -> None:
+        """Everything but the camera: layers, style, section, geographic
+        layers, shadows, hidden objects. ``put_style`` as in :meth:`apply`."""
         hidden = set(self.hidden_layers)
         for ly in scene.layers:
             ly.visible = ly.name not in hidden
         if self.style:
             from core.style import Style
-            scene.display_style = Style.from_dict(self.style)
+            style = Style.from_dict(self.style)
+            if put_style is not None:
+                put_style(style)
+            else:
+                scene.display_style = style
         if self.section is not None:
             uid = self.section.get("active")
             target = None
@@ -145,6 +195,13 @@ class SavedView:
                 self.section.get("planes_shown", True))
             scene.show_section_cuts = bool(
                 self.section.get("cuts_shown", True))
+            # The section box the scene was made with cuts again, by uid
+            # as the plane; a scene made without one (or before boxes)
+            # leaves every box in the model, none cutting.
+            if hasattr(scene, "set_active_section_box"):
+                uid = self.section.get("box")
+                scene.set_active_section_box(next(
+                    (b for b in scene.section_boxes if b.uid == uid), None))
         if self.georef is not None:
             for key, obj in georef_objects(scene):
                 if obj is not None and key in self.georef:
@@ -158,6 +215,8 @@ class SavedView:
         if self.hidden_shown is not None:
             scene.show_hidden_objects = bool(self.hidden_shown.get("objects"))
             scene.show_hidden_geometry = bool(self.hidden_shown.get("geometry"))
+        from core.modeling_style import apply_modeling_visibility
+        apply_modeling_visibility(scene)
 
     # ---- Serialisation (.igz) ------------------------------------------------
     def to_dict(self) -> dict:
@@ -174,6 +233,8 @@ class SavedView:
             entry["parallel"] = True
         if self.two_point:
             entry["two_point"] = True
+        if self.lens:
+            entry["lens"] = dict(self.lens)
         if self.hidden_layers:
             entry["hidden_layers"] = list(self.hidden_layers)
         if self.style:
@@ -188,6 +249,10 @@ class SavedView:
             entry["hidden_objects"] = list(self.hidden_objects)
         if self.hidden_shown is not None:
             entry["hidden_shown"] = dict(self.hidden_shown)
+        if self.folder:
+            entry["folder"] = self.folder
+        if self.photo is not None:
+            entry["photo"] = self.photo.to_dict()
         return entry
 
     @classmethod
@@ -207,7 +272,59 @@ class SavedView:
                    georef=raw.get("georef"),
                    shadows=raw.get("shadows"),
                    hidden_objects=raw.get("hidden_objects"),
-                   hidden_shown=raw.get("hidden_shown"))
+                   hidden_shown=raw.get("hidden_shown"),
+                   folder=(raw.get("folder")
+                           if isinstance(raw.get("folder"), str) else None),
+                   lens=(raw.get("lens")
+                         if isinstance(raw.get("lens"), dict) else None),
+                   photo=_photo_from(raw.get("photo")))
+
+    # ---- The camera alone (Camera from Photo's undo) -------------------------
+    def camera_state(self) -> dict:
+        """The scene's camera as a value."""
+        return {"target": tuple(self.target), "distance": self.distance,
+                "yaw": self.yaw, "pitch": self.pitch,
+                "fov_deg": self.fov_deg, "perspective": self.perspective,
+                "two_point": self.two_point, "lens": dict(self.lens)}
+
+    def set_camera_state(self, state: dict) -> None:
+        for k, v in state.items():
+            setattr(self, k, dict(v) if k == "lens" else
+                    tuple(v) if k == "target" else v)
+
+
+def _photo_from(raw):
+    if raw is None:
+        return None
+    from core.photo_match import PhotoMatch
+    return PhotoMatch.from_dict(raw)
+
+
+class PhotoCalibrationCommand(Command):
+    """The lines of a photo scene moved (Camera ▸ Camera from Photo): its
+    calibration and the camera it gives, as one undo step."""
+
+    keeps_paint = True
+    keeps_groups = True
+
+    def __init__(self, view, before_photo: dict, after_photo: dict,
+                 before_camera: dict, after_camera: dict) -> None:
+        self.view = view
+        self.before = (dict(before_photo), dict(before_camera))
+        self.after = (dict(after_photo), dict(after_camera))
+
+    def _put(self, scene, state) -> None:
+        from core.photo_match import PhotoMatch
+        photo, camera = state
+        self.view.photo = PhotoMatch.from_dict(photo)
+        self.view.set_camera_state(camera)
+        scene.version += 1
+
+    def do(self, scene) -> None:
+        self._put(scene, self.after)
+
+    def undo(self, scene) -> None:
+        self._put(scene, self.before)
 
 
 def apply_shadow_state(scene, raw: dict) -> None:
@@ -226,6 +343,22 @@ def georef_objects(scene) -> list[tuple[str, object]]:
             ("survey", getattr(scene, "photo_mesh", None))]
 
 
+def section_state(scene) -> dict:
+    """What a scene keeps of the sections: the active plane, the two
+    View switches and, when one cuts, the section box (its uid)."""
+    state = {
+        "active": (scene.active_section().uid
+                   if scene.active_section() else None),
+        "planes_shown": getattr(scene, "show_section_planes", True),
+        "cuts_shown": getattr(scene, "show_section_cuts", True),
+    }
+    active_box = getattr(scene, "active_section_box", None)
+    box = active_box() if callable(active_box) else None
+    if box is not None:
+        state["box"] = box.uid
+    return state
+
+
 def shown_state(scene) -> tuple:
     """Everything a recalled view can change besides the camera, as a value
     to compare: layer visibility, style, section, geographic layers,
@@ -236,9 +369,12 @@ def shown_state(scene) -> tuple:
     shadows = getattr(scene, "shadows", None)
     section = (scene.active_section()
                if hasattr(scene, "active_section") else None)
+    active_box = getattr(scene, "active_section_box", None)
+    box = active_box() if callable(active_box) else None
     return (tuple((ly.name, ly.visible) for ly in scene.layers),
             style.to_dict() if style is not None else None,
             getattr(section, "uid", None),
+            getattr(box, "uid", None),
             getattr(scene, "show_section_planes", None),
             getattr(scene, "show_section_cuts", None),
             tuple(sorted(georef_state(scene).items())),
@@ -247,6 +383,32 @@ def shown_state(scene) -> tuple:
                          if getattr(g, "hidden", False))),
             getattr(scene, "show_hidden_objects", None),
             getattr(scene, "show_hidden_geometry", None))
+
+
+def visibility_sig(scene) -> tuple:
+    """Layer visibility + map / terrain objects + hidden objects (and the
+    «show hidden objects» switch) as a hashable value to compare: what a
+    scene recall can change WITHOUT bumping ``scene.version``.
+
+    The composer applies a frame's scene transiently
+    (:meth:`views.composer.ComposerWindow._with_frame_camera`) and
+    restores the live state after, so the swap never bumps the version —
+    and the caches keyed on it (the viewport's pick index, the composer's
+    shared geometry) go stale across it (#1450: a copied frame came back
+    with the ORIGINAL portal's layers on export). Face-level hides go
+    through history and bump the version, so they need no place here;
+    style, section and shadows do not change which faces exist."""
+    by_uid = getattr(scene, "groups_by_uid", None)
+    hidden = (frozenset(uid for uid, g in by_uid().items()
+                        if getattr(g, "hidden", False))
+              if callable(by_uid) else frozenset())
+    return (tuple((ly.name, bool(ly.visible))
+                  for ly in getattr(scene, "layers", []) or []),
+            tuple(bool(getattr(obj, "visible", True))
+                  for _k, obj in georef_objects(scene)
+                  if obj is not None),
+            hidden,
+            bool(getattr(scene, "show_hidden_objects", False)))
 
 
 def georef_state(scene) -> dict:

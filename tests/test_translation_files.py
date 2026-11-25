@@ -66,6 +66,12 @@ def test_bulgarian_is_offered_under_its_own_name():
     assert LANGUAGE_NAMES["bg"] == "Български"
 
 
+def test_catalan_is_offered_under_its_own_name():
+    """Catalan only needs its file and its name, like Bulgarian."""
+    assert "ca" in available_languages()
+    assert LANGUAGE_NAMES["ca"] == "Català"
+
+
 def test_traditional_chinese_keeps_the_composer_tab_generic():
     """Its source used a product's name for the sheet layout tab."""
     data = json.loads((_I18N_DIR / "zh-TW.json").read_text(encoding="utf-8"))
@@ -96,3 +102,22 @@ def test_leading_and_trailing_spaces_are_kept(path):
         (k.startswith(" ") and not v[:1].isspace())
         or (k.endswith(" ") and not v[-1:].isspace()))]
     assert not lost, f"{len(lost)} lost their space: {lost[:3]}"
+
+
+def test_contributor_lines_have_translations():
+    """About's roll of contributors: each description goes through
+    ``tr()``, but a line whose description never entered the catalogs
+    was invisible to ``test_every_language_has_every_message`` — that
+    test only compares catalogs against es.json, and the line was
+    missing from es.json too. 26 lines sat untranslated in every
+    language that way until the 0.6.1 credits update (#1271). Pin the
+    source list itself: a new CONTRIBUTORS line without its es.json
+    entry fails here, and the completeness test above then carries
+    the entry to every other catalog."""
+    from views.about_dialog import CONTRIBUTORS
+    source = json.loads((_I18N_DIR / "es.json").read_text(encoding="utf-8"))
+    missing = [role for _name, role, _link in CONTRIBUTORS
+               if role not in source]
+    assert not missing, (
+        f"{len(missing)} contributor lines have no translation entry: "
+        f"{missing[:3]}")

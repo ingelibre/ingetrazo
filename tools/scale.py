@@ -30,7 +30,8 @@ selected (issue #44), and on the drawing axes otherwise — the
 world's at the top level, the open group's inside it. It is kept in that
 frame's coordinates (``_lo``/``_hi``), mapped to the world to draw and pick.
 
-DEFERRED (documented, not built): the Tape Measure whole-model rescale.
+The Tape Measure's rescale — measure, then type the length it should be —
+scales the whole model or the open group instead (core/resize.py).
 """
 from __future__ import annotations
 
@@ -124,18 +125,21 @@ class ScaleTool(Tool):
 
     def on_deactivate(self, viewport) -> None:
         self._revert_preview(viewport)
+        self._end_vp_preview(viewport)
         self._reset()
         self._last = None
 
     # ---- Box + grips --------------------------------------------------------
-    def _selection_bounds(self, viewport):
+    def _selection_bounds(self, viewport, selection=None):
         """World AABB of the selection: loose vertices, whole groups (their
         nested placements included) and reference images."""
         from core.group import iter_placements
         from core.image_plane import ImagePlane
         from core.mesh import Edge, Face
 
-        self._pick_frame(viewport)
+        if selection is None:
+            selection = viewport.scene.selection
+        self._pick_frame(viewport, selection)
         lo = [float("inf")] * 3
         hi = [float("-inf")] * 3
         seen = False
@@ -150,7 +154,7 @@ class ScaleTool(Tool):
                 if c > hi[i]:
                     hi[i] = c
 
-        for ent in viewport.scene.selection:
+        for ent in selection:
             if isinstance(ent, Edge):
                 absorb(ent.a)
                 absorb(ent.b)
@@ -205,13 +209,13 @@ class ScaleTool(Tool):
         return sum(1 for i in range(3) if ext[i] > _FLAT)
 
     # ---- The box's frame (issue #44) ----------------------------------------
-    def _pick_frame(self, viewport) -> None:
+    def _pick_frame(self, viewport, selection=None) -> None:
         """One group or component selected: its own axes. Anything else:
         the drawing axes. The world frame is kept as ``None`` so every
         number is exactly what it was before the box could turn."""
         from core import axes
         from core.group import Group, frame_axes, group_frame
-        sel = list(viewport.scene.selection)
+        sel = list(viewport.scene.selection if selection is None else selection)
         frame = None
         if len(sel) == 1 and isinstance(sel[0], Group):
             frame = group_frame(sel[0])
@@ -309,7 +313,7 @@ class ScaleTool(Tool):
         "endpoint", "midpoint", "intersection", "intersection_edge",
         "intersection_face", "center", "origin",
         "on_edge", "on_line", "from_point", "close", "guide",
-        "component_origin", "arc_midpoint"})
+        "component_origin", "arc_midpoint", "face_center"})
 
     def snap_excluded(self):
         """What is being scaled stays out of the snap engine, or the grip
@@ -319,6 +323,14 @@ class ScaleTool(Tool):
             return None
         edges = {id(e) for v in self._verts for e in getattr(v, "edges", ())}
         return edges, {id(g) for g in self._groups}
+
+    def moving_face_ids(self) -> set:
+        """The loose faces the scale bends or carries, as Move gives them:
+        the cursor never lands on them nor takes their centre."""
+        if self._grip is None:
+            return set()
+        from tools.move import faces_on_verts
+        return faces_on_verts(self)
 
     def _snapped_point(self, ctx):
         snap = getattr(ctx, "snap", None) if ctx is not None else None
@@ -484,6 +496,34 @@ class ScaleTool(Tool):
         self._grip = grip
         self._anchor = self._anchor_for(grip)
         self._factors = (1.0, 1.0, 1.0)
+        self._vp_preview = False
+        self._bent_faces = []
+        if self._groups and not self._verts and not self._positions:
+            # Groups only: the groups preview Move and Rotate use — the
+            # movers' arrays drawn through the scale, nothing mutated until
+            # the commit. Each frame of a scale of a group without its own
+            # placement matrix set every one of its vertices again and
+            # re-baked it (21-11).
+            begin = getattr(viewport, "begin_groups_preview", None)
+            if begin is not None:
+                begin(self._groups)
+                self._vp_preview = True
+        elif self._verts:
+            # Vertices of a big open group or of the big loose model:
+            # Move's vertex-drag preview, scaled — nothing mutated until
+            # the commit, what rides drawn through the scale, the faces it
+            # bends drawn scaled here (preview_faces). Each frame re-walked
+            # the whole loose model before (21-11). Objects grabbed with
+            # them scale through the same matrix (a mixed scale): both
+            # preview, or the live scale stays for the whole.
+            begin = getattr(viewport, "begin_verts_preview", None)
+            from tools.move import begin_verts_preview_for
+            got = (begin_verts_preview_for(begin, self._verts,
+                                           self._groups)
+                   if begin is not None else None)
+            if got is not None:
+                self._bent_faces, _e, self._bent_paint = got
+                self._vp_preview = True
         self._capture_originals(viewport)
         self._grabbed_px = screen_xy
         self._moved = False
@@ -645,6 +685,7 @@ class ScaleTool(Tool):
 
     def on_cancel(self, viewport) -> None:
         self._revert_preview(viewport)
+        self._end_vp_preview(viewport)
         self._grip = None
         self._anchor = None
         self._last = None
@@ -663,7 +704,8 @@ class ScaleTool(Tool):
         from PySide6.QtGui import QMatrix4x4
         orig_v: list = []
         orig_x: list = []
-        for group in self._groups:
+        vp_only = getattr(self, "_vp_preview", False)
+        for group in ([] if vp_only else self._groups):
             if getattr(group, "xform", None) is not None:
                 orig_x.append((group, QMatrix4x4(group.xform)))
             else:
@@ -671,7 +713,9 @@ class ScaleTool(Tool):
                 orig_v.extend((gmesh, v, QVector3D(v.position))
                               for v in gmesh.vertices)
         mesh = viewport.scene.mesh
-        orig_v.extend((mesh, v, QVector3D(v.position)) for v in self._verts)
+        if not getattr(self, "_vp_preview", False):
+            orig_v.extend((mesh, v, QVector3D(v.position))
+                          for v in self._verts)
         self._orig_v = orig_v
         self._orig_x = orig_x
         self._orig_im = [(im, QVector3D(im.origin), QVector3D(im.u),
@@ -698,6 +742,13 @@ class ScaleTool(Tool):
             else:
                 im.origin, im.u, im.v = (m.map(o0), m.mapVector(u0),
                                          m.mapVector(v0))
+        if getattr(self, "_vp_preview", False):
+            # The vertex-drag preview: the viewport draws what rides
+            # through the matrix; no geometry moved, no version churn.
+            viewport.set_groups_preview_matrix(
+                m if m is not None else QMatrix4x4())
+            if not (self._orig_v or self._orig_x):
+                return
         viewport.scene.version += 1
 
     def _apply_preview(self, viewport, target: tuple) -> None:
@@ -711,9 +762,48 @@ class ScaleTool(Tool):
             self._set_preview(viewport, (1.0, 1.0, 1.0))
             self._factors = (1.0, 1.0, 1.0)
 
+    def _end_vp_preview(self, viewport) -> None:
+        end = getattr(viewport, "end_groups_preview", None)
+        if getattr(self, "_vp_preview", False) and end is not None:
+            end()
+        self._vp_preview = False
+        self._bent_faces = []
+        self._moved_parts = None
+        self._moved_memo = None
+
+    def preview_faces(self):
+        """Mid vertex scale (see begin_verts_preview): the faces it bends,
+        drawn scaled — Move's :class:`tools.move._MovedFaces`, made once
+        per factor."""
+        bent = getattr(self, "_bent_faces", None)
+        if (not bent or not getattr(self, "_vp_preview", False)
+                or self._grip is None or self._anchor is None):
+            return []
+        from tools.move import _MovedFaces
+        f = self._factors
+        # At 1:1 the faces where they are, exactly (as _set_preview puts
+        # the originals back, not through a matrix).
+        identity = all(abs(x - 1.0) < 1e-12 for x in f)
+        m = None if identity else scale_matrix(self._anchor, f, self._axes)
+        key = (id(bent), tuple(m.data()) if m is not None else None)
+        memo = getattr(self, "_moved_memo", None)
+        if memo is not None and memo[0] == key and memo[1] is bent:
+            return memo[2]
+        parts = getattr(self, "_moved_parts", None)
+        if parts is None or parts[0] is not bent:
+            shown = [fc for fc in bent if not fc.attrs.get("hidden")]
+            parts = self._moved_parts = (
+                bent, shown, frozenset(id(v) for v in self._verts))
+        out = _MovedFaces(parts[1], parts[2],
+                          getattr(self, "_bent_paint", None),
+                          QVector3D(0.0, 0.0, 0.0), m)
+        self._moved_memo = (key, bent, out)
+        return out
+
     # ---- Commit -------------------------------------------------------------
     def _commit(self, viewport, factors: tuple) -> None:
         self._revert_preview(viewport)
+        self._end_vp_preview(viewport)
         grip = self._grip
         uniform = (self.uniform
                    or (grip is not None
@@ -773,6 +863,10 @@ class ScaleTool(Tool):
         self._box_version = -1
         self._grabbed_px = None
         self._moved = False
+        self._vp_preview = False
+        self._bent_faces = []
+        self._moved_parts = None
+        self._moved_memo = None
 
     # ---- Feedback -----------------------------------------------------------
     def vcb_caption(self) -> str:

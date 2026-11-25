@@ -75,10 +75,13 @@ class _ButtonsOnlyTranslator(QTranslator):
     ``qtbase_<lang>.qm`` also names the keys — «Control+Mayúsculas+Re Pág»
     for Ctrl+Shift+PgUp in menus, tooltips and the shortcut editor — and
     the shortcuts stay in English on purpose. The button texts live in
-    these contexts; everything else is left untranslated."""
+    these contexts; everything else is left untranslated. QColorDialog
+    joins them (#1178): the colour picker's own labels («Basic colors»,
+    «Custom colors», the channel names) are plain words, no key names,
+    so they translate with the rest of the interface."""
 
     _CONTEXTS = frozenset({"QPlatformTheme", "QMessageBox",
-                           "QDialogButtonBox"})
+                           "QDialogButtonBox", "QColorDialog"})
 
     _BUILTIN = {
         "vi": {
@@ -244,6 +247,16 @@ class _App(QApplication):
 
     def __init__(self, argv: list[str]) -> None:
         super().__init__(argv)
+        from core.macos_accessibility import install_cocoa_accessibility_fix
+        try:
+            install_cocoa_accessibility_fix(self)
+        except RuntimeError as error:
+            # The workaround only guards against a crash when an
+            # accessibility client inspects the window; a Mac with another
+            # Qt, or a source checkout without Apple's command line tools,
+            # must still start (it ran before PR #657 the same way).
+            print(f"IngeTrazo: Cocoa accessibility fix not installed: {error}",
+                  file=sys.stderr)
         self.open_window = None            # set once MainWindow exists
         self.pending_open_path: Path | None = None
 
@@ -258,6 +271,24 @@ class _App(QApplication):
                 self.pending_open_path = path
             return True
         return super().event(e)
+
+
+#: What resources/shaders must hold for the 3D view (see --check).
+SHADERS = (
+    "ao.frag",
+    "ao.vert",
+    "ao_apply.frag",
+    "ao_blur.frag",
+    "basic.frag",
+    "basic.vert",
+    "depth.frag",
+    "depth.vert",
+    "edges.frag",
+    "edges.geom",
+    "edges.vert",
+    "style_ground.frag",
+    "style_ground.vert",
+)
 
 
 def _self_check() -> int:
@@ -279,10 +310,17 @@ def _self_check() -> int:
     print(f"  app root   : {root}")
 
     problems: list[str] = []
+    if sys.platform == "darwin" and is_frozen():
+        from core.macos_accessibility import LIBRARY_NAME
+        cocoa_fix = root / "resources" / "native" / LIBRARY_NAME
+        print(f"  Cocoa a11y fix : {'found' if cocoa_fix.is_file() else 'MISSING'}  {cocoa_fix}")
+        if not cocoa_fix.is_file():
+            problems.append("Cocoa accessibility fix")
     # Only files something actually reads at runtime.
     for label, path in (
-        ("vertex shader", root / "resources" / "shaders" / "basic.vert"),
-        ("fragment shader", root / "resources" / "shaders" / "basic.frag"),
+        # Every shader, by name: 0.6.3 shipped without edges.geom, and the
+        # view went blank as soon as a style or a layer needed it (#1541).
+        *((name, root / "resources" / "shaders" / name) for name in SHADERS),
         ("translations", root / "i18n" / "es.json"),
         ("texture library", root / "resources" / "textures" / "library.json"),
         ("components", root / "resources" / "components" / "components.json"),
@@ -453,9 +491,313 @@ def _run_mcp_server() -> int:
             sys.stdout = open(1, "w", encoding="utf-8")
         except OSError:
             return 2
+    # The rest of the line is the server's own (``--headless --open …``:
+    # it starts a window-less IngeTrazo of its own to talk to).
+    sys.argv = [str(script)] + [a for a in sys.argv[1:] if a != "--mcp"]
     import runpy
-    runpy.run_path(str(script), run_name="__main__")
+    try:
+        runpy.run_path(str(script), run_name="__main__")
+    except SystemExit as stop:
+        return stop.code if isinstance(stop.code, int) else 0
     return 0
+
+
+# The command line that works without a window: ``-p`` (or any of the
+# others) in argv switches to it; anything else is the GUI's, as before.
+_CLI_FLAGS = frozenset({"-i", "--input-file", "-o", "--output-file",
+                        "-p", "--create-pdf", "-h", "--help"})
+
+
+def _wants_cli(argv: list[str]) -> bool:
+    return any(a.split("=", 1)[0] in _CLI_FLAGS for a in argv)
+
+
+def _server_argv(argv: list[str]) -> list[str]:
+    """``ingetrazo --server [file.igz] [--port N] [flags…]`` — the short form
+    Marco asked for (19-11) of ``--headless --ai-bridge --open file.igz``:
+    the same mode, the same code (PR #1494's ``--headless``), not a second
+    window-less run. The other ``--headless`` flags are taken as they are."""
+    out = ["--headless", "--ai-bridge"]
+    rest = [a for a in argv if a not in ("--server", "--headless",
+                                         "--ai-bridge")]
+    takes_value = {"--open", "--port", "--ready-file", "--save-format"}
+    i = 0
+    while i < len(rest):
+        a = rest[i]
+        if a in takes_value and i + 1 < len(rest):
+            out += [a, rest[i + 1]]
+            i += 2
+            continue
+        if not a.startswith("-") and "--open" not in out:
+            out += ["--open", a]          # the positional document
+        else:
+            out.append(a)
+        i += 1
+    return out
+
+
+def _wants_headless(argv: list[str]) -> bool:
+    """``--headless`` — unless the line is the PDF export's, which is
+    window-less already (``--help`` then is the headless one's)."""
+    pdf = _CLI_FLAGS - {"-h", "--help"}
+    return "--headless" in argv and not any(
+        a.split("=", 1)[0] in pdf for a in argv)
+
+
+def _attach_console() -> None:
+    from views.headless import attach_console
+    attach_console()
+
+
+def _parse_cli(argv: list[str]):
+    import argparse
+    parser = argparse.ArgumentParser(
+        prog="ingetrazo",
+        description="IngeTrazo without a window: open a document and "
+                    "export its sheets.")
+    parser.add_argument("-i", "--input-file", required=True, type=Path,
+                        help="the document to open (.igz)")
+    parser.add_argument("-o", "--output-file", type=Path,
+                        help="the PDF to write (default: the input file "
+                             "with .pdf, beside it)")
+    parser.add_argument("-p", "--create-pdf", action="store_true",
+                        help="export all the sheets into one PDF, as "
+                             "Export all sheets (PDF) does")
+    args = parser.parse_args(argv)
+    if not args.create_pdf:
+        parser.error("nothing to do: add -p/--create-pdf")
+    return args
+
+
+def _run_cli(argv: list[str]) -> int:
+    """``ingetrazo -i Casa.igz -p [-o Casa.pdf]``: open the document and
+    run Export all sheets (PDF) on it — every sheet, one PDF, each page
+    at its own paper size — with no window on screen.
+
+    The sheets' views are GL renders, so the main window is still built
+    and "shown" (that is what gives the viewport its GL context), but with
+    ``WA_DontShowOnScreen``: nothing reaches the desktop. No single
+    instance either: a running IngeTrazo is neither asked nor disturbed."""
+    _attach_console()
+    args = _parse_cli(argv)
+    src = args.input_file.resolve()
+    if not src.is_file():
+        print(f"ingetrazo: no such file: {src}", file=sys.stderr)
+        return 2
+    out = (args.output_file or src.with_suffix(".pdf")).resolve()
+
+    app = _headless_app()
+    from views.headless import DialogRefuser, build_hidden_window, open_quietly
+    window = build_hidden_window(app)
+    if getattr(window.viewport, "_gl", None) is None:
+        print("ingetrazo: no OpenGL context — the sheets' views will come "
+              "out empty", file=sys.stderr)
+
+    # Opening must not stop to ask: no progress bar on screen, and an
+    # auto-saved copy of the document is left alone — the file on disk is
+    # what gets exported. A failure's message box is answered at once.
+    refuser = DialogRefuser()
+    app.installEventFilter(refuser)
+    opened = open_quietly(window, src)
+    if not opened:
+        print(f"ingetrazo: could not open {src}", file=sys.stderr)
+        for text in refuser.refused:
+            print(f"ingetrazo: {text}", file=sys.stderr)
+        return 1
+    app.processEvents()
+
+    sheets = list(window.viewport.scene.compositions)
+    if not sheets:
+        print(f"ingetrazo: {src.name} has no sheets", file=sys.stderr)
+        return 1
+    out.parent.mkdir(parents=True, exist_ok=True)
+    troubled = window._ensure_composer().export_all_pdf(str(out), sheets)
+    if not out.is_file():
+        print(f"ingetrazo: the PDF was not written: {out}", file=sys.stderr)
+        return 1
+    print(f"Exported {len(sheets)} sheets to {out}")
+    if troubled:
+        print("ingetrazo: a view would not render on "
+              + ", ".join(troubled), file=sys.stderr)
+        return 3
+    return 0
+
+
+def _headless_app():
+    """The QApplication of a run with no window on screen."""
+    if (sys.platform.startswith("linux") and not os.environ.get("DISPLAY")
+            and not os.environ.get("WAYLAND_DISPLAY")
+            and not os.environ.get("QT_QPA_PLATFORM")):
+        # No display at all (a container, ssh): Qt would abort on xcb. The
+        # offscreen platform runs everything but the GL renders, and the
+        # tools that render say so (n63-mcp, 19-11).
+        os.environ["QT_QPA_PLATFORM"] = "offscreen"
+    _configure_surface_format()
+    app = _App(sys.argv[:1])
+    app.setApplicationName("IngeTrazo")
+    app.setOrganizationName("IngeTrazo")
+    _init_language()
+    return app
+
+
+# ``--headless``: an IngeTrazo with no window that an agent drives over the
+# AI bridge (docs/ai-bridge.md). How it ended, for the script that ran it:
+EXIT_SHUTDOWN = 0      # the agent called shutdown (the only clean end)
+EXIT_USAGE = 2         # bad command line
+EXIT_OPEN_FAILED = 3   # --open: the document could not be opened
+EXIT_BRIDGE_FAILED = 4  # the bridge could not listen (port taken…)
+EXIT_ENDED = 5         # anything else: SIGTERM/SIGINT, stdin closed, …
+
+
+def _parse_headless(argv: list[str]):
+    import argparse
+    parser = argparse.ArgumentParser(
+        prog="ingetrazo --headless",
+        description="IngeTrazo with no window, driven by an AI agent over "
+                    "the AI bridge (MCP).",
+        epilog="Exit codes: 0 ended by the agent's shutdown (needs "
+               "--allow-shutdown); 2 bad command line; 3 the --open document "
+               "could not be opened; 4 the bridge could not listen; 5 ended "
+               "any other way (signal, stdin closed).")
+    parser.add_argument("--headless", action="store_true",
+                        help="no window on screen")
+    parser.add_argument("--open", dest="open_file", type=Path,
+                        metavar="FILE", help="the document to open")
+    parser.add_argument("--ai-bridge", action="store_true",
+                        help="start the AI bridge (127.0.0.1 only)")
+    parser.add_argument("--port", type=int, default=None,
+                        help="the bridge's port (default INGETRAZO_AI_PORT, "
+                             "else any free one, published for the MCP "
+                             "server's discovery; 0 = any free port)")
+    parser.add_argument("--ready-file", type=Path, metavar="PATH",
+                        help="write the bridge's port here once the "
+                             "document is open and the bridge listens")
+    parser.add_argument("--allow-save", action="store_true",
+                        help="let the agent save the document "
+                             "(save_document)")
+    parser.add_argument("--save-format", choices=("auto", "json"),
+                        default=None,
+                        help="how the document is saved: auto (as the app "
+                             "does) or json (plain JSON for version "
+                             "control)")
+    parser.add_argument("--allow-shutdown", action="store_true",
+                        help="let the agent end this IngeTrazo (shutdown); "
+                             "that end is exit code 0")
+    parser.add_argument("--exit-on-stdin-eof", action="store_true",
+                        help="end (code 5) when standard input closes — "
+                             "for a parent process that may die")
+    args = parser.parse_args(argv)
+    if not args.ai_bridge:
+        parser.error("nothing to do: add --ai-bridge (or use -i/-p for a "
+                     "PDF)")
+    return args
+
+
+def _run_headless(argv: list[str]) -> int:
+    """``ingetrazo --headless --ai-bridge [--open Casa.igz] …``: no window
+    on screen, the document opened, the bridge listening — until the agent
+    calls ``shutdown`` (exit 0) or something else ends it (see the EXIT_
+    codes). An open that fails ends it at once, before the bridge starts,
+    so a waiting client never meets an empty document."""
+    _attach_console()
+    try:
+        args = _parse_headless(argv)
+    except SystemExit as stop:
+        return EXIT_USAGE if stop.code else 0
+    src = None
+    if args.open_file is not None:
+        src = args.open_file.expanduser().resolve()
+        if not src.is_file():
+            print(f"ingetrazo: no such file: {src}", file=sys.stderr)
+            return EXIT_OPEN_FAILED
+
+    app = _headless_app()
+    from views.headless import DialogRefuser, build_hidden_window, open_quietly
+    # Nobody can answer a dialog: every one is cancelled, and said.
+    refuser = DialogRefuser()
+    app.installEventFilter(refuser)
+    window = build_hidden_window(app)
+    window.save_format_override = args.save_format
+    window.backup_override = False         # Git (or the caller) keeps those
+    # No recovery copies either: the agent saves what it means to keep,
+    # and a copy of work it discarded must not be offered back to the
+    # next session that opens the file.
+    timer = getattr(window, "_autosave_timer", None)
+    if timer is not None:
+        timer.stop()
+    if src is not None:
+        if not open_quietly(window, src):
+            print(f"ingetrazo: could not open {src}", file=sys.stderr)
+            for text in refuser.refused:
+                print(f"ingetrazo: {text}", file=sys.stderr)
+            return EXIT_OPEN_FAILED
+        app.processEvents()
+
+    from plugins.ai_bridge import _bridge_of
+    bridge = _bridge_of(window.viewport)
+    bridge.allow_save = bool(args.allow_save)
+    bridge.allow_shutdown = bool(args.allow_shutdown)
+    ended = {"by_agent": False}
+
+    def _agent_shutdown():
+        ended["by_agent"] = True
+        app.exit(EXIT_SHUTDOWN)
+    bridge.on_shutdown = _agent_shutdown
+    try:
+        port = bridge.start(args.port)
+    except OSError as exc:
+        print(f"ingetrazo: the AI bridge could not listen: {exc}",
+              file=sys.stderr)
+        return EXIT_BRIDGE_FAILED
+    print(f"INGETRAZO_BRIDGE_PORT={port}", flush=True)
+    from views.bridge_tools import NO_GL, can_render
+    print(f"IngeTrazo without a window, AI bridge on 127.0.0.1:{port}"
+          + (f" — {src.name}" if src is not None else "")
+          + ("" if can_render(window.viewport)
+             else f" (screenshot, export_view and render_sheet: {NO_GL})"),
+          file=sys.stderr, flush=True)
+    if args.ready_file is not None:
+        ready = args.ready_file.expanduser()
+        tmp = ready.with_name(ready.name + ".part")
+        tmp.write_text(str(port), encoding="utf-8")
+        tmp.replace(ready)               # whole, or not there at all
+
+    # Python only runs signal handlers between bytecodes: a tick lets it
+    # in while Qt's loop waits. The same tick watches standard input.
+    import signal
+    import threading
+    stop = {"why": None}
+
+    def _on_signal(signum, _frame):
+        stop["why"] = f"signal {signum}"
+    for name in ("SIGINT", "SIGTERM", "SIGBREAK"):
+        sig = getattr(signal, name, None)
+        if sig is not None:
+            try:
+                signal.signal(sig, _on_signal)
+            except (ValueError, OSError):
+                pass
+    if args.exit_on_stdin_eof:
+        def _watch_stdin():
+            try:
+                while os.read(0, 4096):
+                    pass
+            except OSError:
+                pass
+            stop["why"] = stop["why"] or "standard input closed"
+        threading.Thread(target=_watch_stdin, name="ingetrazo-stdin",
+                         daemon=True).start()
+    from PySide6.QtCore import QTimer
+    tick = QTimer()
+    tick.timeout.connect(lambda: stop["why"] and app.exit(EXIT_ENDED))
+    tick.start(200)
+    code = app.exec()
+    bridge.stop()
+    if ended["by_agent"]:
+        return EXIT_SHUTDOWN
+    if stop["why"]:
+        print(f"ingetrazo: ended ({stop['why']})", file=sys.stderr)
+    return EXIT_ENDED if code == 0 else code
 
 
 def main() -> int:
@@ -467,6 +809,15 @@ def main() -> int:
         return _self_check()
     if "--mcp" in sys.argv[1:]:
         return _run_mcp_server()
+    if "--server" in sys.argv[1:]:
+        return _run_headless(_server_argv(sys.argv[1:]))
+    if _wants_headless(sys.argv[1:]):
+        return _run_headless(sys.argv[1:])
+    if _wants_cli(sys.argv[1:]):
+        return _run_cli(sys.argv[1:])
+    # Identify the taskbar group before Qt creates windows or file dialogs.
+    from core import windows_recent
+    windows_recent.initialize()
     # Hang autopsy (Linux): `kill -USR1 <pid>` dumps every thread's Python
     # stack to stderr, so a frozen main loop names its exact line without a
     # debugger or elevated ptrace. No-op where SIGUSR1 doesn't exist.
@@ -650,6 +1001,10 @@ def main() -> int:
                "again in Preferences ▸ General.")))
 
     def _after_first_frame():
+        if getattr(window, "_closed", False):
+            # The user closed the window before this deferred slot got
+            # to run (#1269): the command-line open dies with it.
+            return
         # The plugins' setup, now that the window is up (#440) — and only
         # then the document passed on the command line (the OS file
         # association's double-click hands it as argv[1]): an extension may
@@ -659,13 +1014,19 @@ def main() -> int:
             doc = Path(arg)
             if doc.exists():
                 _open_document_in(window, doc)
+        if getattr(window, "_closed", False):
+            # Closed while the document was coming in: no units question
+            # or update check on a window that is going away (#1269).
+            return
         # Which units to work in, once the window is up and the document in
         # (off for good with «Don't show this at startup»; Preferences ▸
         # Units turns it back on). Offered after the opening, not beside
         # it: the load lets events through to move its bar, the question
         # came up in the middle of it, and the document stayed frozen at
         # 5 % behind it, the view blank, until it was answered.
-        QTimer.singleShot(0, window.offer_units_at_start)
+        from views.workspace_profiles import offer_intro
+        if arg or not offer_intro(window):
+            QTimer.singleShot(0, window.offer_units_at_start)
         QTimer.singleShot(4000, window.check_updates_quietly)
 
     QTimer.singleShot(0, _after_first_frame)

@@ -7,8 +7,8 @@ was over the group's MESH (or already over a grip). On a thin, long
 object — a pipe, an elbow — a grip can sit far off the mesh, and the
 crossing from the mesh to the grip left both behind: the grips went away
 before any could be taken. They now stay while the cursor is inside the
-box as projected on screen (GRIP_PX of margin around it), as in
-SketchUp — retention only: appearing still takes the pick."""
+box as projected on screen (GRIP_PX of margin around it) —
+retention only: appearing still takes the pick."""
 from __future__ import annotations
 
 from PySide6.QtCore import QPointF, Qt

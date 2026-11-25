@@ -5,7 +5,7 @@ added: it opens the Window ▸ Panels list, wherever the tabs are."""
 from __future__ import annotations
 
 from PySide6.QtCore import QPoint, Qt
-from PySide6.QtWidgets import QApplication, QToolButton
+from PySide6.QtWidgets import QApplication, QLabel, QToolButton
 
 _app = QApplication.instance() or QApplication([])
 
@@ -56,7 +56,7 @@ def test_the_plus_follows_the_last_tab():
     _app.processEvents()
     bar = _bar_on_screen(win)
     btn = _plus(bar)
-    last = bar.tabRect(bar.count() - 1)
+    last = win._real_tab_rect(bar, bar.count() - 1)
     assert last.right() < btn.x() <= last.right() + 6
     # One more tab: it moves along.
     before = btn.x()
@@ -67,26 +67,37 @@ def test_the_plus_follows_the_last_tab():
     bar = _bar_on_screen(win)
     btn = _plus(bar)
     assert btn.x() > before
-    assert btn.x() > bar.tabRect(bar.count() - 1).right()
+    assert btn.x() > win._real_tab_rect(bar, bar.count() - 1).right()
     win._show_all_trays()
     _close(win)
 
 
 def test_the_plus_stays_inside_the_bar_when_the_tabs_do_not_fit():
     win = _window()
+    # The tabs are icons now, and how narrow the tray can go depends on the
+    # platform's fonts: enough of them to overflow it anywhere.
+    from views.extension_api import ExtensionApp
+    app = ExtensionApp(win, "many_panels")
+    for i in range(20):
+        app.add_panel(f"Panel {i}", QLabel(str(i)), name=str(i))
     win._show_all_trays()
     win.resizeDocks([win.tray], [220], Qt.Horizontal)
     _app.processEvents()
+    win._style_dock_tabs()
+    _app.processEvents()
     bar = _bar_on_screen(win)
     btn = _plus(bar)
+    gear = bar.findChild(QToolButton, "panel_options_button")
     arrows = [b for b in bar.findChildren(QToolButton)   # Qt's scroll arrows
-              if b is not btn and b.isVisible()]
+              if b not in (btn, gear) and b.isVisible()]
     assert arrows                                  # they really do not fit
     for arrow in arrows:
         assert not btn.geometry().intersects(arrow.geometry())
         assert arrow.x() > btn.x()                 # «+», then the arrows,
         assert arrow.width() == bar.property("ingetrazo_arrow_px")
-    assert max(a.geometry().right() for a in arrows) == bar.width() - 1
+    # and the gear, fixed at the bar's end.
+    assert max(a.geometry().right() for a in arrows) == gear.x() - 1
+    assert gear.geometry().right() == bar.width() - 1
     # A whole cell of the bar's height: the cut tab ends at its edge
     # instead of showing around a small «+».
     assert btn.height() == bar.height()
@@ -99,11 +110,12 @@ def test_a_tray_alone_on_its_side_has_the_plus_too():
     win.move_dock(win.project_browser, Qt.LeftDockWidgetArea)
     _app.processEvents()
     _app.processEvents()
-    tab = win.project_browser.titleBarWidget()
+    tab = win.project_browser.titleBarWidget().tab
     assert isinstance(tab, _DockTitleTab)
     btn = _plus(tab)
     assert btn is not None and btn.isVisible()
     assert btn.x() > tab.tabRect(0).right()
+    assert btn.geometry().right() < tab.width()      # not cut by the name
     win.move_dock(win.project_browser, Qt.RightDockWidgetArea)
     _close(win)
 

@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2026 Marco Sumari Tellez and IngeTrazo contributors.
-"""The units question at startup (metres, millimetres or imperial, with
+"""The units question at startup (metres, centimetres, millimetres or
+imperial, with
 «Don't show this at startup»), its switch in Preferences ▸ Units, and
 Window ▸ Units… on Ctrl+U."""
 from __future__ import annotations
@@ -57,10 +58,11 @@ def _answer(monkeypatch, profile, dont_ask=False, accept=True):
     return seen
 
 
-# ---- the three configurations ------------------------------------------------
+# ---- the four configurations -------------------------------------------------
 
 @pytest.mark.parametrize("profile, expected, shown", [
     ("metric", {"length": "m", "precision": 2}, "1.23 m"),
+    ("centimetric", {"length": "cm", "precision": 1}, "123.5 cm"),
     ("millimetric", {"length": "mm", "precision": 0}, "1235 mm"),
     ("imperial", {"length": "ft-in-frac", "precision": 2}, "4'5/8\""),
 ])
@@ -68,7 +70,8 @@ def test_each_choice_sets_the_new_document(win, monkeypatch, profile,
                                            expected, shown):
     seen = _answer(monkeypatch, profile)
     win.offer_units_at_start()
-    assert seen["choices"] == ["custom", "imperial", "metric", "millimetric"]
+    assert seen["choices"] == ["centimetric", "custom", "imperial", "metric",
+                               "millimetric"]
     assert seen["preselected"] == "metric"             # metres by default
     assert shown in seen["preview"]
     scene = win.viewport.scene
@@ -91,9 +94,31 @@ def test_the_last_choice_is_preselected_next_time(monkeypatch):
     units.remember_new_document_units({"length": "mm", "precision": 0})
     assert UnitsStartDialog().profile() == "millimetric"
     units.remember_new_document_units({"length": "cm", "precision": 1})
+    assert UnitsStartDialog().profile() == "centimetric"
+    units.remember_new_document_units({"length": "cm", "precision": 3})
     dlg = UnitsStartDialog()
     assert dlg.profile() == "custom"                    # «keep my settings»
-    assert dlg.settings() == {"length": "cm", "precision": 1}
+    assert dlg.settings() == {"length": "cm", "precision": 3}
+
+
+def test_centimetres_are_shown_in_order_and_follow_in_cm2_cm3(win, monkeypatch):
+    """Centimetres sit between metres and millimetres, ready to pick
+    without going through Custom…; areas and volumes follow in cm², cm³."""
+    dlg = UnitsStartDialog()
+    order = [dlg.buttons[n].property("profile")
+             for n in ("metric", "centimetric", "millimetric", "imperial")]
+    layout = dlg.layout()
+    shown = [layout.itemAt(i).widget().property("profile")
+             for i in range(layout.count())
+             if layout.itemAt(i).widget() is not None
+             and layout.itemAt(i).widget().property("profile")]
+    assert shown == order + ["custom"]
+    assert "cm · cm² · cm³" in dlg.buttons["centimetric"].text()
+    _answer(monkeypatch, "centimetric")
+    win.offer_units_at_start()
+    assert units.fmt_len(1.2345) == "123.5 cm"
+    assert units.fmt_area(2.0) == "20000.0 cm²"
+    assert units.fmt_volume(2e-6) == "2.000 cm³"
 
 
 def test_closing_the_question_changes_nothing(win, monkeypatch):

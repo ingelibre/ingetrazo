@@ -248,6 +248,13 @@ def test_browser_selects_and_unlocks_inspected_group():
         assert a not in scene.selection
         panel.tree.clearSelection()
         assert not scene.locked_selection
+        panel.refresh()
+        QApplication.processEvents()
+        # This fixture's dock is hidden: layout callbacks can shrink the
+        # tree below its name column on a scaled display. Keep the next
+        # simulated mouse press inside the viewport, as the first one was.
+        panel.tree.resize(600, 300)
+        row = panel.tree.topLevelItem(0).child(0)
         _press(panel, row, COL_NAME)
         assert scene.locked_selection == {a}
         scene.select([b])

@@ -125,6 +125,58 @@ def sun_direction(lat: float, lon: float,
             math.sin(er))                     # up
 
 
+def wrap_north_deg(deg: float) -> float:
+    """Fold an angle into (-180, 180] — 350° and -10° are the same north."""
+    deg = math.fmod(float(deg), 360.0)
+    if deg <= -180.0:
+        deg += 360.0
+    elif deg > 180.0:
+        deg -= 360.0
+    return deg
+
+
+def scene_north_deg(scene) -> float:
+    """Where true north lies, in degrees clockwise from the green (Y) axis.
+
+    One answer for the whole program: with a location it is the datum's
+    north angle (which also turns the map and the terrain); without one it
+    is the scene's own ``north_deg``, set with Tools ▸ North so the sun can
+    be aimed before the site is known."""
+    datum = getattr(scene, "georef", None)
+    if datum is not None:
+        return float(getattr(datum, "north", 0.0) or 0.0)
+    return float(getattr(scene, "north_deg", 0.0) or 0.0)
+
+
+def north_vector_xy(north_deg: float) -> tuple[float, float]:
+    """Unit (x, y) pointing to true north in the model's frame."""
+    b = math.radians(north_deg)
+    return math.sin(b), math.cos(b)
+
+
+def grid_to_model_xy(north_deg: float, east: float,
+                     north: float) -> tuple[float, float]:
+    """Turn a (grid east, grid north) offset into the model's frame — the
+    same turn as ``SceneDatum.grid_to_local_xy``."""
+    b = math.radians(north_deg)
+    c, s = math.cos(b), math.sin(b)
+    return east * c + north * s, north * c - east * s
+
+
+def turn_sun_to_model(scene, d):
+    """The sun direction ``d`` (grid axes, from :func:`sun_direction`) in the
+    model's frame, turned by :func:`scene_north_deg`; ``None`` stays
+    ``None``. A shadow falls the same way on the site whichever way the
+    axes were drawn."""
+    if d is None:
+        return None
+    deg = scene_north_deg(scene)
+    if not deg:
+        return d
+    x, y = grid_to_model_xy(deg, d[0], d[1])
+    return (x, y, d[2])
+
+
 def default_utc_offset(lon: float) -> int:
     """Solar-time approximation of the zone: ``round(lon / 15)`` hours."""
     return int(round(lon / 15.0))
@@ -209,3 +261,27 @@ class ShadowSettings:
             darkness=max(0.0, min(1.0, dark)),
             utc_offset=int(off) if off is not None else None,
         )
+
+
+def scene_sun_direction(scene):
+    """Unit vector toward the sun for ``scene``'s shadow settings, in model
+    axes — ``None`` when there is nothing to cast (shadows off, night, or a
+    date that does not exist in a hand-edited file). The one the viewport
+    casts its shadows with and the vector exports draw them with."""
+    import datetime as _dt
+    sh = getattr(scene, "shadows", None)
+    if sh is None or not getattr(sh, "enabled", False):
+        return None
+    datum = getattr(scene, "georef", None)
+    lat = getattr(datum, "lat", None)
+    lon = getattr(datum, "lon", None)
+    if lat is None or lon is None:
+        lat, lon = DEFAULT_LAT, DEFAULT_LON
+    try:
+        when = sh.when_utc(lon, year=_dt.date.today().year)
+    except ValueError:
+        return None
+    # The sun comes in grid axes (east, north); the model's frame may be
+    # turned by the north angle — the datum's, or Tools ▸ North's when
+    # there is no location yet.
+    return turn_sun_to_model(scene, sun_direction(lat, lon, when))

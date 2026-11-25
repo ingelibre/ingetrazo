@@ -691,13 +691,15 @@ def test_frame_render_restores_section_and_style_of_the_viewport():
         seen["cut"] = scene.active_section()
         seen["planes"] = scene.show_section_planes
         seen["style"] = scene.display_style.face_mode
+        seen["xray"] = scene.display_style.xray
         return "ok"
 
     assert owner._with_frame_camera(fake, frame, fn) == "ok"
-    assert seen == {"cut": cut, "planes": False, "style": "xray"}  # during
+    assert seen == {"cut": cut, "planes": False, "style": "textures", "xray": True}
     assert scene.active_section() is None                          # after
     assert scene.show_section_planes is True
     assert scene.display_style is live_style
+    assert not live_style.xray
 
 
 def test_frame_render_restores_the_base_map_of_the_viewport():

@@ -15,12 +15,9 @@ the groups open for editing read in bold, so the tree always says where you
 are. Below the groups, the section planes, each with its cut, frame and
 fill.
 
-**Views and sheets** (:class:`SheetsPanel`, docked in the sheet composer,
-beside the page) lists the saved scenes and the sheets with their view
-frames. A scene dragged onto the page lands as a view where it is dropped;
-each scene says which sheets place it, a frame whose scene was deleted is
-flagged instead of breaking, and the sheets are opened, ordered, copied,
-deleted and printed from there.
+The sheets live in the sheet composer's Sheets page
+(:mod:`views.sheet_browser`): the scenes to drag onto them above, the
+sheets in their folders with their view frames below.
 
 The Outliner is built on the Project Structure plugin Carlos Martins
 (@fafecm) shared in #87 — the tree mirrored with the view both ways, the
@@ -36,8 +33,8 @@ sheet, frame) and renames and hides are the usual undoable commands.
 from __future__ import annotations
 
 from PySide6.QtCore import QItemSelectionModel, QPointF, QRectF, QSize, Qt
-from PySide6.QtGui import (QColor, QFont, QIcon, QPainter, QPalette, QPen,
-                           QPixmap)
+from PySide6.QtGui import (QColor, QFont, QIcon, QPainter,
+                           QPalette, QPen, QPixmap)
 from PySide6.QtWidgets import (QAbstractItemView, QApplication, QDialog,
                                QDockWidget,
                                QHBoxLayout,
@@ -50,7 +47,8 @@ from PySide6.QtWidgets import (QAbstractItemView, QApplication, QDialog,
 from core import outliner
 from core.group import Group
 from core.i18n import tr
-from core.section import SectionPlane
+from core.section import SectionBox, SectionPlane
+from views.icons import mark_pixmap
 from views.layers_toolbar import isolate_icon
 from views.side_tree import SideTree, StayOpenMenu, _HeaderButton
 
@@ -71,17 +69,22 @@ OPTIONAL_COLUMNS = ((COL_TYPE, "Type", True), (COL_LAYER, "Layer", True),
 def _paint_icon(paint: dict, size: int = 16) -> QIcon:
     """A small swatch of a paint for a menu: the texture's image when it
     can be read, its colour otherwise."""
-    pix = QPixmap(size, size)
+    raw_opacity = paint.get("opacity")
+    opacity = (1.0 if raw_opacity is None else
+               min(1.0, max(0.0, float(raw_opacity))))
     tex = paint.get("texture") or {}
     path = tex.get("path")
     if path:
-        img = QPixmap(str(path))
-        if not img.isNull():
-            return QIcon(img.scaled(size, size))
+        # Share the Materials panel's diagonal opacity preview and large-file
+        # reader, so the same material looks the same in every menu.
+        from views.tray import _texture_pixmap
+        texture = _texture_pixmap(path, size, opacity)
+        if texture is not None:
+            return QIcon(texture)
     col = paint.get("color") or tex.get("tint") or (0.6, 0.6, 0.6)
-    pix.fill(QColor.fromRgbF(*[max(0.0, min(1.0, float(c)))
-                               for c in list(col)[:3]]))
-    return QIcon(pix)
+    rgb = [max(0.0, min(1.0, float(c))) for c in list(col)[:3]]
+    from views.tray import _color_pixmap
+    return QIcon(_color_pixmap(rgb, size, opacity))
 
 
 def open_to(viewport, path) -> bool:
@@ -118,6 +121,12 @@ _TREE_KEYS = {Qt.Key_Space, Qt.Key_Return, Qt.Key_Enter, Qt.Key_Escape,
 _ICONS: dict = {}
 
 
+def clear_icon_cache() -> None:
+    """Forget the drawn icons — the accent changed. :func:`node_icon` keeps
+    them per palette, and a new accent leaves the palette as it was."""
+    _ICONS.clear()
+
+
 def _ink() -> QColor:
     from PySide6.QtWidgets import QApplication
     return QApplication.palette().text().color()
@@ -141,13 +150,41 @@ def _cube(p, ink, fill=None) -> None:
     p.drawLine(QPointF(11.5, 6.5), QPointF(15.5, 2.5))
 
 
-def _draw(key: str):
+#: The pixel ratios the drawn icons are kept at (plus the window's own):
+#: the common screen scales, so Qt paints the exact drawing instead of
+#: scaling another one by a non-whole factor, which blurs the thin lines.
+_DRAW_RATIOS = (1, 1.25, 1.5, 1.75, 2, 2.25, 2.5, 3)
+
+
+def _draw(key: str) -> QIcon:
+    # Kept at the common ratios and the window's own: Qt then paints the
+    # exact one instead of scaling another by a non-whole factor (a window
+    # at 125 % got the 3x drawing scaled down by 2.4, blurring the 1.2 px
+    # lines of the eye and the padlock). Plain pixmaps, not a Python icon
+    # engine: one owned by the QIcon crashed when Python collected it.
+    from views.icons import screen_dpr
+    icon = QIcon()
+    for ratio in sorted({*_DRAW_RATIOS, screen_dpr()}):
+        icon.addPixmap(_draw_pixmap(key, ratio))
+    return icon
+
+
+def _draw_pixmap(key: str, ratio: float = 1):
+    def _w(width: float) -> float:
+        # On a fractional screen, a stroke a whole number of device pixels
+        # wide: 1.2 px at 125 % is 1.5 pixels, which antialiasing smears
+        # over two. Whole ratios keep the drawing as it always was.
+        if abs(ratio - round(ratio)) < 1e-6:
+            return width
+        return max(1, round(width * ratio)) / ratio
+
     ink = _ink()
-    pm = QPixmap(18, 18)
+    pm = QPixmap(round(18 * ratio), round(18 * ratio))
+    pm.setDevicePixelRatio(ratio)
     pm.fill(Qt.transparent)
     p = QPainter(pm)
     p.setRenderHint(QPainter.Antialiasing)
-    p.setPen(QPen(ink, 1.2))
+    p.setPen(QPen(ink, _w(1.2)))
     if key == "group":
         _cube(p, ink)
     elif key == "component":
@@ -216,11 +253,11 @@ def _draw(key: str):
             p.setBrush(fill)
             p.drawPolygon([QPointF(3, 3), QPointF(15, 3), QPointF(3, 15)])
             p.setBrush(Qt.NoBrush)
-            p.setPen(QPen(ink, 1.2))
+            p.setPen(QPen(ink, _w(1.2)))
         else:
             faint = QColor(ink)
             faint.setAlpha(110)
-            p.setPen(QPen(faint, 1.2))
+            p.setPen(QPen(faint, _w(1.2)))
         p.drawRect(QRectF(3, 3, 12, 12))
         p.drawLine(QPointF(1.5, 16.5), QPointF(16.5, 1.5))
     elif key in ("lock", "lock_open"):
@@ -233,22 +270,68 @@ def _draw(key: str):
         else:
             faint = QColor(ink)
             faint.setAlpha(110)
-            p.setPen(QPen(faint, 1.2))
+            p.setPen(QPen(faint, _w(1.2)))
             p.drawRoundedRect(QRectF(4, 8.5, 10, 7.5), 1.5, 1.5)
             p.drawArc(QRectF(8.5, 1.5, 7, 9), 0, 180 * 16)
             p.drawLine(QPointF(8.5, 6), QPointF(8.5, 8.5))
+    elif key in ("print", "print_off"):
+        # A printer: the paper in, the body, the sheet coming out.
+        if key == "print_off":
+            p.setPen(QPen(QColor(ink.red(), ink.green(), ink.blue(), 110),
+                          _w(1.2)))
+        p.drawRect(QRectF(5.5, 2.5, 7, 4))
+        p.drawRoundedRect(QRectF(2.5, 6.5, 13, 6.5), 1.2, 1.2)
+        p.drawRect(QRectF(5.5, 10.5, 7, 5.5))
+        p.drawLine(QPointF(7, 13), QPointF(11, 13))
+    elif key in ("sheet_add", "folder_add"):
+        if key == "sheet_add":
+            p.drawPolygon([QPointF(2.5, 1.5), QPointF(9.5, 1.5),
+                           QPointF(12.5, 4.5), QPointF(12.5, 13),
+                           QPointF(2.5, 13)])
+            p.drawLine(QPointF(9.5, 1.5), QPointF(9.5, 4.5))
+            p.drawLine(QPointF(9.5, 4.5), QPointF(12.5, 4.5))
+        else:
+            p.drawPolygon([QPointF(1.5, 4), QPointF(6, 4), QPointF(7.5, 5.5),
+                           QPointF(13.5, 5.5), QPointF(13.5, 13),
+                           QPointF(1.5, 13)])
+        # The plus, in the accent colour, bottom-right.
+        p.setPen(QPen(_accent(), 2.0))
+        p.drawLine(QPointF(13.5, 10.5), QPointF(13.5, 17))
+        p.drawLine(QPointF(10.25, 13.75), QPointF(16.75, 13.75))
+    elif key == "delete":
+        # A bin: the lid with its handle, the can with its ribs.
+        p.drawLine(QPointF(3, 4.5), QPointF(15, 4.5))
+        p.drawRect(QRectF(7, 2, 4, 2.5))
+        p.drawPolygon([QPointF(4.5, 4.5), QPointF(13.5, 4.5),
+                       QPointF(12.5, 16), QPointF(5.5, 16)])
+        p.drawLine(QPointF(7.5, 7), QPointF(7.75, 13.5))
+        p.drawLine(QPointF(10.5, 7), QPointF(10.25, 13.5))
+    elif key == "pdf":
+        # A page with an arrow down into a tray: export to a file.
+        p.drawPolygon([QPointF(3.5, 1.5), QPointF(10.5, 1.5),
+                       QPointF(13.5, 4.5), QPointF(13.5, 10),
+                       QPointF(3.5, 10)])
+        p.drawLine(QPointF(10.5, 1.5), QPointF(10.5, 4.5))
+        p.drawLine(QPointF(10.5, 4.5), QPointF(13.5, 4.5))
+        p.setPen(QPen(_accent(), _w(1.6)))
+        p.drawLine(QPointF(8.5, 5), QPointF(8.5, 14))
+        p.drawPolyline([QPointF(5.5, 11), QPointF(8.5, 14),
+                        QPointF(11.5, 11)])
+        p.setPen(QPen(ink, _w(1.2)))
+        p.drawPolyline([QPointF(2.5, 13.5), QPointF(2.5, 16.5),
+                        QPointF(14.5, 16.5), QPointF(14.5, 13.5)])
     elif key in ("eye", "eye_off"):
         if key == "eye_off":
             p.setPen(QPen(QColor(ink.red(), ink.green(), ink.blue(), 110),
-                          1.2))
+                          _w(1.2)))
         p.drawEllipse(QRectF(2, 5.5, 14, 7))
         p.setBrush(p.pen().color())
         p.drawEllipse(QRectF(7, 7, 4, 4))
         if key == "eye_off":
-            p.setPen(QPen(ink, 1.4))
+            p.setPen(QPen(ink, _w(1.4)))
             p.drawLine(QPointF(3, 15), QPointF(15, 3))
     p.end()
-    return QIcon(pm)
+    return pm
 
 
 #: The size every mark of a row is drawn at (eye, padlock, target): the
@@ -260,15 +343,19 @@ def _faded(icon: QIcon, size: int = MARK_SIZE) -> QIcon:
     """``icon`` at 40 %: the eye or padlock a row inherits from a group
     around it — closed, but not its own — at the row's own size, only
     fainter (16 px made an inherited mark smaller than its neighbours)."""
-    src = icon.pixmap(size, size)
-    pm = QPixmap(src.size())
-    pm.setDevicePixelRatio(src.devicePixelRatio())
-    pm.fill(Qt.transparent)
-    p = QPainter(pm)
-    p.setOpacity(0.4)
-    p.drawPixmap(0, 0, src)
-    p.end()
-    return QIcon(pm)
+    from views.icons import screen_dpr
+    out = QIcon()
+    for ratio in sorted({*_DRAW_RATIOS, screen_dpr()}):
+        src = icon.pixmap(QSize(size, size), ratio)
+        pm = QPixmap(src.size())
+        pm.setDevicePixelRatio(src.devicePixelRatio())
+        pm.fill(Qt.transparent)
+        p = QPainter(pm)
+        p.setOpacity(0.4)
+        p.drawPixmap(0, 0, src)
+        p.end()
+        out.addPixmap(pm)
+    return out
 
 
 def mark_icon(key: str, inherited: bool = False) -> QIcon:
@@ -331,8 +418,7 @@ def fill_icon(color, on: bool) -> QIcon:
     """The section fill as a swatch: the style's fill colour, hatched, or
     an empty faint square when the fill is off."""
     ink = _ink()
-    pm = QPixmap(18, 18)
-    pm.fill(Qt.transparent)
+    pm = mark_pixmap(18)
     p = QPainter(pm)
     p.setRenderHint(QPainter.Antialiasing)
     if on:
@@ -426,8 +512,10 @@ def library_catalog() -> list:
                          "mat": label}
                 if item.get("opacity") is not None:
                     paint["opacity"] = float(item["opacity"])
-                entries.append((label, paint,
-                                lambda pa=path: _tray._texture_pixmap(pa)))
+                entries.append((
+                    label, paint,
+                    lambda pa=path, op=item.get("opacity"):
+                    _tray._texture_pixmap(pa, opacity=op)))
             if entries:
                 out.append((tr(names.get(cat["id"], cat["id"])), entries))
     loose = sorted(_tray._TEX_DIR.glob("*.png"))
@@ -758,9 +846,11 @@ class MaterialPopup(QFrame):
         document (listed in the Materials tab), otherwise a plain colour."""
         from views import prompts
         from views.color_dialog import get_color
+        from PySide6.QtWidgets import QColorDialog
         self.hide()                     # the dialogs take the stage
-        colour = get_color(QColor(200, 200, 200), self.parentWidget(),
-                           tr("New color…"))
+        colour = get_color(
+            QColor(200, 200, 200), self.parentWidget(), tr("New color…"),
+            options=QColorDialog.ColorDialogOption.ShowAlphaChannel)
         if not colour.isValid():
             self.close()
             return
@@ -770,6 +860,8 @@ class MaterialPopup(QFrame):
         if not ok:
             return
         paint = {"color": [colour.redF(), colour.greenF(), colour.blueF()]}
+        if colour.alphaF() < 0.99995:
+            paint["opacity"] = colour.alphaF()
         if name.strip():
             paint["mat"] = name.strip()
         self._apply(paint)
@@ -910,6 +1002,10 @@ class _Tree(SideTree):
                 if plane is not None:
                     self._panel.rename_plane(plane)
                     return
+                box = self._panel._box_of(self.currentItem())
+                if box is not None:
+                    self._panel.rename_box(box)
+                    return
                 picked = self._panel._selected_groups()
                 if len(picked) > 1:         # several rows: all at once
                     self._panel.ask_batch_rename(picked)
@@ -956,8 +1052,9 @@ class _Tree(SideTree):
         if item is None or self._panel._head_of(item) is not None:
             return None             # a layer heading: the model's top level
         group = self._panel._group_of(item)
-        if (group is None or item is self._panel._sec_root
-                or self._panel._plane_of(item) is not None):
+        if (group is None
+                or item in (self._panel._sec_root, self._panel._box_root)
+                or self._panel._cut_of(item) is not None):
             return ("beside", item)
         rect = self.visualItemRect(item)
         rel = ((pos.y() - rect.top()) / rect.height()
@@ -998,14 +1095,14 @@ class _Tree(SideTree):
         """Re-nest through the panel — one undoable command — and never
         let Qt move the rows itself: the tree follows the model, not the
         other way round."""
-        sections = self._panel._sec_root
+        folders = [f for f in (self._panel._sec_root, self._panel._box_root)
+                   if f is not None]
         if token is None:
             target = None
         else:
             kind, item = token
-            if item is None or (sections is not None and (
-                    item is sections or item.parent() is sections)):
-                return                      # planes are not containers
+            if item is None or item in folders or item.parent() in folders:
+                return                      # cuts are not containers
             target = item if kind == "into" else item.parent()
         picked = [g for g in (self._panel._group_of(it) for it in rows)
                   if g is not None]
@@ -1047,6 +1144,10 @@ class OutlinerPanel(QWidget):
         self._sec_items: dict = {}          # id(plane) -> its row
         self._sec_state: dict = {}
         self._sec_shape = None
+        self._box_root = None               # the «Section boxes» folder
+        self._box_items: dict = {}          # id(box) -> its row
+        self._box_state: dict = {}
+        self._box_shape = None
         #: Ordering by layer: ``(kind, name)`` -> the heading row of a layer
         #: or a layer folder, and the headings folded by hand — remembered
         #: while the document stays open, as the rows' own branches.
@@ -1269,6 +1370,39 @@ class OutlinerPanel(QWidget):
             return path.name
         return getattr(w, "_import_name", None) or tr("Untitled")
 
+    def refresh_icons(self) -> None:
+        """Repaint every mark drawn in the palette's ink and accent after
+        the theme or the accent changes — the header's, the buttons' and
+        every row's. The rows set theirs once and only touch what changed,
+        so a theme switched with the app open left Light's black eyes and
+        padlocks on Dark's rows (the Layers tab's #1086, for the Browser)."""
+        hi = self.tree.headerItem()
+        hi.setIcon(COL_EYE, node_icon("eye"))
+        hi.setIcon(COL_LOCK, node_icon("lock"))
+        hi.setIcon(COL_ISOLATE, isolate_icon(False))
+        self._rename_btn.setIcon(node_icon("layers_rename"))
+        self._order_btn.setIcon(node_icon("layers_order"))
+        self._show_filter_state()
+        self._update_expand_button()
+        root = getattr(self, "_root", None)
+        if root is not None:
+            root.setIcon(COL_NAME, node_icon("document"))
+        # Forget what each row last showed, so the next pass paints all.
+        was = self._updating
+        self._updating = True
+        try:
+            for key, item in list(getattr(self, "_items", {}).items()):
+                state = self._state.get(key)
+                if state is not None:
+                    self._paint(item, None, state)
+        finally:
+            self._updating = was
+        self._sec_state = {}
+        self._sec_folder = None
+        self._head_marks = {}
+        self._rows_key = None
+        self.refresh()
+
     def refresh(self, rows_if_changed: bool = False) -> None:
         """Bring the tree up to date: rows rebuilt only when groups came or
         went, otherwise updated in place — a refresh follows every edit and
@@ -1461,6 +1595,15 @@ class OutlinerPanel(QWidget):
             self._sec_shape = None
             self._sec_state = {}
             self._sec_folder = None         # a new row: its texts to write
+            box = self._box_root = QTreeWidgetItem(["", "", "", "", ""])
+            box.setIcon(COL_NAME, node_icon("sections"))
+            box.setFlags(Qt.ItemIsEnabled)
+            box.setFont(COL_NAME, font)
+            self.tree.addTopLevelItem(box)
+            self._box_items = {}
+            self._box_shape = None
+            self._box_state = {}
+            self._box_folder = None
             for key, item in self._items.items():
                 if self._groups[key].uid in expanded:
                     item.setExpanded(True)
@@ -2192,6 +2335,16 @@ class OutlinerPanel(QWidget):
         data = item.data(COL_NAME, Qt.UserRole) if item is not None else None
         return data if isinstance(data, SectionPlane) else None
 
+    def _box_of(self, item):
+        """The section box on its row, or ``None``."""
+        data = item.data(COL_NAME, Qt.UserRole) if item is not None else None
+        return data if isinstance(data, SectionBox) else None
+
+    def _cut_of(self, item):
+        """A section plane or the section box: the rows with a cut, a frame
+        and a fill."""
+        return self._plane_of(item) or self._box_of(item)
+
     # ---- Section planes ------------------------------------------------------
     _SECTION_MODE_TEXT = {
         "both": "Cut and frame", "cut": "Cut only (no frame)",
@@ -2201,54 +2354,24 @@ class OutlinerPanel(QWidget):
         """The «Section planes» folder: one row per plane, its mode in
         words, the eye for its frame and the slice for its cut; the folder
         row carries the two global switches (View ▸ Section Planes and
-        Section Cuts)."""
+        Section Cuts). Then the «Section boxes» folder, the same way."""
         sec = self._sec_root
         if sec is None:
             return
         planes = list(getattr(scene, "section_planes", None) or ())
-        shape = tuple(id(sp) for sp in planes)
         self._updating = True
         try:
-            if shape != self._sec_shape:
-                expanded = sec.isExpanded() or self._sec_shape is None
-                sec.takeChildren()
-                self._sec_items = {}
-                self._sec_state = {}
-                for sp in planes:
-                    item = QTreeWidgetItem(["", "", "", "", ""])
-                    item.setData(COL_NAME, Qt.UserRole, sp)
-                    item.setFlags(Qt.ItemIsEnabled | Qt.ItemIsSelectable)
-                    item.setIcon(COL_NAME, node_icon("sections"))
-                    item.setToolTip(COL_LOCK, tr(
-                        "Click: this plane cuts the model (or stops)"))
-                    sec.addChild(item)
-                    self._sec_items[id(sp)] = item
-                self._sec_shape = shape
-                sec.setExpanded(expanded)
             fill = self._fill_state(scene)
+            shape = tuple(id(sp) for sp in planes)
+            if shape != self._sec_shape:
+                self._fill_cut_folder(sec, planes, self._sec_shape is None,
+                                      self._sec_items)
+                self._sec_state = {}
+                self._sec_shape = shape
             for sp in planes:
-                item = self._sec_items[id(sp)]
-                mode = outliner.section_mode(sp)
-                own = dict(getattr(sp, "fill", None) or {})
-                state = (outliner.section_label(sp), mode, fill,
-                         tuple(sorted((k, tuple(v) if k == "color" else v)
-                                      for k, v in own.items())))
-                if self._sec_state.get(id(sp)) == state:
-                    continue
-                self._sec_state[id(sp)] = state
-                item.setText(COL_NAME, state[0])
-                item.setText(COL_TYPE, tr(self._SECTION_MODE_TEXT[mode]))
-                cut, frame = outliner.SECTION_MODES[mode]
-                item.setData(COL_EYE, Qt.UserRole, not frame)
-                item.setIcon(COL_EYE, node_icon("eye" if frame else "eye_off"))
-                item.setToolTip(COL_EYE, tr("Hide the frame, keep the cut")
-                                if frame else tr("Show the frame"))
-                item.setData(COL_LOCK, Qt.UserRole, cut)
-                item.setIcon(COL_LOCK, node_icon("cut" if cut else "cut_off"))
-                self._paint_fill(item, cut, fill, sp)
-                item.setForeground(COL_NAME, self.tree.palette().brush(
-                    QPalette.PlaceholderText if mode == "off"
-                    else QPalette.Text))
+                self._paint_cut_row(self._sec_items[id(sp)], sp,
+                                    outliner.section_label(sp), fill,
+                                    self._sec_state)
             # The folder: the global switches, and the count.
             shown = bool(getattr(scene, "show_section_planes", True))
             cuts = bool(getattr(scene, "show_section_cuts", True))
@@ -2265,30 +2388,134 @@ class OutlinerPanel(QWidget):
                     "Section cuts in the model (View ▸ Section Cuts)"))
                 self._paint_fill(sec, True, fill)
             sec.setHidden(not planes)
+            self._sync_box_folder(scene, fill)
         finally:
             self._updating = False
 
-    def _filter_sections(self) -> None:
-        """The section planes follow the same search and funnel as the
-        groups; the folder shows only when one of its rows does."""
-        sec = self._sec_root
-        if sec is None:
+    def _sync_box_folder(self, scene, fill) -> None:
+        """The «Section boxes» folder: one row per box, by its name; the
+        folder row's eye shows or hides every box's frame and its slice
+        switches the cut of the boxes (one box cuts at a time)."""
+        root = self._box_root
+        if root is None:
             return
-        any_shown = False
-        for i in range(sec.childCount()):
-            item = sec.child(i)
-            plane = self._plane_of(item)
-            show = True
-            if plane is not None:
-                show = (outliner.text_matches(plane.name or "", self._query)
-                        and self._plane_passes_state(plane))
-                show = show != self.invert_filter
-            item.setHidden(not show)
-            any_shown = any_shown or show
-        sec.setHidden(sec.childCount() == 0 or not any_shown)
+        boxes = list(getattr(scene, "section_boxes", None) or ())
+        shape = tuple(id(b) for b in boxes)
+        if shape != self._box_shape:
+            self._fill_cut_folder(root, boxes, self._box_shape is None,
+                                  self._box_items)
+            self._box_state = {}
+            self._box_shape = shape
+        for box in boxes:
+            self._paint_cut_row(self._box_items[id(box)], box,
+                                box.name or tr("Section Box"), fill,
+                                self._box_state)
+        cutting = (scene.active_section_box() is not None
+                   and bool(getattr(scene, "show_section_cuts", True)))
+        folder = (tr("Section boxes"), cutting, len(boxes), fill)
+        if getattr(self, "_box_folder", None) != folder:
+            self._box_folder = folder
+            root.setText(COL_NAME, folder[0])
+            root.setText(COL_TYPE, tr("{n} boxes", n=len(boxes)))
+            root.setIcon(COL_LOCK, node_icon("cut" if cutting else "cut_off"))
+            root.setToolTip(COL_LOCK, tr(
+                "A section box cuts the model (one at a time)"))
+            self._paint_fill(root, True, fill)
+        root.setHidden(not boxes)
+
+    def _fill_cut_folder(self, folder, cuts, first: bool, items: dict) -> None:
+        """Make ``folder``'s rows again, one per plane or box of ``cuts``."""
+        expanded = folder.isExpanded() or first
+        folder.takeChildren()
+        items.clear()
+        for sp in cuts:
+            item = QTreeWidgetItem(["", "", "", "", ""])
+            item.setData(COL_NAME, Qt.UserRole, sp)
+            item.setFlags(Qt.ItemIsEnabled | Qt.ItemIsSelectable)
+            item.setIcon(COL_NAME, node_icon("sections"))
+            item.setToolTip(COL_LOCK, tr(
+                "Click: the section box cuts the model (or stops)")
+                if isinstance(sp, SectionBox) else tr(
+                "Click: this plane cuts the model (or stops)"))
+            folder.addChild(item)
+            items[id(sp)] = item
+        folder.setExpanded(expanded)
+
+    def _paint_cut_row(self, item, sp, label: str, fill, memo: dict) -> None:
+        """One plane's or box's row: its name, its mode in words, the eye
+        for its frame, the slice for its cut and its fill."""
+        mode = outliner.section_mode(sp)
+        own = dict(getattr(sp, "fill", None) or {})
+        state = (label, mode, fill,
+                 tuple(sorted((k, tuple(v) if k == "color" else v)
+                              for k, v in own.items())))
+        if memo.get(id(sp)) == state:
+            return
+        memo[id(sp)] = state
+        item.setText(COL_NAME, state[0])
+        cut, frame = outliner.SECTION_MODES[mode]
+        if isinstance(sp, SectionBox):
+            # It cuts or it is off, in words; a box that is off shows
+            # nothing, so it has no frame to switch.
+            item.setText(COL_TYPE, tr(
+                "Off" if not cut else "Cutting" if frame
+                else "Cut only (no frame)"))
+        else:
+            item.setText(COL_TYPE, tr(self._SECTION_MODE_TEXT[mode]))
+        if isinstance(sp, SectionBox) and not cut:
+            item.setData(COL_EYE, Qt.UserRole, None)
+            item.setIcon(COL_EYE, QIcon())
+            item.setToolTip(COL_EYE, "")
+        else:
+            item.setData(COL_EYE, Qt.UserRole, not frame)
+            item.setIcon(COL_EYE, node_icon("eye" if frame else "eye_off"))
+            item.setToolTip(COL_EYE, tr("Hide the frame, keep the cut")
+                            if frame else tr("Show the frame"))
+        item.setData(COL_LOCK, Qt.UserRole, cut)
+        item.setIcon(COL_LOCK, node_icon("cut" if cut else "cut_off"))
+        self._paint_fill(item, cut, fill, sp)
+        item.setForeground(COL_NAME, self.tree.palette().brush(
+            QPalette.PlaceholderText if mode == "off"
+            else QPalette.Text))
+
+    def toggle_box_folder(self) -> None:
+        """The «Section boxes» folder's slice: the whole model back; or,
+        with none cutting, the box selected or the last one."""
+        scene = self._scene()
+        if scene.active_section_box() is not None:
+            self._window._show_whole_model()
+        else:
+            box = next((e for e in reversed(list(scene.selection))
+                        if isinstance(e, SectionBox)),
+                       scene.section_boxes[-1] if scene.section_boxes
+                       else None)
+            if box is not None:
+                self.set_section_mode(box, "both")
+        self.refresh()
+
+    def _filter_sections(self) -> None:
+        """The section planes and boxes follow the same search and funnel
+        as the groups; each folder shows only when one of its rows does."""
+        for sec in (self._sec_root, self._box_root):
+            if sec is None:
+                continue
+            any_shown = False
+            for i in range(sec.childCount()):
+                item = sec.child(i)
+                cut = self._cut_of(item)
+                show = True
+                if cut is not None:
+                    show = (outliner.text_matches(cut.name or "",
+                                                  self._query)
+                            and self._plane_passes_state(cut))
+                    show = show != self.invert_filter
+                item.setHidden(not show)
+                any_shown = any_shown or show
+            sec.setHidden(sec.childCount() == 0 or not any_shown)
 
     _PATTERN_TEXT = {"solid": "Solid", "hatch": "Hatched 45°",
-                     "cross": "Cross-hatched", "none": "No fill"}
+                     "cross": "Cross-hatched", "none": "No fill",
+                     "layers": "Layers' hatches"}
 
     def set_plane_fill(self, plane, **changes) -> None:
         """Change this cut's own fill — ``pattern``, ``color``, ``spacing``;
@@ -2340,22 +2567,88 @@ class OutlinerPanel(QWidget):
             return
         self.set_plane_fill(plane, spacing=float(value))
 
+    def section_box_menu(self, menu, box) -> None:
+        """The section box's entries — the Browser row's right-click and
+        the model's, the same list. First what a user comes for: this box
+        cuts, or the model shows whole."""
+        from PySide6.QtCore import QTimer
+        if box.active:
+            menu.addAction(tr("Show the whole model"),
+                           self._window._show_whole_model)
+        else:
+            menu.addAction(tr("Cut with this box"),
+                           lambda: self.set_section_mode(box, "both"))
+        menu.addAction(tr("Edit Section Box"), lambda: QTimer.singleShot(
+            0, lambda: self._edit_box(box)))
+        menu.addSeparator()
+        if box.active:
+            act = menu.addAction(tr("Show the frame"), lambda: (
+                self.set_section_mode(box, "cut" if not box.hidden
+                                      else "both")))
+            act.setCheckable(True)
+            act.setChecked(not box.hidden)
+        self._plane_fill_menu(menu, box)
+        menu.addSeparator()
+        menu.addAction(tr("Rename…"), lambda: QTimer.singleShot(
+            0, lambda: self.rename_box(box)))
+        menu.addAction(tr("Remove Section Box"),
+                       lambda: self._window._on_remove_section_box(box))
+
+    def _edit_box(self, box) -> None:
+        """Take up the Section Box tool on ``box``: it cuts, its grips out."""
+        self._scene().select([box])
+        self._window._activate_tool("section_box")
+
+    def new_section_box(self) -> None:
+        """A new box around what is selected, else around the whole model,
+        with the tool out to adjust it."""
+        from tools.section_box import _fit_targets, place_box
+        scene = self._scene()
+        if not _fit_targets(scene):
+            scene.clear_selection()
+            place_box(self._window.viewport, fit_selection=False)
+        self._window._activate_tool("section_box")
+        self.refresh()
+
+    def rename_box(self, box) -> bool:
+        """A section box's name, undoable — the Browser and the scenes'
+        boxes read by it."""
+        from core.history import section_box_changed
+        from views import prompts
+        text, ok = prompts.get_text(self, tr("Rename section box"),
+                                    tr("Name:"), text=box.name)
+        name = (text or "").strip()
+        if not ok or not name or name == box.name:
+            return False
+        changed = box.copy()
+        changed.name = name
+        self._window.viewport.history.execute(
+            section_box_changed(self._scene(), box, changed))
+        self._window.viewport.update()
+        self.refresh()
+        return True
+
     def _plane_fill_menu(self, menu, plane) -> None:
         """The cut's own fill: pattern, colour, spacing, or the style's."""
         from PySide6.QtCore import QTimer
         sub = menu.addMenu(tr("Fill of this cut"))
+        sub.setToolTipsVisible(True)
         own = getattr(plane, "fill", None) or {}
         current = own.get("pattern")
         act = sub.addAction(tr("As the style"), lambda: self.set_plane_fill(
             plane, pattern=None))
         act.setCheckable(True)
         act.setChecked(current is None)
-        for pattern in ("solid", "hatch", "cross", "none"):
+        for pattern in ("solid", "hatch", "cross", "layers", "none"):
             act = sub.addAction(tr(self._PATTERN_TEXT[pattern]),
                                 lambda p=pattern: self.set_plane_fill(
                                     plane, pattern=p))
             act.setCheckable(True)
             act.setChecked(current == pattern)
+            if pattern == "layers":
+                act.setToolTip(tr(
+                    "Each layer's cut with the hatch the Layers panel gives "
+                    "it, as a sheet at 1:50 draws it"))
         sub.addSeparator()
         # Dialogs open once the menu has closed (see _fill_actions).
         sub.addAction(tr("Fill color of this cut…"), lambda: QTimer.singleShot(
@@ -2466,17 +2759,37 @@ class OutlinerPanel(QWidget):
     def set_section_mode(self, plane, mode: str) -> None:
         """One plane: ``"both"``, ``"cut"``, ``"frame"`` or ``"off"`` —
         one undoable step."""
-        from core.history import SetSectionModeCommand
+        from core.history import SetSectionModeCommand, section_box_changed
         if outliner.section_mode(plane) == mode:
             return
         cut, frame = outliner.SECTION_MODES[mode]
-        self._window.viewport.history.execute(
-            SetSectionModeCommand(plane, cut, frame))
+        if isinstance(plane, SectionBox):
+            # A box cuts beside the active plane, never instead of it; it
+            # takes the cut off the other boxes.
+            changed = plane.copy()
+            changed.active, changed.hidden = cut, not frame
+            self._window.viewport.history.execute(
+                section_box_changed(self._scene(), plane, changed))
+        else:
+            self._window.viewport.history.execute(
+                SetSectionModeCommand(plane, cut, frame))
         self._window.viewport.update()
         self.refresh()
 
     def _toggle_section(self, plane, column) -> None:
         cut, frame = outliner.SECTION_MODES[outliner.section_mode(plane)]
+        if isinstance(plane, SectionBox):
+            if column != COL_EYE:
+                # Whatever it was, a box that comes on shows its frame; and
+                # going off is the whole model, with its tool put away.
+                if cut:
+                    self._window._show_whole_model()
+                else:
+                    self.set_section_mode(plane, "both")
+                self.refresh()
+                return
+            if not cut:
+                return                      # off: no frame to switch
         if column == COL_EYE:
             frame = not frame
         else:
@@ -2519,7 +2832,7 @@ class OutlinerPanel(QWidget):
         if self._updating:
             return
         current = self.tree.currentItem()
-        plane = self._plane_of(current)
+        plane = self._cut_of(current)
         if plane is not None and current.isSelected():
             self._select_plane(plane)
             return
@@ -2598,14 +2911,18 @@ class OutlinerPanel(QWidget):
             self.toggle_isolated(selected if group in selected else [group])
             return
         if column == COL_LAYER and item.data(COL_LAYER, Qt.UserRole) \
-                is not None and (item is self._sec_root
-                                 or self._plane_of(item) is not None):
+                is not None and (item in (self._sec_root, self._box_root)
+                                 or self._cut_of(item) is not None):
             self.set_section_fill(not self._fill_state(self._scene())[0])
             return
         if column in (COL_EYE, COL_LOCK):
-            plane = self._plane_of(item)
+            plane = self._cut_of(item)
             if plane is not None:
                 self._toggle_section(plane, column)
+                return
+            if item is not None and item is self._box_root:
+                if column == COL_LOCK:
+                    self.toggle_box_folder()
                 return
             if item is self._sec_root:
                 scene = self._scene()
@@ -2654,8 +2971,9 @@ class OutlinerPanel(QWidget):
 
     def open_item(self, item) -> None:
         """Open the row's group for editing — double-click or Enter. On a
-        section plane: it cuts, or stops cutting. On a layer heading: its
-        objects selected in the model."""
+        section plane: it cuts, or stops cutting. On a section box: its
+        tool, to drag its faces. On a layer heading: its objects selected
+        in the model."""
         head = self._head_of(item)
         if head is not None:
             self.select_head(head)
@@ -2663,6 +2981,9 @@ class OutlinerPanel(QWidget):
         plane = self._plane_of(item)
         if plane is not None:
             self._toggle_section(plane, COL_LOCK)
+            return
+        if self._box_of(item) is not None:
+            self._window._activate_tool("section_box")
             return
         group = self._group_of(item)
         if group is None or group.hidden or getattr(group, "locked", False):
@@ -3660,7 +3981,7 @@ class OutlinerPanel(QWidget):
         its base (made the active cut), a scene looking straight down on it
         in parallel projection, and — with ``sheet`` — a new sheet with
         that scene at 1:``scale``. One undo step. Returns the scene, or
-        ``None`` when the group holds no geometry."""
+        ``None`` when the group holds no geometry or the step was refused."""
         import math
         from PySide6.QtGui import QVector3D
         from core.camera import OrbitCamera
@@ -3690,7 +4011,7 @@ class OutlinerPanel(QWidget):
             cam.fov_deg) / 2))
         view = self._place_view(title, cam, plane, True, sheet, scale,
                                 open_sheet)
-        if z > z1 or z < z0:
+        if view is not None and (z > z1 or z < z0):
             self._window.viewport.flash_status(tr(
                 "The cut is outside «{name}»: the plan shows it whole",
                 name=group.name), 4000)
@@ -3701,7 +4022,8 @@ class OutlinerPanel(QWidget):
         """The part a plan of a group and a view of a cut share: the scene
         from ``cam`` cut by ``plane``, a sheet with it if asked — one undo
         step — and then the way to it: the sheet opened, or Sheets 2D with
-        the scene marked, and the status bar saying what was made."""
+        the scene marked, and the status bar saying what was made.
+        ``None`` when the step was refused or failed."""
         from core.composition import Composicion
         from core.history import CreatePlanCommand
         from core.saved_views import SavedView
@@ -3719,8 +4041,13 @@ class OutlinerPanel(QWidget):
             frame.show_title = True
             page.frames.append(frame)
         self._window.viewport.end_group_edit()
-        self._window.viewport.history.execute(
-            CreatePlanCommand(plane, view, page, add_plane=add_plane))
+        history = self._window.viewport.history
+        if not history.execute(
+                CreatePlanCommand(plane, view, page, add_plane=add_plane)):
+            reason = history.last_rejected or history.last_error
+            if reason:
+                self._window.viewport.flash_status(reason, 4000)
+            return None
         self._window.tray.scenes.refresh()
         self._window._refresh_sheet_tabs()
         self._window.viewport.update()
@@ -3744,7 +4071,8 @@ class OutlinerPanel(QWidget):
         (from the side the plane takes away, towards what stays), in
         parallel projection, the plane made the active cut — a section for
         a vertical plane, a plan for a horizontal one. With ``sheet``, on a
-        new sheet at 1:``scale``. One undo step; returns the scene."""
+        new sheet at 1:``scale``. One undo step; returns the scene, or
+        ``None`` when the step was refused."""
         import math
         from PySide6.QtGui import QVector3D
         from core.camera import OrbitCamera
@@ -3988,6 +4316,11 @@ class OutlinerPanel(QWidget):
         item = self.tree.itemAt(pos)
         group = self._group_of(item)
         menu = QMenu(self)
+        box = self._box_of(item)
+        if box is not None:
+            self.section_box_menu(menu, box)
+            menu.exec(self.tree.viewport().mapToGlobal(pos))
+            return
         plane = self._plane_of(item)
         if plane is not None:
             menu.addAction(tr("Rename… (F2)"),
@@ -4010,6 +4343,16 @@ class OutlinerPanel(QWidget):
             menu.addSeparator()
             self._fill_actions(menu)
             self._plane_fill_menu(menu, plane)
+            menu.exec(self.tree.viewport().mapToGlobal(pos))
+            return
+        if item is not None and item is self._box_root:
+            menu.addAction(tr("New Section Box"), lambda: QTimer.singleShot(
+                0, self.new_section_box))
+            act = menu.addAction(tr("Show the whole model"),
+                                 self._window._show_whole_model)
+            act.setEnabled(self._scene().active_section_box() is not None)
+            menu.addSeparator()
+            self._fill_actions(menu)
             menu.exec(self.tree.viewport().mapToGlobal(pos))
             return
         if item is not None and item is self._sec_root:
@@ -4056,7 +4399,8 @@ class OutlinerPanel(QWidget):
             entries.append(("Make Component", "component"))
             # Explode: one level dissolved — a group's own geometry left
             # loose, the groups it holds out whole in its place.
-            entries.append(("Explode Group", "explode"))
+            from core.group import explode_label
+            entries.append((explode_label(targets), "explode"))
             for text, kind in entries:
                 act = menu.addAction(tr(text), lambda k=kind:
                                      QTimer.singleShot(0, lambda:
@@ -4113,707 +4457,12 @@ class OutlinerPanel(QWidget):
         menu.exec(self.tree.viewport().mapToGlobal(pos))
 
 
-# ---- Sheets 2D -----------------------------------------------------------------
-
-class _SheetsTree(QTreeWidget):
-    """The Sheets 2D tree: a scene dragged onto a sheet (or onto one of its
-    views) is placed on it; Alt+↑/↓ move a sheet in the set; Supr deletes
-    one."""
-
-    def __init__(self, panel) -> None:
-        super().__init__()
-        self._panel = panel
-        self.setDragEnabled(True)
-        self.setAcceptDrops(True)
-        self.setDropIndicatorShown(True)
-        self.setDragDropMode(QAbstractItemView.DragDrop)
-        self.setDefaultDropAction(Qt.CopyAction)
-
-    def mimeTypes(self):
-        from views.composer import SCENE_MIME
-        return [SCENE_MIME]
-
-    def mimeData(self, items):
-        """The dragged scenes, by name — what the page of the composer (and
-        a sheet row here) takes."""
-        from PySide6.QtCore import QMimeData
-        from views.composer import SCENE_MIME
-        names = [d[1].name for d in (it.data(0, Qt.UserRole) for it in items)
-                 if d and d[0] == "scene"]
-        data = QMimeData()
-        data.setData(SCENE_MIME, "\n".join(names).encode("utf-8"))
-        return data
-
-    def supportedDropActions(self):
-        return Qt.CopyAction | Qt.MoveAction
-
-    def dropEvent(self, ev) -> None:
-        item = self.itemAt(ev.position().toPoint())
-        ev.setDropAction(Qt.IgnoreAction)          # the model moves, not Qt
-        ev.accept()
-        sheet = self._panel.sheet_of(item)
-        scenes = [d[1] for d in (it.data(0, Qt.UserRole)
-                                 for it in self.selectedItems())
-                  if d and d[0] == "scene"]
-        if sheet is not None and scenes:
-            for view in scenes:
-                self._panel.place_scene(view, sheet)
-
-    def event(self, ev) -> bool:
-        from PySide6.QtCore import QEvent
-        if (ev.type() == QEvent.ShortcutOverride
-                and self.state() != QAbstractItemView.EditingState
-                and self._panel.current_sheet() is not None
-                and ((ev.key() in (Qt.Key_Up, Qt.Key_Down)
-                      and ev.modifiers() & Qt.AltModifier)
-                     or ev.key() == Qt.Key_Delete)):
-            ev.accept()
-            return True
-        return super().event(ev)
-
-    def keyPressEvent(self, ev) -> None:
-        sheet = self._panel.current_sheet()
-        if sheet is not None and self.state() != \
-                QAbstractItemView.EditingState:
-            if ev.key() in (Qt.Key_Up, Qt.Key_Down) and \
-                    ev.modifiers() & Qt.AltModifier:
-                self._panel.move_sheet(sheet,
-                                       -1 if ev.key() == Qt.Key_Up else 1)
-                return
-            if ev.key() == Qt.Key_Delete:
-                self._panel.delete_sheet(sheet)
-                return
-        super().keyPressEvent(ev)
-
-
-class SheetsPanel(QWidget):
-    """Saved scenes and sheets with their view frames (the Sheets 2D tab) —
-    where views go onto sheets: drag a scene onto a sheet, make, order,
-    duplicate, delete and print sheets, and see which scenes are on no
-    sheet yet."""
-
-    def __init__(self, window, composer=None) -> None:
-        super().__init__()
-        self._window = window
-        #: The sheet composer this panel lives in (its «Views and sheets»
-        #: dock): scenes then go onto the page open beside it, through the
-        #: composer's own undo, and show a picture of themselves.
-        self._composer_win = composer
-        self._stale = False
-        self._shape = None
-        self._thumb_queue: list = []
-        lay = QVBoxLayout(self)
-        lay.setContentsMargins(6, 6, 6, 6)
-        lay.setSpacing(4)
-        self.tree = _SheetsTree(self)
-        if composer is not None:
-            from PySide6.QtCore import QSize
-            self.tree.setIconSize(QSize(48, 32))
-        self.tree.setColumnCount(2)
-        self.tree.setHeaderLabels([tr("Name"), tr("Details")])
-        self.tree.setSelectionMode(QAbstractItemView.ExtendedSelection)
-        head = self.tree.header()
-        head.setStretchLastSection(True)
-        head.setSectionResizeMode(0, QHeaderView.Interactive)
-        head.resizeSection(0, 230)
-        _remember_widths(head, "browser/sheet_columns", (0,))
-        self.tree.setUniformRowHeights(True)
-        self.tree.setAlternatingRowColors(True)
-        self.tree.setToolTip(tr(
-            "Drag a scene onto the page to place it where you drop it, or "
-            "double-click it to place it in a free spot. Double-click a sheet "
-            "to open it. F2 renames, Alt+↑/↓ moves a sheet, Delete removes "
-            "it.") if composer is not None else tr(
-            "Drag a scene onto a sheet to place it there. Double-click a "
-            "scene to show it, a sheet or a view to open the sheet. F2 "
-            "renames, Alt+↑/↓ moves a sheet, Delete removes it. Selecting a "
-            "scene marks the views that show it."))
-        self.tree.setEditTriggers(QAbstractItemView.EditKeyPressed)
-        self.tree.itemDoubleClicked.connect(
-            lambda item, _col: self.activate(item))
-        self.tree.itemChanged.connect(self._on_item_changed)
-        self.tree.currentItemChanged.connect(
-            lambda item, _prev: self._mark_related(item))
-        self._updating = False
-        self._related: list = []
-        self.tree.setContextMenuPolicy(Qt.CustomContextMenu)
-        self.tree.customContextMenuRequested.connect(self._on_context_menu)
-        lay.addWidget(self.tree, 1)
-        new_sheet = _tool_button(tr("New sheet"), tr(
-            "Open the sheet composer on a new sheet"), self._new_sheet)
-        new_sheet.setToolButtonStyle(Qt.ToolButtonTextOnly)
-        export = _tool_button(tr("Export PDF…"), tr(
-            "The selected sheets — or all of them — into one PDF"),
-            lambda: self.export_pdf())
-        export.setToolButtonStyle(Qt.ToolButtonTextOnly)
-        row = QHBoxLayout()
-        row.addStretch(1)
-        row.addWidget(new_sheet)
-        row.addWidget(export)
-        lay.addLayout(row)
-        self.scenes_root = None
-        self.sheets_root = None
-        # The composer is another window and edits sheets without telling
-        # the model: while this tab is on screen it checks, once a second,
-        # whether what it lists changed (a fingerprint of a few names — it
-        # costs nothing when nothing did).
-        from PySide6.QtCore import QTimer
-        self._poll = QTimer(self)
-        self._poll.setInterval(1000)
-        self._poll.timeout.connect(self.refresh)
-        self.refresh()
-
-    def _scene(self):
-        return self._window.viewport.scene
-
-    def on_scene_changed(self) -> None:
-        if self.isVisible():
-            self.refresh()
-        else:
-            self._stale = True
-            self.sync_composer()        # the composer is another window
-
-    def showEvent(self, ev) -> None:
-        super().showEvent(ev)
-        # Sheets change in the composer window, which does not touch the
-        # model's version: looking at the tab is when to catch up.
-        self.refresh()
-        self._poll.start()
-
-    def hideEvent(self, ev) -> None:
-        self._poll.stop()
-        super().hideEvent(ev)
-
-    def refresh(self) -> None:
-        self._stale = False
-        if self.tree.state() == QAbstractItemView.EditingState:
-            return                      # a rename in progress: leave it be
-        scene = self._scene()
-        shape = outliner.sheets_shape(scene)
-        if shape == self._shape:
-            return
-        self._shape = shape
-        self._updating = True
-        try:
-            self._fill(scene)
-        finally:
-            self._updating = False
-        self.sync_composer()
-        if self._composer_win is not None:
-            self._queue_thumbnails()
-
-    def _queue_thumbnails(self) -> None:
-        """Pictures of the scenes, one at a time from the event loop — a
-        render each, so the panel shows at once and fills in. Queued by
-        NAME: a render can refresh the panel, and the row it was for is
-        then another one."""
-        from PySide6.QtCore import QTimer
-        root = self.scenes_root
-        self._thumb_queue = []
-        for i in range(root.childCount() if root is not None else 0):
-            data = root.child(i).data(0, Qt.UserRole)
-            if data:
-                self._thumb_queue.append(data[1].name)
-        QTimer.singleShot(0, self._next_thumbnail)
-
-    def _scene_row(self, name):
-        root = self.scenes_root
-        for i in range(root.childCount() if root is not None else 0):
-            item = root.child(i)
-            data = item.data(0, Qt.UserRole)
-            if data and data[1].name == name:
-                return item
-        return None
-
-    def _next_thumbnail(self) -> None:
-        from shiboken6 import isValid
-        if not self._thumb_queue or not isValid(self):
-            return
-        name = self._thumb_queue.pop(0)
-        icon = self._composer_win.scene_thumbnail(name)
-        item = self._scene_row(name)          # after the render: the live row
-        if icon is not None and item is not None and isValid(item):
-            # A new icon is an item change to Qt, not a rename: unguarded,
-            # it went through _on_item_changed, touched the document and
-            # rebuilt the list — which queued the pictures again: the
-            # scenes flickered, and the file read as modified.
-            self._updating = True
-            try:
-                item.setIcon(0, icon)
-            finally:
-                self._updating = False
-        if self._thumb_queue:
-            from PySide6.QtCore import QTimer
-            QTimer.singleShot(20, self._next_thumbnail)
-
-    def refresh_thumbnails(self) -> None:
-        if self._composer_win is None:
-            return
-        self._composer_win.forget_thumbnails()
-        self._queue_thumbnails()
-
-    def sync_composer(self) -> None:
-        """Bring an open composer up to date with the document's sheets
-        and scenes. It reloads them when it opens; a sheet or a scene made
-        while it is already open (Create plan, the browser) — or one undone
-        under it — did not reach it: the new sheet missed from its list,
-        or the window kept showing a sheet that no longer existed."""
-        comp_win = getattr(self._window, "_composer", None)
-        if comp_win is None:
-            return
-        # Only when the sheets or scenes changed: reloading the composer's
-        # list refreshes the sheet strip, which calls back here.
-        shape = outliner.sheets_shape(self._scene())
-        if shape == getattr(self, "_synced_shape", None):
-            return
-        self._synced_shape = shape
-        comps = self._scene().compositions
-        if comp_win.comp not in comps:
-            if not comps:
-                return                      # it makes its own on showing
-            from core.composition import ComposerHistory
-            comp_win.comp = comps[0]
-            comp_win.history = ComposerHistory(
-                on_change=comp_win._on_history_change)
-            comp_win._rebuild_canvas()
-        comp_win._reload_comp_combo()
-        reload = getattr(comp_win, "_reload_view_sources", None)
-        if reload is not None:
-            reload()
-        if comp_win.isVisible():
-            # A view placed or taken away from here, on the open sheet.
-            comp_win._rebuild_canvas()
-            from PySide6.QtCore import QTimer
-            QTimer.singleShot(0, comp_win._auto_render_stale)
-
-    def show_scene_row(self, name: str) -> None:
-        """Bring the scene called ``name`` into view, current — which also
-        marks the sheet views that show it."""
-        self.refresh()
-        root = self.scenes_root
-        for i in range(root.childCount() if root is not None else 0):
-            item = root.child(i)
-            data = item.data(0, Qt.UserRole)
-            if data and data[1].name == name:
-                root.setExpanded(True)
-                self.tree.setCurrentItem(item)
-                self.tree.scrollToItem(item)
-                return
-
-    def _fill(self, scene) -> None:
-        current = self.tree.currentItem()
-        current_key = self._key(current) if current is not None else None
-        self._related = []
-        from core.composition import format_scale
-        from views.composer import frame_view_name
-        expanded = {self._key(it) for it in self._all_items()
-                    if it.isExpanded()}
-        first = self.tree.topLevelItemCount() == 0
-        used = outliner.scene_usage(scene)
-        self.tree.clear()
-        views = list(getattr(scene, "saved_views", None) or ())
-        comps = list(getattr(scene, "compositions", None) or ())
-        unplaced = len(outliner.unplaced_scenes(scene))
-        self.scenes_root = QTreeWidgetItem(
-            [tr("Scenes"), tr("{n} saved · {k} on no sheet", n=len(views),
-                              k=unplaced) if unplaced
-             else tr("{n} saved", n=len(views))])
-        self.scenes_root.setIcon(0, node_icon("folder"))
-        self.sheets_root = QTreeWidgetItem(
-            [tr("Sheets"), tr("{n} sheets", n=len(comps))])
-        self.sheets_root.setIcon(0, node_icon("folder"))
-        for root in (self.scenes_root, self.sheets_root):
-            font = QFont(root.font(0))
-            font.setBold(True)
-            root.setFont(0, font)
-            root.setFlags(Qt.ItemIsEnabled)
-            self.tree.addTopLevelItem(root)
-        for view in views:
-            on = used.get(view.name, [])
-            item = QTreeWidgetItem([view.name, tr("On {sheets}",
-                                                  sheets=", ".join(on))
-                                    if on else tr("Not on a sheet")])
-            item.setIcon(0, node_icon("scene"))
-            item.setData(0, Qt.UserRole, ("scene", view))
-            item.setFlags((item.flags() | Qt.ItemIsEditable
-                           | Qt.ItemIsDragEnabled) & ~Qt.ItemIsDropEnabled)
-            if not on:
-                font = QFont(item.font(0))
-                font.setItalic(True)
-                item.setFont(0, font)
-            self.scenes_root.addChild(item)
-        for index, comp in enumerate(comps):
-            orient = tr("landscape") if comp.landscape else tr("portrait")
-            sheet = QTreeWidgetItem([comp.name, f"{comp.paper} · {orient}"])
-            sheet.setIcon(0, node_icon("sheet"))
-            sheet.setData(0, Qt.UserRole, ("sheet", index))
-            sheet.setFlags((sheet.flags() | Qt.ItemIsEditable
-                            | Qt.ItemIsDropEnabled) & ~Qt.ItemIsDragEnabled)
-            self.sheets_root.addChild(sheet)
-            for frame in comp.frames:
-                if frame.view_key == "__current__":
-                    name = tr("Current view")
-                else:
-                    name = frame_view_name(frame)
-                item = QTreeWidgetItem(
-                    [f"{name} · {format_scale(frame.scale_n)}", ""])
-                item.setData(0, Qt.UserRole, ("frame", index, frame))
-                item.setFlags((item.flags() | Qt.ItemIsDropEnabled)
-                              & ~Qt.ItemIsDragEnabled)
-                if outliner.is_orphan(scene, frame):
-                    item.setIcon(0, node_icon("warning"))
-                    item.setText(1, tr("Scene missing"))
-                    item.setToolTip(0, tr(
-                        "This view shows the scene «{name}», which the "
-                        "model no longer has. The frame keeps its place on "
-                        "the sheet; pick another view for it in the "
-                        "composer.", name=outliner.frame_scene(frame)))
-                else:
-                    item.setIcon(0, node_icon("frame"))
-                    item.setText(1, tr("Scene") if outliner.frame_scene(
-                        frame) else tr("Standard view")
-                        if frame.view_key.startswith("std:")
-                        else tr("Live camera"))
-                sheet.addChild(item)
-        for it in self._all_items():
-            if first or self._key(it) in expanded or it in (
-                    self.scenes_root, self.sheets_root):
-                it.setExpanded(True)
-            if current_key is not None and self._key(it) == current_key:
-                self.tree.setCurrentItem(it)
-
-    def _all_items(self):
-        stack = [self.tree.topLevelItem(i)
-                 for i in range(self.tree.topLevelItemCount())]
-        while stack:
-            item = stack.pop()
-            yield item
-            stack.extend(item.child(i) for i in range(item.childCount()))
-
-    @staticmethod
-    def _key(item):
-        data = item.data(0, Qt.UserRole)
-        if data is None:
-            return ("root", item.text(0))
-        return (data[0], item.text(0))
-
-    # ---- Scenes ↔ views ---------------------------------------------------
-    def _mark_related(self, item) -> None:
-        """Mark what the current row is linked to: a scene → the views that
-        show it, on every sheet; a view → its scene. The link is the one
-        a sheet keeps — the scene's name — read both ways."""
-        from PySide6.QtGui import QBrush
-        for it in self._related:
-            for col in (0, 1):
-                it.setBackground(col, QBrush())
-            it.setData(0, Qt.UserRole + 1, False)
-        self._related = []
-        data = item.data(0, Qt.UserRole) if item is not None else None
-        if not data:
-            return
-        if data[0] == "scene":
-            name = data[1].name
-            wanted = lambda d: d[0] == "frame" and \
-                outliner.frame_scene(d[2]) == name
-        elif data[0] == "frame" and outliner.frame_scene(data[2]):
-            name = outliner.frame_scene(data[2])
-            wanted = lambda d: d[0] == "scene" and d[1].name == name
-        else:
-            return
-        tint = QColor(_accent())
-        tint.setAlpha(60)
-        for it in self._all_items():
-            d = it.data(0, Qt.UserRole)
-            if d and wanted(d):
-                for col in (0, 1):
-                    it.setBackground(col, tint)
-                it.setData(0, Qt.UserRole + 1, True)
-                self._related.append(it)
-                self._reveal(it)
-
-    @staticmethod
-    def _reveal(item) -> None:
-        parent = item.parent()
-        while parent is not None:
-            parent.setExpanded(True)
-            parent = parent.parent()
-
-    def related(self) -> list:
-        """The rows marked as linked to the current one."""
-        return list(self._related)
-
-    # ---- Rename --------------------------------------------------------
-    def _on_item_changed(self, item, column) -> None:
-        if self._updating or column != 0:
-            return
-        data = item.data(0, Qt.UserRole)
-        if not data or data[0] not in ("scene", "sheet"):
-            return
-        text = item.text(0).strip()
-        comps = self._scene().compositions
-        current = (data[1].name if data[0] == "scene"
-                   else comps[data[1]].name if 0 <= data[1] < len(comps)
-                   else None)
-        if text == current:
-            return                      # not a rename: nothing to do
-        if data[0] == "scene":
-            self.rename_scene(data[1], text)
-        else:
-            self.rename_sheet(data[1], text)
-
-    def _touch(self) -> None:
-        self._scene().version += 1          # a document change: unsaved
-        self._window.viewport.update()
-        self._shape = None
-        from PySide6.QtCore import QTimer
-        QTimer.singleShot(0, self.refresh)  # not under the editor's signal
-
-    def rename_scene(self, view, name: str) -> bool:
-        """Rename a scene and carry the sheet views that show it along."""
-        if not self._window.tray.scenes.rename_view(view, name):
-            self._touch()
-            return False
-        self._window.tray.scenes.refresh()
-        composer = getattr(self._window, "_composer", None)
-        reload = getattr(composer, "_reload_view_sources", None)
-        if reload is not None:
-            reload()
-        self._touch()
-        return True
-
-    def rename_sheet(self, index: int, name: str) -> bool:
-        comps = self._scene().compositions
-        if not name or not 0 <= index < len(comps) \
-                or comps[index].name == name:
-            self._touch()
-            return False
-        comps[index].name = name
-        composer = getattr(self._window, "_composer", None)
-        if getattr(composer, "comp_combo", None) is not None:
-            composer._reload_comp_combo()
-        else:
-            self._window._refresh_sheet_tabs()
-        self._touch()
-        return True
-
-    # ---- Working with sheets -----------------------------------------------
-    def sheet_of(self, item):
-        """The sheet a row is (or is in), or ``None``."""
-        data = item.data(0, Qt.UserRole) if item is not None else None
-        comps = self._scene().compositions
-        if data and data[0] in ("sheet", "frame") and \
-                0 <= data[1] < len(comps):
-            return comps[data[1]]
-        return None
-
-    def current_sheet(self):
-        item = self.tree.currentItem()
-        data = item.data(0, Qt.UserRole) if item is not None else None
-        return self.sheet_of(item) if data and data[0] == "sheet" else None
-
-    def _selected_sheets(self) -> list:
-        out = []
-        for it in self.tree.selectedItems():
-            sheet = self.sheet_of(it)
-            if sheet is not None and sheet not in out:
-                out.append(sheet)
-        return out
-
-    def place_scene(self, view, sheet=None, scale: float = 100.0):
-        """Place scene ``view`` on ``sheet`` — on a new sheet named after
-        it when ``None`` — in a free spot of the page, at 1:``scale``. One
-        undo step; returns the new frame."""
-        from core.composition import Composicion, MarcoVista
-        from core.history import (AddSheetCommand, CompoundCommand,
-                                  PlaceViewCommand)
-        scene = self._scene()
-        comp_win = self._composer_win
-        if comp_win is not None and sheet is not None:
-            # Beside the page: open that sheet and put the view in a free
-            # place of it, as one step of the composer's own undo.
-            comps = scene.compositions
-            if comp_win.comp is not sheet and sheet in comps:
-                comp_win.show_sheet(comps.index(sheet))
-            return comp_win.place_scene_at(view.name)
-        cmds = []
-        if sheet is None:
-            sheet = Composicion(name=outliner.unique_name(
-                view.name, [c.name for c in scene.compositions]),
-                paper="A3")
-            cmds.append(AddSheetCommand(sheet))
-        pw, ph = sheet.page_size_mm()
-        m = float(getattr(sheet, "margin_mm", 10.0) or 0.0)
-        w_mm = max(60.0, (pw - 2 * m) / 2 - 15)
-        h_mm = max(45.0, (ph - 2 * m) / 2 - 15)
-        # A quarter of the page where there is room; smaller where there is
-        # less; over the others, a step aside, only on a full page.
-        spot = None
-        for k in (1.0, 0.75, 0.5, 0.35):
-            spot = outliner.free_slot(sheet, w_mm * k, h_mm * k,
-                                      fallback=False)
-            if spot is not None:
-                w_mm, h_mm = w_mm * k, h_mm * k
-                break
-        x, y = spot if spot is not None else outliner.free_slot(
-            sheet, w_mm, h_mm)
-        frame = MarcoVista(x_mm=x, y_mm=y, w_mm=w_mm, h_mm=h_mm,
-                           view_key=f"scene:{view.name}",
-                           scale_n=float(scale), show_title=True)
-        cmds.append(PlaceViewCommand(sheet, frame))
-        self._window.viewport.history.execute(
-            CompoundCommand(cmds) if len(cmds) > 1 else cmds[0])
-        self._window._refresh_sheet_tabs()
-        self._window.viewport.flash_status(tr(
-            "«{scene}» placed on «{sheet}»", scene=view.name,
-            sheet=sheet.name), 4000)
-        self.refresh()
-        return frame
-
-    def move_sheet(self, sheet, step: int) -> None:
-        """Up or down the set — one undo step."""
-        from core.history import MoveSheetCommand
-        comps = self._scene().compositions
-        i = comps.index(sheet) + step
-        if not 0 <= i < len(comps):
-            return
-        self._window.viewport.history.execute(MoveSheetCommand(sheet, i))
-        self._window._refresh_sheet_tabs()
-        self.refresh()
-        self._select_sheet(sheet)
-
-    def _select_sheet(self, sheet) -> None:
-        comps = self._scene().compositions
-        if sheet not in comps or self.sheets_root is None:
-            return
-        item = self.sheets_root.child(comps.index(sheet))
-        if item is not None:
-            self.tree.setCurrentItem(item)
-
-    def duplicate_sheet(self, sheet) -> None:
-        comp_win = self._window._ensure_composer()
-        comp_win.duplicate_sheet(self._scene().compositions.index(sheet))
-        self._window._refresh_sheet_tabs()
-        self.refresh()
-
-    def delete_sheet(self, sheet) -> None:
-        """Through the composer: it asks first and keeps one sheet."""
-        comp_win = self._window._ensure_composer()
-        if comp_win.delete_sheet(self._scene().compositions.index(sheet),
-                                 self):
-            self._window._refresh_sheet_tabs()
-            self.refresh()
-
-    def export_pdf(self, sheets=None, path=None) -> None:
-        """The selected sheets (all, when none is selected) into one PDF,
-        in the set's order — the composer's own atlas export."""
-        sheets = sheets if sheets is not None else self._selected_sheets()
-        if path is None:
-            from views.filedialogs import file_dialogs
-            path, _ = file_dialogs.getSaveFileName(
-                self, tr("Export PDF…"), "laminas.pdf", "PDF (*.pdf)")
-        if not path:
-            return
-        comp_win = self._window._ensure_composer()
-        troubled = comp_win.export_all_pdf(path, sheets or None)
-        n = len(sheets) if sheets else len(self._scene().compositions)
-        self._window.viewport.flash_status(
-            tr("Exported {n} sheets to {name}", n=n, name=path)
-            if not troubled else
-            tr("Exported {name} — but a view would not render on {sheets}",
-               name=path, sheets=", ".join(troubled)), 6000)
-
-    def _place_menu(self, menu, view) -> None:
-        sub = menu.addMenu(tr("Place on sheet"))
-        for comp in self._scene().compositions:
-            sub.addAction(comp.name, lambda c=comp: self.place_scene(view, c))
-        sub.addSeparator()
-        sub.addAction(tr("On a new sheet"),
-                      lambda: self.place_scene(view, None))
-
-    def activate(self, item) -> None:
-        """Double-click: a scene shows (in the composer: is placed in a
-        free place of the open sheet), a sheet (or one of its views) opens
-        in the composer."""
-        data = item.data(0, Qt.UserRole)
-        if not data:
-            return
-        if data[0] == "scene" and self._composer_win is not None:
-            self._composer_win.place_scene_at(data[1].name)
-        elif data[0] == "scene":
-            self._show_scene(data[1])
-        else:
-            self._window._show_sheet(data[1])
-
-    def _show_scene(self, view) -> None:
-        """Through the Scenes panel, so a scene shown from here does all
-        a scene shown there does (style menu, selection, layers)."""
-        scenes = self._window.tray.scenes
-        for i in range(scenes.list.count()):
-            row = scenes.list.item(i)
-            if row.data(Qt.UserRole) is view:
-                scenes._on_activate(row)
-                return
-
-    def _new_sheet(self) -> None:
-        self._window._show_new_sheet()
-        self.refresh()
-
-    def _on_context_menu(self, pos) -> None:
-        from PySide6.QtWidgets import QMenu
-        item = self.tree.itemAt(pos)
-        data = item.data(0, Qt.UserRole) if item is not None else None
-        menu = QMenu(self)
-        if data and data[0] == "scene":
-            menu.addAction(tr("Show scene"), lambda: self.activate(item))
-            menu.addAction(tr("Rename…"), lambda: self.tree.editItem(item, 0))
-            self._place_menu(menu, data[1])
-        elif data:
-            menu.addAction(tr("Open sheet"), lambda: self.activate(item))
-            if data[0] == "sheet":
-                sheet = self.sheet_of(item)
-                menu.addAction(tr("Rename…"),
-                               lambda: self.tree.editItem(item, 0))
-                menu.addAction(tr("Duplicate sheet"),
-                               lambda: self.duplicate_sheet(sheet))
-                menu.addAction(tr("Delete sheet"),
-                               lambda: self.delete_sheet(sheet))
-                menu.addSeparator()
-                menu.addAction(tr("Move up (Alt+↑)"),
-                               lambda: self.move_sheet(sheet, -1))
-                menu.addAction(tr("Move down (Alt+↓)"),
-                               lambda: self.move_sheet(sheet, 1))
-                menu.addSeparator()
-                views = list(self._scene().saved_views)
-                if views:
-                    sub = menu.addMenu(tr("Place a scene here"))
-                    free = outliner.unplaced_scenes(self._scene())
-                    for v in free + [v for v in views if v not in free]:
-                        sub.addAction(v.name, lambda vv=v, s=sheet:
-                                      self.place_scene(vv, s))
-                chosen = self._selected_sheets() or [sheet]
-                menu.addAction(tr("Export to PDF…") if len(chosen) == 1
-                               else tr("Export {n} sheets to PDF…",
-                                       n=len(chosen)),
-                               lambda: self.export_pdf(chosen))
-            if data[0] == "frame":
-                name = outliner.frame_scene(data[2])
-                view = next((v for v in self._scene().saved_views
-                             if v.name == name), None)
-                if view is not None:
-                    menu.addAction(tr("Show scene"),
-                                   lambda: self._show_scene(view))
-        menu.addAction(tr("New sheet"), self._new_sheet)
-        if self._composer_win is not None:
-            menu.addAction(tr("Refresh previews"), self.refresh_thumbnails)
-        menu.exec(self.tree.viewport().mapToGlobal(pos))
-
-
 # ---- The dock ------------------------------------------------------------------
 
 class ProjectBrowser(QDockWidget):
     """Sidebar tab **Browser**: the model's tree. The sheets have
-    their own panel in the sheet composer, beside the page they go on
-    («Views and sheets», :class:`SheetsPanel`)."""
+    their own page in the sheet composer, beside the page they go on
+    («Sheets», :class:`views.sheet_browser.SheetsTab`)."""
 
     def __init__(self, window) -> None:
         super().__init__(tr("Browser"), window)

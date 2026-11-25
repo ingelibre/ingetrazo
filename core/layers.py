@@ -14,6 +14,8 @@ parallel projection with the right layers on IS the plan drawing.
 """
 from __future__ import annotations
 
+import re
+
 DEFAULT_LAYER = "Layer 0"
 
 # Where an imported photogrammetric survey lands (Track G, G6). Its own layer
@@ -61,6 +63,463 @@ DXF_LINETYPES = {"continuous": "CONTINUOUS", "dashed": "DASHED",
                  "dashdotdot": "DIVIDE", "center": "CENTER",
                  "phantom": "PHANTOM", "border": "BORDER"}
 
+#: The key prefix of a line type the user made or brought in from a line
+#: type file (``.lin``), kept in the document (``Scene.line_types``):
+#: ``"lin:<name>"``.
+CUSTOM_LINETYPE = "lin:"
+#: A line type's limits — what a reasonable pattern needs; a file is data
+#: from anywhere.
+_MAX_PIECES = 32
+
+
+def known_linetype(key) -> bool:
+    """Whether ``key`` names a line type: a built-in one or a custom one."""
+    return key in LINETYPES or (isinstance(key, str)
+                                and key.startswith(CUSTOM_LINETYPE)
+                                and len(key) > len(CUSTOM_LINETYPE))
+
+
+def linetype_pattern(key, scene=None) -> tuple:
+    """The dash pattern of line type ``key`` as it is drawn: paper mm,
+    dash, gap, dash, gap… in turn (as :data:`LINETYPES` holds them; a dot
+    is a dash of 0; empty: continuous) — a built-in one, or the document's
+    own, whose stored pieces (dash > 0, gap < 0, dot 0) are turned so."""
+    if key in LINETYPES:
+        return tuple(LINETYPES[key])
+    if isinstance(key, str) and key.startswith(CUSTOM_LINETYPE):
+        entry = (getattr(scene, "line_types", None) or {}).get(
+            key[len(CUSTOM_LINETYPE):])
+        if isinstance(entry, dict):
+            return drawn_dashes(entry.get("pattern") or ())
+    return ()
+
+
+#: A line type's text (``GAS``, ``AGUA``…): its longest, and its height on
+#: paper in mm — the least and the most.
+_MAX_TEXT = 24
+_TEXT_SIZES = (0.5, 20.0)
+
+
+def text_width(text: str, size: float) -> float:
+    """About how wide ``text`` runs at ``size`` mm high, in mm — what a
+    line type leaves free for it (a sans serif, capitals mostly)."""
+    return 0.68 * float(size) * len(text)
+
+
+def clean_line_text(entry, pattern) -> dict | None:
+    """The text of a line type entry, read defensively: ``{"text",
+    "text_size", "text_at"}`` — the words, their height (paper mm) and the
+    piece of ``pattern`` they sit in, centred (a gap); ``None`` without
+    one."""
+    import math
+    if not isinstance(entry, dict) or not pattern:
+        return None
+    text = entry.get("text")
+    if not isinstance(text, str):
+        return None
+    text = "".join(c for c in text if c.isprintable()).strip()[:_MAX_TEXT]
+    if not text:
+        return None
+    try:
+        size = float(entry.get("text_size", 2.5))
+        at = int(entry.get("text_at", len(pattern) - 1))
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(size):
+        return None
+    size = min(_TEXT_SIZES[1], max(_TEXT_SIZES[0], size))
+    if not 0 <= at < len(pattern) or pattern[at] >= 0:
+        return None
+    return {"text": text, "text_size": round(size, 3), "text_at": at}
+
+
+def with_text(pattern, text: str, size: float = 2.5) -> tuple:
+    """``pattern`` (pieces, dash > 0, gap < 0) with ``text`` in it: room
+    as wide as the words and a margin each side, added to its last gap (or
+    as a gap of its own) — the text sits centred in that gap. Returns ``(pattern, {"text", "text_size",
+    "text_at"})``; the pattern alone when there is no text."""
+    text = (text or "").strip()
+    if not text:
+        return list(pattern), None
+    room = text_width(text, size) + 2.0 * max(0.6, 0.4 * float(size))
+    out = list(pattern)
+    if out and out[-1] < 0:
+        out[-1] = round(out[-1] - room, 3)     # the last gap, widened
+    else:
+        out.append(-round(room, 3))
+    return out, clean_line_text({"text": text, "text_size": size,
+                                 "text_at": len(out) - 1}, out)
+
+
+def text_offset(pattern, at: int) -> float:
+    """Where along one period of the drawn pattern (:func:`drawn_dashes`,
+    which moves a leading gap to the end) the middle of piece ``at`` of
+    ``pattern`` falls, in mm."""
+    period = sum(abs(v) for v in pattern)
+    raw = sum(abs(v) for v in pattern[:at]) + abs(pattern[at]) / 2.0
+    lead = 0.0
+    for v in pattern:
+        if v >= 0:
+            break
+        lead += abs(v)
+    return (raw - lead) % period if period > 0 else 0.0
+
+
+def linetype_text(key, scene=None):
+    """The text of line type ``key`` as it is drawn: ``(text, height mm,
+    where its middle falls along a period, the period)`` in paper mm;
+    ``None`` for a line type without one (every built-in one)."""
+    if not (isinstance(key, str) and key.startswith(CUSTOM_LINETYPE)):
+        return None
+    entry = (getattr(scene, "line_types", None) or {}).get(
+        key[len(CUSTOM_LINETYPE):])
+    pattern = entry.get("pattern") if isinstance(entry, dict) else None
+    spec = clean_line_text(entry, pattern)
+    if spec is None:
+        return None
+    period = sum(drawn_dashes(pattern))
+    return (spec["text"], spec["text_size"],
+            text_offset(pattern, spec["text_at"]), period)
+
+
+def clean_line_colour(raw) -> tuple | None:
+    """A line type's own colour as it is kept: ``(r, g, b)`` 0–1, or
+    ``None`` (by layer) for none or anything else."""
+    if not isinstance(raw, (list, tuple)) or len(raw) != 3:
+        return None
+    try:
+        rgb = tuple(min(1.0, max(0.0, float(c))) for c in raw)
+    except (TypeError, ValueError):
+        return None
+    return rgb if all(c == c for c in rgb) else None
+
+
+def linetype_color(key, scene=None) -> tuple | None:
+    """The colour line type ``key`` inks its lines with whatever their
+    layer — a gas line yellow, a water main blue — or ``None``: the
+    layer's. A built-in one takes the colour the document gave it."""
+    if key in LINETYPES:
+        return clean_line_colour(
+            (getattr(scene, "linetype_colors", None) or {}).get(key))
+    if not (isinstance(key, str) and key.startswith(CUSTOM_LINETYPE)):
+        return None
+    entry = (getattr(scene, "line_types", None) or {}).get(
+        key[len(CUSTOM_LINETYPE):])
+    return clean_line_colour(entry.get("color")) \
+        if isinstance(entry, dict) else None
+
+
+def set_linetype_color(scene, key, rgb) -> bool:
+    """Give line type ``key`` the colour ``rgb`` — ``None``: by layer again
+    — a built-in one in the document's list, an own one in its entry.
+    Returns whether anything changed."""
+    rgb = clean_line_colour(rgb)
+    if linetype_color(key, scene) == rgb:
+        return False
+    if key in LINETYPES:
+        colours = dict(getattr(scene, "linetype_colors", None) or {})
+        if rgb is None:
+            colours.pop(key, None)
+        else:
+            colours[key] = rgb
+        scene.linetype_colors = colours
+        return True
+    if not (isinstance(key, str) and key.startswith(CUSTOM_LINETYPE)):
+        return False
+    own = dict(getattr(scene, "line_types", None) or {})
+    entry = own.get(key[len(CUSTOM_LINETYPE):])
+    if not isinstance(entry, dict):
+        return False
+    entry = dict(entry)
+    if rgb is None:
+        entry.pop("color", None)
+    else:
+        entry["color"] = rgb
+    own[key[len(CUSTOM_LINETYPE):]] = entry
+    scene.line_types = own
+    return True
+
+
+def load_linetype_colors(scene, raw) -> None:
+    """The built-in line types' colours as a file keeps them, read
+    defensively: known keys and real colours only."""
+    if not isinstance(raw, dict):
+        return
+    colours = dict(getattr(scene, "linetype_colors", None) or {})
+    for key, value in raw.items():
+        rgb = clean_line_colour(value)
+        if key in LINETYPES and rgb is not None:
+            colours[key] = rgb
+    scene.linetype_colors = colours
+
+
+def model_line_styles(scene) -> dict:
+    """``{layer name: (rgb or None, dash pattern)}`` of the layers whose
+    edges the model draws with their line type (the style's «Line types in
+    the model»): dashed (the pattern in paper mm, as
+    :func:`linetype_pattern` gives it), in a colour of its own, or both.
+    A continuous line type by layer is not here: the model draws it as
+    ever."""
+    out = {}
+    for ly in getattr(scene, "layers", ()):
+        rgb = linetype_color(ly.linetype, scene)
+        pattern = tuple(linetype_pattern(ly.linetype, scene))
+        if rgb is not None or pattern:
+            out[ly.name] = (rgb, pattern)
+    return out
+
+
+#: The model draws a line type's dashes as a sheet at 1:50 does — metres
+#: of model per paper millimetre.
+MODEL_DASH_SCALE = 0.05
+
+
+def dash_segments(segs, pattern, unit: float = MODEL_DASH_SCALE):
+    """``segs`` ((E, 2, 3) world) cut as the dash ``pattern`` (paper mm:
+    dash, gap, dash…; a dot is a dash of 0) at ``unit`` metres per paper
+    mm, restarting on each segment as a pen does: ``(dashes, gaps)``, two
+    (K, 2, 3) float32 arrays. A dot is drawn as a short dash. Too fine a
+    pattern for a long edge (over 400 periods) leaves it whole."""
+    import numpy as np
+    segs = np.asarray(segs, dtype=np.float64).reshape(-1, 2, 3)
+    empty = np.zeros((0, 2, 3), dtype=np.float32)
+    if not len(segs) or not pattern:
+        return segs.astype(np.float32), empty
+    lengths = [max(float(v), 0.25) * unit if i % 2 == 0
+               else max(float(v), 0.0) * unit
+               for i, v in enumerate(pattern)]
+    if len(lengths) % 2:
+        lengths.append(0.0)
+    period = sum(lengths)
+    dashes: list = []
+    gaps: list = []
+    for a, b in segs:
+        d = b - a
+        total = float(np.linalg.norm(d))
+        if total <= 1e-12:
+            continue
+        if period <= 1e-12 or total / period > 400:
+            dashes.append((a, b))
+            continue
+        u = d / total
+        t = 0.0
+        k = 0
+        while t < total:
+            step = lengths[k % len(lengths)]
+            end = min(total, t + step)
+            if end > t:
+                (dashes if k % 2 == 0 else gaps).append((a + u * t,
+                                                         a + u * end))
+            t = end
+            k += 1
+    as_array = (lambda xs: np.asarray(xs, dtype=np.float32).reshape(-1, 2, 3)
+                if xs else empty)
+    return as_array(dashes), as_array(gaps)
+
+
+def text_marks(p0, p1, spec) -> list:
+    """Where a line type's text goes along the line ``p0``→``p1`` (paper mm,
+    the pattern restarting at ``p0`` as a pen restarts it on each line):
+    ``[(x, y, degrees)]``, the middle of each word that fits whole, turned
+    along the line and kept reading upright. ``spec``: :func:`linetype_text`."""
+    import math
+    if spec is None:
+        return []
+    text, size, offset, period = spec
+    dx, dy = p1[0] - p0[0], p1[1] - p0[1]
+    length = math.hypot(dx, dy)
+    if length <= 1e-9 or period <= 1e-9:
+        return []
+    half = text_width(text, size) / 2.0
+    angle = math.degrees(math.atan2(dy, dx))
+    if angle > 90.0:
+        angle -= 180.0
+    elif angle <= -90.0:
+        angle += 180.0
+    out = []
+    t = offset
+    n = 0
+    while t + half <= length and n < 2000:
+        if t - half >= 0.0:
+            f = t / length
+            out.append((p0[0] + dx * f, p0[1] + dy * f, angle))
+        t += period
+        n += 1
+    return out
+
+
+def drawn_dashes(pieces) -> tuple:
+    """Pieces as a line type file has them (dash > 0, gap < 0, dot 0) as
+    a pen draws them: dash, gap, dash, gap… in turn, all ≥ 0, starting with
+    a dash — two pieces of a kind in a row joined, a leading gap moved to
+    the end."""
+    runs: list = []                    # [(drawn?, length)]
+    for v in pieces:
+        drawn = v >= 0
+        if runs and runs[-1][0] == drawn and not (drawn and v == 0):
+            runs[-1] = (drawn, runs[-1][1] + abs(v))
+        else:
+            runs.append((drawn, abs(v)))
+    if runs and not runs[0][0]:
+        runs = runs[1:] + runs[:1]
+    out: list = []
+    for drawn, length in runs:
+        if out and (len(out) % 2 == 0) != drawn:
+            out[-1] += 0.0 if drawn else length    # never two of a kind
+            continue
+        out.append(length)
+    if len(out) % 2:
+        out.append(0.0)
+    return tuple(out)
+
+
+def file_dashes(drawn) -> tuple:
+    """:func:`drawn_dashes` the other way: dash, −gap, … for a file."""
+    return tuple(v if i % 2 == 0 else -v for i, v in enumerate(drawn))
+
+
+def clean_pattern(raw) -> list | None:
+    """A dash pattern as typed or read from a file, kept sane: finite
+    numbers in mm, at most a few dozen pieces, something drawn and
+    something left blank; ``None`` when there is no such pattern."""
+    import math
+    if not isinstance(raw, (list, tuple)):
+        return None
+    out = []
+    for v in raw[:_MAX_PIECES]:
+        try:
+            v = float(v)
+        except (TypeError, ValueError):
+            return None
+        if not math.isfinite(v) or abs(v) > 1000.0:
+            return None
+        out.append(round(v, 4))
+    if not out or sum(abs(v) for v in out) < 0.05:
+        return None
+    if not any(v < 0 for v in out) or not any(v >= 0 for v in out):
+        return None                    # all gap, or a continuous line
+    return out
+
+
+def parse_lin(text: str) -> tuple[dict, list]:
+    """The line types of a line type file (``.lin``) — the plain text
+    format of drawing programs: ``*NAME,description`` and then
+    ``A,dash,-gap,0,…``. Returns ``({name: {"label", "pattern"[, "text",
+    "text_size", "text_at"]}}, skipped)``: the line types in mm — with
+    their text, when a piece writes one (``["GAS",STANDARD,S=2.5,…]``: the
+    two gaps around it made one, the text centred in it) — and the names
+    of those that carry a shape (``[NAME,file.shx,…]``), left out. The
+    format has no unit: a pattern whose every piece is a fraction of a
+    unit is taken as inches (the imperial files) and turned into mm."""
+    found: dict = {}
+    skipped: list = []
+    name = label = None
+    for raw in text.splitlines():
+        line = raw.split(";;", 1)[0].strip()
+        if not line or line.startswith(";"):
+            continue
+        if line.startswith("*"):
+            head, _, label = line[1:].partition(",")
+            name = head.strip()[:64] or None
+            label = label.strip()[:120]
+            continue
+        if name is None:
+            continue
+        body = line[1:] if line[:1].upper() == "A" else line
+        body = body.lstrip(",")
+        words = None                   # (text, size) of a text piece
+        at = None                      # the gap it sits in, once known
+        nums: list = []
+        bad = False
+        for part in re.split(r",(?![^\[]*\])", body):
+            part = part.strip()
+            if not part:
+                continue
+            if part.startswith("["):
+                inner = [v.strip() for v in part.strip("[]").split(",")]
+                first = inner[0] if inner else ""
+                if not (first.startswith('"') and first.endswith('"')
+                        and len(first) > 2) or words is not None:
+                    bad = True         # a shape, or two texts: left out
+                    break
+                size = 0.1
+                for item in inner[1:]:
+                    k, _, v = item.partition("=")
+                    if k.strip().upper() == "S":
+                        try:
+                            size = float(v)
+                        except ValueError:
+                            pass
+                words = (first[1:-1], size)
+                # The gap before it and the one after are one room.
+                at = len(nums) - 1 if nums and nums[-1] < 0 else None
+                continue
+            try:
+                v = float(part)
+            except ValueError:
+                bad = True
+                break
+            if at is not None and len(nums) - 1 == at and v < 0:
+                nums[at] += v
+                at = -1                # merged: keep it where it is
+                continue
+            if words is not None and at is None and v < 0:
+                at = len(nums)         # no gap before: the one after
+            nums.append(v)
+            if at == -1:
+                at = None
+        if bad:
+            skipped.append(name)
+            name = None
+            continue
+        inches = bool(nums) and all(abs(v) <= 1.0 for v in nums)
+        if inches:
+            nums = [v * 25.4 for v in nums]
+        pattern = clean_pattern(nums)
+        if pattern is not None:
+            entry = {"label": label or name, "pattern": pattern}
+            if words is not None:
+                gaps = [i for i, v in enumerate(pattern) if v < 0]
+                # The widest gap holds the text when its place was lost.
+                where = max(gaps, key=lambda i: -pattern[i]) if gaps else None
+                spec = clean_line_text(
+                    {"text": words[0], "text_size":
+                     words[1] * (25.4 if inches else 1.0), "text_at": where},
+                    pattern)
+                if spec is not None:
+                    entry.update(spec)
+            found[name] = entry
+        name = None
+    return found, skipped
+
+
+def to_lin(entries) -> str:
+    """A line type file (``.lin``, mm) of ``entries`` — ``[(name, label,
+    pattern[, text spec])]`` — that :func:`parse_lin` and drawing programs
+    read. A text goes in the middle of its gap, as the format writes one:
+    ``["GAS",STANDARD,S=2.5,R=0.0,X=-…,Y=-…]`` between its two halves."""
+    lines = [";; Line types exported from IngeTrazo (millimetres)", ""]
+    for entry in entries:
+        name, label, pattern = entry[:3]
+        spec = entry[3] if len(entry) > 3 else None
+        if not pattern:
+            continue
+        safe = re.sub(r"[^A-Za-z0-9_-]+", "_", name).strip("_") or "LINE"
+        lines.append(f"*{safe},{label.replace(',', ' ')}")
+        pieces = [f"{v:g}" for v in pattern]
+        if spec:
+            at, size = spec["text_at"], spec["text_size"]
+            half = pattern[at] / 2.0
+            words = spec["text"].replace('"', "'")
+            pieces[at:at + 1] = [
+                f"{half:g}",
+                f'["{words}",STANDARD,S={size:g},R=0.0,'
+                f"X={-text_width(words, size) / 2.0:g},Y={-size / 2.0:g}]",
+                f"{half:g}"]
+        lines.append("A," + ",".join(pieces))
+    return "\n".join(lines) + "\n"
+
+
 #: How much a locked layer's faces wash toward white: drawn, but plainly
 #: not in play.
 LOCKED_FADE = 0.55
@@ -69,16 +528,26 @@ LOCKED_FADE = 0.55
 class Layer:
     """A named tag with display state.
 
-    ``color`` is an RGB tuple (0–1) or ``None`` for the automatic one (see
-    :func:`layer_color`); ``folder`` is the name of the folder the layer is
-    filed under in the Layers panel, or ``None``. A folder only organises the
-    list: entities still carry the layer's name and nothing else."""
+    ``color`` is an RGB or RGBA tuple (0–1), or ``None`` for the automatic
+    one (see :func:`layer_color`). Its alpha belongs to Colour by layer; it
+    is deliberately separate from :attr:`opacity`, which affects the whole
+    layer whatever face style is active. ``folder`` is the name of the
+    folder the layer is filed under in the Layers panel, or ``None``. A
+    folder only organises the list: entities still carry the layer's name
+    and nothing else."""
 
     def __init__(self, name: str, visible: bool = True,
                  locked: bool = False, color=None,
                  folder: str | None = None, linetype: str = "continuous",
                  lineweight: float | None = None,
-                 opacity: float = 1.0, printable: bool = True) -> None:
+                 opacity: float = 1.0, printable: bool = True,
+                 cut_weight: float | None = None,
+                 hatch: str | None = None, hatch_ground=None,
+                 hatch_color=None, hatch_angle: float = 0.0,
+                 hatch_scale: float = 1.0,
+                 hatch_on_paper: bool | None = None,
+                 brick=None, hatch_cross: bool = False, joints=None,
+                 mortar: bool = False, hatch_offset=None) -> None:
         self.name = name
         self.visible = visible
         self.locked = locked
@@ -86,10 +555,56 @@ class Layer:
         self.folder = folder or None
         #: How the layer's edges are inked on a sheet and in a DXF:
         #: one of :data:`LINETYPES`.
-        self.linetype = linetype if linetype in LINETYPES else "continuous"
+        self.linetype = (linetype if known_linetype(linetype)
+                         else "continuous")
         #: Pen width on a sheet, in millimetres (``None``: the sheet's own
         #: pen for the line's class).
         self.lineweight = lineweight
+        #: Pen width of the layer's section cut on a sheet, in millimetres
+        #: (``None``: the sheet's cut pen) — a wall cut heavier than the
+        #: door and the window cut beside it, whatever its other lines.
+        self.cut_weight = cut_weight
+        #: What its section cut is filled with on a sheet: one of
+        #: ``core.hatches.HATCH_LABELS`` (brick, concrete, insulation…), or
+        #: ``None`` for the frame's own fill.
+        from core.hatches import known
+        self.hatch = hatch if hatch is not None and known(hatch) else None
+        #: A solid colour under the hatch: ``None`` (the paper), ``"layer"``
+        #: (the layer's own colour, light) or an RGB tuple (0–1) — white
+        #: or grey under brick, say.
+        self.hatch_ground = _ground(hatch_ground)
+        #: The ink of the hatch's lines: ``None`` (as the frame says — its
+        #: fill colour, or the layer's when it fills by layer), ``"layer"``
+        #: (by layer: always the layer's colour) or an RGB tuple (a fixed
+        #: colour, black say, whatever the frame).
+        self.hatch_color = _ground(hatch_color)
+        #: The hatch turned this many degrees, and this many times its size.
+        self.hatch_angle = _finite(hatch_angle, 0.0) % 360.0
+        self.hatch_scale = min(20.0, max(0.05, _finite(hatch_scale, 1.0)))
+        #: Where a pattern of pieces (core.hatches.PLACED) starts: ``(x,
+        #: y)`` real mm it is moved by — the first joint along a wall, the
+        #: first course up it, tiles off an axis — ``None`` for none.
+        self.hatch_offset = clean_offset(hatch_offset)
+        #: ``True``: the hatch measures the same on paper at any scale
+        #: (a drawing's convention); ``False``: it grows and shrinks with the
+        #: frame's scale, like the real bricks or tiles it stands for (its
+        #: own size is the one at 1:100).
+        self.hatch_on_paper = (None if hatch_on_paper is None
+                               else bool(hatch_on_paper))
+        #: The brick its brickwork hatch is drawn with: ``(length, width,
+        #: height, joint)`` in mm, ``None`` for the usual metric one.
+        from core.hatches import clean_brick
+        self.brick = clean_brick(brick) if brick is not None else None
+        #: A wood hatch drawn with a cross from corner to corner where a
+        #: piece is cut across its grain (core.hatches.cut_across): studs,
+        #: joists and beams in section; the rest in the hatch.
+        self.hatch_cross = bool(hatch_cross)
+        #: How its masonry joints are drawn: one of core.hatches.JOINTS, or
+        #: ``None`` — by the sheet's scale. ``mortar``: the double joints
+        #: filled in light grey.
+        from core.hatches import JOINTS
+        self.joints = joints if joints in JOINTS else None
+        self.mortar = bool(mortar)
         #: Face opacity, 0.1–1: a reference layer seen through.
         self.opacity = min(1.0, max(0.1, float(opacity)))
         #: ``False``: seen in the model, left out of the sheets — their
@@ -103,13 +618,44 @@ class Layer:
         if self.locked:
             entry["locked"] = True
         if self.color is not None:
-            entry["color"] = [round(float(c), 4) for c in self.color[:3]]
+            # RGB stays exactly the 0.5.11 representation. A fourth value is
+            # optional, so older builds simply ignore it and keep the colour
+            # (opaque) instead of refusing the document.
+            channels = 4 if len(self.color) > 3 \
+                and float(self.color[3]) < 0.99995 else 3
+            entry["color"] = [round(float(c), 4)
+                              for c in self.color[:channels]]
         if self.folder:
             entry["folder"] = self.folder
         if self.linetype != "continuous":
             entry["linetype"] = self.linetype
         if self.lineweight is not None:
             entry["lineweight"] = round(float(self.lineweight), 3)
+        if self.cut_weight is not None:
+            entry["cut_weight"] = round(float(self.cut_weight), 3)
+        if self.hatch:
+            entry["hatch"] = self.hatch
+        if self.hatch_angle:
+            entry["hatch_angle"] = round(self.hatch_angle, 3)
+        if abs(self.hatch_scale - 1.0) > 1e-9:
+            entry["hatch_scale"] = round(self.hatch_scale, 4)
+        if self.hatch_offset is not None:
+            entry["hatch_offset"] = [round(v, 2) for v in self.hatch_offset]
+        if self.hatch_on_paper is not None:
+            entry["hatch_on_paper"] = self.hatch_on_paper
+        if self.brick is not None:
+            entry["brick"] = [round(v, 2) for v in self.brick]
+        if self.hatch_cross:
+            entry["hatch_cross"] = True
+        if self.joints is not None:
+            entry["joints"] = self.joints
+        if self.mortar:
+            entry["mortar"] = True
+        for key in ("hatch_ground", "hatch_color"):
+            value = getattr(self, key)
+            if value is not None:
+                entry[key] = (value if value == GROUND_LAYER
+                              else [round(float(c), 4) for c in value])
         if self.opacity < 1.0:
             entry["opacity"] = round(float(self.opacity), 3)
         if not self.printable:
@@ -122,7 +668,14 @@ class Layer:
         return (self.color is not None or bool(self.folder)
                 or self.linetype != "continuous"
                 or self.lineweight is not None or self.opacity < 1.0
-                or not self.printable)
+                or not self.printable or self.cut_weight is not None
+                or self.hatch is not None or self.hatch_ground is not None
+                or self.hatch_color is not None or bool(self.hatch_angle)
+                or abs(self.hatch_scale - 1.0) > 1e-9
+                or self.hatch_offset is not None
+                or self.hatch_on_paper is not None
+                or self.brick is not None or self.hatch_cross
+                or self.joints is not None or self.mortar)
 
     @classmethod
     def from_dict(cls, raw: dict) -> "Layer":
@@ -131,16 +684,22 @@ class Layer:
             color = None
         else:
             try:
-                color = tuple(min(1.0, max(0.0, float(c))) for c in color[:3])
+                rgb = tuple(min(1.0, max(0.0, float(c)))
+                            for c in color[:3])
             except (TypeError, ValueError):
                 color = None
+            else:
+                # A malformed optional alpha must not throw away a valid
+                # colour written by another program.
+                try:
+                    alpha = (min(1.0, max(0.0, float(color[3])))
+                             if len(color) > 3 else 1.0)
+                except (TypeError, ValueError):
+                    alpha = 1.0
+                color = rgb + ((alpha,) if alpha < 0.99995 else ())
         folder = raw.get("folder")
-        weight = raw.get("lineweight")
-        try:
-            weight = (min(5.0, max(0.05, float(weight)))
-                      if weight is not None else None)
-        except (TypeError, ValueError):
-            weight = None
+        weight = _pen_mm(raw.get("lineweight"))
+        cut_weight = _pen_mm(raw.get("cut_weight"))
         try:
             opacity = float(raw.get("opacity", 1.0))
         except (TypeError, ValueError):
@@ -152,7 +711,83 @@ class Layer:
                    folder=folder if isinstance(folder, str) else None,
                    linetype=raw.get("linetype", "continuous"),
                    lineweight=weight, opacity=opacity,
-                   printable=raw.get("printable", True) is not False)
+                   printable=raw.get("printable", True) is not False,
+                   cut_weight=cut_weight,
+                   hatch=raw.get("hatch") if isinstance(raw.get("hatch"), str)
+                   else None,
+                   hatch_ground=raw.get("hatch_ground"),
+                   hatch_color=raw.get("hatch_color"),
+                   hatch_angle=raw.get("hatch_angle", 0.0),
+                   hatch_scale=raw.get("hatch_scale", 1.0),
+                   hatch_offset=raw.get("hatch_offset"),
+                   hatch_on_paper=(raw.get("hatch_on_paper")
+                                   if isinstance(raw.get("hatch_on_paper"),
+                                                 bool) else None),
+                   brick=raw.get("brick"),
+                   hatch_cross=raw.get("hatch_cross") is True,
+                   joints=raw.get("joints"),
+                   mortar=raw.get("mortar") is True)
+
+
+def _finite(raw, default: float) -> float:
+    try:
+        value = float(raw)
+    except (TypeError, ValueError):
+        return default
+    import math
+    return value if math.isfinite(value) else default
+
+
+#: ``Layer.hatch_ground`` / ``hatch_color`` for «the layer's own colour»
+#: (light, for a ground; as it is, for the ink) — by layer.
+GROUND_LAYER = "layer"
+
+
+def _ground(raw):
+    """A hatch ground or ink as stored: ``None``, :data:`GROUND_LAYER` or
+    an RGB tuple kept to 0–1; anything else is ``None``."""
+    if raw == GROUND_LAYER:
+        return GROUND_LAYER
+    if isinstance(raw, (list, tuple)) and len(raw) >= 3:
+        try:
+            return tuple(min(1.0, max(0.0, float(c))) for c in raw[:3])
+        except (TypeError, ValueError):
+            return None
+    return None
+
+
+def hatch_ground_rgb(ly) -> tuple | None:
+    """The colour under a layer's hatch: its own pick, the layer's colour
+    made light for :data:`GROUND_LAYER`, ``None`` for the paper."""
+    ground = getattr(ly, "hatch_ground", None)
+    if ground == GROUND_LAYER:
+        return light_layer_color(ly)
+    return tuple(ground) if ground is not None else None
+
+
+def hatch_ink_rgb(ly) -> tuple | None:
+    """The ink of a layer's hatch lines when the layer sets one: its colour
+    by layer (a shade darker, so mid tones read on paper) or the fixed one;
+    ``None`` — as the frame says."""
+    ink = getattr(ly, "hatch_color", None)
+    if ink == GROUND_LAYER:
+        return tuple(c * 0.7 for c in layer_color(ly))
+    return tuple(ink) if ink is not None else None
+
+
+def light_layer_color(ly) -> tuple:
+    """The layer's colour three quarters of the way to white — a ground a
+    hatch still reads on."""
+    return tuple(c + (1.0 - c) * 0.75 for c in layer_color(ly))
+
+
+def _pen_mm(raw) -> float | None:
+    """A stored pen width in millimetres, kept to 0.05–5; ``None`` when
+    unset or unreadable."""
+    try:
+        return min(5.0, max(0.05, float(raw))) if raw is not None else None
+    except (TypeError, ValueError):
+        return None
 
 
 def layer_color(layer) -> tuple:
@@ -170,6 +805,32 @@ def layer_color(layer) -> tuple:
     return PALETTE[zlib.crc32(layer.name.encode("utf-8")) % len(PALETTE)]
 
 
+def layer_rgba(layer) -> tuple:
+    """The layer colour with its Colour-by-layer alpha.
+
+    :func:`layer_color` intentionally remains RGB: sheet pens and the R12
+    DXF palette have no alpha channel, and keeping that boundary also makes
+    the new document value harmless to existing exporters. Only a colour
+    explicitly picked with transparency can have an alpha below one;
+    automatic colours are opaque.
+    """
+    rgb = layer_color(layer)
+    alpha = 1.0
+    color = getattr(layer, "color", None) if layer is not None else None
+    if color is not None and len(color) > 3:
+        try:
+            alpha = min(1.0, max(0.0, float(color[3])))
+        except (TypeError, ValueError):
+            pass
+    return (*rgb, alpha)
+
+
+def _layer_paint_color(layer) -> tuple:
+    """RGB as before when opaque; RGBA only when alpha carries meaning."""
+    rgba = layer_rgba(layer)
+    return rgba if rgba[3] < 0.99995 else rgba[:3]
+
+
 def object_layer(group) -> str:
     """The layer an object's insides take their colour from: its own, else
     the top-level object's it belongs to (a nested piece of a component on
@@ -183,9 +844,11 @@ def object_layer(group) -> str:
 
 def layer_paint(scene, group=None) -> dict:
     """The container paint Colour by layer bakes ``group`` with (see
-    ``core.materials.effective_attrs``): every layer's colour by name, and
-    the object's own layer colour for the faces that carry none."""
-    table = {ly.name: layer_color(ly) for ly in getattr(scene, "layers", ())}
+    ``core.materials.effective_attrs``): every layer's RGB/RGBA colour by
+    name, and the object's own layer colour for the faces that carry none.
+    Opaque entries remain RGB so existing paint signatures do not change."""
+    table = {ly.name: _layer_paint_color(ly)
+             for ly in getattr(scene, "layers", ())}
     color = table.get(object_layer(group), DEFAULT_LAYER_COLOR)
     return {"by_layer": table, "color": color}
 
@@ -211,25 +874,34 @@ def layer_look(scene, group, base, fx=None):
 
 def layer_lines_wanted(scene, style=None) -> bool:
     """Whether a sheet has to ink lines layer by layer: some layer has a
-    line type or weight of its own, or the style colours by layer."""
+    line type, weight or cut weight of its own, or the style colours by
+    layer."""
     style = style if style is not None else getattr(scene, "display_style",
                                                     None)
     if getattr(style, "color_by_layer", False):
         return True
     return any(ly.linetype != "continuous" or ly.lineweight is not None
+               or getattr(ly, "cut_weight", None) is not None
                for ly in getattr(scene, "layers", ()))
 
 
 def line_styles(scene, colored: bool) -> dict:
-    """``{name: (rgb or None, linetype, lineweight or None)}`` — how each
-    layer's lines are inked on a sheet and written to a DXF. The colour
+    """``{name: (rgb or None, linetype, lineweight or None, cut weight or
+    None, dash pattern, text)}`` — how each layer's lines are inked on a sheet
+    and written to a DXF (the pattern in paper mm, the document's own line
+    types resolved). The colour
     only with Colour by layer on (a plan prints black otherwise), and never
     for the default layer, whose white would vanish on paper."""
     out = {}
     for ly in getattr(scene, "layers", ()):
-        rgb = (layer_color(ly) if colored and ly.name != DEFAULT_LAYER
-               else None)
-        out[ly.name] = (rgb, ly.linetype, ly.lineweight)
+        # A line type with a colour of its own inks with it, on any sheet.
+        rgb = linetype_color(ly.linetype, scene) or (
+            layer_color(ly) if colored and ly.name != DEFAULT_LAYER
+            else None)
+        out[ly.name] = (rgb, ly.linetype, ly.lineweight,
+                        getattr(ly, "cut_weight", None),
+                        linetype_pattern(ly.linetype, scene),
+                        linetype_text(ly.linetype, scene))
     return out
 
 
@@ -241,9 +913,189 @@ def legend_rows(scene) -> tuple[list, dict]:
         if not ly.visible or not getattr(ly, "printable", True):
             continue
         rows.append(ly.name)
-        swatches[ly.name] = {"color": [round(c, 4) for c in layer_color(ly)],
-                             "linetype": ly.linetype}
+        swatches[ly.name] = layer_swatch(scene, ly)
     return rows, swatches
+
+
+def layer_swatch(scene, ly) -> dict:
+    """A layer's legend swatch: colour, line type and cut hatch, as a sheet
+    snapshots them."""
+    sw = {"color": [round(c, 4) for c in layer_color(ly)],
+          "linetype": ly.linetype}
+    if ly.linetype.startswith(CUSTOM_LINETYPE):
+        sw["pattern"] = list(linetype_pattern(ly.linetype, scene))
+    if getattr(ly, "hatch", None):
+        sw["hatch"] = ly.hatch
+        if getattr(ly, "hatch_angle", 0.0):
+            sw["hatch_angle"] = ly.hatch_angle
+        families = layer_hatch_families(scene, ly)
+        if families:
+            sw["hatch_families"] = families
+        for key, rgb in (("hatch_ground", hatch_ground_rgb(ly)),
+                         ("hatch_color", hatch_ink_rgb(ly))):
+            if rgb is not None:
+                sw[key] = [round(c, 4) for c in rgb]
+    return sw
+
+
+def cut_hatches(scene) -> dict:
+    """``{name: pattern}`` of the layers whose section cut has a hatch of
+    its own (see ``core.hatches``) — empty when none has."""
+    return {ly.name: ly.hatch for ly in getattr(scene, "layers", ())
+            if getattr(ly, "hatch", None)}
+
+
+def cut_hatch_grounds(scene) -> dict:
+    """``{name: rgb}`` — the solid colour under each hatched layer's
+    pattern, for the layers that have one."""
+    out = {}
+    for ly in getattr(scene, "layers", ()):
+        rgb = hatch_ground_rgb(ly) if getattr(ly, "hatch", None) else None
+        if rgb is not None:
+            out[ly.name] = rgb
+    return out
+
+
+def hatch_families(scene, key):
+    """The families of an imported pattern (``pat:<name>``) kept in the
+    document, ``None`` for a built-in one (or one the document lost)."""
+    from core.hatches import IMPORTED
+    if not (isinstance(key, str) and key.startswith(IMPORTED)):
+        return None
+    entry = (getattr(scene, "hatch_patterns", None) or {}).get(
+        key[len(IMPORTED):])
+    return entry.get("families") if isinstance(entry, dict) else None
+
+
+def layer_brick(scene, ly):
+    """The piece a layer's masonry hatch is drawn with: its own
+    (``Layer.brick``), else the document's of that kind (``Scene.bricks``:
+    brick, ticholo, block), else ``None`` — the usual one of its kind."""
+    own = getattr(ly, "brick", None)
+    if own is not None:
+        return own
+    from core.hatches import piece_kind
+    kind = piece_kind(getattr(ly, "hatch", None))
+    return (getattr(scene, "bricks", None) or {}).get(kind) if kind else None
+
+
+def load_bricks(scene, raw) -> None:
+    """The document's pieces as a file or a template stores them,
+    ``{kind: size}``, read defensively into ``Scene.bricks``."""
+    from core.hatches import PIECE_SIZES, clean_brick
+    if not isinstance(raw, dict):
+        return
+    for kind, size in raw.items():
+        size = clean_brick(size) if kind in PIECE_SIZES else None
+        if size is not None:
+            scene.bricks = dict(getattr(scene, "bricks", None) or {},
+                                **{kind: size})
+
+
+def layer_hatch_families(scene, ly):
+    """The families a layer's hatch is drawn with when they are not the
+    built-in pattern's own: an imported pattern's, or a brick pattern's
+    drawn with the layer's brick (its own or the document's). ``None``
+    otherwise."""
+    key = getattr(ly, "hatch", None)
+    families = hatch_families(scene, key)
+    brick = layer_brick(scene, ly)
+    if families is None and brick is not None:
+        from core.hatches import BRICKS, brick_families
+        if key in BRICKS:
+            return [list(f[:5]) + [list(f[5])]
+                    for f in brick_families(key, brick)]
+    return families
+
+
+def hatch_label(scene, key) -> str:
+    """A pattern's name as the user knows it (untranslated): the built-in
+    label, or an imported pattern's own name."""
+    from core.hatches import HATCH_LABELS, IMPORTED
+    if key in HATCH_LABELS:
+        return HATCH_LABELS[key]
+    if isinstance(key, str) and key.startswith(IMPORTED):
+        return key[len(IMPORTED):]
+    return ""
+
+
+def hatch_grows(ly) -> bool:
+    """Whether a layer's hatch grows with the drawing's scale: as the layer
+    says, else as its pattern goes — a material with a real size (brick,
+    tiles, boards…) does, a stipple or a generic hatch keeps its size on
+    paper."""
+    own = getattr(ly, "hatch_on_paper", None)
+    if own is not None:
+        return not own
+    from core.hatches import REAL_SIZE
+    return getattr(ly, "hatch", None) in REAL_SIZE
+
+
+def cut_hatch_forms(scene, scale_n: float = 100.0) -> dict:
+    """``{name: {"angle", "scale", "families", "brick", "scale_n"}}`` — how
+    each hatched layer's pattern is laid on a sheet drawn at 1:``scale_n``:
+    turned, sized (on paper; or with the drawing — a material at its real
+    size, any other pattern from its size at 1:100), the families of an
+    imported pattern or of the layer's own brick, and that brick."""
+    out = {}
+    for ly in getattr(scene, "layers", ()):
+        key = getattr(ly, "hatch", None)
+        if not key:
+            continue
+        size = float(getattr(ly, "hatch_scale", 1.0) or 1.0)
+        if hatch_grows(ly):
+            from core.hatches import real_scale
+            real = real_scale(key, scale_n, layer_brick(scene, ly))
+            size *= (real if real is not None
+                     else 100.0 / max(1e-6, float(scale_n or 100.0)))
+        out[ly.name] = {"angle": float(getattr(ly, "hatch_angle", 0.0) or 0.0),
+                        "scale": size,
+                        "families": layer_hatch_families(scene, ly),
+                        "brick": layer_brick(scene, ly),
+                        "cross": bool(getattr(ly, "hatch_cross", False)),
+                        "joints": getattr(ly, "joints", None),
+                        "mortar": bool(getattr(ly, "mortar", False)),
+                        "hatch_scale": float(getattr(ly, "hatch_scale", 1.0)
+                                             or 1.0),
+                        "offset": getattr(ly, "hatch_offset", None),
+                        "scale_n": float(scale_n or 100.0)}
+    return out
+
+
+def clean_offset(raw) -> tuple | None:
+    """A pattern's shift as a layer keeps it: ``(x, y)`` real mm, each
+    within ±10 m — ``None`` for none or for anything else."""
+    import math
+    if not isinstance(raw, (list, tuple)) or len(raw) != 2:
+        return None
+    try:
+        x, y = (float(v) for v in raw)
+    except (TypeError, ValueError):
+        return None
+    if not (math.isfinite(x) and math.isfinite(y)) or (not x and not y):
+        return None
+    return (min(10000.0, max(-10000.0, x)),
+            min(10000.0, max(-10000.0, y)))
+
+
+def cut_hatch_inks(scene) -> dict:
+    """``{name: rgb}`` — the ink of each hatched layer's pattern, for the
+    layers that set one (by layer or fixed)."""
+    out = {}
+    for ly in getattr(scene, "layers", ()):
+        rgb = hatch_ink_rgb(ly) if getattr(ly, "hatch", None) else None
+        if rgb is not None:
+            out[ly.name] = rgb
+    return out
+
+
+def cut_fill_colours(scene) -> dict:
+    """``{name: rgb}`` a sheet fills each layer's section cut with when the
+    frame asks for the layers' colours: every layer's own colour (picked or
+    automatic), except the default layer, which keeps the frame's fill — its
+    white would vanish on paper."""
+    return {ly.name: layer_color(ly) for ly in getattr(scene, "layers", ())
+            if ly.name != DEFAULT_LAYER}
 
 
 def unprinted(scene) -> list:
@@ -471,13 +1323,13 @@ def taggable(entities) -> list:
     Layers panel and its toolbar all ask."""
     from core.dimension import Dimension
     from core.group import Group
-    from core.guide import Guide
+    from core.guide import Guide, GuideCircle
     from core.image_plane import ImagePlane
     from core.mesh import Edge, Face
     from core.section import SectionPlane
     from core.textlabel import TextLabel
     kinds = (Face, Edge, Group, Dimension, TextLabel, SectionPlane, Guide,
-             ImagePlane)
+             GuideCircle, ImagePlane)
     return [e for e in entities or () if isinstance(e, kinds)]
 
 
@@ -565,6 +1417,18 @@ def template_of(scene) -> dict:
                if folder_parent(scene, f)}
     if parents:
         out["folder_parents"] = parents
+    used = {ly.linetype[len(CUSTOM_LINETYPE):] for ly in scene.layers
+            if ly.linetype.startswith(CUSTOM_LINETYPE)}
+    own = {n: e for n, e in (getattr(scene, "line_types", None) or {}).items()
+           if n in used}
+    if own:
+        out["line_types"] = own
+    if getattr(scene, "linetype_colors", None):
+        out["linetype_colors"] = {k: list(v)
+                                  for k, v in scene.linetype_colors.items()}
+    if getattr(scene, "bricks", None):
+        out["bricks"] = {k: [round(float(v), 2) for v in size]
+                         for k, size in scene.bricks.items()}
     return out
 
 
@@ -585,6 +1449,9 @@ def apply_template(scene, data) -> tuple[int, int]:
         for f, p in raw_parents.items():
             if isinstance(f, str) and isinstance(p, str):
                 move_folder(scene, f, p)
+    load_line_types(scene, data.get("line_types"))
+    load_linetype_colors(scene, data.get("linetype_colors"))
+    load_bricks(scene, data.get("bricks"))
     added = updated = 0
     for raw in data["layers"]:
         if not isinstance(raw, dict) or not isinstance(raw.get("name"), str) \
@@ -601,12 +1468,52 @@ def apply_template(scene, data) -> tuple[int, int]:
         ly.color = new.color
         ly.linetype = new.linetype
         ly.lineweight = new.lineweight
+        ly.cut_weight = new.cut_weight
+        ly.hatch = new.hatch
+        ly.hatch_ground = new.hatch_ground
+        ly.hatch_color = new.hatch_color
+        ly.hatch_angle = new.hatch_angle
+        ly.hatch_scale = new.hatch_scale
+        ly.hatch_offset = new.hatch_offset
+        ly.hatch_on_paper = new.hatch_on_paper
+        ly.brick = new.brick
+        ly.hatch_cross = new.hatch_cross
+        ly.joints = new.joints
+        ly.mortar = new.mortar
         ly.opacity = new.opacity
         if ly.name != DEFAULT_LAYER:
             ly.folder = new.folder
         updated += 1
     _release_active(scene)
     return added, updated
+
+
+def load_line_types(scene, raw) -> int:
+    """Bring line types stored as ``{name: {"label", "pattern"}}`` (a file,
+    a template) into the document, read defensively; returns how many."""
+    if not isinstance(raw, dict):
+        return 0
+    own = dict(getattr(scene, "line_types", None) or {})
+    n = 0
+    for name, entry in list(raw.items())[:500]:
+        if not (isinstance(name, str) and name and isinstance(entry, dict)):
+            continue
+        pattern = clean_pattern(entry.get("pattern"))
+        if pattern is None:
+            continue
+        label = entry.get("label")
+        own[name[:64]] = {"label": label[:120] if isinstance(label, str)
+                          else name[:64], "pattern": pattern}
+        own[name[:64]].update(clean_line_text(entry, pattern) or {})
+        pieces = clean_pattern(entry.get("pieces"))
+        if pieces is not None:
+            own[name[:64]]["pieces"] = pieces
+        colour = clean_line_colour(entry.get("color"))
+        if colour is not None:
+            own[name[:64]]["color"] = colour
+        n += 1
+    scene.line_types = own
+    return n
 
 
 def _release_active(scene) -> bool:
@@ -617,19 +1524,74 @@ def _release_active(scene) -> bool:
     return False
 
 
+class _IdsBefore(set):
+    """The ids :func:`object_ids` returns, with the loose mesh's geometry
+    alongside (``segments``, ``tris``, ``face_edges``). Loose faces and
+    edges are rebuilt from scratch by some commands (a planar rebuild
+    clears the mesh and draws it again), so identity alone cannot tell a
+    redrawn old line from a new one — the geometry can."""
+
+    segments: tuple = ()
+    tris: tuple = ()
+    face_edges: frozenset = frozenset()
+
+
+def _xyz(point) -> tuple:
+    return (point.x(), point.y(), point.z())
+
+
+def _pair_key(a: tuple, b: tuple) -> tuple:
+    """An edge's endpoints as a set-like key (direction does not matter),
+    rounded so a rebuilt edge still matches the one it replaces."""
+    ra = tuple(round(c, 4) for c in a)
+    rb = tuple(round(c, 4) for c in b)
+    return (ra, rb) if ra <= rb else (rb, ra)
+
+
+def _loose_mesh(scene):
+    """The scene's loose mesh (never an open group's), or None."""
+    try:
+        mesh = getattr(scene, "loose_mesh", None)
+    except Exception:  # noqa: BLE001 — a stub scene must not break tagging
+        mesh = None
+    return mesh if mesh is not None else getattr(scene, "mesh", None)
+
+
 def object_ids(scene) -> set:
     """Identity of every object in the document — groups and components at
     any depth (by ``id`` and by ``uid``), dimensions, leader texts,
-    guides. Compared before and after a command to find what it created
-    (:func:`tag_new_objects`)."""
+    guides, and the loose mesh's faces and edges. Compared before and
+    after a command to find what it created (:func:`tag_new_objects`)."""
     from core.purge import iter_groups
-    ids: set = set()
+    ids = _IdsBefore()
     for g in iter_groups(getattr(scene, "groups", None) or ()):
         ids.add(id(g))
         if getattr(g, "uid", None):
             ids.add(g.uid)
     for coll in ("dimensions", "text_labels", "guides"):
         ids.update(id(o) for o in getattr(scene, coll, None) or ())
+    mesh = _loose_mesh(scene)
+    if mesh is not None:
+        segments = []
+        for e in getattr(mesh, "edges", None) or ():
+            ids.add(id(e))
+            segments.append((_xyz(e.a), _xyz(e.b), layer_of(e)))
+        ids.segments = tuple(segments)
+        tris = []
+        face_edges = set()
+        for f in getattr(mesh, "faces", None) or ():
+            ids.add(id(f))
+            loops = [f.vertices] + list(f.holes)
+            for loop in loops:
+                for i in range(len(loop)):
+                    face_edges.add(_pair_key(_xyz(loop[i]),
+                                             _xyz(loop[(i + 1) % len(loop)])))
+            try:
+                tris += [tuple(_xyz(p) for p in t) for t in f.triangulate()]
+            except Exception:  # noqa: BLE001 — a face that will not
+                continue          # triangulate simply covers nothing
+        ids.tris = tuple(tris)
+        ids.face_edges = frozenset(face_edges)
     return ids
 
 
@@ -689,17 +1651,224 @@ def _tag_automatic(scene, before: set) -> int:
     return n
 
 
+def _sub(a: tuple, b: tuple) -> tuple:
+    return (a[0] - b[0], a[1] - b[1], a[2] - b[2])
+
+
+def _dot(a: tuple, b: tuple) -> float:
+    return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
+
+
+def _cross(a: tuple, b: tuple) -> tuple:
+    return (a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2],
+            a[0] * b[1] - a[1] * b[0])
+
+
+#: How far (in model units) a rebuilt point may drift from the geometry it
+#: replaces and still read as that geometry — the planar arrangement keys
+#: its points on a 0.1 mm grid, well inside this.
+_GEOMETRY_TOL = 1e-3
+
+
+def _on_segment(p: tuple, a: tuple, b: tuple) -> bool:
+    """Whether ``p`` lies on segment ``a``–``b``, endpoints included."""
+    ab = _sub(b, a)
+    length_sq = _dot(ab, ab)
+    if length_sq < _GEOMETRY_TOL * _GEOMETRY_TOL:
+        return _dot(_sub(p, a), _sub(p, a)) < _GEOMETRY_TOL ** 2
+    t = _dot(_sub(p, a), ab) / length_sq
+    if t < -1e-9 or t > 1.0 + 1e-9:
+        return False
+    near = (a[0] + ab[0] * t, a[1] + ab[1] * t, a[2] + ab[2] * t)
+    return _dot(_sub(p, near), _sub(p, near)) < _GEOMETRY_TOL ** 2
+
+
+def _line_key(a: tuple, b: tuple):
+    """The infinite line through ``a`` and ``b`` as a hashable key, so the
+    segments that lie on one line can be found without scanning them all."""
+    d = _sub(b, a)
+    length = _dot(d, d) ** 0.5
+    if length < _GEOMETRY_TOL:
+        return None
+    d = (d[0] / length, d[1] / length, d[2] / length)
+    for c in d:                       # one canonical direction per line
+        if abs(c) > 1e-9:
+            if c < 0:
+                d = (-d[0], -d[1], -d[2])
+            break
+    proj = _dot(a, d)
+    foot = (a[0] - d[0] * proj, a[1] - d[1] * proj, a[2] - d[2] * proj)
+    return (tuple(round(c, 6) for c in d),
+            tuple(round(c, 3) for c in foot))
+
+
+class _BeforeGeometry:
+    """The loose mesh's geometry before a command, indexed for the
+    «is this new?» questions :func:`_tag_loose` asks: an edge is new when
+    it neither is nor lies on an old edge, a face when it is bounded by
+    new edges or its inside was not already covered by an old face."""
+
+    def __init__(self, before: set) -> None:
+        self.segments = getattr(before, "segments", ()) or ()
+        self.tris = getattr(before, "tris", ()) or ()
+        self.face_edges = getattr(before, "face_edges", frozenset())
+        self.pairs = {_pair_key(a, b) for a, b, _layer in self.segments}
+        self.by_line: dict = {}
+        self.by_point: dict = {}
+        for seg in self.segments:
+            key = _line_key(seg[0], seg[1])
+            if key is not None:
+                self.by_line.setdefault(key, []).append(seg)
+            for p in seg[:2]:
+                self.by_point.setdefault(tuple(round(c, 4) for c in p),
+                                         []).append(seg)
+        # The triangles bucketed by the cells their box overlaps, so a
+        # probe only tests the triangles that can contain it. The cell is
+        # the largest triangle's diagonal: no box spans more than two
+        # cells per axis.
+        self.cell = 1.0
+        self.grid: dict = {}
+        if self.tris:
+            self.cell = max(
+                max(_dot(_sub(p, q), _sub(p, q)) ** 0.5
+                    for p, q in ((t[0], t[1]), (t[1], t[2]), (t[2], t[0])))
+                for t in self.tris) or 1.0
+            for tri in self.tris:
+                for cell in self._cells(tri):
+                    self.grid.setdefault(cell, []).append(tri)
+
+    def _cells(self, points) -> set:
+        axes = []
+        for axis in range(3):
+            lo = min(p[axis] for p in points)
+            hi = max(p[axis] for p in points)
+            axes.append(range(int(lo // self.cell), int(hi // self.cell) + 1))
+        return {(x, y, z) for x in axes[0] for y in axes[1] for z in axes[2]}
+
+    def _covering(self, a: tuple, b: tuple) -> list:
+        """The old segments that wholly contain segment ``a``–``b``."""
+        candidates = list(self.by_point.get(tuple(round(c, 4) for c in a), ()))
+        candidates += self.by_point.get(tuple(round(c, 4) for c in b), ())
+        key = _line_key(a, b)
+        if key is not None:
+            candidates += self.by_line.get(key, ())
+        return [seg for seg in candidates
+                if _on_segment(a, seg[0], seg[1])
+                and _on_segment(b, seg[0], seg[1])]
+
+    def edge_is_new(self, a: tuple, b: tuple) -> bool:
+        """Whether segment ``a``–``b`` is drawn geometry, not an old edge
+        or a piece of one (an old edge split by a crossing, or an edge a
+        planar rebuild drew again, is the old edge still)."""
+        if _pair_key(a, b) in self.pairs:
+            return False
+        return not self._covering(a, b)
+
+    def inherited_layer(self, a: tuple, b: tuple):
+        """The layer of the old edge ``a``–``b`` is a piece of, when every
+        old edge covering it agrees — the piece a split made of a tagged
+        edge, recreated without its layer by the split, takes it back.
+        None when there is no such edge or they disagree."""
+        layers = {seg[2] for seg in self._covering(a, b)}
+        return layers.pop() if len(layers) == 1 else None
+
+    def covered(self, probe: tuple) -> bool:
+        """Whether ``probe`` lies inside a face that was already there."""
+        cell = tuple(int(probe[axis] // self.cell) for axis in range(3))
+        for tri in self.grid.get(cell, ()):
+            if _in_tri(probe, *tri):
+                return True
+        return False
+
+
+def _in_tri(p: tuple, a: tuple, b: tuple, c: tuple) -> bool:
+    """Whether coplanar ``p`` lies in triangle ``a``–``b``–``c``."""
+    n = _cross(_sub(b, a), _sub(c, a))
+    nl = _dot(n, n) ** 0.5
+    if nl < 1e-12:
+        return False
+    if abs(_dot(_sub(p, a), n)) / nl > _GEOMETRY_TOL:
+        return False                      # another plane, above or below
+    v0, v1, v2 = _sub(b, a), _sub(c, a), _sub(p, a)
+    d00, d01, d11 = _dot(v0, v0), _dot(v0, v1), _dot(v1, v1)
+    d20, d21 = _dot(v2, v0), _dot(v2, v1)
+    denom = d00 * d11 - d01 * d01
+    if abs(denom) < 1e-18:
+        return False
+    v = (d11 * d20 - d01 * d21) / denom
+    w = (d00 * d21 - d01 * d20) / denom
+    return v >= -1e-9 and w >= -1e-9 and v + w <= 1.0 + 1e-9
+
+
+def _face_is_new(face, geo: _BeforeGeometry) -> bool:
+    """Whether a loose face is one the command drew: bounded only by new
+    edges (a disc drawn inside a square, a rectangle carved out of a
+    wall), or standing where no face was (a pushed-up side, an offset's
+    ring). A piece of a split old face is neither — it keeps its layer."""
+    loops = [face.vertices] + list(face.holes)
+    pairs = [(_xyz(loop[i]), _xyz(loop[(i + 1) % len(loop)]))
+             for loop in loops for i in range(len(loop))]
+    if pairs and all(geo.edge_is_new(a, b) for a, b in pairs):
+        return True
+    if {_pair_key(a, b) for a, b in pairs} <= geo.face_edges:
+        return False                      # an old face, redrawn as it was
+    try:
+        tris = face.triangulate()
+    except Exception:  # noqa: BLE001 — an untriangulable face is no proof
+        return False                      # of anything new
+    if not tris:
+        return False
+    tri = tuple(_xyz(p) for p in tris[0])
+    probe = tuple((tri[0][k] + tri[1][k] + tri[2][k]) / 3.0 for k in range(3))
+    return not geo.covered(probe)
+
+
+def _tag_loose(scene, before: set, name: str) -> int:
+    """Put the loose lines and faces a command drew on the active layer
+    (#1366). Only the loose mesh: geometry inside a group follows its
+    container, and what a group holds is not loose. Edges and faces that
+    only changed shape or were split off an old one keep their layer, as
+    does anything that already carries one — a split edge's pieces are
+    recreated without the layer the split edge had, so they take it back
+    from the old edge they lie on."""
+    mesh = _loose_mesh(scene)
+    if mesh is None:
+        return 0
+    geo = _BeforeGeometry(before)
+    n = 0
+    for e in getattr(mesh, "edges", None) or ():
+        if id(e) in before or layer_of(e) != DEFAULT_LAYER:
+            continue
+        a, b = _xyz(e.a), _xyz(e.b)
+        if geo.edge_is_new(a, b):
+            assign_layer(e, name)
+            n += 1
+        else:
+            inherited = geo.inherited_layer(a, b)
+            if inherited and inherited != DEFAULT_LAYER:
+                assign_layer(e, inherited)
+                n += 1
+    for f in getattr(mesh, "faces", None) or ():
+        if id(f) in before or layer_of(f) != DEFAULT_LAYER:
+            continue
+        if _face_is_new(f, geo):
+            assign_layer(f, name)
+            n += 1
+    return n
+
+
 def tag_new_objects(scene, before: set) -> int:
     """Put the objects a command created on the active layer.
 
-    A group, a component, a dimension, a leader text or a guide made while
-    a layer is active goes onto it; loose lines and faces stay on the default
-    layer (a layer hidden never leaves half a solid). Only the outermost
-    new object is tagged: a new group's own children follow it. One that
-    already carries a layer (a copy, a pasted object) keeps its own. With
-    no layer active, guides, dimensions and texts go to their automatic
-    layers (:data:`AUTO_LAYERS`) — ``before`` is then :func:`auto_ids`.
-    Returns how many objects were tagged."""
+    A group, a component, a dimension, a leader text, a guide or a loose
+    line or face made while a layer is active goes onto it (#1366: what
+    is drawn is drawn on the active layer). Only the outermost new object
+    is tagged: a new group's own children follow it. One that already
+    carries a layer (a copy, a pasted object) keeps its own, and geometry
+    a command merely split or rebuilt out of an old object keeps the
+    layer it had. With no layer active, guides, dimensions and texts go
+    to their automatic layers (:data:`AUTO_LAYERS`) — ``before`` is then
+    :func:`auto_ids`. Returns how many objects were tagged."""
     from core.purge import iter_groups
     name = active_layer(scene)
     if name == DEFAULT_LAYER:
@@ -721,7 +1890,7 @@ def tag_new_objects(scene, before: set) -> int:
         if layer_of(obj) == DEFAULT_LAYER:
             assign_layer(obj, name)
             n += 1
-    return n
+    return n + _tag_loose(scene, before, name)
 
 
 def layer_of(entity) -> str:
@@ -730,6 +1899,37 @@ def layer_of(entity) -> str:
     if attrs is not None:                          # Face
         return attrs.get("layer") or DEFAULT_LAYER
     return getattr(entity, "layer", None) or DEFAULT_LAYER
+
+
+def is_taggable(entity) -> bool:
+    """Whether one entity takes a layer: :func:`taggable` for one (PR #701,
+    which found images skipped by every road that moves the selection)."""
+    return bool(taggable((entity,)))
+
+
+def inherited_layer(entity, parents=None) -> str:
+    """The layer an entity is drawn with: its own, else the nearest
+    ancestor's that has one, else the default layer.
+
+    ``entity`` is a group (a face maps to its owning object first: the
+    face's own layer wins before this is even asked). The walk follows
+    ``owner`` — the object a click selects — and then ``parents``, a
+    ``{id(group): parent group}`` map for trees the entity does not
+    carry (the pick index's placement proxies already wear the nearest
+    container's layer in ``layer`` itself, so they answer at once).
+    A cycle or a missing link ends at the default layer, never a loop."""
+    seen: set = set()
+    node = entity
+    while node is not None and id(node) not in seen:
+        seen.add(id(node))
+        name = layer_of(node)
+        if name != DEFAULT_LAYER:
+            return name
+        nxt = getattr(node, "owner", None)
+        if nxt is None and parents is not None:
+            nxt = parents.get(id(node))
+        node = nxt
+    return DEFAULT_LAYER
 
 
 def assign_layer(entity, name: str) -> None:

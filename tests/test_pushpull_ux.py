@@ -1913,7 +1913,7 @@ def test_inference_guide_lines_with_face_inference():
 
 # ---- Preselection: Push/Pull arms on the preselected face -----------------------
 #
-# The SketchUp preselection workflow: Push/Pull activated while EXACTLY one
+# The preselection workflow: Push/Pull activated while EXACTLY one
 # Face is selected (and it lives in the loose mesh) arms on it — the face is
 # hover-shaded, idle hovers do NOT steal the arm (no picking under the
 # cursor), and the FIRST CLICK ANYWHERE starts the drag on the armed face,

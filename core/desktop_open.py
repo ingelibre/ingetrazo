@@ -65,3 +65,62 @@ def open_url(target) -> bool:
             pass
     from PySide6.QtGui import QDesktopServices
     return QDesktopServices.openUrl(url)
+
+
+def _reveal_command(path: Path):
+    """The command that opens the folder of ``path`` with the file picked
+    out in it, or None where the system has no such command (Linux: the
+    file manager is asked over D-Bus, ``_ask_file_manager``)."""
+    if sys.platform == "win32":
+        # One string, not a list: Explorer reads «/select,» and the quoted
+        # path as they are, and a list quotes the two together.
+        return f'explorer /select,"{os.path.normpath(str(path))}"'
+    if sys.platform == "darwin":
+        return ["open", "-R", str(path)]
+    return None
+
+
+def _ask_file_manager(path: Path) -> bool:
+    """Linux and the BSDs: the freedesktop FileManager1 service shows the
+    file picked out in its folder (Files, Dolphin, Nemo, Caja, Thunar…).
+    False when there is no ``dbus-send`` or no file manager answers."""
+    sender = shutil.which("dbus-send")
+    if not sender:
+        return False
+    env = host_env() if _launch_ourselves() else None
+    try:
+        done = subprocess.run(
+            [sender, "--session", "--print-reply",
+             "--dest=org.freedesktop.FileManager1",
+             "/org/freedesktop/FileManager1",
+             "org.freedesktop.FileManager1.ShowItems",
+             f"array:string:{path.as_uri()}", "string:"],
+            env=env, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL, timeout=5)
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return done.returncode == 0
+
+
+def reveal_in_folder(path) -> bool:
+    """Open the folder that holds ``path`` with the file picked out in it
+    (File ▸ Open File Location). A file that is gone opens the folder it
+    was in, if that is still there. False when there is nothing to open."""
+    if not path:
+        return False
+    path = Path(path).absolute()
+    if not path.exists():
+        folder = path.parent
+        return folder.is_dir() and open_url(folder)
+    cmd = _reveal_command(path)
+    if cmd is not None:
+        try:
+            subprocess.Popen(cmd, stdin=subprocess.DEVNULL,
+                             stdout=subprocess.DEVNULL,
+                             stderr=subprocess.DEVNULL)
+            return True
+        except OSError:
+            pass
+    elif _ask_file_manager(path):
+        return True
+    return open_url(path.parent if path.is_file() else path)

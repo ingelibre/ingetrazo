@@ -10,7 +10,7 @@ is enough to build a whole feature outside the core (the Levels plugin is
 the worked example), which is the point: what only some users need lives
 in an extension they choose, not in everyone's IngeTrazo.
 
-Contract (``API_VERSION`` 2; still 0.x — see docs/plugins.md). Version 2
+Contract (``API_VERSION`` 4; still 0.x — see docs/plugins.md). Version 2
 adds, without changing anything version 1 did: named panels that keep
 their place and have a Window-menu entry, the projection an overlay needs,
 opening an extension's own file type, and workspaces. Projects in tabs
@@ -51,6 +51,8 @@ import logging
 
 log = logging.getLogger("ingetrazo.plugins")
 
+# Stays 2: published extensions accept only 1 or 2, and every later
+# addition (tabs, the resource library of #412) is found by its methods.
 API_VERSION = 2
 
 #: Suffixes the core itself reads (natively, or as an import): an extension
@@ -163,10 +165,57 @@ class ExtensionApp:
         win = self._window
         win.__dict__.setdefault("_doc_close_hooks", []).append(fn)
 
+    # ---- Extension resources ------------------------------------------------
+    def register_resource_type(self, name: str, provider, *,
+                               label: str | None = None):
+        """Register one resource type owned by this extension.
+
+        ``name`` is local to the extension. The core namespaces it with
+        ``app.key``, so two unrelated plugins may both register ``"preset"``
+        without colliding. ``provider`` stays extension-owned: the core does
+        not interpret its domain-specific payload.
+        """
+        registry = getattr(self._window, "resource_registry", None)
+        if registry is None:
+            raise RuntimeError("this IngeTrazo build has no resource registry")
+        return registry.register(self.key, name, provider, label=label)
+
+    def resource_types(self):
+        """Return the resource types registered by this extension."""
+        registry = getattr(self._window, "resource_registry", None)
+        if registry is None:
+            return ()
+        return registry.for_owner(self.key)
+
+    def export_resource_bundle(
+        self, name: str, resource_id: str, path, *,
+        include_dependencies: bool = True,
+    ):
+        """Export one extension resource to a portable .iglib bundle."""
+        from core.resource_bundle import export_bundle
+        from core.resource_library import ResourceRef
+        registry = getattr(self._window, "resource_registry", None)
+        if registry is None:
+            raise RuntimeError("this IngeTrazo build has no resource registry")
+        return export_bundle(
+            registry,
+            ResourceRef(f"{self.key}:{name}", resource_id),
+            path,
+            include_dependencies=include_dependencies,
+        )
+
+    def import_resource_bundle(self, path, *, conflict: str = "error"):
+        """Import a portable .iglib bundle through registered providers."""
+        from core.resource_bundle import import_bundle
+        registry = getattr(self._window, "resource_registry", None)
+        if registry is None:
+            raise RuntimeError("this IngeTrazo build has no resource registry")
+        return import_bundle(registry, path, conflict=conflict)
+
     # ---- Side panel ----------------------------------------------------------
     def add_panel(self, title: str, widget, name: str | None = None, *,
                   panel: str | None = None, stretch: int = 0,
-                  start_hidden: bool = False):
+                  start_hidden: bool = False, icon=None):
         """Put ``widget`` in the side tray as a tab of its own, beside
         Properties / BIM / Terrain. Returns the dock.
 
@@ -186,7 +235,13 @@ class ExtensionApp:
 
         ``start_hidden``: the panel starts closed the first time (for a
         panel few users need open all the time); Window ▸ Panels opens it,
-        and from then on the user's choice is kept."""
+        and from then on the user's choice is kept.
+
+        ``icon``: what the panel's tab shows — the tabs show only an icon,
+        the name being their tooltip and the panel's heading. A QIcon, or
+        the key of one of IngeTrazo's drawn icons (``"panel_render"``…),
+        which then follows the theme. Without one the tab shows the
+        title's initial in a rounded square."""
         from PySide6.QtWidgets import QDockWidget, QVBoxLayout, QWidget
         win = self._window
         shared = getattr(win, "_shared_panels", None)
@@ -195,6 +250,8 @@ class ExtensionApp:
         if panel is not None and panel in shared:
             dock, box = shared[panel]
             box.addWidget(widget, stretch)
+            if icon is not None and not dock.property("ingetrazo_icon"):
+                self._set_panel_icon(dock, icon)
             return dock
         if panel is not None:
             object_name = f"extension_{panel}"
@@ -217,7 +274,9 @@ class ExtensionApp:
                 win._start_hidden = set()
             win._start_hidden.add(object_name)
         dock.setWidget(widget)
-        dock.setTitleBarWidget(QWidget(dock))   # the tab already names it
+        dock.setTitleBarWidget(QWidget(dock))   # the window puts its header
+        if icon is not None:
+            self._set_panel_icon(dock, icon)
         win._register_extension_dock(dock)
         if panel is not None:
             shared[panel] = (dock, box)
@@ -225,6 +284,10 @@ class ExtensionApp:
         if tray is not None:
             tray.raise_()                   # Properties stays the one in front
         return dock
+
+    def _set_panel_icon(self, dock, icon) -> None:
+        dock.setProperty("ingetrazo_icon", True)
+        self._window.set_dock_icon(dock, icon)
 
     def show_panel(self, dock) -> None:
         """Bring a tab from :meth:`add_panel` to the front — shown again
@@ -325,6 +388,40 @@ class ExtensionApp:
         self.viewport._ext_overlays.append(fn)
         self.viewport.update()
 
+    # ---- Sheets ----------------------------------------------------------------
+    def add_sheet_annotations(self, fn) -> None:
+        """What an overlay draws on screen, for the SHEETS too: ``fn(scene,
+        sheet)`` returns the items to print in a model-view frame, in
+        WORLD points (metres), and the sheet projects them with the frame's
+        own camera and draws them as vectors — crisp at any scale, in the
+        print and in the PDF. It is asked each time a frame's overlay is
+        worked out (an Update, an annotation switch), with that frame's
+        scene applied: ask ``scene.entity_visible(group)`` and a layer the
+        frame hides hides your items too.
+
+        ``sheet`` gives ``scale_n`` (1:N; 0 for a perspective frame),
+        ``text_mm`` (the frame's annotation text height) and
+        ``paper(points)`` → ``[(x_mm, y_mm), …]``, where your points land.
+
+        Items are dicts:
+
+        - ``{"line": [p0, p1, …]}``: a polyline; ``width_mm`` (0.25),
+          ``color`` (RGB 0–255).
+        - ``{"text": "0+020", "at": p}``: ``toward`` (a second world
+          point: the text runs from ``at`` toward it, turned so it is never
+          upside down; none = level on the page), ``anchor`` (``"center"``
+          or ``"start"``: the text begins at ``at``), ``size_mm``,
+          ``bold`` (True), ``color``, ``background`` (RGB or None),
+          ``background_opacity`` (0–100), and ``priority``: texts that
+          have one give way where they would overlap, the LOWER number
+          kept first.
+
+        A provider that raises is logged once and removed."""
+        win = self._window
+        if not hasattr(win, "_ext_sheet_annots"):
+            win._ext_sheet_annots = []
+        win._ext_sheet_annots.append(fn)
+
     def world_to_pixels(self, points):
         """World points (metres; anything shaped ``(N, 3)``) → ``(px, py,
         in_front)`` NumPy arrays: one call for thousands of points, the same
@@ -336,6 +433,14 @@ class ExtensionApp:
         """``fn(viewport, snap, px, py)`` → a ``SnapResult`` to use instead,
         or ``None`` to leave the engine's answer."""
         self.viewport._ext_snap_providers.append(fn)
+
+    def add_snap_toggle(self, key: str, label: str, kinds, tip: str = ""):
+        """A switch in Tools ▸ Inferences for this extension's own snap
+        ``kinds`` (the ``kind`` of the ``SnapResult`` its provider returns):
+        while it is off, those snaps are dropped. ``label`` and ``tip`` are
+        shown as given. The same ``key`` again replaces the switch."""
+        from core.snap import register_snap_toggle
+        return register_snap_toggle(key, label, kinds, tip)
 
     def add_pickable(self, pick, on_select=None, delete=None) -> None:
         """Let the user SELECT this extension's own items with the Select

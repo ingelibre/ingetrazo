@@ -203,10 +203,13 @@ def test_an_extensions_toolbar_added_after_start_up_shows_names_in_bold(
         also_main.setToolTip("Late tool: added by an update")
         f = WrappingToolTips()
         ev = QHelpEvent(QEvent.ToolTip, QPoint(1, 1), QPoint(10, 10))
+        # The keys as this platform writes them: «Ctrl+Shift+J», «⇧⌘J» on
+        # macOS — the tooltip shows the action's own NativeText.
+        keys = QKeySequence("Ctrl+Shift+J").toString(QKeySequence.NativeText)
         for bar, act, bold, under in (
                 (tb, one_line, "<b>Extruder</b><br>",
                  "Extruye cada cara a su propio grupo"),
-                (tb, status_only, "<b>Summon Faces</b>  (Ctrl+Shift+J)<br>",
+                (tb, status_only, f"<b>Summon Faces</b>  ({keys})<br>",
                  "Crea caras a partir de las aristas."),
                 (win.toolbars["main"], also_main, "<b>Late tool</b><br>",
                  "Added by an update")):

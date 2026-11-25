@@ -15,10 +15,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from typing import Iterable
+from uuid import uuid4
 
 from PySide6.QtGui import QVector3D
 
+from core import layers as _layers
 from core.mesh import Edge, Face, Mesh
+from core.ifc_identity import new_identity
 
 
 def _make_style():
@@ -31,9 +34,44 @@ def _make_shadows():
     return ShadowSettings()
 
 
+def _make_animation():
+    from core.scene_animation import SceneAnimation
+    return SceneAnimation()
+
+
+def _inside(local, d, lo, hi) -> bool:
+    """Whether a placement with matrix ``d`` (column-major) of a mesh whose
+    box is ``local`` (centre, half size) stays inside ``lo``–``hi`` whatever
+    its points: most of a big model's copies do, and reading a copy's points
+    is the cost of walking it (~1 s over 21 406 placements, #158). Strictly
+    inside, by more than the rounding of that reading: it cannot change a
+    minimum or a maximum. A NaN anywhere says no."""
+    cx, cy, cz, hx, hy, hz = local
+    for k in range(3):
+        c = d[k] * cx + d[k + 4] * cy + d[k + 8] * cz + d[k + 12]
+        r = abs(d[k]) * hx + abs(d[k + 4]) * hy + abs(d[k + 8]) * hz
+        slack = 1e-9 * (abs(c) + r)
+        if not (c - r - slack > lo[k] and c + r + slack < hi[k]):
+            return False
+    return True
+
+
+#: The annotations a section box leaves out when they stand outside it
+#: (``Scene.outside_section_box``), by class name: asked for every face and
+#: edge, the test must cost nothing for them.
+_ANNOTATION_KINDS = frozenset({"Dimension", "TextLabel", "Guide", "GeoPoint"})
+
+
 @dataclass
 class Scene:
+    #: Runtime document lifetime, never persisted or restored by undo.
+    #: New/Open invalidate outstanding AI targets even for an empty model.
+    document_id: str = field(default_factory=lambda: uuid4().hex, init=False,
+                             repr=False, compare=False)
     mesh: Mesh = field(default_factory=Mesh)
+    # Document namespace for stable IFC GlobalIds; saved with the model.
+    ifc_namespace: str = field(default_factory=new_identity, kw_only=True)
+    ifc_project: dict = field(default_factory=dict, kw_only=True)
     selection: set = field(default_factory=set)
     # Locked groups can be inspected without entering the editable selection.
     locked_selection: set = field(default_factory=set, init=False, repr=False)
@@ -44,6 +82,20 @@ class Scene:
     #: and need every bump; "unsaved changes" must not: a click on empty
     #: space after Ctrl+S asked to save again (issue #159).
     view_version: int = 0
+    #: How many of ``version``'s bumps moved only the section planes —
+    #: placed, moved, turned, switched. They ARE document edits (the planes
+    #: are saved), but no face, edge or object changed: the caches of what
+    #: the model is (``geometry_version``) stay. Every drag of a section's
+    #: arrow rebuilt the pick index of the whole model, ~2 s a move on a
+    #: furnished house.
+    section_version: int = 0
+    #: How many of ``version``'s bumps showed or hid objects for a moment
+    #: and put them back -- a sheet frame or a scene's picture applying the
+    #: scene's hidden objects. Not a document edit, but what the model draws
+    #: changed: ``geometry_version`` counts them, ``content_version`` not. A
+    #: plain view bump left the caches of what the model is on the previous
+    #: scene's objects (a lamp-post sheet drew the flag, 20-11).
+    shown_version: int = 0
     # Encapsulated chunks (own meshes), isolated from the main mesh's welding.
     groups: list = field(default_factory=list)
     # Annotation entities (static dimensions) — not geometry, drawn as overlays.
@@ -77,6 +129,23 @@ class Scene:
     layer_folders: list = field(default_factory=list)
     # Folder → the folder it sits in (absent: at the top).
     folder_parents: dict = field(default_factory=dict)
+    # Hatch patterns brought in from pattern files (core.hatches.parse_pat),
+    # name → {"label", "families"}: a layer's ``hatch`` names one as
+    # ``pat:<name>``, and the document carries it along.
+    hatch_patterns: dict = field(default_factory=dict)
+    # Line types the user made or brought in from line type files
+    # (core.layers.parse_lin), name → {"label", "pattern"} in paper mm: a
+    # layer's ``linetype`` names one as ``lin:<name>``.
+    line_types: dict = field(default_factory=dict)
+    # The colours given to the built-in line types in this document
+    # (core.layers.LINETYPES key → (r, g, b)): a dashed line drawn red,
+    # whatever its layer. An own line type keeps its colour in its entry.
+    linetype_colors: dict = field(default_factory=dict)
+    # The document's masonry pieces, kind → (length, width, height, joint)
+    # in mm («brick», «hollow», «block»; core.hatches.piece_kind): what every
+    # layer's masonry hatch is drawn with unless the layer sets its own
+    # (core.layers.layer_brick). A kind not here: its usual piece.
+    bricks: dict = field(default_factory=dict)
     # Named materials (core.materials.Material), name → Material. The
     # registry gives identity to paint recipes; faces keep their baked
     # attrs (color/texture) as the render truth and optionally carry
@@ -85,8 +154,16 @@ class Scene:
     # Saved views ("Scenes"): named camera + layer-visibility
     # snapshots (core.saved_views.SavedView). Presentation state, no geometry.
     saved_views: list = field(default_factory=list)
+    # Folder names of the Scenes tab, in order — empty folders included (a
+    # scene names its own folder in ``SavedView.folder``), and folder → the
+    # folder it sits in (absent: at the top). See core.scene_folders.
+    scene_folders: list = field(default_factory=list)
+    scene_folder_parents: dict = field(default_factory=dict)
     # Sheet compositions (core.composition.Composicion) — the print layouts.
     compositions: list = field(default_factory=list)
+    # The folders the sheet explorer orders them in
+    # (core.sheet_folders.SheetFolder); each sheet names its own.
+    sheet_folders: list = field(default_factory=list)
     # Scales (1:N) typed by the user in the composer beyond the common
     # presets — kept with the document so every frame of the file offers
     # them again (Marco, 2026-09-02).
@@ -132,6 +209,10 @@ class Scene:
     #: .igz; the core never reads it. Changed through
     #: ``core.history.SetPluginDataCommand`` so each edit is undoable.
     plugin_data: dict = field(default_factory=dict)
+    #: The layout the document was opened from, when it was the plain-JSON
+    #: one (``"json"``, formats.igz): an Automatic save keeps it, so a
+    #: document kept in Git stays diffable. None for everything else.
+    saved_layout: str | None = None
     dimension_style: dict = field(default_factory=lambda: {
         "decimals": 2, "units": "m", "font_size": 9, "color": [45, 55, 75],
         "norma": "iso", "base_step_mm": 8.0, "ends": "arrow",
@@ -146,11 +227,17 @@ class Scene:
     # Sun shadows (core/sun.py): whether they draw, and the local date/time
     # the sun stands at. Document data — the shadow study is a deliverable.
     shadows: object = field(default_factory=lambda: _make_shadows())
+    # Scene transitions (core/scene_animation.py): whether showing a scene
+    # glides there, and how long the glide and a run's pause on each take.
+    animation: object = field(default_factory=lambda: _make_animation())
     # Section planes (core/section.py). At most ONE is
     # ``active`` (the cut) in the model context; the two flags mirror
     # View ▸ Section Planes / Section Cuts toggles.
     section_planes: list = field(default_factory=list)
     show_section_planes: bool = True
+    # Section boxes (core.section.SectionBox), named. At most ONE is
+    # ``active``: it cuts with its six faces beside the active plane.
+    section_boxes: list = field(default_factory=list)
     # View ▸ Hidden Objects / Hidden Geometry: hidden objects
     # (groups, components) and hidden geometry (faces, edges) are drawn
     # as a see-through grid and become selectable — the way back to
@@ -162,6 +249,11 @@ class Scene:
     # drawing hides — axis inference and the arrow-key locks still work,
     # and an open group keeps showing its own axes.
     show_axes: bool = True
+    # Tools ▸ North without a location: where true north lies, degrees
+    # clockwise from the green (Y) axis — the sun turns with it. Once the
+    # model has a location the datum's own north angle is the one that
+    # counts (core.sun.scene_north_deg).
+    north_deg: float = 0.0
     # Camera ▸ Component Edit ▸ Hide Similar Components: while a
     # component instance is open, its sibling instances (the other copies of
     # the same definition) leave the frame instead of fading with the rest.
@@ -224,9 +316,8 @@ class Scene:
     def _layer_state(self, entity) -> tuple[bool, bool]:
         """(visible, locked) of the layer ``entity`` carries; unknown layer
         names read as the default (visible, unlocked)."""
-        from core.layers import DEFAULT_LAYER, layer_of
-        name = layer_of(entity)
-        if name == DEFAULT_LAYER and self._edit_stack:
+        name = _layers.layer_of(entity)
+        if name == _layers.DEFAULT_LAYER and self._edit_stack:
             name = self._open_group_layer(entity) or name
         ly = self.layer(name)
         if ly is None:
@@ -295,9 +386,28 @@ class Scene:
         # render, pick, snap, bounds, export — whatever its layer says.
         # The hidden-things view does NOT change that: it draws them as a
         # ghost in its own pass and only makes them selectable.
+        if not getattr(self.display_style, "show_guides", True):
+            from core.guide import Guide
+            if isinstance(entity, Guide):
+                return False
         if self.entity_hidden(entity) or self.similar_hidden(entity):
             return False
+        if self.outside_section_box(entity):
+            return False
         return self._layer_state(entity)[0]
+
+    def outside_section_box(self, entity) -> bool:
+        """Whether the section box cutting now leaves this annotation out —
+        a dimension, a text, a guide point or a survey point standing
+        outside it goes with the geometry the box takes away: off the
+        screen, out of the pick, the snap and the sheets."""
+        if not self.section_boxes or not self.show_section_cuts                 or type(entity).__name__ not in _ANNOTATION_KINDS:
+            return False                # the common case, asked per face
+        box = self.active_section_box()
+        if box is None:
+            return False
+        from core.section import annotation_points
+        return any(box.side(p) > 1e-6 for p in annotation_points(entity))
 
     def edge_snappable(self, edge) -> bool:
         """Whether the inference may land on ``edge`` — the visibility rule
@@ -321,6 +431,14 @@ class Scene:
             return False
         return (not getattr(edge, "hidden", False)
                 or bool(getattr(self, "show_hidden_geometry", False)))
+
+    def group_snappable(self, group) -> bool:
+        """A visible group is a snap reference, whatever locks it: the
+        object's own padlock and a locked layer both protect it from
+        EDITING, not from snapping to it (#1510; the object's lock alone
+        was #1210). A hidden group is no reference, unless View ▸ Hidden
+        Objects shows it as a ghost: then it takes the click as before."""
+        return self.entity_visible(group) or self.entity_selectable(group)
 
     def edit_definition(self):
         """The shared prototype mesh of the component instance open at the
@@ -349,7 +467,11 @@ class Scene:
         return False
 
     def entity_selectable(self, entity) -> bool:
-        if self.similar_hidden(entity):
+        if not getattr(self.display_style, "show_guides", True):
+            from core.guide import Guide
+            if isinstance(entity, Guide):
+                return False
+        if self.similar_hidden(entity) or self.outside_section_box(entity):
             return False
         if self._object_hidden(entity) and not self.show_hidden_objects:
             return False
@@ -389,6 +511,18 @@ class Scene:
                 # A plane on a hidden layer cuts nothing (#316).
                 return sp if self._layer_state(sp)[0] else None
         return None
+
+    def active_section_box(self):
+        """The section box cutting the model now, or ``None``."""
+        for box in self.section_boxes:
+            if box.active:
+                return box
+        return None
+
+    def set_active_section_box(self, box) -> None:
+        """Make ``box`` the ONE box that cuts (``None``: none does)."""
+        for b in self.section_boxes:
+            b.active = b is box
 
     def set_active_section(self, plane) -> None:
         """Make ``plane`` the ONE active cut (None deactivates all) —
@@ -430,7 +564,23 @@ class Scene:
         is_comp = getattr(group, "is_component", None)
         definition = (group.mesh if callable(is_comp) and is_comp()
                       else None)
-        if getattr(group, "children", None):
+        # Inside a definition already (an open component, or a group in
+        # one): what is opened here is the same part in every copy.
+        in_definition = anidando and any(
+            lvl.get("share") is not None for lvl in self._edit_stack)
+        if (getattr(group, "children", None)
+                and getattr(group, "xform", None) is not None
+                and (definition is not None or in_definition)):
+            # A component that holds groups: its matrix comes down into its
+            # parts for the session, as any container's — but only for the
+            # session. Leaving puts it back, shares its own mesh like a
+            # plain instance's and hands the parts to every other copy
+            # (#1339, #894, #508). Baking it for good made this copy leave
+            # its definition behind: its loose faces went into the shared
+            # mesh in its own frame, and its parts moved alone.
+            from core.component_parts import open_definition
+            self._edit_share = open_definition(group, frame)
+        elif getattr(group, "children", None):
             # A container: its children stay children. What CANNOT stay is a
             # transform on it, because the tools work in world coordinates —
             # so the matrix is pushed down into the children and into its own
@@ -450,8 +600,13 @@ class Scene:
             proto, xform = group.mesh, group.xform
             group.mesh = transformed_mesh(proto, xform)
             group.xform = None
-            self._edit_share = (group, proto, xform,
-                                group.mesh.capture_state())
+            from core.component_parts import EditShare, PartsAtEntry
+            self._edit_share = EditShare((group, proto, xform,
+                                          group.mesh.capture_state()))
+            # It holds no parts yet; one pasted in while it is open is a
+            # part of the definition all the same.
+            self._edit_share.parts = PartsAtEntry(group, None, xform,
+                                                  [], [], group.axes)
         if not self._edit_stack:
             self._loose_mesh = anterior
         self._edit_stack.append(
@@ -500,6 +655,9 @@ class Scene:
         # has just become the world's.
         from core.explode import rotate_offsets
         rotate_offsets(group, xform)
+        if getattr(group, "images", None):
+            group.images = [image.transformed(xform)
+                            for image in group.images]
         if group.mesh.vertices:
             from core.group import transformed_mesh
             group.mesh = transformed_mesh(group.mesh, xform)
@@ -529,7 +687,10 @@ class Scene:
             # Headless callers (tests, the AI bridge): share back directly.
             # The viewport takes the share first and wraps it in a command.
             group, proto, xform, state0 = share
-            if group.mesh.capture_state() == state0:
+            if getattr(share, "parts", None) is not None:
+                from core.component_parts import close_definition
+                close_definition(self, share)
+            elif group.mesh.capture_state() == state0:
                 self.restore_sharing(group, proto, xform)
             else:
                 self.share_back(group, proto, xform, group.mesh)
@@ -576,6 +737,9 @@ class Scene:
         inverse, ok = xform.inverted()
         local = transformed_mesh(edited, inverse if ok else xform)
         proto.restore_state(local.capture_state())
+        # A face reversed in the session was counted on the world copy, and
+        # a reversed loop is all the definition's chunk could not see.
+        proto.note_rewound()
         group.mesh = proto
         group.xform = xform
 
@@ -654,9 +818,13 @@ class Scene:
         wins over it. Locked groups are remembered separately for inspection;
         editing tools continue to read only ``selection``."""
         mode = mode or ("add" if additive else "replace")
-        edges = list(edges)
-        locked = {ent for ent in edges if self.entity_locked(ent)}
-        for selection, entities in ((self.selection, set(edges) - locked),
+        from core.group import Group
+
+        edges = set(edges)
+        # Faces and edges cannot be object-locked: keep bulk selection cheap.
+        locked = {ent for ent in edges
+                  if isinstance(ent, Group) and self.entity_locked(ent)}
+        for selection, entities in ((self.selection, edges - locked if locked else edges),
                                     (self.locked_selection, locked)):
             if mode == "replace":
                 selection.clear()
@@ -686,11 +854,32 @@ class Scene:
         self.version += 1
         self.view_version += 1
 
+    def bump_shown(self) -> None:
+        """Objects shown or hidden for a moment, not as an edit (see
+        ``shown_version``): every cache refreshes, the document stays
+        clean."""
+        self.version += 1
+        self.shown_version += 1
+
+    def bump_sections(self) -> None:
+        """The section planes changed and nothing else (see
+        ``section_version``): the document is edited, the model is not."""
+        self.version += 1
+        self.section_version += 1
+
+    @property
+    def geometry_version(self) -> int:
+        """``content_version`` without the section planes' own bumps, and
+        with the objects a frame showed or hid (``shown_version``): what the
+        faces, edges and objects drawn are."""
+        return self.version - self.view_version - self.section_version
+
     @property
     def content_version(self) -> int:
         """``version`` minus the view-only bumps: what "unsaved changes"
         compares against the version that was saved."""
-        return self.version - self.view_version
+        return (self.version - self.view_version
+                - getattr(self, "shown_version", 0))
 
     def invert_selection(self) -> int:
         """Edit ▸ Invert Selection (Ctrl+Shift+I): select every
@@ -733,6 +922,7 @@ class Scene:
         self.version += 1
 
     def clear(self) -> None:
+        self.document_id = uuid4().hex
         self.end_group_edit()
         self.locked_selection.clear()
         self._locked_selection_base = frozenset()
@@ -741,15 +931,20 @@ class Scene:
                 or self.tile_layer or self.geo_paths or self.terrain
                 or self.guides or self.geo_points or self.text_labels
                 or self.saved_views or self.compositions
+                or self.scene_folders or self.sheet_folders
                 or self.image_planes or self.plugin_data
                 or self.kept_components or self.section_planes
-                or self.materials
+                or self.section_boxes
+                or self.materials or self.animation.to_dict()
+                or self.ifc_project
                 or not self.show_section_planes
                 or not self.show_section_cuts
                 or self.show_hidden_objects or self.show_hidden_geometry
                 or self.custom_scales or self.back_face_color is not None
                 or len(self.layers) > 1 or self.layer_folders
-                or self.active_layer):
+                or self.active_layer or self.hatch_patterns
+                or self.line_types or self.linetype_colors
+                or self.bricks or self.north_deg):
             self.mesh.clear()
             self.groups.clear()
             self.dimensions.clear()
@@ -759,7 +954,10 @@ class Scene:
             self.guides.clear()
             self.image_planes.clear()
             self.saved_views.clear()
+            self.scene_folders = []
+            self.scene_folder_parents = {}
             self.compositions.clear()
+            self.sheet_folders.clear()
             self.custom_scales.clear()
             self.kept_components.clear()
             self.materials.clear()
@@ -770,6 +968,10 @@ class Scene:
             self.active_layer = None
             self.layer_folders = []
             self.folder_parents = {}
+            self.hatch_patterns = {}
+            self.line_types = {}
+            self.linetype_colors = {}
+            self.bricks = {}
             self.georef = None
             self.tile_layer = None
             self.terrain = None
@@ -777,16 +979,21 @@ class Scene:
             self.active_ifc = None
             self.display_style = _make_style()
             self.shadows = _make_shadows()
+            self.animation = _make_animation()
             self.section_planes.clear()
+            self.section_boxes.clear()
             self.show_section_planes = True
             self.show_section_cuts = True
             self.show_hidden_objects = False
             self.show_hidden_geometry = False
             self.show_axes = True
+            self.north_deg = 0.0
             self.version += 1
         # Outside the guard: an empty document has a camera to forget too.
         self.camera_home = None
         self.views_home = None
+        self.ifc_namespace = new_identity()
+        self.ifc_project = {}
         self.units = {"length": "m", "precision": 2}
         self.plugin_data = {}
 
@@ -815,29 +1022,23 @@ class Scene:
         frame a dot (#627). Not cached: it runs once per command, over the
         selection only."""
         import numpy as np
-        from core.group import iter_placements
-        from core.guide import Guide
+        from core.group import placement_points
+        from core.guide import is_guide
         pts: list = []
 
         def add(p: QVector3D) -> None:
             pts.append((p.x(), p.y(), p.z()))
 
         for ent in self.selection:
-            if isinstance(ent, Guide):        # before Edge: it has .a / .b
-                add(ent.point)
+            if is_guide(ent):                # before Edge: it has .a / .b
+                if getattr(ent, "is_circle", False):
+                    for p in ent.sample_points(32):
+                        add(p)
+                else:
+                    add(ent.point)
             elif hasattr(ent, "mesh"):        # Group / component instance
-                for g, m in iter_placements(ent):
-                    verts = g.mesh.vertices
-                    if not verts:
-                        continue
-                    arr = np.array([[v.position.x(), v.position.y(),
-                                     v.position.z()] for v in verts])
-                    if m is not None:
-                        d = m.data()          # column-major
-                        rot = np.array([[d[0], d[4], d[8]],
-                                        [d[1], d[5], d[9]],
-                                        [d[2], d[6], d[10]]])
-                        arr = arr @ rot.T + np.array([d[12], d[13], d[14]])
+                arr = placement_points(ent)
+                if len(arr):
                     pts.append(tuple(arr.min(axis=0)))
                     pts.append(tuple(arr.max(axis=0)))
             elif hasattr(ent, "vertices"):    # Face
@@ -860,8 +1061,11 @@ class Scene:
         context (it swaps ``mesh``), Hide Similar (it follows the context)
         and the layers' visibility. Every change of these bumps ``version``
         already; the key is there so that a view-only bump — the selection
-        — is told apart from them."""
-        return (self.content_version,
+        — is told apart from them. A section plane or box moved bumps
+        ``version`` too, and the box of the geometry stays: dragging a
+        plane over the plaza walked the whole model on every frame
+        (150 of its 190 ms, 22-11), for the plane's drawn frame."""
+        return (self.content_version - self.section_version,
                 tuple(id(level["group"]) for level in self._edit_stack),
                 id(self.mesh), bool(self.hide_similar_components),
                 tuple((ly.name, bool(ly.visible)) for ly in self.layers))
@@ -937,21 +1141,33 @@ class Scene:
         kept: dict = {}
         from core.lazy_mesh import plan_of
         for g, m in self.placements():
+            for image in getattr(g, "images", None) or ():
+                corners = image.corners()
+                if m is not None:
+                    corners = [m.map(point) for point in corners]
+                for point in corners:
+                    absorb(point)
             key = id(g.mesh)
             arr = per_mesh.get(key)
             if arr is None:
                 plan = plan_of(g.mesh)      # a lazy mesh: no build
                 if plan is not None:
                     arr = plan.pos
-                    per_mesh[key] = (arr, True)
+                    lazy = True
                 else:
                     arr = np.array(
                         [[v.position.x(), v.position.y(), v.position.z()]
                          for v in g.mesh.vertices])
-                    per_mesh[key] = (arr, False)
-                lazy = per_mesh[key][1]
+                    lazy = False
+                # Its own box, centre and half size, for _inside below.
+                local = None
+                if len(arr):
+                    a, b = arr.min(axis=0), arr.max(axis=0)
+                    local = (*((a + b) / 2.0).tolist(),
+                             *((b - a) / 2.0).tolist())
+                per_mesh[key] = (arr, lazy, local)
             else:
-                arr, lazy = arr
+                arr, lazy, local = arr
             if not len(arr):
                 continue
             d = tuple(m.data()) if m is not None else None  # column-major
@@ -961,6 +1177,9 @@ class Scene:
                 part = kept.get(pkey) or parts.get(pkey)
             if part is not None:
                 glo, ghi = part[1], part[2]
+            elif seen and d is not None and _inside(
+                    local, d, (minx, miny, minz), (maxx, maxy, maxz)):
+                continue                    # it cannot widen the box
             else:
                 if d is not None:
                     rot = np.array([[d[0], d[4], d[8]],

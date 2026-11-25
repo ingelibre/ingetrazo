@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2026 Marco Sumari Tellez and IngeTrazo contributors.
-"""Locking changes the selection color, not face opacity or edge visibility."""
+"""Locked inspection adds depth-tested edges without changing face opacity."""
 import numpy as np
 import pytest
 from PySide6.QtGui import QImage, QMatrix4x4, QVector3D as V
@@ -77,22 +77,31 @@ def _live(vp):
 
 
 @pytest.mark.parametrize('placement', ['plain', 'transformed', 'nested'])
-def test_lock_preserves_the_selected_edges_box_and_opaque_faces(cube_viewport, placement):
+def test_lock_preserves_opaque_face_interiors(cube_viewport, placement):
     vp = cube_viewport
     group = _scene(vp, placement)
-    vp.scene.select([group])
     ordinary = _live(vp)
     History(vp.scene).execute(LockCommand([group]))
     vp.scene.select([group])
     locked = _live(vp)
-    assert np.array_equal(ordinary, locked), 'Locking changed more than the selection color'
+    # Flat face interiors must keep their colour; edge pixels acquire the
+    # inspection overlay. Ordinary selection keeps the release's own cues.
+    rgb = ordinary[:, :, :3].astype(int)
+    flat = np.ones(rgb.shape[:2], dtype=bool)
+    for dy, dx in ((-3, 0), (3, 0), (0, -3), (0, 3)):
+        flat &= abs(rgb - np.roll(rgb, (dy, dx), (0, 1))).max(axis=2) < 2
+    flat &= (abs(rgb - rgb[0, 0])).max(axis=2) > 15
+    assert flat.sum() > 1000
+    changed = (abs(ordinary[flat].astype(int) - locked[flat].astype(int))).max(axis=1) > 2
+    # A bounding-box line can cross a flat face; it must occupy less than
+    # one percent of these interiors, rather than making a face translucent.
+    assert changed.mean() < 0.01, (changed.sum(), flat.sum())
 
 
-@pytest.mark.parametrize('locked', [False, True])
-def test_visible_edges_inside_the_group_box_are_highlighted(cube_viewport, locked):
+def test_visible_edges_inside_the_group_box_are_highlighted(cube_viewport):
     vp = cube_viewport
     group = _scene(vp)
-    group.locked = locked
+    group.locked = True
     vp.scene.select([group])
     pixels = _live(vp)
     samples = 0
@@ -101,8 +110,11 @@ def test_visible_edges_inside_the_group_box_are_highlighted(cube_viewport, locke
         # Edges on the smaller cube, away from the overall bounding-box edges.
         if point.x() < 2.01 or vp._is_occluded(point):
             continue
-        x, y = map(round, vp._world_to_pixel(point))
-        patch = pixels[y - 2:y + 3, x - 2:x + 3, :3].astype(int)
+        ratio = vp.devicePixelRatioF()
+        x, y = (round(p * ratio) for p in vp._world_to_pixel(point))
+        radius = max(2, round(2 * ratio))
+        patch = pixels[y - radius:y + radius + 1,
+                       x - radius:x + radius + 1, :3].astype(int)
         assert ((patch[:, :, 2] > patch[:, :, 0] + 80)
                 & (patch[:, :, 2] > patch[:, :, 1] + 80)).any(), point
         samples += 1
@@ -116,14 +128,36 @@ def test_group_selection_is_absent_from_export_and_reuses_gpu_geometry(cube_view
         image = vp.render_image(600, 400, overlays=False).convertToFormat(QImage.Format_RGBA8888)
         return bytes(image.constBits())
     baseline = exported()
-    vp.scene.select([group])
-    _live(vp)
-    entries = {key: value['edges_vbo'] for key, value in vp._proto_draw.items()}
     group.locked = True
     vp.scene.select([group])
     _live(vp)
+    entries = {key: value['edges_vbo'] for key, value in vp._proto_draw.items()}
+    vp.camera.orbit(2, 1, vp.height())
+    _live(vp)
     assert {key: value['edges_vbo'] for key, value in vp._proto_draw.items()} == entries
+    vp.scene.clear_selection()
+    baseline = exported()
+    vp.scene.select([group])
     assert exported() == baseline
+
+
+def test_orbit_reuses_inspection_batches_boxes_and_gpu_upload(cube_viewport, monkeypatch):
+    vp = cube_viewport
+    group = _scene(vp)
+    group.locked = True
+    vp.scene.select([group])
+    _live(vp)
+    geometry = vp._locked_geometry_cache
+    uploaded = vp._locked_box_uploaded
+    def unexpected(*args, **kwargs):
+        pytest.fail('Orbiting rebuilt the cached locked inspection')
+    monkeypatch.setattr(vp, '_expand_placements', unexpected)
+    monkeypatch.setattr(vp, '_group_obb', unexpected)
+    for _ in range(3):
+        vp.camera.orbit(2, 1, vp.height())
+        _live(vp)
+        assert vp._locked_geometry_cache is geometry
+        assert vp._locked_box_uploaded is uploaded
 
 
 @pytest.mark.parametrize('change', ['clear', 'hide', 'delete'])

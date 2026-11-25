@@ -13,6 +13,8 @@ pytest.importorskip("PySide6")
 
 import core.glinfo
 from core.glinfo import GL_RENDERER, GL_VENDOR, GL_VERSION
+from PySide6.QtCore import Qt
+
 from views import viewport as viewport_module
 from views.viewport import GL_COLOR_BUFFER_BIT, GL_DEPTH_BUFFER_BIT, Viewport
 
@@ -61,6 +63,10 @@ class _Viewport:
         self._program = None
         self.glReady = _Signal()
         self.gl_context = _Context()
+        self.attributes: dict = {}
+
+    def setAttribute(self, attr, on=True):
+        self.attributes[attr] = on
 
     def context(self):
         return self.gl_context
@@ -78,6 +84,12 @@ class _Viewport:
         pass
 
     def _sync_projection(self):
+        pass
+
+    def _schedule_preview_check(self, delay_ms=1500):
+        pass
+
+    def _note_camera(self):
         pass
 
 
@@ -101,6 +113,8 @@ def test_gl_3_0_compiles_nothing_and_only_clears(viewport, monkeypatch):
     assert viewport.glReady.sent[0]["version"] == "3.0 Mesa 11.2.2"
     # Nothing to free at teardown, so nothing runs on the dying context.
     assert viewport.gl_context.aboutToBeDestroyed.sent == []
+    # paintGL still clears every pixel opaque, so the view is opaque too.
+    assert viewport.attributes.get(Qt.WA_OpaquePaintEvent) is True
 
     fake.calls.clear()
     Viewport.resizeGL(viewport, 800, 600)        # would make the scene FBO
@@ -111,6 +125,8 @@ def test_gl_3_0_compiles_nothing_and_only_clears(viewport, monkeypatch):
 def test_gl_4_6_goes_on_to_compile_the_shaders(viewport, monkeypatch):
     with pytest.raises(_Compiled):
         _initialize(viewport, monkeypatch, "4.6.0 NVIDIA 552.44")
+    # Opaque before the shaders: the window never paints under the view.
+    assert viewport.attributes.get(Qt.WA_OpaquePaintEvent) is True
 
 
 def test_the_error_names_renderer_and_version_once(monkeypatch):

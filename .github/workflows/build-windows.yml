@@ -89,6 +89,18 @@ jobs:
           pip install "$RUNNER_TEMP"/wheels/ingetrazo_core-*.whl
           INGETRAZO_RUST=1 python -c "import core._native as n; assert n.native is not None; print('motor:', n.engine())"
 
+      # La miniatura de los .igz en el Explorador (installer/thumbnail): la
+      # DLL que lee el thumbnail.png del documento, con el MSVC del runner.
+      # Si no compila o sus pruebas fallan, falla aquí: el instalador la
+      # registra y no debe salir sin ella.
+      - name: Miniaturas de .igz (proveedor del Explorador)
+        shell: cmd
+        run: |
+          call installer\thumbnail\build.cmd || exit /b 1
+          pip install pytest || exit /b 1
+          set QT_QPA_PLATFORM=offscreen
+          python -m pytest tests/test_igz_thumbnail_handler.py -q || exit /b 1
+
       # DWG en Windows (#101): el dwg2dxf.exe OFICIAL de LibreDWG (su
       # release win64, mingw), con las dos DLL que carga — nada más del zip.
       # Hash medido el 2026-09-28 (su dist.sha256 no lista los zips): si

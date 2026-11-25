@@ -86,7 +86,11 @@ def _stub(scene):
     for name in dir(Viewport):
         if name.startswith("__") or hasattr(vp, name):
             continue
-        attr = Viewport.__dict__.get(name)
+        # Viewport's own members, whichever of its mixins holds them
+        # (views/viewport/, #901) — never the Qt base's.
+        attr = next((k.__dict__[name] for k in Viewport.__mro__
+                     if k.__module__.startswith("views.viewport")
+                     and name in k.__dict__), None)
         if isinstance(attr, types.FunctionType):
             setattr(vp, name, attr.__get__(vp))
         elif isinstance(attr, staticmethod):
@@ -182,7 +186,12 @@ def _loose_face_rows(win):
     vp._upload_vbo = fake_upload
     import re
     import views.viewport as vpmod
-    src = open(vpmod.__file__, encoding="utf-8").read()
+    # One file, or the package of one module per job (#901): all of it.
+    from pathlib import Path
+    here = Path(vpmod.__file__)
+    src = "\n".join(p.read_text(encoding="utf-8") for p in (
+        sorted(here.parent.glob("*.py")) if here.name == "__init__.py"
+        else [here]))
     for name in set(re.findall(r"self\.(_\w+_vbo)\b", src)):
         if not hasattr(vp, name):
             setattr(vp, name, None)

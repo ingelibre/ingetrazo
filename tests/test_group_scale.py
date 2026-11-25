@@ -44,6 +44,8 @@ def test_unusable_or_unchanged_values_make_no_command():
     g.xform = QMatrix4x4()
     assert scale_command(g, (0.0, 1.0, 1.0)) is None
     assert scale_command(g, (-1.0, 1.0, 1.0)) is None
+    assert scale_command(g, (float("nan"), 1.0, 1.0)) is None
+    assert scale_command(g, (float("inf"), 1.0, 1.0)) is None
     assert scale_command(g, (1.0, 1.0, 1.0)) is None
 
 

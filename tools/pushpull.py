@@ -17,6 +17,8 @@ UX (the usual push/pull convention):
   stacked.
 - **Double-click** repeats the last committed distance on the face under
   the cursor (with Ctrl, as a copy).
+- **Several faces selected**: pushing or pulling any one of them moves them
+  all the same distance, each along its own normal, as one undo step.
 - Esc cancels without committing.
 
 Commit pipeline (the deterministic root-fix, no case tree):
@@ -39,6 +41,7 @@ from __future__ import annotations
 
 import math
 import time
+import weakref
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QVector3D
@@ -62,7 +65,8 @@ from core.history import (
     translate_points,
 )
 from core.arrangement import _interior_point, _point_in_polygon, plane_basis
-from core.orient import _ray_triangle, is_closed, orient_outward
+from core.orient import (_ray_triangle, is_closed, orient_outward,
+                         orient_outward_each)
 from core.cap_rebuild import (
     RebuildCache,
     _canon_loop,
@@ -85,6 +89,19 @@ from core.topology import (
 )
 from tools.base import Tool, ToolContext, ctrl_clause
 from core.units import fmt_len
+
+
+def _geometry_version(scene) -> int:
+    """What the model's caches key on (Scene.geometry_version), or the plain
+    version of a stand-in scene."""
+    return getattr(scene, "geometry_version", scene.version)
+
+
+def _bits3(p) -> bytes:
+    """A point's three coordinates as their float32 bits (QVector3D's ==
+    is a fuzzy compare)."""
+    import struct
+    return struct.pack("<3f", p.x(), p.y(), p.z())
 
 
 def _project_loop_2d(loop, normal):
@@ -135,6 +152,50 @@ class _GroupScene:
     @version.setter
     def version(self, value):
         self._scene.version = value
+
+
+def _boundary_cracks(mesh) -> int:
+    """How many edges of ``mesh`` have an odd number of boundary faces
+    (faces not marked interior). Round a sound solid's edge the boundary
+    comes in pairs: two faces, or none where partitions meet inside. A
+    push must not add an edge that breaks that."""
+    return sum(1 for e in mesh.edges
+               if sum(1 for f in e.faces if not f.interior) % 2)
+
+
+def _drop_stranded_partitions(mesh) -> bool:
+    """Remove the partitions a push left with nothing around them.
+
+    A kept base standing on a face's plane (a beam's end butting into a
+    wall) has its whole rim on that face. Pushing the face out past it
+    swallows the beam's end into the wall, and the rebuild drops every face
+    around the old base, but not the base itself: it is left floating, open
+    on every edge, and the push was refused. A partition whose every edge
+    borders nothing else is inside the solid by then, so it goes. Only
+    faces marked as partitions are ever removed. Returns whether anything
+    was removed."""
+    removed = False
+    while True:
+        stranded = []
+        for f in mesh.faces:
+            if not f.interior:
+                continue
+            edges = []
+            for lp in (f.loop, *f.hole_loops):
+                n = len(lp)
+                edges.extend(mesh.find_edge(lp[i], lp[(i + 1) % n])
+                             for i in range(n))
+            if edges and all(e is not None and e.faces == [f] for e in edges):
+                stranded.append((f, edges))
+        if not stranded:
+            return removed
+        for f, edges in stranded:
+            mesh.remove_face(f)
+            for e in edges:
+                if not e.faces:
+                    mesh.remove_edge(e)
+        mesh.prune_orphan_vertices()
+        removed = True
 
 
 def _component_is_closed(mesh, face) -> bool:
@@ -319,6 +380,185 @@ def _face_shape(face) -> tuple:
     return (loop(face.vertices), frozenset(loop(h) for h in face.holes),
             face.interior)
 
+
+def _scan_kernel(vp, proj):
+    """``(native, mvp, width, height)`` when the engine can stand in for
+    ``proj`` in the corner scan — the real ``Viewport._project_px``, whose
+    arithmetic it repeats — else None (Python; test stubs project their
+    own way)."""
+    if proj is None:
+        return None
+    from core import _native
+    mod = _native.native
+    if mod is None or not hasattr(mod, "px_near_sorted"):
+        return None
+    from views.viewport import Viewport
+    if getattr(proj, "__func__", None) is not Viewport._project_px:
+        return None
+    import numpy as np
+    m = np.ascontiguousarray(vp._np_mvp(), dtype=np.float64)
+    return mod, m, float(vp.width()), float(vp.height())
+
+
+class _MergedRows:
+    """The candidate vertices of several meshes as one list (global row
+    ``k`` is the ``k``-th candidate of the concatenation), read only where
+    asked: a pile of prototypes holds a million corners within the radius
+    (#1092)."""
+
+    def __init__(self, found):
+        import numpy as np
+        self._parts = [(f[0], f[2]) for f in found]
+        self._ends = np.cumsum([len(f[2]) for f in found])
+
+    def __getitem__(self, k):
+        import numpy as np
+        k = int(k)
+        j = int(np.searchsorted(self._ends, k, side="right"))
+        verts, cand = self._parts[j]
+        start = int(self._ends[j - 1]) if j else 0
+        return verts[int(cand[k - start])]
+
+
+def _sweep_spec(face, off) -> tuple:
+    """``(rings, off, cap_attrs, wall_attrs)``: what the drag overlay sweeps
+    of ``face`` — its rings (outer first) and its paint. The walls take
+    the base's PAINT, re-anchored to their own planes — the same thing
+    the commit stamps on them, so the drag shows the material the push is
+    about to produce instead of bare cream."""
+    attrs = dict(face.attrs) if face.attrs else None
+    wall_attrs = _paint_of(face) or None
+    rings = [list(face.vertices)] + [list(h) for h in face.holes]
+    return rings, off, attrs, wall_attrs
+
+
+def _swept_faces(spec, ring_pairs: list) -> list:
+    """The overlay's faces of one :func:`_sweep_spec`: the moved cap (holes
+    carried) and one quad per edge of every ring; its ``(base_ring,
+    moved_ring)`` pairs join ``ring_pairs``, which the wireframe reads."""
+    rings, off, attrs, wall_attrs = spec
+    pairs = [(low, [p + off for p in low]) for low in rings]
+    ring_pairs += pairs
+    out = [Face(pairs[0][1], [r[1] for r in pairs[1:]], attrs=attrs)]
+    for low, high in pairs:
+        count = len(low)
+        for i in range(count):
+            j = (i + 1) % count
+            out.append(Face([low[i], low[j], high[j], high[i]],
+                            attrs=wall_attrs))
+    return out
+
+
+def sweep_segments(ring_pairs, curve_cos: float) -> list:
+    """The wireframe of a sweep (:meth:`PushPullTool.rubber_band_lines`):
+    for each ``(low, high)`` ring pair, the moved edges and the risers
+    that will stay hard."""
+    segs = []
+    for low, high in ring_pairs:
+        n = len(low)
+        if n < 2:
+            continue
+        # Wall i spans low[i]→low[i+1]; its normal is that edge crossed
+        # with the sweep. The riser at corner i divides walls i-1 and i.
+        off = high[0] - low[0]
+        normals = []
+        for i in range(n):
+            nv = QVector3D.crossProduct(low[(i + 1) % n] - low[i], off)
+            normals.append(nv.normalized() if nv.length() > 1e-12 else None)
+        for i in range(n):
+            j = (i + 1) % n
+            segs.append((high[i], high[j]))
+            a, b = normals[i - 1], normals[i]
+            if a is not None and b is not None:
+                d = QVector3D.dotProduct(a, b)
+                if curve_cos < d < 0.99995:
+                    continue          # curve facet: soft once committed
+            segs.append((low[i], high[i]))
+    return segs
+
+
+def _sweep_arrays(sweeps, curve_cos: float) -> tuple:
+    """``sweeps`` (:func:`_sweep_spec` each) as the engine reads them (see
+    :meth:`PushPullTool.preview_sweep_arrays`)."""
+    from array import array
+    import numpy as np
+    xyz, offs = array("f"), array("f")
+    sizes, counts, caps, walls = [], [], [], []
+    for rings, off, cap_attrs, wall_attrs in sweeps:
+        caps.append(cap_attrs)
+        walls.append(wall_attrs)
+        offs.extend((off.x(), off.y(), off.z()))
+        counts.append(len(rings))
+        for ring in rings:
+            sizes.append(len(ring))
+            for p in ring:
+                xyz.extend((p.x(), p.y(), p.z()))
+    pos = np.frombuffer(xyz, dtype=np.float32).reshape(-1, 3)
+    off3 = np.frombuffer(offs, dtype=np.float32).reshape(-1, 3)
+    return pos, sizes, counts, off3, caps, walls, float(curve_cos)
+
+
+class _SweepFaces:
+    """The faces of a push's drag overlay, made the first time anything
+    reads them (``len``, iteration, indexing, comparison) from the sweeps
+    they come from — and with them the tool's wireframe rings, while they
+    are still the tool's current overlay. A sweep always has its cap, so
+    it is true without being made. ``arrays``: the sweep as the engine
+    reads it, once read (:meth:`PushPullTool.preview_sweep_arrays`)."""
+
+    __slots__ = ("_tool", "_sweeps", "_faces", "arrays")
+
+    def __init__(self, tool, sweeps):
+        self._tool = tool
+        self._sweeps = sweeps
+        self._faces = None
+        self.arrays = None
+
+    def _made(self) -> list:
+        faces = self._faces
+        if faces is None:
+            pairs: list = []
+            faces = []
+            for spec in self._sweeps:
+                faces += _swept_faces(spec, pairs)
+            self._faces = faces
+            tool = self._tool
+            if tool._light_faces is self and tool._light_rings is None:
+                tool._light_rings = pairs
+        return faces
+
+    def __bool__(self):
+        return bool(self._sweeps)
+
+    def __len__(self):
+        return len(self._made())
+
+    def __iter__(self):
+        return iter(self._made())
+
+    def __getitem__(self, k):
+        return self._made()[k]
+
+    def __contains__(self, x):
+        return x in self._made()
+
+    def __eq__(self, other):
+        if isinstance(other, _SweepFaces):
+            other = other._made()
+        return self._made() == other
+
+    def __add__(self, other):
+        return self._made() + list(other)
+
+    def __radd__(self, other):
+        return list(other) + self._made()
+
+    __hash__ = None
+
+    def __repr__(self):
+        return f"_SweepFaces({self._made()!r})"
+
+
 class PushPullTool(Tool):
     name = "Push / Pull"
     #: P is the usual key for this tool (Marco, 2026-09-10). U, the one
@@ -376,13 +616,24 @@ class PushPullTool(Tool):
         self._group = None
         self._hover_group = None
         # The preselection arm: activated with EXACTLY one loose-mesh Face
-        # selected, the tool locks onto it (the SketchUp workflow) — the
+        # selected, the tool locks onto it — the
         # hover shade goes up at once, idle hovers do not steal it, and the
         # first click ANYWHERE starts the drag on it. Disarms when a drag
         # starts, on _reset (Esc, deactivate, commit), and when the armed
         # face is no longer in the mesh (undo) — the next idle hover then
         # picks normally again.
         self._selected_arm: bool = False
+        # Several faces at once: a drag started on a face while two or more
+        # loose-mesh Faces are selected, that face among them, pushes them
+        # all — the same distance, each along its own outward normal, one
+        # undo step. ``_extra_faces`` (and their outward normals) are the
+        # ones riding along with the base face in the drag under way; empty
+        # = the ordinary single-face push.
+        self._extra_faces: list = []
+        self._extra_normals: list = []
+        # Which of them are embedded, for the drag preview (see
+        # _extras_attached): ``(ids, flags)``, None until asked.
+        self._extra_attached = None
         # Whether the base face is embedded in a solid (its boundary edges are
         # shared), so an inner face pushed in is a recess (window/door pocket).
         self._attached: bool = False
@@ -442,6 +693,8 @@ class PushPullTool(Tool):
         self._stage_refusal: tuple | None = None
         # A stage slower than _SLOW_STAGE_S: no more stages this drag.
         self._stage_slow: bool = False
+        # The base face is hidden for the whole drag (see _holding_base).
+        self._hold_base: bool = False
         # Levels (along the normal) of the parallel faces over/under the base,
         # collected at drag start: crossing one changes the topology.
         self._plane_levels: list = []
@@ -497,12 +750,22 @@ class PushPullTool(Tool):
         self._reset()
         self._keep_mode = False      # the modifier arms ONE operation
         self._ctrl_used = False
-        # The SketchUp preselection workflow: activated with EXACTLY one
+        # The preselection workflow: activated with EXACTLY one
         # Face of the loose mesh selected, the tool arms on it — the first
         # click anywhere starts the drag there, not on whatever sits under
         # the cursor. Anything else (nothing, several items, an edge, a
         # group) leaves the tool idle, as before.
         sel = viewport.scene.selection
+        if len(sel) > 1:
+            # Several faces: no single arm (which one would the cursor
+            # measure along?), but a drag started on any of them takes them
+            # all along — see _take_extras.
+            faces = self._selected_faces(viewport.scene)
+            if len(faces) > 1:
+                viewport.flash_status(tr(
+                    "{n} faces selected — push or pull one of them to move "
+                    "them all", n=len(faces)), 5000)
+            return
         if len(sel) != 1:
             return
         item = next(iter(sel))
@@ -560,8 +823,16 @@ class PushPullTool(Tool):
                     viewport.set_hover(self.hovered_face)
                     return
                 self._selected_arm = False
-            self.hovered_face, self._hover_group = viewport.pick_face_any(
-                ctx.screen.x(), ctx.screen.y())
+            # A closed group's face is only ever refused: a big lazy mesh is
+            # not built to learn that (#1092). A face that can be pushed is
+            # the real one.
+            from views.array_bake import LightFace, reading_only
+            with reading_only():
+                self.hovered_face, self._hover_group = viewport.pick_face_any(
+                    ctx.screen.x(), ctx.screen.y())
+            if self._hover_group is None and isinstance(self.hovered_face,
+                                                        LightFace):
+                self.hovered_face = self.hovered_face.real()
             # Shade the face that would be pushed, so the target
             # is unmistakable before clicking. A face inside a group that is not
             # open gets NO shading: it is not going to be pushed, and promising
@@ -585,6 +856,7 @@ class PushPullTool(Tool):
         # result stays put (restoring it every frame is the snapshot cost the
         # stage exists to avoid); the inference skips its geometry instead.
         self._revert_prism_preview(viewport)
+        self._note_prism_rest(viewport)
         inferred = self._infer_reference_distance(ctx)
         if inferred is not None:
             self.extrusion = inferred
@@ -602,7 +874,11 @@ class PushPullTool(Tool):
         # once, then stretched — walls merging and old edges going live, as
         # the commit will leave them. A free face (nothing to merge with) and
         # a Ctrl-copy show the sweep as an overlay — see _build_light_faces.
-        if self._prism_cap and not self._keep_base:
+        # Several faces at once always show the overlay: a prism or staged
+        # preview edits the model under the OTHER faces' feet.
+        if self._extra_faces:
+            self._show_light_preview(viewport)
+        elif self._prism_cap and not self._keep_base:
             self._show_prism_preview(viewport)
         elif self._attached and not self._keep_base:
             self._show_staged_preview(viewport)
@@ -624,6 +900,7 @@ class PushPullTool(Tool):
                 self._refuse_closed_group(viewport)
                 return
             self.base_face = face
+            self._take_extras(face, viewport.scene)
             self.extrusion = 0.0
             self.dragging = True
             self._group = self._hover_group
@@ -652,6 +929,8 @@ class PushPullTool(Tool):
             self._compute_inward_limit(target)
             self._compute_plane_levels(target)
             self._preview_snapshot = None
+            self._overlay_if_big(viewport, target.mesh)
+            self._warm_inference(viewport)
             # The live preview takes over from the hover shade now.
             viewport.set_hover(None)
             viewport.update()
@@ -668,6 +947,80 @@ class PushPullTool(Tool):
                 self._tiny_hint_shown = True
             return
         self._commit(viewport)
+
+    def _holding_base(self) -> bool:
+        """Whether this drag keeps its base face hidden throughout — a big
+        mesh on the overlay (see _overlay_if_big), single face, no Ctrl.
+        Toward the eye the sweep covers the base anyway, so the frame is
+        the same; at a distance too small to sweep, the overlay draws the
+        base in its place."""
+        return (self._hold_base and self.base_face is not None
+                and not self._keep_base and not self._extra_faces)
+
+    def _warm_inference(self, viewport) -> None:
+        """Read the scene's positions for the distance inference right after
+        the click, before the hand moves: the first move of the first push
+        read the ~900 meshes of the Plaza (~0.1 s, 19-11). Later drags find
+        most of them kept (``_infer_memo``)."""
+        from PySide6.QtCore import QTimer
+        face = self.base_face
+
+        def warm(face=face):
+            if not (self.dragging and self.base_face is face):
+                return
+            if getattr(self, "_infer_cache", None) is None:
+                try:
+                    self._infer_cache = self._infer_entries(viewport)
+                except Exception:  # noqa: BLE001 — the first move reads them
+                    self._infer_cache = None
+            # The edge pick's screen grid too, on the overlay: the model and
+            # the camera stay as they are for the drag.
+            grid = getattr(viewport, "warm_edge_grid", None)
+            if grid is not None and self._stage_slow:
+                try:
+                    grid()
+                except Exception:  # noqa: BLE001 — the second move builds it
+                    pass
+        QTimer.singleShot(0, warm)
+
+    def _overlay_if_big(self, viewport, mesh) -> None:
+        """A drag on a big mesh (see _BIG_STAGE_FACES), or on one whose last
+        stage was slow, shows the overlay from the first frame. The open
+        group's bake without the pushed face — what the overlay draws in
+        place of it when the push goes away from the eye — is made right
+        after the click, before the hand moves."""
+        if not (self._attached and not self._prism_cap):
+            return
+        try:
+            slow = mesh in PushPullTool._slow_meshes
+        except TypeError:
+            slow = False
+        if not slow and len(mesh.faces) < self._BIG_STAGE_FACES:
+            return
+        self._stage_slow = True
+        # The base stays hidden the whole drag (see _holding_base): the faces
+        # buffer of every group is laid out once, right after the click, and
+        # crossing the base plane no longer lays it out twice (~75 ms each,
+        # 19-11).
+        self._hold_base = True
+        face = self.base_face
+        warm = getattr(viewport, "_chunk_without", None)
+        group = getattr(viewport.scene, "edit_group", None)
+        if warm is None or group is None or face is None or self._extra_faces:
+            return
+
+        def bake(face=face, group=group):
+            # Still this drag, on this face, with the group open.
+            if (self.dragging and self.base_face is face
+                    and getattr(viewport.scene, "edit_group", None) is group):
+                try:
+                    warm(group, {face})
+                except Exception:  # noqa: BLE001 — the first frame bakes it then
+                    pass
+                if self._hold_base and not self._keep_base:
+                    viewport.set_suppressed_faces({face})
+        from PySide6.QtCore import QTimer
+        QTimer.singleShot(0, bake)
 
     def _grab_point(self, viewport, ctx: ToolContext) -> QVector3D | None:
         """The clicked spot on the face's plane, or ``None`` (the centroid
@@ -704,6 +1057,7 @@ class PushPullTool(Tool):
                 self._refuse_closed_group(viewport)
                 return
             self.base_face = face
+            self._take_extras(face, viewport.scene)
             self.dragging = True
             self._group = grp
             target = self._target_scene(viewport.scene)
@@ -718,6 +1072,8 @@ class PushPullTool(Tool):
             self._compute_inward_limit(target)
             self._compute_plane_levels(target)
             self._preview_snapshot = None
+            self._overlay_if_big(viewport, target.mesh)
+            self._warm_inference(viewport)
             self._selected_arm = False  # never armed once a drag exists
         elif abs(self.extrusion) > _MIN_EXTRUDE:
             # Mid-drag with a real distance: treat as the commit click.
@@ -800,6 +1156,8 @@ class PushPullTool(Tool):
         self._cap_positions = last["cap_positions"]
         self._drag_pre_oriented = last["pre_oriented"]
         self._limit_in = last["limit_in"]
+        self._extra_faces = last["extras"]
+        self._extra_normals = last["extra_normals"]
         self.dragging = True
         self.extrusion = 0.0
         self._preview_snapshot = None
@@ -879,66 +1237,94 @@ class PushPullTool(Tool):
         loops, already built for the sweep. Drawn in ``wireframe_color`` and
         depth-tested (class attributes above), so the box hides its own back
         edges and reads like real geometry rather than a loose rubber band."""
-        segs = []
-        for low, high in self._light_rings:
-            n = len(low)
-            if n < 2:
-                continue
-            # Wall i spans low[i]→low[i+1]; its normal is that edge crossed
-            # with the sweep. The riser at corner i divides walls i-1 and i.
-            off = high[0] - low[0]
-            normals = []
-            for i in range(n):
-                nv = QVector3D.crossProduct(low[(i + 1) % n] - low[i], off)
-                normals.append(nv.normalized() if nv.length() > 1e-12 else None)
-            for i in range(n):
-                j = (i + 1) % n
-                segs.append((high[i], high[j]))
-                a, b = normals[i - 1], normals[i]
-                if a is not None and b is not None:
-                    d = QVector3D.dotProduct(a, b)
-                    if self._CURVE_FACET_COS < d < 0.99995:
-                        continue          # curve facet: soft once committed
-                segs.append((low[i], high[i]))
-        return segs
+        if self._light_rings is None:          # still only the sweep
+            len(self._light_faces)              # (made with the faces)
+        return sweep_segments(self._light_rings or [], self._CURVE_FACET_COS)
 
     def preview_faces(self):
         return self._light_faces
 
+    def preview_sweeps(self):
+        """``(faces, sweeps)`` when :meth:`preview_faces` is the sweep
+        ``_build_light_faces`` made — ``sweeps`` the ``(rings, off,
+        cap_attrs, wall_attrs)`` of each swept face, what the viewport's
+        engine bakes them from without walking them — else ``None``."""
+        spec = getattr(self, "_light_spec", None)
+        if spec is not None and spec[0] is self._light_faces:
+            return spec
+        return None
+
+    def preview_sweep_arrays(self):
+        """``(faces, (pos, ring_sizes, ring_counts, offs, cap_attrs,
+        wall_attrs, curve_cos))`` — :meth:`preview_sweeps` as the arrays
+        the engine bakes the overlay and draws its wireframe from (``pos``
+        (N,3) and ``offs`` (S,3) float32, rings outer first, face by face),
+        read once per frame — else ``None``."""
+        spec = self.preview_sweeps()
+        if spec is None:
+            return None
+        faces = spec[0]
+        arrays = getattr(faces, "arrays", None)
+        if arrays is None:
+            arrays = _sweep_arrays(spec[1], self._CURVE_FACET_COS)
+            if isinstance(faces, _SweepFaces):
+                faces.arrays = arrays
+        return faces, arrays
+
     # ---- Drag preview ------------------------------------------------------
 
-    def _build_light_faces(self):
+    def _build_light_faces(self, lazy: bool = False):
         """The naive sweep of the base face as plain preview polygons: the
         moved cap (holes carried) and one quad per boundary and hole edge.
 
         This is the *shape* the push makes, without any of the work that makes
         it a valid solid — no stitch, no per-plane rebuild, no guard. Those
         decide how the new geometry MERGES with what is already there, which
-        is exactly what you cannot see while the shape is still moving."""
-        face = self.base_face
+        is exactly what you cannot see while the shape is still moving.
+
+        ``lazy``: a :class:`_SweepFaces` instead of the list — the faces
+        are made only if something reads them; the viewport's engine bakes
+        the overlay and its wireframe from the sweep itself (Bloque 6c: the
+        ~400 faces of a holed slab were made each frame to be read by
+        nobody)."""
         d = self.extrusion
         self._light_rings = []
-        if face is None or self._normal is None or abs(d) < _MIN_EXTRUDE:
+        self._light_sweeps = []
+        self._light_spec = None
+        if (self.base_face is None or self._normal is None
+                or abs(d) < _MIN_EXTRUDE):
+            if self.base_face is not None and self._holding_base():
+                # The hidden base, drawn where it is (see _hold_base).
+                f = self.base_face
+                return [Face(list(f.vertices), [list(h) for h in f.holes],
+                             attrs=dict(f.attrs) if f.attrs else None)]
             return []
-        n = self._normal
-        off = n * d
-        attrs = dict(face.attrs) if face.attrs else None
-        # The walls take the base's PAINT, re-anchored to their own planes —
-        # the same thing the commit stamps on them, so the drag shows the
-        # material the push is about to produce instead of bare cream.
-        wall_attrs = _paint_of(face) or None
-        rings = [(list(face.vertices), [p + off for p in face.vertices])]
-        rings += [(list(h), [p + off for p in h]) for h in face.holes]
-        self._light_rings = rings      # the wireframe reads these back
-        cap = Face(rings[0][1], [r[1] for r in rings[1:]], attrs=attrs)
-        out = [cap]
-        for low, high in rings:
-            count = len(low)
-            for i in range(count):
-                j = (i + 1) % count
-                out.append(Face([low[i], low[j], high[j], high[i]],
-                                attrs=wall_attrs))
+        if lazy:
+            self._light_sweeps = [_sweep_spec(self.base_face,
+                                              self._normal * d)]
+            self._light_sweeps += [
+                _sweep_spec(face, n * d)
+                for face, n in zip(self._extra_faces, self._extra_normals)]
+            self._light_rings = None            # made with the faces
+            out = _SweepFaces(self, self._light_sweeps)
+            self._light_spec = (out, self._light_sweeps)
+            return out
+        out = self._sweep_faces(self.base_face, self._normal * d)
+        for face, n in zip(self._extra_faces, self._extra_normals):
+            out += self._sweep_faces(face, n * d)
+        self._light_spec = (out, self._light_sweeps)
         return out
+
+    def _sweep_faces(self, face, off: QVector3D) -> list:
+        """One face's naive sweep by ``off``; its rings join
+        ``_light_rings``, which the wireframe reads back."""
+        spec = _sweep_spec(face, off)
+        sweeps = getattr(self, "_light_sweeps", None)
+        if sweeps is not None:
+            sweeps.append(spec)
+        if self._light_rings is None:
+            self._light_rings = []
+        return _swept_faces(spec, self._light_rings)
 
     def _show_light_preview(self, viewport) -> None:
         """Drop any applied preview and show the sweep as an overlay instead.
@@ -948,7 +1334,7 @@ class PushPullTool(Tool):
         a Ctrl tap mid-drag must find it again, not pay for a new one."""
         self._park_stage(viewport)
         self._revert_preview(viewport)
-        self._light_faces = self._build_light_faces()
+        self._light_faces = self._build_light_faces(lazy=True)
         # Hiding the base face is what lets a drag AWAY FROM THE EYE read as
         # a recess opening instead of a cap buried behind the base. Toward
         # the eye, the sweep covers the base anyway and the frame is
@@ -967,22 +1353,60 @@ class PushPullTool(Tool):
         # positive, the base stayed, and the pocket formed invisibly behind
         # it while the commit worked («no se ve cuando hago push para
         # adentro cuando tengo la cara invertida», Marco, 2026-09-18).
-        recessing = (self._light_faces and self.base_face is not None
-                     and self._attached and not self._keep_base
-                     and self._sweeps_away_from_eye(viewport))
-        viewport.set_suppressed_faces({self.base_face} if recessing else set())
+        hidden = set()
+        if self._holding_base():
+            hidden.add(self.base_face)
+        elif self._light_faces and not self._keep_base:
+            if (self.base_face is not None and self._attached
+                    and self._sweeps_away_from_eye(viewport)):
+                hidden.add(self.base_face)
+            # Every other face of a multi-face push recesses the same way:
+            # each one left standing covered its own pocket with a false
+            # face for the whole drag (#1478) — the single face's
+            # suppression, face by face.
+            for face, n, att in zip(self._extra_faces, self._extra_normals,
+                                    self._extras_attached(viewport)):
+                if att and self._sweeps_away_from_eye(
+                        viewport, face.centroid(), n):
+                    hidden.add(face)
+        viewport.set_suppressed_faces(hidden)
         viewport.update()
 
-    def _sweeps_away_from_eye(self, viewport) -> bool:
+    def _extras_attached(self, viewport) -> list:
+        """Whether each of ``_extra_faces`` is embedded (every edge shared,
+        as ``_classify_base`` asks of the base face): only such a face opens
+        a recess its own face would cover. Worked out once per drag."""
+        extras = self._extra_faces
+        memo = getattr(self, "_extra_attached", None)
+        if memo is not None and memo[0] == [id(f) for f in extras]:
+            return memo[1]
+        faces = self._target_scene(viewport.scene).faces
+        out = []
+        for face in extras:
+            kinds = {}
+            out.append(all(
+                classify_push_edge(face, loop[i], loop[(i + 1) % len(loop)],
+                                   faces, kinds)[0] != "free"
+                for loop in [face.vertices] + face.holes
+                for i in range(len(loop))))
+        self._extra_attached = ([id(f) for f in extras], out)
+        return out
+
+    def _sweeps_away_from_eye(self, viewport, anchor=None,
+                              normal=None) -> bool:
         """Does the sweep move the cap away from the camera — behind the
         base face, where the base would hide it? Without a camera to ask
-        (tests, the bridge) the normal's sign answers as it always did."""
+        (tests, the bridge) the normal's sign answers as it always did.
+        ``anchor`` and ``normal``: another face's of a multi-face push
+        (the base face's by default)."""
+        anchor = self._anchor if anchor is None else anchor
+        normal = self._normal if normal is None else normal
         cam = getattr(viewport, "camera", None)
         eye_fn = getattr(cam, "eye", None)
-        if eye_fn is None or self._anchor is None or self._normal is None:
+        if eye_fn is None or anchor is None or normal is None:
             return self.extrusion < 0.0
-        off = self._normal * self.extrusion
-        return QVector3D.dotProduct(off, self._anchor - eye_fn()) > 0.0
+        off = normal * self.extrusion
+        return QVector3D.dotProduct(off, anchor - eye_fn()) > 0.0
 
     def _refuse_closed_group(self, viewport) -> None:
         """A face inside a group that has not been opened is not pushable.
@@ -1054,13 +1478,64 @@ class PushPullTool(Tool):
         objects is what makes it safe.
         """
         mesh = self._target_mesh(viewport.scene)
-        step = self._normal * delta
-        for v in self._prism_verts:
-            mesh.move_vertex(v, step)
-        # Booked as the TARGET, not as a running sum: adding deltas frame by
-        # frame drifts, and the revert has to undo exactly what it applied.
+        start = self._prism_start_positions()
+        # Placed AT the start plus the extrusion, not moved by the delta:
+        # ``(p + d) - d`` is not ``p`` in single precision, and a cap slid
+        # back by arithmetic crept a micrometre off over a drag (21-11). Put
+        # back, it holds its very starting bits, and so does the base a
+        # release pushes from.
+        step = self._normal * applied
+        for v, p in zip(self._prism_verts, start):
+            mesh.place_vertex(v, p + step if applied else p)
+        # Booked as the TARGET, not as a running sum.
         self._prism_applied = applied
-        viewport.scene.version += 1
+        sc = viewport.scene
+        if _geometry_version(sc) != getattr(self, "_prism_own_ver", None):
+            # Someone else edited the model during the drag: the rest state
+            # is no longer the one the pick index was made for.
+            self._prism_rest_ver = False
+        sc.version += 1
+        self._prism_own_ver = _geometry_version(sc)
+
+    def _prism_start_positions(self) -> list:
+        """Where the cap's vertices stood when the drag took them: read once
+        per vertex list (a new push makes a new list), while the cap still
+        stands there."""
+        memo = getattr(self, "_prism_start", None)
+        if memo is None or memo[0] is not self._prism_verts:
+            memo = (self._prism_verts,
+                    [QVector3D(v.position) for v in self._prism_verts])
+            self._prism_start = memo
+            self._prism_rest_ver = None
+            self._prism_own_ver = None
+        return memo[1]
+
+    def _note_prism_rest(self, viewport) -> None:
+        """The cap is back at its very starting bits: tell the viewport the
+        model is the one it indexed for the first frame of the drag, so the
+        pick index made then answers the distance inference again instead
+        of being rebuilt — the cap's move and its revert each bump the
+        version, and a rebuild per pointer move was ~30 ms in a group of
+        3 400 faces and ~125 ms on a loose mesh (21-11). Only while nothing
+        but this drag has touched the model."""
+        if not (self._prism_cap and self._prism_verts) or self._prism_applied:
+            return
+        start = self._prism_start_positions()
+        if any(_bits3(v.position) != _bits3(p)
+               for v, p in zip(self._prism_verts, start)):
+            return
+        sc = viewport.scene
+        gv = _geometry_version(sc)
+        rest = getattr(self, "_prism_rest_ver", None)
+        if rest is None:
+            # The first frame: the model as the click left it.
+            self._prism_rest_ver = self._prism_own_ver = rest = gv
+        elif rest is False or gv != getattr(self, "_prism_own_ver", None):
+            self._prism_rest_ver = False
+            return
+        note = getattr(viewport, "note_same_geometry", None)
+        if note is not None:
+            note(rest)
 
     def _revert_prism_preview(self, viewport) -> None:
         """Put a translated cap back where it started."""
@@ -1072,6 +1547,24 @@ class PushPullTool(Tool):
     #: the overlay, and a release outside them runs the pipeline as before.
     #: One pause per drag on a big model instead of one per reversal.
     _SLOW_STAGE_S = 0.25
+    #: A mesh at least this many faces big drags with the overlay from the
+    #: first frame: its stage is slower than _SLOW_STAGE_S anyway (~1.2 s on
+    #: a 9 674-face group of the Plaza, 19-11) and froze the first move of
+    #: every push, after which the drag showed the overlay regardless. The
+    #: release runs the pipeline as always. Smaller meshes stage as before,
+    #: and one whose last stage proved slow skips it the next time too.
+    _BIG_STAGE_FACES = 5000
+    #: Meshes whose last stage was slow: their next drags start on the
+    #: overlay. Weak, so a mesh that goes does not stay.
+    _slow_meshes = weakref.WeakKeyDictionary()
+    #: Each built mesh's vertices and their positions as the distance
+    #: inference read them, with the mesh's mutation serial and vertex count
+    #: then (see _infer_reference_distance). Meshes over _INFER_MEMO_MAX
+    #: vertices are read each drag, as before, not held.
+    _infer_memo = weakref.WeakKeyDictionary()
+    #: The same for a lazy mesh's plan: ``(plan, entry, bounds)``.
+    _infer_plans = weakref.WeakKeyDictionary()
+    _INFER_MEMO_MAX = 200_000
 
     def _show_staged_preview(self, viewport) -> None:
         """Preview an attached push by showing the REAL result: the commit's
@@ -1093,6 +1586,9 @@ class PushPullTool(Tool):
         self._light_faces = []
         self._light_rings = []
         d = self.extrusion
+        if abs(d) < _MIN_EXTRUDE and self._holding_base():
+            self._show_light_preview(viewport)   # the base, drawn in place
+            return
         if abs(d) < _MIN_EXTRUDE:
             # Nothing to show, as the overlay. Parked, not dropped: the
             # cursor is on its way to the other side and may come back.
@@ -1189,6 +1685,10 @@ class PushPullTool(Tool):
         # The whole pause the user sat through, snapshot work included.
         if time.perf_counter() - t0 > self._SLOW_STAGE_S:
             self._stage_slow = True
+            try:
+                PushPullTool._slow_meshes[mesh] = len(mesh.faces)
+            except TypeError:  # a mesh that takes no weak reference
+                pass
         self._refused = False          # the commit decides that for itself
         if not ok:
             if self._preview_snapshot is not None:
@@ -1537,8 +2037,24 @@ class PushPullTool(Tool):
             mid = (p + loop3[(i + 1) % len(loop3)]) * 0.5
             samples.append(mid + (ip3 - mid) * 1e-3)
         lateral = None
+        # A ray along ±n meets a face only inside the face's shadow on the
+        # base plane: a face whose shadow box misses the samples' box cannot
+        # be crossed, and is not triangulated. Every face of the mesh was
+        # (~1.9 s pressing a face inside a 9 674-face group of the Plaza,
+        # night of 18-11); the answer is the same.
+        su = [QVector3D.dotProduct(q - origin3, u) for q in samples]
+        sw = [QVector3D.dotProduct(q - origin3, w) for q in samples]
+        pad = 1e-6 + 1e-9 * max(abs(c) for c in su + sw)
+        su0, su1 = min(su) - pad, max(su) + pad
+        sw0, sw1 = min(sw) - pad, max(sw) + pad
         for g in scene.faces:
             if g is self.base_face or g.interior:
+                continue
+            gu = [QVector3D.dotProduct(v.position - origin3, u) for v in g.loop]
+            if not gu or min(gu) > su1 or max(gu) < su0:
+                continue
+            gw = [QVector3D.dotProduct(v.position - origin3, w) for v in g.loop]
+            if min(gw) > sw1 or max(gw) < sw0:
                 continue
             if abs(QVector3D.dotProduct(g.normal().normalized(), n)) > 0.999:
                 continue  # parallel: blocker/through logic owns it
@@ -1614,6 +2130,188 @@ class PushPullTool(Tool):
         occluded = getattr(vp, "_is_occluded", None)   # stub viewports in tests
         return occluded is not None and occluded(world)
 
+    def _clear_candidates(self, vp, arr, cand, exclude, verts):
+        """The rows of ``cand``, in order, that may be a reference: neither
+        the base's own corners, which would pin the drag to 0, nor hidden."""
+        import numpy as np
+        first_clear = getattr(vp, "_first_clear", None)
+        start = 0
+        if first_clear is not None and len(cand):
+            # What a QVector3D of each holds, as _reference_hidden asks.
+            pts = (arr[cand].astype(np.float32).astype(np.float64)
+                   if arr.dtype != np.float32 else arr[cand].astype(np.float64))
+            while start < len(cand):
+                at = first_clear(pts[start:])
+                if at is None:
+                    break                # the engine cannot say: one by one
+                if at < 0:
+                    return
+                start += at
+                i = int(cand[start])
+                start += 1
+                if _key(verts[i].position) not in exclude:
+                    yield i
+        rest = [int(i) for i in cand[start:]]
+        many = getattr(vp, "_occluded_many", None)
+        if many is None or len(rest) < 2:
+            for i in rest:
+                p = verts[i].position
+                if _key(p) not in exclude and not self._reference_hidden(vp,
+                                                                         p):
+                    yield i
+            return
+        # The rays in growing blocks, all of a block cast at once: one by
+        # one they were 1 300 rays a pointer move of a push inside the
+        # Plaza's 9 674-face group (~0.2 s, night of 18-11).
+        # ``_occluded_many`` is ``_is_occluded`` for many points (the cut
+        # first, then the same rays and the same acceptance).
+        from views.viewport import _active_cut
+        sp = _active_cut(vp.scene)
+        k, size = 0, 8
+        while k < len(rest):
+            block = [i for i in rest[k:k + size]
+                     if _key(verts[i].position) not in exclude]
+            k += size
+            size *= 4
+            if not block:
+                continue
+            pos = [verts[i].position for i in block]
+            hid = many(np.array([(p.x(), p.y(), p.z()) for p in pos],
+                                dtype=np.float64))
+            for i, p, h in zip(block, pos, hid):
+                if sp is not None and sp.side(p) > 1e-6:
+                    continue
+                if not h:
+                    yield i
+
+    def _corner_boxes(self, proj, boxes) -> None:
+        """Fill ``boxes`` (see _screen_boxes) for the entries it has none
+        for, from the corners of each entry's 3D box, all projected in one
+        go: in front of the camera, the box of a box's projected corners
+        holds every vertex inside it (the projection keeps convex sets
+        convex), so an entry it puts far from the cursor has no vertex near
+        it. Marked approximate (a fifth term): an entry the cursor comes
+        near is projected whole, and its exact box replaces this one.
+        Projecting each of the Plaza's ~900 meshes, its first move cost a
+        push ~0.1 s (19-11)."""
+        import numpy as np
+        bounds = getattr(self, "_infer_bounds", None)
+        if not bounds:
+            return
+        todo = [n for n in range(len(bounds)) if n not in boxes]
+        if not todo:
+            return
+        lo = np.array([bounds[n][0] for n in todo], dtype=np.float64)
+        hi = np.array([bounds[n][1] for n in todo], dtype=np.float64)
+        pick = np.array([[(k >> a) & 1 for a in range(3)] for k in range(8)],
+                        dtype=bool)                       # (8, 3)
+        corners = np.where(pick[None], hi[:, None, :], lo[:, None, :])
+        px, py, ok = proj(corners.reshape(-1, 3))
+        px, py, ok = (px.reshape(-1, 8), py.reshape(-1, 8),
+                      ok.reshape(-1, 8))
+        front = ok.all(axis=1)
+        x0, x1 = px.min(axis=1), px.max(axis=1)
+        y0, y1 = py.min(axis=1), py.max(axis=1)
+        for j in np.flatnonzero(front).tolist():
+            boxes[todo[j]] = (float(x0[j]), float(x1[j]), float(y0[j]),
+                              float(y1[j]), True)
+
+    def _screen_boxes(self, vp):
+        """Per entry of ``_infer_cache``, its vertices' box in pixels (as far
+        as they are known) for this camera and size; None for a viewport that
+        cannot say which camera it has (stubs in tests)."""
+        mvp = getattr(vp, "_np_mvp", None)
+        if mvp is None:
+            return None
+        key = (mvp().tobytes(), vp.width(), vp.height())
+        held = getattr(self, "_infer_boxes", None)
+        if held is None or held[0] != key:
+            held = self._infer_boxes = (key, {})
+        return held[1]
+
+    def _infer_entries(self, vp) -> list:
+        """The distance inference's ``(vertices, positions)`` per mesh of
+        the scene (shared prototypes once), with each one's 3D box in
+        ``_infer_bounds`` — read on the first move of a drag, or right
+        after its click (see on_click), from the clean model."""
+        import numpy as np
+        cache = []
+        bounds = []                   # each entry's (lo, hi) in 3D
+
+        def add(entry, bnd=None):
+            cache.append(entry)
+            if bnd is None:
+                a = entry[1]
+                bnd = (a.min(axis=0), a.max(axis=0))
+            bounds.append(bnd)
+            return bnd
+        meshes = ([vp.scene.mesh]
+                  + [g.mesh for g in getattr(vp.scene, "groups", [])])
+        seen = set()
+        for mesh in meshes:
+            if id(mesh) in seen:      # shared prototypes: project once
+                continue
+            seen.add(id(mesh))
+            from core.lazy_mesh import plan_of, PlannedVertices
+            plan = plan_of(mesh)
+            if plan is not None:
+                # A lazy mesh (experimental engine): its planned
+                # positions, the same vertices in the same order —
+                # pushing beside a plant no longer builds all of it.
+                if len(plan.pos):
+                    # Kept between drags too: a plan's positions do
+                    # not change while it is the mesh's plan.
+                    try:
+                        held = PushPullTool._infer_plans.get(mesh)
+                    except TypeError:
+                        held = None
+                    if held is not None and held[0] is plan:
+                        add(held[1], held[2])
+                        continue
+                    entry = (PlannedVertices(plan.pos), plan.pos.copy())
+                    bnd = add(entry)
+                    if len(plan.pos) <= self._INFER_MEMO_MAX:
+                        try:
+                            PushPullTool._infer_plans[mesh] = (
+                                plan, entry, bnd)
+                        except TypeError:
+                            pass
+                continue
+            # Kept between drags while the mesh is unchanged: a push
+            # read the ~900 meshes of the Plaza again on its first move
+            # (~0.1 s), though only the one pushed in had changed.
+            key = (getattr(mesh, "_mut_serial", None),
+                   len(mesh.vertices))
+            try:
+                held = PushPullTool._infer_memo.get(mesh)
+            except TypeError:
+                held = None
+            if held is not None and key[0] is not None \
+                    and held[0] == key:
+                add(held[1], held[2])
+                continue
+            # A COPY: a staged preview edits the live list in place, and
+            # the rows of ``arr`` must keep naming the same vertices.
+            verts = list(mesh.vertices)
+            if not verts:
+                continue
+            # (One flat pass: the list of rows was ~3× slower, and this
+            # runs over every prototype on the first move of a push.)
+            arr = np.fromiter(
+                (c for v in verts for c in v.position.toTuple()),
+                dtype=np.float64, count=3 * len(verts)).reshape(-1, 3)
+            bnd = add((verts, arr))
+            if key[0] is not None and len(verts) <= self._INFER_MEMO_MAX:
+                try:
+                    PushPullTool._infer_memo[mesh] = (key, (verts, arr),
+                                                      bnd)
+                except TypeError:
+                    pass
+        self._infer_cache = cache
+        self._infer_bounds = bounds
+        self._infer_boxes = None
+        return cache
+
     def _infer_reference_distance(self, ctx: ToolContext):
         """Distance making the moved face level with the model geometry under the
         cursor — the classic mid-push inference ("push until even with that
@@ -1640,60 +2338,62 @@ class PushPullTool(Tool):
         import numpy as np
         cache = getattr(self, "_infer_cache", None)
         if cache is None:
-            cache = []
-            meshes = ([vp.scene.mesh]
-                      + [g.mesh for g in getattr(vp.scene, "groups", [])])
-            seen = set()
-            for mesh in meshes:
-                if id(mesh) in seen:      # shared prototypes: project once
-                    continue
-                seen.add(id(mesh))
-                from core.lazy_mesh import plan_of, PlannedVertices
-                plan = plan_of(mesh)
-                if plan is not None:
-                    # A lazy mesh (experimental engine): its planned
-                    # positions, the same vertices in the same order —
-                    # pushing beside a plant no longer builds all of it.
-                    if len(plan.pos):
-                        cache.append((PlannedVertices(plan.pos),
-                                      plan.pos.copy()))
-                    continue
-                # A COPY: a staged preview edits the live list in place, and
-                # the rows of ``arr`` must keep naming the same vertices.
-                verts = list(mesh.vertices)
-                if not verts:
-                    continue
-                arr = np.array(
-                    [[v.position.x(), v.position.y(), v.position.z()]
-                     for v in verts])
-                cache.append((verts, arr))
-            self._infer_cache = cache
+            cache = self._infer_entries(vp)
         proj = getattr(vp, "_project_px", None)
-        for verts, arr in cache:
+        boxes = self._screen_boxes(vp) if proj is not None else None
+        if boxes is not None:
+            self._corner_boxes(proj, boxes)
+        kernel = _scan_kernel(vp, proj)
+        thr2 = thr * thr
+        found = []              # per mesh with candidates: (verts, arr, cand, d2)
+        for n, (verts, arr) in enumerate(cache):
             if proj is not None:
-                px, py, ok = proj(arr)
-                d2 = (px - sx) ** 2 + (py - sy) ** 2
-                cand = [(int(i), float(d2[i]))
-                        for i in np.flatnonzero(ok & (d2 <= thr * thr))]
+                # A prototype whose box on screen is far from the cursor is
+                # not projected: 1 300 of them, 230 ms a move on 5 M faces.
+                box = None if boxes is None else boxes.get(n)
+                if box is not None and (sx + thr + 1 < box[0]
+                                        or sx - thr - 1 > box[1]
+                                        or sy + thr + 1 < box[2]
+                                        or sy - thr - 1 > box[3]):
+                    continue
+                if kernel is not None:
+                    # Projected, filtered and sorted in one native pass:
+                    # ~0.2 ms of NumPy a mesh, ~10 meshes a move of a push
+                    # inside the Plaza's 9 674-face group (19-11).
+                    cand, d2, nb = kernel[0].px_near_sorted(
+                        arr, kernel[1], kernel[2], kernel[3],
+                        float(sx), float(sy), thr2)
+                    if boxes is not None and (box is None or len(box) > 4):
+                        boxes[n] = (nb if nb is not None
+                                    else (np.inf, -np.inf, np.inf, -np.inf))
+                else:
+                    px, py, ok = proj(arr)
+                    if boxes is not None and (box is None or len(box) > 4):
+                        boxes[n] = ((px[ok].min(), px[ok].max(),
+                                     py[ok].min(), py[ok].max()) if ok.any()
+                                    else (np.inf, -np.inf, np.inf, -np.inf))
+                    d2all = (px - sx) ** 2 + (py - sy) ** 2
+                    near = np.flatnonzero(ok & (d2all <= thr2))
+                    # Nearest first, ties in vertex order.
+                    cand = near[np.argsort(d2all[near], kind="stable")]
+                    d2 = d2all[cand]
             else:
                 # Stub viewports (tests) expose only the scalar projector.
-                cand = []
+                dd2 = {}
                 for i, vtx in enumerate(verts):
                     pix = vp._world_to_pixel(vtx.position)
                     if pix is None:
                         continue
                     dd = (pix[0] - sx) ** 2 + (pix[1] - sy) ** 2
-                    if dd <= thr * thr:
-                        cand.append((i, dd))
-            for i, dd in cand:
-                p = verts[i].position
-                if _key(p) in exclude:
-                    continue  # the base's own corners would pin the drag to 0
-                if (best is None or dd < best[0]) \
-                        and not self._reference_hidden(vp, p):
-                    best = (dd, QVector3D.dotProduct(
-                        p - self._anchor, self._normal),
-                        QVector3D(p), "vertex")
+                    if dd <= thr2:
+                        dd2[i] = dd
+                cand = sorted(dd2, key=dd2.get)
+                d2 = [dd2[i] for i in cand]
+                cand = np.array(cand, dtype=np.int64)
+                d2 = np.array(d2, dtype=np.float64)
+            if len(cand):
+                found.append((verts, arr, cand, d2))
+        best = self._nearest_clear_vertex(vp, found, exclude)
         # Tape Measure guides (issue #165): a guide POINT is a corner like
         # any vertex -- the nearest one on screen wins -- and a guide LINE
         # is tried right after, like an edge. They live in ``scene.guides``,
@@ -1773,7 +2473,9 @@ class PushPullTool(Tool):
         # push doesn't pin to its own plane; a face the staged preview
         # created (its moving cap, a riser) would pin it to itself.
         pick = getattr(vp, "pick_face_placement", None) or vp.pick_face_any
-        face, _grp = pick(sx, sy)
+        from views.array_bake import reading_only
+        with reading_only():                # its plane is all it is asked
+            face, _grp = pick(sx, sy)
         if (face is not None and face is not self.base_face
                 and face not in self._stage_new
                 and not (_grp is None and self._borders_base(face, exclude))):
@@ -1799,6 +2501,54 @@ class PushPullTool(Tool):
         self._inference_kind = None
         return None
 
+    #: Up to this many corners within the radius, all meshes' go through
+    #: the occlusion test as one list; past it, mesh by mesh, each only
+    #: under the best so far (prototypes piled up at their origin, #1092).
+    _MERGE_MAX = 65536
+
+    def _nearest_clear_vertex(self, vp, found, exclude):
+        """``(d2, push distance, point, "vertex")`` of the nearest corner
+        that may be a reference among ``found`` — per mesh, in cache order,
+        its candidate rows nearest first and their squared pixel distances
+        — or None. The first of equals wins, mesh order then vertex order:
+        what scanning the meshes one by one, each only under the best so
+        far, keeps. Asked as one list, the occlusion rays of all meshes go
+        in one call: mesh by mesh, a push inside the Plaza's 9 674-face
+        group cast 2–3 batches a move, ~1.8 ms each (19-11)."""
+        import numpy as np
+        if not found:
+            return None
+        total = sum(len(f[2]) for f in found)
+        if len(found) > 1 and total <= self._MERGE_MAX:
+            d2 = np.concatenate([f[3] for f in found])
+            # What _clear_candidates reads of each row: its QVector3D's
+            # float values (so the float32 round trip there keeps them).
+            pts = np.concatenate([
+                (f[1][f[2]].astype(np.float32).astype(np.float64)
+                 if f[1].dtype != np.float32
+                 else f[1][f[2]].astype(np.float64)) for f in found])
+            rows = _MergedRows(found)
+            order = np.argsort(d2, kind="stable")
+            for i in self._clear_candidates(vp, pts, order, exclude, rows):
+                p = rows[i].position
+                return (float(d2[i]), QVector3D.dotProduct(
+                    p - self._anchor, self._normal), QVector3D(p), "vertex")
+            return None
+        best = None
+        for verts, arr, cand, d2 in found:
+            if best is not None:
+                # The sorted prefix under the best so far.
+                cand = cand[:int(np.searchsorted(d2, best[0], side="left"))]
+                if not len(cand):
+                    continue
+            pos = {int(c): k for k, c in enumerate(cand.tolist())}
+            for i in self._clear_candidates(vp, arr, cand, exclude, verts):
+                p = verts[i].position
+                best = (float(d2[pos[i]]), QVector3D.dotProduct(
+                    p - self._anchor, self._normal), QVector3D(p), "vertex")
+                break
+        return best
+
     def _infer_edge_midpoint(self, vp, sx, sy, thr, exclude):
         """A visible fixed midpoint within the normal point-snap radius.
 
@@ -1816,7 +2566,7 @@ class PushPullTool(Tool):
         hovered = getattr(vp, "_hover_edge", None)
         if hovered is not None:
             edges.append(hovered)
-        best = None
+        near = []
         for edge in edges:
             if edge in self._stage_new or getattr(edge, "guide", False):
                 continue
@@ -1833,10 +2583,30 @@ class PushPullTool(Tool):
             if pixel is None:
                 continue
             dd = (pixel[0] - sx) ** 2 + (pixel[1] - sy) ** 2
-            if (dd <= thr * thr and (best is None or dd < best[0])
-                    and not self._reference_hidden(vp, point)):
-                best = (dd, point)
-        return None if best is None else best[1]
+            if dd <= thr * thr:
+                near.append((dd, point))
+        if not near:
+            return None
+        # The nearest visible one — the first of equals, as one by one —
+        # with the rays of all of them cast at once.
+        near.sort(key=lambda t: t[0])
+        import numpy as np
+        many = getattr(vp, "_occluded_many", None)
+        if many is None or len(near) < 2:
+            for dd, point in near:
+                if not self._reference_hidden(vp, point):
+                    return point
+            return None
+        from views.viewport import _active_cut
+        sp = _active_cut(vp.scene)
+        hid = many(np.array([(p.x(), p.y(), p.z()) for _d, p in near],
+                            dtype=np.float64))
+        for (dd, point), h in zip(near, hid):
+            if sp is not None and sp.side(point) > 1e-6:
+                continue
+            if not h:
+                return point
+        return None
 
     @staticmethod
     def _borders_base(face, base_keys) -> bool:
@@ -1979,11 +2749,12 @@ class PushPullTool(Tool):
         """
         faces = scene.faces
         kinds = []
+        memo: dict = {}
         for loop in [self.base_face.vertices] + self.base_face.holes:
             n = len(loop)
             kinds.extend(
                 classify_push_edge(self.base_face, loop[i], loop[(i + 1) % n],
-                                   faces)
+                                   faces, memo)
                 for i in range(n)
             )
         normal = self.base_face.normal()
@@ -2031,9 +2802,11 @@ class PushPullTool(Tool):
         # and it is the identical mutation the live preview just showed. A push
         # aimed at a group snapshots that group's mesh instead.
         self._topped_out = False
+        self._multi_missed = 0
         if cmd is None:
             cmd = SnapshotMutation(
-                self._mutate_or_top_out,
+                self._mutate_many if self._extra_faces
+                else self._mutate_or_top_out,
                 mesh=self._group.mesh if self._group is not None else None)
         viewport.history.execute(cmd)
         # The retype window's payload, captured BEFORE _reset clears the drag
@@ -2057,6 +2830,12 @@ class PushPullTool(Tool):
         else:
             PushPullTool.last_distance = self.extrusion  # double-click repeats it
             last = self._retype_state(cmd)
+            if self._multi_missed:
+                total = len(self._extra_faces) + 1
+                viewport.flash_status(tr(
+                    "Pushed {done} of {total} faces — the others would "
+                    "break the solid", done=total - self._multi_missed,
+                    total=total), 6000)
         self._reset()
         self._spend_keep_mode(viewport)
         self._last = last             # arms the retype window, if one opened
@@ -2081,7 +2860,106 @@ class PushPullTool(Tool):
             "pre_oriented": self._drag_pre_oriented,
             "limit_in": self._limit_in,
             "sign": 1.0 if self.extrusion >= 0.0 else -1.0,
+            "extras": list(self._extra_faces),
+            "extra_normals": list(self._extra_normals),
         }
+
+    @staticmethod
+    def _selected_faces(scene) -> list:
+        """The selected Faces of the loose mesh."""
+        return [f for f in scene.selection
+                if isinstance(f, MeshFace) and f in scene.mesh.faces]
+
+    def _take_extras(self, face, scene) -> None:
+        """A drag starting on one of two or more selected faces takes the
+        others along; on any other face it is the ordinary single push.
+
+        The selection is read HERE, at every drag's start, not kept from the
+        activation: the pushed caps stay selected, and pushing the same
+        faces again moved only the one under the cursor."""
+        self._extra_attached = None
+        faces = self._selected_faces(scene)
+        if len(faces) < 2 or not any(f is face for f in faces):
+            self._extra_faces, self._extra_normals = [], []
+            return
+        mesh = scene.mesh
+        # In the mesh's order, not the selection's (a set): when the faces
+        # meet, which goes first decides the result.
+        place = {id(f): i for i, f in enumerate(mesh.faces)}
+        faces.sort(key=lambda f: place.get(id(f), 0))
+        self._extra_faces = [f for f in faces if f is not face]
+        # The same as orienting them one by one, but the component is read
+        # once, not once per face: 100 faces of a 16 000-face group took
+        # 21 s on the click (0.6.3 modelling test, 20-11).
+        orient_outward_each(mesh, self._extra_faces)
+        self._extra_normals = [self._outward_normal(f, mesh)
+                               for f in self._extra_faces]
+
+    #: The drag state that belongs to ONE base face: _mutate_many swaps it
+    #: per face and hands the base face's back.
+    _FACE_STATE = ("base_face", "_normal", "_anchor", "_attached",
+                   "_prism_cap", "_cap_positions", "_limit_in",
+                   "_drag_pre_oriented", "_refused", "_topped_out",
+                   "extrusion")
+
+    def _mutate_many(self, scene) -> None:
+        """A multi-face push, inside the commit's one SnapshotMutation: the
+        base face first, then each other face the same signed distance along
+        its OWN outward normal — every one through the single-face pipeline,
+        guard included. A face the guard refuses, or that cannot go the whole
+        distance, is left as it
+        was and counted in ``_multi_missed``; only when ALL are refused is
+        the push itself refused. A face an earlier push rebuilt (a
+        neighbour) is found again by its outline."""
+        wanted = self.extrusion
+        self._mutate_or_top_out(scene)
+        lead = {k: getattr(self, k) for k in self._FACE_STATE}
+        missed = 1 if self._refused else 0
+        mesh = scene.mesh
+        shapes = [_face_shape(f) for f in self._extra_faces]
+        for face, shape in zip(self._extra_faces, shapes):
+            if face not in mesh.faces:
+                face = next((f for f in mesh.faces
+                             if _face_shape(f) == shape), None)
+            if face is None:
+                missed += 1
+                continue
+            orient_outward(mesh, only=(face,))
+            self.base_face = face
+            self._drag_pre_oriented = True
+            self._anchor = face.centroid()
+            self._normal = self._outward_normal(face, mesh)
+            self._attached, self._prism_cap = self._classify_base(scene)
+            self._cap_positions = self._cap_loop_positions(face)
+            self.extrusion = wanted
+            self._compute_inward_limit(scene)
+            self._clamp_extrusion()
+            # Only the whole distance, or nothing. The drag showed the
+            # base face's own limit and no other: a face that can go only
+            # part of the way — its solid thinner than the push, or made
+            # thinner by a face pushed just before it — used to go as far
+            # as it could without a word, which took a thin slab away
+            # entirely and flattened a box pushed from both ends. It is
+            # left as it was and counted with the refused ones.
+            if abs(self.extrusion - wanted) > _MIN_EXTRUDE:
+                missed += 1
+                continue
+            before = mesh.capture_state()
+            self._mutate_or_top_out(scene)
+            if self._topped_out and not self._refused:
+                mesh.restore_state(before)      # stopped short: same rule
+                self._refused = True
+            if self._refused:
+                missed += 1
+        for k, v in lead.items():
+            setattr(self, k, v)
+        total = len(self._extra_faces) + 1
+        self._refused = missed == total
+        # A partial top-out has no single distance to report: the count
+        # says it instead.
+        self._topped_out = False
+        self.extrusion = wanted
+        self._multi_missed = 0 if self._refused else missed
 
     #: How many halvings the commit tries when the guard refuses the distance
     #: the user dragged to. Each costs a full pipeline run, so this buys a
@@ -2166,8 +3044,22 @@ class PushPullTool(Tool):
         guard = (mesh.capture_state()
                  if is_closed(mesh) and not _mesh_is_flat(mesh) else None)
         fp_before = self._mesh_fingerprint(mesh) if guard is not None else None
+        self._cracks_before = None
         self._mutate_inner(scene, preview)
+        if guard is not None and not is_closed(mesh):
+            _drop_stranded_partitions(mesh)
         if guard is not None and not (is_closed(mesh) or _mesh_is_flat(mesh)):
+            mesh.restore_state(guard)
+            self._refused = True
+            return
+        if (guard is not None and not preview
+                and self._cracks_before is not None
+                and _boundary_cracks(mesh) > self._cracks_before):
+            # Closed, but not sound: a partition left standing where the
+            # boundary needed a face (or a boundary face doubled up), so
+            # some edge has an odd number of boundary faces. Every
+            # edge has two faces or more, so is_closed can't see it, and
+            # committing it skewed the volume and broke the pushes after.
             mesh.restore_state(guard)
             self._refused = True
             return
@@ -2289,6 +3181,16 @@ class PushPullTool(Tool):
         scene = self._target_scene(scene)
         face = self.base_face
         d = self.extrusion
+        # Keep the moved face's outline as a selectable division when it
+        # becomes flush with a neighbour. Snapshot positions before either
+        # translation or extrusion replaces the face and its vertices.
+        normal = self._normal if self._normal is not None else face.normal()
+        shift = normal * d
+        cap_rim = []
+        for loop in (face.loop, *face.hole_loops):
+            for i in range(len(loop)):
+                cap_rim.append((loop[i].position + shift,
+                                loop[(i + 1) % len(loop)].position + shift))
 
         # A prism cap is exactly a translation of the cap along its normal; the
         # walls follow through shared vertices. Then repair connectivity
@@ -2315,7 +3217,8 @@ class PushPullTool(Tool):
                 fresh = {f for f in scene.mesh.faces
                          if any(_key(v) in seedkeys for v in f.vertices)}
                 self._rebuild_planes_fixpoint(scene.mesh, fresh, seedkeys,
-                                              removing=d < 0)
+                                              removing=d < 0,
+                                              keep_edges=cap_rim)
             else:
                 # A full collapse flattened the solid. The cap may have landed
                 # on a *subdivided* base (hole-bearing cycles never dedupe as
@@ -2358,6 +3261,9 @@ class PushPullTool(Tool):
                       else face.normal())
         if entry_closed and not self._drag_pre_oriented:
             orient_outward(scene.mesh, only=(face,))
+        if entry_closed and not preview:
+            # Counted once the partitions are marked: _mutate compares.
+            self._cracks_before = _boundary_cracks(scene.mesh)
         normal = face.normal()
         if QVector3D.dotProduct(normal, pre_normal) < 0:
             d = -d
@@ -2374,8 +3280,10 @@ class PushPullTool(Tool):
         top_holes = [[v + normal * d for v in h] for h in base_holes]
         count = len(base)
         faces = scene.faces
+        memo: dict = {}
         kinds = [
-            classify_push_edge(face, base[i], base[(i + 1) % count], faces)
+            classify_push_edge(face, base[i], base[(i + 1) % count], faces,
+                               memo)
             for i in range(count)
         ]
         # Ctrl ("push/pull a copy") forces the free-extrusion semantics: the
@@ -2408,7 +3316,7 @@ class PushPullTool(Tool):
             for h in base_holes:
                 m = len(h)
                 if any(classify_push_edge(face, h[i], h[(i + 1) % m],
-                                          faces)[0] != "coplanar"
+                                          faces, memo)[0] != "coplanar"
                        for i in range(m)):
                     sheet_fast = False
                     break
@@ -2485,7 +3393,8 @@ class PushPullTool(Tool):
         if solid:
             self._rebuild_planes_fixpoint(scene.mesh, set(new_faces), seedkeys,
                                           keep_mode=self._keep_base,
-                                          removing=d < 0)
+                                          removing=d < 0,
+                                          keep_edges=cap_rim)
         # Give any closed solid a consistent outward orientation — every face's
         # normal pointing out. The extrude can otherwise commit a closed solid
         # wound inconsistently (a flipped cap, or the base of a first flat→solid
@@ -2558,16 +3467,26 @@ class PushPullTool(Tool):
         entry point into the solid(s) it edited, for scoping the orientation
         pass to those components. ``None`` (meaning "the whole mesh") when the
         op left none, so a collapse can never silently skip orientation."""
-        from core.topology import KeyMemo
-        key = KeyMemo()
-        hit = [f for f in mesh.faces
-               if any(key(v) in seedkeys for v in f.vertices)]
+        from core.topology import _key
+        # A corner's key once per vertex, the loop read in place: the list
+        # of positions and a generator per face were most of this scan.
+        keys: dict = {}
+        hit = []
+        for f in mesh.faces:
+            for v in f.loop:
+                k = keys.get(id(v))
+                if k is None:
+                    k = keys[id(v)] = (_key(v.position), v)
+                if k[0] in seedkeys:
+                    hit.append(f)
+                    break
         return hit or None
 
     @staticmethod
     def _rebuild_planes_fixpoint(mesh, fresh: set, seedkeys: set,
                                  keep_mode: bool = False,
-                                 removing: bool = True) -> None:
+                                 removing: bool = True,
+                                 keep_edges=()) -> None:
         """Deterministic root-fix (path C): recompute each touched plane's
         faces from its edges — the planar arrangement finds every region,
         winding-classification keeps the ones inside the solid and drops
@@ -2603,6 +3522,60 @@ class PushPullTool(Tool):
         # entries stay valid. Without it each plane visit re-ran Newell over
         # the whole mesh — 76k normals per drag frame on the barbecue.
         cache = RebuildCache()
+        # The shape of each face, by identity, for the same reason: every
+        # plane that changed read the shape of EVERY face of the mesh to
+        # tell the user's own faces from the op's — 78 000 shapes for one
+        # push inside a 9 674-face group of the Plaza (~2.6 s, night of
+        # 18-11). A face keeps its shape while it lives here.
+        shapes: dict = {}
+
+        def shape_of(f):
+            hit = shapes.get(id(f))
+            if hit is None or hit[0] is not f:
+                hit = shapes[id(f)] = (f, _face_shape(f))
+            return hit[1]
+
+        # Two faces of one shape have the same lowest corner key (the
+        # rounding of _canon_loop, whose cycles lead with it), so a face a
+        # rebuild hands back is compared with the faces sharing its lowest
+        # corner, not with the shape of every face of the mesh — which,
+        # kept per face, still cost ~0.25 s a push in that group (19-11).
+        vkeys: dict = {}
+
+        def low(f):
+            best = None
+            for v in f.loop:
+                hit = vkeys.get(id(v))
+                if hit is None or hit[0] is not v:
+                    p = v.position
+                    hit = vkeys[id(v)] = (v, (round(p.x() / 1e-4),
+                                              round(p.y() / 1e-4),
+                                              round(p.z() / 1e-4)))
+                if best is None or hit[1] < best:
+                    best = hit[1]
+            return best
+
+        by_low: dict = {}
+        indexed: set = set()
+
+        def users_own(added, before, fresh):
+            """The faces of ``added`` with the shape of a face of
+            ``before`` that is not fresh: the user's own, handed back."""
+            for f in before - indexed:
+                by_low.setdefault(low(f), []).append(f)
+                indexed.add(f)
+            out = set()
+            for g in added:
+                sg = None
+                for f in by_low.get(low(g), ()):
+                    if f in before and f not in fresh:
+                        if sg is None:
+                            sg = shape_of(g)
+                        if shape_of(f) == sg:
+                            out.add(g)
+                            break
+            return out
+
         for _ in range(4):  # converges in 1-2 rounds; hard cap for safety
             # The op's own faces name the solids it may touch, so the plane
             # scans narrow to them instead of walking the whole group.
@@ -2629,7 +3602,8 @@ class PushPullTool(Tool):
                 origin, plane_n = planes[key]
                 before_faces = set(mesh.faces)
                 if apply_rebuild(mesh, origin, plane_n, fresh, keep_mode,
-                                 removing, op=op_rims, cache=cache):
+                                 removing, op=op_rims, cache=cache,
+                                 keep_edges=keep_edges):
                     changed = True
                     # A rebuild replaces every face of the plane, so the
                     # user's own faces there come back as new objects. One
@@ -2637,9 +3611,8 @@ class PushPullTool(Tool):
                     # op's: counted as fresh, the next round read a free
                     # sheet (a triangle drawn on the ground beside the
                     # solid) as op debris and deleted it (#552).
-                    kept = {_face_shape(f) for f in before_faces - fresh}
-                    fresh |= {f for f in set(mesh.faces) - before_faces
-                              if _face_shape(f) not in kept}
+                    added = set(mesh.faces) - before_faces
+                    fresh |= added - users_own(added, before_faces, fresh)
             if not changed:
                 break
             fresh = {f for f in fresh if f in mesh.faces}
@@ -2718,16 +3691,18 @@ class PushPullTool(Tool):
         mg = 0.01 + 1e-6 * max(map(abs, sx + sy + sz))
         w0 = (min(sx) - mg, min(sy) - mg, min(sz) - mg)
         w1 = (max(sx) + mg, max(sy) + mg, max(sz) + mg)
-        for g in faces:
+        # Every face's corner box in one flat pass (the corners walked face
+        # by face were ~0.06 s a push in a 9 674-face group, 19-11). A face
+        # with no corner has no box and is left out.
+        import numpy as np
+        from core.topology import corner_boxes
+        flist, glo, ghi, bare = corner_boxes(faces)
+        lo_w, hi_w = np.asarray(w0), np.asarray(w1)
+        reach_box = (~bare & (ghi >= lo_w).all(axis=1)
+                     & (glo <= hi_w).all(axis=1))
+        for g in (flist[i] for i in np.flatnonzero(reach_box).tolist()):
             if g is face:
                 continue
-            gv = g.vertices
-            if (max(p.x() for p in gv) < w0[0] or min(p.x() for p in gv) > w1[0]
-                    or max(p.y() for p in gv) < w0[1]
-                    or min(p.y() for p in gv) > w1[1]
-                    or max(p.z() for p in gv) < w0[2]
-                    or min(p.z() for p in gv) > w1[2]):
-                continue  # nowhere near what the push sweeps
             if abs(QVector3D.dotProduct(fn, g.normal().normalized())) < 0.999:
                 continue  # not parallel
             dist = QVector3D.dotProduct(g.centroid() - origin, push)
@@ -2925,6 +3900,9 @@ class PushPullTool(Tool):
         self._group = None
         self._hover_group = None
         self._selected_arm = False
+        self._extra_faces = []
+        self._extra_normals = []
+        self._extra_attached = None
         self._anchor = None
         self._grab = None
         self._normal = None
@@ -2935,12 +3913,14 @@ class PushPullTool(Tool):
         self._stage_cache = {}
         self._stage_refusal = None
         self._stage_slow = False
+        self._hold_base = False
         self._plane_levels = []
         self._stage_serial = None
         self._drag_pre_oriented = False
         self._inference_point = None
         self._inference_kind = None
         self._infer_cache = None       # per-drag projected-vertex candidates
+        self._infer_boxes = None       # ... and where they fall on screen
         self._refused = False
         self._tiny_hint_shown = False
         self._press_screen = None

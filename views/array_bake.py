@@ -14,6 +14,7 @@ to the object bake."""
 from __future__ import annotations
 
 import sys
+import weakref
 from array import array
 
 import numpy as np
@@ -28,6 +29,111 @@ def can_bake(mesh) -> bool:
     """Whether ``mesh`` is deferred and this engine can bake it as is."""
     return (type(mesh) is DeferredMesh and _native.native is not None
             and _native.qt_hypot() is not None)
+
+
+#: While True, a face asked of a still-lazy mesh comes as a LightFace and the
+#: mesh stays unbuilt: only the hover's read-only passes turn it on
+#: (Viewport._process_hover, see reading_only).
+_reading = False
+
+
+class reading_only:
+    """``with reading_only():`` the code inside only READS the faces it picks
+    — their positions, their boundary's flags — and keeps none. A big lazy
+    mesh is not built for that: 9 s and 2 GB on the hover that crossed into
+    the largest group of a 5 M-face model, in the middle of a Line (#1092)."""
+
+    def __enter__(self):
+        global _reading
+        self._was, _reading = _reading, True
+
+    def __exit__(self, *exc):
+        global _reading
+        _reading = self._was
+
+
+def reading_now() -> bool:
+    return _reading
+
+
+class LightFace(Face):
+    """A face of a still-lazy mesh, read from its plan: the positions, holes,
+    attributes and boundary edges (with their flags) the built face would
+    have, on vertices and edges of its own. For reading only; ``real()`` is
+    the mesh's own face, built with the mesh."""
+
+    __slots__ = ("mesh", "index")
+
+    def real(self):
+        return self.mesh.faces[self.index]
+
+
+def _plan_face_edges(plan):
+    """``(start, edge)``: the edges incident to each face, CSR by face — the
+    inverse of the plan's edge → faces table. Memoised on the plan."""
+    hit = plan.extra.get("face_edges")
+    if hit is None:
+        n_per_edge = np.diff(plan.ef_start)
+        edge_of = np.repeat(np.arange(len(plan.edges)), n_per_edge)
+        order = np.argsort(plan.ef_face, kind="stable")
+        counts = np.bincount(plan.ef_face, minlength=plan.nfaces)
+        hit = plan.extra["face_edges"] = (
+            np.concatenate([[0], np.cumsum(counts)]), edge_of[order])
+    return hit
+
+
+def light_face(mesh, f) -> LightFace:
+    """Face ``f`` of lazy ``mesh`` as a :class:`LightFace`, the same object
+    while the mesh is lazy: the picks of a hover tell faces apart by identity."""
+    from core.mesh import Edge
+    plan = lazy_mesh.plan_of(mesh)
+    memo = plan.extra.setdefault("light_faces", {})
+    hit = memo.get(f)
+    if hit is not None:
+        return hit
+    rs = plan.extra.get("ring_start")
+    if rs is None:
+        rs = plan.extra["ring_start"] = np.concatenate(
+            [[0], np.cumsum(plan.ring_sizes)])
+        plan.extra["face_ring"] = np.concatenate(
+            [[0], np.cumsum(plan.ring_counts)])
+    fr = plan.extra["face_ring"]
+    verts: dict = {}
+    rings = []
+    for k in range(int(fr[f]), int(fr[f + 1])):
+        ring = []
+        for i in plan.corners[int(rs[k]):int(rs[k + 1])].tolist():
+            v = verts.get(i)
+            if v is None:
+                v = verts[i] = Vertex(QVector3D(*plan.pos[i]))
+            ring.append(v)
+        rings.append(ring)
+    out = LightFace(rings[0], rings[1:] or None)
+    out.mesh = mesh
+    out.index = f
+    start, edge_of = _plan_face_edges(plan)
+    for e in edge_of[int(start[f]):int(start[f + 1])].tolist():
+        a, b = plan.edges[e].tolist()
+        va, vb = verts.get(a), verts.get(b)
+        if va is None or vb is None:
+            continue
+        ed = Edge(va, vb)
+        ed.soft = bool(plan.soft[e])
+        ed.hidden = bool(plan.hidden[e])
+        ed.curve = plan.curve[e]
+        ed.layer = plan.layer[e]
+        va.edges.add(ed)
+        vb.edges.add(ed)
+    src = mesh.__dict__["_deferred_source"]
+    k = int(src["face_attr"][f])
+    if k >= 0:
+        from formats.igz import _face_attrs_from_json
+        raw = src["meta"].get("face_attrs") or []
+        out.attrs.update(_face_attrs_from_json(raw[k]) or {})
+    if len(memo) > 4096:                 # a hover's worth is what matters
+        memo.clear()
+    memo[f] = out
+    return out
 
 
 class DeferredFaces:
@@ -46,11 +152,28 @@ class DeferredFaces:
     def __getitem__(self, i):
         if isinstance(i, slice):
             return [self.mesh.faces[k] for k in self.index[i].tolist()]
+        if _reading and type(self.mesh) is DeferredMesh:
+            return light_face(self.mesh, int(self.index[i]))
         return self.mesh.faces[int(self.index[i])]
 
     def __iter__(self):
         faces = self.mesh.faces
         return (faces[k] for k in self.index.tolist())
+
+    def layer_at(self, i):
+        """The layer the ``i``-th drawn face carries (``None``: none of its
+        own), read from the document while the mesh is still unbuilt: the
+        section cut asks it of every face it crosses, and asking for the
+        face built the whole mesh — 140 s of a first cut on a big model."""
+        from core.mesh import DeferredMesh
+        k = int(self.index[i])
+        if type(self.mesh) is not DeferredMesh:
+            return (self.mesh.faces[k].attrs or {}).get("layer")
+        src = self.mesh.__dict__["_deferred_source"]
+        a = int(src["face_attr"][k])
+        if a < 0:
+            return None
+        return (src["meta"].get("face_attrs") or [])[a].get("layer") or None
 
 
 def _geometry(mesh, plan):
@@ -82,6 +205,35 @@ def prefetch(meshes) -> None:
             pass
     with ThreadPoolExecutor(max_workers=min(8, os.cpu_count() or 2)) as ex:
         list(ex.map(work, todo))
+
+
+#: Below this a mesh's bake is mostly Python: hundreds of them in threads
+#: only queue for the interpreter (the plaza opened 5 % slower).
+_PREBAKE_MIN_FACES = 1000
+
+
+def prebake(vp, jobs) -> None:
+    """The bakes ``jobs`` (``(mesh, paint, msig)``) ask for, side by side: most
+    of a bake is NumPy over the mesh's arrays and reads nothing else that can
+    change. They wait in ``vp._prebaked`` for the bake that asks for them,
+    which numbers them and takes them away."""
+    todo = {(id(m), msig): (m, paint, msig) for m, paint, msig in jobs
+            if can_bake(m) and lazy_mesh.plan_of(m).nfaces >= _PREBAKE_MIN_FACES}
+    done: dict = {}
+    if len(todo) >= 2:
+        import os
+        from concurrent.futures import ThreadPoolExecutor
+
+        def work(item):
+            key, (m, paint, msig) = item
+            try:
+                done[key] = _bake(vp, m, paint, msig)
+            except Exception:      # noqa: BLE001 — the bake will retry
+                pass
+        with ThreadPoolExecutor(
+                max_workers=min(8, os.cpu_count() or 2)) as ex:
+            list(ex.map(work, todo.items()))
+    vp._prebaked = done
 
 
 def _attrs_table(src):
@@ -138,6 +290,18 @@ def fingerprint(mesh, plan, table, face_attr):
             soft, hid)
 
 
+def _dot_rows(a, b):
+    """Broadcast Qt float32 dot products, including Apple Clang's FMA order."""
+    a, b = np.broadcast_arrays(a, b)
+    if _native.qt_hypot() == "libc++":
+        values = _native.native.qt_dot_rows(
+            np.ascontiguousarray(a, dtype=np.float32).reshape(-1, 3),
+            np.ascontiguousarray(b, dtype=np.float32).reshape(-1, 3),
+            "libc++")
+        return values.reshape(a.shape[:-1])
+    return (a[..., 0] * b[..., 0] + a[..., 1] * b[..., 1]) + a[..., 2] * b[..., 2]
+
+
 def shade_factors(vp, vecs):
     """``vp._shade_factor`` of each row of ``vecs`` (N,3) float32 — Qt's
     normalized() from the kernel, the float32 dot with the light, then the
@@ -147,8 +311,8 @@ def shade_factors(vp, vecs):
         return np.zeros(0)
     ln, unit, _u, _v = _native.native.qt_vector_probe(
         np.ascontiguousarray(vecs, dtype=np.float32), _native.qt_hypot())
-    lx, ly, lz = (np.float32(c) for c in vp._LIGHT.toTuple())
-    d = np.abs((unit[:, 0] * lx + unit[:, 1] * ly) + unit[:, 2] * lz)
+    light = np.asarray(vp._LIGHT.toTuple(), dtype=np.float32)
+    d = np.abs(_dot_rows(unit, light))
     f = np.rint((0.62 + 0.38 * d.astype(np.float64)) * 32.0) / 32.0
     return np.where(ln.astype(np.float64) < 1e-9, 0.84375, f)
 
@@ -233,15 +397,55 @@ class LazyFingerprint:
 def bake(vp, mesh, paint, msig, vkey, uid):
     """The chunk entry of deferred ``mesh`` inside a container of paint
     ``paint`` — ``Viewport._group_chunk``'s rebuild, from arrays."""
+    ready = getattr(vp, "_prebaked", None)
+    fresh = ready.pop((id(mesh), msig), None) if ready else None
+    if fresh is None:
+        # Another view of this document holds this very bake: its arrays do
+        # (four views of a big model were four copies of them, past 16 GB).
+        other = _live_bakes.get((id(mesh), msig))
+        fresh = (other.as_baked if other is not None and other["mesh"] is mesh
+                 else _bake(vp, mesh, paint, msig))
+    entry = BakedEntry(fresh)
+    entry.as_baked = fresh
+    entry["vkey"], entry["uid"] = vkey, uid
+    _live_bakes[(id(mesh), msig)] = entry
+    return entry
+
+
+class BakedEntry(dict):
+    """A chunk entry of a lazy mesh: one view's own dict, which that view goes
+    on to write its own keys in, and ``as_baked``, the fields as they left the
+    bake, what another view's entry is made from."""
+
+
+#: (mesh id, paint signature) → a live entry of that bake, in any view.
+_live_bakes: weakref.WeakValueDictionary = weakref.WeakValueDictionary()
+
+
+def _bake(vp, mesh, paint, msig):
+    """:func:`bake`, all but the entry's number and the scene's version."""
+    plan = lazy_mesh.plan_of(mesh)
+    src = mesh.__dict__["_deferred_source"]
+    table = _attrs_table(src)
+    face_attr = np.asarray(src["face_attr"], dtype=np.int64)
+    return _bake_arrays(
+        vp, mesh, paint, msig, plan, _geometry(mesh, plan), table,
+        face_attr, lambda drawn: DeferredFaces(mesh, drawn),
+        LazyFingerprint((mesh, plan, table, face_attr)), None)
+
+
+def _bake_arrays(vp, mesh, paint, msig, plan, geometry, table, face_attr,
+                 faces_of, fp, built_faces):
+    """The bake from ``plan`` and its face ``geometry`` (the kernel's),
+    faces painted ``table[face_attr]``. ``faces_of(drawn)`` is the entry's
+    ``faces``; ``built_faces``, when the mesh is built, its faces in plan
+    order — for what still needs the objects (the round shade of curved
+    surfaces, #131)."""
     from core.materials import back_is_default, effective_attrs
     from core.texture import face_uv_axes
 
-    plan = lazy_mesh.plan_of(mesh)
-    src = mesh.__dict__["_deferred_source"]
     (normal, ln, cen, tris_v, tri_face, unit, tris_u,
-     tri_face_u) = _geometry(mesh, plan)
-    table = _attrs_table(src)
-    face_attr = np.asarray(src["face_attr"], dtype=np.int64)
+     tri_face_u) = geometry
     nf = plan.nfaces
     pos32 = plan.pos.astype(np.float32)
 
@@ -280,7 +484,7 @@ def bake(vp, mesh, paint, msig, vkey, uid):
     hidden = per_key("hidden")
     drawn = np.flatnonzero(~hidden)
     is_drawn = ~hidden
-    faces = DeferredFaces(mesh, drawn)
+    faces = faces_of(drawn)
     draw_index = np.full(nf, -1, dtype=np.int64)
     draw_index[drawn] = np.arange(len(drawn))
 
@@ -344,11 +548,9 @@ def bake(vp, mesh, paint, msig, vkey, uid):
             mi = tm[rows]
             P = tpb[rows]
             g = gu[mi][:, None, :]
-            du = (P[:, :, 0] * g[:, :, 0] + P[:, :, 1] * g[:, :, 1]) \
-                + P[:, :, 2] * g[:, :, 2]
+            du = _dot_rows(P, g)
             g = gv[mi][:, None, :]
-            dv = (P[:, :, 0] * g[:, :, 0] + P[:, :, 1] * g[:, :, 1]) \
-                + P[:, :, 2] * g[:, :, 2]
+            dv = _dot_rows(P, g)
             uv[rows, :, 0] = (du.astype(np.float64)
                               + cu[mi][:, None]).astype(np.float32)
             uv[rows, :, 1] = (dv.astype(np.float64)
@@ -465,6 +667,9 @@ def bake(vp, mesh, paint, msig, vkey, uid):
     cnames_of = {c: n for n, c in cnames.items()}
     ct_code = ccode[tfa] if len(tfa) else np.zeros(0, dtype=np.int64)
     col_a = _corner_stream(tpa, np.repeat(f_rgb[tfa][:, None, :], 3, axis=1))
+    if built_faces is not None and len(pf):
+        _round_curved(vp, mesh, built_faces, plain, ent, fk, f_rgb, tfa,
+                      tpa, col_a)
     vcol = _rows(col_a, ct_code, 0)
     fcull_vcol = _rows(col_a, ct_code, 1)
     tcol = {}
@@ -496,6 +701,11 @@ def bake(vp, mesh, paint, msig, vkey, uid):
     edges_data = pos32[plan.edges[hard]].reshape(-1).tobytes() \
         if len(hard) else b""
     softs = np.flatnonzero(vis & plan.soft & ((ef_n == 1) | (ef_n == 2)))
+    # The layer each drawn edge carries of its own (None: its object's), in
+    # the order of ``edges`` and of ``soft_pts``: what a sheet inks a line
+    # with, read here so the hidden-line pass need not walk the mesh.
+    edge_layer = [plan.layer[int(k)] for k in hard]
+    soft_layer = [plan.layer[int(k)] for k in softs]
     fn = normal.astype(np.float64)
     fc = cen.astype(np.float64)
     short = np.isnan(fc[:, 0]) if nf else np.zeros(0, dtype=bool)
@@ -519,7 +729,9 @@ def bake(vp, mesh, paint, msig, vkey, uid):
                       f0)
         soft_pts = pos32[plan.edges[softs]].reshape(-1, 6)
         soft_n0, soft_c0 = fn[f0], fc[f0]
-        soft_n1, soft_c1 = fn[f1], fc[f1]
+        from core.profile_edges import plan_normal_signs
+        soft_n1 = fn[f1] * plan_normal_signs(plan)[softs, None]
+        soft_c1 = fc[f1]
         soft_single = ~two
     else:
         soft_pts = None
@@ -538,11 +750,10 @@ def bake(vp, mesh, paint, msig, vkey, uid):
     bbox = (((float(blo[0]), float(blo[1]), float(blo[2])),
              (float(bhi[0]), float(bhi[1]), float(bhi[2])))
             if blo is not None else None)
-    fp = LazyFingerprint((mesh, plan, table, face_attr))
     nv = len(plan.pos)
     idxs = sorted({k * max(nv - 1, 0) // 31 for k in range(32)}) if nv else []
     samples = [(i, tuple(plan.pos[i].tolist())) for i in idxs]
-    return {"fp": fp, "vkey": vkey, "rev": 0, "uid": uid,
+    return {"fp": fp, "vkey": None, "rev": 0, "uid": None,
             "msig": msig, "serial": None,
             "flags_gen": getattr(mesh, "_flags_gen", 0),
             "nv": nv, "ne": len(plan.edges), "nf": nf,
@@ -568,7 +779,144 @@ def bake(vp, mesh, paint, msig, vkey, uid):
             "soft_n0": soft_n0, "soft_c0": soft_c0,
             "soft_n1": soft_n1, "soft_c1": soft_c1,
             "soft_single": soft_single,
+            "edge_layer": edge_layer, "soft_layer": soft_layer,
             "mesh": mesh}
+
+
+def _round_curved(vp, mesh, faces, plain, ent, fk, f_rgb, tfa, tpa, col_a):
+    """The colour rows of the faces on a curved surface (a soft edge joins
+    them to another face) shaded corner by corner, as the object bake does
+    (``views.viewport._smooth_vcol``, #131): written into ``col_a`` in
+    place, so every bucket the rows go to takes them."""
+    from formats.meshexport import SmoothNormals
+    from views.viewport import _curved_faces, _smooth_vcol
+    curved = _curved_faces(mesh)
+    if not curved:
+        return
+    index = {id(f): i for i, f in enumerate(faces)}
+    ix = sorted(index[id(f)] for f in curved if id(f) in index)
+    ix = [i for i in ix if plain[i]]
+    if not ix:
+        return
+    order = np.argsort(tfa, kind="stable")
+    starts = np.searchsorted(tfa[order], np.asarray(ix), side="left")
+    ends = np.searchsorted(tfa[order], np.asarray(ix), side="right")
+    smoother = SmoothNormals()
+    for i, a, b in zip(ix, starts.tolist(), ends.tolist()):
+        rows = order[a:b]
+        if not len(rows):
+            continue
+        tris = [tuple(tuple(c) for c in tri)
+                for tri in tpa[rows].astype(np.float64).tolist()]
+        base = ent[int(fk[i])]["base"]
+        rgb = tuple(f_rgb[i].tolist())
+        out = _smooth_vcol(faces[i], base, rgb, smoother, tris, vp._LIGHT)
+        col_a[rows] = np.asarray(out, dtype=np.float32).reshape(-1, 3, 6)
+
+
+#: A built mesh is baked from arrays from this many faces on: below, the
+#: walk that reads it into arrays is most of the work anyway.
+BUILT_MIN_FACES = 500
+
+
+def can_bake_built(mesh, min_faces: int | None = None) -> bool:
+    """Whether built ``mesh`` can be baked from arrays by this engine —
+    from ``min_faces`` faces on (default ``BUILT_MIN_FACES``)."""
+    if min_faces is None:
+        min_faces = BUILT_MIN_FACES
+    return (type(mesh) is not DeferredMesh
+            and _native.native is not None
+            and _native.qt_hypot() is not None
+            and len(mesh.faces) >= min_faces)
+
+
+def built_plan(mesh, faces=None, edges=None):
+    """``(plan, table, face_attr, faces)``: built ``mesh`` read into the
+    arrays a lazy mesh's plan holds — its vertices, edges and faces in
+    their own order, so the bake comes out as the object bake would.
+
+    ``faces``/``edges`` (lists, in mesh order) bake a PART of the mesh —
+    the Move preview's two halves: what stays and what rides the drag.
+    An edge then lists only the faces of the part."""
+    from core.lazy_mesh import Plan
+    verts = mesh.vertices
+    vid = {id(v): i for i, v in enumerate(verts)}
+    pos = np.fromiter((c for v in verts for c in v.position.toTuple()),
+                      dtype=np.float64, count=3 * len(verts)).reshape(-1, 3)
+    part = faces is not None
+    faces = list(mesh.faces) if faces is None else list(faces)
+    fid = {id(f): i for i, f in enumerate(faces)}
+    corners: list = []
+    sizes: list = []
+    counts: list = []
+    table: list = []
+    tix: dict = {}
+    face_attr = np.full(len(faces), -1, dtype=np.int64)
+    for i, f in enumerate(faces):
+        n = 0
+        for loop in (f.loop, *f.hole_loops):
+            corners.extend(vid[id(v)] for v in loop)
+            sizes.append(len(loop))
+            n += 1
+        counts.append(n)
+        at = f.attrs
+        if at:
+            k = tix.get(id(at))
+            if k is None:
+                k = tix[id(at)] = len(table)
+                table.append(at)
+            face_attr[i] = k
+    edges = list(mesh.edges) if edges is None else list(edges)
+    ne = len(edges)
+    e_ab = np.fromiter((vid[id(v)] for e in edges for v in (e.v0, e.v1)),
+                       dtype=np.int64, count=2 * ne).reshape(-1, 2)
+    soft = np.fromiter((bool(getattr(e, "soft", False)) for e in edges),
+                       dtype=bool, count=ne)
+    hidden = np.fromiter((bool(getattr(e, "hidden", False)) for e in edges),
+                         dtype=bool, count=ne)
+    curve = [getattr(e, "curve", None) for e in edges]
+    layer = [getattr(e, "layer", None) for e in edges]
+    if part:
+        lists = [[fid[id(f)] for f in e.faces if id(f) in fid]
+                 for e in edges]
+        ef_n = np.fromiter((len(x) for x in lists), dtype=np.int64,
+                           count=ne)
+        ef_face = np.fromiter((i for x in lists for i in x),
+                              dtype=np.int64, count=int(ef_n.sum()))
+    else:
+        ef_n = np.fromiter((len(e.faces) for e in edges), dtype=np.int64,
+                           count=ne)
+        ef_face = np.fromiter((fid.get(id(f), -1) for e in edges
+                               for f in e.faces),
+                              dtype=np.int64, count=int(ef_n.sum()))
+    plan = Plan(pos=pos, edges=e_ab, soft=soft, hidden=hidden, curve=curve,
+                layer=layer,
+                corners=np.asarray(corners, dtype=np.int64),
+                ring_sizes=np.asarray(sizes, dtype=np.int64),
+                ring_counts=np.asarray(counts, dtype=np.int64),
+                ef_start=np.concatenate([[0], np.cumsum(ef_n)]).astype(
+                    np.int64),
+                ef_face=ef_face)
+    return plan, table, face_attr, faces
+
+
+def bake_built(vp, mesh, paint, msig, fp, faces=None, edges=None):
+    """The chunk fields of BUILT ``mesh`` (the one open for editing, most
+    often) baked from arrays: read into a plan (~25 ms for 15 800 faces),
+    the face geometry from the kernel, the rest in NumPy — the object bake
+    walked every face in Python on every edit (~0.4 s warm, ~1.3 s after
+    a Move of the whole 15 799-face flag of the Plaza Yanque, 18-11).
+    ``fp`` is the object fingerprint the caller took; ``faces``/``edges``
+    a part of the mesh (see :func:`built_plan`)."""
+    plan, table, face_attr, faces = built_plan(mesh, faces, edges)
+    if len(plan.ef_face) and int(plan.ef_face.min()) < 0:
+        return None          # an edge still lists a face gone from the mesh
+    geometry = _native.native.face_geometry(
+        plan.pos.astype(np.float32), plan.corners, plan.ring_sizes,
+        plan.ring_counts, _native.qt_hypot(), sys.version_info >= (3, 12))
+    return _bake_arrays(
+        vp, mesh, paint, msig, plan, geometry, table, face_attr,
+        lambda drawn: [faces[i] for i in drawn.tolist()], fp, faces)
 
 
 def _coordsum(plan) -> float:
@@ -595,9 +943,21 @@ class LazyPairs:
     def __getitem__(self, i):
         return (self.faces[i], self.owner)
 
+    def owner_at(self, _i):
+        return self.owner
+
     def __iter__(self):
         owner = self.owner
         return ((f, owner) for f in self.faces)
+
+    def layer_at(self, i):
+        """``(the face's own layer or None, owner)`` — see
+        :meth:`DeferredFaces.layer_at`."""
+        faces = self.faces
+        if hasattr(faces, "layer_at"):
+            return faces.layer_at(i), self.owner
+        return (getattr(faces[i], "attrs", None) or {}).get("layer"), \
+            self.owner
 
 
 class PickEntities:
@@ -640,6 +1000,29 @@ class PickEntities:
         k = bisect.bisect_right(self._starts, i) - 1
         return self._parts[k][i - self._starts[k]]
 
+    def owner_at(self, i):
+        """The owner half of entity ``i``, with no face made for it."""
+        import bisect
+        i = int(i)
+        if i < 0:
+            i += self._len
+        k = bisect.bisect_right(self._starts, i) - 1
+        part = self._parts[k]
+        j = i - self._starts[k]
+        return part.owner_at(j) if isinstance(part, LazyPairs) else part[j][1]
+
     def __iter__(self):
         for part in self._parts:
             yield from part
+
+    def layer_at(self, i):
+        """``(the face's own layer or None, owner)`` of entity ``i``,
+        without building a lazy mesh for it."""
+        import bisect
+        i = int(i)
+        k = bisect.bisect_right(self._starts, i) - 1
+        part, j = self._parts[k], i - self._starts[k]
+        if hasattr(part, "layer_at"):
+            return part.layer_at(j)
+        face, owner = part[j]
+        return (getattr(face, "attrs", None) or {}).get("layer"), owner

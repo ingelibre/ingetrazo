@@ -52,9 +52,21 @@ class SolidError(Exception):
 
 # ---- What is a solid ---------------------------------------------------------
 
+def _lazily_open(mesh) -> bool:
+    """Whether a still-unbuilt mesh already shows it is no solid: an edge not
+    between exactly two faces (no face of a document read back is interior).
+    Selecting a big group built it, and its copy in the world when placed,
+    only for the panel to say nothing about a volume (#1092)."""
+    from core.lazy_mesh import plan_of
+    plan = plan_of(mesh)
+    return plan is not None and bool((np.diff(plan.ef_start) != 2).any())
+
+
 def solid_report(mesh) -> tuple[bool, float | None]:
     """``(is_solid, volume)`` for a mesh: every edge between exactly two
     faces, no stray edges, at least one face. Volume in m³ when solid."""
+    if _lazily_open(mesh):
+        return False, None
     if not mesh.faces:
         return False, None
     for e in mesh.edges:
@@ -77,6 +89,8 @@ def solid_volume(group) -> float | None:
     """The group's volume when it is a solid (a «Solid Group»),
     else ``None``. Nested groups disqualify it."""
     if not isinstance(group, Group) or getattr(group, "children", None):
+        return None
+    if _lazily_open(group.mesh):
         return None
     ok, vol = solid_report(world_mesh(group))
     return vol if ok else None

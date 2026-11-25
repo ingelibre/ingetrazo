@@ -313,6 +313,8 @@ def test_the_snap_keeps_the_scale_the_cursor_asked_for(viewport):
     tool.on_release(viewport)
 
 
+# TODO(MAC-08): Baseline float radius difference is 2.98e-08, above the 1e-9 tolerance.
+# See docs/macos-test-failures.md; confirmed on the baseline commit, not fixed yet.
 def test_the_protractor_sits_on_the_red_pin_with_its_zero_on_the_start_arm(viewport):
     face = _textured_square(viewport)
     tool = _begin(viewport, face)

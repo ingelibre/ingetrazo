@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import copy
 import itertools
+import uuid
 
 from core.mesh import Mesh
 
@@ -23,7 +24,6 @@ _counter = itertools.count(1)
 def new_uid() -> str:
     """A fresh group identity: random, so two documents merged (a ``.igz``
     imported as a component) never collide."""
-    import uuid
     return uuid.uuid4().hex[:16]
 
 
@@ -80,7 +80,7 @@ class Group:
     __slots__ = ("mesh", "name", "layer", "ifc", "billboard", "xform",
                  "children", "owner", "context", "text3d", "hidden", "uid",
                  "material", "axes", "component", "exploded",
-                 "explode_offset", "ext", "locked")
+                 "explode_offset", "ext", "locked", "images", "source")
 
     def __init__(self, mesh: Mesh | None = None, name: str | None = None) -> None:
         self.mesh = mesh if mesh is not None else Mesh()
@@ -113,6 +113,14 @@ class Group:
         # Structure plugin of #87 kept it outside the document: «the
         # padlock function is not saved in the .igz file»).
         self.locked = False
+        #: The external file this component was loaded from — its file
+        #: name, from Insert (a document), the component library or the
+        #: kept components of another document — or ``None`` for one
+        #: modelled here. A Tape Measure resize of the whole model leaves
+        #: such a component at its real size and only moves it
+        #: (core/resize.py): a chair placed in a plan stays a chair when
+        #: the plan is rescaled.
+        self.source = None
         # Stable identity that survives save/load — what a scene names when
         # it remembers which objects it hides. Fresh per object; a copy gets
         # its own (see ``copy_group``).
@@ -176,6 +184,12 @@ class Group:
         #: :meth:`is_component` (issue #90, @fafecm: «the parent group
         #: always becomes a component»).
         self.component = True
+        # Imported photos remain ImagePlane entities when wrapped in a group
+        # or component.  They are deliberately not converted to textured
+        # faces: display styles may suppress face textures, while a photo is
+        # visible in every style (including Wireframe), as images in a model should.
+        # Coordinates are local to ``xform`` exactly like this group's mesh.
+        self.images: list = []
 
     def is_component(self) -> bool:
         """A component instance, as the user knows it — not merely a group
@@ -210,11 +224,17 @@ class Group:
         child geometry a second time."""
         if self.xform is None and not self.children:
             return
+        images = []
+        for group, matrix in iter_placements(self):
+            for image in getattr(group, "images", None) or ():
+                images.append(image.transformed(matrix)
+                              if matrix is not None else image.copy())
         frame = group_frame(self)
         self.mesh = world_mesh(self)
         self.xform = None
         self.axes = frame                   # baked, but it still faces its way
         self.children = []
+        self.images = images
 
     def make_unique(self) -> None:
         """Make Unique: this instance stops sharing with its siblings.
@@ -232,13 +252,22 @@ class Group:
         from PySide6.QtGui import QMatrix4x4
         if self.is_component():
             self.mesh = transformed_mesh(self.mesh, QMatrix4x4())
+            self.images = [image.copy() for image in self.images]
             self.children = [_independent_copy(c)
                              for c in (self.children or ())]
+            return
+        if self.images and not self.children:
+            # A copied photo group stops sharing its definition, but keeps
+            # the placement matrix: all transform commands can continue to
+            # move the non-topological image in O(1).
+            self.mesh = transformed_mesh(self.mesh, QMatrix4x4())
+            self.images = [image.copy() for image in self.images]
             return
         if not self.children:
             self.materialize()
             return
         self.mesh = transformed_mesh(self.mesh, QMatrix4x4())
+        self.images = [image.copy() for image in self.images]
         self.children = [_independent_copy(c) for c in self.children]
         # Nothing shared any more: what is left is a group of groups.
         self.component = False
@@ -368,7 +397,10 @@ def _remap_uvws(mesh, m, faces=None) -> None:
     minv, ok = m.inverted()
     if not ok:
         return
-    tx, ty, tz = m(0, 3), m(1, 3), m(2, 3)
+    # The two matrices read once for the whole mesh, not twice per face:
+    # each ``np_affine`` builds numpy arrays, and the 480 textured faces of
+    # an undo on Marco's plaza spent ~14 ms there alone (20-11).
+    affine = None
     for f in (mesh.faces if faces is None else faces):
         t = f.attrs.get("texture") if f.attrs else None
         uvw = t.get("uvw") if t else None
@@ -376,18 +408,35 @@ def _remap_uvws(mesh, m, faces=None) -> None:
             uvw = _implicit_uvw(f, t, minv) if t else None
             if uvw is None:
                 continue
-        new = list(uvw)
-        for base in (0, 4):
-            gx, gy, gz, c = uvw[base:base + 4]
-            gpx = minv(0, 0) * gx + minv(1, 0) * gy + minv(2, 0) * gz
-            gpy = minv(0, 1) * gx + minv(1, 1) * gy + minv(2, 1) * gz
-            gpz = minv(0, 2) * gx + minv(1, 2) * gy + minv(2, 2) * gz
-            new[base:base + 4] = [gpx, gpy, gpz,
-                                  c - (gpx * tx + gpy * ty + gpz * tz)]
-        f.attrs["texture"] = {**t, "uvw": new}
+        if affine is None:
+            affine = (np_affine(minv)[0], np_affine(m)[1])
+        f.attrs["texture"] = {**t, "uvw": _remapped_uvw(uvw, m, minv,
+                                                         affine)}
 
 
-def world_mesh(group) -> Mesh:
+def _remapped_uvw(uvw, m, minv, affine=None) -> list:
+    """The 8-number ``uvw`` map re-fitted for geometry mapped through ``m``
+    (``minv`` its inverse): g' = L⁻ᵀ·g, c' = c − g'·t for the U and the V
+    rows. The matrices are read through ``data()`` (:func:`np_affine`),
+    never as ``m(row, col)``: that call is gone from some PySide6 builds
+    (Qt 6.10 raises "object is not callable", #1405). ``affine`` is
+    ``(linear part of minv, translation of m)`` when the caller already
+    read them for a whole mesh."""
+    if affine is None:
+        affine = (np_affine(minv)[0], np_affine(m)[1])
+    lin, (tx, ty, tz) = affine
+    new = list(uvw)
+    for base in (0, 4):
+        gx, gy, gz, c = uvw[base:base + 4]
+        gpx = float(lin[0, 0] * gx + lin[1, 0] * gy + lin[2, 0] * gz)
+        gpy = float(lin[0, 1] * gx + lin[1, 1] * gy + lin[2, 1] * gz)
+        gpz = float(lin[0, 2] * gx + lin[1, 2] * gy + lin[2, 2] * gz)
+        new[base:base + 4] = [gpx, gpy, gpz,
+                              float(c - (gpx * tx + gpy * ty + gpz * tz))]
+    return new
+
+
+def world_mesh(group, placements=None) -> Mesh:
     """A world-space mesh for a group: the mesh itself for classic groups,
     a transformed DEEP copy (positions + texture UV maps) for component
     instances — the shared prototype is never touched. (``capture_state``
@@ -398,15 +447,19 @@ def world_mesh(group) -> Mesh:
     A group's nested placements (``children``) are folded in, each through
     its own transform composed with this one — the group's full geometry,
     which is what every consumer that used to read ``group.mesh`` directly
-    needs once a component keeps its internal sharing."""
+    needs once a component keeps its internal sharing.
+
+    ``placements`` (``(group, world_matrix)`` pairs, as
+    :func:`iter_placements` yields them) folds in only those: what
+    :func:`visible_placements` returns, for a consumer that draws."""
     m = getattr(group, "xform", None)
     kids = getattr(group, "children", None)
     if not kids:
         return group.mesh if m is None else transformed_mesh(group.mesh, m)
-    return _merged_placements(group)
+    return _merged_placements(group, placements)
 
 
-def _merged_placements(group) -> Mesh:
+def _merged_placements(group, placements=None) -> Mesh:
     """Every placement of ``group`` welded into ONE mesh, in a single
     vectorized pass.
 
@@ -425,24 +478,28 @@ def _merged_placements(group) -> Mesh:
     ring_sizes: list = []
     ring_counts: list = []
     attrs_list: list = []
-    for g, m in iter_placements(group):
+    for g, m in (iter_placements(group) if placements is None
+                 else placements):
         src = g.mesh
+        mirror = _is_mirror(m)
         epts: list = []
         fpts: list = []
         for e in src.edges:
             epts.append((e.a.x(), e.a.y(), e.a.z()))
             epts.append((e.b.x(), e.b.y(), e.b.z()))
-            edge_flags.append((e.soft, e.curve, None))
+            edge_flags.append((e.soft, e.curve, None, e.hidden,
+                               copy.deepcopy(e.material) if e.material else None))
         for f in src.faces:
             holes = f.holes or []
             if len(holes) > 1:
                 holes = _maximal_holes([list(h) for h in holes])
             ring_counts.append(1 + len(holes))
             ring_sizes.append(len(f.vertices))
-            fpts.extend((v.x(), v.y(), v.z()) for v in f.vertices)
+            fpts.extend((v.x(), v.y(), v.z())
+                        for v in _ring(f.vertices, mirror))
             for h in holes:
                 ring_sizes.append(len(h))
-                fpts.extend((v.x(), v.y(), v.z()) for v in h)
+                fpts.extend((v.x(), v.y(), v.z()) for v in _ring(h, mirror))
             # The texture's world->UV map travels with the placement, so a
             # nested leaf keeps its wood grain instead of inheriting the
             # parent's frame.
@@ -519,6 +576,58 @@ def iter_painted_placements(group, base=None, paint=None):
         yield from iter_painted_placements(child, m, paint)
 
 
+def visible_placements(scene, group, with_layer=False):
+    """:func:`iter_placements` without the nested placements the viewport
+    does not draw, for a top-level ``group`` the caller already found
+    visible.
+
+    The same rule as ``Viewport._expand_placements``: Hide on a group takes
+    its whole subtree along; a nested group with no tag of its own takes the
+    nearest one above it; and a hidden or locked tag above puts every
+    instance below it on that tag, whatever its children are tagged. A
+    hidden group two levels down drew in a sheet while the viewport left it
+    out, because :func:`world_mesh` folds in every child.
+
+    ``with_layer`` also yields the layer each placement is drawn with —
+    its own, else the nearest one above it — as a third item, so a caller
+    that tags geometry per placement (a section cut's fill, a sheet's ink)
+    need not walk the tree again."""
+    from core.layers import DEFAULT_LAYER, layer_of
+
+    def shown(layer):
+        ly = scene.layer(layer) if layer else None
+        return ly is None or ly.visible
+
+    def blocking(layer):
+        ly = scene.layer(layer) if layer else None
+        return ly is not None and (not ly.visible or ly.locked)
+
+    def wrap(placed, m, layer):
+        return (placed, m, layer or DEFAULT_LAYER) if with_layer \
+            else (placed, m)
+
+    def walk(node, world, hidden, forced, inherited):
+        for child in node.children:
+            m = (child.xform if world is None
+                 else (world * child.xform if child.xform is not None
+                       else world))
+            layer = forced or child.layer or inherited or node.layer
+            off = hidden or bool(child.hidden)
+            if not off and shown(layer):
+                yield wrap(child, m, layer)
+            if child.children:
+                kid_forced = forced
+                if kid_forced is None and blocking(layer):
+                    kid_forced = layer
+                yield from walk(child, m, off, kid_forced, layer)
+
+    m = getattr(group, "xform", None)
+    yield wrap(group, m, layer_of(group))
+    if getattr(group, "children", None):
+        forced = group.layer if blocking(group.layer) else None
+        yield from walk(group, m, bool(group.hidden), forced, None)
+
+
 def _copy_mesh(mesh) -> Mesh:
     from PySide6.QtGui import QMatrix4x4
     return transformed_mesh(mesh, QMatrix4x4())
@@ -549,9 +658,24 @@ def np_affine(m):
     return rot, np.array([d[12], d[13], d[14]], dtype=np.float64)
 
 
+def _is_mirror(m) -> bool:
+    """Whether the matrix reflects: it turns every ring it maps inside out."""
+    return m is not None and m.determinant() < 0.0
+
+
+def _ring(points, mirror: bool):
+    """A face's ring in the order that keeps its front the front once mapped
+    through a matrix (see :func:`_is_mirror`)."""
+    return points[::-1] if mirror else points
+
+
 def transformed_mesh(src: Mesh, m) -> Mesh:
     """A DEEP copy of ``src`` with every position mapped through ``m``,
     carrying face attrs, soft/curve flags and re-fitted texture UV maps.
+
+    A mirror keeps each face's front the front, as a mirrored placement draws
+    it (``Viewport._instance_chunk``): opening one for editing showed every
+    face the other way round.
 
     Big meshes go through one vectorized ``bulk_weld`` pass (same recipe as
     the ``.igz`` loader): the per-entity ``add_face``/``add_edge`` walk froze
@@ -563,6 +687,7 @@ def transformed_mesh(src: Mesh, m) -> Mesh:
     import numpy as np
     from core.topology import _maximal_holes
     new = Mesh()
+    mirror = _is_mirror(m)
     flat: list = []
     for e in src.edges:
         flat.append((e.a.x(), e.a.y(), e.a.z()))
@@ -577,10 +702,10 @@ def transformed_mesh(src: Mesh, m) -> Mesh:
             holes = _maximal_holes([list(h) for h in holes])
         ring_counts.append(1 + len(holes))
         ring_sizes.append(len(f.vertices))
-        flat.extend((v.x(), v.y(), v.z()) for v in f.vertices)
+        flat.extend((v.x(), v.y(), v.z()) for v in _ring(f.vertices, mirror))
         for h in holes:
             ring_sizes.append(len(h))
-            flat.extend((v.x(), v.y(), v.z()) for v in h)
+            flat.extend((v.x(), v.y(), v.z()) for v in _ring(h, mirror))
         attrs_list.append(dict(f.attrs) if f.attrs else None)
     if not flat:
         return new
@@ -589,7 +714,8 @@ def transformed_mesh(src: Mesh, m) -> Mesh:
     vobjs, inverse = new.bulk_weld(pts)
     emap = None
     if src.edges:
-        flags = [(e.soft, e.curve, None) for e in src.edges]
+        flags = [(e.soft, e.curve, None, e.hidden,
+                  copy.deepcopy(e.material) if e.material else None) for e in src.edges]
         emap = new.add_edges_welded(
             vobjs, inverse[0:n_edge_pts:2], inverse[1:n_edge_pts:2], flags)
     if ring_counts:
@@ -604,14 +730,16 @@ def _transformed_mesh_walk(src: Mesh, m) -> Mesh:
     """Sequential per-entity copy — exact semantics for small meshes."""
     from PySide6.QtGui import QVector3D
     new = Mesh()
+    mirror = _is_mirror(m)
 
     def W(p) -> QVector3D:
         return m.map(p)
 
     for f in src.faces:
         try:
-            nf = new.add_face([W(v) for v in f.vertices],
-                              [[W(v) for v in h] for h in f.holes] or None)
+            nf = new.add_face([W(v) for v in _ring(f.vertices, mirror)],
+                              [[W(v) for v in _ring(h, mirror)]
+                               for h in f.holes] or None)
         except Exception:  # noqa: BLE001 — degenerate under the transform
             continue
         if f.attrs:
@@ -627,6 +755,8 @@ def _transformed_mesh_walk(src: Mesh, m) -> Mesh:
                 continue
         ne.soft = e.soft
         ne.curve = e.curve
+        if e.material:
+            ne.material = copy.deepcopy(e.material)
     new.resplit_curves()
     _remap_uvws(new, m)
     return new
@@ -645,16 +775,7 @@ def transformed_attrs(attrs, m) -> dict:
     minv, ok = m.inverted()
     if not ok:
         return out
-    tx, ty, tz = m(0, 3), m(1, 3), m(2, 3)
-    new = list(uvw)
-    for base in (0, 4):
-        gx, gy, gz, c = uvw[base:base + 4]
-        gpx = minv(0, 0) * gx + minv(1, 0) * gy + minv(2, 0) * gz
-        gpy = minv(0, 1) * gx + minv(1, 1) * gy + minv(2, 1) * gz
-        gpz = minv(0, 2) * gx + minv(1, 2) * gy + minv(2, 2) * gz
-        new[base:base + 4] = [gpx, gpy, gpz,
-                              c - (gpx * tx + gpy * ty + gpz * tz)]
-    out["texture"] = {**t, "uvw": new}
+    out["texture"] = {**t, "uvw": _remapped_uvw(uvw, m, minv)}
     return out
 
 
@@ -720,10 +841,15 @@ def copy_group(group, delta=None, _in_definition=False):
     g.ext = copy.deepcopy(group.ext) if getattr(group, "ext", None) else None
     g.hidden = group.hidden
     g.locked = getattr(group, "locked", False)
+    g.source = getattr(group, "source", None)
     g.material = dict(group.material) if getattr(group, "material", None) else None
     g.component = getattr(group, "component", True)
     g.exploded = dict(group.exploded) if group.exploded else None
     g.explode_offset = group.explode_offset
+    # A component definition may share its photos; a copied ordinary group
+    # gets independent entities, just as it gets an independent mesh.
+    images = getattr(group, "images", None) or ()
+    g.images = (list(images) if share else [im.copy() for im in images])
     # Nested placements ride along untranslated: ``delta`` already moved the
     # parent, and a child's transform is relative to it.
     g.children = [copy_group(c, _in_definition=share)
@@ -740,6 +866,7 @@ def _independent_copy(group):
     if group.xform is not None:
         g.mesh = transformed_mesh(group.mesh, QMatrix4x4())
     g.uid = group.uid
+    g.images = [im.copy() for im in (getattr(group, "images", None) or ())]
     g.children = [_independent_copy(c) for c in (group.children or ())]
     return g
 
@@ -910,16 +1037,31 @@ def placement_points(group, cache=None):
         arr = cache.get(id(g.mesh))
         if arr is None:
             arr = _local_points(g.mesh)
-            if arr is None:
-                continue
-            cache[id(g.mesh)] = arr
-        if m is not None:
-            d = m.data()                      # column-major
-            rot = np.array([[d[0], d[4], d[8]],
-                            [d[1], d[5], d[9]],
-                            [d[2], d[6], d[10]]])
-            arr = arr @ rot.T + np.array([d[12], d[13], d[14]])
-        out.append(arr)
+            if arr is not None:
+                cache[id(g.mesh)] = arr
+        if arr is not None:
+            if m is not None:
+                d = m.data()                      # column-major
+                rot = np.array([[d[0], d[4], d[8]],
+                                [d[1], d[5], d[9]],
+                                [d[2], d[6], d[10]]])
+                arr = arr @ rot.T + np.array([d[12], d[13], d[14]])
+            out.append(arr)
+        # A photo-only container has no topology vertices, but its four
+        # corners still define the selection box and Zoom Selection bounds.
+        images = getattr(g, "images", None) or ()
+        if images:
+            ip = np.array(
+                [[p.x(), p.y(), p.z()]
+                 for image in images for p in image.corners()],
+                dtype=np.float64)
+            if m is not None:
+                d = m.data()
+                rot = np.array([[d[0], d[4], d[8]],
+                                [d[1], d[5], d[9]],
+                                [d[2], d[6], d[10]]])
+                ip = ip @ rot.T + np.array([d[12], d[13], d[14]])
+            out.append(ip)
     return np.concatenate(out) if out else np.empty((0, 3))
 
 
@@ -977,3 +1119,19 @@ def effective_material(group):
     if owner is not None and owner is not group:
         return getattr(owner, "material", None) or None
     return None
+
+
+def edit_label(group) -> str:
+    """The (untranslated) right-click entry that opens ``group`` for
+    editing: a component says so, a classic group keeps its name (#1412)."""
+    return "Edit Component" if group.is_component() else "Edit Group"
+
+
+def explode_label(groups) -> str:
+    """The (untranslated) right-click entry that explodes ``groups``:
+    "Explode Component" only when every one of them is a component —
+    with a classic group among them it stays "Explode Group" (#1412)."""
+    groups = list(groups)
+    if groups and all(g.is_component() for g in groups):
+        return "Explode Component"
+    return "Explode Group"

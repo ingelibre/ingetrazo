@@ -46,7 +46,9 @@ CONTRIBUTORS = [
      "Architect. The units system, the Browser, Layers 2.0, the Solid "
      "Inspector, Fillet 3D bevels, Bridge, Join Segments, Camera ▸ Axes, "
      "soft ambient occlusion, round curved surfaces, view layouts, scenes "
-     "as tabs, cleaner exports and many everyday editing tools.",
+     "as tabs, cleaner exports and many everyday editing tools. And for "
+     "0.6.2: the North tool, camera settings, scene transitions with video "
+     "and the view as layered SVG.",
      "https://github.com/canalsecuario-blip"),
     ("Félix Riestra",
      "The macOS package: IngeTrazo for Mac. Components that come apart "
@@ -144,7 +146,7 @@ CONTRIBUTORS = [
      "https://github.com/PRIDA-TAKON"),
     ("ChangWoo Lee",
      "Korean translation of the interface, and the AI key from an "
-     "environment variable.",
+     "environment variable. In 0.6.2, soft shadows and fixes for macOS.",
      "https://github.com/ultracat"),
     ("nonasige-ui",
      "Japanese translation of the interface.",
@@ -260,6 +262,13 @@ CONTRIBUTORS = [
      ".skp components scaled by −1 that keep their front, and nested "
      "groups that wear their nearest painted container.",
      "https://github.com/alteralto"),
+    ("Reza Prama Arviandi",
+     "Exact Move+Ctrl copies, overlapping rotated copies, faster box "
+     "selection on huge models and the reviewed Indonesian translation.",
+     "https://github.com/rezaprama"),
+    ("Francesco Fantoni",
+     "Snapping to the rest of the model from inside a group or component.",
+     "https://github.com/hvfrancesco"),
     ("Aashish — IngeTrazo Tutorials",
      "The IngeTrazo Tutorials channel on YouTube, and nine extensions: "
      "MultiView, Phasing Animator, Kitchen Maker, Taper and more.",
@@ -280,6 +289,49 @@ CONTRIBUTORS = [
     ("DarkBiscuits",
      "A .skp component 10 000 times too big, traced.",
      "https://github.com/DarkBiscuits"),
+    ("İbrahim Halim Gökbulut",
+     "Turkish localization and workspace guide.",
+     "https://github.com/h-skycloud"),
+    ("Luciano Ribeiro",
+     "Automatic publishing on Winget (#766).",
+     "https://github.com/calieno"),
+    ("Tristan Cebulla",
+     "History.execute says whether a command ran (#1241), rejected "
+     "commands inside run_python reported as reverted (#1242), the "
+     "shortcuts page follows actions added later (#1244) and "
+     "placing a group honours the workspace's tool filter (#1243).",
+     "https://github.com/d1rty-pixel"),
+    ("Daniel Ramos",
+     "One eye of a stereo pair from the camera (#1174, #1311).",
+     "https://github.com/danielcamposramos"),
+    ("diegog321",
+     "A large .igz could lose a mesh's faces on opening: cause and "
+     "fix (#1533).",
+     "https://github.com/diegog321"),
+    ("Max",
+     "Faster .skp import and .igz saving with less memory (#938, "
+     "#1145, #1146, #1147) and drawing inside a set reaching its "
+     "copies (#1148).",
+     "https://github.com/mle-gall"),
+    ("moominot",
+     "The Catalan translation (#1497) and the Location tab of Model "
+     "Info (#1502).",
+     "https://github.com/moominot"),
+    ("renancadastros01-gif",
+     "Push/Pull bases kept with Ctrl stay sound and cracked results "
+     "are refused (#1155).",
+     "https://github.com/renancadastros01-gif"),
+    ("Henry Salinas Flores",
+     "Camera roll with a 3D mouse (#1406).",
+     "https://github.com/salinashf"),
+    ("sneffetsd",
+     "A preference to swap orbit and pan on the middle button "
+     "(#467).",
+     "https://github.com/sneffetsd"),
+    ("Urkoh00",
+     "IFC export writes the project north, the site location and "
+     "the owning application (#1498).",
+     "https://github.com/Urkoh00"),
 ]
 
 #: Roll speed: pixels per tick, and the tick.
@@ -508,8 +560,12 @@ class AboutDialog(QDialog):
         # Which engine computes the heavy parts (Rust when the experimental
         # native engine is on and loads) — the first thing a report needs.
         gl += f"<br><small>{tr('Engine')}: {engine()}</small>"
+        # What changed in this and every version, beside the number.
+        from core.update_check import RELEASES_PAGE
+        news_text = tr("What's New")
+        news = f" · <a href='{RELEASES_PAGE}'>{news_text}</a>"
         para("<b style='font-size:15px'>IngeTrazo</b> "
-             f"{tr('Version')} {version}{gl}<br>"
+             f"{tr('Version')} {version}{news}{gl}<br>"
              f"{tr('Free 3D modeler for architecture, engineering and 3D design.')}<br>"
              f"{tr('Created by')} <b>Marco Sumari Tellez</b> — "
              f"{tr('Civil Engineer — Arequipa, Peru')}")

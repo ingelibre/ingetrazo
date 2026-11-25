@@ -145,6 +145,9 @@ modules:
       #    on 2026-09-16 (30:20) while PDF export, which goes through
       #    QPdfWriter in QtGui, worked perfectly for him. QtPdf IS still
       #    trimmed: that is the PDF *viewer*, which we do not use.
+      #
+      #    QtMultimedia and its ffmpeg stay too: Export ▸ Scenes as Video
+      #    (.mkv) writes the file through them (views/video_export.py).
       - |
         set -e
         PYVER=$(python3 -c 'import sys; print("%d.%d" % sys.version_info[:2])')
@@ -152,15 +155,13 @@ modules:
         cd "$PS"
         rm -rf Qt/qml Qt/resources Qt/libexec Qt/metatypes examples typesystems glue include
         rm -f  assistant designer linguist lupdate lrelease qmlformat qmllint qmlls qsb balsam* svgtoqml
-        for stem in WebEngine Pdf Quick Qml 3D Quick3D Multimedia SpatialAudio                     Location Positioning Sensors SerialPort SerialBus Bluetooth                     Nfc WebSockets WebChannel WebView RemoteObjects Scxml                     TextToSpeech Charts DataVisualization Graphs Sql Help                     UiTools Designer NetworkAuth HttpServer VirtualKeyboard                     LabsAnimation LabsFolderListModel LabsPlatform LabsQmlModels                     LabsSettings LabsSharedImage LabsWavefrontMesh Test; do
+        for stem in WebEngine Pdf Quick Qml 3D Quick3D SpatialAudio                     Location Positioning Sensors SerialPort SerialBus Bluetooth                     Nfc WebSockets WebChannel WebView RemoteObjects Scxml                     TextToSpeech Charts DataVisualization Graphs Sql Help                     UiTools Designer NetworkAuth HttpServer VirtualKeyboard                     LabsAnimation LabsFolderListModel LabsPlatform LabsQmlModels                     LabsSettings LabsSharedImage LabsWavefrontMesh Test; do
           rm -f  Qt${stem}*.abi3.so Qt${stem}*.pyi
           rm -f  Qt/lib/libQt6${stem}*.so*
         done
         # Quick/Qml family again by lib name (Quick3D matches Quick prefix)
         rm -f Qt/lib/libQt6Quick*.so* Qt/lib/libQt6Qml*.so*
-        # ffmpeg came along for Multimedia
-        rm -f Qt/lib/libav*.so* Qt/lib/libsw*.so*
-        rm -rf Qt/plugins/multimedia Qt/plugins/webview Qt/plugins/qmltooling                Qt/plugins/scenegraph Qt/plugins/designer Qt/plugins/assetimporters                Qt/plugins/sceneparsers Qt/plugins/renderers Qt/plugins/geometryloaders                Qt/plugins/sqldrivers Qt/plugins/position Qt/plugins/sensors                Qt/plugins/canbus Qt/plugins/virtualkeyboard Qt/plugins/texttospeech
+        rm -rf Qt/plugins/webview Qt/plugins/qmltooling                Qt/plugins/scenegraph Qt/plugins/designer Qt/plugins/assetimporters                Qt/plugins/sceneparsers Qt/plugins/renderers Qt/plugins/geometryloaders                Qt/plugins/sqldrivers Qt/plugins/position Qt/plugins/sensors                Qt/plugins/canbus Qt/plugins/virtualkeyboard Qt/plugins/texttospeech
         du -sh "$PS"
     sources:
       - type: dir

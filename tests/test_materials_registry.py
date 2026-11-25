@@ -67,6 +67,17 @@ def test_register_renames_on_recipe_conflict():
     assert len(reg) == 2
 
 
+def test_register_rename_keeps_the_finish():
+    """#1481: the copy renamed to "name (2)" keeps its render finish."""
+    reg: dict = {}
+    register(reg, Material("Wood", color=(0.5, 0.3, 0.1)))
+    final = register(reg, Material("Wood", color=(0.9, 0.9, 0.9),
+                                   opacity=0.5, finish="gloss"))
+    assert final == "Wood (2)"
+    assert reg["Wood (2)"] == Material("Wood (2)", color=(0.9, 0.9, 0.9),
+                                       opacity=0.5, finish="gloss")
+
+
 # ---- .igz round trip ------------------------------------------------------
 
 def test_igz_roundtrip_plain(tmp_path):
