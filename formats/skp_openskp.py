@@ -2092,6 +2092,10 @@ def _adapt_inner(model, name: str, skp_path=None, *, consume=False):
             # geometry): apply_payload turns the placements into groups.
             "hidden_entities": list(
                 getattr(pg, "hidden_entity_ids", None) or []),
+            # Whether the scene saves its hidden objects at all ("Hidden
+            # Objects" ticked): True, False, or None when the file or an
+            # older OpenSKP does not say (openskp#660).
+            "saves_hidden_objects": getattr(pg, "use_hidden_objects", None),
         })
     if scenes:
         payload["scenes"] = scenes

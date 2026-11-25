@@ -39,10 +39,13 @@ def _place(ref, eid, name, x=0.0, hidden=False):
               matrix=[1, 0, 0, 0, 1, 0, 0, 0, 1, x, 0, 0, 1])
 
 
-def _page(name, hidden=()):
+def _page(name, hidden=(), saves=None):
+    """``saves``: ``Page.use_hidden_objects`` (openskp#660); None as an
+    older OpenSKP, which has no such property, leaves it."""
     return NS(name=name, eye=(0.0, -100.0, 50.0), target=(0.0, 0.0, 0.0),
               up=(0.0, 0.0, 1.0), fov=35.0, parallel=False, ortho_height=0.0,
-              hidden_layers=[], hidden_entity_ids=list(hidden))
+              hidden_layers=[], hidden_entity_ids=list(hidden),
+              use_hidden_objects=saves)
 
 
 def _crate_model(*, c_hidden=False, pages=()):
@@ -107,6 +110,24 @@ def test_picking_a_scene_hides_and_shows_what_it_says():
     assert not groups["Part B"].hidden and not groups["Crate"].hidden
     _view(scene, "All").apply_state(scene)      # leaves objects alone
     assert groups["Part C"].hidden
+
+
+def test_a_scene_that_saves_hidden_objects_and_hides_none_shows_them():
+    # OpenSKP's fixtures: «All» saves hidden objects (0x191) and hides none,
+    # «Not saved» does not save them (0x001). Both list nothing; the flag
+    # tells them apart, and «All» shows again what another scene hid.
+    scene, groups = _imported(_crate_model(pages=[
+        _page("All", saves=True), _page("No C", [100], saves=True),
+        _page("Edge", [17], saves=True), _page("Not saved", saves=False)]))
+    assert _view(scene, "All").hidden_objects == []
+    assert _view(scene, "Edge").hidden_objects == []   # an edge, no object
+    assert _view(scene, "Not saved").hidden_objects is None
+    _view(scene, "No C").apply_state(scene)
+    assert groups["Part C"].hidden
+    _view(scene, "Not saved").apply_state(scene)        # leaves it alone
+    assert groups["Part C"].hidden
+    _view(scene, "All").apply_state(scene)              # shows it again
+    assert not any(g.hidden for g in groups.values())
 
 
 def test_a_scene_hides_what_was_pulled_out_of_a_flattened_group():

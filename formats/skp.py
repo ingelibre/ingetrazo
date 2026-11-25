@@ -235,17 +235,25 @@ def _soften_bulk_edges(mesh, vertices, edge_map, segments, tick):
             edge.soft = True
 
 
-def _scene_hidden_objects(entity_ids, by_skp_id):
+def _scene_hidden_objects(entity_ids, by_skp_id, saves=None):
     """A .skp scene's hidden entities → ``SavedView.hidden_objects``.
 
-    The uids of the groups those entities became, or ``None`` (the view
-    leaves objects alone) when none of them is a group. The file does say
-    whether a scene saves its hidden objects at all, but OpenSKP does not
-    report it yet, so an empty list cannot tell "saves them, hides none"
-    from "does not save them". ``None`` is the safe reading: the other one
-    would show every object the user hid each time such a scene is picked.
+    The uids of the groups those entities became. ``saves`` is whether
+    the scene saves its hidden objects at all (OpenSKP's
+    ``Page.use_hidden_objects``, openskp#660):
+
+    * True: the uids, even none — picking the scene shows every other
+      object again, as in SketchUp;
+    * False: ``None``, the view leaves objects alone;
+    * None (an older OpenSKP, or a file that does not say): the uids, or
+      ``None`` when there are none. An empty list then cannot tell "saves
+      them, hides none" from "does not save them", and leaving objects
+      alone is the safe reading.
+
     The ids that name no group are hidden edges and faces (hidden
     geometry), which an import does not hide yet."""
+    if saves is False:
+        return None
     uids: list = []
     seen: set = set()
     for eid in entity_ids or ():
@@ -253,6 +261,8 @@ def _scene_hidden_objects(entity_ids, by_skp_id):
             if g.uid not in seen:
                 seen.add(g.uid)
                 uids.append(g.uid)
+    if saves:
+        return uids
     return uids or None
 
 
@@ -613,7 +623,8 @@ def _apply_payload_inner(scene, payload, progress=None, *, consume=False) -> str
                 ortho_height=raw.get("ortho_height") or None,
                 hidden_layers=raw.get("hidden_layers"))
             view.hidden_objects = _scene_hidden_objects(
-                raw.get("hidden_entities"), by_skp_id)
+                raw.get("hidden_entities"), by_skp_id,
+                raw.get("saves_hidden_objects"))
             scene.saved_views.append(view)
             existing.add(raw["name"])
     if consume:
