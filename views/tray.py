@@ -5520,6 +5520,9 @@ class EntityInfoPanel(QWidget):
     39:00) — and found only the Layers panel's button, which he did not
     understand."""
 
+    #: The volume of a big group, not worked out yet (``_solid_volume``).
+    PENDING = object()
+
     def __init__(self, window) -> None:
         super().__init__()
         from PySide6.QtWidgets import QComboBox, QHBoxLayout
@@ -5789,9 +5792,13 @@ class EntityInfoPanel(QWidget):
             if isinstance(e, Group):
                 # The usual «Solid Group» / «Solid Component» with its
                 # volume, the Solid Tools' own test (core.solids).
+                from core.mesh import face_count
                 vol = self._solid_volume(e)
-                solid = (f"<br>{tr('Volume')}: {fmt_volume(vol)}"
-                         if vol is not None else "")
+                if vol is self.PENDING:
+                    vol, solid = None, f"<br>{tr('Volume')}: …"
+                else:
+                    solid = (f"<br>{tr('Volume')}: {fmt_volume(vol)}"
+                             if vol is not None else "")
                 if e.is_component():
                     # Entity Info usually tells a component from a group and
                     # says how many copies share the definition. Without it the
@@ -5802,11 +5809,11 @@ class EntityInfoPanel(QWidget):
                     title = (tr("Solid Component") if vol is not None
                              else tr("Component"))
                     return (f"<b>{title}</b><br>"
-                            f"{tr('Faces')}: {len(e.mesh.faces)}<br>"
+                            f"{tr('Faces')}: {face_count(e.mesh)}<br>"
                             f"{tr('In model')}: {kin}{solid}")
                 title = tr("Solid Group") if vol is not None else tr("Group")
                 return (f"<b>{title}</b><br>"
-                        f"{tr('Faces')}: {len(e.mesh.faces)}{solid}")
+                        f"{tr('Faces')}: {face_count(e.mesh)}{solid}")
             return f"<b>{tr('1 entity')}</b>"
         curve = self._describe_curve(sel)
         if curve is not None:
@@ -5892,16 +5899,86 @@ class EntityInfoPanel(QWidget):
             f"{tr('Perimeter')}: {fmt_len(length)}"])
 
     def _solid_volume(self, group):
-        """Cached per scene version: the panel refreshes on every change and
-        the check walks the whole mesh."""
-        from core.solids import solid_volume
-        version = self._window.viewport.scene.version
-        cache = getattr(self, "_solid_cache", None)
-        if cache is None or cache[0] != version:
-            cache = self._solid_cache = (version, {})
-        if id(group) not in cache[1]:
-            cache[1][id(group)] = solid_volume(group)
-        return cache[1][id(group)]
+        """The group's volume, ``None`` when it is no solid or ``PENDING``
+        while a big one is worked out in the background. Kept for as long as
+        its mesh and its scale stay as they were (``volume_key``): the panel
+        refreshes on every change and the check walks the whole mesh."""
+        from core.mesh import face_count
+        from core.solids import (SLICED_FROM, solid_volume, volume_key,
+                                 volume_steps)
+        scene = self._window.viewport.scene
+        if getattr(self, "_solid_scene", None) is not scene:
+            self._solid_scene, self._solid_cache = scene, {}
+            self._solid_job = self._solid_asked = None
+        # The refreshes of one change ask once: the key walks the faces.
+        ask = (group, group.mesh, getattr(group.mesh, "_mut_serial", None),
+               scene.version)
+        asked = self._solid_asked
+        if asked is not None and asked[0] == ask:
+            key = asked[1]
+        else:
+            key = volume_key(group)
+            self._solid_asked = (ask, key)
+        # The mesh by identity: the entry keeps it alive, its id is its own.
+        at = (id(key[0]), *key[1:])
+        hit = self._solid_cache.get(at)
+        if hit is not None:
+            return hit[1]
+        if key[2] or face_count(group.mesh) < SLICED_FROM:
+            volume = solid_volume(group)
+            self._keep_solid(at, group.mesh, volume)
+            return volume
+        job = self._solid_job
+        if job is None or job[0] != at or job[1] is not group:
+            self._solid_job = (at, group, volume_steps(group))
+            timer = getattr(self, "_solid_timer", None)
+            if timer is None:
+                from PySide6.QtCore import QTimer
+                timer = self._solid_timer = QTimer(self)
+                timer.setInterval(0)
+                timer.timeout.connect(self._solid_step)
+            timer.start()
+        return self.PENDING
+
+    def _keep_solid(self, at, mesh, volume) -> None:
+        if len(self._solid_cache) >= 64:
+            self._solid_cache.clear()
+        self._solid_cache[at] = (mesh, volume)
+
+    def _solid_step(self) -> None:
+        """A few milliseconds of the big volume being worked out; dropped as
+        soon as what it measures, or the selection, is not what it was."""
+        import time
+        from core.solids import volume_key
+        job, scene = self._solid_job, self._window.viewport.scene
+        sel = list(scene.selection)
+        current = (job is not None and scene is self._solid_scene
+                   and len(sel) == 1 and sel[0] is job[1])
+        if current:
+            at = job[0]
+            mesh = job[1].mesh
+            # Every change refreshes the panel, which asks again; a serial
+            # that moved without one is caught here.
+            current = (id(mesh), getattr(mesh, "_mut_serial", None)) == at[:2]
+            if current and self._solid_asked[0][3] != scene.version:
+                key = volume_key(job[1])
+                current = (id(key[0]), *key[1:]) == at
+                self._solid_asked = ((job[1], mesh, at[1], scene.version), key)
+        if not current:
+            self._solid_timer.stop()
+            self._solid_job = None
+            if len(sel) == 1 and job is not None and sel[0] is job[1]:
+                self.refresh()
+            return
+        end = time.perf_counter() + 0.008
+        try:
+            while time.perf_counter() < end:
+                next(job[2])
+        except StopIteration as done:
+            self._solid_timer.stop()
+            self._solid_job = None
+            self._keep_solid(at, mesh, done.value)
+            self.refresh()
 
     @staticmethod
     def _describe_geopath(path) -> str:

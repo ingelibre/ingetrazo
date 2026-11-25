@@ -96,6 +96,108 @@ def solid_volume(group) -> float | None:
     return vol if ok else None
 
 
+#: From this many faces on, the volume is worked out in slices
+#: (:func:`volume_steps`): the walk of a tube frame of 305 860 faces took
+#: ten seconds, in the middle of a click (#1583).
+SLICED_FROM = 5000
+
+
+def volume_key(group) -> tuple:
+    """What :func:`solid_volume` depends on, ``mesh`` first: equal keys give
+    the same volume, whatever else changed in the scene. The position of a
+    placement is not in it (a move keeps the volume); its scale is."""
+    from core.group import np_affine
+    from core.lazy_mesh import plan_of
+    mesh, m = group.mesh, getattr(group, "xform", None)
+    kids = bool(getattr(group, "children", None))
+    # A face turned over, marked as a partition or given a hole moves no
+    # vertex, so not every one of those edits bumps the serial.
+    faces = 0 if kids or plan_of(mesh) is not None else hash(tuple(
+        (f.interior, len(f.hole_loops), id(f.loop[0]), id(f.loop[1]))
+        for f in mesh.faces))
+    return (mesh, getattr(mesh, "_mut_serial", None), kids, faces,
+            None if m is None else np_affine(m)[0].tobytes())
+
+
+def volume_steps(group):
+    """:func:`solid_volume` of a group without nested ones as a generator:
+    it yields between slices of work and returns the volume or ``None``.
+    Nothing may change the mesh meanwhile (compare :func:`volume_key`)."""
+    from core.lazy_mesh import plan_of
+    mesh, m = group.mesh, getattr(group, "xform", None)
+    plan = plan_of(mesh)
+    if plan is not None:
+        if bool((np.diff(plan.ef_start) != 2).any()):
+            return None
+        pos, corners = plan.pos, plan.corners
+        sizes, counts = plan.ring_sizes, plan.ring_counts
+        nedges = len(plan.edges)
+    else:
+        flat, sizes, counts, index, points = [], [], [], {}, []
+        for k, f in enumerate(mesh.faces):
+            if k % 2000 == 0:
+                yield
+            if f.interior:
+                continue
+            rings = (f.loop, *f.hole_loops)
+            counts.append(len(rings))
+            for ring in rings:
+                sizes.append(len(ring))
+                for v in ring:
+                    at = index.get(v)
+                    if at is None:
+                        at = index[v] = len(points)
+                        points.append(v.position.toTuple())
+                    flat.append(at)
+        nedges = len(mesh.edges)
+        pos = np.array(points, dtype=np.float64).reshape((-1, 3))
+        corners = np.array(flat, dtype=np.int64)
+    sizes = np.asarray(sizes, dtype=np.int64)
+    counts = np.asarray(counts, dtype=np.int64)
+    if not len(counts):
+        return None
+    yield
+    # Every ring's sides, and the face each belongs to.
+    start = np.r_[0, np.cumsum(sizes)[:-1]]
+    ring = np.repeat(np.arange(len(sizes)), sizes)
+    face = np.repeat(np.arange(len(counts)), counts)[ring]
+    nxt = np.arange(len(corners)) + 1
+    nxt[start + sizes - 1] = start
+    a, b = corners, corners[nxt]
+    side = np.minimum(a, b) * len(pos) + np.maximum(a, b)
+    yield
+    order = np.argsort(side, kind="stable")
+    yield
+    side, face = side[order], face[order]
+    if len(side) % 2 or len(side) != 2 * nedges:
+        return None
+    pairs = side.reshape((-1, 2))
+    if ((pairs[:, 0] != pairs[:, 1]).any()
+            or (pairs[1:, 0] == pairs[:-1, 0]).any()
+            or (face.reshape((-1, 2))[:, 0] == face.reshape((-1, 2))[:, 1]).any()):
+        return None
+    yield
+    # Each ring's vector area; a hole counts against its face's outer ring,
+    # whichever way it winds.
+    first = pos[corners[start]][ring]
+    area = np.zeros((len(sizes), 3))
+    cross = np.cross(pos[a] - first, pos[b] - first) * 0.5
+    for axis in range(3):
+        area[:, axis] = np.bincount(ring, cross[:, axis], len(sizes))
+    yield
+    outer = np.r_[0, np.cumsum(counts)[:-1]]
+    owner = np.repeat(outer, counts)
+    hole = np.arange(len(sizes)) != owner
+    same = np.einsum("ij,ij->i", area, area[owner]) > 0
+    area[hole & same] *= -1.0
+    at = pos[corners[start]][owner] - pos[corners[0]]
+    volume = abs(float(np.einsum("ij,ij->", area, at))) / 3.0
+    if m is not None:
+        from core.group import np_affine
+        volume *= abs(float(np.linalg.det(np_affine(m)[0])))
+    return volume if volume > 1e-12 else None
+
+
 # ---- Group <-> manifold --------------------------------------------------------
 
 class _Sources:

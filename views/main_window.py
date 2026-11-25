@@ -6884,7 +6884,8 @@ class MainWindow(QMainWindow):
                            lambda gs=groups: self._lock_groups(gs))
             # The Solid Tools are offered on a selection of solids.
             from core.solids import is_solid
-            solid = [e for e in sel if isinstance(e, Group) and is_solid(e)]
+            solid = ([g for g in groups if is_solid(g)]
+                     if len(groups) >= 2 else [])
             if len(solid) >= 2 and len(solid) == len(groups):
                 menu.addAction(tool_icon("outer_shell"), tr("Outer Shell"),
                                lambda: self._activate_tool("outer_shell"))
