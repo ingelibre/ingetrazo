@@ -7581,6 +7581,12 @@ class MainWindow(QMainWindow):
         box = QMessageBox(QMessageBox.NoIcon, tr("Area"),
                           fmt_area(area),
                           QMessageBox.Ok, self)
+        if sys.platform == "darwin":
+            # macOS draws no title on a message box (its guidelines; Qt
+            # drops it), so the box read a bare «5.00 m²». There «Area» is
+            # the text and the value its informative text.
+            box.setText(tr("Area"))
+            box.setInformativeText(fmt_area(area))
         box.exec()
 
     @_repeatable("Reverse Faces")

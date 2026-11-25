@@ -33,7 +33,7 @@ kind of thing that segfaults.
 """
 from __future__ import annotations
 
-from PySide6.QtCore import QEvent, Qt, QTimer
+from PySide6.QtCore import QEvent, QSize, Qt, QTimer
 from PySide6.QtGui import QFontMetrics
 from PySide6.QtWidgets import QLabel, QSizePolicy, QStatusBar, QTabBar, QWidget
 
@@ -129,6 +129,17 @@ class SheetTabs(QTabBar):
     def set_budget(self, px) -> None:
         """The width the strip may take; past it the scroll arrows show."""
         self.setMaximumWidth(16777215 if px is None else max(int(px), 120))
+
+    def minimumSizeHint(self) -> QSize:  # noqa: N802
+        """No wider than the tabs while they all fit. A QTabBar with scroll
+        arrows asks for both arrows plus 75 px whatever it holds, so the
+        strip of a drawing without sheets, «+» alone, kept a blank of some
+        90 px between its tab and the status message (133 px for a 40 px
+        tab on macOS, whose arrows are wider). Once the tabs need the
+        arrows, they ask for what Qt asks."""
+        hint = super().minimumSizeHint()
+        return QSize(min(hint.width(), self.sizeHint().width()),
+                     hint.height())
 
     def _slots(self) -> list:
         """What each displayed tab stands for: ``("model",)``,

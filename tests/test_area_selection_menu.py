@@ -11,6 +11,7 @@ is selected. Everything is counted and measured all the same
 from __future__ import annotations
 
 import os
+import sys
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
@@ -130,10 +131,15 @@ def test_area_selection_adds_the_faces_alone_in_a_modal_box(
     boxes = []
 
     def fake_exec(self):
-        boxes.append((self.windowTitle(), self.text(), self.isModal()))
+        boxes.append((self.windowTitle(), self.text(), self.informativeText()))
         return QMessageBox.Ok
 
     monkeypatch.setattr(QMessageBox, "exec", fake_exec)
     selection.trigger()
-    assert boxes == [(tr("Area"), fmt_area(5.0), False)] or \
-        boxes[0][:2] == (tr("Area"), fmt_area(5.0))
+    [(title, text, informative)] = boxes
+    if sys.platform == "darwin":
+        # macOS draws no title on a message box (Qt returns it empty), so
+        # «Area» is the text there and the value its informative text.
+        assert (text, informative) == (tr("Area"), fmt_area(5.0))
+    else:
+        assert (title, text, informative) == (tr("Area"), fmt_area(5.0), "")
