@@ -533,6 +533,8 @@ def _pack_geometry(mesh, sink: dict) -> dict:
     face_attr: list = []
     table: list = []
     table_index: dict = {}
+    previous_color = previous_mat = None
+    previous_index = -1
     for f in mesh.faces:
         loop = f.loop
         holes = f.hole_loops or ()
@@ -546,26 +548,50 @@ def _pack_geometry(mesh, sink: dict) -> dict:
         for h in holes:
             ring_sizes.append(len(h))
             corners.extend(h)
-        attrs = _face_attrs_json(f) if f.attrs else None
+        raw = f.attrs
+        if not raw:
+            face_attr.append(-1)
+            continue
+        color = mat = remember_color = None
+        if type(raw) is dict and len(raw) == 2:
+            color, mat = raw.get("color"), raw.get("mat")
+        if (type(color) in (list, tuple) and len(color) == 3
+                and type(mat) is str and mat):
+            r, g, b = color
+            # Loaded faces have their own lists but can share immutable RGB
+            # values. Identity keeps signed zero and JSON number types apart.
+            if (previous_color is not None and mat is previous_mat
+                    and r is previous_color[0] and g is previous_color[1]
+                    and b is previous_color[2]):
+                face_attr.append(previous_index)
+                continue
+            attrs = {"color": list(color), "mat": mat}
+            if type(r) is float and type(g) is float and type(b) is float:
+                remember_color = (r, g, b)
+        else:
+            attrs = _face_attrs_json(f)
+        k = -1
         if attrs:
             key = _attrs_key(attrs)
             k = table_index.get(key)
             if k is None:
                 k = table_index[key] = len(table)
                 table.append(attrs)
-            face_attr.append(k)
-        else:
-            face_attr.append(-1)
+        face_attr.append(k)
+        if remember_color is not None:
+            previous_color, previous_mat, previous_index = remember_color, mat, k
 
     # Number the vertex objects by first appearance.
     ids = np.fromiter(map(id, corners), dtype=np.uint64,
                       count=len(corners))
-    _u, first, inverse = np.unique(ids, return_index=True,
-                                   return_inverse=True)
+    unique_ids, first, inverse = np.unique(ids, return_index=True,
+                                          return_inverse=True)
+    del ids, unique_ids
     order = np.argsort(first, kind="stable")
-    rank = np.empty_like(order)
-    rank[order] = np.arange(len(order))
-    index = rank[inverse.reshape(-1)].astype(np.int32)
+    rank = np.empty(len(order), dtype=np.int32)
+    rank[order] = np.arange(len(order), dtype=np.int32)
+    index = rank[inverse.reshape(-1)]
+    del rank, inverse
     pos = np.array([corners[i].position.toTuple()
                     for i in first[order].tolist()],
                    dtype=np.float32).reshape(-1, 3)
