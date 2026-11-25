@@ -282,17 +282,20 @@ def test_text_block_sits_away_from_the_anchor():
 def test_pick_text_label_hits_the_drawn_block():
     """The hit box follows the drawn block: with the anchor to the right the
     words are LEFT of the leader end, and a click there (not to the right,
-    where the block used to be) picks the label."""
+    where the block used to be) picks the label. The leader only counts
+    for a full pick."""
     from PySide6.QtGui import QFont, QFontMetrics
     from views.viewport import Viewport
 
     scene = Scene()
-    lab = TextLabel(QVector3D(3, 0, 0), QVector3D(-2, 0, 0), "Pileta")
+    lab = TextLabel(QVector3D(3, 0, 0), QVector3D(-2, 0, 0), "Pileta\nNivel de agua")
     scene.text_labels.append(lab)
     font = QFont()
     font.setPointSize(9)
     font.setBold(True)
-    w = QFontMetrics(font).horizontalAdvance("Pileta")
+    fm = QFontMetrics(font)
+    widths = [fm.horizontalAdvance(line) for line in lab.text.splitlines()]
+    x0 = 100 - 6 - max(widths)
 
     class _VP:
         pick_threshold_px = 8.0
@@ -304,5 +307,10 @@ def test_pick_text_label_hits_the_drawn_block():
     vp = _VP()
     vp.scene = scene
     pick = Viewport.pick_text_label.__get__(vp)
-    assert pick(100 - 6 - w / 2, 96, rect_only=True) is lab    # inside block
-    assert pick(100 + 6 + w / 2, 96, rect_only=True) is None   # old side
+    assert pick(x0 + widths[0] / 2, 96, rect_only=True) is lab
+    assert pick(106, 96, rect_only=True) is None
+    bottom = 96 + fm.height() + fm.descent() + 3
+    assert pick(x0 + widths[1] / 2, bottom, rect_only=True) is lab
+    assert pick(x0 + widths[1] / 2, bottom + 1, rect_only=True) is None
+    assert pick(200, 100, rect_only=True) is None
+    assert pick(200, 100) is lab
