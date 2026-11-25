@@ -169,6 +169,34 @@ def test_two_saves_are_byte_identical(tmp_path, binary):
     assert (tmp_path / "a.igz").read_bytes() == (tmp_path / "b.igz").read_bytes()
 
 
+def test_shared_color_values_keep_number_types_and_edits(tmp_path, binary):
+    scene = Scene()
+    red, zero, blue = 1.0, 0.0, 0.5
+    colors = [[red, zero, blue], [red, zero, blue],
+              [red, -0.0, blue], [1, zero, blue]]
+    faces = []
+    for i, color in enumerate(colors):
+        x = 2 * i
+        face = scene.mesh.add_face([V(x, 0, 0), V(x + 1, 0, 0), V(x, 1, 0)])
+        face.attrs.update(color=color, mat="Ladrillo")
+        faces.append(face)
+
+    path = tmp_path / "colors.igz"
+
+    def saved_colors():
+        igz.save_scene(scene, path)
+        with zipfile.ZipFile(path) as zf:
+            meta = json.loads(zf.read("document.json"))["scene"]["geom"]
+            arrays = igz._geometry_arrays(meta, zf.read(meta["member"]))
+        return (json.dumps([a["color"] for a in meta["face_attrs"]]),
+                arrays["face_attr"].tolist())
+
+    table = "[[1.0, 0.0, 0.5], [1.0, -0.0, 0.5], [1, 0.0, 0.5]]"
+    assert saved_colors() == (table, [0, 0, 1, 2])
+    faces[1].attrs["color"][1] = -0.0
+    assert saved_colors() == (table, [0, 1, 1, 2])
+
+
 def test_a_small_document_is_not_binary(tmp_path):
     out = tmp_path / "small.igz"
     igz.save_scene(_scene(tmp_path), out)
