@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import math
 from typing import Optional
+from weakref import ref
 from PySide6.QtGui import QMatrix4x4, QVector3D, QVector4D
 from views.viewport._support import _PROJECT_NATIVE_MIN, _project_px_numpy
 
@@ -957,11 +958,20 @@ class ProjectionMixin:
             table = (self._pick_lazy_table()
                      if hasattr(self, "_pick_lazy_table") else None)
             if table is not None:
-                import numpy as np
                 lo, hi = table[1], table[2]
-                ok = np.isfinite(lo).all(axis=1) & np.isfinite(hi).all(axis=1)
-                if ok.any():
-                    return float(np.linalg.norm(hi[ok].max(axis=0)
-                                                - lo[ok].min(axis=0)))
+                # Moving a placement publishes new box arrays. Reuse the
+                # diagonal while they stay, without retaining the old table.
+                memo = getattr(self, "_zoom_diag_memo", None)
+                if memo is not None and memo[0]() is lo and memo[1]() is hi:
+                    diag = memo[2]
+                else:
+                    import numpy as np
+                    ok = np.isfinite(lo).all(axis=1) & np.isfinite(hi).all(axis=1)
+                    diag = (float(np.linalg.norm(hi[ok].max(axis=0)
+                                                 - lo[ok].min(axis=0)))
+                            if ok.any() else None)
+                    self._zoom_diag_memo = (ref(lo), ref(hi), diag)
+                if diag is not None:
+                    return diag
         lo, hi = self.scene.bounds()
         return (hi - lo).length() if lo is not None else 0.0

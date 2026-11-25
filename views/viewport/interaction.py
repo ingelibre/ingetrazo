@@ -1045,9 +1045,11 @@ class InteractionMixin:
         if focus is not None:
             # A perceptible retreat even from a close-up: ~1 % of the
             # model's size per notch when the frame scaling alone would move
-            # the eye less than that (the "zoom is stuck" report).
-            self.camera.zoom_to(steps, focus,
-                                min_step=self._zoom_out_step() * floor_share)
+            # the eye less than that (the "zoom is stuck" report). Looking
+            # up the model size can build the lazy pick table, so do it only
+            # when zoom_to uses the retreat floor.
+            min_step = self._zoom_out_step() * floor_share if steps < 0 else 0.0
+            self.camera.zoom_to(steps, focus, min_step=min_step)
         else:
             self.camera.zoom(steps)
         self._zoom_focus = (pose(), pos.x(), pos.y(),
