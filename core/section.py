@@ -120,7 +120,7 @@ class SectionPlane:
     the active one, stays. Hidden and inactive is a plane switched off."""
 
     __slots__ = ("point", "normal", "name", "symbol", "active", "uid",
-                 "hidden", "fill", "layer")
+                 "hidden", "fill", "layer", "owner_uid")
 
     def __init__(self, point: QVector3D, normal: QVector3D,
                  name: str = "", symbol: str = "",
@@ -147,6 +147,7 @@ class SectionPlane:
         #: Stable identity for scenes (.igz SavedView references) — survives
         #: reordering and deletion of OTHER planes.
         self.uid = _take_uid(uid)
+        self.owner_uid = None
 
     def flip(self) -> None:
         """Reverse: the cut hides the other side."""
@@ -167,7 +168,9 @@ class SectionPlane:
             entry["name"] = self.name
         if self.symbol:
             entry["symbol"] = self.symbol
-        if self.active:
+        if self.owner_uid is not None:
+            entry["scope"] = {"owner_uid": self.owner_uid, "active": self.active}
+        elif self.active:
             entry["active"] = True
         if self.hidden:
             entry["hidden"] = True          # older readers ignore it
@@ -185,6 +188,10 @@ class SectionPlane:
                  uid=raw.get("uid"), hidden=bool(raw.get("hidden", False)))
         if isinstance(raw.get("layer"), str) and raw["layer"]:
             sp.layer = raw["layer"]
+        scope = raw.get("scope")
+        if isinstance(scope, dict) and isinstance(scope.get("owner_uid"), str):
+            sp.owner_uid = scope["owner_uid"]
+            sp.active = scope.get("active") is True
         sp.fill = fill_from_dict(raw.get("fill"))
         return sp
 
@@ -429,6 +436,193 @@ class CutSet:
         return self.distances(pts) > tol
 
 
+class ScopedSectionCut:
+    """A placement-owned cut resolved once for a drawing or picking pass.
+
+    The scope uses placement IDs because component copies can share a mesh.
+    The plane pose is in the owning placement's coordinates.
+    """
+
+    def __init__(self, scene, owner_uid, point, normal, *, world_pose=False) -> None:
+        from core.group import iter_placements
+
+        self.point = self.normal = None
+        self.placements = frozenset()
+        if owner_uid is None:
+            self.point = QVector3D(point)
+            self.normal = QVector3D(normal)
+            return
+        for root in scene.groups:
+            for group, matrix in iter_placements(root):
+                if group.uid == owner_uid:
+                    self._resolve(group, None if world_pose else matrix, point, normal)
+                    return
+
+    def _resolve(self, owner, matrix, point, normal) -> None:
+        from core.group import iter_placements
+
+        if matrix is not None:
+            inverse, invertible = matrix.inverted()
+            if not invertible:
+                return
+            point = matrix.map(point)
+            normal = inverse.transposed().mapVector(normal)
+        if normal.lengthSquared() < 1e-20:
+            return
+        self.point = QVector3D(point)
+        self.normal = normal.normalized()
+        self.placements = frozenset(group.uid for group, _ in iter_placements(owner))
+
+    def applies_to(self, placement) -> bool:
+        return getattr(placement, "uid", None) in self.placements
+
+    def hidden(self, point, placement, tol=1e-6) -> bool:
+        return self.applies_to(placement) and (
+            QVector3D.dotProduct(self.normal, point - self.point) > tol)
+
+
+    def clip_segment(self, a, b, placement):
+        if not self.applies_to(placement):
+            return a, b
+        da = QVector3D.dotProduct(self.normal, a - self.point)
+        db = QVector3D.dotProduct(self.normal, b - self.point)
+        outside_a, outside_b = da > 1e-6, db > 1e-6
+        if outside_a and outside_b:
+            return None
+        if outside_a == outside_b:
+            return a, b
+        t = min(1.0, max(0.0, da / (da - db)))
+        boundary = a + (b - a) * t
+        return (boundary, b) if outside_a else (a, boundary)
+
+    def clip_draw_primitives(self, raw, stride, arity):
+        """Clip packed float32 lines or triangles, preserving vertex attributes.
+
+        The draw copy is clipped in world coordinates. This never edits the source
+        mesh or shared component definition. The first three floats of each vertex
+        are its position. Remaining values, such as UVs, interpolate at the cut.
+        """
+        import numpy as np
+
+        if not raw:
+            return raw
+        if arity not in (2, 3) or stride < 3:
+            raise ValueError("Expected line or triangle draw vertices")
+        primitives = np.frombuffer(raw, dtype=np.float32).reshape(-1, arity, stride)
+        normal = np.array([self.normal.x(), self.normal.y(), self.normal.z()])
+        point = np.array([self.point.x(), self.point.y(), self.point.z()])
+        distance = (primitives[..., :3] - point) @ normal
+        outside = distance > 1e-6
+        if not outside.any():
+            return raw
+
+        inside = ~outside.any(axis=1)
+        crossing = np.flatnonzero(~inside & ~outside.all(axis=1))
+        kept = []
+        start = 0
+        for row in crossing:
+            kept.append(primitives[start:row][inside[start:row]].reshape(-1, stride))
+            start = row + 1
+            vertices = primitives[row]
+            clipped = []
+            for i in range(arity):
+                j = (i + 1) % arity
+                if not outside[row, i]:
+                    clipped.append(vertices[i])
+                if outside[row, i] != outside[row, j]:
+                    d0, d1 = distance[row, i], distance[row, j]
+                    # Points within the tolerance count as on the boundary.
+                    t = min(1.0, max(0.0, d0 / (d0 - d1)))
+                    clipped.append(vertices[i] + (vertices[j] - vertices[i]) * t)
+                if arity == 2:
+                    if not outside[row, j]:
+                        clipped.append(vertices[j])
+                    break
+            if arity == 2:
+                kept.append(np.asarray(clipped))
+            else:
+                kept.extend(np.asarray((clipped[0], clipped[i], clipped[i + 1]))
+                            for i in range(1, len(clipped) - 1))
+        kept.append(primitives[start:][inside[start:]].reshape(-1, stride))
+        return np.concatenate(kept).astype(np.float32, copy=False).tobytes()
+
+
+def carry_scoped_sections(scene, group, matrix):
+    """Carry section planes owned by a group or its descendants."""
+    scoped = [plane for plane in scene.section_planes if plane.owner_uid is not None]
+    if not scoped:
+        return
+    from core.group import iter_placements
+
+    moved = {placement.uid for placement, _ in iter_placements(group)}
+    inverse, invertible = matrix.inverted()
+    if not invertible:
+        return
+    normals = inverse.transposed()
+    for plane in scoped:
+        if plane.owner_uid in moved:
+            plane.point = matrix.map(plane.point)
+            plane.normal = normals.mapVector(plane.normal).normalized()
+
+
+def _active_planes(scene):
+    active = getattr(scene, "active_sections", None)
+    if active is not None:
+        return active()
+    current = getattr(scene, "active_section", lambda: None)()
+    return [current] if current is not None else []
+
+
+def active_scoped_planes(scene):
+    if not getattr(scene, "show_section_cuts", True):
+        return []
+    return [plane for plane in _active_planes(scene)
+            if getattr(plane, "owner_uid", None) is not None]
+
+
+class ScopedSectionCuts:
+    """Intersection of the active half-spaces that apply to a placement."""
+
+    def __init__(self, cuts, world_cuts=()):
+        self.cuts = tuple(cut for cut in cuts if cut.placements)
+        self.world_cuts = tuple(world_cuts)
+        self.placements = frozenset().union(*(cut.placements for cut in self.cuts))
+        self.key = tuple((cut.placements, cut.point.toTuple(), cut.normal.toTuple())
+                         for cut in (*self.world_cuts, *self.cuts))
+
+    def applies_to(self, placement):
+        return bool(self.world_cuts) or getattr(placement, "uid", None) in self.placements
+
+    def hidden(self, point, placement):
+        return any(cut.hidden(point, placement) for cut in self.cuts)
+
+    def clip_segment(self, a, b, placement):
+        segment = (a, b)
+        for cut in self.cuts:
+            segment = cut.clip_segment(*segment, placement)
+            if segment is None:
+                break
+        return segment
+
+    def clip_draw_primitives(self, raw, stride, arity, placement):
+        for cut in self.world_cuts:
+            raw = cut.clip_draw_primitives(raw, stride, arity)
+        for cut in self.cuts:
+            if cut.applies_to(placement):
+                raw = cut.clip_draw_primitives(raw, stride, arity)
+        return raw
+
+
+def active_scoped_cut(scene, plane=None, *, world_planes=()):
+    planes = active_scoped_planes(scene) if plane is None else (plane,)
+    if not planes and not world_planes:
+        return None
+    cuts = (ScopedSectionCut(scene, sp.owner_uid, sp.point, sp.normal, world_pose=True)
+            for sp in planes)
+    world = (ScopedSectionCut(scene, None, sp.point, sp.normal) for sp in world_planes)
+    return ScopedSectionCuts(cuts, world)
+
+
 def annotation_points(entity) -> list:
     """The points where an annotation stands in the model, for the section
     box to keep or leave out: a dimension's two measured points, a text's
@@ -456,10 +650,8 @@ def cut_planes(scene) -> list:
     if not getattr(scene, "show_section_cuts", True):
         return []
     planes = []
-    active = getattr(scene, "active_section", None)
-    sp = active() if callable(active) else None
-    if sp is not None:
-        planes.append(sp)
+    planes.extend(sp for sp in _active_planes(scene)
+                  if getattr(sp, "owner_uid", None) is None)
     active_box = getattr(scene, "active_section_box", None)
     box = active_box() if callable(active_box) else None
     if box is not None:

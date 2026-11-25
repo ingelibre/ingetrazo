@@ -545,7 +545,7 @@ class SelectTool(Tool):
         if isinstance(entity, SectionPlane):
             # Double-clicking a section plane toggles the active cut.
             viewport.history.execute(SetActiveSectionCommand(
-                None if entity.active else entity))
+                entity, not entity.active))
             viewport.scene.select([entity])
             viewport.update()
             return

@@ -175,3 +175,30 @@ def test_an_orbit_step_keeps_the_batches_while_the_view_stays_inside():
         assert second is not first or exact <= drawn
     finally:
         _close(win)
+
+
+def test_scoped_component_stays_out_of_reused_and_widened_batches():
+    from core.section import SectionPlane, active_scoped_cut
+
+    win = _window()
+    try:
+        vp = win.viewport
+        mesh = _box_mesh(2.0)
+        owner = _place(vp, mesh, -2.0, 0.0)
+        sibling = _place(vp, mesh, 2.0, 0.0)
+        vp.scene.version += 1
+        _look(vp, 20.0)
+
+        assert {id(owner), id(sibling)} <= _drawn(vp)
+        plane = SectionPlane(V(0, 0, 1), V(0, 0, 1), active=True)
+        plane.owner_uid = owner.uid
+        vp.scene.section_planes.append(plane)
+        vp._frame_scoped_cut = active_scoped_cut(vp.scene)
+
+        # Neither a previously recorded widened pass nor a new one may
+        # draw the full prototype over the owner's clipped draw chunk.
+        assert _drawn(vp) == {id(sibling)}
+        vp._inst_frame_memo.clear()
+        assert _drawn(vp) == {id(sibling)}
+    finally:
+        _close(win)

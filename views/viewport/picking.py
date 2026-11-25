@@ -919,6 +919,7 @@ class PickingMixin:
         b_gbase: list = []    # each chunk's (n, 2, 3) edge array, kept
         b_gsel: list = []     # per edge: may pick_group land on it
         b_ggroups: list = []
+        b_gplaces: list = []
         b_gilayer: list = []  # per group: the nearest container's layer
         b_gctx: list = []     # per group: the tip's context word
         # Lazy placements (#158) keep their triangles in their own
@@ -997,6 +998,7 @@ class PickingMixin:
                 b_gel.append(gel)
                 b_gsel.append(np.full(len(ge), gsel, dtype=bool))
                 b_ggroups.append(owner)
+                b_gplaces.append(g)
                 # The placement's own layer — the nearest container's, not
                 # the top-level object's — is what its hard edges are inked
                 # with on a sheet (#1503).
@@ -1012,7 +1014,7 @@ class PickingMixin:
                 "spans": b_spans, "gea": b_gea, "geb": b_geb, "ggi": b_ggi,
                 "gel": b_gel,
                 "gsel": b_gsel, "ggroups": b_ggroups, "gctx": b_gctx,
-                "gilayer": b_gilayer,
+                "gilayer": b_gilayer, "gplaces": b_gplaces,
                 "gbase": b_gbase,
                 "n_ent": n_ent + count, "n_plist": n_plist + len(b_plist),
                 "n_tri": b_tri_off,
@@ -1068,6 +1070,7 @@ class PickingMixin:
             "gedge_layer": cat("gel", None) if gea else None,
             "gedge_sel": cat("gsel", None) if gea else None,
             "gedge_groups": fixed["ggroups"] + lazy["ggroups"],
+            "gedge_places": fixed["gplaces"] + lazy["gplaces"],
             "gedge_ilayer": fixed.get("gilayer", []) + lazy.get("gilayer", []),
             "gedge_ctx": fixed.get("gctx", []) + lazy.get("gctx", []),
             # The fixed part's edges lead, and that part outlives many lazy
@@ -1469,6 +1472,7 @@ class PickingMixin:
         gedge_a = gedge_b = gedge_gi = gedge_sel = gedge_fixed = None
         gedge_layer = None
         gedge_groups: list = []
+        gedge_places: list = []
         gedge_ilayer: list = []
         gedge_ctx: list = []
         if candidatos:
@@ -1480,6 +1484,7 @@ class PickingMixin:
             gedge_layer = block.get("gedge_layer")
             gedge_sel = block.get("gedge_sel")
             gedge_groups = block.get("gedge_groups", [])
+            gedge_places = block.get("gedge_places", [])
             gedge_ilayer = block.get("gedge_ilayer", [])
             gedge_ctx = block.get("gedge_ctx", [])
             gedge_fixed = block.get("gedge_fixed")
@@ -1588,6 +1593,7 @@ class PickingMixin:
             gedge_layer=gedge_layer,
             gedge_sel=gedge_sel,
             gedge_groups=gedge_groups,
+            gedge_places=gedge_places,
             gedge_ilayer=gedge_ilayer,
             gedge_ctx=gedge_ctx,
             gedge_fixed=gedge_fixed,
@@ -2141,7 +2147,8 @@ class PickingMixin:
         by loose/group."""
         key = (self.scene.version, id(self.scene.mesh),
                origin.x(), origin.y(), origin.z(),
-               direction.x(), direction.y(), direction.z())
+               direction.x(), direction.y(), direction.z(),
+               getattr(self.scene, "show_section_cuts", True))
         nat = (self._lazy_native() if hasattr(self, "_lazy_native")
                else None)
         cached = getattr(self, "_hover_hits_cache", None)
@@ -2165,7 +2172,8 @@ class PickingMixin:
         context, not the moving set."""
         key = (self.scene.version, id(self.scene.mesh),
                origin.x(), origin.y(), origin.z(),
-               direction.x(), direction.y(), direction.z())
+               direction.x(), direction.y(), direction.z(),
+               getattr(self.scene, "show_section_cuts", True))
         nat = (self._lazy_native() if hasattr(self, "_lazy_native")
                else None)
         cached = getattr(self, "_infer_hits_cache", None)
@@ -2180,14 +2188,23 @@ class PickingMixin:
     def _drop_past_cut(self, hits, origin, direction) -> None:
         """Hits beyond the active cut are on clipped-away geometry: their
         ``t`` becomes ``inf``, in place."""
+        from core.section import active_scoped_cut
+
         sp = _active_cut(self.scene)
-        if sp is not None and hits is not None and len(hits.t):
+        scoped = active_scoped_cut(self.scene)
+        if (sp is not None or scoped is not None) and hits is not None and len(hits.t):
             import numpy as np
             o = np.array([origin.x(), origin.y(), origin.z()])
             d = np.array([direction.x(), direction.y(), direction.z()])
             with np.errstate(invalid="ignore"):
                 pts = o + d * hits.t[:, None]
-                hidden = sp.hidden(pts)
+                hidden = sp.hidden(pts) if sp is not None else np.zeros(len(pts), dtype=bool)
+            if scoped is not None and scoped.placements:
+                for row in np.flatnonzero(~hidden & np.isfinite(hits.t)):
+                    placement = hits.place(row)
+                    if placement is None and hits.loose[row]:
+                        placement = getattr(self.scene, "edit_group", None)
+                    hidden[row] = scoped.hidden(origin + direction * float(hits.t[row]), placement)
             hits.t = np.where(hidden, np.inf, hits.t)
 
     def edge_point_under_cursor(self, edge, screen_x: float, screen_y: float):
@@ -2889,6 +2906,8 @@ class PickingMixin:
                 if np.isfinite(loose_t) and loose_t <= best[0] + eps:
                     return None
                 return best[1]
+        from core.section import active_scoped_cut
+        scope = active_scoped_cut(self.scene)
         # Edge fallback (cursor over empty space, or a lines-only group):
         # screen-space distance to every group hard edge, batched over the
         # cached projected arrays — the Python per-edge walk took ~300 ms per
@@ -2930,6 +2949,11 @@ class PickingMixin:
                 for i in near[np.argsort(d[near])]:
                     a = QVector3D(*idx.gedge_a[i])
                     p = a + (QVector3D(*idx.gedge_b[i]) - a) * float(t[i])
+                    row = int(idx.gedge_gi[i])
+                    placements = getattr(idx, "gedge_places", ())
+                    placement = placements[row] if placements else idx.gedge_groups[row]
+                    if scope is not None and scope.hidden(p, placement):
+                        continue
                     if not self._is_occluded(p):
                         best_d = float(d[i])
                         best_g = idx.gedge_groups[int(idx.gedge_gi[i])]

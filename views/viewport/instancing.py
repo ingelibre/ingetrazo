@@ -575,6 +575,7 @@ class InstancingMixin:
                 if seen is not None:
                     seen.add(id(child))
                 tops[id(proxy)] = id(group)
+                proxy.uid = child.uid
                 proxy.mesh = child.mesh
                 # A nested entity with no tag of its own inherits the
                 # nearest tag above it (the .skp convention); and when a tag
@@ -752,6 +753,13 @@ class InstancingMixin:
             keep &= ~self._instances_below_a_pixel(pool)
         if pv:
             keep &= ~self._inst_pool_previewed(pool, pv)
+        scope = getattr(self, "_frame_scoped_cut", None)
+        scoped_out = None
+        if scope is not None and scope.key:
+            # Scoped placements draw only from clipped, world-space chunks.
+            scoped_out = np.fromiter((scope.applies_to(g) for g in groups),
+                                     dtype=bool, count=len(groups))
+            keep &= ~scoped_out
         # One pool per (prototype, container paint): a painted instance
         # (issue #47) draws its own bake of the prototype, not the plain
         # one its siblings share — pooled by mesh alone it kept showing
@@ -781,12 +789,15 @@ class InstancingMixin:
             # the view is clipped; nothing on screen changes.
             if (last is not None and last[0] is pool
                     and not (keep & ~last[1]).any()
+                    and (scoped_out is None or not (last[1] & scoped_out).any())
                     and int(last[1].sum()) <= self._INST_SUPERSET_MAX * int(keep.sum()) + 64):
                 self._frame_instanced = last[2]
                 return last[2]
             keep = self._instances_in_frustum(
                 lo, hi, self._widened_planes(planes, self._INST_VIEW_MARGIN))
             keep &= ~self._instances_below_a_pixel(pool, 0.5)
+            if scoped_out is not None:
+                keep &= ~scoped_out
             if pv:
                 keep &= ~self._inst_pool_previewed(pool, pv)
         # The kept placements of each pool, in placement order, the pools
