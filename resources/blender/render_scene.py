@@ -47,8 +47,27 @@ def load_job():
 def import_model(path):
     bpy.ops.import_scene.gltf(filepath=path)
     objs = [o for o in bpy.context.scene.objects if o.type == "MESH"]
+    part_two_sided_faces({o.data for o in objs})
     say("imported", len(objs), "objects")
     return objs
+
+
+def part_two_sided_faces(meshes, gap=1e-4):
+    """A face painted on both sides comes as two single-sided copies in the
+    same plane (formats/meshexport.py). Cycles culls no back face, so it
+    showed either one, triangle by triangle (#1569): each copy steps a
+    tenth of a millimetre out to its own side."""
+    for mesh in meshes:
+        single = {i for i, mat in enumerate(mesh.materials)
+                  if mat is not None and mat.use_backface_culling}
+        out = {}
+        for poly in mesh.polygons if single else ():
+            if poly.material_index in single:
+                for v in poly.vertices:
+                    out[v] = out.get(v, Vector()) + poly.normal
+        for v, normal in out.items():
+            if normal.length > 1e-6:
+                mesh.vertices[v].co += normal.normalized() * gap
 
 
 def _set(bsdf, names, value):

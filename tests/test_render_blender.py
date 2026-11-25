@@ -164,6 +164,29 @@ def test_a_real_render_through_the_users_blender(tmp_path):
     assert _png_size(tmp_path / "render.png") == (160, 90)
 
 
+@pytest.mark.slow
+@pytest.mark.skipif(shutil.which("blender") is None,
+                    reason="no Blender on this machine")
+def test_a_face_painted_on_both_sides_shows_the_side_it_faces(tmp_path):
+    """Cycles culls nothing: the two copies of the face (#1270) may not lie
+    in one plane, or either showed, triangle by triangle (#1569)."""
+    from PySide6.QtGui import QImage
+    scene = _box_scene()
+    for f in scene.mesh.faces:
+        f.attrs["color"] = (0.9, 0.05, 0.05)
+        f.attrs["back"] = {"color": (0.05, 0.05, 0.9)}
+    job = rb.write_job(scene, _camera(scene), tmp_path, engine="cycles",
+                       quality=0, width=160, height=90)
+    run = subprocess.run(rb.command(rb.find_blender(), job),
+                         capture_output=True, text=True, env=rb.clean_env(),
+                         timeout=600)
+    assert run.returncode == 0, run.stdout[-2000:]
+    image = QImage(str(tmp_path / "render.png"))
+    colors = [image.pixelColor(x, y) for x in range(70, 91)
+              for y in range(35, 56)]
+    assert all(c.red() > c.blue() for c in colors)
+
+
 def test_the_panel_knows_where_blender_is(monkeypatch, tmp_path):
     from core import extensions
     monkeypatch.setattr(extensions, "plugin_dirs", lambda: [tmp_path])
