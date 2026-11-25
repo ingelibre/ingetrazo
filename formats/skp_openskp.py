@@ -837,7 +837,64 @@ def _image_geometry_bounds(defn):
     return lo, hi
 
 
-def _rests_on_a_face(roots, by_id, quad) -> bool:
+def _placed_boxes(defn, by_id, cache, stack=frozenset()):
+    """What ``defn`` places, boxed: ``(children, lo, hi)`` — the placements
+    :func:`_rests_on_a_face` walks, as ``(definition, matrix)``, and each
+    one's whole subtree in ``defn``'s own frame. Built once per definition:
+    a file with thousands of cut-out images asks for each of them."""
+    import numpy as np
+    key = id(defn)
+    if key in cache:
+        return cache[key]
+    inner = stack | {key}
+    children, los, his = [], [], []
+    for ins in getattr(defn, "instances", ()):
+        child = by_id.get(getattr(ins, "ref_idx", None))
+        if child is None or getattr(child, "is_image", False) or \
+                getattr(child, "always_faces_camera", False):
+            continue
+        cm = np.array(_matrix(ins.matrix).data(),
+                      dtype=np.float64).reshape(4, 4, order="F")
+        lo, hi = np.full(3, -np.inf), np.full(3, np.inf)    # unknown: walked
+        if id(child) not in inner and len(inner) <= _MAX_DEPTH:
+            box = _subtree_box(child, by_id, cache, inner)
+            if box is None:                 # nothing below: never walked
+                continue
+            if np.isfinite(box).all() and np.isfinite(cm).all():
+                blo, bhi = box
+                corners = np.array([[x, y, z] for x in (blo[0], bhi[0])
+                                    for y in (blo[1], bhi[1])
+                                    for z in (blo[2], bhi[2])])
+                corners = corners @ cm[:3, :3].T + cm[:3, 3]
+                lo, hi = corners.min(axis=0), corners.max(axis=0)
+        children.append((child, cm))
+        los.append(lo)
+        his.append(hi)
+    found = (children, np.array(los).reshape(-1, 3),
+             np.array(his).reshape(-1, 3))
+    cache[key] = found
+    return found
+
+
+def _subtree_box(defn, by_id, cache, stack):
+    """``(lo, hi)`` of ``defn``'s faces and all it places, in its own frame;
+    ``None`` with no face at all, infinite when it cannot be told."""
+    import numpy as np
+    key = ("box", id(defn))
+    if key in cache:
+        return cache[key]
+    _children, los, his = _placed_boxes(defn, by_id, cache, stack)
+    if getattr(defn, "faces", None):
+        own = _image_geometry_bounds(defn)
+        if own is None:
+            own = (np.full(3, -np.inf), np.full(3, np.inf))
+        los, his = np.vstack([los, own[0]]), np.vstack([his, own[1]])
+    box = (los.min(axis=0), his.max(axis=0)) if len(los) else None
+    cache[key] = box
+    return box
+
+
+def _rests_on_a_face(roots, by_id, quad, cache=None) -> bool:
     """Whether the image quad ``quad`` (world ``QVector3D`` corners) lies ON
     a face of the model: parallel to it, within ``_GLUE_TOL``, with its
     centre over the face. That is a logo or a sign stuck to a surface, which
@@ -846,8 +903,12 @@ def _rests_on_a_face(roots, by_id, quad) -> bool:
 
     Walks the placement tree in NumPy: each definition's face boxes are
     tested against the image centre in that definition's own frame, and only
-    the few faces whose box holds it get the exact plane test."""
+    the few faces whose box holds it get the exact plane test. A placement
+    whose whole subtree lies elsewhere is not entered (``cache``, shared by
+    the images of one file, keeps those boxes)."""
     import numpy as np
+    if cache is None:
+        cache = {}
     q = np.array([[p.x(), p.y(), p.z()] for p in quad], dtype=np.float64)
     if len(q) < 3:
         return False
@@ -925,13 +986,27 @@ def _rests_on_a_face(roots, by_id, quad) -> bool:
                         world = pos_m[s0:s1] @ m[:3, :3].T + m[:3, 3]
                         if on_face(world):
                             return True
-        for ins in getattr(defn, "instances", []):
-            child = by_id.get(getattr(ins, "ref_idx", None))
-            if child is None or getattr(child, "is_image", False) or \
-                    getattr(child, "always_faces_camera", False):
-                continue
-            cm = np.array(_matrix(ins.matrix).data(),
-                          dtype=np.float64).reshape(4, 4, order="F")
+        children, los, his = _placed_boxes(defn, by_id, cache)
+        if not children:
+            return False
+        near = range(len(children))
+        try:
+            inv = np.linalg.inv(m)
+            # A face that holds the centre is within _GLUE_TOL of it in the
+            # world; the smallest stretch of ``m`` says how far that is here.
+            # Doubled, with a float's worth of slack for far-off coordinates.
+            tol = 2 * _GLUE_TOL / np.linalg.svd(
+                m[:3, :3], compute_uv=False).min()
+        except (np.linalg.LinAlgError, ZeroDivisionError):
+            pass
+        else:
+            c = inv[:3, :3] @ centre + inv[:3, 3]
+            tol += 1e-5 * np.abs(c).max()
+            if np.isfinite(c).all() and np.isfinite(tol):
+                near = np.nonzero(np.all(
+                    (los - tol <= c) & (c <= his + tol), axis=1))[0]
+        for k in near:
+            child, cm = children[k]
             if walk(child, m @ cm, depth + 1, stack):
                 return True
         return False
@@ -956,6 +1031,7 @@ def _image_billboard_flags(roots, by_id, attr_map, proto_ids):
     Only the booleans survive, not the source model or derived face geometry.
     """
     flags = {}
+    boxes: dict = {}
     has_image: dict = {}
 
     def holds_image(definition):
@@ -989,7 +1065,8 @@ def _image_billboard_flags(roots, by_id, attr_map, proto_ids):
                     tex = next((a["texture"]["path"] for _o, _h, a in faces
                                 if a and "texture" in a), None)
                     flags[key] = bool(tex and _image_has_cutout(tex)
-                                      and not _rests_on_a_face(roots, by_id, faces[0][0]))
+                                      and not _rests_on_a_face(
+                                          roots, by_id, faces[0][0], boxes))
             elif getattr(child, "always_faces_camera", False) \
                     or not holds_image(child):
                 continue
@@ -1878,6 +1955,7 @@ def _adapt_inner(model, name: str, skp_path=None, *, consume=False):
     # always shows the WHOLE picture once (see _image_quad_faces). An
     # "always faces camera" component (Susan) flattens its whole subtree
     # into one billboard group — the flag decides, no heuristic needed.
+    image_boxes: dict = {}
     for child, placed, inh, lay in image_uses:
         if getattr(child, "is_image", False):
             faces = _image_quad_faces(child, placed, attr_map, inh)
@@ -1890,7 +1968,8 @@ def _adapt_inner(model, name: str, skp_path=None, *, consume=False):
                 billboard = image_flags[_image_use_key(child, placed, inh)]
             else:
                 billboard = bool(tex and _image_has_cutout(tex)
-                                 and not _rests_on_a_face(roots, by_id, faces[0][0]))
+                                 and not _rests_on_a_face(
+                                     roots, by_id, faces[0][0], image_boxes))
         else:
             faces = []
             _collect(child, placed, by_id, attr_map, faces, 0, set(),
