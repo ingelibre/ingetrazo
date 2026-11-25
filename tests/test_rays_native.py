@@ -34,6 +34,15 @@ needs_native = pytest.mark.skipif(
     reason="native module not built")
 
 
+def _blas() -> str:
+    """The name of the BLAS this NumPy was built with, or ""."""
+    try:
+        cfg = np.show_config(mode="dicts")
+        return str(cfg["Build Dependencies"]["blas"]["name"]).lower()
+    except Exception:  # noqa: BLE001 — older NumPy: no dict mode
+        return ""
+
+
 def _same(a, b) -> bool:
     return vv._mt_same(a, b)
 
@@ -168,7 +177,12 @@ def test_one_row_passes_on_the_edges(modes):
                 t, hit = mod.ray_tris(o3, d3, a, b, c, modes)
                 assert _same(t, tp) and hit[0] == hp[0], r
                 seen += int(hp[0] != many_h[r])
-    # The sample does reach rows where one row and many part ways.
+    # The sample does reach rows where one row and many part ways — with
+    # OpenBLAS. Apple's Accelerate (NumPy's BLAS on macOS) sums one row as
+    # it sums many, so there is no such row to reach; the rows above still
+    # had to match.
+    if not seen and _blas() == "accelerate":
+        pytest.skip("this NumPy's BLAS sums one row as it sums many")
     assert seen > 0
 
 
