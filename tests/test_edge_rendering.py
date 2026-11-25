@@ -434,7 +434,7 @@ def test_clipped_ends_get_neither_markers_nor_extended_profile_caps(drawing):
     from PySide6.QtGui import QVector4D
     vp, render, _renderer = drawing
     _line(vp)
-    vp._clip_vec = QVector4D(1, 0, 0, 0)
+    vp._clip_vecs = [QVector4D(1, 0, 0, 0)]
     mask = _ink(render(_style(profiles=True, profile_width=4, profile_cap="round_extended",
                               endpoints=True, endpoint_type="square", endpoint_size=20)))
     assert not mask[:, :WIDTH // 2 - 1].any()
@@ -574,7 +574,7 @@ def test_near_plane_and_section_clipping_leave_no_spurious_lines(drawing):
     vp, render, _renderer = drawing
     _line(vp)
     from PySide6.QtGui import QVector4D
-    vp._clip_vec = QVector4D(1, 0, 0, 0)
+    vp._clip_vecs = [QVector4D(1, 0, 0, 0)]
     image = render(_style(extensions=True, extension_length=20))
     mask = _ink(image)
     assert not mask[:, :WIDTH // 2 - 1].any()
@@ -628,3 +628,87 @@ def test_export_profile_pen_remains_independent_of_the_regular_edge_pen(drawing)
     vp._export_profile_px = 6
     image = render(_style(profiles=True, profile_width=1))
     assert _ink(image)[:, WIDTH // 2].sum() >= 6
+
+
+def test_styled_edges_are_cut_by_every_section_plane(drawing):
+    """A section box cuts with six planes at once: each one must cut."""
+    from PySide6.QtGui import QVector4D
+    vp, render, _renderer = drawing
+    _line(vp)
+    plain_x = np.flatnonzero(_ink(render(_style(profiles=True, profile_width=3))).any(axis=0))
+    # Keep -0.5 <= x <= 0.5: the middle half of the line.
+    vp._clip_vecs = [QVector4D(1, 0, 0, 0.5), QVector4D(-1, 0, 0, 0.5)]
+    cut_x = np.flatnonzero(_ink(render(_style(profiles=True, profile_width=3,
+                                              extensions=True, extension_length=10))).any(axis=0))
+    middle = (plain_x[0] + plain_x[-1]) / 2
+    quarter = (plain_x[-1] - plain_x[0]) / 4
+    # Cut ends get no extension: the stroke stops at both planes.
+    assert cut_x[0] == pytest.approx(middle - quarter, abs=2)
+    assert cut_x[-1] == pytest.approx(middle + quarter, abs=2)
+
+
+@pytest.mark.parametrize("width", [1, 3])
+def test_a_section_plane_hides_the_cut_away_edges_in_the_viewport(cube_viewport, width):
+    """The viewport keeps its cuts in ``_clip_vecs``; styled edges (any
+    profile wider than 1 px) read a ``_clip_vec`` gone since the section box
+    and kept drawing the edges of the part a cut hides."""
+    from core.section import SectionPlane
+    vp = cube_viewport
+    scene = vp.scene
+    mvp = vp.camera.projection_matrix() * vp.camera.view_matrix()
+
+    def project(point):
+        p = mvp.map(point)
+        return np.rint([(p.x() + 1) * 450, (1 - p.y()) * 375]).astype(int)
+
+    def pixels():
+        image = vp.render_image(900, 750, overlays=False).convertToFormat(QImage.Format_RGBA8888)
+        return np.frombuffer(image.constBits(), dtype=np.uint8).reshape(
+            (750, image.bytesPerLine() // 4, 4))[:, :900, :3].copy()
+
+    def darkest(image, x, y):
+        return image[y - 1:y + 2, x - 1:x + 2].max(axis=2).min()
+
+    scene.display_style = _style(profiles=True, profile_width=width, section_fill=False)
+    whole = pixels()
+    # The edges of the face at x = 1, at a quarter, half and three quarters.
+    samples = []
+    for edge in scene.mesh.edges:
+        if edge.a.x() > 0.99 and edge.b.x() > 0.99:
+            for t in (0.25, 0.5, 0.75):
+                x, y = project(edge.a + (edge.b - edge.a) * t)
+                if darkest(whole, x, y) <= 60:       # drawn, without the cut
+                    samples.append((x, y))
+    assert len(samples) >= 3
+    plane = SectionPlane(V(0, 0, 0), V(1, 0, 0), name="A")
+    scene.section_planes.append(plane)
+    scene.set_active_section(plane)
+    scene.version += 1
+    cut = pixels()
+    assert all(darkest(cut, x, y) > 60 for x, y in samples), samples
+
+
+@pytest.mark.parametrize("width", [1, 3])
+def test_switching_a_section_plane_off_brings_the_whole_model_back(cube_viewport, width):
+    """A frame with no cut left the last cut's clip distances (and its
+    plane count) on: the faces stayed cut after the plane was switched off,
+    while styled edges drew the whole model — lines where nothing was."""
+    from core.section import SectionPlane
+    vp = cube_viewport
+    scene = vp.scene
+
+    def pixels():
+        image = vp.render_image(900, 750, overlays=False).convertToFormat(QImage.Format_RGBA8888)
+        return np.frombuffer(image.constBits(), dtype=np.uint8).reshape(
+            (750, image.bytesPerLine() // 4, 4))[:, :900, :3].copy()
+
+    scene.display_style = _style(profiles=True, profile_width=width, section_fill=False)
+    whole = pixels()
+    plane = SectionPlane(V(0, 0, 0), V(1, 0, 0), name="A")
+    scene.section_planes.append(plane)
+    scene.set_active_section(plane)
+    scene.version += 1
+    assert not np.array_equal(pixels(), whole)
+    scene.set_active_section(None)
+    scene.version += 1
+    assert np.array_equal(pixels(), whole)
