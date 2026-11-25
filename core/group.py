@@ -835,7 +835,11 @@ def copy_group(group, delta=None, _in_definition=False):
         if getattr(group, "axes", None) is not None:
             g.axes = t * group.axes
     g.layer = group.layer
-    g.ifc = dict(group.ifc) if group.ifc else None
+    ifc = group.ifc
+    if ifc and not isinstance(ifc, dict):     # a script's bare class (#1527)
+        from formats.igz import _ifc_json
+        ifc = _ifc_json(ifc, group.name)
+    g.ifc = dict(ifc) if ifc else None
     g.billboard = group.billboard
     g.text3d = dict(group.text3d) if group.text3d else None
     g.ext = copy.deepcopy(group.ext) if getattr(group, "ext", None) else None

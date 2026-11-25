@@ -56,3 +56,21 @@ def test_a_face_tag_is_repaired_or_left_out(tmp_path, tag, expected, fmt):
     _square(scene.mesh).attrs["ifc"] = tag
     back = _saved_and_opened(scene, tmp_path, fmt)
     assert back.mesh.faces[0].attrs.get("ifc") == expected
+
+
+@pytest.mark.parametrize("place", [False, True])
+@pytest.mark.parametrize("tag, expected", [
+    ("IfcPipeSegment", {"class": "IfcPipeSegment", "name": "Test"}),
+    ({"class": "IfcWall", "name": "W"}, {"class": "IfcWall", "name": "W"}),
+    (7, None),
+    (None, None),
+])
+def test_a_group_with_such_a_tag_can_be_copied(tag, expected, place):
+    from core.group import copy_group
+    g = Group(name="Test")
+    _square(g.mesh)
+    if place:
+        g.xform = QMatrix4x4()
+    g.ifc = tag
+    copied = copy_group(g).ifc
+    assert copied == expected and (copied is None or copied is not tag)
