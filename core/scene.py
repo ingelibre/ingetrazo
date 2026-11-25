@@ -522,6 +522,24 @@ class Scene:
             sp.active = sp is plane
 
     # ---- Group-edit context (Groups v2) --------------------------------------
+    def _ancestor_chain(self, group) -> list:
+        """``[top, ..., parent]`` of ``group`` in the scene tree — the road
+        a direct entry from the outside walks first (#1642). ``[]`` for a
+        top-level group or one that is not in the tree."""
+        chain: list = []
+
+        def walk(groups, acc) -> bool:
+            for g in groups:
+                if g is group:
+                    chain.extend(acc)
+                    return True
+                if walk(getattr(g, "children", None) or (), acc + [g]):
+                    return True
+            return False
+
+        walk(self.groups, [])
+        return chain
+
     def begin_group_edit(self, group) -> None:
         """Enter a group: tools and commands now edit ITS mesh (the usual
         double-click-into-group).
@@ -529,6 +547,15 @@ class Scene:
         Entering a CHILD of the group already open pushes a level instead of
         starting over — that is the nesting. Anything else closes what is
         open first.
+
+        Entering a NESTED group straight from the outside (#1642) walks its
+        ancestors first, top down: the ancestors' matrices are what put it
+        where it stands, and the entry below only ever applies the group's
+        OWN matrix — a plain child none at all — so the whole assembly
+        jumped back to where it was before its parent moved, until leaving
+        put it back. Each ancestor enters exactly as entering it by hand
+        would (its matrix baked down or session-ized), so by the time the
+        group itself opens it is already in world coordinates.
 
         A group that owns children used to be BAKED on the way in
         (``materialize``): its nine nested groups became one mesh, and both
@@ -542,6 +569,16 @@ class Scene:
                     and group in (getattr(self.edit_group, "children", None) or ()))
         if self.edit_group is not None and not anidando:
             self.end_group_edit()
+        if self.edit_group is None:
+            # #1642: a nested group entered straight from the outside —
+            # walk its ancestors first, top down. Each enters as it would
+            # by hand, so the group's own entry below (which only applies
+            # its own matrix) lands it in world coordinates.
+            for ancestor in self._ancestor_chain(group):
+                self.begin_group_edit(ancestor)
+            anidando = (self.edit_group is not None
+                        and group in (getattr(self.edit_group, "children", None)
+                                      or ()))
         self._refresh_dimension_holds()
         anterior = self.mesh
         self._edit_share = None

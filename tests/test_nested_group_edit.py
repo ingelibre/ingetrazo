@@ -116,6 +116,80 @@ def test_un_contenedor_movido_entra_sin_moverse():
     assert antes == despues, "la geometría se movió al entrar"
 
 
+def test_entrar_directo_a_un_hijo_movido_no_lo_devuelve():
+    """#1642: entrar DIRECTO a un grupo anidado de un contenedor movido no
+    puede devolver el conjunto a su posición original mientras se edita.
+
+    Antes del arreglo la entrada solo aplicaba la matriz propia del hijo —
+    y un grupo normal ni siquiera tiene — así que la malla en edición se
+    dibujaba sin la traslación del padre y al salir volvía a su sitio. La
+    entrada camina ahora los ancestros primero, de arriba abajo, así que
+    el hijo aterriza en coordenadas del mundo; al salir, todo sigue donde
+    estaba."""
+    def mundo(scene):
+        return {g.name: sorted(
+            round(c, 6)
+            for v in g.mesh.vertices
+            for c in (m.map(v.position) if m is not None
+                      else v.position).toTuple())
+            for g, m in scene.placements()}
+
+    scene, padre, h1, _h2 = _plaza()
+    t = QMatrix4x4()
+    t.translate(10.0, 5.0, 0.0)
+    padre.xform = t
+    antes = mundo(scene)
+    scene.begin_group_edit(h1)                  # DIRECTO, sin pasar por el padre
+    assert [n["group"].name for n in scene._edit_stack] == ["Plaza", "Jardinera"]
+    durante = sorted(round(v.position.x(), 6) for v in scene.mesh.vertices)
+    assert durante == [10.0, 10.0, 11.0, 11.0], (
+        "dentro, la jardinera se dibuja donde está, no en el origen")
+    assert mundo(scene) == antes, "entrar no mueve nada del modelo"
+    scene.end_group_edit()
+    assert mundo(scene) == antes, "al salir, todo sigue donde estaba"
+
+    # y con un hijo que también lleva su propia matriz: la del padre no
+    # se pierde tampoco (11..12, no 1..2).
+    scene, padre, h1, _h2 = _plaza()
+    m = QMatrix4x4()
+    m.translate(1.0, 0.0, 0.0)
+    h1.xform = m
+    padre.xform = t
+    scene.begin_group_edit(h1)
+    durante = sorted(round(v.position.x(), 6) for v in scene.mesh.vertices)
+    assert durante == [11.0, 11.0, 12.0, 12.0]
+    scene.end_group_edit()
+    assert mundo(scene)["Jardinera"] == sorted(
+        round(c, 6)
+        for v in h1.mesh.vertices
+        for c in ((padre.xform * h1.xform).map(v.position)).toTuple())
+
+
+def test_entrar_directo_a_un_nieto_movido_tampoco():
+    """#1642, tres niveles: el camino de entrada es el mismo."""
+    scene, padre, h1, _h2 = _plaza()
+    nieto = Group(_cuadrado(Mesh(), 6.0), name="Banca")
+    h1.adopt([nieto])
+    t = QMatrix4x4()
+    t.translate(7.0, 0.0, 0.0)
+    padre.xform = t
+    scene.begin_group_edit(nieto)               # DIRECTO al nieto
+    assert [n["group"].name for n in scene._edit_stack] == [
+        "Plaza", "Jardinera", "Banca"]
+    durante = sorted(round(v.position.x(), 6) for v in scene.mesh.vertices)
+    assert durante == [13.0, 13.0, 14.0, 14.0], (
+        "la banca se dibuja en 13..14, no en 6..7")
+    scene.end_group_edit()
+    # Al salir, la plaza vuelve a su matriz (componente: restore_sharing)
+    # y la banca a la suya local; lo que no puede cambiar es el mundo.
+    mundo = sorted(round(c, 6)
+                   for g, m in scene.placements() if g is nieto
+                   for v in g.mesh.vertices
+                   for c in (m.map(v.position) if m is not None
+                             else v.position).toTuple())
+    assert 13.0 in mundo and 14.0 in mundo, "al salir, la banca sigue en su sitio"
+
+
 def test_un_grupo_normal_sigue_funcionando_igual():
     """Sin hijos, todo como siempre: la malla de la escena pasa a ser la suya
     y al salir vuelve la suelta."""
