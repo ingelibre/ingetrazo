@@ -592,6 +592,8 @@ _support.Viewport = Viewport
 interaction.Viewport = Viewport
 value_input.Viewport = Viewport
 snapping.Viewport = Viewport
+_BOX_GROUP_METHODS = (Viewport._expand_placements, Viewport._group_chunk)
+
 picking.Viewport = Viewport
 projection.Viewport = Viewport
 render.Viewport = Viewport
