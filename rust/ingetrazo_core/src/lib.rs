@@ -57,6 +57,7 @@ fn ingetrazo_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(rays::ray_face_min, m)?)?;
     m.add_function(wrap_pyfunction!(nearest_within, m)?)?;
     m.add_function(wrap_pyfunction!(project_px, m)?)?;
+    m.add_function(wrap_pyfunction!(qt_world_boxes, m)?)?;
     m.add_function(wrap_pyfunction!(edge_grid_bins, m)?)?;
     // Bloque 6a: the hover's picks under the cursor (pick.rs).
     m.add_function(wrap_pyfunction!(pick::ray_boxes_meet, m)?)?;
@@ -500,6 +501,65 @@ fn project_px<'py>(py: Python<'py>, pts: PyReadonlyArray2<'py, f64>, mvp: Vec<f6
         ok.push(k);
     }
     Ok((PyArray1::from_vec(py, xs), PyArray1::from_vec(py, ys), PyArray1::from_vec(py, ok)))
+}
+
+fn qt_world_box(local: &[f32; 6], m: &[f32; 16]) -> Option<[f32; 6]> {
+    if [m[3], m[7], m[11], m[15]] != [0.0, 0.0, 0.0, 1.0]
+        || !local.iter().chain(m).all(|v| v.is_finite())
+        || (0..3).any(|axis| local[axis] > local[axis + 3])
+    {
+        return None;
+    }
+
+    let mut bounds = [0.0; 6];
+    for axis in 0..3 {
+        let coeff = [m[axis], m[axis + 4], m[axis + 8]];
+        for high in 0..2 {
+            // Float operations are monotone along each signed coefficient.
+            // Keep QVector3D's float32 order at the extremal corners.
+            let value = |i: usize| local[i + 3 * (high ^ usize::from(coeff[i] < 0.0))];
+            bounds[axis + 3 * high] =
+                value(0) * coeff[0] + value(1) * coeff[1] + value(2) * coeff[2] + m[axis + 12];
+        }
+    }
+    // Qt's fast matrix modes and Python's first tied corner can affect zero signs.
+    bounds.iter().all(|v| v.is_finite() && *v != 0.0).then_some(bounds)
+}
+
+/// Float32 local and world box rows are lx,ly,lz,hx,hy,hz. Matrices are
+/// float32 column-major. The mask marks rows that need no Qt fallback.
+#[pyfunction]
+fn qt_world_boxes<'py>(
+    py: Python<'py>,
+    local: PyReadonlyArray2<'py, f32>,
+    mats: PyReadonlyArray2<'py, f32>,
+) -> PyResult<(Bound<'py, PyArray2<f32>>, Bound<'py, PyArray1<bool>>)> {
+    use numpy::PyArrayMethods;
+    let (local, mats) = (local.as_array(), mats.as_array());
+    let count = mats.shape()[0];
+    if mats.shape()[1] != 16 || local.shape() != [count, 6] {
+        return Err(pyo3::exceptions::PyValueError::new_err("shape"));
+    }
+    let mut boxes = Vec::with_capacity(count * 6);
+    let mut supported = Vec::with_capacity(count);
+    let mut add = |local: &[f32; 6], m: &[f32; 16]| {
+        let bounds = qt_world_box(local, m);
+        supported.push(bounds.is_some());
+        boxes.extend(bounds.unwrap_or([0.0; 6]));
+    };
+    if let (Some(local), Some(mats)) = (local.as_slice(), mats.as_slice()) {
+        for (local, m) in local.as_chunks::<6>().0.iter().zip(mats.as_chunks::<16>().0) {
+            add(local, m);
+        }
+    } else {
+        for i in 0..count {
+            let local = std::array::from_fn(|j| local[[i, j]]);
+            let m = std::array::from_fn(|j| mats[[i, j]]);
+            add(&local, &m);
+        }
+    }
+    Ok((PyArray1::from_vec(py, boxes).reshape([count, 6])?,
+        PyArray1::from_vec(py, supported)))
 }
 
 /// ``core.edge_grid.EdgeGrid``'s binning (pick::grid_bins): ``(cx0, cy0,

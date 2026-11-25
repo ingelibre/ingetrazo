@@ -178,6 +178,91 @@ def test_the_instanced_pool_moves_one_row():
         _close(win)
 
 
+def test_dense_parent_move_and_undo_match_fresh_pool_and_frames(monkeypatch):
+    from PySide6.QtGui import QVector4D
+    from core import _native
+    from core.group import Group
+    from core.history import MoveGroupCommand
+    from views.viewport import Viewport
+
+    vp = Viewport()
+    try:
+        prototypes = (_prisma(5), _prisma(7, h=1.5))
+        siblings = []
+        for i in range(96):
+            group = Group(prototypes[i % 2])
+            group.xform = QMatrix4x4()
+            group.xform.translate((i % 12) * 1.5, (i // 12) * 1.25, (i % 7) * .2)
+            group.xform.rotate(i * 11., .25, .5, 1.)
+            if i % 3 == 0:
+                group.xform.scale(-1., 1., 1.)
+            if i == 5:
+                group.xform.setRow(3, QVector4D(.01, 0., 0., 1.))
+            if i % 4 == 0:
+                group.material = {"color": (.2, .4, .7), "opacity": 1.}
+            siblings.append(group)
+        middle, parent = Group(prototypes[0]), Group(prototypes[1])
+        middle.adopt(siblings)
+        middle.xform.rotate(19., 0., 1., 0.)
+        parent.adopt([middle])
+        parent.xform.rotate(-17., 0., 0., 1.)
+        fixed = Group(prototypes[0])
+        fixed.xform = QMatrix4x4()
+        vp.scene.groups[:] = [parent, fixed]
+        vp.scene.version += 1
+        assert vp._gather_instanced()
+        old = vp._inst_pool
+        assert len(old[1]) == len(siblings) + 3
+        assert {mirrored for _, _, mirrored in old[5]} == {False, True}
+
+        kernel = _native.qt_world_boxes()
+        masks = []
+        if kernel is not None:
+            def record_boxes(bounds, matrices):
+                boxes, mask = kernel(bounds, matrices)
+                masks.append(mask)
+                return boxes, mask
+
+            monkeypatch.setattr(_native, "qt_world_boxes", lambda: record_boxes)
+        command = MoveGroupCommand(parent, V(2.25, -.875, .625))
+        for apply in (lambda: vp.history.execute(command), vp.history.undo):
+            assert apply()
+            if kernel is None:
+                vp._placements()
+            assert vp._gather_instanced()
+            moved = vp._inst_pool
+            assert moved[1] is old[1]
+            moved_count = len(siblings) + 2
+            assert np.count_nonzero((moved[6] != old[6]).any(axis=1)) == moved_count
+            if kernel is not None:
+                assert len(masks) == 1
+                mask = masks.pop()
+                assert len(mask) == moved_count and mask.any() and not mask.all()
+
+            frames = vp._placement_frames
+            memo = vp._placements_memo
+            vp._placement_frames, vp._placements_memo = {}, None
+            try:
+                fresh = vp._inst_pool_build(moved[0])
+                assert tuple(moved[1]) == tuple(fresh[1]) and moved[5] == fresh[5]
+                for i in (2, 3, 4, 6, 7):
+                    assert moved[i].tobytes() == fresh[i].tobytes()
+                for group in moved[1]:
+                    key, (bounds, inverse) = frames[id(group)]
+                    ref, (ref_bounds, ref_inverse) = vp._placement_frames[id(group)]
+                    assert key[0] == ref[0]
+                    assert np.asarray(key[1]).tobytes() == np.asarray(ref[1]).tobytes()
+                    assert np.asarray(bounds).tobytes() == np.asarray(ref_bounds).tobytes()
+                    assert (np.asarray(inverse.data()).tobytes()
+                            == np.asarray(ref_inverse.data()).tobytes())
+            finally:
+                vp._placement_frames = frames
+                vp._placements_memo = memo
+            old = moved
+    finally:
+        vp.close()
+
+
 def test_a_picked_up_placement_leaves_the_batches_and_comes_back():
     win, vp, gs = _scene()
     try:
