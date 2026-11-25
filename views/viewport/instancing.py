@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from itertools import compress as _compress
 
-from PySide6.QtGui import QVector2D, QVector3D, QVector4D
+from PySide6.QtGui import QMatrix4x4, QVector2D, QVector3D, QVector4D
 from PySide6.QtOpenGL import QOpenGLBuffer, QOpenGLVertexArrayObject
 from core.group import Group
 from core.style import effective_back_color, xray_enabled
@@ -1267,10 +1267,10 @@ class InstancingMixin:
         if epoch_of is not None:
             sig = (epoch_of(), tuple(map(id, groups)))
         else:
-            sig = tuple((id(g), tuple(g.xform.data())) for g in groups)
+            sig = tuple((id(g), tuple((g.xform or QMatrix4x4()).data())) for g in groups)
         if entry["mat_sig"] != sig:
             import numpy as np
-            raw = np.asarray([list(g.xform.data()) for g in groups],
+            raw = np.asarray([list((g.xform or QMatrix4x4()).data()) for g in groups],
                              dtype=np.float32).tobytes()
             entry["mat_vbo"].bind()
             entry["mat_vbo"].allocate(raw, len(raw))

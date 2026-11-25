@@ -638,7 +638,7 @@ class SnappingMixin:
         out.sort(key=lambda de: de[0])        # stable: the fixed ones first
         return out[:cap]
 
-    def _pick_group_edge_unbaked(self, px, py, nat):
+    def _pick_group_edge_unbaked(self, px, py, nat, *, allowed_groups=None):
         """pick_group's edge fallback with the lazy placements' edges from
         the engine, none baked (#158): ``(d, owner)`` of the nearest group
         edge within the pick threshold that a pick may land on and the
@@ -657,9 +657,13 @@ class SnappingMixin:
             safe = np.where(l2 > 1e-12, l2, 1.0)
             t = np.clip(((px - ax) * dx + (py - ay) * dy) / safe, 0.0, 1.0)
             d = np.hypot(ax + t * dx - px, ay + t * dy - py)
-            sel = getattr(idx, "gedge_sel", None)
-            if sel is not None:
-                ok = ok & sel[:m]
+            if allowed_groups is not None:
+                eligible = np.array([g in allowed_groups for g in idx.gedge_groups], dtype=bool)
+                ok = ok & eligible[idx.gedge_gi[:m]]
+            else:
+                sel = getattr(idx, "gedge_sel", None)
+                if sel is not None:
+                    ok = ok & sel[:m]
             d = np.where(ok, d, np.inf)
             near = np.where(d < best)[0]
             for i in near[np.argsort(d[near], kind="stable")]:
@@ -669,7 +673,11 @@ class SnappingMixin:
         table = self._pick_lazy_table()
         rows = self._footprint_need(table, float(px), float(py), best)
         if len(rows):
-            rows = rows[np.isin(rows, Viewport._lazy_sel_rows(self, nat))]
+            if allowed_groups is None:
+                rows = rows[np.isin(rows, Viewport._lazy_sel_rows(self, nat))]
+            else:
+                rows = rows[np.array([self._owner_of(table[0][int(i)]) in allowed_groups
+                                      for i in rows], dtype=bool)]
         if len(rows):
             M = self._np_mvp()
             pl, _e, a, b, d = nat[0].edges_near(

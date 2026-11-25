@@ -1306,7 +1306,7 @@ class InteractionMixin:
             tool.on_cancel(self)
             self._release_linear_mode()
             return
-        if self.scene.selection or self.extension_pick is not None:
+        if self.scene.selection or self.scene.locked_selection or self.extension_pick is not None:
             self.scene.clear_selection()
             self.clear_extension_pick()
             self.update()

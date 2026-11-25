@@ -32,6 +32,7 @@ _NATIVE_REPLAY = textwrap.dedent("""\
                                   QTreeWidgetItem)
     from core.macos_accessibility import install_cocoa_accessibility_fix
     from views import outliner
+    from views.sheet_browser import _SheetTree
 
     scenario = sys.argv[1]
     app = QApplication([])
@@ -95,7 +96,8 @@ _NATIVE_REPLAY = textwrap.dedent("""\
     if scenario == "table":
         view = QTableWidget()
     else:
-        view = getattr(outliner, scenario)(
+        view_type = {"_Tree": outliner._Tree, "_SheetTree": _SheetTree}[scenario]
+        view = view_type(
             SimpleNamespace(current_sheet=lambda: None))
     view.setColumnCount(8)
     view.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
@@ -205,7 +207,7 @@ _NATIVE_REPLAY = textwrap.dedent("""\
 
 
 @pytest.mark.skipif(sys.platform != "darwin", reason="requires native Cocoa accessibility")
-@pytest.mark.parametrize("scenario", ["_Tree", "_SheetsTree", "table"])
+@pytest.mark.parametrize("scenario", ["_Tree", "_SheetTree", "table"])
 def test_native_accessibility_survives_view_mutations(scenario):
     env = dict(os.environ, QT_QPA_PLATFORM="cocoa")
     result = subprocess.run(

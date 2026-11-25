@@ -35,11 +35,16 @@ class PickingMixin:
     """Picking: the pick index, ray hits and the pick_* queries."""
 
     def pick_locked_group(self, screen_x: float, screen_y: float):
-        """The right-click's door back to a LOCKED group or component: the
-        one whose face is the front-most thing under the cursor (drawn,
-        its layer visible and unlocked), or ``None``. A locked group
-        refuses every click by design, so the context menu is the only
-        place left to offer Unlock (#782)."""
+        """Inspect or unlock a LOCKED group or component: the
+        front-most face or a visible edge under the cursor, or ``None``.
+        Its layer must be visible and unlocked. Editing tools still
+        use ``pick_group``, which excludes locked objects."""
+        context = self.scene.edit_group
+        groups = self.scene.groups if context is None else context.children
+        allowed = {g for g in groups if self.scene.entity_locked(g)
+                   and self.scene.entity_inspectable(g)}
+        if not allowed:
+            return None
         origin, direction = self._pixel_to_ray(screen_x, screen_y)
         if origin is None or direction is None:
             return None
@@ -49,21 +54,61 @@ class PickingMixin:
             return None
         hits = Viewport._face_hits(self, idx, origin, direction, "vis")
         Viewport._drop_past_cut(self, hits, origin, direction)
-        if hits is None or not len(hits.t):
-            return None
-        front = Viewport._smallest_at_front(self, hits, origin, direction)
-        if not len(front):
-            return None
-        owner = hits.owner(int(front[0]))
-        for g in (owner, getattr(owner, "owner", None)):
-            if (g is not None and getattr(g, "locked", False)
-                    and hasattr(g, "children")):
-                visible, layer_locked = self.scene._layer_state(g)
-                if (visible and not layer_locked
-                        and self.scene.entity_visible(g)):
-                    return g
-                return None
-        return None
+        if hits is not None and len(hits.t):
+            front = Viewport._smallest_at_front(self, hits, origin, direction)
+            if len(front):
+                owner = hits.owner(int(front[0]))
+                for group in (owner, getattr(owner, "owner", None)):
+                    if group in allowed:
+                        return group
+        return self._pick_locked_group_edge(screen_x, screen_y, allowed)
+
+
+    def _pick_locked_group_edge(self, x, y, allowed):
+        """Locked wire groups and face boundaries use the usual edge tolerance."""
+        import numpy as np
+
+        best_d, best = self.pick_threshold_px, None
+        nat = self._lazy_native()
+        table = self._pick_lazy_table()
+        lazy_ids = set() if table is None else {id(g) for g in table[0]}
+        if nat is not None:
+            best_d, best = self._pick_group_edge_unbaked(
+                x, y, nat, allowed_groups=allowed)
+            near_ids = set()  # The engine already checked the lazy placements.
+        elif table is not None:
+            rows = self._footprint_need(table, float(x), float(y), best_d)
+            near_ids = {id(table[0][int(i)]) for i in rows}
+        else:
+            near_ids = set()
+        for placement in self._context_placements():
+            owner = self._owner_of(placement)
+            if owner not in allowed:
+                continue
+            if id(placement) in lazy_ids and id(placement) not in near_ids:
+                continue
+            # Locked edges are deliberately absent from the snapping index.
+            # Read their cached drawing chunk without making them snap targets.
+            raw = self._group_chunk(placement)["edges"]
+            if not raw:
+                continue
+            edges = np.frombuffer(raw, dtype=np.float32).reshape(-1, 2, 3)
+            xs, ys, valid = self._project_px(edges.reshape(-1, 3))
+            ax, ay, bx, by = xs[::2], ys[::2], xs[1::2], ys[1::2]
+            dx, dy = bx - ax, by - ay
+            length2 = dx * dx + dy * dy
+            t = np.clip(((x - ax) * dx + (y - ay) * dy)
+                        / np.where(length2 > 1e-12, length2, 1.0), 0.0, 1.0)
+            ok = valid[::2] & valid[1::2]
+            distance = np.where(ok, np.hypot(ax + t * dx - x, ay + t * dy - y), np.inf)
+            near = np.flatnonzero(distance < best_d)
+            for i in near[np.argsort(distance[near])]:
+                a, b = QVector3D(*edges[i, 0]), QVector3D(*edges[i, 1])
+                if not self._is_occluded(a + (b - a) * float(t[i])):
+                    best_d, best = float(distance[i]), owner
+                    break
+        return best
+
 
     def _front_face_at(self, x: float, y: float, which: str = "sel"):
         """``(face, placement)`` of the front-most face on the ray through

@@ -1,5 +1,26 @@
 # Benchmarks — the release history
 
+## Locked-object inspection (#1247)
+
+`python scripts/bench_locked_selection.py --source <checkout> --output result.json`
+compares Select All, warm paint frames and orbit frames on 1,035 independent
+groups with 49,680 faces. Run the same script against each checkout, sequentially
+on the same machine; it requires native OpenGL and forces the Python engine.
+The default is 30 samples per frame measurement. First-frame rebuild costs are
+reported separately. User settings and extensions are isolated.
+
+[The Windows comparison](results/locked-selection-1247.json) records upstream
+`78defb95`, the previous PR `511a020d` (based on 0.6.1), and corrected rendering
+`7176cbb7` (updated to 0.6.3.2). Median orbit after Select All was 7.533 ms on
+upstream, 722.500 ms on the previous PR and 8.299 ms with the correction. With
+one locked object among all selected groups, the corrected median was 7.967 ms.
+These synthetic measurements do not replace the maintainer's real Plaza model
+or its Linux measurements. Deterministic tests in `test_locked_selection_cost`
+also ensure that ordinary selection is never walked by the inspection renderer
+and that repeated orbit frames reuse the inspected objects' batches and boxes.
+
+## Release measurements
+
 Before every release, `scripts/release_check.sh <previous tag> <real .igz>`
 measures the release candidate against the previous release **on the same
 document**, and writes `results/<version>.json`. The files stay here, one per

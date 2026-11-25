@@ -1108,6 +1108,7 @@ class RenderMixin:
             self._gl.glDrawArrays(GL_LINES, 0, self._selected_count)
             self._selected_vao.release()
         if self._export_size is None:
+            self._draw_locked_group_edges()
             self._draw_locked_selection()
 
         # Hovered edge — light blue, on top of everything else so it reads as
@@ -1486,32 +1487,98 @@ class RenderMixin:
         style = getattr(self, "_frame_style", None) or self.scene.display_style
         return modeling_color(style, key, default)
 
+    def _locked_selection_geometry(self):
+        """Batches and box bytes for inspected objects, once per scene change.
+
+        Ordinary selections use the existing rendering passes. In particular,
+        orbiting after Select All must not walk the editable selection at all.
+        """
+        scene = self.scene
+        if not scene.locked_selection:
+            self._locked_geometry_cache = None
+            return (), b"", ()
+        key = (id(scene), scene.version, scene.view_version,
+               getattr(self, "_preview_epoch", 0))
+        cached = getattr(self, "_locked_geometry_cache", None)
+        if cached is not None and cached[0] == key:
+            return cached[1]
+        from core.outliner import path_to
+
+        batches, boxes, billboards = {}, [], []
+        preview = getattr(self, "_preview_groups", None) or ()
+        for group in scene.locked_selection:
+            if (not isinstance(group, Group) or id(group) in preview
+                    or not scene.entity_locked(group)
+                    or not scene.entity_visible(group)
+                    or path_to(scene.groups, group) is None):
+                continue
+            if getattr(group, "billboard", False):
+                billboards.append(group)
+                continue
+            boxes.append(_box_edges(*self._group_obb(group)))
+            for placement in self._expand_placements(group):
+                if (not scene.entity_visible(placement)
+                        or getattr(placement, "billboard", False)):
+                    continue
+                paint = _paint_of(self, placement)
+                variant = (id(placement.mesh), _material_sig(paint))
+                if variant not in batches:
+                    batches[variant] = (placement.mesh, paint, [])
+                batches[variant][2].append(placement)
+        result = (tuple(batches.values()), b"".join(boxes), tuple(billboards))
+        self._locked_geometry_cache = (key, result)
+        return result
+
+    def _draw_locked_group_edges(self) -> None:
+        """Draw only the inspected objects' hard edges, with normal depth."""
+        batches, _boxes, _billboards = self._locked_selection_geometry()
+        for mesh, paint, placements in batches:
+            entry = self._ensure_proto_draw(mesh, paint)
+            if not entry["edge_count"]:
+                continue
+            count = self._update_inst_matrices(entry, placements)
+            self._set_color(*self._modeling_color("locked"), 1.0)
+            entry["edges_vao"].bind()
+            self.context().extraFunctions().glDrawArraysInstanced(
+                GL_LINES, 0, entry["edge_count"], count)
+            entry["edges_vao"].release()
+
     def _draw_locked_selection(self) -> None:
-        parts = []
-        for group in self.scene.selection:
-            if (isinstance(group, Group) and getattr(group, "locked", False)
-                    and self.scene.entity_visible(group)):
-                if getattr(group, "billboard", False):
-                    quad = self._billboard_quad(group)
-                    if quad is not None:
-                        corners = quad[0]
-                        data = array("f")
-                        for i in range(4):
-                            for point in (corners[i], corners[(i + 1) % 4]):
-                                data.extend(point.toTuple())
-                        parts.append(data.tobytes())
-                else:
-                    parts.append(_box_edges(*self._group_obb(group)))
-        if not parts:
+        _batches, boxes, billboards = self._locked_selection_geometry()
+        key = (id(boxes), id(billboards), None)
+        if billboards:
+            # Face-me outlines follow the eye even without a scene edit.
+            camera_key = (tuple(self.camera.eye().toTuple()),
+                          tuple(self.camera.target.toTuple()),
+                          self.camera.perspective)
+            key = (id(boxes), id(billboards), camera_key)
+        uploaded = getattr(self, "_locked_box_uploaded", None)
+        if uploaded is None or uploaded[0] != key:
+            parts = [boxes]
+            for group in billboards:
+                quad = self._billboard_quad(group)
+                if quad is not None:
+                    data = array("f")
+                    corners = quad[0]
+                    for i in range(4):
+                        for point in (corners[i], corners[(i + 1) % 4]):
+                            data.extend(point.toTuple())
+                    parts.append(data.tobytes())
+            raw = b"".join(parts)
+            if raw:
+                self._locked_sel_vbo.bind()
+                self._locked_sel_vbo.allocate(raw, len(raw))
+                self._locked_sel_vbo.release()
+            # Retain the bytes as well: their identity is the upload token.
+            self._locked_box_uploaded = (key, raw, boxes, billboards)
+        else:
+            raw = uploaded[1]
+        if not raw:
             return
-        raw = b"".join(parts)
-        self._bb_sel_vbo.bind()
-        self._bb_sel_vbo.allocate(raw, len(raw))
-        self._bb_sel_vbo.release()
         self._set_color(*self._modeling_color("locked"), 1.0)
-        self._bb_sel_vao.bind()
+        self._locked_sel_vao.bind()
         self._gl.glDrawArrays(GL_LINES, 0, len(raw) // 12)
-        self._bb_sel_vao.release()
+        self._locked_sel_vao.release()
 
     def _selection_dot_colors(self, face, paint=_NO_PAINT,
                               back_default=None, dots=None) -> tuple:

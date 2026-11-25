@@ -177,6 +177,8 @@ class GLSetupMixin:
         self._tex_faces_vao, self._tex_faces_vbo = self._create_dynamic_uv()
         self._billboard_vao, self._billboard_vbo = self._create_dynamic_uv()
         self._bb_sel_vao, self._bb_sel_vbo = self._create_dynamic()
+        self._locked_sel_vao, self._locked_sel_vbo = self._create_dynamic()
+        self._locked_geometry_cache = self._locked_box_uploaded = None
         self._hover_faces_vao, self._hover_faces_vbo = self._create_dynamic()
         self._hover_edges_vao, self._hover_edges_vbo = self._create_dynamic()
         self._silhouette_vao, self._silhouette_vbo = self._create_dynamic()
@@ -638,6 +640,7 @@ class GLSetupMixin:
         document also slowed down reopen after reopen (the garbage collector
         walking the dead ones). And a CPython id() reused by a new group
         could meet an old entry — the composer's lesson with frames."""
+        self._locked_geometry_cache = self._locked_box_uploaded = None
         self._pick_warm = None               # its threads end on their own
         self._inst_obb = None
         self._pick_warm_due = False
