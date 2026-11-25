@@ -3,9 +3,10 @@
 """Instanced component drawing: placements, prototype draw entries, recorded GL passes."""
 from __future__ import annotations
 
+import math
 from itertools import compress as _compress
 
-from PySide6.QtGui import QVector2D, QVector3D, QVector4D
+from PySide6.QtGui import QMatrix4x4, QVector2D, QVector3D, QVector4D
 from PySide6.QtOpenGL import QOpenGLBuffer, QOpenGLVertexArrayObject
 from core.group import Group
 from core.style import effective_back_color, xray_enabled
@@ -95,6 +96,43 @@ class InstancingMixin:
         plain one."""
         return self._group_chunk(_proto_wrapper(self, mesh, paint))
 
+    def _face_camera_view_key(self):
+        sc = self.scene
+        key = (id(sc), getattr(sc, "geometry_version", sc.version))
+        memo = getattr(self, "_face_camera_presence", None)
+        if memo is None or memo[0] != key:
+            from core.purge import iter_groups
+            present = any(getattr(g, "face_camera", False) for g in iter_groups(sc.groups))
+            memo = self._face_camera_presence = (key, present)
+        if not memo[1]:
+            return None
+        camera = self.camera
+        return (camera.perspective, camera.eye().toTuple(), camera.target.toTuple())
+
+    def _camera_facing_matrix(self, group, placement):
+        if not getattr(group, "face_camera", False) or placement is None:
+            return placement
+        if any(level["group"] is group for level in self.scene._edit_stack):
+            return placement
+        frame = placement if group.axes is None else placement * group.axes
+        pivot = frame.map(QVector3D())
+        blue = frame.mapVector(QVector3D(0, 0, 1)).normalized()
+        front = frame.mapVector(QVector3D(0, -1, 0))
+        toward = self._faceme_dir(pivot)
+        front -= blue * QVector3D.dotProduct(front, blue)
+        toward -= blue * QVector3D.dotProduct(toward, blue)
+        if min(blue.lengthSquared(), front.lengthSquared(), toward.lengthSquared()) < 1e-10:
+            return placement
+        front.normalize()
+        toward.normalize()
+        sine = QVector3D.dotProduct(blue, QVector3D.crossProduct(front, toward))
+        cosine = QVector3D.dotProduct(front, toward)
+        turn = QMatrix4x4()
+        turn.translate(pivot)
+        turn.rotate(math.degrees(math.atan2(sine, cosine)), blue)
+        turn.translate(-pivot)
+        return turn * placement
+
     def _placements_epoch(self):
         """A signature of everything the per-frame placement passes read:
         the group tree (ids, matrices, mesh mutation serials, tags), the
@@ -106,8 +144,10 @@ class InstancingMixin:
         memoised per tick (a paint or a hover) and scene version."""
         sc = self.scene
         tick = getattr(self, "_tick", 0)
+        view_key = self._face_camera_view_key()
+        tick_key = (tick, _cache_ver(self), view_key)
         memo = getattr(self, "_epoch_memo", None)
-        if memo is not None and memo[0] == (tick, _cache_ver(self)):
+        if memo is not None and memo[0] == tick_key:
             return memo[1]
         # Across ticks: while the version is live (not frozen by a groups
         # preview, whose matrices move without a version bump) and none of
@@ -126,7 +166,7 @@ class InstancingMixin:
                  bool(getattr(sc, "show_hidden_geometry", False)),
                  tuple((ly.name, ly.visible, ly.locked) for ly in sc.layers),
                  _layer_look_sig(sc, self._view_style()),
-                 len(sc.groups))
+                 len(sc.groups), view_key)
         # A vertex drag (``begin_verts_preview``: a face moved inside a big
         # group) freezes the version too, but moves no placement and
         # mutates no mesh until its commit, which bumps the version: what
@@ -138,7 +178,7 @@ class InstancingMixin:
                     and not getattr(self, "_preview_groups", None)))
         same = getattr(self, "_epoch_same", None)
         if live and same is not None and same[0] == cheap:
-            self._epoch_memo = ((tick, _cache_ver(self)), same[1])
+            self._epoch_memo = (tick_key, same[1])
             return same[1]
         parts: list = [id(sc.edit_group), id(sc.mesh),
                        getattr(self, "_preview_epoch", 0),
@@ -159,7 +199,7 @@ class InstancingMixin:
                        tuple((ly.name, ly.visible, ly.locked) for ly in sc.layers),
                        # Colour by layer and each layer's colour and
                        # transparency change the paint a placement draws in.
-                       _layer_look_sig(sc, self._view_style())]
+                       _layer_look_sig(sc, self._view_style()), view_key]
 
         loose = sc.mesh
 
@@ -195,7 +235,7 @@ class InstancingMixin:
             epoch = hash(tuple(whole))
             self._epoch_remember(epoch, len(base[1]), list(whole), base[4],
                                  base[5])
-            self._epoch_memo = ((tick, _cache_ver(self)), epoch)
+            self._epoch_memo = (tick_key, epoch)
             self._epoch_same = None
             return epoch
         movers: list = []
@@ -234,7 +274,7 @@ class InstancingMixin:
         self._epoch_frozen_base = ((cheap, parts[:head], list(parts), movers,
                                     tops, ups)
                                    if not live and pv else None)
-        self._epoch_memo = ((tick, _cache_ver(self)), epoch)
+        self._epoch_memo = (tick_key, epoch)
         self._epoch_same = (cheap, epoch) if live else None
         return epoch
 
@@ -502,7 +542,8 @@ class InstancingMixin:
         if key is not None and memo is not None and memo[0] == key:
             return memo[1]
         anidado = ctx is not None and getattr(ctx, "children", None)
-        if not anidado and not any(getattr(g, "children", None) for g in groups):
+        if (not anidado and self._face_camera_view_key() is None
+                and not any(getattr(g, "children", None) for g in groups)):
             self._placements_memo = (key, groups)
             return groups                      # unchanged for flat scenes
         cache = getattr(self, "_placement_proxies", None)
@@ -538,7 +579,20 @@ class InstancingMixin:
         cache = getattr(self, "_placement_proxies", None)
         if cache is None:
             cache = self._placement_proxies = {}
-        out.append(group)
+        world_root = self._camera_facing_matrix(group, getattr(group, "xform", None))
+        if world_root is not getattr(group, "xform", None):
+            proxy = cache.get(id(group))
+            if proxy is None:
+                proxy = cache[id(group)] = Group(group.mesh)
+            for field in Group.__slots__:
+                if field not in ("owner", "xform"):
+                    setattr(proxy, field, getattr(group, field))
+            proxy.owner, proxy.xform = group, world_root
+            if seen is not None:
+                seen.add(id(group))
+            out.append(proxy)
+        else:
+            out.append(group)
         kids = getattr(group, "children", None)
         if not kids:
             return out
@@ -568,6 +622,7 @@ class InstancingMixin:
                 m = (child.xform if world is None
                      else (world * child.xform if child.xform is not None
                            else world))
+                m = self._camera_facing_matrix(child, m)
                 proxy = cache.get(id(child))
                 if proxy is None:
                     proxy = cache[id(child)] = Group(child.mesh,
@@ -575,6 +630,7 @@ class InstancingMixin:
                 if seen is not None:
                     seen.add(id(child))
                 tops[id(proxy)] = id(group)
+                proxy.uid = child.uid
                 proxy.mesh = child.mesh
                 # A nested entity with no tag of its own inherits the
                 # nearest tag above it (the .skp convention); and when a tag
@@ -617,7 +673,7 @@ class InstancingMixin:
                          child if (ctx is not None and node is ctx) else dentro,
                          proxy.hidden, kid_forced, proxy.layer, proxy.material)
 
-        walk(group, getattr(group, "xform", None), hidden=bool(group.hidden),
+        walk(group, world_root, hidden=bool(group.hidden),
              paint=getattr(group, "material", None) or above)
         return out
 

@@ -109,12 +109,12 @@ def test_the_box_stays_on_screen(win):
 
     sc.selection.clear()
     sc.selection.add(g)
-    orig = prompts.get_text
-    prompts.get_text = lambda *a, text="", **k: ("Caja", True)
+    orig = win._component_creation_options
+    win._component_creation_options = lambda _: ("Caja", False, True)
     try:
         win._on_make_component()
     finally:
-        prompts.get_text = orig
+        win._component_creation_options = orig
     assert g.is_component()
     assert on_face() == face                              # the report
 

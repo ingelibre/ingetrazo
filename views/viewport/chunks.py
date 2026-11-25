@@ -403,13 +403,16 @@ class ChunkCacheMixin:
         selected_color = tuple(getattr(self._view_style(), "modeling_colors",
                                        {}).get("selected", ()))
         layer_look = _layer_look_sig(self.scene)
+        view_key = self._face_camera_view_key()
         if _cache_ver(self) == self._edges_version \
                 and tint == getattr(self, "_edges_front_tint", None) \
                 and selected_color == getattr(self, "_selection_style_color", ()) \
-                and layer_look == getattr(self, "_edges_layer_look", None):
+                and layer_look == getattr(self, "_edges_layer_look", None) \
+                and view_key == getattr(self, "_edges_face_camera_key", None):
             return
         self._selection_style_color = selected_color
         self._edges_layer_look = layer_look
+        self._edges_face_camera_key = view_key
         self._edges_front_tint = tint
         _st0 = _time_mod.perf_counter() if _PERF else 0.0
 

@@ -1208,8 +1208,9 @@ class PickingMixin:
         # arch inside never opened (Marco, 2026-09-14).
         # The content version: a click (a view-only bump) changes nothing
         # in it — on the plant of #158 it rebuilt it on every click.
+        face_camera_view = getattr(self, "_face_camera_view_key", lambda: None)()
         key = (Viewport._pick_geometry_ver(self), id(self.scene.mesh), oculto,
-               id(self.scene.edit_group), getattr(self, "_pick_gen", 0))
+               id(self.scene.edit_group), getattr(self, "_pick_gen", 0), face_camera_view)
         cached = getattr(self, "_pick_index_cache", None)
         if cached is not None and cached[0] == key:
             return cached[1]
