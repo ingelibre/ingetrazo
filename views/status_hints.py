@@ -60,10 +60,19 @@ HINTS: dict = {
     # and repeating it ate the room the instruction needs (Marco, 2026-09-17).
     "pushpull": ("Click a face and move.",
                  "Move, or type the distance and Enter. Double-click repeats the last."),
-    "move": ("Click what to move (or select it first). Red + on a group = rotate it.",
-             "Click the destination, or type the distance and Enter."),
-    "rotate": ("Click the centre of rotation — on a face, the protractor takes its plane.",
-               "Click the start of the angle, then the end; or type the degrees."),
+    # «array»: a copy was just made, and «3x» / «/3» would lay an array
+    # of it — said there and then, or nobody finds it (2026-11-25: «no
+    # entendí cómo hacerlo»).
+    "move": {
+        "idle": "Click what to move (or select it first). Red + on a group = rotate it.",
+        "started": "Click the destination, or type the distance and Enter.",
+        "array": "Copy made: type 3x + Enter for 3 more, or /3 to divide the distance.",
+    },
+    "rotate": {
+        "idle": "Click the centre of rotation — on a face, the protractor takes its plane.",
+        "started": "Click the start of the angle, then the end; or type the degrees.",
+        "array": "Copy made: type 3x + Enter for 3 more, or /3 to divide the angle.",
+    },
     "scale": ("Select something, then drag a grip: corners uniform, edges along an axis.",
               "Drag, or type a factor (2) or a size (2m). Ctrl = centre, Shift = uniform."),
     "flip": "Click the plane to mirror the selection across.",
@@ -150,6 +159,10 @@ def phase_of(key: str, tool) -> str:
         return "ground" if getattr(tool, "footprint", None) else "idle"
     if key == "fillet":
         return "sizing" if getattr(tool, "sizing", False) else "idle"
+    if key in ("move", "rotate") and getattr(tool, "start_point", None) is None:
+        last = getattr(tool, "_last", None)
+        if isinstance(last, dict) and (key == "move" or last.get("copy")):
+            return "array"      # the array window is open (array_pending)
     if (key == "tape" and getattr(tool, "start_point", None) is None
             and getattr(tool, "_measure_ends", None) is not None):
         return "measured"
@@ -228,7 +241,7 @@ def _with_alt(text: str, key, tool, linear_mode) -> str:
     # the bar elide (Marco, 2026-09-17: «no sale completo el texto»).
     # A Tape that has just measured is at rest too: the next click starts
     # over, so its Ctrl clause still applies.
-    if phase_of(key, tool) in ("idle", "measured"):
+    if phase_of(key, tool) in ("idle", "measured", "array"):
         own = getattr(tool, "status_clause", None)
         own = own() if callable(own) else ""
         return f"{text} | {own}" if own else text

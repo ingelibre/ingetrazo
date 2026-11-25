@@ -80,7 +80,8 @@ class Group:
     __slots__ = ("mesh", "name", "layer", "ifc", "billboard", "xform",
                  "children", "owner", "context", "text3d", "hidden", "uid",
                  "material", "axes", "component", "exploded",
-                 "explode_offset", "ext", "locked", "images", "source")
+                 "explode_offset", "ext", "locked", "images", "source",
+                 "array")
 
     def __init__(self, mesh: Mesh | None = None, name: str | None = None) -> None:
         self.mesh = mesh if mesh is not None else Mesh()
@@ -96,6 +97,10 @@ class Group:
         # generated from — text, font, height… — so it can be re-edited and
         # laid out again in place. ``None`` on every other group.
         self.text3d = None
+        # Live array (core/array.py): how this container's copies were
+        # laid out — count, step, repeat or divide — so they can be laid
+        # out again. ``None`` on every other group.
+        self.array = None
         # Extensions' own parameters for this container, by extension key
         # ({"windowizer": {...}}): kept with copies and saved in the .igz,
         # and apart from ``ifc``, which the BIM panel replaces when it
@@ -854,6 +859,10 @@ def copy_group(group, delta=None, _in_definition=False):
     # parent, and a child's transform is relative to it.
     g.children = [copy_group(c, _in_definition=share)
                   for c in (group.children or ())]
+    if getattr(group, "array", None):
+        # A copied live array names its own children, not the original's.
+        from core.array import remap_uids
+        g.array = remap_uids(group.array, group.children, g.children)
     return g
 
 
@@ -868,6 +877,8 @@ def _independent_copy(group):
     g.uid = group.uid
     g.images = [im.copy() for im in (getattr(group, "images", None) or ())]
     g.children = [_independent_copy(c) for c in (group.children or ())]
+    if getattr(group, "array", None):
+        g.array = copy.deepcopy(group.array)    # same uids, same names
     return g
 
 

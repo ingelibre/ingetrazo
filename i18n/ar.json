@@ -4385,5 +4385,22 @@
  "Push/Pull bases kept with Ctrl stay sound and cracked results are refused (#1155).": "القواعد المحتفظ بها بـ Ctrl في الدفع/السحب تبقى سليمة وتُرفض النتائج المتشققة (#1155).",
  "Camera roll with a 3D mouse (#1406).": "دوران الكاميرا حول محورها بفأرة ثلاثية الأبعاد (#1406).",
  "A preference to swap orbit and pan on the middle button (#467).": "تفضيل لتبديل الدوران والتحريك على الزر الأوسط (#467).",
- "IFC export writes the project north, the site location and the owning application (#1498).": "يكتب تصدير IFC شمال المشروع وموقع الأرض والتطبيق المالك (#1498)."
+ "IFC export writes the project north, the site location and the owning application (#1498).": "يكتب تصدير IFC شمال المشروع وموقع الأرض والتطبيق المالك (#1498).",
+ "Array": "مصفوفة",
+ "Copies:": "النسخ:",
+ "Repeat": "تكرار",
+ "Total:": "الإجمالي:",
+ "How many copies the array has, the original not counted — they are laid out again from the original": "عدد نسخ المصفوفة دون احتساب الأصل — يُعاد ترتيبها انطلاقًا من الأصل",
+ "Repeat: every copy one step further (3x). Divide: the copies share the step out (/3)": "تكرار: كل نسخة أبعد بخطوة (3x). قسمة: تتقاسم النسخ الخطوة (/3)",
+ "The whole angle the copies share": "الزاوية كلها التي تتقاسمها النسخ",
+ "The angle from one copy to the next": "الزاوية من نسخة إلى التالية",
+ "The whole distance the copies share": "المسافة كلها التي تتقاسمها النسخ",
+ "The distance from one copy to the next": "المسافة من نسخة إلى التالية",
+ "Full turn": "دورة كاملة",
+ "Spreads the original and its copies evenly all the way round (360°)": "يوزّع الأصل ونسخه بالتساوي على الدورة كلها (360°)",
+ "{n} in all": "{n} إجمالًا",
+ "Copy made: type 3x + Enter for 3 more, or /3 to divide the distance.": "تم النسخ: اكتب 3x ثم Enter لثلاث نسخ أخرى، أو /3 لقسمة المسافة.",
+ "Copy made: type 3x + Enter for 3 more, or /3 to divide the angle.": "تم النسخ: اكتب 3x ثم Enter لثلاث نسخ أخرى، أو /3 لقسمة الزاوية.",
+ "{n} in all, {m} removed": "{n} إجمالًا، {m} محذوفة",
+ "Changing a field lays every copy out again, the removed ones too": "تغيير حقل يعيد ترتيب كل النسخ، والمحذوفة أيضًا"
 }

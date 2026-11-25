@@ -124,7 +124,7 @@ def test_mixed_copy_selects_all_results_instead_of_just_the_last_group():
     assert sum(isinstance(ent, Guide) for ent in scene.selection) == 1
 
 
-@pytest.mark.parametrize("kind", ["face", "edge", "group", "guide"])
+@pytest.mark.parametrize("kind", ["face", "edge", "guide"])
 def test_retyping_an_array_selects_only_the_current_copies(kind):
     scene = Scene()
     original = _source(scene, kind)
@@ -144,6 +144,28 @@ def test_retyping_an_array_selects_only_the_current_copies(kind):
     assert len(scene.selection) == 4
     assert original not in scene.selection
     assert scene.selection <= _live(scene)
+
+
+def test_retyping_a_group_array_selects_the_live_array():
+    """Groups make a live array (core/array.py): the one container holding
+    the original and its copies is what stays selected."""
+    scene = Scene()
+    original = _source(scene, "group")
+    scene.select([original])
+    vp = _Vp(scene)
+    tool = _copy(vp)
+
+    for count, mode in ((3, "x"), (2, "/"), (4, "x")):
+        assert tool.on_array_value(vp, count, mode)
+        (array,) = scene.selection
+        assert array.array["count"] == count
+        assert original in array.children
+        assert len(array.children) == count + 1
+        assert len(vp.history.undo_stack) == 1
+    vp.history.undo()
+    assert scene.selection == {original}
+    vp.history.redo()
+    assert scene.selection == {array}
 
 
 def _segment(edge):

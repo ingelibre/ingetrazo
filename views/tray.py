@@ -23,7 +23,8 @@ import os
 from pathlib import Path
 
 from PySide6.QtCore import QObject, QPoint, QRect, QSettings, QSize, Qt, Signal
-from PySide6.QtGui import QColor, QIcon, QImage, QPainter, QPen, QPixmap
+from PySide6.QtGui import (QColor, QIcon, QImage, QPainter, QPen, QPixmap,
+                           QVector3D)
 from PySide6.QtWidgets import (
     QButtonGroup,
     QCheckBox,
@@ -5586,6 +5587,11 @@ class EntityInfoPanel(QWidget):
             "there is one behind, and moves it with it"))
         self._opening_box.toggled.connect(self._on_opening_toggled)
         lay.addWidget(self._opening_box)
+        # A live array (core/array.py): its count, step and mode, changed
+        # after it was made — «3x» only reaches the copy just made.
+        self._array = None               # the array the fields are showing
+        self._array_row = self._build_array_row()
+        lay.addWidget(self._array_row)
         # A steady height. Selecting something used to resize this panel —
         # one line for nothing, two for an edge, four and a layer row for a
         # face — and everything below it (layers, scenes, the materials
@@ -5601,9 +5607,11 @@ class EntityInfoPanel(QWidget):
         # at the same x (they sat at three different ones).
         fm = self._layer_caption.fontMetrics()
         cap_w = max(fm.horizontalAdvance(t) for t in (
-            tr("Name:"), tr("Sides:"), tr("Segments:"), tr("Layer:"))) + 4
+            tr("Name:"), tr("Sides:"), tr("Segments:"), tr("Layer:"),
+            tr("Copies:"), tr("Distance:"), tr("Total:"), tr("Angle:"))) + 4
         for cap in (self._name_caption, self._seg_caption,
-                    self._layer_caption):
+                    self._layer_caption, self._copies_caption,
+                    self._step_caption):
             cap.setFixedWidth(cap_w)
         from PySide6.QtGui import QFont, QFontMetrics
         font = QFont(self._label.font())
@@ -5613,6 +5621,7 @@ class EntityInfoPanel(QWidget):
         self._layer_box.hide()
         self._first_row.hide()
         self._opening_box.hide()
+        self._array_row.hide()
 
     def refresh(self) -> None:
         sel = list(self._window.viewport.scene.selection)
@@ -5623,6 +5632,169 @@ class EntityInfoPanel(QWidget):
                                    or self._curve is not None)
         self._refresh_layer(sel)
         self._refresh_opening(sel)
+        self._refresh_array(sel)
+
+    # ---- Live array ---------------------------------------------------------
+    def _build_array_row(self) -> QWidget:
+        from PySide6.QtWidgets import (QComboBox, QDoubleSpinBox,
+                                       QGridLayout, QSpinBox, QStackedWidget)
+        from core.array import MAX_COPIES
+        from views.length_field import LengthSpinBox
+        box = QWidget()
+        grid = QGridLayout(box)
+        grid.setContentsMargins(0, 0, 0, 0)
+        self._copies_caption = QLabel(tr("Copies:"))
+        self._copies_box = QSpinBox()
+        self._copies_box.setRange(1, MAX_COPIES)
+        self._copies_box.setKeyboardTracking(False)   # one layout per entry
+        self._copies_box.setToolTip(tr(
+            "How many copies the array has, the original not counted — "
+            "they are laid out again from the original"))
+        self._copies_box.valueChanged.connect(self._on_array_copies)
+        self._mode_box = QComboBox()
+        self._mode_box.addItem(tr("Repeat"), "x")
+        self._mode_box.addItem(tr("Divide"), "/")
+        self._mode_box.setToolTip(tr(
+            "Repeat: every copy one step further (3x). Divide: the copies "
+            "share the step out (/3)"))
+        self._mode_box.currentIndexChanged.connect(self._on_array_mode)
+        self._step_caption = QLabel(tr("Distance:"))
+        self._distance_box = LengthSpinBox(minimum=0.0001, maximum=100000.0)
+        self._distance_box.setKeyboardTracking(False)
+        self._distance_box.valueChanged.connect(self._on_array_distance)
+        self._angle_box = QDoubleSpinBox()
+        self._angle_box.setRange(-360.0, 360.0)
+        self._angle_box.setDecimals(2)
+        self._angle_box.setSuffix("°")
+        self._angle_box.setKeyboardTracking(False)
+        self._angle_box.valueChanged.connect(self._on_array_angle)
+        self._step_stack = QStackedWidget()
+        self._step_stack.addWidget(self._distance_box)
+        self._step_stack.addWidget(self._angle_box)
+        self._step_stack.setSizePolicy(QSizePolicy.Preferred,
+                                       QSizePolicy.Fixed)
+        grid.addWidget(self._copies_caption, 0, 0)
+        grid.addWidget(self._copies_box, 0, 1)
+        grid.addWidget(self._mode_box, 0, 2)
+        grid.addWidget(self._step_caption, 1, 0)
+        grid.addWidget(self._step_stack, 1, 1, 1, 2)
+        # A polar array all the way round: «8 posts around» without doing
+        # 360 ÷ 8 by hand (2026-11-25: «no entendí cómo hacerlo»).
+        self._full_turn_box = QCheckBox(tr("Full turn"))
+        self._full_turn_box.setToolTip(tr(
+            "Spreads the original and its copies evenly all the way round "
+            "(360°)"))
+        self._full_turn_box.toggled.connect(self._on_array_full_turn)
+        # The count above leaves the original out; this says the total.
+        self._array_total = QLabel()
+        grid.addWidget(self._full_turn_box, 2, 1)
+        grid.addWidget(self._array_total, 2, 2)
+        grid.setColumnStretch(2, 1)
+        return box
+
+    def _refresh_array(self, sel: list) -> None:
+        from core.array import (can_edit, copies_of, is_full_turn,
+                                removed_copies, sources_of)
+        one = sel[0] if len(sel) == 1 and isinstance(sel[0], Group) else None
+        self._array = one if one is not None and can_edit(one) else None
+        self._array_row.setVisible(self._array is not None)
+        if self._array is None:
+            return
+        rec = self._array.array
+        rotate = rec.get("kind") == "rotate"
+        divide = rec.get("mode") == "/"
+        full = rotate and is_full_turn(rec)
+        self._updating = True
+        try:
+            count = int(rec.get("count", 1))
+            self._copies_box.setValue(count)
+            # What is there, not what the recipe says: copies deleted by
+            # hand inside the array are counted out.
+            there = len(sources_of(self._array)) + len(copies_of(self._array))
+            removed = removed_copies(self._array)
+            if removed:
+                self._array_total.setText(
+                    tr("{n} in all, {m} removed").format(n=there, m=removed))
+                self._array_total.setToolTip(tr(
+                    "Changing a field lays every copy out again, the removed "
+                    "ones too"))
+            else:
+                self._array_total.setText(tr("{n} in all").format(n=there))
+                self._array_total.setToolTip("")
+            self._mode_box.setCurrentIndex(1 if divide else 0)
+            self._mode_box.setEnabled(not full)
+            self._step_stack.setCurrentIndex(1 if rotate else 0)
+            self._full_turn_box.setVisible(rotate)
+            self._full_turn_box.setChecked(full)
+            if rotate:
+                self._step_caption.setText(tr("Angle:"))
+                self._angle_box.setValue(float(rec.get("angle") or 0.0))
+                self._angle_box.setEnabled(not full)
+                self._angle_box.setToolTip(
+                    tr("The whole angle the copies share")
+                    if divide else tr("The angle from one copy to the next"))
+            else:
+                self._step_caption.setText(tr("Total:") if divide
+                                           else tr("Distance:"))
+                step = QVector3D(*[float(v) for v in rec.get("step")
+                                   or (0, 0, 0)])
+                self._distance_box.setValue(step.length())
+                self._distance_box.setToolTip(
+                    tr("The whole distance the copies share")
+                    if divide else
+                    tr("The distance from one copy to the next"))
+        finally:
+            self._updating = False
+
+    def _edit_array(self, changes: dict) -> None:
+        if self._updating or self._array is None:
+            return
+        from core.array import EditArrayCommand
+        vp = self._window.viewport
+        vp.history.execute(EditArrayCommand(self._array, changes))
+        vp.update()
+        self.refresh()
+
+    def _on_array_copies(self, n: int) -> None:
+        if self._array is not None and n != self._array.array.get("count"):
+            self._edit_array({"count": int(n)})
+
+    def _on_array_mode(self, _index: int) -> None:
+        mode = self._mode_box.currentData()
+        if self._array is not None and mode != self._array.array.get("mode"):
+            self._edit_array({"mode": mode})
+
+    def _on_array_distance(self, value: float) -> None:
+        if self._array is None:
+            return
+        step = QVector3D(*[float(v) for v in self._array.array.get("step")
+                           or (0, 0, 0)])
+        if step.length() < 1e-12 or abs(step.length() - value) < 1e-9:
+            return
+        new = step.normalized() * float(value)
+        self._edit_array({"step": [new.x(), new.y(), new.z()]})
+
+    def _on_array_angle(self, value: float) -> None:
+        if self._array is None:
+            return
+        if abs(float(self._array.array.get("angle") or 0.0) - value) < 1e-9:
+            return
+        self._edit_array({"angle": float(value)})
+
+    def _on_array_full_turn(self, on: bool) -> None:
+        """On: the copies share the whole circle, the way they turned.
+        Off: they stay where they are, as a repeat of the angle between
+        two of them — nothing jumps."""
+        if self._updating or self._array is None:
+            return
+        rec = self._array.array
+        sign = -1.0 if float(rec.get("angle") or 0.0) < 0 else 1.0
+        if on:
+            self._edit_array({"mode": "/", "angle": 360.0 * sign})
+        else:
+            count = max(1, int(rec.get("count", 1)))
+            self._edit_array({"mode": "x",
+                              "angle": 360.0 * sign / (count + 1)})
 
     # ---- Cut opening --------------------------------------------------------
     def _refresh_opening(self, sel: list) -> None:

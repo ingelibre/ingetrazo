@@ -4349,5 +4349,22 @@
  "Push/Pull bases kept with Ctrl stay sound and cracked results are refused (#1155).": "推/拉中用 Ctrl 保留的底面保持完好，出现裂缝的结果会被拒绝 (#1155)。",
  "Camera roll with a 3D mouse (#1406).": "用 3D 鼠标横滚相机 (#1406)。",
  "A preference to swap orbit and pan on the middle button (#467).": "在中键上交换环绕和平移的偏好设置 (#467)。",
- "IFC export writes the project north, the site location and the owning application (#1498).": "IFC 导出写入项目北向、场地位置和所属应用程序 (#1498)。"
+ "IFC export writes the project north, the site location and the owning application (#1498).": "IFC 导出写入项目北向、场地位置和所属应用程序 (#1498)。",
+ "Array": "阵列",
+ "Copies:": "副本：",
+ "Repeat": "重复",
+ "Total:": "总计：",
+ "How many copies the array has, the original not counted — they are laid out again from the original": "阵列的副本数，不含原件 — 会从原件重新排布",
+ "Repeat: every copy one step further (3x). Divide: the copies share the step out (/3)": "重复：每个副本再远一步 (3x)。分割：副本均分这一步 (/3)",
+ "The whole angle the copies share": "副本均分的整个角度",
+ "The angle from one copy to the next": "相邻副本之间的角度",
+ "The whole distance the copies share": "副本均分的整个距离",
+ "The distance from one copy to the next": "相邻副本之间的距离",
+ "Full turn": "整圈",
+ "Spreads the original and its copies evenly all the way round (360°)": "将原件和副本均匀分布在整圈 (360°) 上",
+ "{n} in all": "共 {n} 个",
+ "Copy made: type 3x + Enter for 3 more, or /3 to divide the distance.": "已复制：输入 3x + Enter 再加 3 个，或 /3 均分距离。",
+ "Copy made: type 3x + Enter for 3 more, or /3 to divide the angle.": "已复制：输入 3x + Enter 再加 3 个，或 /3 均分角度。",
+ "{n} in all, {m} removed": "共 {n} 个，已移除 {m} 个",
+ "Changing a field lays every copy out again, the removed ones too": "更改任一字段会重新排布所有副本，包括已移除的"
 }

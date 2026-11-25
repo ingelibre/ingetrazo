@@ -4357,5 +4357,22 @@
  "Push/Pull bases kept with Ctrl stay sound and cracked results are refused (#1155).": "Podstawy zachowane z Ctrl w Wypychaniu/Przeciąganiu pozostają poprawne, a pęknięte wyniki są odrzucane (#1155).",
  "Camera roll with a 3D mouse (#1406).": "Przechylenie kamery myszą 3D (#1406).",
  "A preference to swap orbit and pan on the middle button (#467).": "Ustawienie zamiany orbity i przesuwania na środkowym przycisku (#467).",
- "IFC export writes the project north, the site location and the owning application (#1498).": "Eksport IFC zapisuje północ projektu, lokalizację terenu i aplikację właściciela (#1498)."
+ "IFC export writes the project north, the site location and the owning application (#1498).": "Eksport IFC zapisuje północ projektu, lokalizację terenu i aplikację właściciela (#1498).",
+ "Array": "Szyk",
+ "Copies:": "Kopie:",
+ "Repeat": "Powtórz",
+ "Total:": "Razem:",
+ "How many copies the array has, the original not counted — they are laid out again from the original": "Ile kopii ma szyk, bez oryginału — są rozmieszczane od nowa na podstawie oryginału",
+ "Repeat: every copy one step further (3x). Divide: the copies share the step out (/3)": "Powtórz: każda kopia o krok dalej (3x). Podziel: kopie dzielą krok między siebie (/3)",
+ "The whole angle the copies share": "Cały kąt dzielony między kopie",
+ "The angle from one copy to the next": "Kąt od jednej kopii do następnej",
+ "The whole distance the copies share": "Cała odległość dzielona między kopie",
+ "The distance from one copy to the next": "Odległość od jednej kopii do następnej",
+ "Full turn": "Pełny obrót",
+ "Spreads the original and its copies evenly all the way round (360°)": "Rozkłada oryginał i jego kopie równo na całym obrocie (360°)",
+ "{n} in all": "Razem: {n}",
+ "Copy made: type 3x + Enter for 3 more, or /3 to divide the distance.": "Kopia gotowa: wpisz 3x + Enter, by dodać 3, lub /3, by podzielić odległość.",
+ "Copy made: type 3x + Enter for 3 more, or /3 to divide the angle.": "Kopia gotowa: wpisz 3x + Enter, by dodać 3, lub /3, by podzielić kąt.",
+ "{n} in all, {m} removed": "Razem: {n}, usunięto: {m}",
+ "Changing a field lays every copy out again, the removed ones too": "Zmiana pola rozmieszcza od nowa wszystkie kopie, także usunięte"
 }

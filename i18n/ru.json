@@ -4349,5 +4349,22 @@
  "Push/Pull bases kept with Ctrl stay sound and cracked results are refused (#1155).": "Основания, сохранённые с Ctrl при выдавливании, остаются целыми, а треснувшие результаты отклоняются (#1155).",
  "Camera roll with a 3D mouse (#1406).": "Крен камеры с помощью 3D-мыши (#1406).",
  "A preference to swap orbit and pan on the middle button (#467).": "Настройка, меняющая местами вращение и панорамирование на средней кнопке (#467).",
- "IFC export writes the project north, the site location and the owning application (#1498).": "Экспорт IFC записывает север проекта, расположение участка и приложение-владельца (#1498)."
+ "IFC export writes the project north, the site location and the owning application (#1498).": "Экспорт IFC записывает север проекта, расположение участка и приложение-владельца (#1498).",
+ "Array": "Массив",
+ "Copies:": "Копии:",
+ "Repeat": "Повторить",
+ "Total:": "Всего:",
+ "How many copies the array has, the original not counted — they are laid out again from the original": "Сколько копий в массиве, не считая оригинала — они заново расставляются от оригинала",
+ "Repeat: every copy one step further (3x). Divide: the copies share the step out (/3)": "Повторить: каждая копия на шаг дальше (3x). Разделить: копии делят шаг между собой (/3)",
+ "The whole angle the copies share": "Весь угол, который делят копии",
+ "The angle from one copy to the next": "Угол от одной копии до следующей",
+ "The whole distance the copies share": "Всё расстояние, которое делят копии",
+ "The distance from one copy to the next": "Расстояние от одной копии до следующей",
+ "Full turn": "Полный оборот",
+ "Spreads the original and its copies evenly all the way round (360°)": "Равномерно расставляет оригинал и его копии по всему кругу (360°)",
+ "{n} in all": "Всего: {n}",
+ "Copy made: type 3x + Enter for 3 more, or /3 to divide the distance.": "Копия готова: введите 3x + Enter для ещё 3 или /3, чтобы разделить расстояние.",
+ "Copy made: type 3x + Enter for 3 more, or /3 to divide the angle.": "Копия готова: введите 3x + Enter для ещё 3 или /3, чтобы разделить угол.",
+ "{n} in all, {m} removed": "Всего: {n}, удалено: {m}",
+ "Changing a field lays every copy out again, the removed ones too": "Изменение поля заново расставляет все копии, и удалённые тоже"
 }

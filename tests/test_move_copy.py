@@ -175,7 +175,10 @@ def test_a_group_copies_as_a_sibling_and_arrays():
     assert abs(min(v.y() for v in copy.mesh.faces[0].vertices) - 3.0) < 1e-6
     assert abs(min(v.y() for v in g.mesh.faces[0].vertices)) < 1e-6   # original untouched
     assert tool.on_array_value(vp, 4, "x")
-    assert len(scene.groups) == 5
+    # A group makes a live array (core/array.py): one container that
+    # holds the original and its four copies.
+    (array,) = scene.groups
+    assert array.children[0] is g and len(array.children) == 5
     vp.history.undo()
     assert scene.groups == [g]
 

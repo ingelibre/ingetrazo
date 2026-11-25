@@ -4349,5 +4349,22 @@
  "Push/Pull bases kept with Ctrl stay sound and cracked results are refused (#1155).": "Le basi mantenute con Ctrl in Spingi/Tira restano integre e i risultati incrinati vengono rifiutati (#1155).",
  "Camera roll with a 3D mouse (#1406).": "Rollio della fotocamera con un mouse 3D (#1406).",
  "A preference to swap orbit and pan on the middle button (#467).": "Una preferenza per scambiare orbita e panoramica sul tasto centrale (#467).",
- "IFC export writes the project north, the site location and the owning application (#1498).": "L'esportazione IFC scrive il nord di progetto, la posizione del sito e l'applicazione proprietaria (#1498)."
+ "IFC export writes the project north, the site location and the owning application (#1498).": "L'esportazione IFC scrive il nord di progetto, la posizione del sito e l'applicazione proprietaria (#1498).",
+ "Array": "Serie",
+ "Copies:": "Copie:",
+ "Repeat": "Ripeti",
+ "Total:": "Totale:",
+ "How many copies the array has, the original not counted — they are laid out again from the original": "Quante copie ha la serie, senza contare l'originale — vengono ricollocate a partire dall'originale",
+ "Repeat: every copy one step further (3x). Divide: the copies share the step out (/3)": "Ripeti: ogni copia un passo più in là (3x). Dividi: le copie si spartiscono il passo (/3)",
+ "The whole angle the copies share": "L'angolo intero che le copie si spartiscono",
+ "The angle from one copy to the next": "L'angolo da una copia alla successiva",
+ "The whole distance the copies share": "La distanza intera che le copie si spartiscono",
+ "The distance from one copy to the next": "La distanza da una copia alla successiva",
+ "Full turn": "Giro completo",
+ "Spreads the original and its copies evenly all the way round (360°)": "Distribuisce l'originale e le sue copie in modo uniforme su tutto il giro (360°)",
+ "{n} in all": "{n} in tutto",
+ "Copy made: type 3x + Enter for 3 more, or /3 to divide the distance.": "Copia fatta: digita 3x + Invio per altre 3, o /3 per dividere la distanza.",
+ "Copy made: type 3x + Enter for 3 more, or /3 to divide the angle.": "Copia fatta: digita 3x + Invio per altre 3, o /3 per dividere l'angolo.",
+ "{n} in all, {m} removed": "{n} in tutto, {m} rimosse",
+ "Changing a field lays every copy out again, the removed ones too": "Cambiando un campo tutte le copie vengono ricollocate, anche quelle rimosse"
 }
