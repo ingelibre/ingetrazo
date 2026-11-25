@@ -2325,26 +2325,31 @@ class PickingMixin:
         from PySide6.QtGui import QPaintDevice
         fm = (QFontMetrics(font, self) if isinstance(self, QPaintDevice)
               else QFontMetrics(font))        # the test stubs bind this
+        projector = getattr(self, "_pixel_projector", None)
+        project = projector() if projector is not None else self._world_to_pixel
+        ascent, descent, line_height = fm.ascent(), fm.descent(), fm.height()
         best, best_d = None, self.pick_threshold_px * 2.0
         for lab in labels:
             if not self.scene.entity_selectable(lab):   # hidden / locked
                 continue
-            pp = self._world_to_pixel(lab.position())
+            pp = project(lab.position())
             if pp is None:
                 continue
-            pa = self._world_to_pixel(lab.anchor)
-            # The text block: lines start at _text_block_x(...), first
-            # baseline at pp.y - 4, one fm.height() apart (mirror of
-            # _draw_text_labels).
             lines = lab.text.splitlines() or [""]
-            x0 = self._text_block_x(
-                pp, pa, max(fm.horizontalAdvance(ln) for ln in lines))
-            for i, line in enumerate(lines):
-                base = pp[1] - 4 + i * fm.height()
-                if (x0 - 3 <= screen_x <= x0 + fm.horizontalAdvance(line) + 3
-                        and base - fm.ascent() - 3 <= screen_y
-                        <= base + fm.descent() + 3):
-                    return lab
+            first = pp[1] - 4
+            last = first + (len(lines) - 1) * line_height
+            in_band = first - ascent - 3 <= screen_y <= last + descent + 3
+            if rect_only and not in_band:
+                continue
+            pa = project(lab.anchor)
+            if in_band:
+                widths = [fm.horizontalAdvance(line) for line in lines]
+                x0 = self._text_block_x(pp, pa, max(widths))
+                for i, width in enumerate(widths):
+                    base = first + i * line_height
+                    if (x0 - 3 <= screen_x <= x0 + width + 3
+                            and base - ascent - 3 <= screen_y <= base + descent + 3):
+                        return lab
             if rect_only:
                 continue
             d = math.hypot(pp[0] - screen_x, pp[1] - screen_y)
