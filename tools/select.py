@@ -21,10 +21,14 @@ from __future__ import annotations
 from views import prompts as _prompts
 
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QMatrix4x4
 
 from core.dimension import Dimension
 from core.textlabel import TextLabel
-from core.group import Group
+from core.group import Group, effective_material
+from core.layers import object_layer
+from core.materials import material_sig
+from core.scene import Scene
 from core.mesh import Edge, Face
 from core.guide import is_guide
 from core.section import SectionBox, SectionPlane
@@ -216,7 +220,7 @@ def _local_bounds(ch):
     return bounds
 
 
-def _placement_side(viewport, pg, rect):
+def _placement_side(viewport, pg, rect, project):
     """``"in"`` when everything the box test reads of placement ``pg``
     projects inside ``rect``, ``"out"`` when all of it lies past one side
     of it, ``"empty"`` when it has nothing, None when that takes the full
@@ -241,7 +245,7 @@ def _placement_side(viewport, pg, rect):
                     for y in (lo[1], hi[1]) for z in (lo[2], hi[2])])
     if tp is not None:
         box = tp(box)
-    xs, ys, ok = viewport._project_px(box)
+    xs, ys, ok = project(box)
     if not ok.all():
         return None
     x0, y0, x1, y1 = rect
@@ -253,12 +257,13 @@ def _placement_side(viewport, pg, rect):
     return None
 
 
-def _box_group_fast(viewport, group, rect, crossing):
+def _box_group_fast(viewport, group, rect, crossing, project=None):
     """Vectorized box test for one (non-billboard) group via its chunk
     arrays. True/False, or None to fall back to the per-vertex walk."""
+    if project is None:
+        project = getattr(viewport, "_project_px", None)
     if (getattr(group, "billboard", False)
-            or getattr(viewport, "_group_chunk", None) is None
-            or getattr(viewport, "_project_px", None) is None):
+            or getattr(viewport, "_group_chunk", None) is None or project is None):
         return None
     # A component's geometry lives in the placements it holds, each with its
     # own chunk: reading only the top-level one found an EMPTY array for an
@@ -273,7 +278,7 @@ def _box_group_fast(viewport, group, rect, crossing):
             # wholly past one of its sides, answers without its triangles:
             # on a model of 2 000 instances the corners of every triangle
             # carried to world and projected were most of a box's 5 s.
-            side = _placement_side(viewport, pg, rect)
+            side = _placement_side(viewport, pg, rect, project)
             if side == "empty":
                 continue
             seen = True
@@ -287,7 +292,7 @@ def _box_group_fast(viewport, group, rect, crossing):
                 continue
             ch, tv, tp = _box_source(viewport, pg)
             for points, paired in _box_point_batches(ch, tv, tp):
-                xs, ys, ok = viewport._project_px(points)
+                xs, ys, ok = project(points)
                 x0, y0, x1, y1 = rect
                 inside = ok & (xs >= x0) & (xs <= x1) & (ys >= y0) & (ys <= y1)
                 if not crossing:
@@ -302,6 +307,109 @@ def _box_group_fast(viewport, group, rect, crossing):
     except Exception:  # noqa: BLE001
         return None
     return (not crossing) if seen else None
+
+
+# Batch only the built-in selection policy. Reordered calls can be observable
+# when a test viewport or a plugin uses custom selection or visibility rules.
+_BOX_SCENE_METHODS = {
+    name: getattr(Scene, name) for name in (
+        "entity_selectable", "entity_visible", "entity_locked", "entity_hidden",
+        "_object_hidden", "_face_hidden", "similar_hidden", "outside_section_box",
+        "_layer_state", "layer", "edit_definition", "_open_group_layer",
+    )
+}
+
+
+def _box_broad_verdicts(viewport, groups, rect, project):
+    """Classify the flat placements with conclusive projections in one tile."""
+    import numpy as np
+    from views.viewport import _paint_of, _proto_wrapper
+
+    slots, boxes, matrices = [], [], []
+    by_source, by_wrapper = {}, {}
+    for row, g in enumerate(groups):
+        xf, mesh = g.xform, g.mesh
+        if type(xf) is not QMatrix4x4 or mesh is None or g.children or g.billboard:
+            continue
+        try:
+            key = (id(mesh), object_layer(g), material_sig(effective_material(g)))
+            if key not in by_source:
+                wrapper = _proto_wrapper(viewport, mesh, _paint_of(viewport, g))
+                wrapper_id = id(wrapper)
+                if wrapper_id not in by_wrapper:
+                    by_wrapper[wrapper_id] = _local_bounds(viewport._group_chunk(wrapper))
+                by_source[key] = by_wrapper[wrapper_id]
+            bounds = by_source[key]
+            if bounds is None:
+                continue
+            values = xf.data()
+        except Exception:  # noqa: BLE001 — the original per-group path can answer
+            continue
+        slots.append(row)
+        boxes.append(bounds)
+        matrices.append(values)
+    if not slots:
+        return {}
+    try:
+        bounds = np.asarray(boxes, dtype=np.float64)
+        m = np.asarray(matrices, dtype=np.float64)
+        # Match _placed_maps' term and corner order.
+        tx = bounds[:, :, 0, None] * m[:, None, 0:3]
+        ty = bounds[:, :, 1, None] * m[:, None, 4:7]
+        tz = bounds[:, :, 2, None] * m[:, None, 8:11]
+        world = (tx[:, :, None, None, :] + ty[:, None, :, None, :]) + tz[:, None, None, :, :]
+        world += m[:, None, None, None, 12:15]
+        x, y, ok = (a.reshape(-1, 8) for a in project(world.reshape(-1, 3)))
+        left, top, right, bottom = rect
+        inside = ((x >= left) & (x <= right) & (y >= top) & (y <= bottom)).all(axis=1)
+        outside = ((x < left).all(axis=1) | (x > right).all(axis=1)
+                   | (y < top).all(axis=1) | (y > bottom).all(axis=1))
+        return {row: bool(hit) for row, good, hit in zip(
+            slots, ok.all(axis=1) & (inside | outside), inside) if good}
+    except Exception:  # noqa: BLE001 — try the existing geometry path
+        return {}
+
+
+def _box_group_verdicts(viewport, candidates, rect, crossing):
+    """Share a camera matrix per marquee and batch conclusive group bounds."""
+    from views.viewport import Viewport, _BOX_GROUP_METHODS
+    from views.viewport.projection import _PROJECT_NATIVE_MIN, _PROJECT_PX_WITH_MVP
+
+    scene = viewport.scene
+    selectable = scene.entity_selectable
+    project = project_px = getattr(viewport, "_project_px", None)
+    stock_project = getattr(project_px, "__func__", None) is _PROJECT_PX_WITH_MVP
+    if stock_project:
+        mvp = None
+
+        def project(points):
+            nonlocal mvp
+            if mvp is None:
+                mvp = viewport._np_mvp()
+            return project_px(points, mvp)
+
+    tile = min(255, (_PROJECT_NATIVE_MIN - 1) // 8)
+    if (type(candidates) is not list or len(candidates) < 64
+            or tile < 2 or type(viewport) is not Viewport or not stock_project
+            or type(scene) is not Scene or any(
+                name in vars(scene) or getattr(Scene, name) is not method
+                for name, method in _BOX_SCENE_METHODS.items())
+            or (getattr(viewport._expand_placements, "__func__", None),
+                getattr(viewport._group_chunk, "__func__", None)) != _BOX_GROUP_METHODS
+            or any(type(g) is not Group for g in candidates)):
+        for g in candidates:
+            if selectable(g):
+                yield g, _box_group_fast(viewport, g, rect, crossing, project)
+        return
+
+    for offset in range(0, len(candidates), tile):
+        groups = [g for g in candidates[offset:offset+tile] if selectable(g)]
+        verdicts = _box_broad_verdicts(viewport, groups, rect, project)
+        for row, group in enumerate(groups):
+            verdict = verdicts.get(row)
+            if verdict is None:
+                verdict = _box_group_fast(viewport, group, rect, crossing, project)
+            yield group, verdict
 
 
 def _frame_projector(viewport):
@@ -679,10 +787,7 @@ class SelectTool(Tool):
         candidates = (getattr(viewport.scene, "groups", []) if ctx is None
                       else (getattr(ctx, "children", None) or []))
         if candidates:
-            for group in candidates:
-                if not viewport.scene.entity_selectable(group):
-                    continue
-                verdict = _box_group_fast(viewport, group, rect, crossing)
+            for group, verdict in _box_group_verdicts(viewport, candidates, rect, crossing):
                 if verdict is not None:
                     if verdict:
                         picked.append(group)

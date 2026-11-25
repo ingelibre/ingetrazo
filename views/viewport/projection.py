@@ -788,10 +788,9 @@ class ProjectionMixin:
         m = self.camera.projection_matrix() * self.camera.view_matrix()
         return np.array(m.data(), dtype=np.float64).reshape(4, 4, order="F")
 
-    def _project_px(self, pts):
-        """Batch world points (N, 3) → ``(px, py, in_front)`` arrays — the
-        exact math of :meth:`_world_to_pixel`, vectorised."""
-        M = self._np_mvp()
+    def _project_px(self, pts, mvp=None):
+        """Batch world points into pixel and in-front arrays for one camera pose."""
+        M = self._np_mvp() if mvp is None else mvp
         if len(pts) >= _PROJECT_NATIVE_MIN:
             from core import _native
             mod = _native.native
@@ -965,3 +964,7 @@ class ProjectionMixin:
                                                 - lo[ok].min(axis=0)))
         lo, hi = self.scene.bounds()
         return (hi - lo).length() if lo is not None else 0.0
+
+
+# The implementation that accepts a precomputed camera matrix.
+_PROJECT_PX_WITH_MVP = ProjectionMixin._project_px

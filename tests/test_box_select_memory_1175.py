@@ -10,7 +10,10 @@ import numpy as np
 import pytest
 from PySide6.QtGui import QMatrix4x4, QVector3D
 
-from tools.select import _box_group_fast, _local_bounds, _seg_rect_overlap
+from PySide6.QtWidgets import QApplication
+from tools.select import SelectTool, _box_group_fast, _local_bounds, _seg_rect_overlap
+
+_app = QApplication.instance() or QApplication([])
 
 
 def _chunk(v0=(), e1=(), e2=(), edges=(), uid=1, dtype=np.float64):
@@ -226,3 +229,189 @@ def test_empty_and_unavailable_chunks_keep_the_fallback():
         raise ValueError('unavailable')
     vp._group_chunk = unavailable
     assert _box_group_fast(vp, vp.places[0], (0, 0, 1, 1), True) is None
+
+
+def test_marquee_reuses_the_stock_projection_for_one_selection(monkeypatch):
+    from views.viewport.projection import ProjectionMixin
+
+    class ProjectedViewport(ProjectionMixin, _Viewport):
+        mvp_builds = 0
+        shift = 0
+
+        def _np_mvp(self):
+            self.mvp_builds += 1
+            mvp = np.identity(4)
+            mvp[0, 3] = self.shift
+            return mvp
+
+        def width(self):
+            return 100
+
+        def height(self):
+            return 100
+
+        def _world_to_pixel(self, _point):
+            pytest.fail('these groups should use the batch projector')
+
+        def _expand_placements(self, group):
+            return [group]
+
+        def update(self):
+            pass
+
+    chunk = _chunk([[0, 0, 0]], [[0.15, 0, 0]], [[0, 0.15, 0]])
+    vp = ProjectedViewport([chunk, chunk])
+    selections = []
+    vp.scene = SimpleNamespace(edges=[], faces=[], edit_group=None, groups=vp.places,
+                               entity_selectable=lambda _: True,
+                               select=lambda entities, **_: selections.append(entities))
+    tool = SelectTool()
+    tool.on_box_select(vp, (40, 40, 60, 60), crossing=False)
+    assert selections[-1] == vp.places
+    assert vp.mvp_builds == 1
+
+    vp.shift = 1
+    tool.on_box_select(vp, (40, 40, 60, 60), crossing=False)
+    assert selections[-1] == []
+    assert vp.mvp_builds == 2
+
+    def custom_project(self, points):
+        return np.full(len(points), 50), np.full(len(points), 50), np.ones(len(points), bool)
+
+    monkeypatch.setattr(ProjectionMixin, '_project_px', custom_project)
+    tool.on_box_select(vp, (40, 40, 60, 60), crossing=False)
+    assert selections[-1] == vp.places
+    assert vp.mvp_builds == 2
+
+
+@pytest.mark.parametrize('perspective', [False, True])
+def test_marquee_batches_placed_bounds_and_keeps_fallback_order(monkeypatch, perspective):
+    from core.group import Group
+    from core.mesh import Mesh
+    from tools import select
+    from views.viewport import Viewport
+
+    vp = Viewport()
+    try:
+        vp.resize(1000, 700)
+        vp.camera.set_aspect(1000, 700)
+        vp.camera.set_view('top')
+        vp.camera.perspective = perspective
+        vp.camera.fit_to(QVector3D(-4, -4, -1), QVector3D(4, 4, 1))
+        mesh = Mesh()
+        points = [(0., 0., 0.), (1., 0., 0.), (1., 1., 0.), (0., 1., 0.)]
+        mesh.add_face([QVector3D(*p) for p in points])
+
+        def placed(x, y, scale=1.):
+            group = Group(mesh)
+            group.xform = QMatrix4x4()
+            group.xform.translate(x, y, 0.)
+            group.xform.scale(scale, 1., 1.)
+            return group
+
+        inside, partial, mirrored = placed(0, 0), placed(.5, .5), placed(1, 0, -1.)
+        nested = Group()
+        nested.adopt([placed(0, 0)])
+        fillers = [placed(5, 5) for _ in range(253)]
+        x, y, ok = vp._project_px(np.array(points))
+        assert ok.all()
+        rect = (x.min(), y.min(), x.max(), y.max())
+
+        selected, broad = [], {}
+        classify = select._box_broad_verdicts
+
+        def record_broad(viewport, groups, rect, project):
+            verdicts = classify(viewport, groups, rect, project)
+            broad.update((groups[i], verdict) for i, verdict in verdicts.items())
+            return verdicts
+
+        monkeypatch.setattr(select, '_box_broad_verdicts', record_broad)
+        monkeypatch.setattr(vp.scene, 'select', lambda entities, **_: selected.extend(entities))
+        tool = SelectTool()
+        for count in (59, len(fillers)):
+            vp.scene.groups[:] = [inside, nested, partial, *fillers[:count], mirrored]
+            vp.scene.version += 1
+            for crossing in (False, True):
+                selected.clear()
+                broad.clear()
+                tool.on_box_select(vp, rect, crossing)
+                expected = [inside, nested, partial, mirrored] if crossing else [inside, nested, mirrored]
+                assert selected == expected
+                if count == len(fillers):
+                    assert broad[inside] and broad[mirrored] and not broad[fillers[0]]
+                    assert nested not in broad and partial not in broad
+                else:
+                    assert not broad
+
+        project = vp._project_px
+        monkeypatch.setattr(vp, '_project_px', lambda points: project(points))
+        selected.clear()
+        broad.clear()
+        tool.on_box_select(vp, rect, crossing=True)
+        assert selected == [inside, nested, partial, mirrored]
+        assert not broad
+    finally:
+        vp.close()
+
+
+def test_marquee_batches_children_of_an_open_component(monkeypatch):
+    from core.group import Group
+    from core.layers import Layer
+    from core.mesh import Mesh
+    from tools import select
+    from views.viewport import Viewport
+
+    vp = Viewport()
+    scene = vp.scene
+    try:
+        vp.resize(800, 600)
+        vp.camera.set_aspect(800, 600)
+        vp.camera.set_view('top')
+        vp.camera.perspective = False
+        vp.camera.fit_to(QVector3D(-3, -3, -1), QVector3D(3, 3, 1))
+        mesh = Mesh()
+        vertices = [(0., 0., 0.), (1., 0., 0.), (1., 1., 0.), (0., 1., 0.)]
+        mesh.add_face([QVector3D(*p) for p in vertices])
+
+        def place(prototype, name, x=0.0):
+            group = Group(prototype, name)
+            group.xform = QMatrix4x4()
+            group.xform.translate(x, 0.0, 0.0)
+            return group
+
+        holder = Group(Mesh(), 'Assembly')
+        duplicate = place(holder.mesh, 'Same definition')
+        shown = place(mesh, 'Visible child')
+        locked = place(mesh, 'Locked child')
+        locked.layer = 'Locked'
+        scene.layers.append(Layer('Locked', locked=True))
+        holder.adopt([duplicate, shown, locked]
+                     + [place(mesh, f'Filler {i}', 4.0) for i in range(64)])
+        holder.component = True
+        scene.groups[:] = [holder, place(mesh, 'Outside the context')]
+        scene.hide_similar_components = True
+        scene.begin_group_edit(holder)
+        duplicate, shown, locked = holder.children[:3]
+        assert not scene.entity_selectable(duplicate)
+        assert scene.entity_selectable(shown)
+        assert not scene.entity_selectable(locked)
+
+        x, y, front = vp._project_px(np.asarray(vertices))
+        assert front.all()
+        rect = (x.min() - 1.0, y.min() - 1.0, x.max() + 1.0, y.max() + 1.0)
+        batched = []
+        broad = select._box_broad_verdicts
+
+        def record(viewport, groups, rect, project):
+            batched.extend(groups)
+            return broad(viewport, groups, rect, project)
+
+        monkeypatch.setattr(select, '_box_broad_verdicts', record)
+        for crossing in (False, True):
+            batched.clear()
+            SelectTool().on_box_select(vp, rect, crossing)
+            assert scene.selection == {shown}
+            assert shown in batched and duplicate not in batched and locked not in batched
+    finally:
+        scene.end_group_edit()
+        vp.close()
