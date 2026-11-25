@@ -3,7 +3,7 @@
 """#1329: what a .skp hides comes in hidden.
 
 Two kinds of hiding, both lost before: a group or component the user hid
-(SketchUp's Hide, ``Instance.hidden``), and the objects each scene hides
+(the Hide stored on a placement, ``Instance.hidden``), and the objects each scene hides
 (``Page.hidden_entity_ids``, entity ids). A placement either one touches
 must stay an object of its own instead of melting into its parent's mesh.
 

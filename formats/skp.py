@@ -243,7 +243,7 @@ def _scene_hidden_objects(entity_ids, by_skp_id, saves=None):
     ``Page.use_hidden_objects``, openskp#660):
 
     * True: the uids, even none — picking the scene shows every other
-      object again, as in SketchUp;
+      object again, as the scene means;
     * False: ``None``, the view leaves objects alone;
     * None (an older OpenSKP, or a file that does not say): the uids, or
       ``None`` when there are none. An empty list then cannot tell "saves

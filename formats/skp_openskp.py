@@ -1132,7 +1132,7 @@ _hidden_tags: frozenset = frozenset()
 def _kept(ins, scene_hidden=frozenset()) -> bool:
     """Whether a nested placement must stay an object of its own instead of
     melting into what holds it: it has a tag, it is hidden itself
-    (SketchUp's Hide), or a scene hides it. A tag and a hide only work on an
+    (the Hide stored on the placement), or a scene hides it. A tag and a hide only work on an
     object, and once the geometry is flattened into the parent's mesh there
     is none left to work on (#1329: every hidden group came in visible)."""
     return bool(getattr(ins, "layer", "") or getattr(ins, "hidden", False)
@@ -1152,7 +1152,7 @@ def _ident(ins, chain=(), hidden_above=False):
 
     ``ids`` is its own entity id first, then those of the flattened
     placements around it (``chain``): when a scene hides one of those, it
-    hides this object with it, as SketchUp does, although here the object
+    hides this object with it, as the file means, although here the object
     sits beside the mesh it came out of rather than inside it. ``hidden`` is
     the placement's own Hide, or one above it (``hidden_above``)."""
     own = getattr(ins, "id", None)
