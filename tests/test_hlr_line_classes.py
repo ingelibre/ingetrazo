@@ -85,6 +85,35 @@ def test_section_loops_keep_a_hollow_wall_hollow_and_skip_open_chains():
 
 # ---- line classes -------------------------------------------------------------
 
+def test_soft_edges_share_normals_without_changing_winding(monkeypatch):
+    from core.hlr import collect_geometry
+    from core.mesh import Face
+
+    scene = Scene()
+    p, q, r = V(0, 0, 0), V(1, 0, 0), V(0, 1, 0)
+    scene.mesh.add_face([p, q, V(0, -1, 1)])
+    middle = scene.mesh.add_face([p, q, r])
+    scene.mesh.add_face([q, r, V(1, 1, 1)])
+    for edge in scene.mesh.edges:
+        edge.soft = len(edge.faces) == 2
+
+    calls = []
+    real_normal = Face.normal
+
+    def count(face):
+        if face is middle:
+            calls.append(face)
+        return real_normal(face)
+
+    monkeypatch.setattr(Face, "normal", count)
+    _, _, soft = collect_geometry(scene)
+
+    assert len(soft) == 2
+    assert soft[0][3] == (0.0, 0.0, -1.0)
+    assert soft[1][2] == (0.0, 0.0, 1.0)
+    assert len(calls) == 2  # One triangulation and one shared soft-edge normal.
+
+
 def test_a_cut_box_from_above_draws_cut_lines_and_fills_the_ring():
     scene = Scene()
     _box(scene.mesh, 0, 0, 0, 2, 3, 2)
