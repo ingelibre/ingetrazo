@@ -87,7 +87,15 @@ void main() {
     // the pixel center. Cover that subpixel difference on sloped faces.
     float margin = 0.75 * (max(abs(g_depth_side.x), abs(g_depth_side.y))
                          + max(abs(g_depth_along.x), abs(g_depth_along.y)));
-    float bias = min(max(0.0, -min(delta.x, delta.y)) + margin, 0.01) + 1e-6;
+    float bias = min(max(0.0, -min(delta.x, delta.y)) + margin, 0.01);
+    if (u_marker_pass == 0 && (u_endpoint <= 0.0 || u_endpoint_type != 0)) {
+        // The polygon offset of the faces already clears a regular stroke.
+        // Here a face seen edge-on has a slope so steep that its bias drew
+        // the line through whatever stood before it (#1569).
+        float width = mix(g_width.x, g_width.y, clamp(g_pixel.x / g_length, 0.0, 1.0));
+        bias *= smoothstep(1.0, 1.5, width / u_scale);
+    }
+    bias += 1e-6;
     gl_FragDepth = max(0.0, gl_FragCoord.z - bias * 0.5);
     vec3 color = mix(g_color, u_background, u_hidden_fade);
     color = mix(color, u_fade_color, u_fade);

@@ -581,6 +581,30 @@ def test_near_plane_and_section_clipping_leave_no_spurious_lines(drawing):
     assert mask[:, WIDTH // 2:].any()
 
 
+def test_regular_styled_edges_stay_behind_a_thin_board(cube_viewport, monkeypatch, perspective, dpr):
+    """A dashed layer sends every edge through the styled renderer: the ones
+    behind a board must not show through it (#1569)."""
+    vp, scene = cube_viewport, cube_viewport.scene
+    monkeypatch.setattr(vp, "devicePixelRatioF", lambda: float(dpr))
+    # Edges of faces seen edge-on, 2 cm behind a 4 x 4 m board.
+    scene.mesh.add_face([V(-2, -1.02, -2), V(2, -1.02, -2), V(2, -1.02, 2), V(-2, -1.02, 2)])
+    scene.mesh.add_face([V(-.5, -1, -.5), V(.5, -1, -.5), V(.5, 0, -.5), V(-.5, 0, -.5)])
+    scene.layers[0].linetype = "dashed"
+    scene.version += 1
+    vp.camera.set_view("front")
+    vp.camera.perspective = perspective
+    scene.display_style = _style()
+    image = vp.render_image(900, 750, overlays=False).convertToFormat(QImage.Format_RGBA8888)
+    pixels = np.frombuffer(image.constBits(), dtype=np.uint8).reshape(
+        (image.height(), image.bytesPerLine() // 4, 4))[:, :image.width(), :3]
+    mvp = vp.camera.projection_matrix() * vp.camera.view_matrix()
+    a, b = mvp.map(V(-1.9, -1.02, -1.9)), mvp.map(V(1.9, -1.02, 1.9))
+    x0, x1 = sorted(int((p.x() + 1) * 450) for p in (a, b))
+    y0, y1 = sorted(int((1 - p.y()) * 375) for p in (a, b))
+    board = pixels[max(y0, 0):y1, max(x0, 0):x1]
+    assert board.size and board.max(axis=2).min() > 200
+
+
 def test_soft_edges_only_reappear_at_silhouettes_when_profiles_are_enabled(drawing):
     vp, render, _renderer = drawing
     mesh = vp.scene.mesh
