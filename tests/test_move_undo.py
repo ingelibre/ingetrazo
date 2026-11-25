@@ -58,12 +58,24 @@ def test_move_undo_redo_cycle_stable():
     assert _positions(scene) == before     # and undo is still exact
 
 
-def test_plain_move_still_works():
+def test_plain_move_reuses_the_rollback_snapshot(monkeypatch):
     scene = Scene()
     hist = History(scene)
     _two_squares(scene, hist)
-    hist.execute(MoveVerticesCommand(
-        [V(0, 0), V(2, 0), V(2, 2), V(0, 2)], QVector3D(0, 10, 0)))
+    capture_state = scene.mesh.capture_state
+    snapshots = []
+
+    def capture():
+        snap = capture_state()
+        snapshots.append(snap)
+        return snap
+
+    monkeypatch.setattr(scene.mesh, "capture_state", capture)
+    move = MoveVerticesCommand([V(0, 0), V(2, 0), V(2, 2), V(0, 2)],
+                               QVector3D(0, 10, 0))
+    assert hist.execute(move)
+    assert len(snapshots) == 2
+    assert move._before is snapshots[0]
     assert (0.0, 10.0) in _positions(scene)
     hist.undo()
     assert (0.0, 0.0) in _positions(scene)
