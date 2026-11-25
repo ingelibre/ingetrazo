@@ -2290,7 +2290,7 @@ class PickingMixin:
             if not self.scene.entity_selectable(dim):   # hidden / locked
                 continue
             ap, bp = dim.line_points()
-            for s, e in ((dim.a, ap), (dim.b, bp), (ap, bp)):
+            for s, e in (*dim.extension_segments(ap, bp), (ap, bp)):
                 ps = self._world_to_pixel(s)
                 pe = self._world_to_pixel(e)
                 if ps is None or pe is None:

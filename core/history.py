@@ -2180,6 +2180,23 @@ class EditDimensionTextCommand(Command):
         scene.version += 1
 
 
+class ChangeCircularDimensionCommand(Command):
+    """Change the measurement type or label position of a circular dimension."""
+
+    def __init__(self, dimension, kind, label_outside) -> None:
+        self.dimension = dimension
+        self.before = (dimension.kind, dimension.label_outside)
+        self.after = (kind, label_outside)
+
+    def do(self, scene) -> None:
+        self.dimension.kind, self.dimension.label_outside = self.after
+        scene.version += 1
+
+    def undo(self, scene) -> None:
+        self.dimension.kind, self.dimension.label_outside = self.before
+        scene.version += 1
+
+
 class DeleteTextLabelsCommand(Command):
     """Remove a set of text labels from ``scene.text_labels``."""
 

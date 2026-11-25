@@ -242,6 +242,12 @@ class OverlayMixin:
                 painter.drawEllipse(QPointF(*q), 6, 6)
                 painter.setBrush(Qt.NoBrush)
 
+        curve_lines = getattr(self.active_tool, "curve_highlight_lines", None)
+        if curve_lines is not None:
+            painter.setPen(QPen(QColor("#2676df"), 2.5))
+            for a, b in curve_lines():
+                self._draw_occluded_segment(painter, a, b, samples=2)
+
         # Persistent dimension annotations
         self._draw_dimensions(painter)
 
@@ -727,8 +733,8 @@ class OverlayMixin:
             # dimension reads as part of the model instead of floating over it.
             # Each 3D segment is sampled and only its visible runs are drawn.
             painter.setPen(QPen(ink, 1.0))
-            self._draw_occluded_segment(painter, dim.a, ap)      # extension
-            self._draw_occluded_segment(painter, dim.b, bp)
+            for start, end in dim.extension_segments(ap, bp):
+                self._draw_occluded_segment(painter, start, end)
             painter.setPen(QPen(ink, 1.5))
             self._draw_occluded_segment(painter, ap, bp)         # dimension line
             # The ends, in screen space, drawn only where the end point
@@ -739,7 +745,10 @@ class OverlayMixin:
             ends = style.get("ends", "arrow") or "arrow"
             if ln > 1e-6 and ends != "none":
                 ux, uy = dx / ln, dy / ln
-                for (cx, cy), w, sign in ((pap, ap, 1.0), (pbp, bp, -1.0)):
+                tips = ((pap, ap, 1.0), (pbp, bp, -1.0))
+                if getattr(dim, "kind", None) == "radius":
+                    tips = tips[1:]
+                for (cx, cy), w, sign in tips:
                     if self._occluded_on_screen(w):
                         continue
                     if ends == "tick":
@@ -763,18 +772,28 @@ class OverlayMixin:
                             QPointF(bx - uy * half, by + ux * half),
                             QPointF(bx + uy * half, by - ux * half)]))
                         painter.restore()
-            # Value label at the dimension line's midpoint — hidden if that
-            # point is behind the solid.
-            mid_world = dim.midpoint()
+            # The label follows the dimension unless its anchor is occluded.
+            mid_world = dim.label_point()
             mid = self._world_to_pixel(mid_world)
             if mid is not None and not self._occluded_on_screen(mid_world):
                 text = dim.display_text(
                     self._format_dim_value(dim.value(), style))
                 painter.setFont(font)
+                x = mid[0] + 4
+                if dim.kind is not None:
+                    width = painter.fontMetrics().horizontalAdvance(text)
+                    if dim.label_outside:
+                        side = -1 if dx < 0 else 1
+                        landing = mid[0] + 12 * side
+                        painter.setPen(QPen(ink, 1.0))
+                        painter.drawLine(QPointF(*mid), QPointF(landing, mid[1]))
+                        x = landing + 4 if side > 0 else landing - width - 4
+                    else:
+                        x = mid[0] - width / 2
                 painter.setPen(QPen(QColor(255, 255, 255, 230)))
-                painter.drawText(QPointF(mid[0] + 5, mid[1] - 4), text)
+                painter.drawText(QPointF(x + 1, mid[1] - 4), text)
                 painter.setPen(QPen(ink))
-                painter.drawText(QPointF(mid[0] + 4, mid[1] - 5), text)
+                painter.drawText(QPointF(x, mid[1] - 5), text)
 
     @staticmethod
     def _format_dim_value(metres: float, style: dict) -> str:
