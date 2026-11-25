@@ -343,6 +343,16 @@ def _loop_projection(face):
     return proj
 
 
+def _near_segment_2d(p, a, b, tol: float = 1e-4) -> bool:
+    """Whether ``p`` is within ``tol`` metres (the weld grid) of ``a``–``b``:
+    a corner split out of a slanted edge is float32-rounded off its line."""
+    dx, dy = b[0] - a[0], b[1] - a[1]
+    sq = dx * dx + dy * dy
+    t = ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / sq if sq else 0.0
+    t = min(1.0, max(0.0, t))
+    return math.hypot(p[0] - a[0] - t * dx, p[1] - a[1] - t * dy) <= tol
+
+
 def _cycle_within_loop(face, loop, cycle) -> bool:
     """Every cycle vertex lies on ``face``'s plane, inside-or-on ``loop``."""
     normal = face.normal()
@@ -357,7 +367,7 @@ def _cycle_within_loop(face, loop, cycle) -> bool:
         q = proj(p)
         if _strictly_inside_2d(q, poly):
             continue
-        if not any(_on_segment_2d(q, poly[i], poly[(i + 1) % n])
+        if not any(_near_segment_2d(q, poly[i], poly[(i + 1) % n])
                    for i in range(n)):
             return False
     return True
@@ -386,6 +396,11 @@ def _cycle_centroid(cycle):
     return c / len(cycle)
 
 
+def _on_face_plane(face, p) -> bool:
+    return abs(QVector3D.dotProduct(face.normal(), p - face.vertices[0])) \
+        <= _PLANAR_TOLERANCE
+
+
 def _cycle_opening_owner(faces, cycle):
     """The face whose *hole* the cycle wholly re-faces, or ``None``.
 
@@ -400,7 +415,10 @@ def _cycle_opening_owner(faces, cycle):
         for hole in f.holes:
             if _cycle_within_loop(f, hole, cycle):
                 centre = _cycle_centroid(cycle)
-                if any(g is not f and _point_in_face_solid(g, centre)
+                # Only a face on the opening's own plane fills it: the
+                # solid test projects, and a box's floor is under its lid.
+                if any(g is not f and _on_face_plane(g, centre)
+                       and _point_in_face_solid(g, centre)
                        for g in faces):
                     return None
                 return f
@@ -438,6 +456,19 @@ def _cycle_partially_covers_hole(faces, cycle) -> bool:
                 continue  # the hole sits wholly inside the cycle
             return True
     return False
+
+
+def _cycle_encloses_opening(faces, cycle) -> bool:
+    """The cycle is a piece of a face that holds one of its openings whole.
+
+    A cycle is a bare outline: faced, it stacks a hole-less piece that the
+    plane rebuild reads as a redraw of the mother, and caps the opening. The
+    other side of the chord carves the mother, or the rebuild divides her;
+    both keep the hole (#1407, #1613)."""
+    shell = Face(list(cycle))
+    return any(f.holes and _cycle_within_loop(f, f.vertices, cycle)
+               and any(_cycle_within_loop(shell, cycle, h) for h in f.holes)
+               for f in faces)
 
 
 def _plan_faces(commands, faces_snapshot, simulated, sa, sb, eye=None,
@@ -493,6 +524,8 @@ def _plan_faces(commands, faces_snapshot, simulated, sa, sb, eye=None,
         # Nor one whose interior swallows part of a hole: leave the region
         # to the plane rebuild, which traces the true pieces (#1407).
         if _cycle_partially_covers_hole(faces_snapshot, cycle):
+            continue
+        if _cycle_encloses_opening(faces_snapshot, cycle):
             continue
         # One boundary-touching cycle per mother is enough: executing its
         # AddFaceCommand carves the mother, and the carve's remainder IS
