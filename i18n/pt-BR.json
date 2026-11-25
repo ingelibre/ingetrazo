@@ -4355,5 +4355,8 @@
  "Push/Pull bases kept with Ctrl stay sound and cracked results are refused (#1155).": "As bases mantidas com Ctrl em Empurrar/Puxar ficam íntegras e resultados rachados são recusados (#1155).",
  "Camera roll with a 3D mouse (#1406).": "Rolagem da câmera com um mouse 3D (#1406).",
  "A preference to swap orbit and pan on the middle button (#467).": "Uma preferência para trocar órbita e panorâmica no botão do meio (#467).",
- "IFC export writes the project north, the site location and the owning application (#1498).": "A exportação IFC grava o norte do projeto, a localização do terreno e o aplicativo proprietário (#1498)."
+ "IFC export writes the project north, the site location and the owning application (#1498).": "A exportação IFC grava o norte do projeto, a localização do terreno e o aplicativo proprietário (#1498).",
+ "Pin": "Fixar",
+ "Keep this panel: it stays in the sidebar from now on.": "Manter este painel: ele fica na barra lateral daqui em diante.",
+ "Close this panel": "Fechar este painel"
 }

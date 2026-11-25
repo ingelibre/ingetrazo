@@ -7138,6 +7138,32 @@ class ScenesDock(QDockWidget):
 
     def on_scene_changed(self) -> None:
         self.panel.refresh()
+
+
+class StylesDock(QDockWidget):
+    """Sidebar tab **Styles**: the style editor (StylesPanel) among the
+    other panels, closed until the user enables it in the panels list.
+    The Styles toolbar button opens it for a while when it is closed
+    (MainWindow.show_tray_temporarily) — it used to be a window of its
+    own."""
+
+    def __init__(self, window, panel) -> None:
+        from PySide6.QtWidgets import QScrollArea
+        super().__init__(tr("Styles"), window)
+        self.setObjectName("tray_styles")
+        self.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
+        self.setFeatures(QDockWidget.DockWidgetMovable
+                         | QDockWidget.DockWidgetClosable)
+        self.panel = panel
+        # Scrolls in a short window instead of squeezing the editor.
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QScrollArea.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        panel.setMinimumHeight(420)
+        scroll.setWidget(panel)
+        self.setWidget(scroll)
+        self.setMinimumWidth(240)
 #: The BIM panel's buttons: less padding than a dialog's, for a narrow tray.
 _SLIM_BUTTON = "padding:2px 8px;"
 
