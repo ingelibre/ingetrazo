@@ -100,6 +100,11 @@ class EraserTool(Tool):
             label = (pick_label(ctx.screen.x(), ctx.screen.y(),
                                 rect_only=True)
                      if pick_label is not None else None)
+            if label is None:
+                # A dimension's value text, the same way (#1039).
+                pick_dim = getattr(viewport, "pick_dimension_text", None)
+                label = (pick_dim(ctx.screen.x(), ctx.screen.y())
+                         if pick_dim is not None else None)
             viewport.set_hover(label if label is not None else
                                self._pick(viewport, ctx.screen.x(),
                                           ctx.screen.y()))
@@ -232,6 +237,13 @@ class EraserTool(Tool):
             label = pick_label(sx, sy, rect_only=True)
             if label is not None:
                 self.marked.add(label)
+                return
+        pick_dim = getattr(viewport, "pick_dimension_text", None)
+        if pick_dim is not None and not edge_only:
+            # A dimension's value text overdraws the model too (#1039).
+            dim = pick_dim(sx, sy)
+            if dim is not None:
+                self.marked.add(dim)
                 return
         edge = self._pick(viewport, sx, sy, with_soft=self._soften is False)
         if edge is not None:

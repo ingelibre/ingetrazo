@@ -375,6 +375,11 @@ class SelectTool(Tool):
             label = pick_label(screen_x, screen_y, rect_only=True)
             if label is not None:
                 return label
+        # A dimension's value text overdraws the model the same way (#1039).
+        pick_dim_text = getattr(viewport, "pick_dimension_text", None)
+        dim = pick_dim_text(screen_x, screen_y) if pick_dim_text else None
+        if dim is not None:
+            return dim
         group = viewport.pick_group(screen_x, screen_y)
         # Only an edge the user can SEE takes the click (issue #71): the
         # hidden seams of a smooth surface, or edges behind the model, left

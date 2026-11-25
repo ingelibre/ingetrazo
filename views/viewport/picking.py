@@ -2278,12 +2278,58 @@ class PickingMixin:
                 return e
         return None
 
-    def pick_dimension(self, screen_x: float, screen_y: float):
-        """Return the dimension whose lines (extension + dimension line) are
-        closest to the cursor within the pick threshold, or ``None``."""
+    def pick_dimension_text(self, screen_x: float, screen_y: float):
+        """Return the dimension whose value text is under the cursor, or
+        ``None`` (#1039).
+
+        The text is laid out as ``_draw_dimensions`` draws it: from 4 px
+        right of the dimension line's midpoint, baseline 5 px above it, in
+        the dimension style's bold font, and not at all while the midpoint
+        is hidden behind the model. Like a leader text's block, the drawn
+        text overdraws all geometry, so this hit outranks the 3D picks; a
+        dimension was only picked by its thin lines, and a click on its
+        value took the face behind it."""
         dims = getattr(self.scene, "dimensions", None)
         if not dims:
             return None
+        style = getattr(self.scene, "dimension_style", {})
+        font = QFont()
+        font.setPointSize(int(style.get("font_size", 9)))
+        font.setBold(True)
+        # Measured on this widget, as the painter that draws it (see
+        # pick_text_label).
+        from PySide6.QtGui import QPaintDevice
+        fm = (QFontMetrics(font, self) if isinstance(self, QPaintDevice)
+              else QFontMetrics(font))
+        occluded = getattr(self, "_occluded_on_screen", None)
+        for dim in reversed(dims):          # the one drawn last is on top
+            if not self.scene.entity_selectable(dim):   # hidden / locked
+                continue
+            mid_world = dim.midpoint()
+            mid = self._world_to_pixel(mid_world)
+            if mid is None or (occluded is not None and occluded(mid_world)):
+                continue
+            text = dim.display_text(
+                self._format_dim_value(dim.value(), style))
+            # The ink at (+4, -5) and its white halo at (+5, -4), 3 px slack.
+            x0, base = mid[0] + 4, mid[1] - 5
+            if (x0 - 3 <= screen_x <= x0 + fm.horizontalAdvance(text) + 4
+                    and base - fm.ascent() - 3 <= screen_y
+                    <= base + fm.descent() + 4):
+                return dim
+        return None
+
+    def pick_dimension(self, screen_x: float, screen_y: float):
+        """Return the dimension whose lines (extension + dimension line) are
+        closest to the cursor within the pick threshold, or whose value text
+        is under it, or ``None``."""
+        dims = getattr(self.scene, "dimensions", None)
+        if not dims:
+            return None
+        pick_text = getattr(self, "pick_dimension_text", None)   # stub VPs
+        on_text = pick_text(screen_x, screen_y) if pick_text else None
+        if on_text is not None:
+            return on_text
         best = None
         best_d = self.pick_threshold_px
         for dim in dims:
