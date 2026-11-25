@@ -640,6 +640,8 @@ class GLSetupMixin:
         could meet an old entry — the composer's lesson with frames."""
         self._pick_warm = None               # its threads end on their own
         self._inst_obb = None
+        if not keep_bakes:
+            self._inst_bounds_memo = None
         self._pick_warm_due = False
         edge_renderer = getattr(self, "_edge_renderer", None)
         if edge_renderer is not None and self.context() is not None:

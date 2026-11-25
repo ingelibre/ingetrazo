@@ -744,11 +744,12 @@ class InstancingMixin:
         if planes is None:
             keep = np.ones(len(groups), dtype=bool)
         else:
-            # Same p-vertex test as ``_aabb_visible``, all boxes at once —
-            # a plane at a time on the box columns (the (planes, boxes, 3)
-            # array it used to build was most of a frame's gather, #158);
-            # the same products and sums, in the same order.
-            keep = self._instances_in_frustum(lo, hi, planes)
+            # Box arrays are replaced when the placement bounds change.
+            memo = getattr(self, "_inst_bounds_memo", None)
+            if memo is None or memo[0] is not lo or memo[1] is not hi:
+                memo = self._inst_bounds_memo = (lo, hi, self._finite_instance_bounds(lo, hi))
+            bounds = memo[2]
+            keep = self._cull_instance_bounds(bounds, planes)
             keep &= ~self._instances_below_a_pixel(pool)
         if pv:
             keep &= ~self._inst_pool_previewed(pool, pv)
@@ -784,8 +785,8 @@ class InstancingMixin:
                     and int(last[1].sum()) <= self._INST_SUPERSET_MAX * int(keep.sum()) + 64):
                 self._frame_instanced = last[2]
                 return last[2]
-            keep = self._instances_in_frustum(
-                lo, hi, self._widened_planes(planes, self._INST_VIEW_MARGIN))
+            keep = self._cull_instance_bounds(
+                bounds, self._widened_planes(planes, self._INST_VIEW_MARGIN))
             keep &= ~self._instances_below_a_pixel(pool, 0.5)
             if pv:
                 keep &= ~self._inst_pool_previewed(pool, pv)
@@ -992,16 +993,31 @@ class InstancingMixin:
         multiplied inf by a zero plane component (``invalid value
         encountered in multiply``, issue #952) and let the NaN comparison
         drop the box."""
+        bounds = InstancingMixin._finite_instance_bounds(lo, hi)
+        return InstancingMixin._cull_instance_bounds(bounds, planes, margin)
+
+    @staticmethod
+    def _finite_instance_bounds(lo, hi):
+        """Prepare known box rows once for each version of the pool."""
         import numpy as np
-        lo = np.asarray(lo)
-        hi = np.asarray(hi)
-        keep = np.ones(len(lo), dtype=bool)
-        finite = np.isfinite(lo).all(axis=1) & np.isfinite(hi).all(axis=1)
-        idx = np.flatnonzero(finite)
-        if not len(idx):
+        lo, hi = np.asarray(lo), np.asarray(hi)
+        count = len(lo)
+        if not count:
+            return count, lo, hi, None
+        finite = np.isfinite(lo) & np.isfinite(hi)
+        if finite.all():
+            return count, lo, hi, None
+        idx = np.flatnonzero(finite.all(axis=1))
+        return count, lo[idx], hi[idx], idx
+
+    @staticmethod
+    def _cull_instance_bounds(bounds, planes, margin=0.0):
+        import numpy as np
+        count, lo, hi, idx = bounds
+        keep = np.ones(count, dtype=bool)
+        if not len(lo):
             return keep
-        flo, fhi = lo[idx], hi[idx]
-        fkeep = np.ones(len(idx), dtype=bool)
+        fkeep = keep if idx is None else np.ones(len(idx), dtype=bool)
         # Same p-vertex test as ``_aabb_visible``, all boxes at once — a
         # plane at a time on the box columns (the (planes, boxes, 3) array
         # it used to build was most of a frame's gather, #158); the same
@@ -1010,11 +1026,12 @@ class InstancingMixin:
             nx, ny, nz, d = (float(c) for c in pl)
             if margin:
                 d += margin * (nx * nx + ny * ny + nz * nz) ** 0.5
-            px = fhi[:, 0] if nx >= 0.0 else flo[:, 0]
-            py = fhi[:, 1] if ny >= 0.0 else flo[:, 1]
-            pz = fhi[:, 2] if nz >= 0.0 else flo[:, 2]
+            px = hi[:, 0] if nx >= 0.0 else lo[:, 0]
+            py = hi[:, 1] if ny >= 0.0 else lo[:, 1]
+            pz = hi[:, 2] if nz >= 0.0 else lo[:, 2]
             fkeep &= ((px * nx + py * ny) + pz * nz) + d >= 0.0
-        keep[idx] = fkeep
+        if idx is not None:
+            keep[idx] = fkeep
         return keep
 
     #: An instance whose bounding sphere spans less than this many

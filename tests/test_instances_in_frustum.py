@@ -52,6 +52,19 @@ def test_finite_boxes_match_the_plain_p_vertex_test():
     assert keep[finite].tolist() == plain.tolist()
 
 
+def test_margin_keeps_the_boundary_box_in_both_paths():
+    lo = np.array([[10.25, 0.0, 0.0], [10.5, 0.0, 0.0], [np.nan, 0.0, 0.0]],
+                  dtype=np.float32, order="F")
+    hi = lo + 1.0
+    planes = [(-2.0, 0.0, 0.0, 20.0)]
+    cull = Viewport._instances_in_frustum
+    assert cull(lo[:2], hi[:2], planes).tolist() == [False, False]
+    assert cull(lo[:2], hi[:2], planes, margin=0.25).tolist() == [True, False]
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        assert cull(lo, hi, planes, margin=0.25).tolist() == [True, False, True]
+
+
 def test_no_boxes_and_all_nonfinite_boxes():
     empty = np.zeros((0, 3))
     assert Viewport._instances_in_frustum(empty, empty, _PLANES).tolist() == []
