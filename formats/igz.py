@@ -2650,8 +2650,18 @@ def _document_geometry_arrays(meta, geom: dict) -> dict:
 def _load_geometry(mesh, meta, geom: dict) -> None:
     """Rebuild a mesh from its format-3 block — the same weld and the same
     bulk edge/face creation as the JSON path, fed from arrays."""
+    import copy
+
     import numpy as np
     import core.mesh as _mesh_mod
+
+    # Owned, not borrowed: load_into empties the parsed document tree in
+    # place (_release_in_steps) once it is read, and everything that reads
+    # a still-deferred mesh — build, save, plans, the material tally —
+    # reads this meta. A deep copy: the release also empties any attribute
+    # dict holding a list of more than 64 entries. Same rule the JSON path
+    # already follows: it builds from its own arrays, not from the payload.
+    meta = copy.deepcopy(meta)
 
     a = _document_geometry_arrays(meta, geom)
     pos = a["pos"]
