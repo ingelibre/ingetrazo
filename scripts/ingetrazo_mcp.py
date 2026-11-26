@@ -60,7 +60,23 @@ HOST = os.environ.get("INGETRAZO_AI_HOST", "").strip() or "127.0.0.1"
 PROTOCOLS = ("2025-06-18", "2025-03-26", "2024-11-05")
 PROTOCOL = PROTOCOLS[0]
 DISCOVERY_TIMEOUT = 0.5
-OPERATION_TIMEOUT = 180.0
+
+
+def _operation_timeout() -> float:
+    """How long to wait for a reply: the bridge's own limit
+    (``INGETRAZO_AI_TIMEOUT``, default 180 s — plugins/ai_bridge.py
+    ``call_timeout``) plus a margin, so a slow call ends with the bridge's
+    "timed out on the UI thread" and not with a bare socket timeout here.
+    Kept stdlib-only: this process never imports the Qt plugin."""
+    raw = os.environ.get("INGETRAZO_AI_TIMEOUT", "").strip()
+    try:
+        value = float(raw) if raw else 180.0
+    except ValueError:
+        value = 180.0
+    return (value if value > 0 else 180.0) + 30.0
+
+
+OPERATION_TIMEOUT = _operation_timeout()
 
 # The recipe book the model needs, from the app's own copy — the SAME text
 # the in-app assistant teaches (core/ai_recipes.py explains what its absence

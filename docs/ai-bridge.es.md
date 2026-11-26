@@ -275,6 +275,12 @@ controladores de la máquina. Para tener GL seguro:
 - En Windows y macOS, el modo sin ventana usa la pantalla del sistema sin
   mostrar la ventana.
 
+**Llamadas lentas.** Una llamada puede ocupar IngeTrazo 180 segundos; luego
+el agente recibe `timed out on the UI thread`. Exportar las láminas de un
+modelo grande dibujado por software (un contenedor con Mesa llvmpipe) puede
+tardar más: define `INGETRAZO_AI_TIMEOUT` (segundos) para IngeTrazo y para
+el servidor MCP, que espera 30 segundos más que el puente.
+
 ### Un solo comando para el cliente MCP
 
 El servidor MCP puede arrancar su propio IngeTrazo sin ventana: no hace

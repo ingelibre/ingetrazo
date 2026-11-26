@@ -273,6 +273,12 @@ depends on the machine's drivers. For a sure GL:
 - On Windows and macOS the window-less mode uses the system's display
   without showing the window.
 
+**Slow calls.** A call may hold IngeTrazo for 180 seconds; then the agent
+gets `timed out on the UI thread`. Exporting the sheets of a large model
+rendered in software (a container with Mesa llvmpipe) can take longer:
+set `INGETRAZO_AI_TIMEOUT` (seconds) for IngeTrazo and for the MCP server,
+which waits 30 seconds more than the bridge.
+
 ### One command for the MCP client
 
 The MCP server can start its own window-less IngeTrazo: there is no need to
