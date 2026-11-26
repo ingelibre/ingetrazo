@@ -882,15 +882,25 @@ class PushPullTool(Tool):
             self.extrusion = QVector3D.dotProduct(
                 projected - grab, self._normal)
         self._clamp_extrusion(viewport)
-        # A clean prism extend/shrink is previewed by MOVING the cap, so the
-        # model itself shows the result and nothing of the old shape is left
-        # standing. Any other attached face is STAGED: the real commit applied
-        # once, then stretched — walls merging and old edges going live, as
-        # the commit will leave them. A free face (nothing to merge with) and
-        # a Ctrl-copy show the sweep as an overlay — see _build_light_faces.
-        # Several faces at once always show the overlay: a prism or staged
-        # preview edits the model under the OTHER faces' feet.
-        if self._extra_faces:
+        self._show_drag_preview(viewport)
+
+    def _show_drag_preview(self, viewport) -> None:
+        """Which live preview a drag frame shows. A clean prism extend/shrink
+        is previewed by MOVING the cap, so the model itself shows the result
+        and nothing of the old shape is left standing. Any other attached
+        face is STAGED: the real commit applied once, then stretched — walls
+        merging and old edges going live, as the commit will leave them. A
+        free face (nothing to merge with) and a Ctrl-copy show the sweep as
+        an overlay — see _build_light_faces. Several faces at once show the
+        overlay too — unless they touch, in which case the commit merges
+        their sweeps and the overlay shows them apart (#1638): then the
+        staged preview shows the real result, re-staged every frame
+        (several normals, no single slide)."""
+        if (self._extra_faces and self._extras_touch()
+                and self._group is None and self._attached
+                and not self._keep_base):
+            self._show_staged_preview(viewport)
+        elif self._extra_faces:
             self._show_light_preview(viewport)
         elif self._prism_cap and not self._keep_base:
             self._show_prism_preview(viewport)
@@ -1386,6 +1396,24 @@ class PushPullTool(Tool):
         viewport.set_suppressed_faces(hidden)
         viewport.update()
 
+    def _extras_touch(self) -> bool:
+        """Whether any pushed face shares an EDGE with another pushed face:
+        their sweeps then merge on commit, and the naive overlay shows them
+        apart (#1638). Two faces of separate solids, or opposite ends of
+        one box, never touch — their overlay stays right, and stays cheap."""
+        faces = [self.base_face, *self._extra_faces]
+        seen: dict = {}
+        for i, f in enumerate(faces):
+            if f is None:
+                continue
+            for loop in [f.vertices, *f.holes]:
+                for a, b in zip(loop, loop[1:] + loop[:1]):
+                    key = (id(a), id(b)) if id(a) < id(b) else (id(b), id(a))
+                    if key in seen and seen[key] != i:
+                        return True
+                    seen.setdefault(key, i)
+        return False
+
     def _extras_attached(self, viewport) -> list:
         """Whether each of ``_extra_faces`` is embedded (every edge shared,
         as ``_classify_base`` asks of the base face): only such a face opens
@@ -1690,7 +1718,15 @@ class PushPullTool(Tool):
                 self._preview_selection = set(scene.selection)
             elif self._stage_d is not None:
                 self._restore_clean(viewport)
-            self._mutate(scene)
+            # The commit's own mutation: all the pushed faces, not just the
+            # base one (#1638) — a multi-face stage is the commit, staged.
+            # _mutate_many reads the pushed faces off the target mesh, so
+            # this road is the loose mesh's only (a group keeps the overlay:
+            # see the dispatch in on_mouse_move).
+            if self._extra_faces:
+                self._mutate_many(scene)
+            else:
+                self._mutate(scene)
             ok = not self._refused and self._resolve_stage(mesh)
         except Exception:
             # The commit is guarded by History.execute's rollback; the stage
@@ -1725,6 +1761,17 @@ class PushPullTool(Tool):
         neighbour's top, a ledge). A stage sitting ON a level is exact only
         at its own distance."""
         snap = self._preview_snapshot
+        if self._extra_faces:
+            # Several faces move along several normals at once: no single
+            # slide rate describes the movers, so the stage is exact only
+            # at its own distance and the next frame stages anew (#1638).
+            # A stage that proved slow still ends staging for the drag.
+            self._stage_lo = self._stage_hi = self.extrusion
+            self._stage_verts = []
+            self._stage_pos = []
+            self._stage_new = ((set(mesh.faces) - set(snap["faces"]))
+                               | (set(mesh.edges) - set(snap["edges"])))
+            return True
         n, anchor, d = self._normal, self._anchor, self.extrusion
         movers = [v for v in mesh.vertices if v not in snap["vpos"]
                   and abs(QVector3D.dotProduct(v.position - anchor, n) - d)
