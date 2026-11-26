@@ -122,6 +122,9 @@ class _Bridge(BridgeTools, QObject):
         #: Whether ``shutdown`` may end the app — set from the command
         #: line only (``--allow-shutdown``), never from the window.
         self.allow_shutdown = False
+        #: Whether ``run_python`` may run — off only from the command line
+        #: (``--no_mcp_python``); the named tools stay available.
+        self.allow_python = True
         #: Called by ``shutdown`` instead of quitting outright, so the
         #: window-less run can tell its exit apart (main._run_headless).
         self.on_shutdown = None
@@ -401,7 +404,11 @@ class _Bridge(BridgeTools, QObject):
     def _tool_run_python(self, code: str = "") -> dict:
         """Execute ``code`` via the shared transactional executor (core.ai):
         one undoable step, whole-rollback on error, no undo entry when
-        nothing changed."""
+        nothing changed. Refused under ``--no_mcp_python``."""
+        if not self.allow_python:
+            raise PermissionError(
+                "run_python is disabled in this IngeTrazo (--no_mcp_python); "
+                "use the named tools")
         from core.ai import run_transactional
         return run_transactional(self._viewport, code, self._scope)
 
@@ -464,6 +471,7 @@ class _Bridge(BridgeTools, QObject):
                             else "auto"),
             "saving_allowed": self.saving_allowed(),
             "shutdown_allowed": bool(self.allow_shutdown),
+            "python_allowed": bool(self.allow_python),
             "sheets": [getattr(c, "name", "") for c in
                        getattr(scene, "compositions", []) or []],
             "views": [v.name for v in

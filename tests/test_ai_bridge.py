@@ -326,35 +326,141 @@ def test_the_mcp_door_hands_the_model_the_same_recipe_book_as_the_assistant():
     correctly in 81 calls, 46 of them introspection (``dir``, ``inspect``,
     ``dis``), because ``run_python``'s description taught ``mesh.add_face``
     and nothing else while the in-app assistant's prompt taught the whole
-    recipe book. One text, both doors."""
+    recipe book. One book, both doors — in English over MCP, in Spanish
+    in the assistant, with the same helpers in both."""
     import ingetrazo_mcp as mcp
     from core import ai_recipes
 
     run_python = next(t for t in mcp.TOOLS if t["name"] == "run_python")
     description = run_python["description"]
-    for recipe in ("revolve(", "extrude(", "prism(", "wall(", "house("):
+    for recipe in ("box(", "revolve(", "extrude(", "prism(", "wall(",
+                   "house("):
         assert recipe in description, recipe
     # The two things the model paid the most turns to rediscover.
     assert 'f.attrs["color"]' in description
-    assert "METROS" in description
+    assert "METRES" in description
     # And what it should not have spent turns on at all.
-    assert "NO explores la API" in description
+    assert "Do NOT explore the API" in description
 
     # The handshake states the stance before any tool is listed.
     init = mcp.handle({"jsonrpc": "2.0", "id": 1, "method": "initialize",
                        "params": {}})
     instructions = init["result"]["instructions"]
-    assert "Ingeniero" in instructions       # the scale figure, not the model
-    assert ai_recipes.RECIPES in instructions
+    assert "Engineer" in instructions        # the scale figure, not the model
+    assert ai_recipes.RECIPES_EN in instructions
 
-    # Same source as the assistant's prompt: teach a helper once.
+    # The assistant keeps the Spanish edition.
     from plugins.ai_assistant import SYSTEM_PROMPT
 
     assert ai_recipes.RECIPES in SYSTEM_PROMPT
     assert ai_recipes.SCOPE in SYSTEM_PROMPT
     # Each door names its own unit of execution.
     assert "Cada bloque es UN paso de undo" in SYSTEM_PROMPT
-    assert "Cada llamada es UN paso de undo" in description
+    assert "Each call is ONE undo step" in description
+
+
+def test_the_mcp_door_speaks_english():
+    """Tool names, schemas and errors were English already; the handshake
+    and the recipe book were Spanish. An MCP client is any agent, in any
+    language: the door speaks English."""
+    import ingetrazo_mcp as mcp
+
+    init = mcp.handle({"jsonrpc": "2.0", "id": 1, "method": "initialize",
+                       "params": {}})
+    texts = [init["result"]["instructions"]] + [
+        t["description"] for t in mcp.TOOLS]
+    for text in texts:
+        for spanish in ("Recetario", "En el scope", "Cada llamada",
+                        "Empieza por", "unidades en METROS", "Estas "
+                        "herramientas"):
+            assert spanish not in text, spanish
+
+
+def test_both_editions_of_the_recipe_book_teach_the_same_code():
+    """Two languages must not become two books: every helper call and
+    keyword argument taught in one edition is taught in the other."""
+    import re
+
+    from core import ai_recipes
+
+    def code(text):
+        calls = set(re.findall(r"\b([a-z_][a-z_.]*)\(", text))
+        kwargs = set(re.findall(r"\b([a-z_]+)=", text))
+        return calls, kwargs
+
+    calls_es, kwargs_es = code(ai_recipes.RECIPES)
+    calls_en, kwargs_en = code(ai_recipes.RECIPES_EN)
+    assert calls_es == calls_en
+    assert kwargs_es == kwargs_en
+    assert ai_recipes.reference("call", lang="en").startswith(
+        ai_recipes.UNITS_EN)
+    assert ai_recipes.reference() == ai_recipes.reference("llamada", "es")
+
+
+def test_no_mcp_python_hides_and_refuses_run_python(monkeypatch):
+    """``--no_mcp_python``: run_python is not listed, a call to it is
+    refused before any socket, and the handshake carries no recipe book
+    the model could not run. Every other tool stays."""
+    import ingetrazo_mcp as mcp
+    monkeypatch.setattr(mcp, "PORT", 1)            # nothing listens there
+    monkeypatch.setattr(mcp, "PYTHON_ALLOWED", False)
+
+    tools = mcp.handle({"jsonrpc": "2.0", "id": 1, "method": "tools/list"})
+    names = {t["name"] for t in tools["result"]["tools"]}
+    assert "run_python" not in names
+    assert {"list_documents", "get_scene_info", "screenshot",
+            "apply_material"} <= names
+
+    call = mcp.handle({"jsonrpc": "2.0", "id": 2, "method": "tools/call",
+                       "params": {"name": "run_python",
+                                  "arguments": {"document_id": "a:b",
+                                                "code": "print(1)"}}})
+    result = call["result"]
+    assert result["isError"] is True
+    assert "--no_mcp_python" in result["content"][0]["text"]
+
+    init = mcp.handle({"jsonrpc": "2.0", "id": 3, "method": "initialize",
+                       "params": {}})
+    instructions = init["result"]["instructions"]
+    assert "run_python is disabled" in instructions
+    assert "Recipe book" not in instructions
+
+    # The flag, in either spelling, switches it off in main().
+    for flag in ("--no_mcp_python", "--no-mcp-python"):
+        monkeypatch.setattr(mcp, "PYTHON_ALLOWED", True)
+        monkeypatch.setattr(sys, "argv", ["ingetrazo_mcp.py", flag])
+        monkeypatch.setattr(sys, "stdin", iter(()))
+        mcp.main()
+        assert mcp.PYTHON_ALLOWED is False
+
+
+def test_the_bridge_refuses_run_python_when_told(monkeypatch):
+    """The window-less IngeTrazo's own gate (``--no_mcp_python`` reaches
+    it through ``main._parse_headless``): a client that talks to the
+    bridge directly is refused too; the named tools still answer."""
+    from plugins.ai_bridge import _Bridge
+    from views.main_window import MainWindow
+    monkeypatch.setenv("INGETRAZO_AI_PORT", "0")
+    win = MainWindow()
+    try:
+        vp = win.viewport
+        bridge = _Bridge(vp)
+        bridge.allow_python = False
+        bridge.start()
+        edges0 = len(vp.scene.mesh.edges)
+        reply = _ask(bridge, "run_python", {"code": (
+            "mesh.add_edge(QVector3D(0,0,0), QVector3D(2,0,0))")})
+        assert reply["ok"] is False
+        assert "PermissionError" in reply["error"]
+        assert "--no_mcp_python" in reply["error"]
+        assert len(vp.scene.mesh.edges) == edges0
+        reply = _ask(bridge, "document_info")
+        assert reply["ok"] and reply["result"]["python_allowed"] is False
+        assert _ask(bridge, "query_model")["ok"]
+        bridge.stop()
+    finally:
+        win._saved_version = win.viewport.scene.version
+        win.close()
 
 
 def test_the_packaged_app_would_notice_a_missing_recipe_book():

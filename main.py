@@ -683,6 +683,10 @@ def _parse_headless(argv: list[str]):
     parser.add_argument("--allow-shutdown", action="store_true",
                         help="let the agent end this IngeTrazo (shutdown); "
                              "that end is exit code 0")
+    parser.add_argument("--no_mcp_python", "--no-mcp-python",
+                        dest="no_mcp_python", action="store_true",
+                        help="refuse run_python: the agent works with the "
+                             "named tools only")
     parser.add_argument("--exit-on-stdin-eof", action="store_true",
                         help="end (code 5) when standard input closes — "
                              "for a parent process that may die")
@@ -737,6 +741,7 @@ def _run_headless(argv: list[str]) -> int:
     bridge = _bridge_of(window.viewport)
     bridge.allow_save = bool(args.allow_save)
     bridge.allow_shutdown = bool(args.allow_shutdown)
+    bridge.allow_python = not args.no_mcp_python
     ended = {"by_agent": False}
 
     def _agent_shutdown():

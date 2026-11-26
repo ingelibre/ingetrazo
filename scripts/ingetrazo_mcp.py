@@ -27,6 +27,10 @@ start first:
 
     ingetrazo_mcp.py --headless --open Casa.igz [--allow-save]
                      [--save-format json] [--allow-shutdown]
+                     [--no_mcp_python]
+
+``--no_mcp_python`` (with or without ``--headless``) takes ``run_python``
+away: not listed, refused when called — only the named tools remain.
 
 starts an IngeTrazo of its own with no window (``ingetrazo --headless``)
 on a free port, talks to it, and ends it when the client goes. When that
@@ -74,32 +78,52 @@ try:
     from core.ai_discovery import read_endpoints
     try:
         from core.ai_recipes import reference as _reference
-        REFERENCE = _reference("llamada")
+        REFERENCE = _reference("call", lang="en")
     except ImportError:                         # pragma: no cover - packaging
-        REFERENCE = ("IngeTrazo: Z arriba, unidades en METROS. En el scope: "
+        REFERENCE = ("IngeTrazo: Z up, units in METRES. In scope: "
                      "scene, mesh, selection, groups, layers, viewport, "
-                     "QVector3D, Mesh, Group, Edge, Face, bim. Recetario: "
-                     "revolve / extrude / prism / wall / house.")
+                     "QVector3D, Mesh, Group, Edge, Face, bim. Recipe book: "
+                     "box / revolve / extrude / prism / wall / house.")
 finally:
     if sys.path and sys.path[0] == _APP_ROOT:   # leave the process as found
         del sys.path[0]
+
+#: ``--no_mcp_python`` (or ``--no-mcp-python``): no ``run_python`` — the
+#: tool is not listed, a call to it is refused, and a window-less IngeTrazo
+#: started with ``--headless`` refuses it in its bridge too. Only the named
+#: tools with a schema remain.
+NO_PYTHON_FLAGS = ("--no_mcp_python", "--no-mcp-python")
+PYTHON_ALLOWED = True
+
+_STANCE = (
+    "These tools operate on OPEN IngeTrazo documents, live: what you write "
+    "appears on the user's screen and enters their undo history. Start "
+    "with list_documents and choose a document_id explicitly for every "
+    "call. If the document changes or closes, call list_documents again; "
+    "a window is never chosen by default.\n")
+_AUTOMATION = (
+    "Automation: document_info says what is open and what is allowed "
+    "(and the new document_id after open_document); save_document saves "
+    "(if IngeTrazo allows it); export_pdf exports the sheets; shutdown "
+    "ends a window-less IngeTrazo when you are done.")
 
 #: MCP's ``initialize`` hands this to the client before any tool is listed —
 #: the stance, with the recipes themselves on ``run_python`` where every
 #: client is sure to put them in front of the model.
 INSTRUCTIONS = (
-    "Estas herramientas operan documentos ABIERTOS de IngeTrazo, en vivo: "
-    "lo que escribas aparece en la pantalla del usuario y entra en su "
-    "historial de deshacer. Empieza por list_documents y elige explícitamente "
-    "un document_id para cada llamada. Si cambia o se cierra el documento, "
-    "vuelve a list_documents; nunca se elige una ventana por defecto.\n"
-    + REFERENCE + "\nLuego get_scene_info para ver qué hay, construye con "
-    "run_python (o con las herramientas con nombre si tu cliente no permite "
-    "código) y MIRA el resultado con screenshot, export_view o render_sheet. "
-    "Automatización: document_info dice qué está abierto y qué se permite "
-    "(y el document_id nuevo tras open_document); save_document guarda (si "
-    "IngeTrazo lo permite); export_pdf saca las láminas; shutdown cierra un "
-    "IngeTrazo sin ventana al terminar.")
+    _STANCE + REFERENCE + "\nThen get_scene_info to see what is there, "
+    "build with run_python (or with the named tools if your client does "
+    "not allow code) and LOOK at the result with screenshot, export_view "
+    "or render_sheet. " + _AUTOMATION)
+
+#: The same without ``run_python`` (``--no_mcp_python``): no recipe book —
+#: nothing here could run it.
+INSTRUCTIONS_NO_PYTHON = (
+    _STANCE + "run_python is disabled on this server (--no_mcp_python): "
+    "work with the named tools. Units are METRES, Z up. Start with "
+    "get_scene_info to see what is there, change the document with the "
+    "named tools and LOOK at the result with screenshot, export_view or "
+    "render_sheet. " + _AUTOMATION)
 
 TOOLS = [
     {
@@ -183,8 +207,8 @@ TOOLS = [
         "name": "document_info",
         "description": ("The open document: its path, whether it has unsaved "
                         "changes, the save format, its sheets and scenes "
-                        "(saved views), and whether save_document and "
-                        "shutdown are allowed."),
+                        "(saved views), and whether save_document, "
+                        "shutdown and run_python are allowed."),
         "inputSchema": {"type": "object", "properties": {}},
     },
     {
@@ -532,7 +556,20 @@ def _tool_result(text: str, is_error: bool = False) -> dict:
     return {"content": [{"type": "text", "text": text}], "isError": is_error}
 
 
+def _tools() -> list[dict]:
+    """The tools this server offers: all of them, or all but
+    ``run_python`` under ``--no_mcp_python``."""
+    if PYTHON_ALLOWED:
+        return TOOLS
+    return [tool for tool in TOOLS if tool["name"] != "run_python"]
+
+
 def _call(name: str, args: dict) -> dict:
+    if name == "run_python" and not PYTHON_ALLOWED:
+        return _tool_result(
+            "run_python is disabled on this server (--no_mcp_python). "
+            "Use the named tools instead (get_scene_info, set_camera, "
+            "apply_material, import_file and the rest).", is_error=True)
     if name not in {tool["name"] for tool in TOOLS}:
         return _tool_result(f"Unknown tool: {name}", is_error=True)
     if not isinstance(args, dict):
@@ -611,11 +648,12 @@ def handle(msg: dict) -> dict | None:
                                 else PROTOCOL),
             "capabilities": {"tools": {}},
             "serverInfo": {"name": "ingetrazo", "version": "2.0.0"},
-            "instructions": INSTRUCTIONS,
+            "instructions": (INSTRUCTIONS if PYTHON_ALLOWED
+                             else INSTRUCTIONS_NO_PYTHON),
         }}
     if method == "tools/list":
         return {"jsonrpc": "2.0", "id": msg_id,
-                "result": {"tools": TOOLS}}
+                "result": {"tools": _tools()}}
     if method == "tools/call":
         params = msg.get("params") or {}
         result = _call(params.get("name", ""),
@@ -710,8 +748,13 @@ def _child_ended(wait: float = 0.0) -> int | None:
 
 
 def main() -> None:
-    global PORT
+    global PORT, PYTHON_ALLOWED
     argv = sys.argv[1:]
+    if any(flag in argv for flag in NO_PYTHON_FLAGS):
+        # Refused here for any IngeTrazo this server reaches; a headless
+        # child gets the flag too (_start_child passes argv on) and
+        # refuses it in its own bridge.
+        PYTHON_ALLOWED = False
     if "--headless" in argv:
         PORT = _start_child(argv)
     for line in sys.stdin:
