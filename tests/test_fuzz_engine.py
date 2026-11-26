@@ -223,6 +223,23 @@ def _on_segment_3d(p, a, b, tol: float = 1e-6) -> bool:
     return (p - (a + ab * t)).length() <= tol
 
 
+def _stretches_an_edge(e, segments, tol: float = 1e-5) -> bool:
+    """``e`` runs along an edge that was already there and keeps one of its
+    ends: a line drawn on a wall, stretched or shortened with it when a
+    push slides the face at its other end (#1213)."""
+    for a, b in segments:
+        ab = b - a
+        n = ab.length()
+        if n < 1e-12:
+            continue
+        if any(QVector3D.crossProduct(p - a, ab).length() / n > tol
+               for p in (e.a, e.b)):
+            continue
+        if any((p - q).length() < tol for p in (e.a, e.b) for q in (a, b)):
+            return True
+    return False
+
+
 def _edge_on_user_segment(e, segments) -> bool:
     return any(_on_segment_3d(e.a, a, b) and _on_segment_3d(e.b, a, b)
                for a, b in segments)
@@ -275,6 +292,7 @@ def _check_mesh_invariants(mesh, was_closed, user_segments, ctx: str,
                                  e.faces[1].normal().normalized())
         if (abs(d) > 0.999
                 and not _edge_on_user_segment(e, pre_seams)
+                and not _stretches_an_edge(e, pre_seams)
                 and not _edge_on_user_segment(e, user_segments)):
             # A seam is a bug only when *this* commit minted its edge: edges
             # left by earlier commits (and their split pieces) persist

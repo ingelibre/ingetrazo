@@ -559,6 +559,20 @@ class _SweepFaces:
         return f"_SweepFaces({self._made()!r})"
 
 
+def _within_segment(seg, outer, tol: float = 1e-5) -> bool:
+    """Whether both ends of ``seg`` lie on the segment ``outer``."""
+    a, b = outer
+    ab = b - a
+    ll = QVector3D.dotProduct(ab, ab)
+    if ll < 1e-18:
+        return False
+    for p in seg:
+        t = QVector3D.dotProduct(p - a, ab) / ll
+        if t < -1e-9 or t > 1 + 1e-9 or (a + ab * t - p).length() > tol:
+            return False
+    return True
+
+
 class PushPullTool(Tool):
     name = "Push / Pull"
     #: P is the usual key for this tool (Marco, 2026-09-10). U, the one
@@ -3200,6 +3214,7 @@ class PushPullTool(Tool):
         if (self._prism_cap and not self._keep_base
                 and not self._cap_passes_a_wall_vertex(scene, face, d)):
             normal = self._normal if self._normal is not None else face.normal()
+            drawn = self._drawn_divisions(scene.mesh, normal * d)
             translate_points(scene, {_key(p) for p in self._cap_positions},
                              normal * d)
             seed = list(self._cap_positions) + [p + normal * d
@@ -3218,7 +3233,8 @@ class PushPullTool(Tool):
                          if any(_key(v) in seedkeys for v in f.vertices)}
                 self._rebuild_planes_fixpoint(scene.mesh, fresh, seedkeys,
                                               removing=d < 0,
-                                              keep_edges=cap_rim)
+                                              keep_edges=cap_rim,
+                                              drawn=drawn)
             else:
                 # A full collapse flattened the solid. The cap may have landed
                 # on a *subdivided* base (hole-bearing cycles never dedupe as
@@ -3414,6 +3430,37 @@ class PushPullTool(Tool):
                                                          touched[0]))):
                 orient_outward(scene.mesh, only=touched)
 
+    def _drawn_divisions(self, mesh, shift) -> list:
+        """The lines the user drew on the walls the slide stretches: edges
+        that already part two faces of one plane, as position pairs where
+        the slide leaves them. Every face the slide touches is handed to the
+        plane rebuild, whose union would dissolve these as the push's own
+        seams; they are the user's and stay (#1213)."""
+        cap = {_key(p) for p in self._cap_positions}
+        touched = set()
+        for v in mesh.vertices:
+            if _key(v.position) in cap:
+                for e in v.edges:
+                    touched.update(e.faces)
+        seen, out = set(), []
+        for f in touched:
+            for lp in (f.loop, *f.hole_loops):
+                for v in lp:
+                    for g in v.edges:
+                        if id(g) in seen or len(g.faces) < 2:
+                            continue
+                        seen.add(id(g))
+                        n0 = g.faces[0].normal()
+                        if not all(_faces_coplanar(n0, h.normal())
+                                   for h in g.faces[1:]):
+                            continue
+                        a, b = g.v0.position, g.v1.position
+                        out.append((QVector3D(a + shift if _key(a) in cap
+                                              else a),
+                                    QVector3D(b + shift if _key(b) in cap
+                                              else b)))
+        return out
+
     def _cap_passes_a_wall_vertex(self, scene, face, d: float) -> bool:
         """Whether shrinking the prism cap by ``d`` carries it past a vertex
         partway up one of its walls — the next room's corner sitting on the
@@ -3486,7 +3533,7 @@ class PushPullTool(Tool):
     def _rebuild_planes_fixpoint(mesh, fresh: set, seedkeys: set,
                                  keep_mode: bool = False,
                                  removing: bool = True,
-                                 keep_edges=()) -> None:
+                                 keep_edges=(), drawn=()) -> None:
         """Deterministic root-fix (path C): recompute each touched plane's
         faces from its edges — the planar arrangement finds every region,
         winding-classification keeps the ones inside the solid and drops
@@ -3514,8 +3561,11 @@ class PushPullTool(Tool):
             for lp in (f.loop, *f.hole_loops):
                 cnt = len(lp)
                 for i in range(cnt):
-                    op_rims.append((QVector3D(lp[i].position),
-                                    QVector3D(lp[(i + 1) % cnt].position)))
+                    seg = (QVector3D(lp[i].position),
+                           QVector3D(lp[(i + 1) % cnt].position))
+                    # A line the user drew there is not the push's seam.
+                    if not any(_within_segment(seg, u) for u in drawn):
+                        op_rims.append(seg)
         # Per-face memos (normal, centroid, triangles) and the packed parity
         # set, shared across every plane and round: faces are never mutated in
         # place inside this loop (rebuilds remove + add), so identity-keyed
