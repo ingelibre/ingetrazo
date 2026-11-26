@@ -292,7 +292,8 @@ _PLACE_FIELDS = frozenset({
     "x_mm", "y_mm", "uid", "z", "locked", "group_id", "list_name",
     "show_title", "title_style", "title_text", "title_subtitle",
     "title_number", "title_sheet", "title_scale", "title_align",
-    "title_pos", "title_mm"})
+    "title_pos", "title_mm", "title_source", "title_path_sep",
+    "title_path_levels", "title_path_strip"})
 
 
 def render_look(frame) -> str:

@@ -4354,5 +4354,16 @@
  "The report of styled edges seen through faces.": "Der Bericht über gestylte Kanten, die durch Flächen sichtbar waren.",
  "The report of huge groups freezing the click.": "Der Bericht über riesige Gruppen, die den Klick einfroren.",
  "The report of the layers panel closing the program.": "Der Bericht über das Ebenen-Bedienfeld, das das Programm schloss.",
- "Confirming Push/Pull deleting lines on Windows and Linux.": "Die Bestätigung, dass Drücken/Ziehen unter Windows und Linux Linien löschte."
+ "Confirming Push/Pull deleting lines on Windows and Linux.": "Die Bestätigung, dass Drücken/Ziehen unter Windows und Linux Linien löschte.",
+ "Title source": "Titelquelle",
+ "View name": "Ansichtsname",
+ "Full path": "Vollständiger Pfad",
+ "Custom text": "Eigener Text",
+ "What the title says: the view's name, its full path through the folders of the Scenes tab, or the text typed below. Any title text can also use {vista}, {ruta} and {carpeta}.": "Was der Titel zeigt: den Namen der Ansicht, ihren vollständigen Pfad durch die Ordner des Szenen-Tabs oder den unten eingegebenen Text. Jeder Titeltext kann außerdem {vista}, {ruta} und {carpeta} verwenden.",
+ "What goes between the folders and the view's name.": "Was zwischen den Ordnern und dem Ansichtsnamen steht.",
+ "Path separator": "Pfadtrenner",
+ "How many of the innermost folders the path keeps; all = every folder from the top.": "Wie viele der innersten Ordner der Pfad behält; alle = jeder Ordner von oben.",
+ "Folder levels": "Ordnerebenen",
+ "Strip folder numbers": "Ordnernummern entfernen",
+ "Leave out the numbers that sort the folders: «01 Plans» reads «Plans».": "Lässt die Nummern weg, die die Ordner sortieren: aus «01 Pläne» wird «Pläne»."
 }

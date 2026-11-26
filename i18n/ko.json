@@ -4354,5 +4354,16 @@
  "The report of styled edges seen through faces.": "스타일 모서리가 면을 투과해 보이는 문제 보고.",
  "The report of huge groups freezing the click.": "거대한 그룹이 클릭을 멈추게 하는 문제 보고.",
  "The report of the layers panel closing the program.": "레이어 패널이 프로그램을 종료시키는 문제 보고.",
- "Confirming Push/Pull deleting lines on Windows and Linux.": "밀기/당기기가 Windows와 Linux에서 선을 지운다는 확인."
+ "Confirming Push/Pull deleting lines on Windows and Linux.": "밀기/당기기가 Windows와 Linux에서 선을 지운다는 확인.",
+ "Title source": "제목 출처",
+ "View name": "뷰 이름",
+ "Full path": "전체 경로",
+ "Custom text": "사용자 지정 텍스트",
+ "What the title says: the view's name, its full path through the folders of the Scenes tab, or the text typed below. Any title text can also use {vista}, {ruta} and {carpeta}.": "제목에 표시할 내용: 뷰 이름, 장면 탭 폴더를 거친 전체 경로, 또는 아래에 입력한 텍스트. 모든 제목 텍스트에서 {vista}, {ruta}, {carpeta}도 쓸 수 있습니다.",
+ "What goes between the folders and the view's name.": "폴더와 뷰 이름 사이에 들어갈 문자.",
+ "Path separator": "경로 구분자",
+ "How many of the innermost folders the path keeps; all = every folder from the top.": "경로에 남길 가장 안쪽 폴더 수; 모두 = 맨 위부터 모든 폴더.",
+ "Folder levels": "폴더 단계",
+ "Strip folder numbers": "폴더 번호 제거",
+ "Leave out the numbers that sort the folders: «01 Plans» reads «Plans».": "폴더를 정렬하는 번호를 뺍니다: «01 Plans»는 «Plans»가 됩니다."
 }

@@ -4357,5 +4357,16 @@
  "The report of styled edges seen through faces.": "Laporan tepi bergaya yang terlihat menembus muka.",
  "The report of huge groups freezing the click.": "Laporan grup raksasa yang membekukan klik.",
  "The report of the layers panel closing the program.": "Laporan panel lapisan yang menutup program.",
- "Confirming Push/Pull deleting lines on Windows and Linux.": "Konfirmasi bahwa Dorong/Tarik menghapus garis di Windows dan Linux."
+ "Confirming Push/Pull deleting lines on Windows and Linux.": "Konfirmasi bahwa Dorong/Tarik menghapus garis di Windows dan Linux.",
+ "Title source": "Sumber judul",
+ "View name": "Nama tampilan",
+ "Full path": "Jalur lengkap",
+ "Custom text": "Teks sendiri",
+ "What the title says: the view's name, its full path through the folders of the Scenes tab, or the text typed below. Any title text can also use {vista}, {ruta} and {carpeta}.": "Isi judul: nama tampilan, jalur lengkapnya melalui folder tab Adegan, atau teks yang diketik di bawah. Setiap teks judul juga dapat memakai {vista}, {ruta} dan {carpeta}.",
+ "What goes between the folders and the view's name.": "Apa yang berada di antara folder dan nama tampilan.",
+ "Path separator": "Pemisah jalur",
+ "How many of the innermost folders the path keeps; all = every folder from the top.": "Berapa banyak folder terdalam yang disimpan jalur; semua = setiap folder dari atas.",
+ "Folder levels": "Tingkat folder",
+ "Strip folder numbers": "Hapus nomor folder",
+ "Leave out the numbers that sort the folders: «01 Plans» reads «Plans».": "Menghilangkan nomor yang mengurutkan folder: «01 Denah» terbaca «Denah»."
 }

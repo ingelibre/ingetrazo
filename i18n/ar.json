@@ -4390,5 +4390,16 @@
  "The report of styled edges seen through faces.": "البلاغ عن حواف منسّقة تظهر عبر الأوجه.",
  "The report of huge groups freezing the click.": "البلاغ عن مجموعات ضخمة تُجمّد النقر.",
  "The report of the layers panel closing the program.": "البلاغ عن لوحة الطبقات التي كانت تُغلق البرنامج.",
- "Confirming Push/Pull deleting lines on Windows and Linux.": "تأكيد أن أداة الدفع/السحب كانت تحذف الخطوط على Windows وLinux."
+ "Confirming Push/Pull deleting lines on Windows and Linux.": "تأكيد أن أداة الدفع/السحب كانت تحذف الخطوط على Windows وLinux.",
+ "Title source": "مصدر العنوان",
+ "View name": "اسم العرض",
+ "Full path": "المسار الكامل",
+ "Custom text": "نص مخصص",
+ "What the title says: the view's name, its full path through the folders of the Scenes tab, or the text typed below. Any title text can also use {vista}, {ruta} and {carpeta}.": "ما يقوله العنوان: اسم العرض، أو مساره الكامل عبر مجلدات تبويب المشاهد، أو النص المكتوب أدناه. يمكن لأي نص عنوان أيضًا استخدام {vista} و{ruta} و{carpeta}.",
+ "What goes between the folders and the view's name.": "ما يوضع بين المجلدات واسم العرض.",
+ "Path separator": "فاصل المسار",
+ "How many of the innermost folders the path keeps; all = every folder from the top.": "عدد المجلدات الداخلية التي يحتفظ بها المسار؛ الكل = كل مجلد من الأعلى.",
+ "Folder levels": "مستويات المجلدات",
+ "Strip folder numbers": "إزالة أرقام المجلدات",
+ "Leave out the numbers that sort the folders: «01 Plans» reads «Plans».": "يحذف الأرقام التي ترتب المجلدات: «01 Plans» تصبح «Plans»."
 }

@@ -4357,5 +4357,16 @@
  "The report of styled edges seen through faces.": "帶樣式的邊線透過面可見的回報。",
  "The report of huge groups freezing the click.": "巨大群組導致點擊卡住的回報。",
  "The report of the layers panel closing the program.": "圖層面板導致程式關閉的回報。",
- "Confirming Push/Pull deleting lines on Windows and Linux.": "確認推/拉在 Windows 和 Linux 上會刪除線條。"
+ "Confirming Push/Pull deleting lines on Windows and Linux.": "確認推/拉在 Windows 和 Linux 上會刪除線條。",
+ "Title source": "標題來源",
+ "View name": "檢視名稱",
+ "Full path": "完整路徑",
+ "Custom text": "自訂文字",
+ "What the title says: the view's name, its full path through the folders of the Scenes tab, or the text typed below. Any title text can also use {vista}, {ruta} and {carpeta}.": "標題顯示的內容：檢視名稱、它在場景分頁資料夾中的完整路徑，或下方輸入的文字。任何標題文字也可以使用 {vista}、{ruta} 和 {carpeta}。",
+ "What goes between the folders and the view's name.": "資料夾與檢視名稱之間的分隔內容。",
+ "Path separator": "路徑分隔符",
+ "How many of the innermost folders the path keeps; all = every folder from the top.": "路徑保留的最內層資料夾數量；全部 = 從頂層起的每個資料夾。",
+ "Folder levels": "資料夾層級",
+ "Strip folder numbers": "去除資料夾編號",
+ "Leave out the numbers that sort the folders: «01 Plans» reads «Plans».": "省略用於排序資料夾的編號：«01 Plans» 顯示為 «Plans»。"
 }

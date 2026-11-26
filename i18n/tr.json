@@ -4353,5 +4353,16 @@
   "The report of styled edges seen through faces.": "Yüzeylerin arkasından görünen stilli kenarlar bildirimi.",
   "The report of huge groups freezing the click.": "Tıklamayı donduran dev gruplar bildirimi.",
   "The report of the layers panel closing the program.": "Programı kapatan katmanlar paneli bildirimi.",
-  "Confirming Push/Pull deleting lines on Windows and Linux.": "İt/Çek aracının Windows ve Linux'ta çizgileri sildiğinin doğrulanması."
+  "Confirming Push/Pull deleting lines on Windows and Linux.": "İt/Çek aracının Windows ve Linux'ta çizgileri sildiğinin doğrulanması.",
+  "Title source": "Başlık kaynağı",
+  "View name": "Görünüm adı",
+  "Full path": "Tam yol",
+  "Custom text": "Özel metin",
+  "What the title says: the view's name, its full path through the folders of the Scenes tab, or the text typed below. Any title text can also use {vista}, {ruta} and {carpeta}.": "Başlığın ne söylediği: görünümün adı, Sahneler sekmesinin klasörleri boyunca tam yolu ya da aşağıya yazılan metin. Her başlık metni {vista}, {ruta} ve {carpeta} da kullanabilir.",
+  "What goes between the folders and the view's name.": "Klasörler ile görünüm adı arasına ne gelir.",
+  "Path separator": "Yol ayırıcı",
+  "How many of the innermost folders the path keeps; all = every folder from the top.": "Yolun en içteki kaç klasörü tuttuğu; tümü = en üstten her klasör.",
+  "Folder levels": "Klasör düzeyleri",
+  "Strip folder numbers": "Klasör numaralarını kaldır",
+  "Leave out the numbers that sort the folders: «01 Plans» reads «Plans».": "Klasörleri sıralayan numaraları atlar: «01 Planlar» «Planlar» olarak okunur."
 }

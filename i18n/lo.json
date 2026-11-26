@@ -4357,5 +4357,16 @@
  "The report of styled edges seen through faces.": "ລາຍງານຂອບທີ່ມີສະໄຕລ໌ເບິ່ງເຫັນຜ່ານໜ້າ",
  "The report of huge groups freezing the click.": "ລາຍງານກຸ່ມໃຫຍ່ທີ່ເຮັດໃຫ້ການຄລິກຄ້າງ",
  "The report of the layers panel closing the program.": "ລາຍງານແຜງຊັ້ນທີ່ເຮັດໃຫ້ໂປຣແກຣມປິດ",
- "Confirming Push/Pull deleting lines on Windows and Linux.": "ການຢືນຢັນວ່າ ດັນ/ດຶງ ລຶບເສັ້ນໃນ Windows ແລະ Linux"
+ "Confirming Push/Pull deleting lines on Windows and Linux.": "ການຢືນຢັນວ່າ ດັນ/ດຶງ ລຶບເສັ້ນໃນ Windows ແລະ Linux",
+ "Title source": "ແຫຼ່ງຂອງຫົວຂໍ້",
+ "View name": "ຊື່ມຸມມອງ",
+ "Full path": "ເສັ້ນທາງເຕັມ",
+ "Custom text": "ຂໍ້ຄວາມກຳນົດເອງ",
+ "What the title says: the view's name, its full path through the folders of the Scenes tab, or the text typed below. Any title text can also use {vista}, {ruta} and {carpeta}.": "ສິ່ງທີ່ຫົວຂໍ້ສະແດງ: ຊື່ມຸມມອງ, ເສັ້ນທາງເຕັມຜ່ານໂຟນເດີຂອງແຖບສາກ, ຫຼື ຂໍ້ຄວາມທີ່ພິມຂ້າງລຸ່ມ. ຂໍ້ຄວາມຫົວຂໍ້ໃດກໍ່ໃຊ້ {vista}, {ruta} ແລະ {carpeta} ໄດ້.",
+ "What goes between the folders and the view's name.": "ສິ່ງທີ່ຢູ່ລະຫວ່າງໂຟນເດີ ແລະ ຊື່ມຸມມອງ.",
+ "Path separator": "ຕົວຂັ້ນເສັ້ນທາງ",
+ "How many of the innermost folders the path keeps; all = every folder from the top.": "ຈຳນວນໂຟນເດີຊັ້ນໃນສຸດທີ່ເສັ້ນທາງເກັບໄວ້; ທັງໝົດ = ທຸກໂຟນເດີຈາກເທິງສຸດ.",
+ "Folder levels": "ລະດັບໂຟນເດີ",
+ "Strip folder numbers": "ຕັດເລກໂຟນເດີ",
+ "Leave out the numbers that sort the folders: «01 Plans» reads «Plans».": "ລະເລກທີ່ໃຊ້ຮຽງໂຟນເດີ: «01 Plans» ອ່ານເປັນ «Plans»."
 }

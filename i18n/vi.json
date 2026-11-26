@@ -4381,5 +4381,16 @@
  "The report of styled edges seen through faces.": "Báo cáo cạnh có kiểu hiện xuyên qua các mặt.",
  "The report of huge groups freezing the click.": "Báo cáo các nhóm khổng lồ làm treo cú nhấp.",
  "The report of the layers panel closing the program.": "Báo cáo bảng lớp làm đóng chương trình.",
- "Confirming Push/Pull deleting lines on Windows and Linux.": "Xác nhận Đẩy/Kéo xóa đường kẻ trên Windows và Linux."
+ "Confirming Push/Pull deleting lines on Windows and Linux.": "Xác nhận Đẩy/Kéo xóa đường kẻ trên Windows và Linux.",
+ "Title source": "Nguồn tiêu đề",
+ "View name": "Tên chế độ xem",
+ "Full path": "Đường dẫn đầy đủ",
+ "Custom text": "Văn bản tùy chỉnh",
+ "What the title says: the view's name, its full path through the folders of the Scenes tab, or the text typed below. Any title text can also use {vista}, {ruta} and {carpeta}.": "Nội dung tiêu đề: tên chế độ xem, đường dẫn đầy đủ qua các thư mục của thẻ Cảnh, hoặc văn bản nhập bên dưới. Mọi văn bản tiêu đề cũng có thể dùng {vista}, {ruta} và {carpeta}.",
+ "What goes between the folders and the view's name.": "Ký tự đặt giữa các thư mục và tên chế độ xem.",
+ "Path separator": "Dấu phân cách đường dẫn",
+ "How many of the innermost folders the path keeps; all = every folder from the top.": "Số thư mục trong cùng mà đường dẫn giữ lại; tất cả = mọi thư mục từ trên xuống.",
+ "Folder levels": "Cấp thư mục",
+ "Strip folder numbers": "Bỏ số thư mục",
+ "Leave out the numbers that sort the folders: «01 Plans» reads «Plans».": "Bỏ các số dùng để sắp xếp thư mục: «01 Mặt bằng» thành «Mặt bằng»."
 }

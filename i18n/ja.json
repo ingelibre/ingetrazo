@@ -4354,5 +4354,16 @@
  "The report of styled edges seen through faces.": "スタイル付きエッジが面を透けて見える問題の報告。",
  "The report of huge groups freezing the click.": "巨大なグループでクリックが固まる問題の報告。",
  "The report of the layers panel closing the program.": "レイヤーパネルがプログラムを終了させる問題の報告。",
- "Confirming Push/Pull deleting lines on Windows and Linux.": "プッシュ/プルが Windows と Linux で線を消すことの確認。"
+ "Confirming Push/Pull deleting lines on Windows and Linux.": "プッシュ/プルが Windows と Linux で線を消すことの確認。",
+ "Title source": "タイトルの内容",
+ "View name": "ビュー名",
+ "Full path": "フルパス",
+ "Custom text": "カスタムテキスト",
+ "What the title says: the view's name, its full path through the folders of the Scenes tab, or the text typed below. Any title text can also use {vista}, {ruta} and {carpeta}.": "タイトルに表示する内容: ビュー名、シーンタブのフォルダーを通したフルパス、または下に入力したテキスト。どのタイトルテキストでも {vista}、{ruta}、{carpeta} を使えます。",
+ "What goes between the folders and the view's name.": "フォルダーとビュー名の間に入る文字。",
+ "Path separator": "パス区切り",
+ "How many of the innermost folders the path keeps; all = every folder from the top.": "パスに残す最も内側のフォルダー数。すべて = 最上位からすべてのフォルダー。",
+ "Folder levels": "フォルダー階層",
+ "Strip folder numbers": "フォルダー番号を除く",
+ "Leave out the numbers that sort the folders: «01 Plans» reads «Plans».": "フォルダーを並べる番号を省きます:「01 Plans」は「Plans」になります。"
 }

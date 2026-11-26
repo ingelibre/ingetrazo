@@ -4354,5 +4354,16 @@
  "The report of styled edges seen through faces.": "带样式的边线透过面可见的报告。",
  "The report of huge groups freezing the click.": "巨大群组导致点击卡死的报告。",
  "The report of the layers panel closing the program.": "图层面板导致程序关闭的报告。",
- "Confirming Push/Pull deleting lines on Windows and Linux.": "确认推/拉在 Windows 和 Linux 上会删除线条。"
+ "Confirming Push/Pull deleting lines on Windows and Linux.": "确认推/拉在 Windows 和 Linux 上会删除线条。",
+ "Title source": "标题来源",
+ "View name": "视图名称",
+ "Full path": "完整路径",
+ "Custom text": "自定义文本",
+ "What the title says: the view's name, its full path through the folders of the Scenes tab, or the text typed below. Any title text can also use {vista}, {ruta} and {carpeta}.": "标题显示的内容：视图名称、它在场景选项卡文件夹中的完整路径，或下方输入的文本。任何标题文本也可以使用 {vista}、{ruta} 和 {carpeta}。",
+ "What goes between the folders and the view's name.": "文件夹与视图名称之间的分隔内容。",
+ "Path separator": "路径分隔符",
+ "How many of the innermost folders the path keeps; all = every folder from the top.": "路径保留的最内层文件夹数量；全部 = 从顶层起的每个文件夹。",
+ "Folder levels": "文件夹层级",
+ "Strip folder numbers": "去掉文件夹编号",
+ "Leave out the numbers that sort the folders: «01 Plans» reads «Plans».": "省略用于排序文件夹的编号：«01 Plans» 显示为 «Plans»。"
 }
