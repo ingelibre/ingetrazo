@@ -3,6 +3,8 @@
 """Independent sky/ground controls and compatibility with existing documents."""
 from __future__ import annotations
 
+import math
+
 import pytest
 import numpy as np
 from PySide6.QtCore import QSettings, QSize
@@ -175,6 +177,38 @@ def test_ground_keeps_coplanar_faces_visible(cube_viewport):
                              V(0.4, 0.4, 0), V(-0.4, 0.4, 0)])
     vp.scene.version += 1
     assert _sample(vp, _pixels(vp), V()) == pytest.approx((255, 0, 0), abs=2)
+
+
+@pytest.mark.parametrize("distance", [5, 10000])
+@pytest.mark.parametrize("pitch", [-10, 10])
+@pytest.mark.parametrize("transparency", [0, 50])
+def test_ground_reaches_horizon_beyond_camera_far_plane(
+        cube_viewport, distance, pitch, transparency):
+    vp = cube_viewport
+    scene = vp.scene
+    scene.clear()
+    scene.show_axes = False
+    scene.display_style = Style(
+        sky=pitch > 0, ground=True, ground_color=(0, 0, 1),
+        background=(1, 1, 1), sky_color=(1, 0, 0),
+        horizon_color=(1, 1, 0), ground_transparency=transparency)
+    vp.camera.perspective = True
+    vp.camera.target = V()
+    vp.camera.distance = distance
+    vp.camera.pitch = math.radians(pitch)
+    scene.version += 1
+    pixels = _pixels(vp)
+    horizon_y = 250 * (1 - math.tan(vp.camera.pitch)
+                       / math.tan(math.radians(vp.camera.fov_deg) / 2))
+    # Every row on the ground side, including just below/above the horizon,
+    # must contain ground. The model's far clipping plane must leave no gap.
+    rows = (slice(math.ceil(horizon_y) + 2, -2) if pitch > 0
+            else slice(2, math.floor(horizon_y) - 2))
+    expected = (0, 0, 255) if transparency == 0 else (128, 128, 255)
+    assert np.all(np.abs(pixels[rows, 30].astype(float) - expected) <= 2)
+    # The plane must also stop at the horizon instead of covering the sky.
+    sky_row = round(horizon_y) - 10 if pitch > 0 else round(horizon_y) + 10
+    assert pixels[sky_row, 30, :2].min() > 100
 
 
 @pytest.mark.parametrize("quality", ["faster", "nicer"])
