@@ -533,6 +533,15 @@ def test_export_writes_each_format_by_its_extension(env, tmp_path):
                               {"path": str(tmp_path / "m.gltf")})
     assert "must be absolute" in _err(bridge, "export_file",
                                       {"path": "m.glb"})
+    # The layers ride along in a GLB for a web viewer, and only there.
+    glb = tmp_path / "capas.glb"
+    _ok(bridge, "export_file", {"path": str(glb), "layers": True})
+    from tests.test_gltf_dae_export import _read_glb
+    gltf, _ = _read_glb(glb)
+    assert [ly["name"] for ly in gltf["asset"]["extras"]["ingetrazo_layers"]] \
+        == [ly.name for ly in vp.scene.layers]
+    assert "for .glb only" in _err(bridge, "export_file", {
+        "path": str(tmp_path / "m.obj"), "layers": True})
     assert not vp.history.undo_stack            # exporting is no step
 
 

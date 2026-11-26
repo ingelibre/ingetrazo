@@ -310,13 +310,19 @@ class Scene:
                 return ly
         return None
 
-    def _layer_state(self, entity) -> tuple[bool, bool]:
-        """(visible, locked) of the layer ``entity`` carries; unknown layer
-        names read as the default (visible, unlocked)."""
+    def entity_layer(self, entity) -> str:
+        """The name of the layer that decides whether ``entity`` shows: its
+        own, or, for a face or edge on the default layer inside the open
+        group, the group's (:meth:`_open_group_layer`)."""
         name = _layers.layer_of(entity)
         if name == _layers.DEFAULT_LAYER and self._edit_stack:
             name = self._open_group_layer(entity) or name
-        ly = self.layer(name)
+        return name
+
+    def _layer_state(self, entity) -> tuple[bool, bool]:
+        """(visible, locked) of the layer ``entity`` carries; unknown layer
+        names read as the default (visible, unlocked)."""
+        ly = self.layer(self.entity_layer(entity))
         if ly is None:
             return True, False
         return ly.visible, ly.locked
@@ -383,15 +389,23 @@ class Scene:
         # render, pick, snap, bounds, export — whatever its layer says.
         # The hidden-things view does NOT change that: it draws them as a
         # ghost in its own pass and only makes them selectable.
+        return (self.entity_visible_but_for_layer(entity)
+                and self._layer_state(entity)[0])
+
+    def entity_visible_but_for_layer(self, entity) -> bool:
+        """:meth:`entity_visible` without the layer's switch: whether
+        ``entity`` would show with its layer on. A file that carries the
+        layers (the GLB export with ``layers=True``) keeps what only a
+        layer hides, so its viewer can switch the layer back on; Hide,
+        Hide similar, the section box and the guides switch still leave
+        things out."""
         if not getattr(self.display_style, "show_guides", True):
             from core.guide import Guide
             if isinstance(entity, Guide):
                 return False
         if self.entity_hidden(entity) or self.similar_hidden(entity):
             return False
-        if self.outside_section_box(entity):
-            return False
-        return self._layer_state(entity)[0]
+        return not self.outside_section_box(entity)
 
     def outside_section_box(self, entity) -> bool:
         """Whether the section box cutting now leaves this annotation out —

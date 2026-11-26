@@ -610,9 +610,12 @@ class BridgeTools:
 
     # ---- Files ------------------------------------------------------------------
     def _tool_export_file(self, path: str, unit: str = "mm",
-                          selection_only: bool = False) -> dict:
+                          selection_only: bool = False,
+                          layers: bool = False) -> dict:
         """File ▸ Export, by the suffix: IFC (the BIM-tagged objects),
-        glTF binary, COLLADA, STL, OBJ and DXF (the view's lines). The
+        glTF binary, COLLADA, STL, OBJ and DXF (the view's lines).
+        ``layers`` (GLB only) writes the layers along, hidden ones too, for
+        a web viewer that switches them (``formats.gltf.save_glb``). The
         sheets are ``export_pdf`` and the pictures ``screenshot`` /
         ``export_view`` / ``render_sheet`` (PR #1494's names): one tool for
         each job."""
@@ -637,6 +640,8 @@ class BridgeTools:
         if suffix not in EXPORT_SUFFIXES:
             raise ValueError(f"unknown export format {suffix!r}; one of "
                              + ", ".join(EXPORT_SUFFIXES))
+        if layers and suffix != ".glb":
+            raise ValueError("layers is for .glb only")
         if suffix == ".ifc":
             from core.bim import collect_objects
             if not collect_objects(scene):
@@ -653,7 +658,8 @@ class BridgeTools:
             if selection_only and not only:
                 raise ValueError("selection_only, and nothing is selected")
             ok = win._write_export("GLB", out, lambda s, p:
-                                   gltf_format.save_glb(s, p, only=only))
+                                   gltf_format.save_glb(s, p, only=only,
+                                                        layers=bool(layers)))
         elif suffix == ".dae":
             ok = win._write_export("COLLADA", out, dae_format.save_dae)
         elif suffix == ".stl":
