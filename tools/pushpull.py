@@ -449,10 +449,13 @@ def _swept_faces(spec, ring_pairs: list) -> list:
     return out
 
 
-def sweep_segments(ring_pairs, curve_cos: float) -> list:
+def sweep_segments(ring_pairs, curve_cos: float, curve_keys=None) -> list:
     """The wireframe of a sweep (:meth:`PushPullTool.rubber_band_lines`):
     for each ``(low, high)`` ring pair, the moved edges and the risers
-    that will stay hard."""
+    that will stay hard. A riser hides only above a curve vertex (a
+    position key in ``curve_keys``) — a 12-gon's sides meet at 30° but
+    its profile is a polygon, so its risers stay (#1547); ``None`` keeps
+    the old dihedral-only rule."""
     segs = []
     for low, high in ring_pairs:
         n = len(low)
@@ -472,7 +475,8 @@ def sweep_segments(ring_pairs, curve_cos: float) -> list:
             if a is not None and b is not None:
                 d = QVector3D.dotProduct(a, b)
                 if curve_cos < d < 0.99995:
-                    continue          # curve facet: soft once committed
+                    if curve_keys is None or _key(low[i]) in curve_keys:
+                        continue      # curve facet: soft once committed
             segs.append((low[i], high[i]))
     return segs
 
@@ -746,6 +750,11 @@ class PushPullTool(Tool):
         # The sweep's rings, ``[(base_ring, moved_ring), …]`` (outer first,
         # then holes) — the wireframe is drawn straight off them.
         self._light_rings: list = []
+        # The base's curve vertices as position keys, read when the rings
+        # were built — the wireframe hides a riser only above one of these,
+        # the same gate the commit's ``_soften_curve_facets`` applies
+        # (#1547). ``None`` where the rings were built without a mesh.
+        self._light_curve_keys: set | None = None
         # ---- Hot retype ------------------------------------------------------
         # The just-committed push, adjustable by typing (on_value): typing a
         # distance undoes that one command and re-commits the push at the
@@ -1253,7 +1262,8 @@ class PushPullTool(Tool):
         edges and reads like real geometry rather than a loose rubber band."""
         if self._light_rings is None:          # still only the sweep
             len(self._light_faces)              # (made with the faces)
-        return sweep_segments(self._light_rings or [], self._CURVE_FACET_COS)
+        return sweep_segments(self._light_rings or [], self._CURVE_FACET_COS,
+                              getattr(self, "_light_curve_keys", None))
 
     def preview_faces(self):
         return self._light_faces
@@ -1349,6 +1359,17 @@ class PushPullTool(Tool):
         self._park_stage(viewport)
         self._revert_preview(viewport)
         self._light_faces = self._build_light_faces(lazy=True)
+        # The wireframe hides a riser only above a curve vertex — the same
+        # gate the commit's ``_soften_curve_facets`` applies (#1547). Read
+        # off every swept face (the base and any extra), while the mesh is
+        # still the pre-push one.
+        mesh = self._target_mesh(viewport.scene)
+        faces = ([self.base_face] if self.base_face is not None else [])
+        faces += list(getattr(self, "_extra_faces", None) or [])
+        keys = set()
+        for f in faces:
+            keys |= self._curve_vertex_keys(mesh, f)
+        self._light_curve_keys = keys if faces else None
         # Hiding the base face is what lets a drag AWAY FROM THE EYE read as
         # a recess opening instead of a cap buried behind the base. Toward
         # the eye, the sweep covers the base anyway and the frame is
@@ -3055,6 +3076,8 @@ class PushPullTool(Tool):
                         if base_tag is not None or base_paint else None)
         curve_runs = (self._curve_runs(mesh, self.base_face)
                       if self.base_face is not None else [])
+        curve_keys = (self._curve_vertex_keys(mesh, self.base_face)
+                      if self.base_face is not None else set())
         guard = (mesh.capture_state()
                  if is_closed(mesh) and not _mesh_is_flat(mesh) else None)
         fp_before = self._mesh_fingerprint(mesh) if guard is not None else None
@@ -3084,7 +3107,7 @@ class PushPullTool(Tool):
             # Flag it so the commit tells the user instead of failing silently.
             self._refused = True
             return
-        self._soften_curve_facets(mesh, before_edges)
+        self._soften_curve_facets(mesh, before_edges, curve_keys)
         self._tag_moved_curves(mesh, curve_runs)
         if base_tag is not None or base_paint:
             # Only faces carrying at least one vertex this push created — the
@@ -3139,6 +3162,29 @@ class PushPullTool(Tool):
                 i = (i + 1) % n
         return runs
 
+    @staticmethod
+    def _curve_vertex_keys(mesh, face) -> set:
+        """The base's curve vertices as position keys: a loop vertex whose
+        two edges share one curve id (a circle's every vertex; a rounded
+        rectangle's arc interiors, not the arc/line junctions). A polygon's
+        vertices never qualify — its edges carry no curve id — so a pushed
+        12-gon keeps its sides visible while a pushed circle still reads
+        as a smooth cylinder (#1547). Read before the push, like
+        :meth:`_curve_runs`."""
+        keys = set()
+        for loop in (face.loop, *face.hole_loops):
+            n = len(loop)
+            if n < 2:
+                continue
+            ids = []
+            for i in range(n):
+                e = mesh.find_edge(loop[i], loop[(i + 1) % n])
+                ids.append(getattr(e, "curve", None) if e is not None else None)
+            for i in range(n):
+                if ids[i - 1] is not None and ids[i - 1] == ids[i]:
+                    keys.add(_key(loop[i].position))
+        return keys
+
     def _tag_moved_curves(self, mesh, runs) -> None:
         """The base's curves, carried to the moved cap: the ring a pushed
         circle leaves on top is a curve again, one click selects it all
@@ -3169,18 +3215,23 @@ class PushPullTool(Tool):
                 tuple(sorted(_key(v.position) for v in mesh.vertices)))
 
     # The dihedral above which a swept seam reads as a *curve* facet (a
-    # cylinder's side) rather than a real corner. cos(31.8°): a 24-side circle
-    # (15° steps) softens, a hexagon/octagon (≥45°) keeps its visible edges.
-    _CURVE_FACET_COS = 0.85
+    # cylinder's side) rather than a real corner. cos(20°): a 24-side circle
+    # (15° steps) softens, a 12-sided prism (30° steps) and an 18-gon (20°)
+    # keep their visible edges (#1547).
+    _CURVE_FACET_COS = 0.94
 
-    def _soften_curve_facets(self, mesh, before_edges) -> None:
+    def _soften_curve_facets(self, mesh, before_edges, curve_keys) -> None:
         """Hide the *new* edges between two faces that meet at a shallow dihedral
         — the vertical facet seams of a swept curve — so a pushed circle reads as
         a smooth cylinder while its circle outline (and a polygon's flat sides,
         which meet at a real angle) stay visible. Topology-free: only the render
-        flag changes."""
+        flag changes. Only a seam above a curve vertex softens: a 12-sided
+        prism's sides meet at 30°, under the dihedral threshold, but its
+        profile is a polygon, not a curve, so its edges stay visible (#1547)."""
         for e in mesh.edges:
             if e in before_edges or e.soft or len(e.faces) != 2:
+                continue
+            if not any(_key(p) in curve_keys for p in (e.a, e.b)):
                 continue
             d = QVector3D.dotProduct(e.faces[0].normal().normalized(),
                                      e.faces[1].normal().normalized())
