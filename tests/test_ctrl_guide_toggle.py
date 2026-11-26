@@ -138,6 +138,55 @@ def test_a_typed_distance_places_the_point_exactly():
     assert abs(scene.guides[0].point.y() - 2.5) < 1e-6
 
 
+def test_ctrl_after_the_first_click_is_honoured_at_the_second_click():
+    """#1682 (@pacaeiro): after the 1st click, Ctrl changes the mode in
+    the status bar — but the second click still left a guide line behind
+    when the mode said "measure". The mode at the second click decides
+    what is left behind, on every path that can leave one."""
+    scene = Scene()
+    vp = _Vp(scene, _edge(V(0, 0), V(4, 0)))
+    tool = TapeMeasureTool()
+    tool.on_click(_ctx(vp, 1, 0))          # 1st click on the edge body
+    assert tool._edge is not None
+    _tap(tool, vp)   # -> point
+    _tap(tool, vp)   # -> measure
+    assert tool._mode == "measure"
+    tool.on_click(_ctx(vp, 1, 2))
+    assert scene.guides == [], "measure only: nothing left behind"
+    assert tool._measured == 2.0
+
+
+def test_a_typed_distance_after_a_mid_measurement_toggle_measures_only():
+    """#1682: the same toggle, via the VCB — typing a distance in
+    measure mode must measure it, not place the guide line."""
+    scene = Scene()
+    vp = _Vp(scene, _edge(V(0, 0), V(4, 0)))
+    tool = TapeMeasureTool()
+    tool.on_click(_ctx(vp, 1, 0))
+    _tap(tool, vp)
+    _tap(tool, vp)   # -> measure
+    tool.on_hover(_ctx(vp, 1, 2))
+    assert tool.on_value(vp, 2.5)
+    assert scene.guides == []
+    assert tool._measured == 2.5
+
+
+def test_no_guide_preview_once_the_mode_is_measure():
+    """#1682: while the mode says "measure" the viewport must not keep
+    previewing the guide line the next click will not leave."""
+    scene = Scene()
+    vp = _Vp(scene, _edge(V(0, 0), V(4, 0)))
+    tool = TapeMeasureTool()
+    tool.on_click(_ctx(vp, 1, 0))
+    tool.on_hover(_ctx(vp, 1, 2))
+    assert tool.guide_preview_lines()
+    _tap(tool, vp)
+    _tap(tool, vp)   # -> measure
+    assert tool.guide_preview_lines() == []
+    _tap(tool, vp)   # -> line again: the preview comes back
+    assert tool.guide_preview_lines()
+
+
 def test_ctrl_turns_the_tape_into_a_plain_ruler():
     scene = Scene()
     vp = _Vp(scene, _edge(V(0, 0), V(4, 0)))

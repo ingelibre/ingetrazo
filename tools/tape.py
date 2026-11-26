@@ -271,7 +271,10 @@ class TapeMeasureTool(Tool):
             # expect: from the red axis to a circle's centre (issue #693).
             self._place_guide_point(viewport, ctx.world,
                                     self._segment_origin(ctx.world))
-        elif self._edge is not None:
+        elif self._edge is not None and self._mode == "line":
+            # The edge only pulls a guide line while the mode is still
+            # "line": Ctrl-toggling to "measure" after the first click
+            # must measure only, not leave a guide behind (#1682).
             offset = self._guide_offset(ctx.world)
             if offset is not None:
                 self._place_guide(viewport, offset)
@@ -318,6 +321,25 @@ class TapeMeasureTool(Tool):
             self._reset()
             viewport.update()
             return True
+        if self._mode == "measure":
+            # A typed distance in measure-only mode just measures it:
+            # Ctrl-toggling after the first click must not leave a guide
+            # behind (#1682). Recorded like a second click, so it can
+            # still be typed over to resize afterwards.
+            d = self.hover_point - self.start_point
+            if d.length() < 1e-9:
+                return False
+            where = self.start_point + d.normalized() * float(value)
+            dist = (where - self.start_point).length()
+            self._measured = dist
+            if dist > 1e-9:
+                self._measure_ends = (QVector3D(self.start_point),
+                                      QVector3D(where))
+            viewport.flash_status(
+                tr("Distance: {d}").format(d=fmt_len_fine(dist)), 4000)
+            self._reset()
+            viewport.update()
+            return True
         if self._edge is None:
             if self._mode == "line" and self._from_point:
                 d = self.hover_point - self.start_point
@@ -354,9 +376,13 @@ class TapeMeasureTool(Tool):
         return [(self.start_point, self.hover_point)]
 
     def guide_preview_lines(self):
-        """The guide line the next click leaves, parallel to its source."""
-        if (self._edge is None or self.start_point is None
-                or self.hover_point is None):
+        """The guide line the next click leaves, parallel to its source.
+
+        Only while the mode is "line": in "point" or "measure" mode no
+        guide line is left behind, so none is previewed either (#1682).
+        """
+        if (self._mode != "line" or self._edge is None
+                or self.start_point is None or self.hover_point is None):
             return []
         offset = self._guide_offset(self.hover_point)
         if offset is None:
