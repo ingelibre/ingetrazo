@@ -370,9 +370,55 @@ class InteractionMixin:
         mime = getattr(win, "DOCK_MIME", None)
         return bool(mime) and ev.mimeData().hasFormat(mime)
 
+    # ---- A component dragged from a list: placed where it is let go ------
+    def _place_drag(self, ev) -> bool:
+        """Whether ``ev`` is a drag that places a component (see
+        ``views/place_drag.py``), starting the Place component tool the
+        first time it reaches the view. The piece then follows the pointer
+        as on a hover; a starter that put nothing on the pointer (a file
+        that could not be read) is not asked again in the same drag."""
+        from views import place_drag
+        starter = place_drag.starter_of(ev.mimeData())
+        if starter is None:
+            return False
+        state = getattr(self, "_place_drag_state", None)
+        if state is None or state[0] is not starter:
+            from tools.place_group import PlaceGroupTool
+            starter()
+            tool = self.active_tool
+            if not isinstance(tool, PlaceGroupTool):
+                tool = None
+            state = self._place_drag_state = (starter, tool)
+        if state[1] is None or self.active_tool is not state[1]:
+            return False
+        ev.setDropAction(Qt.CopyAction)
+        ev.accept()
+        return True
+
+    def _place_drag_hover(self, ev) -> None:
+        self._process_hover(ev.position(), ev.modifiers())
+
+    def end_place_drag(self, placed: bool) -> None:
+        """The drag that started a placement is over. Let go outside the
+        view (or Esc): its piece leaves the pointer and Select comes back,
+        as Esc does in the tool."""
+        state = getattr(self, "_place_drag_state", None)
+        self._place_drag_state = None
+        if state is None or placed or state[1] is None:
+            return
+        if self.active_tool is state[1]:
+            state[1].on_cancel(self)
+            win = self.window()
+            if hasattr(win, "_activate_tool"):
+                win._activate_tool("select")
+            self.update()
+
     def dragEnterEvent(self, ev) -> None:
         if self._dock_drag(ev):
             ev.acceptProposedAction()
+            return
+        if self._place_drag(ev):
+            self._place_drag_hover(ev)
             return
         win = self.window()
         image_path = getattr(win, "image_path_from_mime", None)
@@ -385,6 +431,9 @@ class InteractionMixin:
         if self._dock_drag(ev):
             ev.acceptProposedAction()
             return
+        if self._place_drag(ev):
+            self._place_drag_hover(ev)
+            return
         win = self.window()
         image_path = getattr(win, "image_path_from_mime", None)
         if callable(image_path) and image_path(ev.mimeData()) is not None:
@@ -395,6 +444,19 @@ class InteractionMixin:
     def dropEvent(self, ev) -> None:
         if self._dock_drag(ev):
             self.window().drop_dock_on_viewport(ev)
+            return
+        if self._place_drag(ev):
+            # Let go = the click of the tool, at the point under the
+            # pointer with its snap: placed in one undo step.
+            hover = _HoverEvent(ev.position(), ev.modifiers())
+            ctx = self._build_ctx(hover)
+            if ctx is not None:
+                self._note_snap(ctx.snap)
+                self.active_tool.on_click(ctx)
+                ev.setDropAction(Qt.CopyAction)
+                ev.accept()
+            else:
+                ev.ignore()          # no point there: nothing is placed
             return
         win = self.window()
         image_path = getattr(win, "image_path_from_mime", None)
