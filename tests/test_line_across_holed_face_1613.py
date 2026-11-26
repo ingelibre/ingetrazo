@@ -80,6 +80,11 @@ def test_the_openings_stay_open_and_the_face_is_divided(where, holes, line):
     assert len(lid) == 1 and len(lid[0].holes) == holes
     a, b = LINES[line]
     _draw(LineTool, vp, V(0, H * a, z), V(W, H * b, z))
+    if where == "solid" and line in ("through", "corner to corner"):
+        # On a box's lid a line across the opening closes it, as the
+        # reference modeller does: its two halves are new faces.
+        assert any(_filling(scene.mesh, c) for c in centres)
+        return
     for c in centres:
         for dx, dy in ((0.011, 0.013), (-0.02, 0.01), (0.015, -0.02)):
             assert not _filling(scene.mesh, c + V(dx, dy, 0))

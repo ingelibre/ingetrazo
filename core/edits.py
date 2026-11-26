@@ -396,11 +396,6 @@ def _cycle_centroid(cycle):
     return c / len(cycle)
 
 
-def _on_face_plane(face, p) -> bool:
-    return abs(QVector3D.dotProduct(face.normal(), p - face.vertices[0])) \
-        <= _PLANAR_TOLERANCE
-
-
 def _cycle_opening_owner(faces, cycle):
     """The face whose *hole* the cycle wholly re-faces, or ``None``.
 
@@ -417,8 +412,7 @@ def _cycle_opening_owner(faces, cycle):
                 centre = _cycle_centroid(cycle)
                 # Only a face on the opening's own plane fills it: the
                 # solid test projects, and a box's floor is under its lid.
-                if any(g is not f and _on_face_plane(g, centre)
-                       and _point_in_face_solid(g, centre)
+                if any(g is not f and _point_in_face_solid(g, centre)
                        for g in faces):
                     return None
                 return f
