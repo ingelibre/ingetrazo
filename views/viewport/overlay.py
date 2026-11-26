@@ -214,6 +214,7 @@ class OverlayMixin:
         self._draw_section_planes(painter)
         self._draw_section_box(painter)
         self._draw_section_box_chip(painter)
+        self._draw_cut_arrows(painter)
         # Tool-owned overlay (the Flip planes; the future Axes gizmo): a tool
         # exposing ``draw_overlay(viewport, painter)`` paints after the
         # document annotations, before the edit-group frame.
@@ -1229,6 +1230,43 @@ class OverlayMixin:
         for x, y in cached[1]:
             painter.drawEllipse(QPointF(x, y), 7.0, 7.0)
         painter.setBrush(Qt.NoBrush)
+
+    def _draw_cut_arrows(self, painter: QPainter) -> None:
+        """Over each selected window or door marked «Cut Opening»: an arrow
+        from the middle of its opening into the wall — the way the hole is
+        cut — so the side it cuts from can be told, and flipped."""
+        from core.openings import ARROW_LENGTH, direction, wants_opening
+        from core.group import Group
+        for g in list(self.scene.selection):
+            if not isinstance(g, Group) or not wants_opening(g):
+                continue
+            hit = direction(g)
+            if hit is None:
+                continue
+            c, n = hit
+            a = self._world_to_pixel(c)
+            b = self._world_to_pixel(c + n * ARROW_LENGTH)
+            if a is None or b is None:
+                continue
+            dx, dy = b[0] - a[0], b[1] - a[1]
+            length = math.hypot(dx, dy)
+            color = QColor(232, 116, 42)
+            painter.save()
+            painter.setPen(QPen(color, 2.4, Qt.SolidLine, Qt.RoundCap,
+                                Qt.RoundJoin))
+            painter.setBrush(color)
+            painter.drawEllipse(QPointF(*a), 3.5, 3.5)
+            if length >= 6:
+                painter.drawLine(QPointF(*a), QPointF(*b))
+                ux, uy = dx / length, dy / length
+                head = 11.0
+                painter.drawPolygon(QPolygonF([
+                    QPointF(*b),
+                    QPointF(b[0] - head * (ux * 0.87 - uy * 0.5),
+                            b[1] - head * (uy * 0.87 + ux * 0.5)),
+                    QPointF(b[0] - head * (ux * 0.87 + uy * 0.5),
+                            b[1] - head * (uy * 0.87 - ux * 0.5))]))
+            painter.restore()
 
     def _draw_extension_overlays(self, painter: QPainter) -> None:
         """Extensions' overlays (``ExtensionApp.add_overlay``): whatever the
