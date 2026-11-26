@@ -4352,5 +4352,10 @@
  "Push/Pull bases kept with Ctrl stay sound and cracked results are refused (#1155).": "Alas yang dipertahankan dengan Ctrl pada Dorong/Tarik tetap utuh dan hasil yang retak ditolak (#1155).",
  "Camera roll with a 3D mouse (#1406).": "Putaran kamera (roll) dengan mouse 3D (#1406).",
  "A preference to swap orbit and pan on the middle button (#467).": "Preferensi untuk menukar orbit dan geser pada tombol tengah (#467).",
- "IFC export writes the project north, the site location and the owning application (#1498).": "Ekspor IFC menulis utara proyek, lokasi tapak, dan aplikasi pemilik (#1498)."
+ "IFC export writes the project north, the site location and the owning application (#1498).": "Ekspor IFC menulis utara proyek, lokasi tapak, dan aplikasi pemilik (#1498).",
+ "The cases of a line across a face that closed its openings.": "Kasus garis melintasi sebuah muka yang menutup bukaannya.",
+ "The report of styled edges seen through faces.": "Laporan tepi bergaya yang terlihat menembus muka.",
+ "The report of huge groups freezing the click.": "Laporan grup raksasa yang membekukan klik.",
+ "The report of the layers panel closing the program.": "Laporan panel lapisan yang menutup program.",
+ "Confirming Push/Pull deleting lines on Windows and Linux.": "Konfirmasi bahwa Dorong/Tarik menghapus garis di Windows dan Linux."
 }

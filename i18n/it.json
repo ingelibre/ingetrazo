@@ -4349,5 +4349,10 @@
  "Push/Pull bases kept with Ctrl stay sound and cracked results are refused (#1155).": "Le basi mantenute con Ctrl in Spingi/Tira restano integre e i risultati incrinati vengono rifiutati (#1155).",
  "Camera roll with a 3D mouse (#1406).": "Rollio della fotocamera con un mouse 3D (#1406).",
  "A preference to swap orbit and pan on the middle button (#467).": "Una preferenza per scambiare orbita e panoramica sul tasto centrale (#467).",
- "IFC export writes the project north, the site location and the owning application (#1498).": "L'esportazione IFC scrive il nord di progetto, la posizione del sito e l'applicazione proprietaria (#1498)."
+ "IFC export writes the project north, the site location and the owning application (#1498).": "L'esportazione IFC scrive il nord di progetto, la posizione del sito e l'applicazione proprietaria (#1498).",
+ "The cases of a line across a face that closed its openings.": "I casi di una linea su una faccia che ne chiudeva le aperture.",
+ "The report of styled edges seen through faces.": "La segnalazione di spigoli con stile visibili attraverso le facce.",
+ "The report of huge groups freezing the click.": "La segnalazione di gruppi enormi che bloccavano il clic.",
+ "The report of the layers panel closing the program.": "La segnalazione del pannello dei livelli che chiudeva il programma.",
+ "Confirming Push/Pull deleting lines on Windows and Linux.": "La conferma che Spingi/Tira cancellava linee su Windows e Linux."
 }

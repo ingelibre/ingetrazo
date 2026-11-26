@@ -4352,5 +4352,10 @@
  "Push/Pull bases kept with Ctrl stay sound and cracked results are refused (#1155).": "Основите, запазени с Ctrl при избутване, остават здрави, а напуканите резултати се отхвърлят (#1155).",
  "Camera roll with a 3D mouse (#1406).": "Накланяне на камерата с 3D мишка (#1406).",
  "A preference to swap orbit and pan on the middle button (#467).": "Настройка за размяна на орбита и панорамиране на средния бутон (#467).",
- "IFC export writes the project north, the site location and the owning application (#1498).": "Експортът в IFC записва севера на проекта, местоположението на терена и приложението собственик (#1498)."
+ "IFC export writes the project north, the site location and the owning application (#1498).": "Експортът в IFC записва севера на проекта, местоположението на терена и приложението собственик (#1498).",
+ "The cases of a line across a face that closed its openings.": "Случаите на линия върху лице, която затваряше отворите му.",
+ "The report of styled edges seen through faces.": "Сигналът за стилизирани ръбове, видими през лицата.",
+ "The report of huge groups freezing the click.": "Сигналът за огромни групи, които замразяваха щракването.",
+ "The report of the layers panel closing the program.": "Сигналът за панела на слоевете, който затваряше програмата.",
+ "Confirming Push/Pull deleting lines on Windows and Linux.": "Потвърждението, че Бутни/Дърпай изтриваше линии в Windows и Linux."
 }

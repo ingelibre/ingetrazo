@@ -332,6 +332,21 @@ CONTRIBUTORS = [
      "IFC export writes the project north, the site location and "
      "the owning application (#1498).",
      "https://github.com/Urkoh00"),
+    ("Steven South",
+     "The cases of a line across a face that closed its openings.",
+     "https://github.com/Starrigger"),
+    ("Gustavo Grassi",
+     "The report of styled edges seen through faces.",
+     "https://github.com/gusgrassi"),
+    ("Magpius",
+     "The report of huge groups freezing the click.",
+     "https://github.com/Magpius"),
+    ("ahladik",
+     "The report of the layers panel closing the program.",
+     "https://github.com/ahladik"),
+    ("jorce-arg",
+     "Confirming Push/Pull deleting lines on Windows and Linux.",
+     "https://github.com/jorce-arg"),
 ]
 
 #: Roll speed: pixels per tick, and the tick.

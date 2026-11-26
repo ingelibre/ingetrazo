@@ -6,7 +6,7 @@ follow [SemVer](https://semver.org).
 
 ## [Unreleased]
 
-## [0.6.3.2] — 2026-11-23
+## [0.6.3.3] — 2026-11-26
 
 **La release más grande hasta ahora, dedicada a los grupos y componentes: editar dentro de ellos sin tirones, copias de componentes que siguen tus cambios, componentes anidados al importar y una biblioteca propia. Mover, Rotar y Escalar ya no tocan el modelo mientras arrastras, así que arrastrar es fluido también en modelos grandes. Las láminas ganan pestañas reordenables, un panel de láminas, leyenda editable e índice, y llegan la Caja de sección, Terreno, Cámara desde foto y Cortar hueco. Más de 100 PRs de la comunidad. El motor Rust ya hace buena parte del trabajo de cada fotograma, y seguiremos afinando el rendimiento con cada release.**
 
@@ -132,6 +132,14 @@ follow [SemVer](https://semver.org).
 
 ### Corregido
 
+- **Dibujar una línea sobre una cara ya no tapa sus huecos** (#1407, #1613, 0.6.3.3): una línea que va de lado a lado de una cara con huecos, aunque no los toque, volvía a cerrarlos con caras nuevas. Ahora quedan abiertos, también en grupos, sobre la tapa de una caja y con huecos circulares o poligonales — gracias a @Starrigger por los casos.
+- **Empujar/Tirar ya no borra las líneas dibujadas en las caras que estira** (#1213, 0.6.3.3): al empujar el extremo de una caja, las líneas de su tapa y de sus lados desaparecían y las caras se fundían en una. Ahora se conservan y las que llegan a la cara empujada se alargan con ella — gracias a @tomlai-git y @jorce-arg.
+- **Guardar ya no falla cuando un grupo tiene una etiqueta BIM que no es un diccionario** (#1527, 0.6.3.3): pasaba con etiquetas escritas por scripts (`Group.ifc = "IfcWall"`); ahora se guarda, se copia y se exporta a IFC — gracias a @BastelBaus.
+- **Abrir un `.skp` con miles de imágenes recortadas ya no se queda colgado** (0.6.3.3).
+- **Un grupo enorme ya no congela el clic ni la copia con Ctrl** (#1583, 0.6.3.3): Información de la entidad calcula el volumen sin bloquear la interfaz y el fantasma de la copia sigue fluido — gracias a @Magpius.
+- **Un plano de sección apagado deja de recortar el modelo** (#1574, 0.6.3.3) — gracias a @BastelBaus por el arreglo (#1575).
+- **Las aristas con estilo ya no se ven a través de las caras de delante, y en el render una cara pintada por los dos lados muestra el lado que mira a la cámara** (#1569, 0.6.3.3) — gracias a @gusgrassi.
+- **Capas: la lista espera a que termines de escribir un nombre antes de rehacerse** (#1528, 0.6.3.3): refuerza el panel frente al cierre reportado al ocultar y mostrar capas de una carpeta, que no hemos podido reproducir — gracias a @ahladik.
 - **Cortar hueco conserva el muro tal como estaba** (0.6.3.2): al mover o borrar una ventana o una puerta, las zonas del muro (zócalos, pinturas, texturas, etiquetas y capas) se quedan en su sitio. Antes podían perderse sin aviso. Además, una ventana que cruza dos zonas ahora abre su hueco.
 - **La vista 3D ya no deja de dibujarse con tipos de línea o estilos de arista** (#1541, 0.6.3.1): los paquetes de Windows, macOS, AppImage, tar.gz y snap de la 0.6.3 salieron sin un shader (`edges.geom`). Ahora cada paquete comprueba que los lleva todos — gracias a @arthurarquitetoamb por el reporte y a @bolotov por encontrar la causa.
 - **Abrir un `.igz` grande ya no puede perder las caras de una malla** (y guardarlas vacías) con el motor Rust (#1533) — gracias a @diegog321 por la causa y el arreglo.

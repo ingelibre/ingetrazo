@@ -4349,5 +4349,10 @@
  "Push/Pull bases kept with Ctrl stay sound and cracked results are refused (#1155).": "밀기/당기기에서 Ctrl로 남긴 밑면이 온전하게 유지되고 균열이 생긴 결과는 거부됩니다 (#1155).",
  "Camera roll with a 3D mouse (#1406).": "3D 마우스로 카메라 롤 (#1406).",
  "A preference to swap orbit and pan on the middle button (#467).": "가운데 버튼의 궤도 회전과 이동을 바꾸는 설정 (#467).",
- "IFC export writes the project north, the site location and the owning application (#1498).": "IFC 내보내기가 프로젝트 북쪽, 대지 위치, 소유 응용 프로그램을 기록합니다 (#1498)."
+ "IFC export writes the project north, the site location and the owning application (#1498).": "IFC 내보내기가 프로젝트 북쪽, 대지 위치, 소유 응용 프로그램을 기록합니다 (#1498).",
+ "The cases of a line across a face that closed its openings.": "면을 가로지르는 선이 개구부를 막는 사례.",
+ "The report of styled edges seen through faces.": "스타일 모서리가 면을 투과해 보이는 문제 보고.",
+ "The report of huge groups freezing the click.": "거대한 그룹이 클릭을 멈추게 하는 문제 보고.",
+ "The report of the layers panel closing the program.": "레이어 패널이 프로그램을 종료시키는 문제 보고.",
+ "Confirming Push/Pull deleting lines on Windows and Linux.": "밀기/당기기가 Windows와 Linux에서 선을 지운다는 확인."
 }

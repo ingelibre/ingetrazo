@@ -4357,5 +4357,10 @@
  "Push/Pull bases kept with Ctrl stay sound and cracked results are refused (#1155).": "Основи, збережені з Ctrl під час видавлювання, лишаються цілими, а потріскані результати відхиляються (#1155).",
  "Camera roll with a 3D mouse (#1406).": "Крен камери за допомогою 3D-миші (#1406).",
  "A preference to swap orbit and pan on the middle button (#467).": "Налаштування, що міняє місцями обертання й панорамування на середній кнопці (#467).",
- "IFC export writes the project north, the site location and the owning application (#1498).": "Експорт IFC записує північ проєкту, розташування ділянки та застосунок-власник (#1498)."
+ "IFC export writes the project north, the site location and the owning application (#1498).": "Експорт IFC записує північ проєкту, розташування ділянки та застосунок-власник (#1498).",
+ "The cases of a line across a face that closed its openings.": "Випадки лінії на грані, що закривала її отвори.",
+ "The report of styled edges seen through faces.": "Повідомлення про стилізовані ребра, видимі крізь грані.",
+ "The report of huge groups freezing the click.": "Повідомлення про величезні групи, що заморожували клацання.",
+ "The report of the layers panel closing the program.": "Повідомлення про панель шарів, що закривала програму.",
+ "Confirming Push/Pull deleting lines on Windows and Linux.": "Підтвердження, що «Тягни/Штовхай» видаляв лінії у Windows і Linux."
 }

@@ -75,6 +75,17 @@
   <url type="vcs-browser">https://github.com/ingelibre/ingetrazo</url>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="0.6.3.3" date="2026-11-26">
+      <description>
+        <p>Fixes: a line drawn across a face no longer closes its openings;
+        Push/Pull keeps the lines drawn on the faces it stretches; saving no
+        longer fails on a BIM tag written by a script; a .skp with thousands of
+        cut-out images opens; a huge group no longer freezes a click or a
+        Ctrl-copy; a section plane switched off stops clipping; styled edges no
+        longer show through faces; and the layers panel waits for a name being
+        typed.</p>
+      </description>
+    </release>
     <release version="0.6.3.2" date="2026-11-23">
       <description>
         <p>Groups and components: editing inside them without stalls, component

@@ -356,6 +356,7 @@ jonson7777  (github.com/jonson7777)
 tomlai-git  (github.com/tomlai-git)
     Reports on installation, the extension manager, keyboard shortcuts and
     faceted curved surfaces.
+    For 0.6.3.3: the report of Push/Pull deleting drawn lines (#1213).
 
 arthurarquitetoamb  (github.com/arthurarquitetoamb)
     Feature requests from modelling practice: 3D text, copies along
@@ -414,6 +415,8 @@ BastelBaus  (github.com/BastelBaus)
     For 0.6.2: sheet dimensions with the label below or flipped, a text gap
     and snaps to lines (#1249), dimensions on edges (#933) and all sheets to
     PDF from the command line (#1055).
+    For 0.6.3.3: a section plane switched off stops clipping the model
+    (#1575), and the report of BIM tags that stopped the save (#1527).
 
 David  (github.com/Booshdag-io)
     The choice of tool cursor in Preferences: the tool's icon, the classic
@@ -541,3 +544,20 @@ sneffetsd  (github.com/sneffetsd)
 Urkoh00  (github.com/Urkoh00)
     For 0.6.3: IFC export writes the project north, the site location and
     the owning application (#1498).
+
+Steven South  (github.com/Starrigger)
+    For 0.6.3.3: the cases of a line drawn across a face that closed its
+    openings (#1407, #1613).
+
+Gustavo Grassi  (github.com/gusgrassi)
+    For 0.6.3.3: the report of styled edges seen through faces (#1569).
+
+Magpius  (github.com/Magpius)
+    For 0.6.3.3: the report of huge groups freezing the click (#1583).
+
+ahladik  (github.com/ahladik)
+    For 0.6.3.3: the report of the layers panel closing the program (#1528).
+
+jorce-arg  (github.com/jorce-arg)
+    For 0.6.3.3: confirming Push/Pull deleting lines on Windows and Linux
+    (#1213).

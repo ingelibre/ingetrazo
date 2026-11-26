@@ -4352,5 +4352,10 @@
  "Push/Pull bases kept with Ctrl stay sound and cracked results are refused (#1155).": "推/拉中以 Ctrl 保留的底面保持完好，出現裂縫的結果會被拒絕 (#1155)。",
  "Camera roll with a 3D mouse (#1406).": "以 3D 滑鼠橫滾相機 (#1406)。",
  "A preference to swap orbit and pan on the middle button (#467).": "在中鍵上交換環繞與平移的偏好設定 (#467)。",
- "IFC export writes the project north, the site location and the owning application (#1498).": "IFC 匯出寫入專案北向、基地位置與所屬應用程式 (#1498)。"
+ "IFC export writes the project north, the site location and the owning application (#1498).": "IFC 匯出寫入專案北向、基地位置與所屬應用程式 (#1498)。",
+ "The cases of a line across a face that closed its openings.": "一條橫跨面的線會封閉其開口的案例。",
+ "The report of styled edges seen through faces.": "帶樣式的邊線透過面可見的回報。",
+ "The report of huge groups freezing the click.": "巨大群組導致點擊卡住的回報。",
+ "The report of the layers panel closing the program.": "圖層面板導致程式關閉的回報。",
+ "Confirming Push/Pull deleting lines on Windows and Linux.": "確認推/拉在 Windows 和 Linux 上會刪除線條。"
 }
