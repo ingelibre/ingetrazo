@@ -709,8 +709,20 @@ def _child_ended(wait: float = 0.0) -> int | None:
         return None
 
 
+def _utf8_stdio() -> None:
+    """MCP's stdio transport is UTF-8 by definition, but Python reads and
+    writes pipes in the locale's encoding — cp1252 on Windows: a «Küche»
+    in run_python code arrived as «KÃ¼che» and matched nothing."""
+    for stream in (sys.stdin, sys.stdout):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, ValueError):   # not a text file (tests)
+            pass
+
+
 def main() -> None:
     global PORT
+    _utf8_stdio()
     argv = sys.argv[1:]
     if "--headless" in argv:
         PORT = _start_child(argv)
