@@ -1240,6 +1240,8 @@
  "Saved views": "저장된 뷰",
  "Saved with missing textures": "누락된 텍스처가 있는 상태로 저장됨",
  "Scale": "축척",
+ "Scale 0 flattens loose geometry only, not groups": "배율 0은 개별 형상만 평평하게 하며 그룹에는 적용되지 않습니다",
+ "Scale 0 on every axis would leave a point": "모든 축의 배율 0은 점 하나만 남깁니다",
  "Scale Uniformly: off": "균일 축척: 끔",
  "Scale Uniformly: on": "균일 축척: 켬",
  "Scale bar": "축척 막대",

@@ -3835,6 +3835,32 @@ def invert_scale_factor(factor):
     return inv(float(factor))
 
 
+def _flattens(factor) -> bool:
+    """A typed Scale 0 on some axis (#688)."""
+    fs = factor if isinstance(factor, (tuple, list)) else (factor,)
+    return any(float(f) == 0.0 for f in fs)
+
+
+def _clean_flattened(mesh, landed: set) -> None:
+    """What a Scale 0 leaves on one plane, made clean (#688): vertices that
+    landed on each other merge (zero-length edges go, faces left under three
+    corners go), then the faces with no area — walls squashed to a line —
+    and the doubles of a face that landed on another (a box's top on its
+    bottom) are removed — only among the faces touching a flattened
+    vertex (``landed``: their position keys). Runs under the command's
+    snapshot."""
+    mesh.weld_coincident()
+    seen: set = set()
+    for f in list(mesh.faces):
+        if not any(_key(v.position) in landed for v in f.loop):
+            continue
+        ring = frozenset(id(v) for v in f.loop)
+        if f.area() < 1e-10 or ring in seen:
+            mesh.remove_face(f)
+            continue
+        seen.add(ring)
+
+
 class ScaleVerticesCommand(Command):
     """Uniformly scale every shared vertex at a set of positions about
     ``center`` by ``factor``, then autofold (scaling a subset of connected
@@ -3858,6 +3884,9 @@ class ScaleVerticesCommand(Command):
         self._before = scene.mesh.capture_state()
         m = scale_matrix(self.center, self.factor, self.axes)
         rotate_points(scene, {_key(p) for p in self.src}, m)  # generic mapper
+        if _flattens(self.factor):
+            _clean_flattened(scene.mesh,
+                             {_key(m.map(p)) for p in self.src})
         fold_nonplanar_faces(scene.mesh)
         self._after = scene.mesh.capture_state()
 

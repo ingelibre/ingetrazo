@@ -1218,6 +1218,8 @@
  "Saved views": "Viste salvate",
  "Saved with missing textures": "Salvato con texture mancanti",
  "Scale": "Scala",
+ "Scale 0 flattens loose geometry only, not groups": "Scala 0 appiattisce solo la geometria libera, non i gruppi",
+ "Scale 0 on every axis would leave a point": "Scala 0 su tutti gli assi lascerebbe un punto",
  "Scale Uniformly: off": "Scala uniforme: disattivato",
  "Scale Uniformly: on": "Scala uniforme: attivato",
  "Scale bar": "Scala grafica",

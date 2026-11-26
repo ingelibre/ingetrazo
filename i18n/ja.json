@@ -1231,6 +1231,8 @@
  "Saved views": "保存したビュー",
  "Saved with missing textures": "一部のテクスチャがない状態で保存しました",
  "Scale": "拡大縮小",
+ "Scale 0 flattens loose geometry only, not groups": "スケール 0 で平らにできるのは単独のジオメトリだけで、グループは対象外です",
+ "Scale 0 on every axis would leave a point": "すべての軸でスケール 0 にすると点だけが残ります",
  "Scale Uniformly: off": "均等に拡大縮小: オフ",
  "Scale Uniformly: on": "均等に拡大縮小: オン",
  "Scale bar": "スケールバー",

@@ -1398,6 +1398,8 @@
  "Saved with missing textures": "Desat amb textures que falten",
  "Saved — {n} texture(s) packed into the document.": "Desat — {n} textura(es) empaquetada(es) al document.",
  "Scale": "Escala",
+ "Scale 0 flattens loose geometry only, not groups": "Escala 0 només aplana geometria solta, no grups",
+ "Scale 0 on every axis would leave a point": "Escala 0 en tots els eixos deixaria un punt",
  "Scale Uniformly: off": "Escala uniforme: desactivada",
  "Scale Uniformly: on": "Escala uniforme: activada",
  "Scale bar": "Escala gràfica",

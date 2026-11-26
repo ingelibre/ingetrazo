@@ -1241,6 +1241,8 @@
  "Saved views": "Lượt xem đã lưu",
  "Saved with missing textures": "Đã lưu (cảnh báo: một số tệp họa tiết bị thiếu)",
  "Scale": "Tỷ lệ",
+ "Scale 0 flattens loose geometry only, not groups": "Tỉ lệ 0 chỉ làm phẳng hình học rời, không áp dụng cho nhóm",
+ "Scale 0 on every axis would leave a point": "Tỉ lệ 0 trên mọi trục sẽ chỉ còn một điểm",
  "Scale Uniformly: off": "Chia tỷ lệ đồng đều: tắt",
  "Scale Uniformly: on": "Chia tỷ lệ đồng đều: bật",
  "Scale bar": "Thanh tỷ lệ",

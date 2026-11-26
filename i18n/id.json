@@ -1220,6 +1220,8 @@
  "Saved views": "Tampilan tersimpan",
  "Saved with missing textures": "Disimpan dengan tekstur yang hilang",
  "Scale": "Skala",
+ "Scale 0 flattens loose geometry only, not groups": "Skala 0 hanya meratakan geometri lepas, bukan grup",
+ "Scale 0 on every axis would leave a point": "Skala 0 pada semua sumbu akan menyisakan satu titik",
  "Scale Uniformly: off": "Skala seragam: nonaktif",
  "Scale Uniformly: on": "Skala seragam: aktif",
  "Scale bar": "Skala grafis",

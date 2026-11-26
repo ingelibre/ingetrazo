@@ -1241,6 +1241,8 @@
  "Saved views": "ມຸມມອງທີ່ບັນທຶກໄວ້",
  "Saved with missing textures": "ບັນທຶກແລ້ວແຕ່ມີບາງລວດລາຍຂາດຫາຍໄປ",
  "Scale": "ມາດຕາສ່ວນ",
+ "Scale 0 flattens loose geometry only, not groups": "ຂະໜາດ 0 ເຮັດໃຫ້ຮູບຊົງທີ່ບໍ່ຢູ່ໃນກຸ່ມແປເທົ່ານັ້ນ, ບໍ່ແມ່ນກຸ່ມ",
+ "Scale 0 on every axis would leave a point": "ຂະໜາດ 0 ໃນທຸກແກນຈະເຫຼືອພຽງຈຸດດຽວ",
  "Scale Uniformly: off": "ປັບຂະໜາດເທົ່າກັນທຸກດ້ານ: ປິດ",
  "Scale Uniformly: on": "ປັບຂະໜາດເທົ່າກັນທຸກດ້ານ: ເປີດ",
  "Scale bar": "ບັນທັດມາດຕາສ່ວນ",
