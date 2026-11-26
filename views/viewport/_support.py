@@ -85,12 +85,13 @@ def _plog(tag: str, ms: float, extra: str = "", floor: float = 50.0) -> None:
                      f"{tag} {ms:.0f}ms"
                      f"{' ' + extra if extra else ''}\n")
 
-from PySide6.QtCore import QEvent, QObject, Qt, QPointF, QRectF
+from PySide6.QtCore import QEvent, QObject, Qt, QPointF, QRectF, QSize
 
 _HAND_EVENTS = frozenset((QEvent.MouseMove, QEvent.MouseButtonPress,
                           QEvent.MouseButtonRelease, QEvent.KeyPress,
                           QEvent.Wheel))
-from PySide6.QtGui import QColor, QImage, QMatrix4x4, QPainter, QVector3D
+from PySide6.QtGui import (QColor, QImage, QImageReader, QMatrix4x4, QPainter,
+                           QVector3D)
 
 from core.group import Group, effective_material
 from core import layers as _layers
@@ -904,6 +905,34 @@ def _several_views_shown() -> bool:
 #: texture itself belongs to each context and is made from this.
 _DECODED_TEXTURES: dict = {}
 _DECODED_BUDGET = 256 * 1024 * 1024
+_LARGE_TEXTURE_DECODE_MIB = 512
+_LARGE_TEXTURE_DISPLAY_PX = 8192
+
+
+def _read_display_texture(path: str) -> QImage:
+    """Load an oversized source at a bounded display resolution.
+
+    Qt's default 256 MiB allocation limit rejects a 97 MP plan before the
+    viewport can upload it: the image entity remains but looks transparent.
+    Preserve ordinary texture decoding; only sources above that limit use a
+    scaled read and a temporary 512 MiB decode allowance. The source file
+    stays intact for saving and export.
+    """
+    reader = QImageReader(path)
+    size = reader.size()
+    limit = QImageReader.allocationLimit()
+    if (not size.isValid() or limit == 0
+            or size.width() * size.height() * 4
+            <= limit * 1024 * 1024):
+        return QImage(path)
+    factor = _LARGE_TEXTURE_DISPLAY_PX / max(size.width(), size.height())
+    reader.setScaledSize(QSize(max(1, round(size.width() * factor)),
+                               max(1, round(size.height() * factor))))
+    try:
+        QImageReader.setAllocationLimit(max(limit, _LARGE_TEXTURE_DECODE_MIB))
+        return reader.read()
+    finally:
+        QImageReader.setAllocationLimit(limit)
 
 
 def _decoded_texture(path: str):
@@ -923,7 +952,7 @@ def _decoded_texture(path: str):
     if hit is not None and hit[0] == stamp:
         _DECODED_TEXTURES[path] = _DECODED_TEXTURES.pop(path)   # newest last
         return hit[1]
-    img = QImage(path)
+    img = _read_display_texture(path)
     if img.isNull():
         _DECODED_TEXTURES.pop(path, None)
         return None
