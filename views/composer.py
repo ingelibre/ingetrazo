@@ -11865,7 +11865,10 @@ class ComposerWindow(QMainWindow):
         to the view has no trace and gets none): the plane's trace on
         paper, clipped to the model's extent plus a margin, the paper
         direction the section looks along (its arrows), the plane's
-        letter (its symbol, else A, B, C… by order) and the text size."""
+        letter (its symbol, else A, B, C… by order) and the text size.
+        A plane on a layer the frame's scene hides leaves no mark — the
+        same rule that already takes its cut away (#316) — so a sheet can
+        show the main sections and leave the detail planes out."""
         import math
         import numpy as np
         out: list = []
@@ -11899,7 +11902,10 @@ class ComposerWindow(QMainWindow):
         if bx1 <= bx0 or by1 <= by0:
             return out
         margin = 6.0
+        layer_state = getattr(scene, "_layer_state", None)
         for i, sp in enumerate(planes):
+            if layer_state is not None and not layer_state(sp)[0]:
+                continue                       # its layer is off here
             n = np.array([sp.normal.x(), sp.normal.y(), sp.normal.z()],
                          dtype=float)
             if abs(float(np.dot(n, fwd))) > 0.999:
