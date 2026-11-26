@@ -472,7 +472,8 @@ class OverlayMixin:
         group = self.scene.edit_group
         if group is None:
             return None
-        if not group.mesh.vertices and not getattr(group, "children", None):
+        if (not group.mesh.vertices and not getattr(group, "children", None)
+                and not getattr(group, "images", None)):
             return None     # nothing to wrap
         # A CONTAINER's own mesh is usually empty — its geometry is in its
         # children — so testing that mesh alone left you inside a group with

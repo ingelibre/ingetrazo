@@ -27,6 +27,47 @@ class EditShare(tuple):
     at entry (:class:`PartsAtEntry`)."""
 
     parts = None
+    images = None
+
+
+def open_instance_images(share) -> None:
+    """Put an instance's photos in world coordinates for its edit session.
+
+    Keep the definition's image objects untouched: component copies share
+    them, while only the open copy should use the temporary world placement.
+    """
+    group, _proto, xform, _state = share
+    if not group.images:
+        return
+    originals = list(group.images)
+    working = [image.transformed(xform) for image in originals]
+    share.images = (originals, [image.to_dict() for image in working])
+    group.images = working
+
+
+def instance_images_changed(share) -> bool:
+    if share.images is None:
+        return False
+    originals, before = share.images
+    return (len(share[0].images) != len(originals)
+            or [image.to_dict() for image in share[0].images] != before)
+
+
+def settle_instance_images(share, *, changed: bool) -> None:
+    """Return an edited copy's photos to the shared definition's frame."""
+    if share.images is None:
+        return
+    group, _proto, xform, _state = share
+    originals, _before = share.images
+    if changed:
+        inverse, ok = xform.inverted()
+        if not ok:
+            inverse = QMatrix4x4()
+        for original, working in zip(originals, group.images):
+            local = working.transformed(inverse)
+            original.origin, original.u, original.v = (
+                local.origin, local.u, local.v)
+    group.images = originals
 
 
 def _flags(g) -> tuple:
