@@ -598,6 +598,8 @@ class Scene:
             # part of the definition all the same.
             self._edit_share.parts = PartsAtEntry(group, None, xform,
                                                   [], [], group.axes)
+            from core.component_parts import open_instance_images
+            open_instance_images(self._edit_share)
         if not self._edit_stack:
             self._loose_mesh = anterior
         self._edit_stack.append(
@@ -676,6 +678,9 @@ class Scene:
             # Headless callers (tests, the AI bridge): share back directly.
             # The viewport takes the share first and wraps it in a command.
             group, proto, xform, state0 = share
+            from core.component_parts import (instance_images_changed,
+                                              settle_instance_images)
+            images_changed = instance_images_changed(share)
             if getattr(share, "parts", None) is not None:
                 from core.component_parts import close_definition
                 close_definition(self, share)
@@ -683,6 +688,7 @@ class Scene:
                 self.restore_sharing(group, proto, xform)
             else:
                 self.share_back(group, proto, xform, group.mesh)
+            settle_instance_images(share, changed=images_changed)
         self.mesh = nivel["mesh"]
         self.edit_group = (self._edit_stack[-1]["group"] if self._edit_stack
                            else None)

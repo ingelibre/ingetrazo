@@ -26,12 +26,6 @@ class GroupEditMixin:
         if locked_on_path(self.scene.groups, group):
             self.flash_status(tr("Unlock it first"), 3000)
             return
-        if (getattr(group, "images", None) and not group.mesh.vertices
-                and not getattr(group, "children", None)):
-            self.flash_status(tr(
-                "This group contains a photo, not editable geometry — "
-                "explode it to edit the image"), 4000)
-            return
         parent = self.scene.edit_group
         in_definition = (parent is not None
                          and group in (getattr(parent, "children", None) or ())
@@ -62,7 +56,8 @@ class GroupEditMixin:
         self._hover_entity = None
         self._edges_version = -1     # the rest may fade out or leave the VBOs
         share = getattr(self.scene, "_edit_share", None)
-        if was_instance and share is not None:
+        if (was_instance and share is not None
+                and getattr(group, "component", True)):
             copies = sum(1 for g in self.scene.groups if g.mesh is share[1]) + 1
             self.flash_status(tr(
                 "Editing component '{name}' — the change reaches its {n} "
@@ -162,20 +157,27 @@ class GroupEditMixin:
         elif share is not None:
             group, proto, xform, state0 = share
             edited = group.mesh
-            if edited.capture_state() == state0:
+            from core.component_parts import (instance_images_changed,
+                                              settle_instance_images)
+            images_changed = instance_images_changed(share)
+            if edited.capture_state() == state0 and not images_changed:
                 self.scene.restore_sharing(group, proto, xform)
+                settle_instance_images(share, changed=False)
                 self.flash_status(tr("Left the group"), 2000)
             else:
                 from core.history import ReshareInstanceCommand
                 inner = self.history.undo_stack[mark:]
                 del self.history.undo_stack[mark:]
                 self.history.execute(ReshareInstanceCommand(
-                    group, proto, xform, edited, inner))
-                copies = sum(1 for g, _m in self.scene.placements()
-                             if g.mesh is proto)
-                self.flash_status(tr(
-                    "Component '{name}' updated on its {n} copies",
-                    name=group.name, n=copies), 4000)
+                    group, proto, xform, edited, inner, share=share))
+                if getattr(group, "component", True):
+                    copies = sum(1 for g, _m in self.scene.placements()
+                                 if g.mesh is proto)
+                    self.flash_status(tr(
+                        "Component '{name}' updated on its {n} copies",
+                        name=group.name, n=copies), 4000)
+                else:
+                    self.flash_status(tr("Left the group"), 2000)
         elif self.scene.edit_group is not None:
             # Stepping up into another container: say so, or it reads as a
             # click that did nothing (everything around is still faded).

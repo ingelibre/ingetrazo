@@ -75,6 +75,12 @@ def _lowest_corner(group) -> QVector3D | None:
             lo = (QVector3D(p) if lo is None else
                   QVector3D(min(lo.x(), p.x()), min(lo.y(), p.y()),
                             min(lo.z(), p.z())))
+        for image in getattr(pg, "images", None) or ():
+            for corner in image.corners():
+                p = m.map(corner) if m is not None else corner
+                lo = (QVector3D(p) if lo is None else
+                      QVector3D(min(lo.x(), p.x()), min(lo.y(), p.y()),
+                                min(lo.z(), p.z())))
     return lo
 
 
@@ -148,6 +154,8 @@ class ResizeCommand(Command):
         self._mesh = scene.mesh
         self._groups = (list(scene.groups) if self.model else
                         list(getattr(scene.edit_group, "children", None) or ()))
+        self._images = (list(scene.image_planes) if self.model else
+                        list(getattr(scene.edit_group, "images", None) or ()))
         self._before: dict | None = None
         self._after: dict | None = None
 
@@ -181,12 +189,12 @@ class ResizeCommand(Command):
                 self._transform_group(g, _translation(m.map(here) - here))
             else:
                 self._transform_group(g, m)
-        if not self.model:
-            return
-        for im in scene.image_planes:
+        for im in self._images:
             im.origin = m.map(im.origin)
             im.u = m.mapVector(im.u)
             im.v = m.mapVector(im.v)
+        if not self.model:
+            return
         for gd in scene.guides:
             gd.point = m.map(gd.point)
             if gd.origin is not None:
@@ -225,9 +233,9 @@ class ResizeCommand(Command):
                  QMatrix4x4(g.axes) if g.axes is not None else None)
                 for g in self._groups],
         }
+        state["images"] = [(im, QVector3D(im.origin), QVector3D(im.u),
+                            QVector3D(im.v)) for im in self._images]
         if self.model:
-            state["images"] = [(im, QVector3D(im.origin), QVector3D(im.u),
-                                QVector3D(im.v)) for im in scene.image_planes]
             state["guides"] = [
                 (gd, QVector3D(gd.point),
                  QVector3D(gd.origin) if gd.origin is not None else None)

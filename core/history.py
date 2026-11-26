@@ -53,7 +53,7 @@ def _plog(tag: str, ms: float, extra: str = "", floor: float = 100.0) -> None:
                      f"{tag} {ms:.0f}ms"
                      f"{' ' + extra if extra else ''}\n")
 
-from PySide6.QtGui import QVector3D
+from PySide6.QtGui import QMatrix4x4, QVector3D
 
 from core.group import Group
 from core.materials import has_own_material
@@ -4689,18 +4689,43 @@ class ReshareInstanceCommand(Command):
     whole edit undoes as one step, back to the definition as it was, with
     the instance shared again. Redo replays it from the edited copy."""
 
-    def __init__(self, group, proto, xform, edited, inner=()) -> None:
+    def __init__(self, group, proto, xform, edited, inner=(),
+                 share=None) -> None:
         self.group = group
         self.proto = proto
         self.xform = xform
         self.edited = edited
         self.inner = list(inner)
         self._before = None
+        self._images = None
+        self._image_before = None
+        self._image_after = None
+        if share is not None and share.images is not None:
+            from core.component_parts import instance_images_changed
+            self._images = list(share.images[0])
+            if instance_images_changed(share):
+                inverse, ok = xform.inverted()
+                if not ok:
+                    inverse = QMatrix4x4()
+                self._image_before = [image.copy() for image in self._images]
+                self._image_after = [image.transformed(inverse)
+                                     for image in group.images]
+
+    def _restore_images(self, states) -> None:
+        if self._images is None:
+            return
+        if states is not None:
+            for image, state in zip(self._images, states):
+                image.origin, image.u, image.v = (
+                    QVector3D(state.origin), QVector3D(state.u),
+                    QVector3D(state.v))
+        self.group.images = self._images
 
     def do(self, scene) -> None:
         if self._before is None:
             self._before = self.proto.capture_state()
         scene.share_back(self.group, self.proto, self.xform, self.edited)
+        self._restore_images(self._image_after)
         scene.version += 1
 
     def undo(self, scene) -> None:
@@ -4708,6 +4733,7 @@ class ReshareInstanceCommand(Command):
         self.proto.note_rewound()
         self.group.mesh = self.proto
         self.group.xform = self.xform
+        self._restore_images(self._image_before)
         scene.version += 1
 
 
