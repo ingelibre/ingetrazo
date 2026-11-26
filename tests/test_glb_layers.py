@@ -22,6 +22,7 @@ if QApplication.instance() is None:
     QApplication([])
 
 from core.group import Group  # noqa: E402
+from core.i18n import tr  # noqa: E402
 from core.layers import DEFAULT_LAYER, Layer  # noqa: E402
 from core.mesh import Mesh  # noqa: E402
 from core.scene import Scene  # noqa: E402
@@ -77,7 +78,7 @@ def test_without_the_option_the_file_is_as_before_and_nested_hidden_goes(tmp_pat
     # screen, so it is not in the file either (it used to be).
     assert "cage" not in names
     assert "wall" in names and "table" in names
-    assert names.count("Loose geometry") == 1
+    assert names.count(tr("Loose geometry")) == 1
     assert "ingetrazo_layers" not in gltf["asset"]["extras"]
     assert not any("ingetrazo_layer" in n.get("extras", {})
                    for n in gltf["nodes"])
@@ -97,7 +98,7 @@ def test_with_layers_every_node_names_its_layer_and_hidden_ones_come_along(tmp_p
     assert cage in nodes["wall"]["children"]
     # The loose geometry: one node per layer, the hidden one included.
     loose = [n["extras"]["ingetrazo_layer"] for n in gltf["nodes"]
-             if n["name"] == "Loose geometry"]
+             if n["name"] == tr("Loose geometry")]
     assert sorted(loose) == ["Rebar", "Walls"]
     listed = gltf["asset"]["extras"]["ingetrazo_layers"]
     assert [(ly["name"], ly["visible"]) for ly in listed] == [
