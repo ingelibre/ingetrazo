@@ -73,7 +73,7 @@ def _mesh_name(key, tree) -> str:
 _FILE_FACING = (0.0, -1.0, 0.0)
 
 
-def _file_hierarchy(scene, only=None):
+def _file_hierarchy(scene, only=None, layers=False):
     """The model as a tree for a file: ``(materials, meshes, roots)``.
 
     ``meshes`` maps a key to the triangles of ONE mesh in its own
@@ -83,7 +83,12 @@ def _file_hierarchy(scene, only=None):
     (QMatrix4x4 Z-up, or None), "mesh" (a key or None), "children",
     "extras"}``. A face-me figure is a world-space root standing toward
     :data:`_FILE_FACING`, with ``ingetrazo_faceme`` = feet and heading,
-    as the Render with Blender export writes it."""
+    as the Render with Blender export writes it.
+
+    A group or component that does not show leaves its whole subtree out,
+    nested ones too, as on screen (``Scene.placements``). With ``layers``
+    what only its layer hides stays in, and every node names the layer it
+    shows with in ``extras.ingetrazo_layer`` (see :func:`save_glb`)."""
     import math
     from PySide6.QtGui import QVector3D
     from core.group import transformed_mesh
@@ -92,6 +97,8 @@ def _file_hierarchy(scene, only=None):
     from .meshexport import (SmoothNormals, _add_face, _facing_quad, _feet,
                              _resolve_finishes, _shown,
                              _turned_toward)
+    kept = (scene.entity_visible_but_for_layer if layers
+            else scene.entity_visible)
     smoother = SmoothNormals()
     materials: dict = {}
     meshes: dict = {}
@@ -103,8 +110,22 @@ def _file_hierarchy(scene, only=None):
         return facing
 
     loose = [f for f in scene.loose_mesh.faces
-             if scene.entity_visible(f) and (only is None or f in only)]
-    if loose:
+             if kept(f) and (only is None or f in only)]
+    if loose and layers:
+        # Loose faces each carry a layer of their own: one node per layer,
+        # so a viewer switches them with the layer.
+        by_layer: dict = {}
+        for f in loose:
+            by_layer.setdefault(scene.entity_layer(f), []).append(f)
+        for name, faces in by_layer.items():
+            prims = {}
+            for f in faces:
+                _add_face(f, materials, prims, smoother=smoother)
+            meshes[("loose", name)] = prims
+            roots.append({"name": tr("Loose geometry"), "matrix": None,
+                          "mesh": ("loose", name), "children": [],
+                          "extras": {"ingetrazo_layer": name}})
+    elif loose:
         prims: dict = {}
         for f in loose:
             _add_face(f, materials, prims, smoother=smoother)
@@ -112,7 +133,7 @@ def _file_hierarchy(scene, only=None):
         roots.append({"name": tr("Loose geometry"), "matrix": None,
                       "mesh": "loose", "children": []})
 
-    def part(g, base, above):
+    def part(g, base, above, outer=()):
         m = getattr(g, "xform", None)
         world = m if base is None else (base if m is None else base * m)
         # What the piece's unpainted faces show: its own paint, else the
@@ -132,12 +153,19 @@ def _file_hierarchy(scene, only=None):
             if prims:
                 key = ("figure", len(figures))
                 meshes[key] = prims
+                extras = {"ingetrazo_faceme": [
+                    feet.x(), feet.y(), feet.z(),
+                    math.atan2(facing.y(), facing.x())]}
+                if layers:
+                    # A figure is a root of its own, out of the groups
+                    # around it: their layers ride along.
+                    extras["ingetrazo_layer"] = scene.entity_layer(g)
+                    if outer:
+                        extras["ingetrazo_parent_layers"] = list(outer)
                 figures.append({
                     "name": getattr(g, "name", "") or tr("Figure"),
                     "matrix": None, "mesh": key, "children": [],
-                    "extras": {"ingetrazo_faceme": [
-                        feet.x(), feet.y(), feet.z(),
-                        math.atan2(facing.y(), facing.x())]}})
+                    "extras": extras})
             return None
         # Copies of a component share ONE mesh in the file — unless they
         # wear different paint, which makes them different meshes.
@@ -150,14 +178,19 @@ def _file_hierarchy(scene, only=None):
         node = {"name": getattr(g, "name", "") or tr("Group"),
                 "matrix": m, "mesh": key if meshes[key] else None,
                 "children": []}
+        if layers:
+            node["extras"] = {"ingetrazo_layer": scene.entity_layer(g)}
+            outer = outer + (scene.entity_layer(g),)
         for child in getattr(g, "children", None) or ():
-            sub = part(child, world, paint)
+            if not kept(child):
+                continue
+            sub = part(child, world, paint, outer)
             if sub is not None:
                 node["children"].append(sub)
         return node
 
     for g in getattr(scene, "groups", []):
-        if not scene.entity_visible(g):
+        if not kept(g):
             continue
         if only is not None and g not in only:
             continue
@@ -169,7 +202,8 @@ def _file_hierarchy(scene, only=None):
     return materials, meshes, roots
 
 
-def save_glb(scene, path, face_me=None, only=None) -> None:
+def save_glb(scene, path, face_me=None, only=None,
+             layers: bool = False) -> None:
     """Write the scene as a binary glTF (``.glb``) to ``path``.
 
     ``face_me`` turns the face-me figures toward a camera and brings them
@@ -183,7 +217,19 @@ def save_glb(scene, path, face_me=None, only=None) -> None:
     figure stands facing the Front view as a node with its feet and
     heading in extras (#353: they were left out, or came out mirrored
     from inside a group). ``only`` (a set of selected entities) writes
-    just those: loose faces and top-level groups."""
+    just those: loose faces and top-level groups.
+
+    ``layers`` makes a file a web viewer can switch the model's layers in
+    (opt-in; files for other programs stay as they were): what only its
+    layer hides is written too, every node carries the layer it shows with
+    in ``extras.ingetrazo_layer`` (the loose geometry is one node per
+    layer), and ``asset.extras.ingetrazo_layers`` lists the document's
+    layers in order as ``{"name", "visible", "color"}``. A node shows when
+    its layer is on and its parents show; a face-me figure, a root of its
+    own, also lists its containers' layers in
+    ``extras.ingetrazo_parent_layers``. Faces inside a group show with
+    the group, as on screen. Only for a file: with ``face_me`` it is
+    ignored."""
     # With a camera the face-me figures travel as nodes of their own, each
     # with its feet and heading in extras: a renderer that moves the camera
     # (Render ▸ sync with the view) turns them instead of re-exporting.
@@ -193,7 +239,7 @@ def save_glb(scene, path, face_me=None, only=None) -> None:
         from formats.meshexport import collect_geometry_split
         materials_in, prims, figures = collect_geometry_split(scene, face_me)
     else:
-        materials_in, mesh_prims, tree = _file_hierarchy(scene, only)
+        materials_in, mesh_prims, tree = _file_hierarchy(scene, only, layers)
         prims = {}
 
     buf = bytearray()
@@ -384,6 +430,13 @@ def save_glb(scene, path, face_me=None, only=None) -> None:
     if geo is not None:
         extras["ingetrazo_geolocation"] = {"lat": geo[0], "lon": geo[1],
                                            "alt": geo[2]}
+
+    if layers and tree is not None:
+        from core.layers import layer_color
+        extras["ingetrazo_layers"] = [
+            {"name": ly.name, "visible": bool(ly.visible),
+             "color": [float(c) for c in layer_color(ly)]}
+            for ly in getattr(scene, "layers", ())]
 
     gltf: dict = {
         "asset": {"version": "2.0", "generator": "IngeTrazo", "extras": extras},

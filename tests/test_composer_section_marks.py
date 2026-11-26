@@ -124,3 +124,31 @@ def test_toggling_the_marks_redoes_only_the_overlay():
     assert frame.section_marks is True
     assert composer.hlr_cache.get(id(frame)) is lines     # drawing kept
     assert len(_marks(composer.annot_cache[id(frame)])) == 1
+
+
+def test_a_plane_on_a_hidden_layer_leaves_no_mark():
+    # Two cross sections; the detail one sits on a layer the sheet's
+    # scene hides: only the main section is marked, letters unchanged.
+    from core.layers import Layer
+    main = SectionPlane(V(4, 1.5, 1), V(0, -1, 0), symbol="A")
+    detail = SectionPlane(V(2, 0, 1), V(1, 0, 0), symbol="K1")
+    detail.layer = "Details"
+    composer, frame, host = _composer([main, detail])
+    scene = host.viewport.scene
+    scene.layers.append(Layer("Details"))
+    frame.view_key, frame.section_marks = "std:top", True
+    labels = [m[7] for m in _marks(composer.compute_annotations(frame))]
+    assert sorted(labels) == ["A", "K1"]
+    scene.layer("Details").visible = False
+    composer.annot_cache.clear()
+    labels = [m[7] for m in _marks(composer.compute_annotations(frame))]
+    assert labels == ["A"]
+
+
+def test_the_plane_hidden_flag_alone_keeps_the_mark():
+    # ``hidden`` only hides the plane's frame in the viewport; the mark on
+    # the sheet stays (a plan marks its sections with every plane hidden).
+    sp = SectionPlane(V(4, 1.5, 1), V(0, -1, 0), hidden=True)
+    composer, frame, _host = _composer([sp])
+    frame.view_key, frame.section_marks = "std:top", True
+    assert len(_marks(composer.compute_annotations(frame))) == 1
