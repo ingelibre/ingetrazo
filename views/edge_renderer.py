@@ -20,6 +20,60 @@ GL_LEQUAL, GL_GREATER = 0x0203, 0x0204
 GL_DEPTH_BUFFER_BIT, GL_CULL_FACE = 0x0100, 0x0B44
 
 
+def visible_depth_range(segments, mvp, eye, forward):
+    """(near, far) axial depths of the edge segments that reach the viewport.
+
+    Each segment is clipped against the view frustum first (Liang-Barsky in
+    clip space, the same clip the geometry shader applies), and only the
+    drawn part counts. A segment wholly outside the viewport — behind the
+    camera, or past a side of the frame — contributes nothing, so it can no
+    longer stretch the interval and thin the strokes that are visible
+    (#1656). A long segment crossing the frame still counts, at the depths
+    of its visible part. Returns ``None`` when no segment reaches the
+    viewport; the caller then falls back to the scene interval.
+
+    ``segments`` is ``(S, 2, 3)`` world-space endpoints, ``mvp`` the (4, 4)
+    row-major world-to-clip matrix, ``eye``/``forward`` the camera.
+    """
+    segments = np.asarray(segments, dtype=np.float64)
+    if segments.size == 0:
+        return None
+    flat = segments.reshape((-1, 2, 3))
+    depths = ((flat - np.asarray(eye, dtype=np.float64))
+              @ np.asarray(forward, dtype=np.float64))
+    homogeneous = np.concatenate(
+        [flat, np.ones(flat.shape[:2] + (1,))], axis=2)
+    clip = homogeneous @ np.asarray(mvp, dtype=np.float64).T
+    # Six frustum inequalities, each ``p + t*q >= 0`` along the segment.
+    values = np.stack([
+        clip[:, :, 0] + clip[:, :, 3],   # left:   x + w >= 0
+        clip[:, :, 3] - clip[:, :, 0],   # right:  w - x >= 0
+        clip[:, :, 1] + clip[:, :, 3],   # bottom: y + w >= 0
+        clip[:, :, 3] - clip[:, :, 1],   # top:    w - y >= 0
+        clip[:, :, 2] + clip[:, :, 3],   # near:   z + w >= 0
+        clip[:, :, 3] - clip[:, :, 2],   # far:    w - z >= 0
+    ], axis=0)
+    p = values[:, :, 0]
+    q = values[:, :, 1] - values[:, :, 0]
+    ratio = np.zeros_like(p)
+    np.divide(-p, q, out=ratio, where=q != 0)
+    visible = ~np.any((q == 0) & (p < 0), axis=0)
+    t0 = np.max(np.where(q > 0, ratio, 0.0), axis=0)
+    t1 = np.min(np.where(q < 0, ratio, 1.0), axis=0)
+    visible &= t0 <= t1
+    if not np.any(visible):
+        return None
+    span = depths[:, 1] - depths[:, 0]
+    start = depths[:, 0] + t0 * span
+    end = depths[:, 0] + t1 * span
+    visible &= np.isfinite(start) & np.isfinite(end)
+    if not np.any(visible):
+        return None
+    near = max(0.0, float(np.min(np.minimum(start[visible], end[visible]))))
+    far = max(near + 1e-4, float(np.max(np.maximum(start[visible], end[visible]))))
+    return near, far
+
+
 class EdgeRenderer:
     """Keep one geometry buffer per prototype and instance matrices per batch."""
 
@@ -40,6 +94,8 @@ class EdgeRenderer:
         self.batch_key = None
         self.marker_batches = []
         self.marker_key = None
+        self._depth_range_key = None
+        self._depth_range = None
 
     def loc(self, name):
         if name not in self.locations:
@@ -120,6 +176,8 @@ class EdgeRenderer:
             geometry["vbo"].destroy()
         self.geometry.clear()
         self.batch_key = None
+        self._depth_range_key = None
+        self._depth_range = None
 
     def forget_context(self):
         """Drop Qt wrappers after their GL context has already gone away."""
@@ -129,6 +187,8 @@ class EdgeRenderer:
         self.batches = []
         self.marker_batches = []
         self.marker_key = None
+        self._depth_range_key = None
+        self._depth_range = None
         self.geometry.clear()
         self.batch_key = None
 
@@ -267,6 +327,43 @@ class EdgeRenderer:
                         "count": len(packed), "corners": np.zeros((1, 4))}
             self.marker_batches.append(self._make_batch(geometry, [identity], float(opacity)))
 
+    def _visible_depth_range(self, mvp, eye, forward):
+        """(near, far) depths of the edge segments that reach the viewport.
+
+        Cached on the camera matrix and the batch set: a still view costs
+        nothing extra per frame, and the range is recomputed when the camera
+        or the geometry moves. The local edge stream is the same one the
+        markers use; building it here only fills their cache when depth cue
+        runs without markers.
+        """
+        key = (tuple(mvp.data()), self.batch_key)
+        if key == self._depth_range_key:
+            return self._depth_range
+        vp = self.viewport
+        matrix = np.asarray(mvp.data(), dtype=np.float64).reshape(4, 4).T
+        near = far = None
+        for batch in self.batches:
+            source = batch["source"]
+            if source["marker_data"] is None:
+                source["marker_data"] = edge_vertices(
+                    source["mesh"], vp.scene, source["paint"], source["layer"],
+                    vp._texture_avg_color)
+            local = np.asarray(source["marker_data"], dtype=np.float64)
+            if not len(local):
+                continue
+            positions = local[:, :3].reshape((-1, 2, 3))
+            for transform in batch["transforms"]:
+                world = positions @ transform[:3, :3].T + transform[:3, 3]
+                found = visible_depth_range(world, matrix, eye, forward)
+                if found is None:
+                    continue
+                near = found[0] if near is None else min(near, found[0])
+                far = found[1] if far is None else max(far, found[1])
+        result = None if near is None else (near, far)
+        self._depth_range_key = key
+        self._depth_range = result
+        return result
+
     def draw(self, mvp, width, height, style, mode, fade_color=None):
         """Draw visible edges and optional hidden edges, restoring the main program."""
         vp = self.viewport
@@ -301,9 +398,17 @@ class EdgeRenderer:
             if style.depth_cue:
                 forward = np.asarray(vp.camera.forward().toTuple())
                 eye = np.asarray(vp.camera.eye().toTuple())
-                depths = [(batch["corners"] - eye) @ forward for batch in self.batches]
-                near = max(0.0, min((d.min() for d in depths), default=0.0))
-                far = max(near + 1e-4, max((d.max() for d in depths), default=near))
+                visible = self._visible_depth_range(mvp, eye, forward)
+                if visible is None:
+                    # Nothing reaches the viewport: keep the scene interval
+                    # so the uniforms stay finite instead of collapsing.
+                    depths = [(batch["corners"] - eye) @ forward
+                              for batch in self.batches]
+                    near = max(0.0, min((d.min() for d in depths), default=0.0))
+                    far = max(near + 1e-4, max((d.max() for d in depths),
+                                                default=near))
+                else:
+                    near, far = visible
             self.number("u_depth_near", near)
             self.number("u_depth_range", far - near)
             self.number("u_extension", style.extension_length if style.extensions else 0)

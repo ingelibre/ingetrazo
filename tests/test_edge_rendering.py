@@ -7,6 +7,8 @@ windows using QT_QPA_PLATFORM=windows on a Windows development machine.
 """
 from __future__ import annotations
 
+import math
+
 import numpy as np
 import pytest
 from PySide6.QtCore import QObject
@@ -169,6 +171,69 @@ def test_depth_cue_foreground_matches_the_same_profile_width(drawing, width):
     profiles = render(_style(profiles=True, profile_width=width))
     depth = render(_style(depth_cue=True, depth_cue_width=width))
     assert np.array_equal(profiles, depth)
+
+
+def _left_stroke_width(image):
+    """Width of the leftmost ink run on the centre scanline, in pixels."""
+    row = _ink(image)[HEIGHT // 2]
+    first = int(np.flatnonzero(row)[0])
+    run = 0
+    while first + run < WIDTH and row[first + run]:
+        run += 1
+    return run
+
+
+def test_depth_cue_ignores_a_fully_offscreen_edge(drawing):
+    """#1656: an edge outside the viewport must not thin visible strokes.
+
+    Same geometry and camera as the issue's .igz files: two vertical edges
+    in front orthographic view with a 12 px depth cue, plus a third edge
+    outside the frame and behind the camera. Before the fix the foreground
+    stroke dropped from 12 px to about 4 px; the rendered image must now be
+    identical with the extra edge present.
+    """
+    vp, render, _renderer = drawing
+    vp.camera.distance = 7
+    for a, b in (((-1.8, 0, -1), (-1.8, 0, 1)), ((1.8, 3.0, -1), (1.8, 3.0, 1))):
+        vp.scene.mesh.add_edge(V(*a), V(*b))
+    vp.scene.version += 1
+    style = _style(depth_cue=True, depth_cue_width=12)
+    before = render(style)
+    vp.scene.mesh.add_edge(V(50, -27, -1), V(50, -27, 1))
+    vp.scene.version += 1
+    after = render(style)
+    assert _left_stroke_width(before) == pytest.approx(12, abs=2)
+    assert _left_stroke_width(after) == pytest.approx(12, abs=2)
+    assert np.array_equal(before, after)
+
+
+def test_visible_depth_range_clips_segments_to_the_frustum():
+    """The depth interval comes from the drawn part of each segment."""
+    from views.edge_renderer import visible_depth_range
+
+    cam = OrbitCamera()
+    cam.target = V(0, 0, 0)
+    cam.distance = 7
+    cam.yaw = math.radians(-90.0)
+    cam.pitch = 0.0
+    cam.fov_deg = 45.0
+    cam.perspective = False
+    cam.aspect = WIDTH / HEIGHT
+    mvp = np.asarray((cam.projection_matrix() * cam.view_matrix()).data(),
+                     dtype=np.float64).reshape(4, 4).T
+    eye = np.asarray(cam.eye().toTuple())
+    forward = np.asarray(cam.forward().toTuple())
+    visible = np.array([[[-1.8, 0, -1], [-1.8, 0, 1]],
+                        [[1.8, 3, -1], [1.8, 3, 1]]])
+    offscreen = np.array([[[50, -27, -1], [50, -27, 1]]])
+    assert visible_depth_range(visible, mvp, eye, forward) == (7.0, 10.0)
+    assert visible_depth_range(
+        np.concatenate([visible, offscreen]), mvp, eye, forward) == (7.0, 10.0)
+    assert visible_depth_range(offscreen, mvp, eye, forward) is None
+    # A long segment crossing the frame still counts, at its own depth.
+    crossing = np.array([[[-50, -1, 0], [50, -1, 0]]])
+    assert visible_depth_range(
+        np.concatenate([visible, crossing]), mvp, eye, forward) == (6.0, 10.0)
 
 
 def test_negative_extensions_retract_both_ends_without_reversing_short_lines(drawing):
