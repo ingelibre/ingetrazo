@@ -1260,6 +1260,7 @@ def _plain_edge_rules(scene):
     if not isinstance(scene, Scene):
         return False
     for name in ("entity_selectable", "edge_snappable", "entity_visible",
+                 "entity_visible_but_for_layer", "entity_layer",
                  "_layer_state", "_open_group_layer", "similar_hidden",
                  "outside_section_box", "entity_locked", "entity_hidden"):
         if (getattr(cls, name, None) is not getattr(Scene, name, None)
