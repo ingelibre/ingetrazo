@@ -391,12 +391,16 @@ TOOLS += [
         "description": ("Export the model by the file's extension "
                         "(absolute path): .ifc (BIM-tagged objects), .glb, "
                         ".dae, .stl (unit, default mm), .obj, .dxf (the "
-                        "view's lines). Sheets: export_pdf; pictures: "
-                        "screenshot, export_view, render_sheet."),
+                        "view's lines). layers (.glb only): every node "
+                        "names its layer and hidden layers are written "
+                        "too, for a viewer that switches them. Sheets: "
+                        "export_pdf; pictures: screenshot, export_view, "
+                        "render_sheet."),
         "inputSchema": {
             "type": "object",
             "properties": {"path": _STR, "unit": _UNIT,
-                           "selection_only": {"type": "boolean"}},
+                           "selection_only": {"type": "boolean"},
+                           "layers": {"type": "boolean"}},
             "required": ["path"],
         },
     },
