@@ -260,7 +260,7 @@ class History:
                   extra=type(cmd).__name__)
         self.last_rejected = None
         before = getattr(self.scene, "content_version", None)
-        objs_before = self._objects_before()
+        objs_before = self._objects_before_for(cmd, snapshot)
         from core import openings
         openings_before = openings.records(self.scene)
         try:
@@ -393,6 +393,30 @@ class History:
         self.undo_stack.append(cmd)
         self._rebind_dimensions()
         return True
+
+    def _objects_before_for(self, cmd, snapshot) -> set:
+        """The objects in the document before ``cmd`` runs — the «before» of
+        :func:`core.layers.tag_new_objects`.
+
+        Usually the live model: a command runs on the model as it is. A staged
+        commit (:class:`SnapshotMutation` built by ``from_states``) is the
+        exception — the model already shows its result when it is executed, so
+        read off the live model the pushed cap and walls would count as
+        already there and the #1366 tagging would find nothing new to tag
+        (#1675). Its own ``before`` snapshot is the clean model, so the
+        «before» is read off that instead: restore it, read the identities,
+        restore the staged model. Restores keep object identity, so nothing
+        is lost either way.
+        """
+        before_state = getattr(cmd, "before", None)
+        if not isinstance(cmd, SnapshotMutation) or before_state is None:
+            return self._objects_before()
+        mesh = self.scene.mesh
+        mesh.restore_state(before_state)
+        try:
+            return self._objects_before()
+        finally:
+            mesh.restore_state(snapshot)
 
     def _objects_before(self):
         """The objects in the document before a command runs. With no
