@@ -17,7 +17,10 @@ void main() {
     vec4 clip = u_mvp * hit;
     if (clip.w <= 0.0) discard;
     float depth = clip.z / clip.w * 0.5 + 0.5;
-    if (depth < 0.0 || depth > 1.0) discard;
+    if (depth < 0.0) discard;
+    // The display plane extends beyond the model's far clipping plane all
+    // the way to the horizon. Clamp those hits to far depth instead of
+    // exposing a band of background between the ground and sky.
     // Coplanar model faces and their edges take priority over the backdrop.
     gl_FragDepth = min(1.0, depth + 0.000002);
     fragColor = u_color;
