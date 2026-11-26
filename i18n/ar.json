@@ -4390,5 +4390,7 @@
  "The report of styled edges seen through faces.": "البلاغ عن حواف منسّقة تظهر عبر الأوجه.",
  "The report of huge groups freezing the click.": "البلاغ عن مجموعات ضخمة تُجمّد النقر.",
  "The report of the layers panel closing the program.": "البلاغ عن لوحة الطبقات التي كانت تُغلق البرنامج.",
- "Confirming Push/Pull deleting lines on Windows and Linux.": "تأكيد أن أداة الدفع/السحب كانت تحذف الخطوط على Windows وLinux."
+ "Confirming Push/Pull deleting lines on Windows and Linux.": "تأكيد أن أداة الدفع/السحب كانت تحذف الخطوط على Windows وLinux.",
+ "Show the other side": "أظهر الجانب الآخر",
+ "The lines fit two cameras, mirror images of each other: this one shows the other side, for a photo whose model faces the wrong way.": "الخطوط تناسب كاميرتين، كل منهما صورة معكوسة للأخرى: هذا الخيار يعرض الجانب الآخر، لصورة يظهر فيها النموذج من الجهة الخاطئة."
 }

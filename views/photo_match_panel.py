@@ -11,7 +11,8 @@ the right-click menu over the photo do the same, so neither has to be
 remembered.
 
 - Lines: where they start for the kind of photo, Reset, Swap red and green,
-  the length the blue handle stands for, the photo's own focal length.
+  the length the blue handle stands for, the photo's own focal length, and
+  showing the other side when the camera comes back mirrored.
 - Display: the model shown or hidden, the photo in front of it and how
   opaque.
 - Grid: lines on the axis planes every so many metres, to judge the fit.
@@ -85,6 +86,13 @@ class PhotoMatchPanel(QWidget):
             "instead of reading it from the lines."))
         self.exif.toggled.connect(self._on_exif)
         form.addRow("", self.exif)
+        self.flip = QCheckBox(tr("Show the other side"))
+        self.flip.setToolTip(tr(
+            "The lines fit two cameras, mirror images of each other: "
+            "this one shows the other side, for a photo whose model "
+            "faces the wrong way."))
+        self.flip.toggled.connect(self._on_flip)
+        form.addRow("", self.flip)
         root.addWidget(lines)
 
         # ---- Display ----
@@ -191,6 +199,7 @@ class PhotoMatchPanel(QWidget):
             self.exif.setEnabled(bool(pm.exif_focal_35))
             self.exif.setChecked(bool(pm.use_exif_focal
                                       and pm.exif_focal_35))
+            self.flip.setChecked(bool(pm.flip_sides))
             self.model.setChecked(bool(pm.show_model))
             self.front.setChecked(bool(pm.photo_front))
             self.front.setEnabled(bool(pm.show_model))
@@ -234,6 +243,9 @@ class PhotoMatchPanel(QWidget):
     def _on_exif(self, on: bool) -> None:
         if self._act("set_exif_focal", on) is False:
             self.refresh()
+
+    def _on_flip(self, on: bool) -> None:
+        self._act("set_flip_sides", on)
 
     def _on_model(self, on: bool) -> None:
         self._act("set_show_model", on)

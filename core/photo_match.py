@@ -137,6 +137,15 @@ class PhotoMatch:
     #: Keep the EXIF focal length instead of reading it from the lines
     #: (the lines then only turn the camera).
     use_exif_focal: bool = False
+    #: Show the other side of the photo: the lines fit two cameras, mirror
+    #: images of each other about the blue axis, and the solver can only
+    #: tell them apart where a line lies on an axis from the origin
+    #: (:func:`solve`). When the origin sits on another corner — the far
+    #: one of the wall, say — the solver's pick is the mirror, and this
+    #: turns the camera to the one that took the photo (issue #1553).
+    #: The user asked for it as the way back when the model faces the
+    #: wrong way; it is the final word, over the solver's pick.
+    flip_sides: bool = False
     #: How the photo shows (the panel): drawn IN FRONT of the model at
     #: ``photo_opacity`` — the default: the photo stays in sight however
     #: much of the model is drawn — and whether the model shows at all;
@@ -217,6 +226,8 @@ class PhotoMatch:
             out["exif_model"] = self.exif_model
         if self.use_exif_focal:
             out["use_exif_focal"] = True
+        if self.flip_sides:
+            out["flip_sides"] = True
         if not self.photo_front:
             out["photo_front"] = False
         if self.photo_opacity != 0.5:
@@ -284,6 +295,7 @@ class PhotoMatch:
                    exif_focal_35=focal if focal and focal > 0 else None,
                    exif_model=str(raw.get("exif_model", "") or ""),
                    use_exif_focal=bool(raw.get("use_exif_focal", False)),
+                   flip_sides=bool(raw.get("flip_sides", False)),
                    photo_front=bool(raw.get("photo_front", True)),
                    photo_opacity=_opacity(raw.get("photo_opacity", 0.5)),
                    show_model=bool(raw.get("show_model", True)))
@@ -573,7 +585,14 @@ def solve(pm: PhotoMatch, fixed_focal: float | None = None) -> Solution:
            -(o_cam[0] * right[2] + o_cam[1] * up[2] + o_cam[2] * back[2]))
     sol = Solution(focal=f, right=right, up=up, back=back, eye=eye,
                    vp_x=vx, vp_y=vy, flipped_y=flipped)
-    return _right_side(pm, sol)
+    sol = _right_side(pm, sol)
+    if pm.flip_sides:
+        # The other side of the same picture: the lines fit two cameras,
+        # mirror images of each other, and the solver's pick is the wrong
+        # one for this photo (issue #1553). The toggle is the final word,
+        # over the solver's pick.
+        sol = _other_side(sol)
+    return sol
 
 
 def solve_match(pm: PhotoMatch) -> Solution:

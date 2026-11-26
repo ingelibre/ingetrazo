@@ -4354,5 +4354,7 @@
  "The report of styled edges seen through faces.": "Сообщение о стилизованных рёбрах, видимых сквозь грани.",
  "The report of huge groups freezing the click.": "Сообщение об огромных группах, замораживавших щелчок.",
  "The report of the layers panel closing the program.": "Сообщение о панели слоёв, закрывавшей программу.",
- "Confirming Push/Pull deleting lines on Windows and Linux.": "Подтверждение того, что «Тяни/Толкай» удалял линии в Windows и Linux."
+ "Confirming Push/Pull deleting lines on Windows and Linux.": "Подтверждение того, что «Тяни/Толкай» удалял линии в Windows и Linux.",
+ "Show the other side": "Показать другую сторону",
+ "The lines fit two cameras, mirror images of each other: this one shows the other side, for a photo whose model faces the wrong way.": "Линии подходят двум камерам, зеркальным отражениям друг друга: этот вариант показывает другую сторону — для фото, на котором модель повёрнута не той стороной."
 }

@@ -137,6 +137,67 @@ def test_the_layout_of_issue_1553_solves_to_the_green_side():
     assert sol.eye[1] < 0.0 and sol.forward[1] > 0.0
 
 
+def test_flipping_the_sides_returns_the_other_camera():
+    """The toggle is the final word over the solver's pick: with it on,
+    the calibration hands back the mirror camera — the half turn about
+    the blue axis through the origin — and with it off, the camera the
+    solver found."""
+    cam = FakeCamera(eye=(14.0, -12.0, 6.0), target=(2.0, 2.0, 2.0),
+                     fov=50.0)
+    pm = PM.PhotoMatch(width_px=int(1000 * cam.aspect), height_px=1000)
+    pm.x_lines = [[list(cam.uv((0, 0, 0))), list(cam.uv((5, 0, 0)))],
+                  [list(cam.uv((0, 0, 5))), list(cam.uv((5, 0, 5)))]]
+    pm.y_lines = [[list(cam.uv((5, 0, 0))), list(cam.uv((5, 5, 0)))],
+                  [list(cam.uv((5, 0, 5))), list(cam.uv((5, 5, 5)))]]
+    pm.origin = list(cam.uv((0, 0, 0)))
+    pm.scale_point = list(cam.uv((0, 0, 5)))
+    pm.scale_length = 5.0
+    assert PM.solve(pm).eye == pytest.approx(cam.eye, abs=1e-5)
+    pm.flip_sides = True
+    flipped = PM.solve(pm)
+    assert flipped.eye == pytest.approx((-14.0, 12.0, 6.0), abs=1e-5)
+    assert flipped.eye[1] > 0.0 and flipped.forward[1] < 0.0
+    pm.flip_sides = False
+    assert PM.solve(pm).eye == pytest.approx(cam.eye, abs=1e-5)
+
+
+def test_the_reporters_project_flips_to_the_camera_that_took_it():
+    """Issue #1553, the saved Test_View handles: the origin sits on the
+    far corner (5, 5, 0), so the solver's pick is the mirror — the
+    engineer stands to the right of the cube — and no solver-only rule
+    can tell, the handles fitting both cameras exactly. With the toggle
+    on, the camera that took the photo comes back: the engineer stands
+    where the photo shows him, to the left of the cube."""
+    pm = PM.PhotoMatch(
+        width_px=3840, height_px=2258,
+        x_lines=[[[0.261161908436214, 0.2617283950617284],
+                  [0.5653356481481482, 0.5271604938271605]],
+                 [[0.2241383744855967, 0.3493827160493827],
+                  [0.8048996913580246, 0.9950617283950617]]],
+        y_lines=[[[0.35190586419753084, 0.7320987654320987],
+                  [0.9958249742798354, 0.07407407407407407]],
+                 [[0.3468242026748971, 0.9691358024691358],
+                  [0.6241377314814814, 0.6135802469135803]]],
+        origin=[0.624863683127572, 0.6111111111111112],
+        scale_point=[0.6399356971847905, 0.43699373425330756],
+        scale_length=5.0)
+    # The engineer billboard's centre, in solver coordinates: the origin
+    # handle is the cube corner (5, 5, 0), so the model is shifted by it.
+    engineer = (-0.65 - 5.0, -0.6 - 5.0, 0.85)
+
+    def _u(sol):
+        p = sol.project(engineer)
+        return p[0] / (2.0 * pm.aspect) + 0.5
+
+    assert PM.solve(pm).eye == pytest.approx((-11.16, 19.272, 16.941),
+                                             abs=1e-2)
+    assert _u(PM.solve(pm)) > 0.5          # engineer on the right: wrong
+    pm.flip_sides = True
+    flipped = PM.solve(pm)
+    assert flipped.eye == pytest.approx((11.16, -19.272, 16.941), abs=1e-2)
+    assert _u(flipped) < 0.5               # engineer on the left, as shot
+
+
 def test_vanishing_point_of_two_lines():
     vp = PM.vanishing_point(((0, 0), (1, 1)), ((0, 2), (1, 1.5)))
     assert vp == pytest.approx((4.0 / 3.0, 4.0 / 3.0))
@@ -256,6 +317,16 @@ def test_round_trip_through_a_dict():
     back = PM.PhotoMatch.from_dict(pm.to_dict())
     assert back.to_dict() == pm.to_dict()
     assert pm.to_dict()["texture"] == {"path": "C:/fotos/esquina.jpg"}
+
+
+def test_flipping_the_sides_survives_a_round_trip():
+    pm = PM.PhotoMatch()
+    assert not pm.flip_sides
+    assert "flip_sides" not in pm.to_dict()
+    pm.flip_sides = True
+    back = PM.PhotoMatch.from_dict(pm.to_dict())
+    assert back.flip_sides
+    assert back.to_dict() == pm.to_dict()
 
 
 def test_a_broken_entry_falls_back_to_the_defaults():

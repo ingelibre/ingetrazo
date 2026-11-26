@@ -4354,5 +4354,7 @@
  "The report of styled edges seen through faces.": "Der Bericht über gestylte Kanten, die durch Flächen sichtbar waren.",
  "The report of huge groups freezing the click.": "Der Bericht über riesige Gruppen, die den Klick einfroren.",
  "The report of the layers panel closing the program.": "Der Bericht über das Ebenen-Bedienfeld, das das Programm schloss.",
- "Confirming Push/Pull deleting lines on Windows and Linux.": "Die Bestätigung, dass Drücken/Ziehen unter Windows und Linux Linien löschte."
+ "Confirming Push/Pull deleting lines on Windows and Linux.": "Die Bestätigung, dass Drücken/Ziehen unter Windows und Linux Linien löschte.",
+ "Show the other side": "Die andere Seite zeigen",
+ "The lines fit two cameras, mirror images of each other: this one shows the other side, for a photo whose model faces the wrong way.": "Die Linien passen zu zwei Kameras, Spiegelbildern voneinander: Diese zeigt die andere Seite, für ein Foto, auf dem das Modell verkehrt herum steht."
 }
