@@ -4357,5 +4357,16 @@
  "The report of styled edges seen through faces.": "Сигналът за стилизирани ръбове, видими през лицата.",
  "The report of huge groups freezing the click.": "Сигналът за огромни групи, които замразяваха щракването.",
  "The report of the layers panel closing the program.": "Сигналът за панела на слоевете, който затваряше програмата.",
- "Confirming Push/Pull deleting lines on Windows and Linux.": "Потвърждението, че Бутни/Дърпай изтриваше линии в Windows и Linux."
+ "Confirming Push/Pull deleting lines on Windows and Linux.": "Потвърждението, че Бутни/Дърпай изтриваше линии в Windows и Linux.",
+ "Title source": "Източник на заглавието",
+ "View name": "Име на изгледа",
+ "Full path": "Пълен път",
+ "Custom text": "Собствен текст",
+ "What the title says: the view's name, its full path through the folders of the Scenes tab, or the text typed below. Any title text can also use {vista}, {ruta} and {carpeta}.": "Какво казва заглавието: името на изгледа, пълния му път през папките на раздела Сцени или текста, въведен по-долу. Всеки текст на заглавие може да използва и {vista}, {ruta} и {carpeta}.",
+ "What goes between the folders and the view's name.": "Какво стои между папките и името на изгледа.",
+ "Path separator": "Разделител на пътя",
+ "How many of the innermost folders the path keeps; all = every folder from the top.": "Колко от най-вътрешните папки запазва пътят; всички = всяка папка отгоре.",
+ "Folder levels": "Нива на папки",
+ "Strip folder numbers": "Премахни номерата на папките",
+ "Leave out the numbers that sort the folders: «01 Plans» reads «Plans».": "Пропуска номерата, които подреждат папките: «01 Планове» се чете «Планове»."
 }

@@ -4356,5 +4356,16 @@
  "The report of styled edges seen through faces.": "L'informe d'arestes amb estil que es veien a través de les cares.",
  "The report of huge groups freezing the click.": "L'informe de grups enormes que congelaven el clic.",
  "The report of the layers panel closing the program.": "L'informe del tauler de capes que tancava el programa.",
- "Confirming Push/Pull deleting lines on Windows and Linux.": "La confirmació que Empènyer/Estirar esborrava línies a Windows i Linux."
+ "Confirming Push/Pull deleting lines on Windows and Linux.": "La confirmació que Empènyer/Estirar esborrava línies a Windows i Linux.",
+ "Title source": "Origen del títol",
+ "View name": "Nom de la vista",
+ "Full path": "Camí complet",
+ "Custom text": "Text propi",
+ "What the title says: the view's name, its full path through the folders of the Scenes tab, or the text typed below. Any title text can also use {vista}, {ruta} and {carpeta}.": "Què diu el títol: el nom de la vista, el seu camí complet per les carpetes de la pestanya Escenes, o el text escrit a sota. Qualsevol text de títol pot fer servir també {vista}, {ruta} i {carpeta}.",
+ "What goes between the folders and the view's name.": "El que va entre les carpetes i el nom de la vista.",
+ "Path separator": "Separador del camí",
+ "How many of the innermost folders the path keeps; all = every folder from the top.": "Quantes de les carpetes més internes conserva el camí; totes = cada carpeta des de dalt.",
+ "Folder levels": "Nivells de carpeta",
+ "Strip folder numbers": "Treure els números de carpeta",
+ "Leave out the numbers that sort the folders: «01 Plans» reads «Plans».": "Omet els números que ordenen les carpetes: «01 Plànols» es llegeix «Plànols»."
 }

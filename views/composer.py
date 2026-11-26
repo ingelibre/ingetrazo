@@ -264,10 +264,11 @@ def frame_title_text(frame: MarcoVista) -> str:
 
 def view_title_texts(frame: MarcoVista) -> dict:
     """The strings of the frame's title, fields expanded: ``title``
-    (the typed text or the view's name), ``subtitle``, ``scale``
+    (the view's name, its folder path or the typed text, as
+    ``title_source`` says), ``subtitle``, ``scale``
     («ESC. 1:N» or ""), ``number`` and ``sheet`` (the bubble). ``{escala}``
     always reads THIS frame's scale, bound uid or not."""
-    from core.composition import expand_fields
+    from core.composition import FIELD_NAMES, expand_fields, frame_view_path
     uid = getattr(frame, "uid", "") or ""
     # A perspective frame is not drawn to any scale: «ESC. 1:N» under it
     # would be a lie on a printed sheet, so it reads «SIN ESCALA» — what
@@ -276,11 +277,30 @@ def view_title_texts(frame: MarcoVista) -> dict:
     n = f"{frame.scale_n:g}"
     scale_field = tr("no scale") if persp else format_scale(frame.scale_n)
 
+    name = frame_view_name(frame)
+    path, folder = frame_view_path(frame, name)
+    # Like {escala}, the view fields read THIS frame, bound uid or not.
+    own = {"escala": scale_field, "vista": name, "ruta": path,
+           "carpeta": folder}
+    for es in ("vista", "ruta", "carpeta"):
+        for alias in FIELD_NAMES[es]:
+            own[alias] = own[es]
+
     def ex(text) -> str:
-        text = (text or "").replace("{escala}", scale_field)
+        text = text or ""
+        if "{" in text:
+            for key, value in own.items():
+                text = text.replace("{%s}" % key, value)
         return expand_fields(text, uid) if text else ""
+    source = getattr(frame, "title_source", "") or ""
+    if source == "path":
+        title = path
+    elif source == "name":
+        title = name
+    else:                    # "custom", or "" (a document from before)
+        title = ex(getattr(frame, "title_text", "")) or name
     return {
-        "title": ex(getattr(frame, "title_text", "")) or frame_view_name(frame),
+        "title": title,
         "subtitle": ex(getattr(frame, "title_subtitle", "")),
         "scale": ("" if not getattr(frame, "title_scale", True)
                   else tr("NO SCALE") if persp
@@ -7896,6 +7916,45 @@ class ComposerWindow(QMainWindow):
         self.title_style_combo.currentIndexChanged.connect(
             self._on_frame_title)
         _row(self._title_rows, tr("Title style"), self.title_style_combo)
+        self.title_source_combo = QComboBox()
+        self.title_source_combo.addItem(tr("View name"), "name")
+        self.title_source_combo.addItem(tr("Full path"), "path")
+        self.title_source_combo.addItem(tr("Custom text"), "custom")
+        self.title_source_combo.setToolTip(local_field_names(tr(
+            "What the title says: the view's name, its full path through "
+            "the folders of the Scenes tab, or the text typed below. Any "
+            "title text can also use {vista}, {ruta} and {carpeta}.")))
+        self.title_source_combo.currentIndexChanged.connect(
+            self._on_frame_title)
+        _row(self._title_rows, tr("Title source"), self.title_source_combo)
+        # The path's own rows: shown only while the title is the path.
+        self._title_path_rows: list = []
+        self.title_sep_combo = QComboBox()
+        self.title_sep_combo.setEditable(True)
+        for sep in (" / ", " › ", " > ", " – ", " | "):
+            self.title_sep_combo.addItem(sep.strip(), sep)
+        self.title_sep_combo.setToolTip(tr(
+            "What goes between the folders and the view's name."))
+        self.title_sep_combo.currentIndexChanged.connect(self._on_frame_title)
+        self.title_sep_combo.lineEdit().textEdited.connect(
+            self._on_frame_title)
+        _row(self._title_path_rows, tr("Path separator"),
+             self.title_sep_combo)
+        self.title_levels_spin = QSpinBox()
+        self.title_levels_spin.setRange(0, 20)
+        self.title_levels_spin.setSpecialValueText(tr("all"))
+        self.title_levels_spin.setToolTip(tr(
+            "How many of the innermost folders the path keeps; all = "
+            "every folder from the top."))
+        self.title_levels_spin.valueChanged.connect(self._on_frame_title)
+        _row(self._title_path_rows, tr("Folder levels"),
+             self.title_levels_spin)
+        self.title_strip_check = QCheckBox(tr("Strip folder numbers"))
+        self.title_strip_check.setToolTip(tr(
+            "Leave out the numbers that sort the folders: «01 Plans» "
+            "reads «Plans»."))
+        self.title_strip_check.toggled.connect(self._on_frame_title)
+        _row(self._title_path_rows, None, self.title_strip_check)
         self.title_text_edit = QLineEdit()
         self.title_text_edit.setPlaceholderText(tr("automatic: the view's name"))
         self.title_text_edit.textChanged.connect(self._on_frame_title)
@@ -9892,6 +9951,7 @@ class ComposerWindow(QMainWindow):
                     getattr(f, "title_style", "layout") or "layout")
                 self.title_style_combo.setCurrentIndex(max(tidx, 0))
                 self.title_text_edit.setText(getattr(f, "title_text", "") or "")
+                self._show_title_source(f)
                 self.title_sub_edit.setText(
                     getattr(f, "title_subtitle", "") or "")
                 self.title_number_edit.setText(
@@ -12552,21 +12612,64 @@ class ComposerWindow(QMainWindow):
             for r in getattr(self, "_pen_rows", []):
                 form.setRowVisible(r, on or r in raster_rows)
 
+    @staticmethod
+    def _title_source_of(frame) -> str:
+        """The title source the panel shows: a frame from before the
+        field (``""``) reads as custom text when it has some, else as the
+        view's name — what it draws."""
+        source = getattr(frame, "title_source", "") or ""
+        if source in ("name", "path", "custom"):
+            return source
+        return "custom" if (getattr(frame, "title_text", "") or "") else "name"
+
+    def _show_title_source(self, frame) -> None:
+        """Fill the title-source and path widgets from ``frame``
+        (called with ``self._updating`` set)."""
+        self.title_source_combo.setCurrentIndex(max(
+            self.title_source_combo.findData(self._title_source_of(frame)), 0))
+        sep = getattr(frame, "title_path_sep", " / ")
+        sep = " / " if sep is None or sep == "" else sep
+        idx = self.title_sep_combo.findData(sep)
+        if idx >= 0:
+            self.title_sep_combo.setCurrentIndex(idx)
+        else:
+            self.title_sep_combo.setEditText(sep.strip() or sep)
+        self.title_levels_spin.setValue(
+            int(getattr(frame, "title_path_levels", 0) or 0))
+        self.title_strip_check.setChecked(
+            bool(getattr(frame, "title_path_strip", False)))
+
+    def _title_sep(self) -> str:
+        """The separator the combo holds: a listed one as stored (with its
+        spaces), a typed one padded with a space on each side."""
+        text = self.title_sep_combo.currentText()
+        idx = self.title_sep_combo.findText(text)
+        if idx >= 0:
+            return self.title_sep_combo.itemData(idx) or " / "
+        return f" {text.strip()} " if text.strip() else " / "
+
     def _sync_title_widgets(self, frame) -> None:
-        """Alignment and position mean nothing to the vertical bar."""
+        """Alignment and position mean nothing to the vertical bar; the
+        path rows show only while the title is the path, and the title
+        text is typed only for a custom title."""
         on = bool(getattr(frame, "show_title", False))
         bar = (getattr(frame, "title_style", "layout") or "layout") == "bar"
-        for w in (self.title_style_combo, self.title_text_edit,
+        source = self._title_source_of(frame)
+        for w in (self.title_style_combo, self.title_source_combo,
                   self.title_sub_edit, self.title_number_edit,
                   self.title_sheet_edit, self.title_scale_check,
-                  self.title_mm_spin):
+                  self.title_mm_spin, self.title_sep_combo,
+                  self.title_levels_spin, self.title_strip_check):
             w.setEnabled(on)
+        self.title_text_edit.setEnabled(on and source == "custom")
         self.title_align_combo.setEnabled(on and not bar)
         self.title_pos_combo.setEnabled(on and not bar)
         form = getattr(self, "_frame_form", None)
         if form is not None:
             for r in getattr(self, "_title_rows", []):
                 form.setRowVisible(r, on)
+            for r in getattr(self, "_title_path_rows", []):
+                form.setRowVisible(r, on and source == "path")
 
     def _on_frame_title(self, *_a) -> None:
         """The title is paint-only: no render or hidden-line pass to redo,
@@ -12576,6 +12679,10 @@ class ComposerWindow(QMainWindow):
             return
         self._panel_edit(item, {
             "title_style": self.title_style_combo.currentData() or "layout",
+            "title_source": self.title_source_combo.currentData() or "name",
+            "title_path_sep": self._title_sep(),
+            "title_path_levels": int(self.title_levels_spin.value()),
+            "title_path_strip": self.title_strip_check.isChecked(),
             "title_text": self.title_text_edit.text(),
             "title_subtitle": self.title_sub_edit.text(),
             "title_number": self.title_number_edit.text(),

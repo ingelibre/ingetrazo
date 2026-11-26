@@ -4354,5 +4354,16 @@
  "The report of styled edges seen through faces.": "La segnalazione di spigoli con stile visibili attraverso le facce.",
  "The report of huge groups freezing the click.": "La segnalazione di gruppi enormi che bloccavano il clic.",
  "The report of the layers panel closing the program.": "La segnalazione del pannello dei livelli che chiudeva il programma.",
- "Confirming Push/Pull deleting lines on Windows and Linux.": "La conferma che Spingi/Tira cancellava linee su Windows e Linux."
+ "Confirming Push/Pull deleting lines on Windows and Linux.": "La conferma che Spingi/Tira cancellava linee su Windows e Linux.",
+ "Title source": "Origine del titolo",
+ "View name": "Nome della vista",
+ "Full path": "Percorso completo",
+ "Custom text": "Testo personalizzato",
+ "What the title says: the view's name, its full path through the folders of the Scenes tab, or the text typed below. Any title text can also use {vista}, {ruta} and {carpeta}.": "Cosa dice il titolo: il nome della vista, il suo percorso completo nelle cartelle della scheda Scene, o il testo digitato sotto. Ogni testo del titolo può usare anche {vista}, {ruta} e {carpeta}.",
+ "What goes between the folders and the view's name.": "Cosa va tra le cartelle e il nome della vista.",
+ "Path separator": "Separatore del percorso",
+ "How many of the innermost folders the path keeps; all = every folder from the top.": "Quante delle cartelle più interne mantiene il percorso; tutte = ogni cartella dall'alto.",
+ "Folder levels": "Livelli di cartella",
+ "Strip folder numbers": "Togli i numeri delle cartelle",
+ "Leave out the numbers that sort the folders: «01 Plans» reads «Plans».": "Omette i numeri che ordinano le cartelle: «01 Piante» diventa «Piante»."
 }

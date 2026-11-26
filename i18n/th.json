@@ -4357,5 +4357,16 @@
  "The report of styled edges seen through faces.": "รายงานขอบที่มีสไตล์มองทะลุผ่านหน้า",
  "The report of huge groups freezing the click.": "รายงานกลุ่มขนาดใหญ่ที่ทำให้การคลิกค้าง",
  "The report of the layers panel closing the program.": "รายงานแผงเลเยอร์ที่ทำให้โปรแกรมปิด",
- "Confirming Push/Pull deleting lines on Windows and Linux.": "การยืนยันว่าดัน/ดึงลบเส้นบน Windows และ Linux"
+ "Confirming Push/Pull deleting lines on Windows and Linux.": "การยืนยันว่าดัน/ดึงลบเส้นบน Windows และ Linux",
+ "Title source": "ที่มาของชื่อเรื่อง",
+ "View name": "ชื่อมุมมอง",
+ "Full path": "เส้นทางเต็ม",
+ "Custom text": "ข้อความกำหนดเอง",
+ "What the title says: the view's name, its full path through the folders of the Scenes tab, or the text typed below. Any title text can also use {vista}, {ruta} and {carpeta}.": "สิ่งที่ชื่อเรื่องแสดง: ชื่อมุมมอง เส้นทางเต็มผ่านโฟลเดอร์ของแท็บฉาก หรือข้อความที่พิมพ์ด้านล่าง ข้อความชื่อเรื่องใดก็ใช้ {vista}, {ruta} และ {carpeta} ได้ด้วย",
+ "What goes between the folders and the view's name.": "สิ่งที่คั่นระหว่างโฟลเดอร์กับชื่อมุมมอง",
+ "Path separator": "ตัวคั่นเส้นทาง",
+ "How many of the innermost folders the path keeps; all = every folder from the top.": "จำนวนโฟลเดอร์ชั้นในสุดที่เส้นทางเก็บไว้ ทั้งหมด = ทุกโฟลเดอร์จากบนสุด",
+ "Folder levels": "ระดับโฟลเดอร์",
+ "Strip folder numbers": "ตัดหมายเลขโฟลเดอร์",
+ "Leave out the numbers that sort the folders: «01 Plans» reads «Plans».": "ละหมายเลขที่ใช้เรียงโฟลเดอร์: «01 Plans» อ่านเป็น «Plans»"
 }

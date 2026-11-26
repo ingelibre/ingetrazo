@@ -4362,5 +4362,16 @@
  "The report of styled edges seen through faces.": "Zgłoszenie stylizowanych krawędzi widocznych przez ściany.",
  "The report of huge groups freezing the click.": "Zgłoszenie ogromnych grup zamrażających kliknięcie.",
  "The report of the layers panel closing the program.": "Zgłoszenie panelu warstw, który zamykał program.",
- "Confirming Push/Pull deleting lines on Windows and Linux.": "Potwierdzenie, że Wypchnij/Wciągnij usuwało linie w Windows i Linux."
+ "Confirming Push/Pull deleting lines on Windows and Linux.": "Potwierdzenie, że Wypchnij/Wciągnij usuwało linie w Windows i Linux.",
+ "Title source": "Źródło tytułu",
+ "View name": "Nazwa widoku",
+ "Full path": "Pełna ścieżka",
+ "Custom text": "Własny tekst",
+ "What the title says: the view's name, its full path through the folders of the Scenes tab, or the text typed below. Any title text can also use {vista}, {ruta} and {carpeta}.": "Co mówi tytuł: nazwę widoku, jego pełną ścieżkę przez foldery karty Sceny lub tekst wpisany poniżej. Każdy tekst tytułu może też używać {vista}, {ruta} i {carpeta}.",
+ "What goes between the folders and the view's name.": "Co stoi między folderami a nazwą widoku.",
+ "Path separator": "Separator ścieżki",
+ "How many of the innermost folders the path keeps; all = every folder from the top.": "Ile najgłębszych folderów zachowuje ścieżka; wszystkie = każdy folder od góry.",
+ "Folder levels": "Poziomy folderów",
+ "Strip folder numbers": "Usuń numery folderów",
+ "Leave out the numbers that sort the folders: «01 Plans» reads «Plans».": "Pomija numery sortujące foldery: «01 Rzuty» czyta się «Rzuty»."
 }

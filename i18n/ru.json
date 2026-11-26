@@ -4354,5 +4354,16 @@
  "The report of styled edges seen through faces.": "Сообщение о стилизованных рёбрах, видимых сквозь грани.",
  "The report of huge groups freezing the click.": "Сообщение об огромных группах, замораживавших щелчок.",
  "The report of the layers panel closing the program.": "Сообщение о панели слоёв, закрывавшей программу.",
- "Confirming Push/Pull deleting lines on Windows and Linux.": "Подтверждение того, что «Тяни/Толкай» удалял линии в Windows и Linux."
+ "Confirming Push/Pull deleting lines on Windows and Linux.": "Подтверждение того, что «Тяни/Толкай» удалял линии в Windows и Linux.",
+ "Title source": "Источник заголовка",
+ "View name": "Имя вида",
+ "Full path": "Полный путь",
+ "Custom text": "Свой текст",
+ "What the title says: the view's name, its full path through the folders of the Scenes tab, or the text typed below. Any title text can also use {vista}, {ruta} and {carpeta}.": "Что пишет заголовок: имя вида, его полный путь по папкам вкладки «Сцены» или текст, введённый ниже. Любой текст заголовка может также использовать {vista}, {ruta} и {carpeta}.",
+ "What goes between the folders and the view's name.": "Что стоит между папками и именем вида.",
+ "Path separator": "Разделитель пути",
+ "How many of the innermost folders the path keeps; all = every folder from the top.": "Сколько самых внутренних папок оставляет путь; все = каждая папка сверху.",
+ "Folder levels": "Уровни папок",
+ "Strip folder numbers": "Убрать номера папок",
+ "Leave out the numbers that sort the folders: «01 Plans» reads «Plans».": "Опускает номера, сортирующие папки: «01 Планы» читается «Планы»."
 }

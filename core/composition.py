@@ -233,6 +233,20 @@ class MarcoVista:
     title_align: str = "left"         # left | center | right
     title_pos: str = "below"          # below | above (not for the bar)
     title_mm: float = 4.0             # text height on paper
+    #: What the title says (#1691): "name" — the view's own name;
+    #: "path" — its full path through the Scenes tab's folders
+    #: («Plans / Ground floor / Plan new»), so two scenes of the same name
+    #: in different folders read apart on the sheet; "custom" — the typed
+    #: ``title_text`` (the view's name while it is empty). "" is how every
+    #: document before this field reads: the typed text if there is one,
+    #: else the name — exactly what those sheets drew.
+    title_source: str = ""
+    #: The path's look: what goes between folders, how many of the
+    #: innermost folders it keeps (0 = all, from the top) and whether the
+    #: numbers that sort the folders («01 Plans») are left out.
+    title_path_sep: str = " / "
+    title_path_levels: int = 0
+    title_path_strip: bool = False
     #: Coordinate-grid spacing over the view, in model METRES (0 = off) —
     #: QGIS's graticule, the civil habit of gridded plans.
     grid_m: float = 0.0
@@ -1887,7 +1901,52 @@ FIELD_NAMES = {
     "nombre": ("name", "planname", "sheet_name"),   # {sheet} is the LÁMINA row
     "hoja": ("page", "blatt"),
     "total": ("total", "gesamt"),
+    # The frame's view: its name, its path through the Scenes folders and
+    # the folders alone — the pieces of a title that tells «Plan new» of
+    # the ground floor from «Plan new» of the first floor.
+    "vista": ("view", "ansicht"),
+    "ruta": ("view_path", "ansichtspfad"),
+    "carpeta": ("view_folder", "ansichtsordner"),
 }
+
+
+def frame_view_folders(frame, scene=None) -> list:
+    """The Scenes-tab folders the frame's scene sits in, from the top
+    down, as the frame's path options trim them (innermost
+    ``title_path_levels``, sorting numbers left out with
+    ``title_path_strip``). ``[]`` for a frame that shows no saved scene, a
+    scene at the top level, or when no model is at hand (``scene`` None
+    and none in the field context)."""
+    import re
+    scene = scene if scene is not None else _FIELD_CTX.get("scene")
+    key = getattr(frame, "view_key", "") or ""
+    if scene is None or not key.startswith("scene:"):
+        return []
+    view = next((v for v in getattr(scene, "saved_views", None) or ()
+                 if getattr(v, "name", None) == key[6:]), None)
+    if view is None:
+        return []
+    from core.scene_folders import folder_of, folder_parent
+    out: list = []
+    folder = folder_of(scene, view)
+    while folder and folder not in out:          # folder_parent breaks loops
+        out.insert(0, folder)
+        folder = folder_parent(scene, folder)
+    levels = int(getattr(frame, "title_path_levels", 0) or 0)
+    if levels > 0:
+        out = out[-levels:]
+    if getattr(frame, "title_path_strip", False):
+        out = [re.sub(r"^\d+[\s._\-]+", "", f) or f for f in out]
+    return out
+
+
+def frame_view_path(frame, name: str, scene=None) -> tuple:
+    """``(path, folders)`` of the frame's view: the folders and ``name``
+    joined with the frame's separator, and the folders alone."""
+    sep = getattr(frame, "title_path_sep", " / ")
+    sep = " / " if sep is None or sep == "" else sep
+    folders = frame_view_folders(frame, scene)
+    return sep.join(folders + [name]), sep.join(folders)
 
 
 def set_field_context(comp=None, scene=None, path=None, index=None,
@@ -1946,6 +2005,11 @@ def field_values(frame_uid: str = "") -> dict:
         "hoja": str(idx + 1) if idx is not None else "",
         "total": str(total) if total else "",
     }
+    view = (main.view_key[6:] if main is not None
+            and main.view_key.startswith("scene:") else "")
+    vals["vista"] = view
+    vals["ruta"], vals["carpeta"] = (frame_view_path(main, view) if view
+                                     else ("", ""))
     for es, names in FIELD_NAMES.items():
         for name in names:
             vals.setdefault(name, vals[es])
