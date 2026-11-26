@@ -35,8 +35,12 @@ def test_the_command_line():
                          "json", "--allow-shutdown"])
     assert a.open_file == Path("C.igz") and a.port == 0
     assert a.allow_save and a.allow_shutdown and a.save_format == "json"
+    assert not a.no_mcp_python
     b = _parse_headless(["--headless", "--ai-bridge"])
     assert not b.allow_save and not b.allow_shutdown
+    for flag in ("--no_mcp_python", "--no-mcp-python"):
+        assert _parse_headless(["--headless", "--ai-bridge",
+                                flag]).no_mcp_python
     assert b.save_format is None and b.port is None
     with pytest.raises(SystemExit):
         _parse_headless(["--headless"])                 # nothing to do

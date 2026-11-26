@@ -105,6 +105,97 @@ UNITS = ("IngeTrazo es un modelador 3D libre de empujar/tirar: Z arriba, "
          "unidades en METROS, ángulos en RADIANES.")
 
 
-def reference(unit: str = "llamada") -> str:
-    """Everything, in reading order — what a door hands the model."""
-    return "\n".join((UNITS, SCOPE, RECIPES, HOW_IT_RUNS.format(unit=unit)))
+# ---- English edition ---------------------------------------------------------
+# The MCP door speaks English: its tool names, schemas and errors are
+# English, and an MCP client may be any agent in any language. The in-app
+# assistant keeps the Spanish book above. Both editions teach the SAME
+# helpers with the SAME signatures — tests/test_ai_bridge.py compares the
+# code in them, so a helper taught in one and not the other fails a test.
+
+SCOPE_EN = (
+    "In scope you have: scene, mesh, selection, groups, layers, "
+    "viewport, QVector3D, Mesh, Group, Edge, Face, Layer, bim.")
+
+RECIPES_EN = """Recipe book (use these functions FIRST; they already \
+exist, do not define them):
+- BOX / CUBE: g = box((x,y,z), (dx,dy,dz), name="Cube", color=(r,g,b,1.0)) \
+— lower corner and sizes. A 6 m cube is box((0,0,0), (6,6,6)). \
+It creates the group and adds it (like revolve, extrude, prism, wall and \
+house): do NOT groups.append it.
+- WHOLE HOUSE: see house(...) below — for «a house» ALWAYS use it \
+instead of building walls and roof by hand.
+- LATHE (prefer it for every round part): g = revolve([(radius,z), ...], \
+name="Column", color=(r,g,b,1.0), segments=32, scallop=None, closed=False) \
+— profile from bottom to top; an open one is capped on its own; \
+closed=True if the profile is a closed section (e.g. the wall of a cup); \
+scallop=(depth, lobes) carves scallops/gadroons into the rim. Creates the \
+group and adds it.
+- PRISM: g = extrude([(x,y), ...], z0, z1, name="Base", color=...) — \
+plan outline extruded; creates the group and adds it. A box \
+(table top, leg, rail, step) is box(...): do not build it face by face.
+- SLAB / PLATE: g = prism([3D points of a planar polygon], (dx,dy,dz), \
+holes=[[...]], name=..., color=...) — sweeps the polygon (with holes) \
+along the vector.
+- WALL: g = wall((x,y), (x,y), height=3, thickness=0.2, openings=[(offset, \
+sill, width, height)], peak=None) — grows to the LEFT of a→b; \
+sill 0 = door (notch), >0 = window (hole).
+- WHOLE HOUSE: gs = house(width=6, depth=4, wall_height=3, thickness=0.2, \
+roof="gable"|"hip"|"flat", ridge_height=None, overhang=0.4, ridge="x", \
+doors=[("S", offset, width, height)], windows=[("S", offset, sill, width, \
+height)], origin=(0,0), name="House") — walls with thickness, doors with \
+leaves, windows with glass, and a roof, in groups «House · \
+Paredes/Techo/Carpintería» (walls/roof/joinery). Sides S (front, y=y0), \
+E, N, W; offset along the wall counter-clockwise from its first corner. \
+Typical sizes: door 0.9×2.1, window 1.2×1.0 with sill 1.0, pitch 30°.
+- Loose face: f = mesh.add_face([QVector3D(x,y,z), ...])  (loop \
+counter-clockwise seen from outside); f.attrs["color"] = (r, g, b, 1.0)  \
+(0..1)
+- Edge: mesh.add_edge(QVector3D(...), QVector3D(...))
+- Manual group: m = Mesh(); m.add_face([...]); g = Group(m, name="..."); \
+groups.append(g)
+- Paint a whole group: g.material = {"color": (r,g,b), "opacity": 1.0} \
+— do NOT touch scene.materials (it is the document's material registry).
+- Move a group: for v in list(g.mesh.vertices): g.mesh.move_vertex(v, \
+QVector3D(dx,dy,dz))  — and if g.xform is not None (a component \
+instance), compose the translation into g.xform instead of moving vertices.
+- Camera: viewport.camera.target/distance/yaw/pitch (RADIANS); \
+viewport.update()
+- SHEET (a composer page to print; «sheet»/«layout»/«lámina», it is NOT \
+a layer): c = sheet("Plan", paper="A3", landscape=True) — creates it with \
+a view frame and it shows up in the sheet tabs on its own. Delete: \
+scene.compositions.remove(c) (at least one stays if there was one).
+- LAYER / TAG: ly = Layer("Walls"); layers.append(ly); g.layer = \
+"Walls". Only Layer objects go into layers, never strings.
+- print(...) to report data (keep it short: the result travels every \
+turn)."""
+
+HOW_IT_RUNS_EN = """Each {unit} is ONE undo step: if it raises an exception \
+it is rolled back COMPLETELY, and the user's Ctrl+Z undoes your whole step. \
+The scope PERSISTS between {unit}s: the variables and functions you define \
+stay available — do not redefine them.
+Do NOT explore the API with dir(), inspect or dis: what you need is in this \
+recipe book, and every probe is a wasted turn. If something is missing, \
+write it directly and read the error.
+A simple request (a house, a table, a post) goes in COMPLETE in one go, \
+with reasonable details even if not asked for; big ones, in steps. Verify \
+with viewport captures and iterate.
+The person figure of a new document is called «Engineer» («Ingeniero» \
+when the interface is in Spanish) and is the SCALE (1.70 m, a \
+billboard): do not delete or move it unless asked, and do not take it \
+for the model."""
+
+UNITS_EN = ("IngeTrazo is a free push/pull 3D modeller: Z up, units in "
+            "METRES, angles in RADIANS.")
+
+_EDITIONS = {
+    "es": (UNITS, SCOPE, RECIPES, HOW_IT_RUNS),
+    "en": (UNITS_EN, SCOPE_EN, RECIPES_EN, HOW_IT_RUNS_EN),
+}
+
+
+def reference(unit: str = "llamada", lang: str = "es") -> str:
+    """Everything, in reading order — what a door hands the model.
+    ``lang``: ``"es"`` (the in-app assistant's) or ``"en"`` (the MCP
+    door's)."""
+    units, scope, recipes, how = _EDITIONS[lang]
+    return "\n".join((units, scope, recipes, how.format(unit=unit)))

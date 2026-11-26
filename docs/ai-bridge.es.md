@@ -235,6 +235,7 @@ las mismas opciones y códigos de salida.
 | `--allow-save` | El agente puede usar `save_document`. |
 | `--save-format auto\|json` | Cómo se guarda: `auto` (como siempre) o `json` (ver abajo). |
 | `--allow-shutdown` | El agente puede usar `shutdown`. Solo por línea de comandos. |
+| `--no_mcp_python` | Se niega `run_python`: el agente trabaja solo con las herramientas con nombre. También lo acepta `ingetrazo_mcp.py`, que entonces tampoco lista `run_python` (vale también `--no-mcp-python`). |
 | `--exit-on-stdin-eof` | Termina (código 5) cuando se cierra su entrada estándar: para un proceso padre que podría morir. |
 
 Sin ventana no se hacen copias `.igz.bak` ni copias de recuperación al

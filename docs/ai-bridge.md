@@ -234,6 +234,7 @@ the same options and exit codes.
 | `--allow-save` | The agent may use `save_document`. |
 | `--save-format auto\|json` | How it saves: `auto` (as always) or `json` (see below). |
 | `--allow-shutdown` | The agent may use `shutdown`. Command line only. |
+| `--no_mcp_python` | `run_python` is refused: the agent works with the named tools only. Also accepted by `ingetrazo_mcp.py` itself, which then does not list `run_python` either (`--no-mcp-python` works too). |
 | `--exit-on-stdin-eof` | Ends (code 5) when its standard input closes: for a parent process that might die. |
 
 Without a window no `.igz.bak` copies and no recovery copies are made on
