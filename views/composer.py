@@ -254,6 +254,20 @@ def apply_frame_shadows(frame, scene) -> None:
     apply_shadow_state(scene, state)
 
 
+def _resync_visibility(vp) -> None:
+    """Make the viewport look at the layers and objects again before its
+    next draw. ``_with_frame_camera`` switches them for a frame and back
+    WITHOUT a version bump, and the consolidated face / edge buffers
+    (``Viewport._sync_edges``) are kept for as long as the version holds.
+    The instanced placements re-key on the layer states by themselves, but
+    glass never draws instanced: a frame whose scene hid a floor drew that
+    floor's window panes floating, with their edges, until something else
+    bumped the version (issue #1520). Rebuilt only when the content key
+    really moved; an unchanged visibility costs the key, not a rebuild."""
+    if hasattr(vp, "_edges_version"):
+        vp._edges_version = -1
+
+
 def frame_title_text(frame: MarcoVista) -> str:
     """The automatic title: view name — scale («Planta — 1:100»). A
     perspective frame has no scale to give, so it says what it is."""
@@ -14184,6 +14198,7 @@ class ComposerWindow(QMainWindow):
             if not getattr(frame, "screen", False):
                 from core.layers import hide_unprinted
                 hide_unprinted(scene)
+            _resync_visibility(vp)
             return fn()
         finally:
             (cam.target, cam.distance, cam.yaw, cam.pitch, cam.fov_deg,
@@ -14215,6 +14230,8 @@ class ComposerWindow(QMainWindow):
                  scene.show_hidden_geometry) = keep_hidden_shown
                 if hidden_moved and hasattr(scene, "bump_view"):
                     self._own_view_bump(scene)
+            # And back: the live view draws its own layers' glass again.
+            _resync_visibility(vp)
             # The live view gets its camera and objects back — redrawn now
             # when it shows, when it comes back when this window covers it:
             # a repaint of the covered model window waits ~1 s on the
