@@ -477,6 +477,7 @@ if sys.platform == 'darwin':
                 {
                     'CFBundleTypeName': 'IngeTrazo document',
                     'CFBundleTypeExtensions': ['igz'],
+                    'LSItemContentTypes': ['com.ingetrazo.igz'],
                     'CFBundleTypeRole': 'Editor',
                     'LSHandlerRank': 'Owner',
                 },
@@ -485,6 +486,21 @@ if sys.platform == 'darwin':
                     'CFBundleTypeExtensions': ['skp'],
                     'CFBundleTypeRole': 'Editor',
                     'LSHandlerRank': 'Alternate',
+                },
+            ],
+            # .igz as a type of its own. Without it macOS gave the extension
+            # a dynamic type (dyn.*), which the thumbnail extension
+            # (packaging/macos/thumbnail, QLSupportedContentTypes) cannot
+            # name: Finder showed only the icon, never the picture the
+            # document carries (#1380).
+            'UTExportedTypeDeclarations': [
+                {
+                    'UTTypeIdentifier': 'com.ingetrazo.igz',
+                    'UTTypeDescription': 'IngeTrazo document',
+                    'UTTypeConformsTo': ['public.data', 'public.content'],
+                    'UTTypeTagSpecification': {
+                        'public.filename-extension': ['igz'],
+                    },
                 },
             ],
         },

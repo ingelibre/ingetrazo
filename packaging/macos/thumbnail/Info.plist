@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- The thumbnail extension's own Info.plist (ThumbnailProvider.swift).
+     build.sh fills in the version. It names the type the app exports for
+     .igz (ingetrazo.spec, UTExportedTypeDeclarations): change both together. -->
+<plist version="1.0">
+<dict>
+    <key>CFBundleDevelopmentRegion</key>
+    <string>en</string>
+    <key>CFBundleDisplayName</key>
+    <string>IngeTrazo Thumbnail</string>
+    <key>CFBundleExecutable</key>
+    <string>IngeTrazoThumbnail</string>
+    <key>CFBundleIdentifier</key>
+    <string>com.ingetrazo.IngeTrazo.Thumbnail</string>
+    <key>CFBundleInfoDictionaryVersion</key>
+    <string>6.0</string>
+    <key>CFBundleName</key>
+    <string>IngeTrazoThumbnail</string>
+    <key>CFBundlePackageType</key>
+    <string>XPC!</string>
+    <key>CFBundleShortVersionString</key>
+    <string>@VERSION@</string>
+    <key>CFBundleVersion</key>
+    <string>@VERSION@</string>
+    <key>CFBundleSupportedPlatforms</key>
+    <array>
+        <string>MacOSX</string>
+    </array>
+    <key>LSMinimumSystemVersion</key>
+    <string>@MINOS@</string>
+    <key>NSExtension</key>
+    <dict>
+        <key>NSExtensionAttributes</key>
+        <dict>
+            <key>QLSupportedContentTypes</key>
+            <array>
+                <string>com.ingetrazo.igz</string>
+            </array>
+            <key>QLThumbnailMinimumDimension</key>
+            <integer>0</integer>
+        </dict>
+        <key>NSExtensionPointIdentifier</key>
+        <string>com.apple.quicklook.thumbnail</string>
+        <key>NSExtensionPrincipalClass</key>
+        <string>IngeTrazoThumbnail.ThumbnailProvider</string>
+    </dict>
+</dict>
+</plist>

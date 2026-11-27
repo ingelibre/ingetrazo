@@ -88,6 +88,12 @@ rm -rf "$BUILD_APP" "$WORK/pyi"
     --distpath "$WORK/pyi" --workpath "$WORK/pyi-work" \
     ingetrazo.spec
 
+# The .igz thumbnail extension (Finder and Quick Look show the picture the
+# document carries, #1380), for this Mac's architecture and the macOS the
+# rest of the bundle asks for. It signs the bundle again around it.
+packaging/macos/thumbnail/build.sh "$BUILD_APP" "$ARCH" \
+    "${MACOSX_DEPLOYMENT_TARGET:-14.0}"
+
 echo "==> the bundle finds its own data"
 # Before wrapping it in a .dmg, ask the bundle itself. A missing shader or
 # texture starts fine and only fails when the user needs it.

@@ -96,6 +96,15 @@ jobs:
       - name: The bundle finds everything it needs
         run: dist/IngeTrazo.app/Contents/MacOS/ingetrazo --check
 
+      - name: The .igz thumbnail extension is in the bundle, signed
+        run: |
+          set -e
+          X=dist/IngeTrazo.app/Contents/PlugIns/IngeTrazoThumbnail.appex
+          lipo -archs "$X/Contents/MacOS/IngeTrazoThumbnail"
+          plutil -lint "$X/Contents/Info.plist"
+          codesign --verify --deep --strict dist/IngeTrazo.app
+          codesign -d --entitlements - "$X" 2>/dev/null | grep -q app-sandbox
+
       # A report: it must not hold up a package that was fine.
       - name: No Mach-O asks for a newer macOS
         if: matrix.deployment_target
