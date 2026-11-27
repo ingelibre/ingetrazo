@@ -172,7 +172,8 @@ NAMED = ("get_scene_info", "get_object_info", "list_layers",
          "select", "screenshot", "export_view", "render_sheet",
          "export_pdf", "document_info", "open_document", "save_document",
          "shutdown", "import_file", "export_file", "list_materials",
-         "apply_material")
+         "apply_material", "export_video", "video_status",
+         "video_keyframe", "video_download", "cancel_video")
 #: One tool per job (PR #1494 reconciled with n63-mcp, 19-11): the names
 #: the PR gave to the same job are the ones left.
 RETIRED = ("open_file", "save_file")
@@ -633,3 +634,194 @@ def test_the_server_mode_answers_and_ends_on_sigterm(tmp_path):
         if proc.poll() is None:
             proc.kill()
             proc.wait()
+
+
+# ---- Videos in the background (#1714) ---------------------------------------------
+
+@pytest.fixture
+def video_env(env, monkeypatch):
+    """``env`` with a second scene and a render that needs no GPU: a frame
+    filled with the grey of whether the walls show (the scene's layers)."""
+    from PySide6.QtGui import QColor, QImage
+
+    from core.saved_views import SavedView
+    from views import bridge_tools
+    win, vp, bridge = env
+    scene = vp.scene
+    plan = scene.saved_views[0]
+    hall = SavedView.capture("Pasillo", scene, vp.camera)
+    scene.saved_views.append(hall)
+    scene.version += 1
+    win._saved_version = scene.version
+    seen = []
+
+    def render(width, height, **_kw):
+        seen.append(scene.layer("Muros").visible)
+        image = QImage(width, height, QImage.Format_RGB32)
+        image.fill(QColor(200, 200, 200) if seen[-1] else QColor(20, 20, 20))
+        return image
+
+    monkeypatch.setattr(vp, "render_image", render)
+    monkeypatch.setattr(bridge_tools, "can_render", lambda vp: True)
+    assert plan.name == "Planta"
+    return win, vp, bridge, seen
+
+
+def _until_done(bridge, job_id, timeout=30.0):
+    t0 = time.monotonic()
+    while time.monotonic() - t0 < timeout:
+        got = _ok(bridge, "video_status", {"job_id": job_id})
+        if got["state"] != "running":
+            return got
+        QApplication.instance().processEvents()
+    raise AssertionError("the video never finished")
+
+
+def test_a_video_starts_at_once_and_renders_between_calls(video_env,
+                                                         tmp_path):
+    win, vp, bridge, seen = video_env
+    yaw = vp.camera.yaw
+    out = tmp_path / "tour.png"
+    started = _ok(bridge, "export_video", {
+        "path": str(out), "width": 160, "height": 90, "fps": 24,
+        "transition": 0.5, "pause": 0.25})
+    assert started["state"] == "running"
+    assert started["frames_total"] == 25          # 0.25 + 0.5 + 0.25 s
+    assert started["scenes"] == ["Planta", "Pasillo"]
+    # Between frames the bridge answers, and the view is the user's.
+    assert _ok(bridge, "list_scenes")["scenes"]
+    assert vp.scene.layer("Muros").visible is True
+    done = _until_done(bridge, started["job_id"])
+    assert done["state"] == "done", done
+    assert done["frames_done"] == 25 and done["percent"] == 100.0
+    frames = sorted((tmp_path / "tour").glob("tour_*.png"))
+    assert len(frames) == 25
+    assert seen[0] is False and seen[-1] is True  # each scene's layers
+    # One keyframe per scene, where it is reached, small and on disk.
+    keys = done["keyframes"]
+    assert [k["scene"] for k in keys] == ["Planta", "Pasillo"]
+    assert keys[0]["frame"] == 0 and Path(keys[1]["path"]).is_file()
+    # The user's view is back and a clean document stays clean.
+    assert vp.scene.layer("Muros").visible is True
+    assert vp.camera.yaw == yaw
+    assert not win._is_dirty()
+    # The keyframe is a picture the MCP client is shown.
+    result = _mcp_call(bridge, "video_keyframe",
+                       {"job_id": started["job_id"], "index": 1})
+    assert result["content"][0]["type"] == "image"
+
+
+def test_one_video_at_a_time_unless_configured(video_env, tmp_path):
+    win, vp, bridge, _seen = video_env
+    long = {"width": 64, "height": 64, "fps": 60, "transition": 60,
+            "pause": 60}
+    first = _ok(bridge, "export_video",
+                dict(long, path=str(tmp_path / "a.png")))
+    error = _err(bridge, "export_video",
+                 dict(long, path=str(tmp_path / "b.png")))
+    assert "at most 1 at a time" in error and first["job_id"] in error
+    assert not (tmp_path / "b").exists()          # refused before writing
+    bridge.max_videos = 2
+    second = _ok(bridge, "export_video",
+                 dict(long, path=str(tmp_path / "b.png")))
+    listed = _ok(bridge, "video_status")
+    assert listed["max_parallel"] == 2
+    assert {j["job_id"] for j in listed["jobs"]} == {first["job_id"],
+                                                    second["job_id"]}
+    for job in (first, second):
+        _ok(bridge, "cancel_video", {"job_id": job["job_id"]})
+
+
+def test_a_cancelled_video_leaves_nothing_half_written(video_env, tmp_path):
+    win, vp, bridge, _seen = video_env
+    started = _ok(bridge, "export_video", {
+        "path": str(tmp_path / "long.png"), "width": 64, "height": 64,
+        "fps": 60, "transition": 60, "pause": 60})
+    for _ in range(20):                            # a few frames get written
+        QApplication.instance().processEvents()
+    got = _ok(bridge, "cancel_video", {"job_id": started["job_id"]})
+    assert got["state"] == "cancelled"
+    assert got["frames_done"] < got["frames_total"]
+    assert not (tmp_path / "long").exists()
+    assert _ok(bridge, "video_status",
+               {"job_id": started["job_id"]})["state"] == "cancelled"
+    assert vp.scene.layer("Muros").visible is True
+    assert not win._is_dirty()
+
+
+def test_a_video_says_what_is_wrong_before_it_starts(video_env, tmp_path,
+                                                     monkeypatch):
+    win, vp, bridge, _seen = video_env
+    assert "no scene called 'Cocina'" in _err(
+        bridge, "export_video", {"path": str(tmp_path / "t.png"),
+                                 "scenes": ["Planta", "Cocina"]})
+    assert ".mkv (Matroska) or .png" in _err(
+        bridge, "export_video", {"path": str(tmp_path / "t.mp4")})
+    assert "transparent is for a PNG sequence" in _err(
+        bridge, "export_video", {"path": str(tmp_path / "t.mkv"),
+                                 "transparent": True})
+    assert "fps is one of" in _err(
+        bridge, "export_video", {"path": str(tmp_path / "t.png"),
+                                 "fps": 50})
+    assert "no video job 'nope'" in _err(bridge, "video_status",
+                                         {"job_id": "nope"})
+    # An earlier sequence is replaced only when asked.
+    old = tmp_path / "t"
+    old.mkdir()
+    (old / "t_0001.png").write_bytes(b"")
+    assert "overwrite=true" in _err(
+        bridge, "export_video", {"path": str(tmp_path / "t.png")})
+    from views import bridge_tools
+    monkeypatch.setattr(bridge_tools, "can_render", lambda vp: False)
+    assert "no OpenGL context" in _err(
+        bridge, "export_video", {"path": str(tmp_path / "u.png")})
+
+
+def test_a_video_whose_document_is_replaced_fails(video_env, tmp_path):
+    from core.scene import Scene
+    win, vp, bridge, _seen = video_env
+    started = _ok(bridge, "export_video", {
+        "path": str(tmp_path / "gone.png"), "width": 64, "height": 64,
+        "fps": 60, "transition": 60, "pause": 60})
+    job = bridge._videos().get(started["job_id"])
+    job.scene = Scene()                            # as if another were opened
+    for _ in range(5):
+        QApplication.instance().processEvents()
+    got = _ok(bridge, "video_status", {"job_id": started["job_id"]})
+    assert got["state"] == "failed" and "replaced" in got["error"]
+    assert not (tmp_path / "gone").exists()
+
+
+def test_a_finished_video_is_downloaded_in_chunks(video_env, tmp_path):
+    import base64
+    import hashlib
+    win, vp, bridge, _seen = video_env
+    started = _ok(bridge, "export_video", {
+        "path": str(tmp_path / "dl.png"), "width": 64, "height": 64,
+        "fps": 24, "transition": 0.25, "pause": 0.25})
+    job_id = started["job_id"]
+    done = _until_done(bridge, job_id)
+    assert done["state"] == "done"
+    assert "a frame at a time" in _err(bridge, "video_download",
+                                       {"job_id": job_id})
+    first = sorted((tmp_path / "dl").glob("dl_*.png"))[0].read_bytes()
+    parts, offset = [], 0
+    while True:
+        got = _ok(bridge, "video_download", {"job_id": job_id, "frame": 0,
+                                             "offset": offset, "length": 100})
+        parts.append(base64.b64decode(got["data"]))
+        offset = got["next_offset"]
+        if got["eof"]:
+            break
+    data = b"".join(parts)
+    assert data == first and got["size"] == len(first)
+    assert got["sha256"] == hashlib.sha256(first).hexdigest()
+    assert "no frame 999" in _err(bridge, "video_download",
+                                  {"job_id": job_id, "frame": 999})
+    # Only a finished video: a cancelled one has nothing to fetch.
+    other = _ok(bridge, "export_video", {
+        "path": str(tmp_path / "x.png"), "width": 64, "height": 64,
+        "fps": 60, "transition": 60, "pause": 60})
+    _ok(bridge, "cancel_video", {"job_id": other["job_id"]})
+    assert "is cancelled, not done" in _err(
+        bridge, "video_download", {"job_id": other["job_id"], "frame": 0})

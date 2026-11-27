@@ -17,7 +17,8 @@ query_model, screenshot (the agent SEES the viewport), undo, redo — and
 named tools with a schema, for clients that do not allow code:
 get_scene_info, get_object_info, list_layers, set_layer_visibility,
 list_scenes, show_scene, set_camera, select, render_sheet, export_view,
-list_materials, apply_material, import_file, export_file; and for
+export_video (in the background: video_status, video_keyframe,
+video_download, cancel_video), list_materials, apply_material, import_file, export_file; and for
 automation document_info, open_document, save_document, export_pdf and
 shutdown. Every mutation goes through IngeTrazo's command engine — the
 hermeticity guard validates the agent's recipes, and Ctrl+Z always works.
@@ -247,6 +248,96 @@ TOOLS = [
         },
     },
     {
+        "name": "export_video",
+        "description": (
+            "START a video of the scenes, as File > Export > Scenes as "
+            "Video does: the camera glides from scene to scene (e.g. a "
+            "walk-through at eye level: front door, hall, kitchen). Returns "
+            "at once with a job_id; the frames render in the BACKGROUND "
+            "while IngeTrazo keeps answering. Then poll video_status, look "
+            "at video_keyframe while it renders, cancel_video to stop. "
+            "`path`: an absolute .mkv file, or a .png path for a PNG "
+            "sequence (a folder of that name; `transparent` for no sky or "
+            "ground; `overwrite` replaces an earlier sequence). `scenes` "
+            "picks the saved views and their order (default: all); "
+            "`transition` and `pause` (seconds) override the document's "
+            "animation settings for this video only. At most a few videos "
+            "at once (1 by default): more are refused. Needs OpenGL."),
+        "inputSchema": {
+            "type": "object",
+            "properties": {"path": {"type": "string"},
+                           "scenes": {"type": "array",
+                                      "items": {"type": "string"}},
+                           "width": {"type": "integer"},
+                           "height": {"type": "integer"},
+                           "fps": {"type": "integer",
+                                   "enum": [24, 25, 30, 60]},
+                           "transition": {"type": "number"},
+                           "pause": {"type": "number"},
+                           "transparent": {"type": "boolean"},
+                           "overwrite": {"type": "boolean"}},
+            "required": ["path"],
+        },
+    },
+    {
+        "name": "video_status",
+        "description": (
+            "How far a video from export_video got (job_id), or every "
+            "video of this window (none given): state (running, done, "
+            "failed, cancelled), frames done of the total, percent, "
+            "elapsed and estimated seconds left, the keyframes so far, and "
+            "the file's path. Poll it every few seconds, not in a tight "
+            "loop."),
+        "inputSchema": {
+            "type": "object",
+            "properties": {"job_id": {"type": "string"}},
+        },
+    },
+    {
+        "name": "video_keyframe",
+        "description": (
+            "LOOK at a video while it renders, without downloading it: "
+            "the frame where a scene is reached, small (480 px wide). "
+            "`index` as video_status lists the keyframes (0 = the first "
+            "scene); the latest when not given."),
+        "inputSchema": {
+            "type": "object",
+            "properties": {"job_id": {"type": "string"},
+                           "index": {"type": "integer"}},
+            "required": ["job_id"],
+        },
+    },
+    {
+        "name": "video_download",
+        "description": (
+            "Fetch a finished video (state done) over MCP, for a client "
+            "that cannot read the IngeTrazo machine's disk (Docker, a "
+            "server). Returns base64 `data` of at most `length` bytes "
+            "(default 2 MiB, max 8 MiB) from `offset`, plus the file's "
+            "`size`, `sha256`, `next_offset` and `eof`: call again with "
+            "next_offset until eof, join the chunks, check the sha256. A "
+            "PNG sequence is fetched one `frame` at a time (0 = first)."),
+        "inputSchema": {
+            "type": "object",
+            "properties": {"job_id": {"type": "string"},
+                           "offset": {"type": "integer"},
+                           "length": {"type": "integer"},
+                           "frame": {"type": "integer"}},
+            "required": ["job_id"],
+        },
+    },
+    {
+        "name": "cancel_video",
+        "description": (
+            "Stop a video from export_video: the half-written file (or the "
+            "frames of a PNG sequence) is removed; the keyframes stay."),
+        "inputSchema": {
+            "type": "object",
+            "properties": {"job_id": {"type": "string"}},
+            "required": ["job_id"],
+        },
+    },
+    {
         "name": "shutdown",
         "description": (
             "End this IngeTrazo when the work is done (exit code 0). Only "
@@ -419,7 +510,8 @@ TOOLS += [
 ]
 
 #: The tools whose reply is a picture the client is shown.
-IMAGE_TOOLS = ("screenshot", "render_sheet", "export_view")
+IMAGE_TOOLS = ("screenshot", "render_sheet", "export_view",
+               "video_keyframe")
 
 
 # Every tool but list_documents names the document it acts on (#892): the
@@ -441,7 +533,8 @@ _req_id = 0
 _READ_ONLY = ("list_documents", "query_model", "screenshot", "get_scene_info",
               "get_object_info", "list_layers", "list_scenes",
               "list_materials", "render_sheet", "document_info",
-              "export_view")
+              "export_view", "export_video", "video_status",
+              "video_keyframe", "video_download")
 # Opening another document, overwriting a file or ending the program can
 # lose work a client did not mean to lose (names as merged with #1494).
 _DESTRUCTIVE = ("run_python", "open_document", "save_document", "shutdown")
