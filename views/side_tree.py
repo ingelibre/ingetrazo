@@ -473,3 +473,73 @@ class SideTree(QTreeWidget):
         event.setDropAction(Qt.IgnoreAction)
         event.accept()
         QTimer.singleShot(0, lambda: self.apply_drop(token, rows))
+
+
+# ---- ⊞ Expand all / ⊟ Collapse all ------------------------------------------------
+
+def fold_button(slot) -> QToolButton:
+    """The Expand all / Collapse all button of a tree's bar — the Browser's
+    and the Layers': one button, ⊞ while a branch is folded, ⊟ once all are
+    open (#1694). ``slot`` is called with nothing; :func:`show_folds` keeps
+    its face up to date."""
+    from views.icons import tool_icon
+    btn = QToolButton()
+    btn.setAutoRaise(True)
+    btn.setIcon(tool_icon("layers_expand"))
+    # Drawn in the theme's ink: named, so a change of theme draws it again.
+    btn.setProperty("icon_key", "layers_expand")
+    btn.setToolTip(tr("Expand all"))
+    btn.clicked.connect(lambda _checked=False: slot())
+    return btn
+
+
+def foldable_rows(tree) -> list:
+    """Every row of ``tree`` that holds others and is not hidden by a
+    filter, top to bottom."""
+    out: list = []
+    stack = [tree.invisibleRootItem()]
+    while stack:
+        node = stack.pop()
+        for i in reversed(range(node.childCount())):
+            child = node.child(i)
+            if child.isHidden():
+                continue
+            if child.childCount():
+                out.append(child)
+            stack.append(child)
+    out.reverse()
+    return out
+
+
+def all_open(rows) -> bool:
+    """Whether every row in ``rows`` is unfolded (none: ``False``)."""
+    rows = list(rows)
+    return bool(rows) and all(r.isExpanded() for r in rows)
+
+
+def show_folds(btn, rows) -> None:
+    """Give ``btn`` the face for ``rows``: ⊟ Collapse all when all are open,
+    ⊞ Expand all otherwise; off when there is nothing to fold."""
+    if btn is None:
+        return
+    from views.icons import tool_icon
+    rows = list(rows)
+    opened = all_open(rows)
+    key = "layers_collapse" if opened else "layers_expand"
+    if btn.property("icon_key") != key:
+        btn.setIcon(tool_icon(key))
+        btn.setProperty("icon_key", key)
+    btn.setProperty("opened", opened)
+    btn.setToolTip(tr("Collapse all") if opened else tr("Expand all"))
+    btn.setEnabled(bool(rows))
+
+
+def fold_all(rows, open_: bool) -> None:
+    """Open (or fold) every row in ``rows`` one by one, so each panel hears
+    of it as of a click on the row's arrow — and keeps it."""
+    rows = list(rows)
+    # Parents first when opening, children first when folding: a child
+    # folded under an already folded parent would not say so on screen.
+    for row in (rows if open_ else reversed(rows)):
+        if row.isExpanded() != open_:
+            row.setExpanded(open_)

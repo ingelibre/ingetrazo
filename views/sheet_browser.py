@@ -566,6 +566,11 @@ class SheetExplorer(QWidget):
             btn.setIcon(_icon(icon))
             setattr(self, attr, btn)
             bar.addWidget(btn)
+        # Expand all / Collapse all the folders (List only), as in the
+        # Browser and Layers (#1694).
+        from views.side_tree import fold_button
+        self.expand_btn = fold_button(self._expand_or_collapse)
+        bar.addWidget(self.expand_btn)
         lay.addLayout(bar)
 
         from PySide6.QtWidgets import QStackedWidget
@@ -689,6 +694,7 @@ class SheetExplorer(QWidget):
         self.search.setVisible(not pages)
         self._bar_stretch.setVisible(pages)
         self.add_folder_btn.setVisible(not pages)
+        self.expand_btn.setVisible(not pages)
         self.add_sheet_btn.setToolTip(
             tr("New sheet, after the selected one") if pages
             else tr("New sheet, in the selected folder"))
@@ -995,6 +1001,25 @@ class SheetExplorer(QWidget):
         for i in range(root.childCount()):
             walk(root.child(i), False)
         self._updating = False
+        self._update_expand_button()
+
+    # ---- ⊞ expand / ⊟ collapse ------------------------------------------------
+    def _folder_rows(self) -> list:
+        from views.side_tree import foldable_rows
+        return [it for it in foldable_rows(self.tree)
+                if (it.data(COL_NAME, Qt.UserRole) or (None,))[0] == _FOLDER]
+
+    def _update_expand_button(self) -> None:
+        from views.side_tree import show_folds
+        show_folds(getattr(self, "expand_btn", None), self._folder_rows())
+
+    def _expand_or_collapse(self) -> None:
+        """Every folder open, or every folder shut — each one kept with
+        the document as a click on its arrow is."""
+        from views.side_tree import all_open, fold_all
+        rows = self._folder_rows()
+        fold_all(rows, not all_open(rows))
+        self._update_expand_button()
 
     # ---- A scene and the sheets that show it ------------------------------------
     def mark_scene(self, name) -> list:
@@ -1374,6 +1399,7 @@ class SheetExplorer(QWidget):
         if d and d[0] == _FOLDER:
             d[1].expanded = on
             self._shape = self._fingerprint(self._scene())
+        self._update_expand_button()
 
     # ---- Moving: drag & drop, Alt+↑/↓ ----------------------------------------
     def move(self, sheets, folders, target_id, before=None) -> None:
@@ -1857,7 +1883,6 @@ class SceneList(QWidget):
         self._icon_for = icon_for
         self._icon_queue: list = []
         self._shape = None
-        self._collapsed: set = set()
         #: Each scene with its picture (only with ``icon_for``), or a list.
         self.thumbnails = icon_for is not None and self._saved_thumbnails()
         lay = QVBoxLayout(self)
@@ -1866,6 +1891,10 @@ class SceneList(QWidget):
         #: out here: the page puts it in the heading above the list, where
         #: it takes no line of its own.
         self.view_btn = self._view_button() if icon_for is not None else None
+        #: Expand all / Collapse all (#1694) — laid out by the page too, in
+        #: the heading beside the list-or-thumbnails button.
+        from views.side_tree import fold_button
+        self.expand_btn = fold_button(self._expand_or_collapse)
         self.tree = _SceneTree()
         self.tree.setHeaderHidden(True)
         self.tree.setColumnCount(1)
@@ -1884,6 +1913,29 @@ class SceneList(QWidget):
 
     def _scene(self):
         return self._window.viewport.scene
+
+    @property
+    def _collapsed(self) -> set:
+        """Folders folded shut here, by name — the document's own set
+        (apart from the Scenes tab's), saved with it (#1694)."""
+        from core.tree_folds import COMPOSER_SCENES, folds
+        return folds(self._scene(), COMPOSER_SCENES)
+
+    # ---- ⊞ expand / ⊟ collapse ------------------------------------------------
+    def _folder_rows(self) -> list:
+        from views.side_tree import foldable_rows
+        return [it for it in foldable_rows(self.tree)
+                if it.data(0, Qt.UserRole)[0] == "folder"]
+
+    def _update_expand_button(self) -> None:
+        from views.side_tree import show_folds
+        show_folds(getattr(self, "expand_btn", None), self._folder_rows())
+
+    def _expand_or_collapse(self) -> None:
+        from views.side_tree import all_open, fold_all
+        rows = self._folder_rows()
+        fold_all(rows, not all_open(rows))
+        self._update_expand_button()
 
     # ---- The list or the thumbnails --------------------------------------------------
     #: Where the choice is kept — the composer's own, apart from the
@@ -1990,6 +2042,7 @@ class SceneList(QWidget):
             self._collapsed.discard(name)
         else:
             self._collapsed.add(name)
+        self._update_expand_button()
 
     # ---- Model → view ------------------------------------------------------------
     def refresh(self) -> None:
@@ -2000,7 +2053,8 @@ class SceneList(QWidget):
         folders = SF.folders_of(scene)
         # Rebuilt only when the scenes or their folders changed: every edit
         # of the model calls here, and a rebuild throws the pictures away.
-        shape = (tuple((id(v), v.name, SF.folder_of(scene, v))
+        shape = (id(scene),
+                 tuple((id(v), v.name, SF.folder_of(scene, v))
                        for v in views),
                  tuple((f, SF.folder_parent(scene, f)) for f in folders))
         if shape == self._shape:
@@ -2039,6 +2093,7 @@ class SceneList(QWidget):
                     self.tree.setCurrentItem(row)
         finally:
             self.tree.blockSignals(False)
+        self._update_expand_button()
         self._queue_icons()
 
     # ---- Pictures (icon_for) -------------------------------------------------------
@@ -2102,6 +2157,7 @@ class SceneList(QWidget):
             parent = parent.parent()
         self.tree.setCurrentItem(item)
         self.tree.scrollToItem(item)
+        self._update_expand_button()
         return True
 
     # ---- View → model ------------------------------------------------------------
@@ -2146,7 +2202,8 @@ class SheetsTab(QWidget):
         #: The Scenes page: the composer puts it in its side panel as a tab
         #: of its own («scenes»), next to this one.
         self.scenes_page = _titled(tr("Scenes"), self.scenes,
-                                   tail=self.scenes.view_btn)
+                                   tail=(self.scenes.expand_btn,
+                                         self.scenes.view_btn))
         lay.addWidget(_titled(tr("Sheets"), self.sheets,
                               tail=self.sheets.view_btn))
         # A scene and the views that show it mark each other (a folder
@@ -2212,8 +2269,8 @@ def sync_composer(window) -> None:
 
 
 def _titled(title: str, panel, tail=None) -> QWidget:
-    """A panel under a small bold heading; ``tail`` (a small button) at
-    the heading's right end, on the same line."""
+    """A panel under a small bold heading; ``tail`` (a small button, or a
+    tuple of them) at the heading's right end, on the same line."""
     box = QWidget()
     lay = QVBoxLayout(box)
     lay.setContentsMargins(0, 4, 0, 0)
@@ -2232,9 +2289,12 @@ def _titled(title: str, panel, tail=None) -> QWidget:
         row.addWidget(head)
         row.addStretch(1)
         side = head.sizeHint().height() + 4
-        tail.setIconSize(QSize(side - 6, side - 6))
-        tail.setFixedSize(side, side)
-        row.addWidget(tail)
+        for btn in (tail if isinstance(tail, tuple) else (tail,)):
+            if btn is None:
+                continue
+            btn.setIconSize(QSize(side - 6, side - 6))
+            btn.setFixedSize(side, side)
+            row.addWidget(btn)
         lay.addLayout(row)
     lay.addWidget(panel, 1)
     return box

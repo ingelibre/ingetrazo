@@ -161,6 +161,10 @@ class Scene:
     # The folders the sheet explorer orders them in
     # (core.sheet_folders.SheetFolder); each sheet names its own.
     sheet_folders: list = field(default_factory=list)
+    # Which branches of the side trees are folded (or, for the Browser,
+    # opened), by tree — view state saved with the document
+    # (core.tree_folds, #1694).
+    tree_folds: dict = field(default_factory=dict)
     # Scales (1:N) typed by the user in the composer beyond the common
     # presets — kept with the document so every frame of the file offers
     # them again (Marco, 2026-09-02).
@@ -895,6 +899,7 @@ class Scene:
 
     def clear(self) -> None:
         self.document_id = uuid4().hex
+        self.tree_folds = {}
         self.end_group_edit()
         if (self.mesh.edges or self.mesh.faces or self.selection
                 or self.groups or self.dimensions or self.georef

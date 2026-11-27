@@ -2744,7 +2744,6 @@ class LayersPanel(QWidget):
         #: ``"check"`` — and the rows renamed since the last rebuild.
         self._waiting: str | None = None
         self._renamed: dict[tuple, str] = {}
-        self._collapsed: set[str] = set()
         self._counts: dict[str, int] = {}
         self._counted_version = None
         lay = QVBoxLayout(self)
@@ -3004,6 +3003,13 @@ class LayersPanel(QWidget):
     # ---- Model → view --------------------------------------------------------
     def _scene(self):
         return self._window.viewport.scene
+
+    @property
+    def _collapsed(self) -> set:
+        """The folders folded shut, by name — the document's own set, so
+        they open as they were left after a save and reopen (#1694)."""
+        from core.tree_folds import LAYERS, folds
+        return folds(self._scene(), LAYERS)
 
     @staticmethod
     def _key(item):

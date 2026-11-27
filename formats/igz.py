@@ -999,6 +999,12 @@ def _save_document(scene, path, *, large, stream=None, thumbnail=None,
     sheet_folders = getattr(scene, "sheet_folders", None)
     if sheet_folders:
         payload["sheet_folders"] = [f.to_dict() for f in sheet_folders]
+    # Which branches of the side trees are folded (#1694). View state:
+    # older readers ignore the key and open every tree as they always did.
+    from core.tree_folds import to_payload as _folds
+    tree_folds = _folds(scene)
+    if tree_folds:
+        payload["tree_folds"] = tree_folds
     dims = getattr(scene, "dimensions", None)
     if dims:
         payload["dimensions"] = [
@@ -1963,6 +1969,8 @@ def _load_into_inner(scene, path: Path, progress=None) -> None:
                            for r in payload.get("sheet_folders", []) or []
                            if isinstance(r, dict)]
     repair(scene)
+    from core.tree_folds import from_payload as _folds
+    _folds(scene, payload.get("tree_folds"))
     proto_meshes: list = []
     import time as _time
     raw_protos = payload.get("protos", [])

@@ -463,6 +463,12 @@ def _remember_widths(header, key: str, columns, quiet=None) -> None:
     header.sectionResized.connect(save)
 
 
+def _head_key(key) -> str:
+    """A heading's ``(kind, name)`` as the string the document keeps."""
+    kind, name = key
+    return f"{kind}:{name}"
+
+
 def _tool_button(text: str, tip: str, slot) -> QToolButton:
     btn = QToolButton()
     btn.setText(text)
@@ -1149,10 +1155,13 @@ class OutlinerPanel(QWidget):
         self._box_state: dict = {}
         self._box_shape = None
         #: Ordering by layer: ``(kind, name)`` -> the heading row of a layer
-        #: or a layer folder, and the headings folded by hand — remembered
-        #: while the document stays open, as the rows' own branches.
+        #: or a layer folder. The headings folded by hand and the groups
+        #: opened are the document's (:attr:`_heads_closed`,
+        #: :attr:`_open_uids`), saved with it (#1694).
         self._heads: dict = {}
-        self._heads_closed: set = set()
+        #: ``id`` of the scene the rows were built from: the rows of
+        #: another document say nothing about this one's folds.
+        self._rows_scene = None
         lay = QVBoxLayout(self)
         lay.setContentsMargins(6, 6, 6, 6)
         lay.setSpacing(4)
@@ -1304,6 +1313,8 @@ class OutlinerPanel(QWidget):
             lambda _i: self._update_expand_button())
         self.tree.itemCollapsed.connect(
             lambda _i: self._update_expand_button())
+        self.tree.itemExpanded.connect(self._remember_folds)
+        self.tree.itemCollapsed.connect(self._remember_folds)
         self._root = None
         lay.addWidget(self.tree, 1)
         self._empty = QLabel(tr(
@@ -1320,6 +1331,40 @@ class OutlinerPanel(QWidget):
     # ---- Model → view --------------------------------------------------------
     def _scene(self):
         return self._window.viewport.scene
+
+    # ---- Folds kept with the document (#1694) --------------------------------
+    @property
+    def _open_uids(self) -> set:
+        """The groups whose rows are unfolded, by ``uid`` — the document's
+        own set: the Browser opens as it was left when the file was
+        saved."""
+        from core.tree_folds import BROWSER, folds
+        return folds(self._scene(), BROWSER)
+
+    @property
+    def _heads_closed(self) -> set:
+        """The layer and folder headings folded by hand (ordering by
+        layer), as ``kind:name`` — the document's own set."""
+        from core.tree_folds import BROWSER_HEADS, folds
+        return folds(self._scene(), BROWSER_HEADS)
+
+    def _remember_folds(self, *_a) -> None:
+        """Write what the rows show folded and unfolded into the
+        document's sets — after a rebuild, a click on an arrow, Expand all
+        or Collapse all (``expandAll`` tells nobody)."""
+        if self._updating or self._rows_scene != id(self._scene()):
+            return
+        opened = self._open_uids
+        opened.clear()
+        opened.update(self._groups[key].uid
+                      for key, item in self._items.items()
+                      if item.isExpanded() and key in self._groups)
+        closed = self._heads_closed
+        for key, item in self._heads.items():
+            if item.isExpanded():
+                closed.discard(_head_key(key))
+            else:
+                closed.add(_head_key(key))
 
     def on_scene_changed(self) -> None:
         """The dock's per-change call: refreshed when on screen, on
@@ -1515,7 +1560,7 @@ class OutlinerPanel(QWidget):
         self._root = None
         self._shape = None
         self._heads = {}
-        self._heads_closed = set()
+        self._rows_scene = None
 
     def _update_summary(self) -> None:
         """The footer: what the model holds, or what the filter found."""
@@ -1537,14 +1582,18 @@ class OutlinerPanel(QWidget):
         """Rows for every group, each born with its texts and icons: one
         constructor call does what a setText per column would, and the
         cache it fills tells ``_update_rows`` there is nothing left to do."""
-        expanded = {self._groups[key].uid
-                    for key, item in self._items.items() if item.isExpanded()}
+        same = self._rows_scene == id(scene)
+        expanded = set(self._open_uids)
+        if same:
+            expanded |= {self._groups[key].uid
+                         for key, item in self._items.items()
+                         if item.isExpanded()}
+            for key, item in self._heads.items():
+                if item.isExpanded():
+                    self._heads_closed.discard(_head_key(key))
+                else:
+                    self._heads_closed.add(_head_key(key))
         expanded |= self.__dict__.pop("_kept_expanded", set())
-        for key, item in self._heads.items():
-            if item.isExpanded():
-                self._heads_closed.discard(key)
-            else:
-                self._heads_closed.add(key)
         scroll = self.tree.verticalScrollBar().value()
         counts = self._counts = outliner.instance_counts(scene.groups)
         opened = {id(g) for g in outliner.open_path(scene)}
@@ -1585,7 +1634,7 @@ class OutlinerPanel(QWidget):
                 self._state[key] = state
             root.setExpanded(True)
             for key, head in self._heads.items():
-                head.setExpanded(key not in self._heads_closed)
+                head.setExpanded(_head_key(key) not in self._heads_closed)
             sec = self._sec_root = QTreeWidgetItem(["", "", "", "", ""])
             sec.setIcon(COL_NAME, node_icon("sections"))
             sec.setFlags(Qt.ItemIsEnabled)
@@ -1610,6 +1659,8 @@ class OutlinerPanel(QWidget):
         finally:
             self.tree.blockSignals(False)
             self._updating = False
+        self._rows_scene = id(scene)
+        self._remember_folds()
         self._shown_selection = ()
         self._shown_path = ()
         self.tree.verticalScrollBar().setValue(scroll)
@@ -2318,11 +2369,13 @@ class OutlinerPanel(QWidget):
 
     def _expand_all(self) -> None:
         self.tree.expandAll()
+        self._remember_folds()
 
     def _collapse_all(self) -> None:
         self.tree.collapseAll()
         if self._root is not None:
             self._root.setExpanded(True)
+        self._remember_folds()
 
     # ---- View → model --------------------------------------------------------
     def _open_to(self, path) -> bool:
