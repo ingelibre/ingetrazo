@@ -8,7 +8,7 @@ follow [SemVer](https://semver.org).
 
 ### Añadido
 
-- **IFC: estado del elemento (nuevo / existente / a demoler)**: una etiqueta BIM con `"status"` (`NEW`, `EXISTING`, `DEMOLISH`, `TEMPORARY`, `OTHER`, `NOTKNOWN`, `UNSET`) se exporta como `Pset_<Clase>Common.Status`, así Revit y otros visores distinguen lo existente de lo nuevo y de lo que se demuele. Un valor no válido detiene la exportación antes de escribir el archivo.
+- **IFC: estado del elemento (nuevo / existente / a demoler)**: una etiqueta BIM con `"status"` (`NEW`, `EXISTING`, `DEMOLISH`, `TEMPORARY`, `OTHER`, `NOTKNOWN`, `UNSET`) se exporta como `Pset_<Clase>Common.Status`, así Revit y otros visores distinguen lo existente de lo nuevo y de lo que se demuele. Un valor no válido detiene la exportación antes de escribir el archivo (#1705).
 
 ## [0.6.3.3] — 2026-11-26
 
