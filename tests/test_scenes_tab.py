@@ -191,9 +191,9 @@ def test_the_bar_has_flat_icon_buttons_the_filter_and_the_view(win):
     bar = panel.layout().itemAt(0).layout()
     widgets = [bar.itemAt(i).widget() for i in range(bar.count())]
     assert widgets == [panel.add_btn, panel.add_folder_btn, panel.update_btn,
-                       panel.search, panel.view_btn]
+                       panel.search, panel.expand_btn, panel.view_btn]
     for btn in (panel.add_btn, panel.add_folder_btn, panel.update_btn,
-                panel.view_btn):
+                panel.expand_btn, panel.view_btn):
         assert isinstance(btn, QToolButton) and btn.autoRaise()
         assert btn.text() == "" and not btn.icon().isNull()
         assert btn.toolTip()

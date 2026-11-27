@@ -238,7 +238,10 @@ def test_another_document_starts_with_every_heading_open():
     try:
         panel.set_order_by("layer")
         panel._heads[("layer", "Walls")].setExpanded(False)
-        panel._forget_rows()                 # what New and Open do
+        # What New and Open do: the rows go, and the folds are the new
+        # document's own (none here) — they are kept in the file (#1694).
+        panel._forget_rows()
+        scene.tree_folds = {}
         panel.refresh()
         assert panel._heads[("layer", "Walls")].isExpanded()
     finally:

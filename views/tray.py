@@ -6181,8 +6181,6 @@ class ScenesPanel(QWidget):
         self._window = window
         self._updating = False
         self._shape = None
-        #: Folders folded shut by the user (by name).
-        self._collapsed: set = set()
         #: The scene shown last from here, the sheets' list or a key: its
         #: row carries the mark (#1158, point 6).
         self.shown = None
@@ -6257,6 +6255,10 @@ class ScenesPanel(QWidget):
         self.thumbs_action.triggered.connect(
             lambda: self.set_thumbnails(True))
         self.view_btn.setMenu(menu)
+        # Expand all / Collapse all, as in the Browser and Layers (#1694).
+        from views.side_tree import fold_button
+        self.expand_btn = fold_button(self._expand_or_collapse)
+        bar.addWidget(self.expand_btn)
         bar.addWidget(self.view_btn)
         lay.addLayout(bar)
         self.tree = _SceneTree(self)
@@ -6304,6 +6306,29 @@ class ScenesPanel(QWidget):
 
     def _scene(self):
         return self._window.viewport.scene
+
+    @property
+    def _collapsed(self) -> set:
+        """Folders folded shut by the user, by name — the document's own
+        set, saved with it (#1694)."""
+        from core.tree_folds import SCENES, folds
+        return folds(self._scene(), SCENES)
+
+    # ---- ⊞ expand / ⊟ collapse ------------------------------------------------
+    def _folder_rows(self) -> list:
+        from views.side_tree import foldable_rows
+        return [it for it in foldable_rows(self.tree)
+                if it.data(0, Qt.UserRole)[0] == "folder"]
+
+    def _update_expand_button(self) -> None:
+        from views.side_tree import show_folds
+        show_folds(getattr(self, "expand_btn", None), self._folder_rows())
+
+    def _expand_or_collapse(self) -> None:
+        from views.side_tree import all_open, fold_all
+        rows = self._folder_rows()
+        fold_all(rows, not all_open(rows))
+        self._update_expand_button()
 
     def _history(self):
         return self._window.viewport.history
@@ -6516,7 +6541,8 @@ class ScenesPanel(QWidget):
         folders = SF.folders_of(scene)
         # Rebuilt only when what the rows show changed: every edit of the
         # model calls here, and a rebuild drops the selection.
-        shape = (tuple((id(v), v.name, SF.folder_of(scene, v))
+        shape = (id(scene),
+                 tuple((id(v), v.name, SF.folder_of(scene, v))
                        for v in views),
                  tuple((f, SF.folder_parent(scene, f)) for f in folders),
                  id(self.shown), self.thumbnails)
@@ -6676,6 +6702,7 @@ class ScenesPanel(QWidget):
             self._updating = False
         self.tree.setDragDropMode(QAbstractItemView.NoDragDrop if text
                                   else QAbstractItemView.InternalMove)
+        self._update_expand_button()
 
     def select_view(self, view) -> None:
         """Make ``view``'s row the current one (and the only one picked),
@@ -6708,6 +6735,7 @@ class ScenesPanel(QWidget):
             self._collapsed.discard(name)
         else:
             self._collapsed.add(name)
+        self._update_expand_button()
 
     def _on_double_click(self, item, _column=0) -> None:
         if item.data(0, Qt.UserRole)[0] == "scene":
@@ -7235,6 +7263,12 @@ BIM_COL_CLASS, BIM_COL_NAME, BIM_COL_TAKEOFF, BIM_COL_VOL, BIM_COL_OUTLINE = \
     range(5)
 #: A foldable takeoff row's key (its group or heading), kept over a rebuild.
 _BIM_FOLD_KEY = Qt.UserRole + 2
+
+
+def _bim_fold_key(g) -> str:
+    """A group's row key in the BIM tree: its ``uid``, kept in the file,
+    so a branch folded there is folded again after reopening (#1694)."""
+    return f"group:{getattr(g, 'uid', None) or id(g)}"
 #: (column, header label, starts shown).
 BIM_OPTIONAL_COLUMNS = ((BIM_COL_TAKEOFF, "Takeoff", True),
                         (BIM_COL_VOL, "Vol m³", True),
@@ -7478,6 +7512,10 @@ class BimPanel(QWidget):
         self.group_box.currentIndexChanged.connect(
             lambda _i: self.set_group_by(self.group_box.currentData()))
         bar.addWidget(self.group_box)
+        # Expand all / Collapse all, as in the Browser and Layers (#1694).
+        from views.side_tree import fold_button
+        self.expand_btn = fold_button(self._expand_or_collapse)
+        bar.addWidget(self.expand_btn)
         lay.addLayout(bar)
         self._query = ""
         self._show_filter_state()
@@ -7512,6 +7550,9 @@ class BimPanel(QWidget):
         self.tree.itemClicked.connect(self._on_pick_object)
         self.tree.itemExpanded.connect(self._fit_tree)
         self.tree.itemCollapsed.connect(self._fit_tree)
+        self._building = False
+        self.tree.itemExpanded.connect(lambda it: self._on_folded(it, True))
+        self.tree.itemCollapsed.connect(lambda it: self._on_folded(it, False))
         lay.addWidget(self.tree)
 
         from core.turkiye_delivery import ui as delivery_ui
@@ -7545,6 +7586,37 @@ class BimPanel(QWidget):
         self._window.viewport.end_group_edit()
         from views.turkiye_delivery import DeliveryDialog
         DeliveryDialog(self._window).exec()
+
+    @property
+    def _folded(self) -> set:
+        """The branches folded shut, by row key (``class:…``, ``name:…``,
+        ``group:<uid>``) — the document's own set, saved with it
+        (#1694)."""
+        from core.tree_folds import BIM, folds
+        return folds(self._scene(), BIM)
+
+    def _on_folded(self, item, opened: bool) -> None:
+        if self._building:
+            return
+        key = item.data(0, _BIM_FOLD_KEY)
+        if isinstance(key, str):
+            if opened:
+                self._folded.discard(key)
+            else:
+                self._folded.add(key)
+        self._update_expand_button()
+
+    # ---- ⊞ expand / ⊟ collapse ------------------------------------------------
+    def _update_expand_button(self) -> None:
+        from views.side_tree import foldable_rows, show_folds
+        show_folds(getattr(self, "expand_btn", None),
+                   foldable_rows(self.tree))
+
+    def _expand_or_collapse(self) -> None:
+        from views.side_tree import all_open, fold_all, foldable_rows
+        rows = foldable_rows(self.tree)
+        fold_all(rows, not all_open(rows))
+        self._update_expand_button()
 
     def _fit_tree(self, *_a) -> None:
         """``fit_rows`` for the rows an open branch shows, not only the top."""
@@ -7791,15 +7863,18 @@ class BimPanel(QWidget):
         """The rows of the last takeoff, structured as the Group box says;
         then the search and the funnel hide what they leave out. A branch
         the user folded stays folded: picking a nested row opens the groups
-        around it, which rebuilds the list."""
+        around it, which rebuilds the list. What is folded is the
+        document's (:attr:`_folded`): it opens folded as it was saved."""
+        folded = set(self._folded)
+        self._building = True
+        try:
+            self._fill_tree(folded)
+        finally:
+            self._building = False
+        self._apply_filter()
+
+    def _fill_tree(self, folded: set) -> None:
         from PySide6.QtWidgets import QTreeWidgetItemIterator
-        folded = set()
-        it = QTreeWidgetItemIterator(self.tree)
-        while it.value() is not None:
-            item = it.value()
-            if item.childCount() and not item.isExpanded():
-                folded.add(item.data(0, _BIM_FOLD_KEY))
-            it += 1
         self.tree.clear()
         self._containers = []
         self._head_rows = []
@@ -7824,7 +7899,6 @@ class BimPanel(QWidget):
                         it += 1
                 finally:
                     self.tree.blockSignals(False)
-        self._apply_filter()
 
     def _build_flat(self) -> None:
         """No grouping: one row per object, by class and name."""
@@ -7891,7 +7965,7 @@ class BimPanel(QWidget):
                 return row
             row = QTreeWidgetItem([_group_label(g)])
             row.setData(0, Qt.UserRole, -len(self._containers) - 1)
-            row.setData(0, _BIM_FOLD_KEY, f"group:{id(g)}")
+            row.setData(0, _BIM_FOLD_KEY, _bim_fold_key(g))
             self._containers.append(g)
             font = row.font(0)
             font.setItalic(True)
@@ -7912,7 +7986,7 @@ class BimPanel(QWidget):
                 g = obj["group"]
                 stale = group_rows.pop(id(g), None)
                 tagged_rows[id(g)] = item
-                item.setData(0, _BIM_FOLD_KEY, f"group:{id(g)}")
+                item.setData(0, _BIM_FOLD_KEY, _bim_fold_key(g))
                 if stale is not None:
                     # Its contents came first: move them under the object row.
                     item.addChildren(stale.takeChildren())
@@ -7961,6 +8035,7 @@ class BimPanel(QWidget):
         for head in self._head_rows:
             self._set_head_totals(head)
         self._fit_tree()
+        self._update_expand_button()
 
     def _set_head_totals(self, head) -> None:
         """A heading's count and totals over the rows it shows: the takeoff
