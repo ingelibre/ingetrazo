@@ -994,7 +994,12 @@ class InteractionMixin:
         steps = math.log1p(value) / -math.log(0.9)
         # The zoom-out floor is for a notch; a pinch is many tiny steps,
         # each would take the whole floor and the view would race away.
-        self._zoom_at(steps, ev.position(), floor_share=min(1.0, abs(steps)))
+        # On macOS the gesture's position() is in the top-level window's
+        # coordinates, not the viewport's: inside the main window the zoom
+        # pinned a point offset by the toolbars and the left panel
+        # (+36, +104 px). The screen position is right on every platform.
+        pos = self.mapFromGlobal(ev.globalPosition())
+        self._zoom_at(steps, pos, floor_share=min(1.0, abs(steps)))
         self.update()
 
     def _zoom_at(self, steps: float, pos, floor_share: float = 1.0):
