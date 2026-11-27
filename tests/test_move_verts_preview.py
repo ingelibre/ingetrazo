@@ -38,6 +38,12 @@ def win(monkeypatch):
     w = MainWindow()
     w.show()
     _app.processEvents()
+    if getattr(w.viewport, "_gl", None) is None or not w.viewport.isValid():
+        # The preview draws from GL buffers: with no context (the
+        # offscreen platform on macOS) it never starts.
+        w._saved_version = w.viewport.scene.version
+        w.close()
+        pytest.skip("no OpenGL context on this platform")
     yield w
     w._saved_version = w.viewport.scene.version
     w.close()
