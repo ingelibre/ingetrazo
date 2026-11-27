@@ -76,3 +76,29 @@ def test_the_inherited_mark_is_the_same_drawing_fainter():
     a_faint = max(faint.pixelColor(x, y).alpha()
                   for y in range(faint.height()) for x in range(faint.width()))
     assert 0 < a_faint < a_own
+
+
+@pytest.mark.parametrize("dpr", [1.25, 1.5, 2.0])
+@pytest.mark.parametrize("on", [False, True])
+def test_the_isolate_mark_is_kept_at_the_common_ratios_too(on, dpr):
+    from PySide6.QtCore import QSize
+    from views.layers_toolbar import _ink, _isolate_pixmap, isolate_icon
+    got = isolate_icon(on).pixmap(QSize(18, 18), dpr).toImage()
+    want = _isolate_pixmap(on, _ink(), dpr).toImage()
+    assert got.size() == want.size()
+    assert got.convertToFormat(QImage.Format_ARGB32_Premultiplied) == \
+        want.convertToFormat(QImage.Format_ARGB32_Premultiplied)
+
+
+def test_a_row_asks_no_window_for_its_isolate_mark(monkeypatch):
+    """The Browser asks for the mark once per row: once drawn, it costs no
+    look at the windows (with many open, that look was seconds on 10 000
+    rows)."""
+    import views.layers_toolbar as layers_toolbar
+    layers_toolbar.isolate_icon(False)
+    asked = []
+    monkeypatch.setattr(layers_toolbar, "screen_dpr",
+                        lambda: asked.append(1) or 1.0)
+    for _ in range(100):
+        layers_toolbar.isolate_icon(False)
+    assert asked == []

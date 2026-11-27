@@ -25,7 +25,7 @@ panel, the toolbar and the right-click menus never disagree.
 from __future__ import annotations
 
 from PySide6.QtCore import QEvent, QPoint, QRect, QRectF, QSize, Qt
-from PySide6.QtGui import QAction, QColor, QIcon, QPainter, QPen
+from PySide6.QtGui import QAction, QColor, QIcon, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import (QApplication, QComboBox, QStyle,
                                QStyledItemDelegate, QToolBar)
 
@@ -63,13 +63,29 @@ def toolbar_icon(key: str) -> QIcon:
 def isolate_icon(on: bool) -> QIcon:
     """A row's isolate mark: a target, filled on the layer shown alone.
     Drawn once per state and theme: the Browser paints one per row, and a
-    document with ten thousand rows would otherwise draw ten thousand."""
+    document with ten thousand rows would otherwise draw ten thousand.
+
+    Kept, like the eye and the padlock (views.outliner._draw), at the common
+    pixel ratios and the window's own, so the key needs no ratio: asking
+    the window's ratio for every row walked every top-level window each
+    time, which put seconds on a big Browser refresh when many were open."""
     ink = _ink()
-    key = (bool(on), ink.rgba(), screen_dpr())
+    key = (bool(on), ink.rgba())
     icon = _ISOLATE_ICONS.get(key)
     if icon is not None:
         return icon
-    pm = mark_pixmap(18)
+    from views.outliner import _DRAW_RATIOS
+    icon = QIcon()
+    for ratio in sorted({*_DRAW_RATIOS, screen_dpr()}):
+        icon.addPixmap(_isolate_pixmap(on, ink, ratio))
+    _ISOLATE_ICONS[key] = icon
+    return icon
+
+
+def _isolate_pixmap(on: bool, ink: QColor, ratio: float) -> QPixmap:
+    pm = QPixmap(round(18 * ratio), round(18 * ratio))
+    pm.setDevicePixelRatio(ratio)
+    pm.fill(Qt.transparent)
     p = QPainter(pm)
     p.setRenderHint(QPainter.Antialiasing)
     if on:
@@ -87,9 +103,7 @@ def isolate_icon(on: bool) -> QIcon:
         p.drawEllipse(QRectF(2, 2, 14, 14))
         p.drawEllipse(QRectF(6.5, 6.5, 5, 5))
     p.end()
-    icon = QIcon(pm)
-    _ISOLATE_ICONS[key] = icon
-    return icon
+    return pm
 
 
 # ---- The drop-down -----------------------------------------------------------
