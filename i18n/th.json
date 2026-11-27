@@ -4359,5 +4359,5 @@
  "The report of the layers panel closing the program.": "รายงานแผงเลเยอร์ที่ทำให้โปรแกรมปิด",
  "Confirming Push/Pull deleting lines on Windows and Linux.": "การยืนยันว่าดัน/ดึงลบเส้นบน Windows และ Linux",
  "Show the other side": "แสดงอีกด้านหนึ่ง",
- "The lines fit two cameras, mirror images of each other: this one shows the other side, for a photo whose model faces the wrong way.": "เส้นต่าง ๆ เข้ากับกล้องสองตัวที่เป็นภาพสะท้อนของกันและกัน ตัวเลือกนี้แสดงอีกด้านหนึ่ง สำหรับภาพที่แบบจำลองหันไปผิดทาง"
+ "Show the other side, for when the model faces the wrong way relative to the image.": "แสดงอีกด้านหนึ่ง สำหรับภาพที่แบบจำลองหันไปผิดทางเมื่อเทียบกับภาพถ่าย"
 }

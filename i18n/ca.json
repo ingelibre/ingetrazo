@@ -4358,5 +4358,5 @@
  "The report of the layers panel closing the program.": "L'informe del tauler de capes que tancava el programa.",
  "Confirming Push/Pull deleting lines on Windows and Linux.": "La confirmació que Empènyer/Estirar esborrava línies a Windows i Linux.",
  "Show the other side": "Mostra l'altra banda",
- "The lines fit two cameras, mirror images of each other: this one shows the other side, for a photo whose model faces the wrong way.": "Les línies encaixen amb dues càmeres, imatges especulars l'una de l'altra: això mostra l'altra banda, per a una foto on el model mira al revés."
+ "Show the other side, for when the model faces the wrong way relative to the image.": "Mostra l'altra banda, per quan el model mira al revés respecte a la imatge."
 }

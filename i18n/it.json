@@ -4356,5 +4356,5 @@
  "The report of the layers panel closing the program.": "La segnalazione del pannello dei livelli che chiudeva il programma.",
  "Confirming Push/Pull deleting lines on Windows and Linux.": "La conferma che Spingi/Tira cancellava linee su Windows e Linux.",
  "Show the other side": "Mostra l'altro lato",
- "The lines fit two cameras, mirror images of each other: this one shows the other side, for a photo whose model faces the wrong way.": "Le linee corrispondono a due fotocamere, immagini speculari l'una dell'altra: questa mostra l'altro lato, per una foto il cui modello è rivolto dalla parte sbagliata."
+ "Show the other side, for when the model faces the wrong way relative to the image.": "Mostra l'altro lato, per quando il modello è rivolto dalla parte sbagliata rispetto all'immagine."
 }

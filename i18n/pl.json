@@ -4364,5 +4364,5 @@
  "The report of the layers panel closing the program.": "Zgłoszenie panelu warstw, który zamykał program.",
  "Confirming Push/Pull deleting lines on Windows and Linux.": "Potwierdzenie, że Wypchnij/Wciągnij usuwało linie w Windows i Linux.",
  "Show the other side": "Pokaż drugą stronę",
- "The lines fit two cameras, mirror images of each other: this one shows the other side, for a photo whose model faces the wrong way.": "Linie pasują do dwóch kamer, będących swymi lustrzanymi odbiciami: ta pokazuje drugą stronę, do zdjęcia, na którym model jest odwrócony tyłem."
+ "Show the other side, for when the model faces the wrong way relative to the image.": "Pokazuje drugą stronę, gdy model jest odwrócony tyłem względem zdjęcia."
 }

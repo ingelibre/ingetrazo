@@ -4359,5 +4359,5 @@
  "The report of the layers panel closing the program.": "圖層面板導致程式關閉的回報。",
  "Confirming Push/Pull deleting lines on Windows and Linux.": "確認推/拉在 Windows 和 Linux 上會刪除線條。",
  "Show the other side": "顯示另一面",
- "The lines fit two cameras, mirror images of each other: this one shows the other side, for a photo whose model faces the wrong way.": "這些線條對應兩台互為鏡像的相機：此選項顯示另一面，適用於模型朝向錯誤的照片。"
+ "Show the other side, for when the model faces the wrong way relative to the image.": "顯示另一面，適用於模型相對於圖像朝向錯誤的情況。"
 }

@@ -4383,5 +4383,5 @@
  "The report of the layers panel closing the program.": "Báo cáo bảng lớp làm đóng chương trình.",
  "Confirming Push/Pull deleting lines on Windows and Linux.": "Xác nhận Đẩy/Kéo xóa đường kẻ trên Windows và Linux.",
  "Show the other side": "Hiển thị phía bên kia",
- "The lines fit two cameras, mirror images of each other: this one shows the other side, for a photo whose model faces the wrong way.": "Các đường thẳng khớp với hai máy ảnh, là ảnh gương của nhau: tùy chọn này hiển thị phía bên kia, cho bức ảnh mà mô hình quay sai hướng."
+ "Show the other side, for when the model faces the wrong way relative to the image.": "Hiển thị phía bên kia, cho khi mô hình quay sai hướng so với hình ảnh."
 }

@@ -4359,5 +4359,5 @@
  "The report of the layers panel closing the program.": "Laporan panel lapisan yang menutup program.",
  "Confirming Push/Pull deleting lines on Windows and Linux.": "Konfirmasi bahwa Dorong/Tarik menghapus garis di Windows dan Linux.",
  "Show the other side": "Tampilkan sisi lainnya",
- "The lines fit two cameras, mirror images of each other: this one shows the other side, for a photo whose model faces the wrong way.": "Garis-garis itu cocok dengan dua kamera, bayangan cermin satu sama lain: ini menampilkan sisi lainnya, untuk foto yang modelnya menghadap ke arah yang salah."
+ "Show the other side, for when the model faces the wrong way relative to the image.": "Menampilkan sisi lainnya, untuk saat model menghadap ke arah yang salah relatif terhadap gambar."
 }

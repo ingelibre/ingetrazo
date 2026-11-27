@@ -4392,5 +4392,5 @@
  "The report of the layers panel closing the program.": "البلاغ عن لوحة الطبقات التي كانت تُغلق البرنامج.",
  "Confirming Push/Pull deleting lines on Windows and Linux.": "تأكيد أن أداة الدفع/السحب كانت تحذف الخطوط على Windows وLinux.",
  "Show the other side": "أظهر الجانب الآخر",
- "The lines fit two cameras, mirror images of each other: this one shows the other side, for a photo whose model faces the wrong way.": "الخطوط تناسب كاميرتين، كل منهما صورة معكوسة للأخرى: هذا الخيار يعرض الجانب الآخر، لصورة يظهر فيها النموذج من الجهة الخاطئة."
+ "Show the other side, for when the model faces the wrong way relative to the image.": "إظهار الجانب الآخر، عندما يكون النموذج مواجهًا للجهة الخاطئة بالنسبة إلى الصورة."
 }

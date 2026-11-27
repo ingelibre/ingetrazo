@@ -106,15 +106,34 @@ CAMERAS_FROM_THE_OTHER_SIDES = [
 ]
 
 
+def _assert_camera(sol, cam, eye):
+    assert sol.focal == pytest.approx(cam.f, rel=1e-6)
+    turned = tuple(eye) != tuple(cam.eye)
+    for got, want in ((sol.right, cam.right), (sol.up, cam.up),
+                      (sol.back, cam.back)):
+        if turned:      # the mirror: a half turn about the blue axis
+            want = (-want[0], -want[1], want[2])
+        assert got == pytest.approx(want, abs=1e-6)
+    assert sol.eye == pytest.approx(eye, abs=1e-5)
+
+
 @pytest.mark.parametrize("spec", CAMERAS_FROM_THE_OTHER_SIDES)
 def test_a_camera_from_any_side_comes_back(spec):
     cam = FakeCamera(**spec)
-    sol = PM.solve(_photo(cam))
-    assert sol.focal == pytest.approx(cam.f, rel=1e-6)
-    for got, want in ((sol.right, cam.right), (sol.up, cam.up),
-                      (sol.back, cam.back)):
-        assert got == pytest.approx(want, abs=1e-6)
-    assert sol.eye == pytest.approx(spec["eye"], abs=1e-5)
+    pm = _photo(cam)
+    if spec["eye"] == (14.0, -12.0, 6.0):
+        # From the red side the solver's pick is the camera itself.
+        _assert_camera(PM.solve(pm), cam, spec["eye"])
+        return
+    # From across the green axis, and from behind the corner, the
+    # solver's pick is the mirror camera — the lines fit both, and the
+    # blue-up rule settles on the green side. The toggle is the only
+    # way to the other one: with it on, the camera that took the photo
+    # comes back. Moving the origin never turns the model.
+    mirror = (-spec["eye"][0], -spec["eye"][1], spec["eye"][2])
+    _assert_camera(PM.solve(pm), cam, mirror)
+    pm.flip_sides = True
+    _assert_camera(PM.solve(pm), cam, spec["eye"])
 
 
 def test_the_layout_of_issue_1553_solves_to_the_green_side():
@@ -161,13 +180,13 @@ def test_flipping_the_sides_returns_the_other_camera():
     assert PM.solve(pm).eye == pytest.approx(cam.eye, abs=1e-5)
 
 
-def test_the_reporters_project_flips_to_the_camera_that_took_it():
+def test_the_reporters_project_solves_to_the_camera_that_took_it():
     """Issue #1553, the saved Test_View handles: the origin sits on the
-    far corner (5, 5, 0), so the solver's pick is the mirror — the
-    engineer stands to the right of the cube — and no solver-only rule
-    can tell, the handles fitting both cameras exactly. With the toggle
-    on, the camera that took the photo comes back: the engineer stands
-    where the photo shows him, to the left of the cube."""
+    far corner (5, 5, 0), and the solver's pick is the camera that took
+    the photo — the engineer stands where the photo shows him, to the
+    left of the cube. The handles fit the mirror camera exactly too;
+    the toggle, and only the toggle, turns to it: moving the origin
+    never changes which side the model faces."""
     pm = PM.PhotoMatch(
         width_px=3840, height_px=2258,
         x_lines=[[[0.261161908436214, 0.2617283950617284],
@@ -189,13 +208,13 @@ def test_the_reporters_project_flips_to_the_camera_that_took_it():
         p = sol.project(engineer)
         return p[0] / (2.0 * pm.aspect) + 0.5
 
-    assert PM.solve(pm).eye == pytest.approx((-11.16, 19.272, 16.941),
+    assert PM.solve(pm).eye == pytest.approx((11.16, -19.272, 16.941),
                                              abs=1e-2)
-    assert _u(PM.solve(pm)) > 0.5          # engineer on the right: wrong
+    assert _u(PM.solve(pm)) < 0.5          # engineer on the left, as shot
     pm.flip_sides = True
     flipped = PM.solve(pm)
-    assert flipped.eye == pytest.approx((11.16, -19.272, 16.941), abs=1e-2)
-    assert _u(flipped) < 0.5               # engineer on the left, as shot
+    assert flipped.eye == pytest.approx((-11.16, 19.272, 16.941), abs=1e-2)
+    assert _u(flipped) > 0.5               # the mirror: engineer right
 
 
 def test_vanishing_point_of_two_lines():

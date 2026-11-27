@@ -4355,5 +4355,5 @@
  "The report of the layers panel closing the program.": "Programı kapatan katmanlar paneli bildirimi.",
  "Confirming Push/Pull deleting lines on Windows and Linux.": "İt/Çek aracının Windows ve Linux'ta çizgileri sildiğinin doğrulanması.",
  "Show the other side": "Diğer tarafı göster",
- "The lines fit two cameras, mirror images of each other: this one shows the other side, for a photo whose model faces the wrong way.": "Çizgiler, birbirinin ayna görüntüsü olan iki kameraya uyar: bu, modeli yanlış yöne bakan bir fotoğraf için diğer tarafı gösterir."
+ "Show the other side, for when the model faces the wrong way relative to the image.": "Model görüntüye göre yanlış yöne baktığında diğer tarafı gösterir."
 }

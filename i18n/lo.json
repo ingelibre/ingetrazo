@@ -4359,5 +4359,5 @@
  "The report of the layers panel closing the program.": "ລາຍງານແຜງຊັ້ນທີ່ເຮັດໃຫ້ໂປຣແກຣມປິດ",
  "Confirming Push/Pull deleting lines on Windows and Linux.": "ການຢືນຢັນວ່າ ດັນ/ດຶງ ລຶບເສັ້ນໃນ Windows ແລະ Linux",
  "Show the other side": "ສະແດງອີກດ້ານໜຶ່ງ",
- "The lines fit two cameras, mirror images of each other: this one shows the other side, for a photo whose model faces the wrong way.": "ເສັ້ນຕ່າງໆເໝາະກັບກ້ອງສອງໂຕ, ທີ່ເປັນພາບສະທ້ອນຂອງກັນ: ຕົວເລືອກນີ້ສະແດງອີກດ້ານໜຶ່ງ, ສຳລັບຮູບທີ່ຕົວແບບຫັນໄປຜິດດ້ານ."
+ "Show the other side, for when the model faces the wrong way relative to the image.": "ສະແດງອີກດ້ານໜຶ່ງ, ສຳລັບເວລາທີ່ຕົວແບບຫັນໄປຜິດດ້ານທຽບກັບຮູບພາບ."
 }

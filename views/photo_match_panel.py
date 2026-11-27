@@ -88,9 +88,8 @@ class PhotoMatchPanel(QWidget):
         form.addRow("", self.exif)
         self.flip = QCheckBox(tr("Show the other side"))
         self.flip.setToolTip(tr(
-            "The lines fit two cameras, mirror images of each other: "
-            "this one shows the other side, for a photo whose model "
-            "faces the wrong way."))
+            "Show the other side, for when the model faces the wrong way "
+            "relative to the image."))
         self.flip.toggled.connect(self._on_flip)
         form.addRow("", self.flip)
         root.addWidget(lines)
