@@ -17,7 +17,7 @@ from formats.ifc import (_ATTR_COUNT, _DEFAULT_ATTRS, _PREDEFINED_INDEX,
 
 def _scene(cls):
     scene = Scene()
-    face = scene.mesh.add_face([V(0, 0), V(2, 0), V(2, 0, 3), V(0, 0, 3)])
+    face = scene.mesh.add_face([V(0, 0, 0), V(2, 0, 0), V(2, 0, 3), V(0, 0, 3)])
     tag_faces([face], cls, "Element", 1)
     return scene
 
