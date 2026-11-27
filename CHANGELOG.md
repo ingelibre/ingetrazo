@@ -6,6 +6,11 @@ follow [SemVer](https://semver.org).
 
 ## [Unreleased]
 
+### Añadido
+
+- **BIM: 39 clases IFC más** (#1293): placas, chimeneas, muros cortina, tramos de escalera y rampa, muebles, conjuntos, accesorios, elementos geográficos y del terreno, y las instalaciones (tuberías, válvulas, bombas, depósitos, calderas, radiadores, equipos, paneles solares, conductos, rejillas, aparatos sanitarios, cables, cuadros eléctricos, enchufes, luminarias…). Se exportan con su propia clase en IFC4 e IFC4.3 en vez de como `IfcBuildingElementProxy`.
+- **Una clase que sigue sin soporte ya no se pierde** (#1293): el proxy guarda el nombre de la clase pedida en `ObjectType` y el registro avisa una vez por clase.
+
 ## [0.6.3.3] — 2026-11-26
 
 **Arreglos del motor topológico, para luego migrarlo a Rust.** Antes de pasar el motor a Rust en la 0.6.4, esta versión corrige los fallos del motor que podían hacerte perder trabajo: una línea sobre una cara ya no tapa sus huecos y Empujar/Tirar ya no borra las líneas dibujadas en las caras que estira. Trae además los arreglos críticos de guardar, abrir `.skp`, grupos enormes, planos de sección, aristas y capas. Sin cambios de interfaz, de formato de archivo ni para las extensiones.

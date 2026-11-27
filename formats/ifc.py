@@ -39,8 +39,14 @@ SUPPORTED_SCHEMAS = ("IFC4", "IFC4X3_ADD2")
 #: layouts (doors/windows carry OverallHeight/Width…, IfcSpace has LongName
 #: where others have Tag) just get the right pad width.
 _ATTR_COUNT = {"IfcPile": 10, "IfcDoor": 13, "IfcWindow": 13, "IfcSpace": 11,
-               "IfcReinforcingBar": 14}
+               "IfcReinforcingBar": 14, "IfcStairFlight": 13,
+               "IfcElementAssembly": 10, "IfcMechanicalFastener": 11}
 _DEFAULT_ATTRS = 9
+
+#: Index of PredefinedType where it is not slot 8 (the first after Tag).
+_PREDEFINED_INDEX = {"IfcDoor": 10, "IfcWindow": 10, "IfcSpace": 9,
+                     "IfcStairFlight": 12, "IfcElementAssembly": 9,
+                     "IfcMechanicalFastener": 10}
 
 
 def ifc_guid() -> str:
@@ -356,6 +362,9 @@ def save_ifc(scene, path, project_name: str = "IngeTrazo project", *,
               f"#{building}", f"(#{storey})")
     element_ids = []
     space_ids = []
+    warned: set = set()
+    import logging
+    log = logging.getLogger(__name__)
     for obj, element_guid in zip(objects, element_guids):
         # World space: a moved group or a component instance lands where it
         # is drawn, not at its definition's origin (#984).
@@ -366,6 +375,12 @@ def save_ifc(scene, path, project_name: str = "IngeTrazo project", *,
         pds = w.add("IFCPRODUCTDEFINITIONSHAPE", "$", "$", f"(#{rep})")
         cls = obj["class"] if obj["class"] in IFC_CLASSES \
             else "IfcBuildingElementProxy"
+        fallback = obj["class"] if cls != obj["class"] else ""
+        if fallback and fallback not in warned:
+            # The proxy keeps the asked-for class in ObjectType below (#1293).
+            warned.add(fallback)
+            log.warning("IFC export: %s is not a supported class; "
+                        "written as IfcBuildingElementProxy", fallback)
         qset_name, qentries, _metrado = class_quantities(obj["class"], faces)
         total = _ATTR_COUNT.get(cls, _DEFAULT_ATTRS)
         # Slot 8 is the element's own mark (Tag; LongName on IfcSpace):
@@ -393,6 +408,8 @@ def save_ifc(scene, path, project_name: str = "IngeTrazo project", *,
                       ".NOTDEFINED."]
         attrs += ["$"] * (total - len(attrs))
         data = metadata(obj)
+        if fallback:
+            attrs[4] = _s(fallback)
         if data.get("object_type"):
             attrs[4] = _s(data["object_type"])
         if data.get("tag") and cls != "IfcSpace":
@@ -400,7 +417,7 @@ def save_ifc(scene, path, project_name: str = "IngeTrazo project", *,
         if cls == "IfcSpace" and data.get("room_number"):
             attrs[7] = _s(data["room_number"])
         if data.get("predefined_type"):
-            index = 10 if cls in ("IfcDoor", "IfcWindow") else 9 if cls == "IfcSpace" else 8
+            index = _PREDEFINED_INDEX.get(cls, 8)
             attrs[index] = f".{data['predefined_type']}."
         elem = w.add(cls.upper(), *attrs)
         from core.turkiye_delivery import property_values
