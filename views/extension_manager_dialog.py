@@ -487,6 +487,8 @@ class ExtensionManagerDialog(QDialog):
         return page
 
     def _load(self) -> None:
+        # A load asked for now stands for the one showEvent scheduled.
+        self._initial_load_timer.stop()
         if self._catalog_worker is not None:
             return
         cached = load_cached_catalog()
