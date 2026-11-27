@@ -137,6 +137,14 @@ class PhotoMatch:
     #: Keep the EXIF focal length instead of reading it from the lines
     #: (the lines then only turn the camera).
     use_exif_focal: bool = False
+    #: Show the other side of the photo: the lines fit two cameras, mirror
+    #: images of each other about the blue axis, and the solver makes no
+    #: choice between them — it hands back one, and this turns the camera
+    #: to the other, the one that took the photo (issue #1553). It is the
+    #: only way the model flips: moving the origin never turns it.
+    #: The user asked for it as the way back when the model faces the
+    #: wrong way; it is the final word, over the solver's pick.
+    flip_sides: bool = False
     #: How the photo shows (the panel): drawn IN FRONT of the model at
     #: ``photo_opacity`` — the default: the photo stays in sight however
     #: much of the model is drawn — and whether the model shows at all;
@@ -217,6 +225,8 @@ class PhotoMatch:
             out["exif_model"] = self.exif_model
         if self.use_exif_focal:
             out["use_exif_focal"] = True
+        if self.flip_sides:
+            out["flip_sides"] = True
         if not self.photo_front:
             out["photo_front"] = False
         if self.photo_opacity != 0.5:
@@ -284,6 +294,7 @@ class PhotoMatch:
                    exif_focal_35=focal if focal and focal > 0 else None,
                    exif_model=str(raw.get("exif_model", "") or ""),
                    use_exif_focal=bool(raw.get("use_exif_focal", False)),
+                   flip_sides=bool(raw.get("flip_sides", False)),
                    photo_front=bool(raw.get("photo_front", True)),
                    photo_opacity=_opacity(raw.get("photo_opacity", 0.5)),
                    show_model=bool(raw.get("show_model", True)))
@@ -360,8 +371,8 @@ class Solution:
     #: The two vanishing points in image coordinates.
     vp_x: tuple
     vp_y: tuple
-    #: Whether the green axis had to point the other way for blue to point
-    #: up (the green lines then run toward the camera from the origin).
+    #: Whether an axis had to point the other way for blue to point up
+    #: (its lines then run toward the camera from the origin).
     flipped_y: bool = False
 
     @property
@@ -404,6 +415,20 @@ class Solution:
         if n < 1e-12:
             return None
         return (d[0] / n, d[1] / n)
+
+
+def _other_side(sol: Solution) -> Solution:
+    """The other camera of the same picture: ``sol`` turned half a turn
+    about the blue axis through the origin. It stands the same height,
+    projects the blue axis and both vanishing points exactly as ``sol``
+    does, and sees every other point mirrored in that axis."""
+    def turned(v):
+        return (-v[0], -v[1], v[2])
+    return Solution(focal=sol.focal, right=turned(sol.right),
+                    up=turned(sol.up), back=turned(sol.back),
+                    eye=(-sol.eye[0], -sol.eye[1], sol.eye[2]),
+                    vp_x=sol.vp_x, vp_y=sol.vp_y,
+                    flipped_y=not sol.flipped_y)
 
 
 def solve(pm: PhotoMatch, fixed_focal: float | None = None) -> Solution:
@@ -456,9 +481,13 @@ def solve(pm: PhotoMatch, fixed_focal: float | None = None) -> Solution:
     dz = _cross(dx, dy)
     flipped = False
     if dz[1] < 0.0:
-        # Blue must point up in the picture: the green axis goes the other
-        # way, toward the camera from the origin.
-        dy = _mul(dy, -1.0)
+        # Blue must point up in the picture: the red axis goes the other
+        # way, toward the camera from the origin. Turning red instead of
+        # green picks the mirror camera of the pair — the one that took
+        # the reporter's photo (issue #1553) — and the green side is the
+        # one the model shows it. Nothing else decides between the two:
+        # moving the origin never turns the model, only the toggle does.
+        dx = _mul(dx, -1.0)
         dz = _mul(dz, -1.0)
         flipped = True
     # dx, dy, dz: the world axes in camera coordinates — the columns of
@@ -491,8 +520,15 @@ def solve(pm: PhotoMatch, fixed_focal: float | None = None) -> Solution:
     eye = (-(o_cam[0] * right[0] + o_cam[1] * up[0] + o_cam[2] * back[0]),
            -(o_cam[0] * right[1] + o_cam[1] * up[1] + o_cam[2] * back[1]),
            -(o_cam[0] * right[2] + o_cam[1] * up[2] + o_cam[2] * back[2]))
-    return Solution(focal=f, right=right, up=up, back=back, eye=eye,
-                    vp_x=vx, vp_y=vy, flipped_y=flipped)
+    sol = Solution(focal=f, right=right, up=up, back=back, eye=eye,
+                   vp_x=vx, vp_y=vy, flipped_y=flipped)
+    if pm.flip_sides:
+        # The other side of the same picture: the lines fit two cameras,
+        # mirror images of each other, and the solver's pick is the wrong
+        # one for this photo (issue #1553). The toggle is the final word,
+        # over the solver's pick.
+        sol = _other_side(sol)
+    return sol
 
 
 def solve_match(pm: PhotoMatch) -> Solution:

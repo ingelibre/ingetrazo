@@ -4354,5 +4354,7 @@
  "The report of styled edges seen through faces.": "스타일 모서리가 면을 투과해 보이는 문제 보고.",
  "The report of huge groups freezing the click.": "거대한 그룹이 클릭을 멈추게 하는 문제 보고.",
  "The report of the layers panel closing the program.": "레이어 패널이 프로그램을 종료시키는 문제 보고.",
- "Confirming Push/Pull deleting lines on Windows and Linux.": "밀기/당기기가 Windows와 Linux에서 선을 지운다는 확인."
+ "Confirming Push/Pull deleting lines on Windows and Linux.": "밀기/당기기가 Windows와 Linux에서 선을 지운다는 확인.",
+ "Show the other side": "반대쪽 표시",
+ "Show the other side, for when the model faces the wrong way relative to the image.": "모델이 이미지에 대해 잘못된 방향을 향할 때 반대쪽을 표시합니다."
 }

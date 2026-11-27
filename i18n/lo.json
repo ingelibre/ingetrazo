@@ -4357,5 +4357,7 @@
  "The report of styled edges seen through faces.": "ລາຍງານຂອບທີ່ມີສະໄຕລ໌ເບິ່ງເຫັນຜ່ານໜ້າ",
  "The report of huge groups freezing the click.": "ລາຍງານກຸ່ມໃຫຍ່ທີ່ເຮັດໃຫ້ການຄລິກຄ້າງ",
  "The report of the layers panel closing the program.": "ລາຍງານແຜງຊັ້ນທີ່ເຮັດໃຫ້ໂປຣແກຣມປິດ",
- "Confirming Push/Pull deleting lines on Windows and Linux.": "ການຢືນຢັນວ່າ ດັນ/ດຶງ ລຶບເສັ້ນໃນ Windows ແລະ Linux"
+ "Confirming Push/Pull deleting lines on Windows and Linux.": "ການຢືນຢັນວ່າ ດັນ/ດຶງ ລຶບເສັ້ນໃນ Windows ແລະ Linux",
+ "Show the other side": "ສະແດງອີກດ້ານໜຶ່ງ",
+ "Show the other side, for when the model faces the wrong way relative to the image.": "ສະແດງອີກດ້ານໜຶ່ງ, ສຳລັບເວລາທີ່ຕົວແບບຫັນໄປຜິດດ້ານທຽບກັບຮູບພາບ."
 }

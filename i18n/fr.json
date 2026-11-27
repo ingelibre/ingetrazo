@@ -4354,5 +4354,7 @@
  "The report of styled edges seen through faces.": "Le signalement d'arêtes stylisées visibles à travers les faces.",
  "The report of huge groups freezing the click.": "Le signalement de groupes énormes qui figeaient le clic.",
  "The report of the layers panel closing the program.": "Le signalement du panneau des calques qui fermait le programme.",
- "Confirming Push/Pull deleting lines on Windows and Linux.": "La confirmation que Pousser/Tirer effaçait des lignes sous Windows et Linux."
+ "Confirming Push/Pull deleting lines on Windows and Linux.": "La confirmation que Pousser/Tirer effaçait des lignes sous Windows et Linux.",
+ "Show the other side": "Montrer l'autre côté",
+ "Show the other side, for when the model faces the wrong way relative to the image.": "Montre l'autre côté, lorsque le modèle est tourné du mauvais côté par rapport à l'image."
 }

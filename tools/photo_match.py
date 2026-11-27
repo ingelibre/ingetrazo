@@ -20,9 +20,10 @@ scene. The lines become one undo step.
 Everything the keys do is also on the right-click menu and in the panel
 that opens with the tool (views/photo_match_panel.py): Done, Cancel,
 Reset lines (for a corner seen from outside, a room seen from inside, or a
-block seen from above), Swap red and green, the photo's focal length, the
-photo in front of the model or the model hidden, and a grid on the axis
-planes to judge the fit.
+block seen from above), Swap red and green, the photo's focal length,
+showing the other side of the photo when the solver's camera is the mirror
+image, the photo in front of the model or the model hidden, and a grid on
+the axis planes to judge the fit.
 """
 from __future__ import annotations
 
@@ -158,6 +159,14 @@ class PhotoMatchTool(Tool):
         self._changed(viewport)
         return True
 
+    def set_flip_sides(self, viewport, on: bool) -> None:
+        """Show the other side of the photo (``on``): the lines fit two
+        cameras, mirror images of each other, and the solver's pick is
+        the wrong one for this photo — the model faces away, green side
+        turned from the viewer (issue #1553)."""
+        self.view.photo.flip_sides = bool(on)
+        self._changed(viewport)
+
     def reset_lines(self, viewport, preset: str = "outside") -> None:
         self.view.photo.reset_lines(preset)
         self._changed(viewport, snap=True)
@@ -237,6 +246,10 @@ class PhotoMatchTool(Tool):
         exif.setChecked(bool(pm.use_exif_focal))
         exif.setEnabled(bool(pm.exif_focal_35))
         exif.toggled.connect(lambda on: self.set_exif_focal(viewport, on))
+        flip = menu.addAction(tr("Show the other side"))
+        flip.setCheckable(True)
+        flip.setChecked(bool(pm.flip_sides))
+        flip.toggled.connect(lambda on: self.set_flip_sides(viewport, on))
         menu.addSeparator()
         model = menu.addAction(tr("Show model"))
         model.setCheckable(True)

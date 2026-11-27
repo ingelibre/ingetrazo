@@ -4357,5 +4357,7 @@
  "The report of styled edges seen through faces.": "รายงานขอบที่มีสไตล์มองทะลุผ่านหน้า",
  "The report of huge groups freezing the click.": "รายงานกลุ่มขนาดใหญ่ที่ทำให้การคลิกค้าง",
  "The report of the layers panel closing the program.": "รายงานแผงเลเยอร์ที่ทำให้โปรแกรมปิด",
- "Confirming Push/Pull deleting lines on Windows and Linux.": "การยืนยันว่าดัน/ดึงลบเส้นบน Windows และ Linux"
+ "Confirming Push/Pull deleting lines on Windows and Linux.": "การยืนยันว่าดัน/ดึงลบเส้นบน Windows และ Linux",
+ "Show the other side": "แสดงอีกด้านหนึ่ง",
+ "Show the other side, for when the model faces the wrong way relative to the image.": "แสดงอีกด้านหนึ่ง สำหรับภาพที่แบบจำลองหันไปผิดทางเมื่อเทียบกับภาพถ่าย"
 }

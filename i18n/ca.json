@@ -4356,5 +4356,7 @@
  "The report of styled edges seen through faces.": "L'informe d'arestes amb estil que es veien a través de les cares.",
  "The report of huge groups freezing the click.": "L'informe de grups enormes que congelaven el clic.",
  "The report of the layers panel closing the program.": "L'informe del tauler de capes que tancava el programa.",
- "Confirming Push/Pull deleting lines on Windows and Linux.": "La confirmació que Empènyer/Estirar esborrava línies a Windows i Linux."
+ "Confirming Push/Pull deleting lines on Windows and Linux.": "La confirmació que Empènyer/Estirar esborrava línies a Windows i Linux.",
+ "Show the other side": "Mostra l'altra banda",
+ "Show the other side, for when the model faces the wrong way relative to the image.": "Mostra l'altra banda, per quan el model mira al revés respecte a la imatge."
 }

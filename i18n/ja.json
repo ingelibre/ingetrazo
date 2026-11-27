@@ -4354,5 +4354,7 @@
  "The report of styled edges seen through faces.": "スタイル付きエッジが面を透けて見える問題の報告。",
  "The report of huge groups freezing the click.": "巨大なグループでクリックが固まる問題の報告。",
  "The report of the layers panel closing the program.": "レイヤーパネルがプログラムを終了させる問題の報告。",
- "Confirming Push/Pull deleting lines on Windows and Linux.": "プッシュ/プルが Windows と Linux で線を消すことの確認。"
+ "Confirming Push/Pull deleting lines on Windows and Linux.": "プッシュ/プルが Windows と Linux で線を消すことの確認。",
+ "Show the other side": "反対側を表示",
+ "Show the other side, for when the model faces the wrong way relative to the image.": "モデルが画像に対して逆向きに見えるときに、反対側を表示します。"
 }

@@ -431,6 +431,25 @@ def test_the_right_click_menu_does_what_the_keys_do(win, tmp_path):
     assert tool.done and vp.active_tool is win._tools["select"]
 
 
+def test_the_other_side_is_one_click_from_the_menu(win, tmp_path):
+    from PySide6.QtWidgets import QMenu
+    vp = win.viewport
+    view = win.start_camera_from_photo(str(make_photo(tmp_path / "a.jpg")))
+    tool = vp.active_tool
+    menu = QMenu()
+    tool.fill_menu(menu, vp)
+    acts = {a.text(): a for a in menu.actions()}
+    assert "Show the other side" in acts
+    before = tool.result.eye
+    acts["Show the other side"].setChecked(True)
+    assert view.photo.flip_sides
+    assert tool.result.eye == pytest.approx((-before[0], -before[1],
+                                             before[2]), abs=1e-6)
+    acts["Show the other side"].setChecked(False)
+    assert not view.photo.flip_sides
+    assert tool.result.eye == pytest.approx(before, abs=1e-6)
+
+
 def test_a_photo_scene_tab_offers_its_lines(win, tmp_path):
     vp = win.viewport
     view = win.start_camera_from_photo(str(make_photo(tmp_path / "a.jpg")))

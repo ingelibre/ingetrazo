@@ -4357,5 +4357,7 @@
  "The report of styled edges seen through faces.": "帶樣式的邊線透過面可見的回報。",
  "The report of huge groups freezing the click.": "巨大群組導致點擊卡住的回報。",
  "The report of the layers panel closing the program.": "圖層面板導致程式關閉的回報。",
- "Confirming Push/Pull deleting lines on Windows and Linux.": "確認推/拉在 Windows 和 Linux 上會刪除線條。"
+ "Confirming Push/Pull deleting lines on Windows and Linux.": "確認推/拉在 Windows 和 Linux 上會刪除線條。",
+ "Show the other side": "顯示另一面",
+ "Show the other side, for when the model faces the wrong way relative to the image.": "顯示另一面，適用於模型相對於圖像朝向錯誤的情況。"
 }

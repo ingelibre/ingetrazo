@@ -4353,5 +4353,7 @@
   "The report of styled edges seen through faces.": "Yüzeylerin arkasından görünen stilli kenarlar bildirimi.",
   "The report of huge groups freezing the click.": "Tıklamayı donduran dev gruplar bildirimi.",
   "The report of the layers panel closing the program.": "Programı kapatan katmanlar paneli bildirimi.",
-  "Confirming Push/Pull deleting lines on Windows and Linux.": "İt/Çek aracının Windows ve Linux'ta çizgileri sildiğinin doğrulanması."
+  "Confirming Push/Pull deleting lines on Windows and Linux.": "İt/Çek aracının Windows ve Linux'ta çizgileri sildiğinin doğrulanması.",
+  "Show the other side": "Diğer tarafı göster",
+  "Show the other side, for when the model faces the wrong way relative to the image.": "Model görüntüye göre yanlış yöne baktığında diğer tarafı gösterir."
 }

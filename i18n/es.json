@@ -4353,5 +4353,7 @@
  "The report of styled edges seen through faces.": "El informe de aristas con estilo que se veían a través de las caras.",
  "The report of huge groups freezing the click.": "El informe de grupos enormes que congelaban el clic.",
  "The report of the layers panel closing the program.": "El informe del panel de capas que cerraba el programa.",
- "Confirming Push/Pull deleting lines on Windows and Linux.": "La confirmación de que Empujar/Tirar borraba líneas en Windows y Linux."
+ "Confirming Push/Pull deleting lines on Windows and Linux.": "La confirmación de que Empujar/Tirar borraba líneas en Windows y Linux.",
+ "Show the other side": "Mostrar el otro lado",
+ "Show the other side, for when the model faces the wrong way relative to the image.": "Muestra el otro lado, para cuando el modelo mira al revés respecto a la imagen."
 }

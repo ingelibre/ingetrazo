@@ -4362,5 +4362,7 @@
  "The report of styled edges seen through faces.": "Zgłoszenie stylizowanych krawędzi widocznych przez ściany.",
  "The report of huge groups freezing the click.": "Zgłoszenie ogromnych grup zamrażających kliknięcie.",
  "The report of the layers panel closing the program.": "Zgłoszenie panelu warstw, który zamykał program.",
- "Confirming Push/Pull deleting lines on Windows and Linux.": "Potwierdzenie, że Wypchnij/Wciągnij usuwało linie w Windows i Linux."
+ "Confirming Push/Pull deleting lines on Windows and Linux.": "Potwierdzenie, że Wypchnij/Wciągnij usuwało linie w Windows i Linux.",
+ "Show the other side": "Pokaż drugą stronę",
+ "Show the other side, for when the model faces the wrong way relative to the image.": "Pokazuje drugą stronę, gdy model jest odwrócony tyłem względem zdjęcia."
 }

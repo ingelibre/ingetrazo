@@ -4362,5 +4362,7 @@
  "The report of styled edges seen through faces.": "Повідомлення про стилізовані ребра, видимі крізь грані.",
  "The report of huge groups freezing the click.": "Повідомлення про величезні групи, що заморожували клацання.",
  "The report of the layers panel closing the program.": "Повідомлення про панель шарів, що закривала програму.",
- "Confirming Push/Pull deleting lines on Windows and Linux.": "Підтвердження, що «Тягни/Штовхай» видаляв лінії у Windows і Linux."
+ "Confirming Push/Pull deleting lines on Windows and Linux.": "Підтвердження, що «Тягни/Штовхай» видаляв лінії у Windows і Linux.",
+ "Show the other side": "Показати інший бік",
+ "Show the other side, for when the model faces the wrong way relative to the image.": "Показує інший бік — для випадку, коли модель повернута не тим боком відносно зображення."
 }

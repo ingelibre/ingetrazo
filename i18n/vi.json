@@ -4381,5 +4381,7 @@
  "The report of styled edges seen through faces.": "Báo cáo cạnh có kiểu hiện xuyên qua các mặt.",
  "The report of huge groups freezing the click.": "Báo cáo các nhóm khổng lồ làm treo cú nhấp.",
  "The report of the layers panel closing the program.": "Báo cáo bảng lớp làm đóng chương trình.",
- "Confirming Push/Pull deleting lines on Windows and Linux.": "Xác nhận Đẩy/Kéo xóa đường kẻ trên Windows và Linux."
+ "Confirming Push/Pull deleting lines on Windows and Linux.": "Xác nhận Đẩy/Kéo xóa đường kẻ trên Windows và Linux.",
+ "Show the other side": "Hiển thị phía bên kia",
+ "Show the other side, for when the model faces the wrong way relative to the image.": "Hiển thị phía bên kia, cho khi mô hình quay sai hướng so với hình ảnh."
 }
