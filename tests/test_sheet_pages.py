@@ -121,8 +121,11 @@ def test_dragging_a_sheet_tab_reorders_the_sheets_with_undo(composer):
     scene = composer._scene()
     version = scene.version
     before_win = composer._window._saved_version
-    # «A» (tab 1) dragged past «C»: B C A D.
-    _drag_tab(tabs, 1, tabs.tabRect(3).right() - 2)
+    # «A» (tab 1) dragged past «C»: B C A D. Dropped on C's middle: 2 px
+    # inside C's right edge, A's own right edge lands on D's middle, and
+    # whether Qt slides A past D too then depends on the font's tab widths
+    # (it did on the Linux CI runner).
+    _drag_tab(tabs, 1, tabs.tabRect(3).center().x())
     assert _order(composer) == ["B", "C", "A", "D"]
     assert tabs.names() == ["Model", "B", "C", "A", "D"]
     assert composer.comp.name == "A"                  # still the sheet open
