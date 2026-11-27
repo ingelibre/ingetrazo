@@ -56,6 +56,10 @@ def build_scope(viewport, scope: dict | None = None) -> dict:
         QVector3D=QVector3D, Mesh=Mesh, Group=Group, Vertex=Vertex,
         Edge=Edge, Face=Face, Layer=Layer)
     scope.update(_recipe_helpers(viewport.scene))
+    # The public sheets API (#1505): sheets.list(), sheets.add_frame(...)…
+    from core.sheets_api import SheetsAPI
+    scope["sheets"] = SheetsAPI(viewport.scene,
+                                getattr(viewport, "camera", None))
     return scope
 
 
@@ -417,44 +421,26 @@ def _tidy_groups(scene) -> None:
         scene.groups[:] = tidy
 
 
-def run_transactional(viewport, code: str, scope: dict) -> dict:
-    """Execute ``code`` exactly like the Python Console: one undoable step,
-    rolled back whole on error, no undo entry if nothing changed. Returns
-    {stdout, stderr, error, changed}."""
-    build_scope(viewport, scope)
+def run_step(viewport, fn) -> dict:
+    """``fn(scene)`` as ONE undoable step, rolled back whole on error, no
+    undo entry if nothing changed: what ``run_python`` and the bridge's
+    sheet tools share. Returns ``{result, error, changed}``, ``result``
+    being what ``fn`` returned."""
     history = viewport.history
-    out_buf, err_buf = io.StringIO(), io.StringIO()
     scene = viewport.scene
     version_before = scene.version
-    #: Version bumps the agent's own code made (an API call that reports a
-    #: change bumps it): those keep the document dirty even when the
-    #: snapshot finds nothing different.
-    code_bumps = [0]
+    #: Version bumps ``fn`` made itself (an API call that reports a change
+    #: bumps it): those keep the document dirty even when the snapshot
+    #: finds nothing different.
+    own_bumps = [0]
+    out: dict = {}
 
     def mutate(_scene) -> None:
-        old_out, old_err = sys.stdout, sys.stderr
-        sys.stdout, sys.stderr = out_buf, err_buf
         v_in = _scene.version
         try:
-            try:
-                compiled = compile(code, "<ai>", "eval")
-            except SyntaxError:
-                compiled = None
-            if compiled is None:
-                exec(compile(code, "<ai>", "exec"), scope)
-            else:
-                result = eval(compiled, scope)
-                if result is not None:
-                    scope["_"] = result
-                    print(repr(result))
-            _tidy_groups(_scene)
-            _check_scene_lists(_scene)
-        except Exception:
-            traceback.print_exc(file=err_buf)
-            raise
+            out["result"] = fn(_scene)
         finally:
-            sys.stdout, sys.stderr = old_out, old_err
-            code_bumps[0] = _scene.version - v_in
+            own_bumps[0] = _scene.version - v_in
 
     cmd = SnapshotImport(mutate)
     saved_redo = list(history.redo_stack)
@@ -480,14 +466,48 @@ def run_transactional(viewport, code: str, scope: dict) -> dict:
             # «changed: False» and still marked the document modified, and
             # the agent's shutdown was then refused (0.6.3 modelling test,
             # 20-11). ``version`` still moves on, so every cache refreshes.
-            machinery = scene.version - version_before - code_bumps[0]
+            machinery = scene.version - version_before - own_bumps[0]
             if machinery > 0:
                 scene.view_version += machinery
     else:
         changed = False
     viewport.notify_scene_changed()
+    return {"result": out.get("result"), "error": error, "changed": changed}
+
+
+def run_transactional(viewport, code: str, scope: dict) -> dict:
+    """Execute ``code`` exactly like the Python Console: one undoable step,
+    rolled back whole on error, no undo entry if nothing changed. Returns
+    {stdout, stderr, error, changed}."""
+    build_scope(viewport, scope)
+    out_buf, err_buf = io.StringIO(), io.StringIO()
+
+    def run(_scene) -> None:
+        old_out, old_err = sys.stdout, sys.stderr
+        sys.stdout, sys.stderr = out_buf, err_buf
+        try:
+            try:
+                compiled = compile(code, "<ai>", "eval")
+            except SyntaxError:
+                compiled = None
+            if compiled is None:
+                exec(compile(code, "<ai>", "exec"), scope)
+            else:
+                result = eval(compiled, scope)
+                if result is not None:
+                    scope["_"] = result
+                    print(repr(result))
+            _tidy_groups(_scene)
+            _check_scene_lists(_scene)
+        except Exception:
+            traceback.print_exc(file=err_buf)
+            raise
+        finally:
+            sys.stdout, sys.stderr = old_out, old_err
+
+    step = run_step(viewport, run)
     return {"stdout": out_buf.getvalue(), "stderr": err_buf.getvalue(),
-            "error": error, "changed": changed}
+            "error": step["error"], "changed": step["changed"]}
 
 
 # ---- Provider layer (mirrors IngePresupuestos ai_specs) ---------------------
