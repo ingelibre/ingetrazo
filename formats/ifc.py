@@ -46,7 +46,10 @@ _DEFAULT_ATTRS = 9
 #: Index of PredefinedType where it is not slot 8 (the first after Tag).
 _PREDEFINED_INDEX = {"IfcDoor": 10, "IfcWindow": 10, "IfcSpace": 9,
                      "IfcStairFlight": 12, "IfcElementAssembly": 9,
-                     "IfcMechanicalFastener": 10}
+                     "IfcMechanicalFastener": 10,
+                     # After SteelGrade, NominalDiameter, CrossSectionArea
+                     # and BarLength: slot 8 is SteelGrade, not the type.
+                     "IfcReinforcingBar": 12}
 
 
 def ifc_guid() -> str:
