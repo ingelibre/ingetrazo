@@ -4357,5 +4357,8 @@
  "The report of styled edges seen through faces.": "Сигналът за стилизирани ръбове, видими през лицата.",
  "The report of huge groups freezing the click.": "Сигналът за огромни групи, които замразяваха щракването.",
  "The report of the layers panel closing the program.": "Сигналът за панела на слоевете, който затваряше програмата.",
- "Confirming Push/Pull deleting lines on Windows and Linux.": "Потвърждението, че Бутни/Дърпай изтриваше линии в Windows и Linux."
+ "Confirming Push/Pull deleting lines on Windows and Linux.": "Потвърждението, че Бутни/Дърпай изтриваше линии в Windows и Linux.",
+ "Back-to-index button in the PDF": "Бутон „към съдържанието“ в PDF",
+ "Button size": "Размер на бутона",
+ "In the PDF of all the sheets every row opens its sheet; this button on every other page leads back to the index.": "В PDF с всички листове всеки ред отваря своя лист; този бутон на останалите страници води обратно към съдържанието."
 }

@@ -4362,5 +4362,8 @@
  "The report of styled edges seen through faces.": "Zgłoszenie stylizowanych krawędzi widocznych przez ściany.",
  "The report of huge groups freezing the click.": "Zgłoszenie ogromnych grup zamrażających kliknięcie.",
  "The report of the layers panel closing the program.": "Zgłoszenie panelu warstw, który zamykał program.",
- "Confirming Push/Pull deleting lines on Windows and Linux.": "Potwierdzenie, że Wypchnij/Wciągnij usuwało linie w Windows i Linux."
+ "Confirming Push/Pull deleting lines on Windows and Linux.": "Potwierdzenie, że Wypchnij/Wciągnij usuwało linie w Windows i Linux.",
+ "Back-to-index button in the PDF": "Przycisk „powrót do spisu” w PDF",
+ "Button size": "Rozmiar przycisku",
+ "In the PDF of all the sheets every row opens its sheet; this button on every other page leads back to the index.": "W PDF ze wszystkimi arkuszami każdy wiersz otwiera swój arkusz; ten przycisk na pozostałych stronach prowadzi z powrotem do spisu."
 }

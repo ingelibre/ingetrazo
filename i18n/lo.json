@@ -4357,5 +4357,8 @@
  "The report of styled edges seen through faces.": "ລາຍງານຂອບທີ່ມີສະໄຕລ໌ເບິ່ງເຫັນຜ່ານໜ້າ",
  "The report of huge groups freezing the click.": "ລາຍງານກຸ່ມໃຫຍ່ທີ່ເຮັດໃຫ້ການຄລິກຄ້າງ",
  "The report of the layers panel closing the program.": "ລາຍງານແຜງຊັ້ນທີ່ເຮັດໃຫ້ໂປຣແກຣມປິດ",
- "Confirming Push/Pull deleting lines on Windows and Linux.": "ການຢືນຢັນວ່າ ດັນ/ດຶງ ລຶບເສັ້ນໃນ Windows ແລະ Linux"
+ "Confirming Push/Pull deleting lines on Windows and Linux.": "ການຢືນຢັນວ່າ ດັນ/ດຶງ ລຶບເສັ້ນໃນ Windows ແລະ Linux",
+ "Back-to-index button in the PDF": "ປຸ່ມ «ກັບໄປສາລະບານ» ໃນ PDF",
+ "Button size": "ຂະໜາດປຸ່ມ",
+ "In the PDF of all the sheets every row opens its sheet; this button on every other page leads back to the index.": "ໃນ PDF ຂອງທຸກແຜ່ນ ແຕ່ລະແຖວຈະເປີດແຜ່ນຂອງມັນ; ປຸ່ມນີ້ໃນໜ້າອື່ນໆ ຈະພາກັບໄປສາລະບານ."
 }

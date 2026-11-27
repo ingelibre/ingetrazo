@@ -4381,5 +4381,8 @@
  "The report of styled edges seen through faces.": "Báo cáo cạnh có kiểu hiện xuyên qua các mặt.",
  "The report of huge groups freezing the click.": "Báo cáo các nhóm khổng lồ làm treo cú nhấp.",
  "The report of the layers panel closing the program.": "Báo cáo bảng lớp làm đóng chương trình.",
- "Confirming Push/Pull deleting lines on Windows and Linux.": "Xác nhận Đẩy/Kéo xóa đường kẻ trên Windows và Linux."
+ "Confirming Push/Pull deleting lines on Windows and Linux.": "Xác nhận Đẩy/Kéo xóa đường kẻ trên Windows và Linux.",
+ "Back-to-index button in the PDF": "Nút «về mục lục» trong PDF",
+ "Button size": "Kích thước nút",
+ "In the PDF of all the sheets every row opens its sheet; this button on every other page leads back to the index.": "Trong PDF của tất cả các bản vẽ, mỗi dòng mở bản vẽ của nó; nút này trên các trang khác đưa về mục lục."
 }

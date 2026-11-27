@@ -4362,5 +4362,8 @@
  "The report of styled edges seen through faces.": "Повідомлення про стилізовані ребра, видимі крізь грані.",
  "The report of huge groups freezing the click.": "Повідомлення про величезні групи, що заморожували клацання.",
  "The report of the layers panel closing the program.": "Повідомлення про панель шарів, що закривала програму.",
- "Confirming Push/Pull deleting lines on Windows and Linux.": "Підтвердження, що «Тягни/Штовхай» видаляв лінії у Windows і Linux."
+ "Confirming Push/Pull deleting lines on Windows and Linux.": "Підтвердження, що «Тягни/Штовхай» видаляв лінії у Windows і Linux.",
+ "Back-to-index button in the PDF": "Кнопка «до змісту» в PDF",
+ "Button size": "Розмір кнопки",
+ "In the PDF of all the sheets every row opens its sheet; this button on every other page leads back to the index.": "У PDF з усіма аркушами кожен рядок відкриває свій аркуш; ця кнопка на інших сторінках повертає до змісту."
 }

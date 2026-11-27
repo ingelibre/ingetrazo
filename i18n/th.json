@@ -4357,5 +4357,8 @@
  "The report of styled edges seen through faces.": "รายงานขอบที่มีสไตล์มองทะลุผ่านหน้า",
  "The report of huge groups freezing the click.": "รายงานกลุ่มขนาดใหญ่ที่ทำให้การคลิกค้าง",
  "The report of the layers panel closing the program.": "รายงานแผงเลเยอร์ที่ทำให้โปรแกรมปิด",
- "Confirming Push/Pull deleting lines on Windows and Linux.": "การยืนยันว่าดัน/ดึงลบเส้นบน Windows และ Linux"
+ "Confirming Push/Pull deleting lines on Windows and Linux.": "การยืนยันว่าดัน/ดึงลบเส้นบน Windows และ Linux",
+ "Back-to-index button in the PDF": "ปุ่ม «กลับไปที่สารบัญ» ใน PDF",
+ "Button size": "ขนาดปุ่ม",
+ "In the PDF of all the sheets every row opens its sheet; this button on every other page leads back to the index.": "ใน PDF ของแผ่นงานทั้งหมด แต่ละแถวจะเปิดแผ่นงานของตน ปุ่มนี้ในหน้าอื่นๆ จะพากลับไปที่สารบัญ"
 }

@@ -4390,5 +4390,8 @@
  "The report of styled edges seen through faces.": "البلاغ عن حواف منسّقة تظهر عبر الأوجه.",
  "The report of huge groups freezing the click.": "البلاغ عن مجموعات ضخمة تُجمّد النقر.",
  "The report of the layers panel closing the program.": "البلاغ عن لوحة الطبقات التي كانت تُغلق البرنامج.",
- "Confirming Push/Pull deleting lines on Windows and Linux.": "تأكيد أن أداة الدفع/السحب كانت تحذف الخطوط على Windows وLinux."
+ "Confirming Push/Pull deleting lines on Windows and Linux.": "تأكيد أن أداة الدفع/السحب كانت تحذف الخطوط على Windows وLinux.",
+ "Back-to-index button in the PDF": "زر «العودة إلى الفهرس» في PDF",
+ "Button size": "حجم الزر",
+ "In the PDF of all the sheets every row opens its sheet; this button on every other page leads back to the index.": "في ملف PDF لجميع اللوحات يفتح كل سطر لوحته؛ وهذا الزر في الصفحات الأخرى يعيد إلى الفهرس."
 }
