@@ -4645,6 +4645,18 @@ class MakeGroupCommand(Command):
         elif rot is not None:
             from core.axes import frame_matrix
             group.axes = frame_matrix(corner, *rot)
+        elif pts:
+            # Top level, world axes: the group still gets an origin of its
+            # own — the selection's lowest corner, like a component's —
+            # instead of staying at the drawing's origin, which a later
+            # move then drags along (#1693). The mesh stays in world
+            # coordinates; only the frame moves.
+            from core.axes import frame_matrix
+            corner = QVector3D(min(p.x() for p in pts),
+                               min(p.y() for p in pts),
+                               min(p.z() for p in pts))
+            group.axes = frame_matrix(corner, QVector3D(1, 0, 0),
+                                      QVector3D(0, 1, 0), QVector3D(0, 0, 1))
         return group
 
     def _take_off_loose(self, scene) -> None:
