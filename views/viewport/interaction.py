@@ -346,6 +346,7 @@ class InteractionMixin:
         if mine is not None and mine in self.scene.selection:
             return mine
         picked = (self.pick_text_label(x, y, rect_only=True)
+                  or self.pick_dimension_text(x, y)
                   or self.pick_group(x, y) or self.pick_edge(x, y)
                   or self.pick_geopath(x, y) or self.pick_dimension(x, y)
                   or self.pick_text_label(x, y)
