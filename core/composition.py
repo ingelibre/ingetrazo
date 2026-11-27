@@ -870,6 +870,15 @@ class IndiceLaminas:
     #: Hidden from the sheet — not drawn, not printed, not picked;
     #: shown again from the Items list's eye (QGIS; Marco, 26-09).
     hidden: bool = False
+    #: In the PDF of all the sheets (#1695) every row is a link to its
+    #: sheet's page anyway; this puts a small «back to the index» button
+    #: on every other page too — PDF only: paper cannot be clicked.
+    pdf_back_link: bool = True
+    #: Where that button sits: top-right | top-left | bottom-right |
+    #: bottom-left, inside the sheet's margin.
+    pdf_back_corner: str = "top-right"
+    #: Its side, in mm.
+    pdf_back_size_mm: float = 8.0
 
     # Row geometry, in multiples of the text height.
     PAD_MM = 2.0
@@ -904,6 +913,26 @@ class TocEntry:
     level: int = 0                # indentation depth
     folder: bool = False
     current: bool = False         # the sheet the index sits on
+    #: The sheet a row stands for (``None`` for a folder) — what a click on
+    #: the row opens in the PDF (#1695). Not part of a row's equality.
+    sheet: object = field(default=None, compare=False, repr=False)
+
+
+def toc_row_boxes(toc: "IndiceLaminas", rows) -> list:
+    """``[(entry, (x, y, w, h))]``: where each row of ``rows`` sits on index
+    *toc*, in mm from the element's top-left corner — the band
+    :func:`views.composer.paint_indice_mm` writes the row in, from its
+    indent to the right padding."""
+    pad = toc.PAD_MM
+    size = toc.text_mm()
+    row_h = toc.row_mm()
+    y = pad + toc.title_mm()
+    out = []
+    for e in rows:
+        x0 = pad + e.level * size * 1.5
+        out.append((e, (x0, y, max(0.0, toc.w_mm - pad - x0), row_h)))
+        y += row_h
+    return out
 
 
 def sheet_folder(comp, folders=None) -> tuple:
@@ -945,7 +974,7 @@ def toc_entries(comps, toc: IndiceLaminas, here=None, folders=None) -> list:
     rows = [(i, c) for i, c in enumerate(comps)
             if toc.include_self or c is not here]
     if toc.layout != "tree":
-        return [TocEntry(c.name, str(i + 1), 0, False, c is here)
+        return [TocEntry(c.name, str(i + 1), 0, False, c is here, sheet=c)
                 for i, c in rows]
     # By folder: sheets at the top first, then each folder in the order
     # its first sheet appears, sub-folders inside it; the document's order
@@ -968,7 +997,8 @@ def toc_entries(comps, toc: IndiceLaminas, here=None, folders=None) -> list:
         for depth in range(same, len(path)):
             out.append(TocEntry(path[depth], "", depth, True))
         open_path = path
-        out.append(TocEntry(c.name, str(i + 1), len(path), False, c is here))
+        out.append(TocEntry(c.name, str(i + 1), len(path), False, c is here,
+                            sheet=c))
     return out
 
 

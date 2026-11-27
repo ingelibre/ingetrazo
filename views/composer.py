@@ -1694,6 +1694,51 @@ def paint_indice_mm(painter: QPainter, ix: IndiceLaminas, rows,
         y += row_h
 
 
+#: The corners the «back to the index» button may sit in (#1695).
+TOC_BACK_CORNERS = ("top-right", "top-left", "bottom-right", "bottom-left")
+
+
+def toc_back_box_mm(comp, ix: IndiceLaminas) -> tuple:
+    """``(x, y, w, h)`` of the «back to the index» button on sheet
+    ``comp``, in sheet mm: a square of ``ix.pdf_back_size_mm`` in the
+    corner ``ix.pdf_back_corner``, inside the sheet's margin."""
+    w_mm, h_mm = comp.page_size_mm()
+    side = min(max(3.0, float(ix.pdf_back_size_mm or 8.0)), 40.0)
+    m = max(2.0, float(getattr(comp, "margin_mm", 10.0) or 0.0) / 2.0)
+    corner = (ix.pdf_back_corner if ix.pdf_back_corner in TOC_BACK_CORNERS
+              else "top-right")
+    x = m if corner.endswith("left") else w_mm - m - side
+    y = m if corner.startswith("top") else h_mm - m - side
+    return (x, y, side, side)
+
+
+def paint_toc_back_mm(painter: QPainter, box) -> None:
+    """The «back to the index» button (#1695): a rounded square with the
+    lines of a list and an arrow up — drawn on the PDF pages only."""
+    x, y, w, h = box
+    ink = QColor(30, 36, 44)
+    painter.save()
+    painter.setRenderHint(QPainter.Antialiasing)
+    pen = QPen(ink, max(0.15, w * 0.04))
+    pen.setCapStyle(Qt.RoundCap)
+    painter.setPen(pen)
+    painter.setBrush(QColor(255, 255, 255, 230))
+    painter.drawRoundedRect(QRectF(x, y, w, h), w * 0.18, w * 0.18)
+    # Three lines of a list on the left…
+    for k in range(3):
+        ly = y + h * (0.32 + 0.18 * k)
+        painter.drawLine(QPointF(x + w * 0.2, ly), QPointF(x + w * 0.24, ly))
+        painter.drawLine(QPointF(x + w * 0.33, ly), QPointF(x + w * 0.56, ly))
+    # …and an arrow up on the right: back to it.
+    ax = x + w * 0.74
+    painter.drawLine(QPointF(ax, y + h * 0.72), QPointF(ax, y + h * 0.28))
+    painter.drawLine(QPointF(ax, y + h * 0.28),
+                     QPointF(ax - w * 0.1, y + h * 0.4))
+    painter.drawLine(QPointF(ax, y + h * 0.28),
+                     QPointF(ax + w * 0.1, y + h * 0.4))
+    painter.restore()
+
+
 def paint_forma_mm(painter: QPainter, f: FormaItem) -> None:
     pen = QPen(QColor(f.color))
     pen.setWidthF(f.stroke_mm)
@@ -8358,6 +8403,31 @@ class ComposerWindow(QMainWindow):
         form.addRow(tr("Index page"), self.ix_page)
         self.ix_info = QLabel()
         form.addRow(self.ix_info)
+        # The PDF of all the sheets (#1695): the rows link to their sheets;
+        # a button on the other pages leads back here.
+        tip = tr("In the PDF of all the sheets every row opens its sheet; "
+                 "this button on every other page leads back to the index.")
+        self.ix_back = QCheckBox(tr("Back-to-index button in the PDF"))
+        self.ix_back.setToolTip(tip)
+        self.ix_back.toggled.connect(self._on_indice_props)
+        form.addRow(self.ix_back)
+        self.ix_back_corner = QComboBox()
+        for key, label in (("top-right", "Top right"),
+                           ("top-left", "Top left"),
+                           ("bottom-right", "Bottom right"),
+                           ("bottom-left", "Bottom left")):
+            self.ix_back_corner.addItem(tr(label), key)
+        self.ix_back_corner.setToolTip(tip)
+        self.ix_back_corner.currentIndexChanged.connect(
+            self._on_indice_props)
+        form.addRow(tr("Position"), self.ix_back_corner)
+        self.ix_back_size = QDoubleSpinBox()
+        self.ix_back_size.setRange(3.0, 40.0)
+        self.ix_back_size.setSingleStep(1.0)
+        self.ix_back_size.setSuffix(" mm")
+        self.ix_back_size.setToolTip(tip)
+        self.ix_back_size.valueChanged.connect(self._on_indice_props)
+        form.addRow(tr("Button size"), self.ix_back_size)
         return w
 
     def _page_forma(self) -> QWidget:
@@ -10061,6 +10131,10 @@ class ComposerWindow(QMainWindow):
                 self.ix_border.setChecked(bool(ix.border))
                 self.ix_per_page.setValue(int(ix.per_page))
                 self.ix_page.setValue(int(ix.page))
+                self.ix_back.setChecked(bool(ix.pdf_back_link))
+                self.ix_back_corner.setCurrentIndex(
+                    max(0, self.ix_back_corner.findData(ix.pdf_back_corner)))
+                self.ix_back_size.setValue(float(ix.pdf_back_size_mm))
                 self._sync_indice_info(item)
                 self.props.setCurrentIndex(16)
             elif isinstance(item, FormaCanvasItem):
@@ -13214,7 +13288,11 @@ class ComposerWindow(QMainWindow):
             "include_self": self.ix_self.isChecked(),
             "border": self.ix_border.isChecked(),
             "per_page": int(self.ix_per_page.value()),
-            "page": int(self.ix_page.value())})
+            "page": int(self.ix_page.value()),
+            "pdf_back_link": self.ix_back.isChecked(),
+            "pdf_back_corner": (self.ix_back_corner.currentData()
+                                or "top-right"),
+            "pdf_back_size_mm": float(self.ix_back_size.value())})
         self._sync_indice_info(item)
 
     def _sync_indice_info(self, item) -> None:
@@ -13226,6 +13304,8 @@ class ComposerWindow(QMainWindow):
                             getattr(self._scene(), "sheet_folders", None)))
         pages = toc_page_count(n, ix.per_page)
         self.ix_page.setEnabled(ix.per_page > 0)
+        self.ix_back_corner.setEnabled(bool(ix.pdf_back_link))
+        self.ix_back_size.setEnabled(bool(ix.pdf_back_link))
         self.ix_info.setText(tr("{n} entries on {pages} page(s)").format(
             n=n, pages=pages))
 
@@ -15657,14 +15737,83 @@ class ComposerWindow(QMainWindow):
             comps = [c for c in comps if id(c) in wanted]
         writer = QPdfWriter(path)
         writer.setResolution(RENDER_DPI)
-        return self._paint_atlas(writer, comps, RENDER_DPI)
+        links: list = []
+        troubled = self._paint_atlas(writer, comps, RENDER_DPI, links=links)
+        del writer                       # the file closed before it is read
+        if links:
+            # The sheet index's rows and the «back to the index» buttons
+            # become links between the pages (#1695). A file the linker
+            # cannot read stays as Qt wrote it.
+            from formats.pdf_links import add_links
+            try:
+                add_links(path, links)
+            except (OSError, ValueError):
+                import logging
+                logging.getLogger(__name__).warning(
+                    "PDF links not added to %s", path, exc_info=True)
+        return troubled
 
-    def _paint_atlas(self, device, comps, dpi) -> list:
+    def _atlas_index(self, comps) -> tuple:
+        """``(pages, home, back)`` for an atlas of ``comps``: the atlas
+        pages that hold a sheet index (shown), the first of them — where
+        «back to the index» leads — and that index's element, whose
+        settings the button follows (``None`` when there is no index or
+        its button is off)."""
+        pages = [i for i, c in enumerate(comps)
+                 if any(not getattr(ix, "hidden", False)
+                        for ix in getattr(c, "indices", ()) or ())]
+        if not pages:
+            return (), None, None
+        home = pages[0]
+        first = next(ix for ix in comps[home].indices
+                     if not getattr(ix, "hidden", False))
+        return (tuple(pages), home,
+                first if getattr(first, "pdf_back_link", True) else None)
+
+    def _atlas_links(self, device, comps, i, comp, index, painter) -> list:
+        """The links of atlas page ``i`` (sheet ``comp``): one per row of
+        each sheet index on it, to the page of the row's sheet, and — on a
+        page without an index — the «back to the index» button, painted
+        here (``painter`` still in sheet mm) and linked to the index's
+        page."""
+        from PySide6.QtGui import QPageLayout
+        from core.composition import toc_row_boxes
+        from formats.pdf_links import PdfLink, mm_rect_to_pdf
+        index_pages, home, back = index
+        layout = device.pageLayout()
+        paint = layout.paintRect(QPageLayout.Point)
+        full = layout.fullRect(QPageLayout.Point)
+        origin = (paint.left() - full.left(), paint.top() - full.top())
+        page_h = full.height()
+        where = {id(c): j for j, c in enumerate(comps)}
+        out: list = []
+        for ix in getattr(comp, "indices", ()) or ():
+            if getattr(ix, "hidden", False):
+                continue
+            rows, _page, _pages = self.toc_rows(ix, comp)
+            for entry, (x, y, w, h) in toc_row_boxes(ix, rows):
+                target = where.get(id(entry.sheet)) if entry.sheet else None
+                if target is None or entry.folder:
+                    continue
+                out.append(PdfLink(i, mm_rect_to_pdf(
+                    (ix.x_mm + x, ix.y_mm + y, w, h), origin, page_h),
+                    target, entry.label))
+        if back is not None and i not in index_pages:
+            box = toc_back_box_mm(comp, back)
+            paint_toc_back_mm(painter, box)
+            out.append(PdfLink(i, mm_rect_to_pdf(box, origin, page_h), home,
+                               back.title or tr("SHEET INDEX")))
+        return out
+
+    def _paint_atlas(self, device, comps, dpi, links=None) -> list:
         """Paint ``comps`` on ``device`` (a PDF writer or a printer), one
         page each at its own paper size and orientation. Returns the names
-        of the sheets where a frame would not render."""
+        of the sheets where a frame would not render. ``links`` (a list):
+        a PDF of them all — the sheet index's links and its «back» buttons
+        are collected into it (#1695); a printer gets neither."""
         painter = None
         troubled: list = []
+        index = self._atlas_index(comps) if links is not None else None
         try:
             for i, comp in enumerate(comps):
                 for f in comp.frames:          # fresh renders per sheet
@@ -15691,6 +15840,9 @@ class ComposerWindow(QMainWindow):
                 painter.resetTransform()
                 painter.scale(dpi / 25.4, dpi / 25.4)
                 self._paint_sheet(painter, comp)
+                if index is not None and index[0]:
+                    links.extend(self._atlas_links(device, comps, i, comp,
+                                                   index, painter))
         finally:
             if painter is not None:
                 painter.end()

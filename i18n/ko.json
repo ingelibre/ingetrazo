@@ -4354,5 +4354,8 @@
  "The report of styled edges seen through faces.": "스타일 모서리가 면을 투과해 보이는 문제 보고.",
  "The report of huge groups freezing the click.": "거대한 그룹이 클릭을 멈추게 하는 문제 보고.",
  "The report of the layers panel closing the program.": "레이어 패널이 프로그램을 종료시키는 문제 보고.",
- "Confirming Push/Pull deleting lines on Windows and Linux.": "밀기/당기기가 Windows와 Linux에서 선을 지운다는 확인."
+ "Confirming Push/Pull deleting lines on Windows and Linux.": "밀기/당기기가 Windows와 Linux에서 선을 지운다는 확인.",
+ "Back-to-index button in the PDF": "PDF의 «목차로 돌아가기» 버튼",
+ "Button size": "버튼 크기",
+ "In the PDF of all the sheets every row opens its sheet; this button on every other page leads back to the index.": "모든 시트의 PDF에서 각 행은 해당 시트를 엽니다. 다른 페이지의 이 버튼은 목차로 돌아갑니다."
 }

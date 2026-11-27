@@ -4357,5 +4357,8 @@
  "The report of styled edges seen through faces.": "Laporan tepi bergaya yang terlihat menembus muka.",
  "The report of huge groups freezing the click.": "Laporan grup raksasa yang membekukan klik.",
  "The report of the layers panel closing the program.": "Laporan panel lapisan yang menutup program.",
- "Confirming Push/Pull deleting lines on Windows and Linux.": "Konfirmasi bahwa Dorong/Tarik menghapus garis di Windows dan Linux."
+ "Confirming Push/Pull deleting lines on Windows and Linux.": "Konfirmasi bahwa Dorong/Tarik menghapus garis di Windows dan Linux.",
+ "Back-to-index button in the PDF": "Tombol «kembali ke indeks» di PDF",
+ "Button size": "Ukuran tombol",
+ "In the PDF of all the sheets every row opens its sheet; this button on every other page leads back to the index.": "Di PDF semua lembar, setiap baris membuka lembarnya; tombol ini di halaman lain membawa kembali ke indeks."
 }

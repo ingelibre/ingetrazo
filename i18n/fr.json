@@ -4354,5 +4354,8 @@
  "The report of styled edges seen through faces.": "Le signalement d'arêtes stylisées visibles à travers les faces.",
  "The report of huge groups freezing the click.": "Le signalement de groupes énormes qui figeaient le clic.",
  "The report of the layers panel closing the program.": "Le signalement du panneau des calques qui fermait le programme.",
- "Confirming Push/Pull deleting lines on Windows and Linux.": "La confirmation que Pousser/Tirer effaçait des lignes sous Windows et Linux."
+ "Confirming Push/Pull deleting lines on Windows and Linux.": "La confirmation que Pousser/Tirer effaçait des lignes sous Windows et Linux.",
+ "Back-to-index button in the PDF": "Bouton « retour au sommaire » dans le PDF",
+ "Button size": "Taille du bouton",
+ "In the PDF of all the sheets every row opens its sheet; this button on every other page leads back to the index.": "Dans le PDF de toutes les planches, chaque ligne ouvre sa planche ; ce bouton sur les autres pages ramène au sommaire."
 }

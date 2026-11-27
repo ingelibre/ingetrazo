@@ -4354,5 +4354,8 @@
  "The report of styled edges seen through faces.": "带样式的边线透过面可见的报告。",
  "The report of huge groups freezing the click.": "巨大群组导致点击卡死的报告。",
  "The report of the layers panel closing the program.": "图层面板导致程序关闭的报告。",
- "Confirming Push/Pull deleting lines on Windows and Linux.": "确认推/拉在 Windows 和 Linux 上会删除线条。"
+ "Confirming Push/Pull deleting lines on Windows and Linux.": "确认推/拉在 Windows 和 Linux 上会删除线条。",
+ "Back-to-index button in the PDF": "PDF 中的“返回目录”按钮",
+ "Button size": "按钮大小",
+ "In the PDF of all the sheets every row opens its sheet; this button on every other page leads back to the index.": "在所有图纸的 PDF 中，每一行都会打开对应的图纸；其他页面上的此按钮可返回目录。"
 }

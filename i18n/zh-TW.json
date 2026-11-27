@@ -4357,5 +4357,8 @@
  "The report of styled edges seen through faces.": "帶樣式的邊線透過面可見的回報。",
  "The report of huge groups freezing the click.": "巨大群組導致點擊卡住的回報。",
  "The report of the layers panel closing the program.": "圖層面板導致程式關閉的回報。",
- "Confirming Push/Pull deleting lines on Windows and Linux.": "確認推/拉在 Windows 和 Linux 上會刪除線條。"
+ "Confirming Push/Pull deleting lines on Windows and Linux.": "確認推/拉在 Windows 和 Linux 上會刪除線條。",
+ "Back-to-index button in the PDF": "PDF 中的「返回目錄」按鈕",
+ "Button size": "按鈕大小",
+ "In the PDF of all the sheets every row opens its sheet; this button on every other page leads back to the index.": "在所有圖紙的 PDF 中，每一列都會開啟對應的圖紙；其他頁面上的此按鈕可返回目錄。"
 }

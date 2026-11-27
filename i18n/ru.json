@@ -4354,5 +4354,8 @@
  "The report of styled edges seen through faces.": "Сообщение о стилизованных рёбрах, видимых сквозь грани.",
  "The report of huge groups freezing the click.": "Сообщение об огромных группах, замораживавших щелчок.",
  "The report of the layers panel closing the program.": "Сообщение о панели слоёв, закрывавшей программу.",
- "Confirming Push/Pull deleting lines on Windows and Linux.": "Подтверждение того, что «Тяни/Толкай» удалял линии в Windows и Linux."
+ "Confirming Push/Pull deleting lines on Windows and Linux.": "Подтверждение того, что «Тяни/Толкай» удалял линии в Windows и Linux.",
+ "Back-to-index button in the PDF": "Кнопка «к оглавлению» в PDF",
+ "Button size": "Размер кнопки",
+ "In the PDF of all the sheets every row opens its sheet; this button on every other page leads back to the index.": "В PDF со всеми листами каждая строка открывает свой лист; эта кнопка на остальных страницах возвращает к оглавлению."
 }

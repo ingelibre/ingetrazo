@@ -4354,5 +4354,8 @@
  "The report of styled edges seen through faces.": "Der Bericht über gestylte Kanten, die durch Flächen sichtbar waren.",
  "The report of huge groups freezing the click.": "Der Bericht über riesige Gruppen, die den Klick einfroren.",
  "The report of the layers panel closing the program.": "Der Bericht über das Ebenen-Bedienfeld, das das Programm schloss.",
- "Confirming Push/Pull deleting lines on Windows and Linux.": "Die Bestätigung, dass Drücken/Ziehen unter Windows und Linux Linien löschte."
+ "Confirming Push/Pull deleting lines on Windows and Linux.": "Die Bestätigung, dass Drücken/Ziehen unter Windows und Linux Linien löschte.",
+ "Back-to-index button in the PDF": "Schaltfläche „Zum Inhaltsverzeichnis“ im PDF",
+ "Button size": "Größe der Schaltfläche",
+ "In the PDF of all the sheets every row opens its sheet; this button on every other page leads back to the index.": "Im PDF aller Blätter öffnet jede Zeile ihr Blatt; diese Schaltfläche auf allen anderen Seiten führt zurück zum Inhaltsverzeichnis."
 }

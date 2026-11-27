@@ -4353,5 +4353,8 @@
   "The report of styled edges seen through faces.": "Yüzeylerin arkasından görünen stilli kenarlar bildirimi.",
   "The report of huge groups freezing the click.": "Tıklamayı donduran dev gruplar bildirimi.",
   "The report of the layers panel closing the program.": "Programı kapatan katmanlar paneli bildirimi.",
-  "Confirming Push/Pull deleting lines on Windows and Linux.": "İt/Çek aracının Windows ve Linux'ta çizgileri sildiğinin doğrulanması."
+  "Confirming Push/Pull deleting lines on Windows and Linux.": "İt/Çek aracının Windows ve Linux'ta çizgileri sildiğinin doğrulanması.",
+ "Back-to-index button in the PDF": "PDF'de «dizine dön» düğmesi",
+ "Button size": "Düğme boyutu",
+ "In the PDF of all the sheets every row opens its sheet; this button on every other page leads back to the index.": "Tüm paftaların PDF'inde her satır kendi paftasını açar; diğer sayfalardaki bu düğme dizine geri götürür."
 }

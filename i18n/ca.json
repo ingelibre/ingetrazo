@@ -4356,5 +4356,8 @@
  "The report of styled edges seen through faces.": "L'informe d'arestes amb estil que es veien a través de les cares.",
  "The report of huge groups freezing the click.": "L'informe de grups enormes que congelaven el clic.",
  "The report of the layers panel closing the program.": "L'informe del tauler de capes que tancava el programa.",
- "Confirming Push/Pull deleting lines on Windows and Linux.": "La confirmació que Empènyer/Estirar esborrava línies a Windows i Linux."
+ "Confirming Push/Pull deleting lines on Windows and Linux.": "La confirmació que Empènyer/Estirar esborrava línies a Windows i Linux.",
+ "Back-to-index button in the PDF": "Botó «tornar a l'índex» al PDF",
+ "Button size": "Mida del botó",
+ "In the PDF of all the sheets every row opens its sheet; this button on every other page leads back to the index.": "Al PDF de totes les làmines cada fila obre la seva làmina; aquest botó a les altres pàgines torna a l'índex."
 }
