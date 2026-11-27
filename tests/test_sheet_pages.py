@@ -69,6 +69,15 @@ def _spin(ms: int = 0) -> None:
     _app.processEvents()
 
 
+def _spin_until(done, ms: int = 5000) -> None:
+    """Events run until ``done()`` holds, or ``ms`` have gone by."""
+    end = time.monotonic() + ms / 1000.0
+    while not done() and time.monotonic() < end:
+        _app.processEvents()
+        time.sleep(0.01)
+    _app.processEvents()
+
+
 def _order(comp) -> list:
     return [c.name for c in comp._scene().compositions]
 
@@ -703,7 +712,9 @@ def test_a_page_shows_at_once_and_fills_in_when_its_frames_render(
     panel = _explorer(composer)
     assert panel.page_pixmap(c) is None          # a grey page, for now
     pics = _open_panel(composer).pictures
-    _spin(150)
+    # Painted, filled in, painted again: on a slow runner that takes more
+    # than a fixed 150 ms.
+    _spin_until(lambda: pics.painted_keys.count(id(c)) >= 2)
     assert made == [frame]                       # one small render, no more
     assert pics.filled == 1
     assert id(frame) not in composer.render_cache     # the canvas's untouched
