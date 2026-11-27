@@ -29,6 +29,8 @@ so «in the background» means interleaved, not on a thread of its own:
   that video: its scenes are gone.
 - A video cancelled or failed leaves no half file (the writers'
   ``discard``); the keyframes stay, small, in the bridge's own folder.
+- A finished video is fetched over the bridge in chunks
+  (``video_download``) by a client that cannot read this machine's disk.
 """
 from __future__ import annotations
 
@@ -97,6 +99,7 @@ class VideoJob:
         self.started = time.monotonic()
         self.ended: float | None = None
         self._reached = -1
+        self._sha256: dict[str, str] = {}
 
     # ---- One frame -------------------------------------------------------------
     def step(self) -> None:
@@ -183,6 +186,25 @@ class VideoJob:
         if self.state == RUNNING:
             self.writer.discard()
             self._end(FAILED, str(exc) or type(exc).__name__)
+
+    # ---- Downloads ------------------------------------------------------------
+    def frame_files(self) -> list:
+        """The frames of a PNG sequence, in the order they play."""
+        from views.video_export import existing_frames
+        return existing_frames(self.path)
+
+    def sha256_of(self, path) -> str:
+        """The SHA-256 of a file this job wrote, worked out once."""
+        import hashlib
+        key = str(path)
+        cache = self._sha256
+        if key not in cache:
+            digest = hashlib.sha256()
+            with open(path, "rb") as fh:
+                for block in iter(lambda: fh.read(1 << 20), b""):
+                    digest.update(block)
+            cache[key] = digest.hexdigest()
+        return cache[key]
 
     # ---- What the agent is told ----------------------------------------------------
     def status(self) -> dict:

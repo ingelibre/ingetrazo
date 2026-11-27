@@ -772,6 +772,59 @@ class _Bridge(BridgeTools, QObject):
                 "frame": key["frame"], "index": key["index"],
                 "state": job.state}
 
+    def _tool_video_download(self, job_id: str = "", offset: int = 0,
+                             length: int | None = None,
+                             frame: int | None = None) -> dict:
+        """A finished video's bytes, in chunks, for a client that cannot
+        read the IngeTrazo machine's disk (a container, a server): base64
+        ``data`` from ``offset``, at most ``length`` bytes (2 MiB by
+        default, 8 MiB at most), with the file's ``size`` and ``sha256`` to
+        put it together and check it; ``eof`` on the last chunk. A PNG
+        sequence is fetched a ``frame`` at a time (0 = the first)."""
+        import base64
+        try:
+            job = self._videos().get(job_id)
+        except KeyError as exc:
+            raise ValueError(exc.args[0]) from None
+        if job.state != "done":
+            raise ValueError(f"the video is {job.state}, not done: "
+                             "video_status says how far it got")
+        if job.fmt == "png":
+            if frame is None:
+                raise ValueError("a PNG sequence is downloaded a frame at "
+                                 f"a time: give frame (0 to "
+                                 f"{job.frames - 1})")
+            frames = job.frame_files()
+            try:
+                target = frames[int(frame)]
+            except (IndexError, ValueError, TypeError):
+                raise ValueError(f"no frame {frame!r}; there are "
+                                 f"{len(frames)}") from None
+        else:
+            if frame is not None:
+                raise ValueError("frame is for a PNG sequence only")
+            target = job.path
+        if not target.is_file():
+            raise FileNotFoundError(f"the video is gone: {target}")
+        size = target.stat().st_size
+        offset = int(offset)
+        if not 0 <= offset <= size:
+            raise ValueError(f"offset must be between 0 and {size}")
+        cap = 8 * 1024 * 1024
+        length = 2 * 1024 * 1024 if length is None else int(length)
+        if length < 1:
+            raise ValueError("length must be at least 1 byte")
+        length = min(length, cap, size - offset)
+        with open(target, "rb") as fh:
+            fh.seek(offset)
+            chunk = fh.read(length)
+        return {"job_id": job.id, "file": target.name, "size": size,
+                "sha256": job.sha256_of(target), "offset": offset,
+                "length": len(chunk), "eof": offset + len(chunk) >= size,
+                "next_offset": offset + len(chunk),
+                "encoding": "base64",
+                "data": base64.b64encode(chunk).decode("ascii")}
+
     def _tool_cancel_video(self, job_id: str = "") -> dict:
         """Stop a video: what it wrote is removed (the keyframes stay)."""
         try:

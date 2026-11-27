@@ -18,7 +18,7 @@ named tools with a schema, for clients that do not allow code:
 get_scene_info, get_object_info, list_layers, set_layer_visibility,
 list_scenes, show_scene, set_camera, select, render_sheet, export_view,
 export_video (in the background: video_status, video_keyframe,
-cancel_video), list_materials, apply_material, import_file, export_file; and for
+video_download, cancel_video), list_materials, apply_material, import_file, export_file; and for
 automation document_info, open_document, save_document, export_pdf and
 shutdown. Every mutation goes through IngeTrazo's command engine — the
 hermeticity guard validates the agent's recipes, and Ctrl+Z always works.
@@ -308,6 +308,25 @@ TOOLS = [
         },
     },
     {
+        "name": "video_download",
+        "description": (
+            "Fetch a finished video (state done) over MCP, for a client "
+            "that cannot read the IngeTrazo machine's disk (Docker, a "
+            "server). Returns base64 `data` of at most `length` bytes "
+            "(default 2 MiB, max 8 MiB) from `offset`, plus the file's "
+            "`size`, `sha256`, `next_offset` and `eof`: call again with "
+            "next_offset until eof, join the chunks, check the sha256. A "
+            "PNG sequence is fetched one `frame` at a time (0 = first)."),
+        "inputSchema": {
+            "type": "object",
+            "properties": {"job_id": {"type": "string"},
+                           "offset": {"type": "integer"},
+                           "length": {"type": "integer"},
+                           "frame": {"type": "integer"}},
+            "required": ["job_id"],
+        },
+    },
+    {
         "name": "cancel_video",
         "description": (
             "Stop a video from export_video: the half-written file (or the "
@@ -515,7 +534,7 @@ _READ_ONLY = ("list_documents", "query_model", "screenshot", "get_scene_info",
               "get_object_info", "list_layers", "list_scenes",
               "list_materials", "render_sheet", "document_info",
               "export_view", "export_video", "video_status",
-              "video_keyframe")
+              "video_keyframe", "video_download")
 # Opening another document, overwriting a file or ending the program can
 # lose work a client did not mean to lose (names as merged with #1494).
 _DESTRUCTIVE = ("run_python", "open_document", "save_document", "shutdown")

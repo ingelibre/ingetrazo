@@ -173,7 +173,7 @@ NAMED = ("get_scene_info", "get_object_info", "list_layers",
          "export_pdf", "document_info", "open_document", "save_document",
          "shutdown", "import_file", "export_file", "list_materials",
          "apply_material", "export_video", "video_status",
-         "video_keyframe", "cancel_video")
+         "video_keyframe", "video_download", "cancel_video")
 #: One tool per job (PR #1494 reconciled with n63-mcp, 19-11): the names
 #: the PR gave to the same job are the ones left.
 RETIRED = ("open_file", "save_file")
@@ -790,3 +790,38 @@ def test_a_video_whose_document_is_replaced_fails(video_env, tmp_path):
     got = _ok(bridge, "video_status", {"job_id": started["job_id"]})
     assert got["state"] == "failed" and "replaced" in got["error"]
     assert not (tmp_path / "gone").exists()
+
+
+def test_a_finished_video_is_downloaded_in_chunks(video_env, tmp_path):
+    import base64
+    import hashlib
+    win, vp, bridge, _seen = video_env
+    started = _ok(bridge, "export_video", {
+        "path": str(tmp_path / "dl.png"), "width": 64, "height": 64,
+        "fps": 24, "transition": 0.25, "pause": 0.25})
+    job_id = started["job_id"]
+    done = _until_done(bridge, job_id)
+    assert done["state"] == "done"
+    assert "a frame at a time" in _err(bridge, "video_download",
+                                       {"job_id": job_id})
+    first = sorted((tmp_path / "dl").glob("dl_*.png"))[0].read_bytes()
+    parts, offset = [], 0
+    while True:
+        got = _ok(bridge, "video_download", {"job_id": job_id, "frame": 0,
+                                             "offset": offset, "length": 100})
+        parts.append(base64.b64decode(got["data"]))
+        offset = got["next_offset"]
+        if got["eof"]:
+            break
+    data = b"".join(parts)
+    assert data == first and got["size"] == len(first)
+    assert got["sha256"] == hashlib.sha256(first).hexdigest()
+    assert "no frame 999" in _err(bridge, "video_download",
+                                  {"job_id": job_id, "frame": 999})
+    # Only a finished video: a cancelled one has nothing to fetch.
+    other = _ok(bridge, "export_video", {
+        "path": str(tmp_path / "x.png"), "width": 64, "height": 64,
+        "fps": 60, "transition": 60, "pause": 60})
+    _ok(bridge, "cancel_video", {"job_id": other["job_id"]})
+    assert "is cancelled, not done" in _err(
+        bridge, "video_download", {"job_id": other["job_id"], "frame": 0})

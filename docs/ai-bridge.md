@@ -185,6 +185,7 @@ Common rules:
 | `export_video` | **Starts** a video of the scenes, as File ▸ Export ▸ Scenes as Video… writes it, and returns at once with a `job_id`: the frames render in the background (see below). A `.mkv` file, or a PNG sequence for a `.png` path (`transparent`; `overwrite` replaces an earlier sequence's frames). `scenes` picks the scenes and their order (all by default); `transition` and `pause` (seconds) override the document's animation settings for this video only; `fps` 24, 25, 30 or 60. | `{"path": "/home/ana/site/tour.mkv", "scenes": ["Door", "Hall", "Kitchen"], "transition": 3, "pause": 0.5}` |
 | `video_status` | How far a video got: `state` (`running`, `done`, `failed`, `cancelled`), `frames_done` / `frames_total`, `percent`, `elapsed_s`, `eta_s`, the `keyframes` so far and the file's `path`. Without `job_id`, every video of the window and `max_parallel`. | `{"job_id": "3f2a9c0d1e4b"}` |
 | `video_keyframe` | Shows the frame where a scene is reached (480 px wide), while the video renders: the agent checks the framing without downloading the video. `index` as `video_status` lists them; the latest by default. | `{"job_id": "3f2a9c0d1e4b", "index": 1}` |
+| `video_download` | Fetches a finished video over MCP, for a client that cannot read the IngeTrazo machine's disk (Docker, a server): base64 `data` of at most `length` bytes (2 MiB by default, 8 MiB at most) from `offset`, with the file's `size`, `sha256`, `next_offset` and `eof`. A PNG sequence goes a `frame` at a time. | `{"job_id": "3f2a9c0d1e4b", "offset": 0}` |
 | `cancel_video` | Stops a video; the half-written file (or the frames written) is removed, the keyframes stay. | `{"job_id": "3f2a9c0d1e4b"}` |
 | `render_sheet` | A PNG of a sheet, painted by the composer as its image export does. The sheet is given by name, by title-block number (`L-02`) or by place (1 = the first); `width` in pixels or `dpi`. | `{"sheet": "L-02", "width": 1600}` |
 | `export_pdf` | The sheets (all, or those in `sheets`: name, title-block number or place) into one PDF. | `{"path": "/home/ana/site/plaza.pdf"}` or `{"path": "/home/ana/site/L-02.pdf", "sheets": ["L-02"]}` |
@@ -210,7 +211,9 @@ user's view back before each frame is written. The agent:
    at `video_keyframe` as each scene is reached;
 4. stops it with `cancel_video` if a keyframe shows it is wrong; nothing
    half-written is left behind;
-5. once `state` is `done`, the file is at `path`.
+5. once `state` is `done`, the file is at `path`; a client on another
+   machine fetches it with `video_download` (call again with `next_offset`
+   until `eof`, join the chunks, compare the `sha256`).
 
 At most one video renders at a time by default; more are refused with the
 running job's ID, not queued. `--max-videos N` (without a window) or the

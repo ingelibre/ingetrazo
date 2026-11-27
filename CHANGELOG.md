@@ -8,7 +8,7 @@ follow [SemVer](https://semver.org).
 
 ### Added
 
-- **AI bridge (MCP): videos of the scenes in the background (#1714).** `export_video` starts a video (.mkv or a PNG sequence) and returns at once; `video_status` reports the progress, `video_keyframe` shows where each scene is reached while it renders, `cancel_video` stops it and removes the half-written file. The scenes, their order, the transition and the pause are chosen per call; one video at a time by default (`--max-videos N`, `INGETRAZO_MAX_VIDEOS`).
+- **AI bridge (MCP): videos of the scenes in the background (#1714).** `export_video` starts a video (.mkv or a PNG sequence) and returns at once; `video_status` reports the progress, `video_keyframe` shows where each scene is reached while it renders, `cancel_video` stops it and removes the half-written file. `video_download` fetches the finished video over MCP in chunks (with size and SHA-256), for clients on another machine. The scenes, their order, the transition and the pause are chosen per call; one video at a time by default (`--max-videos N`, `INGETRAZO_MAX_VIDEOS`).
 
 ## [0.6.3.3] — 2026-11-26
 
