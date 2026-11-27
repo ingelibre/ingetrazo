@@ -235,6 +235,37 @@ def _soften_bulk_edges(mesh, vertices, edge_map, segments, tick):
             edge.soft = True
 
 
+def _scene_hidden_objects(entity_ids, by_skp_id, saves=None):
+    """A .skp scene's hidden entities → ``SavedView.hidden_objects``.
+
+    The uids of the groups those entities became. ``saves`` is whether
+    the scene saves its hidden objects at all (OpenSKP's
+    ``Page.use_hidden_objects``, openskp#660):
+
+    * True: the uids, even none — picking the scene shows every other
+      object again, as the scene means;
+    * False: ``None``, the view leaves objects alone;
+    * None (an older OpenSKP, or a file that does not say): the uids, or
+      ``None`` when there are none. An empty list then cannot tell "saves
+      them, hides none" from "does not save them", and leaving objects
+      alone is the safe reading.
+
+    The ids that name no group are hidden edges and faces (hidden
+    geometry), which an import does not hide yet."""
+    if saves is False:
+        return None
+    uids: list = []
+    seen: set = set()
+    for eid in entity_ids or ():
+        for g in by_skp_id.get(eid, ()):
+            if g.uid not in seen:
+                seen.add(g.uid)
+                uids.append(g.uid)
+    if saves:
+        return uids
+    return uids or None
+
+
 def _apply_payload_inner(scene, payload, progress=None, *, consume=False) -> str:
     import time
     from PySide6.QtGui import QVector3D
@@ -442,23 +473,6 @@ def _apply_payload_inner(scene, payload, progress=None, *, consume=False) -> str
                                           visible=raw.get("visible", True)))
                 known.add(raw["name"])
 
-    # The file's saved scenes become saved views (camera + hidden layers);
-    # a view whose name already exists is left alone (re-import).
-    if payload.get("scenes"):
-        from core.saved_views import from_lookat
-        existing = {v.name for v in scene.saved_views}
-        for raw in payload["scenes"]:
-            if raw.get("name") in existing:
-                continue
-            scene.saved_views.append(from_lookat(
-                raw["name"], raw["eye"], raw["target"],
-                raw.get("up") or (0.0, 0.0, 1.0),
-                fov_deg=raw.get("fov", 45.0),
-                perspective=not raw.get("parallel", False),
-                ortho_height=raw.get("ortho_height") or None,
-                hidden_layers=raw.get("hidden_layers")))
-            existing.add(raw["name"])
-
     # Linear dimensions (.skp dimension entities): world endpoints + an
     # offset. IngeTrazo's Dimension carries the offset as a VECTOR from
     # the a–b segment to the dimension line. The adapter resolves that
@@ -504,6 +518,18 @@ def _apply_payload_inner(scene, payload, progress=None, *, consume=False) -> str
             scene.text_labels.append(TextLabel(
                 anchor, label - anchor, raw["text"]))
 
+    # The file's entity ids → the groups they became, for the scenes that
+    # hide them. One id can be several groups: a placement inside a
+    # component is one in every copy of the component.
+    by_skp_id: dict = {}
+
+    def _mark(g, ids, hidden):
+        """A .skp placement's entity ids and Hide onto its group."""
+        if hidden:
+            g.hidden = True
+        for eid in ids or ():
+            by_skp_id.setdefault(eid, []).append(g)
+
     for gp in groups:
         _tick(1)
         mesh = _build_mesh(gp["faces"], gp.get("soft_edges"),
@@ -511,6 +537,7 @@ def _apply_payload_inner(scene, payload, progress=None, *, consume=False) -> str
         _release(gp)
         if mesh.faces or mesh.edges:        # a group of lines is one too
             g = Group(mesh, name=gp.get("name"))
+            _mark(g, gp.get("skp_ids"), gp.get("hidden"))
             if gp.get("layer"):
                 g.layer = gp["layer"]
             axes = gp.get("axes")
@@ -541,7 +568,8 @@ def _apply_payload_inner(scene, payload, progress=None, *, consume=False) -> str
                                         pr.get("loose_edges")))
         _release(pr)
 
-    def _place(idx, xf, layer=None, depth=0, name=None):
+    def _place(idx, xf, layer=None, depth=0, name=None, ids=(),
+               hidden=False):
         pr = protos[idx]
         # The placement's own name (what the user called the group or
         # copy), else the definition's.
@@ -551,11 +579,17 @@ def _apply_payload_inner(scene, payload, progress=None, *, consume=False) -> str
         g.component = bool(pr.get("component", True))
         if layer:
             g.layer = layer
+        _mark(g, ids, hidden)
         if depth < 32:      # a malformed file must not spin
             g.adopt(_place(kid["proto"], kid["xform"], kid.get("layer"),
-                           depth + 1, kid.get("name"))
+                           depth + 1, kid.get("name"),
+                           kid.get("skp_ids") or (),
+                           bool(kid.get("hidden")))
                     for kid in pr.get("children", []) or [])
         return g
+
+    def _nth(values, i, default=None):
+        return values[i] if i < len(values) else default
 
     for idx, pr in enumerate(protos):
         if not proto_meshes[idx].faces and not proto_meshes[idx].edges \
@@ -564,10 +598,35 @@ def _apply_payload_inner(scene, payload, progress=None, *, consume=False) -> str
         _tick(1)
         layers = pr.get("instance_layers") or []
         names = pr.get("instance_names") or []
+        skp_ids = pr.get("instance_skp_ids") or []
+        hides = pr.get("instance_hidden") or []
         for i, xf in enumerate(pr.get("instances", []) or []):
-            g = _place(idx, xf, layers[i] if i < len(layers) else None,
-                       name=names[i] if i < len(names) else None)
+            g = _place(idx, xf, _nth(layers, i), name=_nth(names, i),
+                       ids=_nth(skp_ids, i) or (),
+                       hidden=bool(_nth(hides, i)))
             scene.groups.append(g)
+
+    # The file's saved scenes become saved views (camera + hidden layers +
+    # hidden objects); a view whose name already exists is left alone
+    # (re-import). After the groups, which the hidden objects name.
+    if payload.get("scenes"):
+        from core.saved_views import from_lookat
+        existing = {v.name for v in scene.saved_views}
+        for raw in payload["scenes"]:
+            if raw.get("name") in existing:
+                continue
+            view = from_lookat(
+                raw["name"], raw["eye"], raw["target"],
+                raw.get("up") or (0.0, 0.0, 1.0),
+                fov_deg=raw.get("fov", 45.0),
+                perspective=not raw.get("parallel", False),
+                ortho_height=raw.get("ortho_height") or None,
+                hidden_layers=raw.get("hidden_layers"))
+            view.hidden_objects = _scene_hidden_objects(
+                raw.get("hidden_entities"), by_skp_id,
+                raw.get("saves_hidden_objects"))
+            scene.saved_views.append(view)
+            existing.add(raw["name"])
     if consume:
         # Names/children/instances stay available until every placement exists.
         payload["groups"] = []

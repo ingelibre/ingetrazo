@@ -1129,6 +1129,37 @@ def _soft_edge_segments(defn, xform, out) -> None:
 _hidden_tags: frozenset = frozenset()
 
 
+def _kept(ins, scene_hidden=frozenset()) -> bool:
+    """Whether a nested placement must stay an object of its own instead of
+    melting into what holds it: it has a tag, it is hidden itself
+    (the Hide stored on the placement), or a scene hides it. A tag and a hide only work on an
+    object, and once the geometry is flattened into the parent's mesh there
+    is none left to work on (#1329: every hidden group came in visible)."""
+    return bool(getattr(ins, "layer", "") or getattr(ins, "hidden", False)
+                or (scene_hidden and getattr(ins, "id", None) in scene_hidden))
+
+
+def _put_ident(entry, ids, hidden) -> None:
+    """Note :func:`_ident`'s ``(ids, hidden)`` on a payload group or child."""
+    if ids:
+        entry["skp_ids"] = list(ids)
+    if hidden:
+        entry["hidden"] = True
+
+
+def _ident(ins, chain=(), hidden_above=False):
+    """``(ids, hidden)`` for a placement that becomes an object.
+
+    ``ids`` is its own entity id first, then those of the flattened
+    placements around it (``chain``): when a scene hides one of those, it
+    hides this object with it, as the file means, although here the object
+    sits beside the mesh it came out of rather than inside it. ``hidden`` is
+    the placement's own Hide, or one above it (``hidden_above``)."""
+    own = getattr(ins, "id", None)
+    ids = ((own,) if own is not None else ()) + tuple(chain)
+    return ids, bool(hidden_above or getattr(ins, "hidden", False))
+
+
 def _loose_edge_segments(defn, xform, out) -> None:
     """Append the transformed endpoint pairs of ``defn``'s LOOSE edges —
     lines that bound no face — to ``out``. Only face rings were read, so a
@@ -1176,7 +1207,8 @@ def _collect(defn, xform, by_id, attr_map, out, depth, stack,
              proto_ids=frozenset(), proto_uses=None, inherited=None,
              image_uses=None, edges_out=None, layer=None,
              layer_uses=None, group_layer=None, loose_out=None,
-             release=None) -> None:
+             release=None, scene_hidden=frozenset(), chain=(),
+             hidden_above=False) -> None:
     """Append ``(outer, holes, attrs)`` faces for ``defn`` (transformed by
     ``xform``) and, recursively, for every definition its instances place.
 
@@ -1199,7 +1231,13 @@ def _collect(defn, xform, by_id, attr_map, out, depth, stack,
     NOT flattened here — the composed placement matrix is recorded in
     ``proto_uses[(def_id, inherited)]`` instead, so the shared prototype is
     built once per inherited material and every copy becomes an O(1) instance
-    (``Group.xform``); the entry is ``(matrix, layer, instance name)``.
+    (``Group.xform``); the entry is ``(matrix, layer, instance name, ids,
+    hidden)``, the last two from :func:`_ident`.
+
+    A hidden placement, or one a scene hides (``scene_hidden``, entity ids),
+    is kept like a tagged one (:func:`_kept`), and a ``layer_uses`` entry is
+    ``(definition, matrix, inherited, layer, ids, hidden)``. ``chain`` and
+    ``hidden_above`` describe the flattened placements the faces belong to.
 
     ``loose_out`` collects the loose edges (lines on no face), like
     ``edges_out`` the soft ones."""
@@ -1256,16 +1294,19 @@ def _collect(defn, xform, by_id, attr_map, out, depth, stack,
             continue
         if proto_uses is not None and cid in proto_ids:
             proto_uses.setdefault((cid, child_inherited), []).append(
-                (placed, out_layer, getattr(ins, "name", "") or None))
+                (placed, out_layer, getattr(ins, "name", "") or None,
+                 *_ident(ins, chain, hidden_above)))
             continue
-        if layer_uses is not None and getattr(ins, "layer", ""):
-            # Tagged nested instance → its own group carrying the layer.
-            layer_uses.append((child, placed, child_inherited, ins.layer))
+        if layer_uses is not None and _kept(ins, scene_hidden):
+            # Tagged or hidden nested instance → its own group, carrying
+            # its layer and its hide.
+            layer_uses.append((child, placed, child_inherited, out_layer,
+                               *_ident(ins, chain, hidden_above)))
             continue
         _collect(child, placed, by_id, attr_map, out, depth + 1, stack,
                  proto_ids, proto_uses, child_inherited, image_uses,
                  edges_out, child_layer, layer_uses, group_layer, loose_out,
-                 release)
+                 release, scene_hidden, chain, hidden_above)
 
 
 def _subtree_polys(defn, by_id, memo, stack) -> int:
@@ -1403,7 +1444,8 @@ def _merge_equal_protos(protos):
             src, dst = protos[i], protos[keep]
             if not src["instances"]:
                 continue
-            for key in ("instance_layers", "instance_names"):
+            for key in ("instance_layers", "instance_names",
+                        "instance_skp_ids", "instance_hidden"):
                 if key in src or key in dst:
                     dst.setdefault(key, [None] * len(dst["instances"])).extend(
                         src.get(key) or [None] * len(src["instances"]))
@@ -1564,6 +1606,11 @@ def _adapt_inner(model, name: str, skp_path=None, *, consume=False):
         if root is None and getattr(d, "name", None) == "ROOT_MODEL":
             root = d
     roots = [root] if root is not None else list(defs.values())
+    # The entities the file's scenes hide (openskp ≥ Nov 2026): placements
+    # among them stay objects of their own, so a scene can hide them.
+    scene_hidden = frozenset(
+        eid for pg in (getattr(model, "pages", None) or [])
+        for eid in (getattr(pg, "hidden_entity_ids", None) or ()))
 
     # Shared-prototype census over the reachable tree.
     uses: dict = {}
@@ -1582,14 +1629,15 @@ def _adapt_inner(model, name: str, skp_path=None, *, consume=False):
                 return True
         return False
 
-    def _subtree_has_tagged(d, stack=frozenset()):
+    def _subtree_has_kept(d, stack=frozenset()):
+        # A tagged or hidden placement, or one a scene hides (``_kept``).
         if id(d) in stack:
             return False
         for ins in getattr(d, "instances", []):
-            if getattr(ins, "layer", ""):
+            if _kept(ins, scene_hidden):
                 return True
             c = by_id.get(getattr(ins, "ref_idx", None))
-            if c is not None and _subtree_has_tagged(c, stack | {id(d)}):
+            if c is not None and _subtree_has_kept(c, stack | {id(d)}):
                 return True
         return False
 
@@ -1599,8 +1647,8 @@ def _adapt_inner(model, name: str, skp_path=None, *, consume=False):
         # spot. Tagged-instance-carrying subtrees too: each copy's tagged
         # subtree must extract as its own layer group (the tagged child
         # itself usually re-shares one level down, with per-placement
-        # layers).
-        return not (_subtree_has_faceme(d) or _subtree_has_tagged(d))
+        # layers). Hidden placements count as tagged ones (``_kept``).
+        return not (_subtree_has_faceme(d) or _subtree_has_kept(d))
 
     proto_ids = set()
     for did, cnt in uses.items():
@@ -1636,7 +1684,8 @@ def _adapt_inner(model, name: str, skp_path=None, *, consume=False):
     # a tag survives as a per-face one the renderer does not filter — so a
     # tagged placement, and a shared definition with tagged placements
     # inside, becomes a prototype too. «01_EG» (walls, doors and furniture
-    # in subgroups on their own tags) arrived as one flat mesh.
+    # in subgroups on their own tags) arrived as one flat mesh. A hidden
+    # placement, or one a scene hides, likewise (#1329).
     def _promote_nested(d, stack=frozenset()):
         if id(d) in stack:
             return
@@ -1647,7 +1696,7 @@ def _adapt_inner(model, name: str, skp_path=None, *, consume=False):
                 continue
             if uses.get(getattr(c, "id", None)) == 1:
                 proto_ids.add(c.id)
-            elif ((getattr(ins, "layer", "") or _subtree_has_tagged(c))
+            elif ((_kept(ins, scene_hidden) or _subtree_has_kept(c))
                     and not _subtree_has_faceme(c)):
                 proto_ids.add(c.id)
             _promote_nested(c, stack | {id(d)})
@@ -1803,9 +1852,10 @@ def _adapt_inner(model, name: str, skp_path=None, *, consume=False):
                 image_uses.append((child, placed, inh, lay))
                 continue
             ins_name = getattr(ins, "name", "") or None
+            ids, hid = _ident(ins)
             if getattr(child, "id", None) in proto_ids:
                 proto_uses.setdefault((child.id, inh), []).append(
-                    (placed, lay, ins_name))
+                    (placed, lay, ins_name, ids, hid))
                 continue
             sub: list = []
             sub_edges = SoftSegments()
@@ -1813,7 +1863,8 @@ def _adapt_inner(model, name: str, skp_path=None, *, consume=False):
             _collect(child, placed, by_id, attr_map, sub, 0, set(),
                      proto_ids, proto_uses, inh, image_uses, sub_edges,
                      layer_uses=layer_uses, group_layer=lay,
-                     loose_out=sub_lines, release=release_flat)
+                     loose_out=sub_lines, release=release_flat,
+                     scene_hidden=scene_hidden, chain=ids, hidden_above=hid)
             if sub or sub_lines:
                 # The name the user gave the group or copy, else its
                 # definition's («Group#3» is all a .skp names a group).
@@ -1825,26 +1876,31 @@ def _adapt_inner(model, name: str, skp_path=None, *, consume=False):
                       "axes": [float(x) for x in placed.data()]}
                 if lay:
                     gp["layer"] = lay
+                _put_ident(gp, ids, hid)
                 groups.append(gp)
 
-    # Tagged nested instances → their own groups carrying the layer, so a
-    # layer toggle hides them whole (faces AND edges) with no renderer work.
-    # The list grows while we walk it: a tagged instance inside a tagged
-    # instance extracts recursively.
+    # Tagged and hidden nested instances → their own groups carrying the
+    # layer and the hide, so a layer toggle or a scene hides them whole
+    # (faces AND edges) with no renderer work. The list grows while we walk
+    # it: a kept instance inside a kept instance extracts recursively.
     i = 0
     while i < len(layer_uses):
-        child, placed, inh, lay = layer_uses[i]
+        child, placed, inh, lay, ids, hid = layer_uses[i]
         i += 1
         sub = []
         sub_edges = SoftSegments()
         _collect(child, placed, by_id, attr_map, sub, 0, set(),
                  proto_ids, proto_uses, inh, image_uses, sub_edges,
-                 layer_uses=layer_uses, group_layer=lay, release=release_flat)
+                 layer_uses=layer_uses, group_layer=lay, release=release_flat,
+                 scene_hidden=scene_hidden, chain=ids, hidden_above=hid)
         if sub:
-            groups.append({"name": getattr(child, "name", None) or name,
-                           "faces": sub, "soft_edges": sub_edges,
-                           "layer": lay,
-                           "axes": [float(x) for x in placed.data()]})
+            gp = {"name": getattr(child, "name", None) or name,
+                  "faces": sub, "soft_edges": sub_edges,
+                  "axes": [float(x) for x in placed.data()]}
+            if lay:
+                gp["layer"] = lay
+            _put_ident(gp, ids, hid)
+            groups.append(gp)
 
     # Build each shared prototype ONCE, in local coordinates — per inherited
     # material, so a component painted red and green as a whole yields two
@@ -1893,12 +1949,13 @@ def _adapt_inner(model, name: str, skp_path=None, *, consume=False):
             ci = _build_proto(cid, cinh)
             if ci is None:
                 continue
-            for xf, ly, nm in places:
+            for xf, ly, nm, ids, hid in places:
                 kid = {"proto": ci, "xform": xf}
                 if ly:
                     kid["layer"] = ly
                 if nm:
                     kid["name"] = nm
+                _put_ident(kid, ids, hid)
                 children.append(kid)
         protos[idx] = {"name": getattr(d, "name", None) or name,
                        "faces": local, "soft_edges": local_edges,
@@ -1920,14 +1977,20 @@ def _adapt_inner(model, name: str, skp_path=None, *, consume=False):
         idx = _build_proto(did, inh)
         if idx is None:
             continue
-        protos[idx]["instances"] = [xf for xf, _ly, _nm in uses]
-        if any(ly for _xf, ly, _nm in uses):
+        protos[idx]["instances"] = [u[0] for u in uses]
+        if any(u[1] for u in uses):
             # Layer (tag) per PLACEMENT — copies of one component can sit on
             # different layers.
-            protos[idx]["instance_layers"] = [ly for _xf, ly, _nm in uses]
-        if any(nm for _xf, _ly, nm in uses):
+            protos[idx]["instance_layers"] = [u[1] for u in uses]
+        if any(u[2] for u in uses):
             # Name per PLACEMENT too: each copy can carry its own.
-            protos[idx]["instance_names"] = [nm for _xf, _ly, nm in uses]
+            protos[idx]["instance_names"] = [u[2] for u in uses]
+        if any(u[3] for u in uses):
+            # Entity ids per placement, for the scenes that hide it.
+            protos[idx]["instance_skp_ids"] = [list(u[3]) for u in uses]
+        if any(u[4] for u in uses):
+            # And whether each copy is hidden: one can be, the next not.
+            protos[idx]["instance_hidden"] = [u[4] for u in uses]
 
     # The face-me pieces a prototype holds turn toward the camera from
     # their own WORLD spot, so they leave it like the ones outside any
@@ -2009,7 +2072,8 @@ def _adapt_inner(model, name: str, skp_path=None, *, consume=False):
     file_layers = file_layer_records(model)
     if file_layers:
         payload["layers"] = file_layers
-    # The file's saved scenes (camera + hidden layers), inches → metres.
+    # The file's saved scenes (camera + hidden layers + the entities they
+    # hide), inches → metres.
     scenes = []
     for pg in getattr(model, "pages", []) or []:
         if getattr(pg, "eye", None) is None or \
@@ -2024,6 +2088,14 @@ def _adapt_inner(model, name: str, skp_path=None, *, consume=False):
             "parallel": getattr(pg, "parallel", False),
             "ortho_height": getattr(pg, "ortho_height", 0.0) * _INCH,
             "hidden_layers": list(getattr(pg, "hidden_layers", []) or []),
+            # Entity ids (placements, and edges and faces for hidden
+            # geometry): apply_payload turns the placements into groups.
+            "hidden_entities": list(
+                getattr(pg, "hidden_entity_ids", None) or []),
+            # Whether the scene saves its hidden objects at all ("Hidden
+            # Objects" ticked): True, False, or None when the file or an
+            # older OpenSKP does not say (openskp#660).
+            "saves_hidden_objects": getattr(pg, "use_hidden_objects", None),
         })
     if scenes:
         payload["scenes"] = scenes

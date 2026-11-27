@@ -72,7 +72,7 @@ jobs:
           # textos guía PR #203). Pineado por SHA para builds
           # reproducibles; avanzar el SHA cuando upstream traiga algo
           # que necesitemos.
-          pip install "openskp @ git+https://github.com/iamahsanmehmood/openskp@291700bc213655a00461838de71e5f206311e619#subdirectory=packages/python"
+          pip install "openskp @ git+https://github.com/iamahsanmehmood/openskp@1d8c759a0a2a1313a9f7dc66b0e0fee0a46dba72#subdirectory=packages/python"
           python -c "import openskp, openskp.legacy; print('openskp OK:', openskp.__name__)" 
 
       # El motor Rust (rust/ingetrazo_core, Preferencias ▸
