@@ -100,13 +100,16 @@ def _rows(comp) -> list:
 
 # ---- the strip ------------------------------------------------------------------
 def _drag_tab(tabs, src: int, to_x: int) -> None:
-    """Press displayed tab ``src``, drag it to ``to_x`` and drop it."""
+    """Press displayed tab ``src``, drag it to ``to_x`` and drop it.
+
+    The last step lands on ``to_x`` exactly: a fixed 6 px stride used to
+    overshoot by up to 5 px, and whether that crossed a neighbour's middle
+    (where Qt swaps the tabs) depended on the font's tab widths (#1721)."""
     start = tabs.tabRect(src).center()
     QTest.mousePress(tabs, Qt.LeftButton, Qt.NoModifier, start)
     x = start.x()
-    step = 6 if to_x > x else -6
-    while (to_x - x) * step > 0:
-        x += step
+    while x != to_x:
+        x = min(x + 6, to_x) if to_x > x else max(x - 6, to_x)
         QTest.mouseMove(tabs, QPoint(x, start.y()))
         _app.processEvents()
     QTest.mouseRelease(tabs, Qt.LeftButton, Qt.NoModifier,
@@ -121,8 +124,11 @@ def test_dragging_a_sheet_tab_reorders_the_sheets_with_undo(composer):
     scene = composer._scene()
     version = scene.version
     before_win = composer._window._saved_version
-    # «A» (tab 1) dragged past «C»: B C A D.
-    _drag_tab(tabs, 1, tabs.tabRect(3).right() - 2)
+    # «A» (tab 1) dragged onto «C»'s middle: B C A D. Its right edge then
+    # sits half a tab past «C»'s middle and half a tab short of «D»'s,
+    # whatever the font; «C»'s right edge left it 4 px short of «D»'s
+    # middle, and the stride's overshoot could tip it over (#1721).
+    _drag_tab(tabs, 1, tabs.tabRect(3).center().x())
     assert _order(composer) == ["B", "C", "A", "D"]
     assert tabs.names() == ["Model", "B", "C", "A", "D"]
     assert composer.comp.name == "A"                  # still the sheet open

@@ -8,7 +8,8 @@ import threading
 import zipfile
 
 import pytest
-from PySide6.QtCore import QBuffer, QEventLoop, QIODevice, QObject, QTimer, Signal
+from PySide6.QtCore import (QBuffer, QEventLoop, QIODevice, QObject,
+                            QThreadPool, QTimer, Signal)
 from PySide6.QtGui import QColor, QPixmap
 from PySide6.QtWidgets import (
     QApplication,
@@ -102,7 +103,10 @@ def _wait_for_catalog(dialog, app):
     QTimer.singleShot(15000, loop.quit)
     loop.exec()
     timer.stop()
-    assert dialog._catalog_worker is None
+    pool = QThreadPool.globalInstance()
+    assert dialog._catalog_worker is None, (
+        "catalog refresh still pending after 15 s; global thread pool: "
+        f"{pool.activeThreadCount()}/{pool.maxThreadCount()} threads busy")
     assert not page["dirty"]
 
 
@@ -1640,9 +1644,22 @@ def test_on_windows_the_manager_appears_only_once_painted(
         assert dialog.windowOpacity() == 0.0
         dialog.show()
         dialog.repaint()
+        # Until the first paint has come and its reveal has run — not a
+        # fixed 50 ms, which a busy CI runner overran (#1721). The 600 ms
+        # fallback does not clear the flag, so this still proves the
+        # paint is what reveals it.
         loop = QEventLoop()
-        QTimer.singleShot(50, loop.quit)
+        timer = QTimer()
+        timer.setInterval(10)
+        timer.timeout.connect(
+            lambda: loop.quit()
+            if (not dialog._waiting_first_paint
+                and dialog.windowOpacity() == 1.0) else None)
+        timer.start()
+        QTimer.singleShot(5000, loop.quit)
         loop.exec()
+        timer.stop()
+        assert not dialog._waiting_first_paint
         assert dialog.windowOpacity() == 1.0
     finally:
         dialog.close()

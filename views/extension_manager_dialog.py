@@ -1053,6 +1053,15 @@ class ExtensionManagerDialog(QDialog):
             # Never left invisible, whatever happens to the first paint.
             QTimer.singleShot(600, self._reveal)
 
+    def hideEvent(self, event) -> None:
+        # A manager closed within 100 ms of opening must not start its
+        # catalog refresh afterwards, hidden: in the test suite such a
+        # dialog fired it inside a later test, with the real network and
+        # none of that test's stubs, and held a thread of the global pool
+        # the next manager's refresh then waited for (#1721).
+        self._initial_load_timer.stop()
+        super().hideEvent(event)
+
     def paintEvent(self, event) -> None:
         super().paintEvent(event)
         if self._waiting_first_paint:
