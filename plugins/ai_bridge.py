@@ -125,6 +125,11 @@ class _Bridge(BridgeTools, QObject):
         #: Called by ``shutdown`` instead of quitting outright, so the
         #: window-less run can tell its exit apart (main._run_headless).
         self.on_shutdown = None
+        #: Videos rendering in the background (``export_video``, #1714):
+        #: made on first use; ``max_videos`` = how many at once (None: 1,
+        #: or ``INGETRAZO_MAX_VIDEOS``; ``--max-videos`` without a window).
+        self._video_jobs = None
+        self.max_videos: int | None = None
         # Queued to a BOUND method of this main-thread QObject — connecting a
         # lambda would run the slot on the worker thread (CLAUDE.md gotcha).
         self._dispatch.connect(self._run_on_main, Qt.QueuedConnection)
@@ -182,6 +187,9 @@ class _Bridge(BridgeTools, QObject):
 
     def stop(self) -> None:
         self._stop.set()
+        if self._video_jobs is not None:
+            # A video must not go on rendering for a bridge that is gone.
+            self._video_jobs.cancel_all()
         server, self._server = self._server, None
         self.port = None
         registration, self._registration = self._registration, None
@@ -620,6 +628,156 @@ class _Bridge(BridgeTools, QObject):
             raise RuntimeError(f"could not write {out}")
         return {"path": str(out), "view": target.name,
                 "width": width, "height": height}
+
+    # ---- Videos, rendered in the background (#1714) -----------------------------
+    def _videos(self):
+        from views.video_jobs import VideoJobs
+        if self._video_jobs is None:
+            self._video_jobs = VideoJobs(self, busy=lambda: self._busy,
+                                         max_jobs=self.max_videos)
+        elif self.max_videos:
+            self._video_jobs.max_jobs = max(1, int(self.max_videos))
+        return self._video_jobs
+
+    def _tool_export_video(self, path: str = "", scenes=None,
+                           width: int = 1920, height: int = 1080,
+                           fps: int = 30, transition: float | None = None,
+                           pause: float | None = None,
+                           transparent: bool = False,
+                           overwrite: bool = False) -> dict:
+        """START a video of the scenes, as File ▸ Export ▸ Scenes as Video…
+        writes it, without its dialogs, and return at once with its
+        ``job_id``: the frames render in the background, between other
+        calls (``views/video_jobs.py``). ``video_status`` says how far it
+        got, ``video_keyframe`` shows where each scene is reached,
+        ``cancel_video`` stops it.
+
+        A ``.mkv`` path writes a Matroska file; a ``.png`` path a PNG
+        sequence in a folder of that name (``transparent`` if asked;
+        ``overwrite`` to replace an earlier sequence's frames). ``scenes``
+        picks the saved views and their order (all by default);
+        ``transition`` and ``pause`` (seconds) override the document's
+        animation settings for this video only."""
+        from core.scene_animation import VIDEO_FPS, SceneAnimation
+        from views import video_export as vx
+        from views.video_jobs import VideoJob
+        if not path:
+            raise ValueError("give the video path: an absolute .mkv file, "
+                             "or a .png path for a PNG sequence")
+        out = absolute(_expand(path))
+        suffix = out.suffix.lower()
+        if suffix not in (".mkv", ".png"):
+            raise ValueError(f"unknown video format {suffix or path!r}: "
+                             ".mkv (Matroska) or .png (a PNG sequence)")
+        fmt = vx.MKV if suffix == ".mkv" else vx.PNG
+        if transparent and fmt != vx.PNG:
+            raise ValueError("transparent is for a PNG sequence (.png) only")
+        fps = int(fps)
+        if fps not in VIDEO_FPS:
+            raise ValueError("fps is one of "
+                             + ", ".join(str(f) for f in VIDEO_FPS))
+        width = max(64, min(int(width), 4096))
+        height = max(64, min(int(height), 4096))
+        vp = self._viewport
+        scene = vp.scene
+        if scenes is None:
+            views = list(scene.saved_views or [])
+        else:
+            if isinstance(scenes, str):
+                scenes = [scenes]
+            views = []
+            for name in scenes:
+                try:
+                    views.append(self._scene_view(name))
+                except KeyError as exc:
+                    raise ValueError(exc.args[0]) from None
+        if not views:
+            raise ValueError("the document has no scenes to play: keep "
+                             "views as scenes first (list_scenes)")
+        base = scene.animation
+        anim = SceneAnimation(
+            enabled=base.enabled,
+            transition=base.transition if transition is None else transition,
+            pause=base.pause if pause is None else pause)
+        if not self._has_gl():
+            raise RuntimeError("the video cannot render (" + NO_GL + ")")
+        if fmt == vx.MKV and not vx.multimedia_available():
+            raise RuntimeError(vx.no_video_message() + " A PNG sequence "
+                               "(a .png path) needs no Qt Multimedia.")
+        if not out.parent.is_dir():
+            raise FileNotFoundError(
+                f"the folder does not exist: {out.parent}")
+        jobs = self._videos()
+        jobs.check_room()                   # before any file is touched
+        if fmt == vx.PNG:
+            folder = vx.frame_folder(out)
+            if folder.exists() and not folder.is_dir():
+                raise FileExistsError(f"not a folder: {folder}")
+            old = vx.existing_frames(folder)
+            if old and not overwrite:
+                raise FileExistsError(
+                    f"{folder} already has {len(old)} frames of an earlier "
+                    "export: give overwrite=true to replace them")
+        from core.scene_animation import video_frame_count
+        total = video_frame_count(len(views), anim.transition, anim.pause,
+                                  fps)
+        try:
+            writer = (vx.PngSequenceWriter(out, width, height, total)
+                      if fmt == vx.PNG
+                      else vx.MkvWriter(out, width, height, fps))
+        except vx.VideoError as exc:
+            raise RuntimeError(str(exc)) from None
+        player = getattr(self._window(), "scene_player", None)
+        if player is not None:
+            player.cancel()                 # one camera, one animation
+        job = VideoJob(vp, writer, views, anim, fps, width, height, fmt,
+                       bool(transparent), out, out_dir())
+        jobs.add(job)
+        return job.status()
+
+    def _tool_video_status(self, job_id: str | None = None) -> dict:
+        """How far a video got (``job_id``), or every video of this window
+        (none given): frames done of the total, the time it took and the
+        time left, the keyframes so far, and at the end the file."""
+        jobs = self._videos()
+        if job_id:
+            try:
+                return jobs.get(job_id).status()
+            except KeyError as exc:
+                raise ValueError(exc.args[0]) from None
+        return {"max_parallel": jobs.max_jobs,
+                "jobs": [j.status() for j in jobs.all()]}
+
+    def _tool_video_keyframe(self, job_id: str = "",
+                             index: int | None = None) -> dict:
+        """A keyframe of a video, to look at while it renders: the frame
+        where a scene is reached, small (``index`` as ``video_status``
+        lists them; the latest when not given)."""
+        try:
+            job = self._videos().get(job_id)
+        except KeyError as exc:
+            raise ValueError(exc.args[0]) from None
+        if not job.keyframes:
+            raise ValueError("no keyframe yet: the first comes with the "
+                             "first frame")
+        if index is None:
+            key = job.keyframes[-1]
+        else:
+            try:
+                key = job.keyframes[int(index)]
+            except (IndexError, ValueError, TypeError):
+                raise ValueError(f"no keyframe {index!r}; there are "
+                                 f"{len(job.keyframes)} so far") from None
+        return {"path": key["path"], "job_id": job.id, "scene": key["scene"],
+                "frame": key["frame"], "index": key["index"],
+                "state": job.state}
+
+    def _tool_cancel_video(self, job_id: str = "") -> dict:
+        """Stop a video: what it wrote is removed (the keyframes stay)."""
+        try:
+            return self._videos().cancel(job_id).status()
+        except KeyError as exc:
+            raise ValueError(exc.args[0]) from None
 
     def _tool_shutdown(self, discard_changes: bool = False) -> dict:
         """End IngeTrazo — only when started with ``--allow-shutdown``.

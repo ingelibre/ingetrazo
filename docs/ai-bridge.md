@@ -162,7 +162,7 @@ Common rules:
   refused.
 - Nobody is at the screen to answer a dialog: the bridge cancels it, and if
   the step failed, the error repeats what it said.
-- Without OpenGL, `screenshot`, `export_view`, `render_sheet` and
+- Without OpenGL, `screenshot`, `export_view`, `export_video`, `render_sheet` and
   `export_pdf` with rendered views return an error that explains why. They
   never hang.
 
@@ -182,6 +182,10 @@ Common rules:
 | `select` | Selects groups or components by `names` or `ids` (`mode`: `replace`, `add`, `remove` or `toggle`), or clears the selection with `clear`. | `{"names": ["Bench 1", "Bench 2"]}` or `{"clear": true}` |
 | `screenshot` | Renders the view. The agent looks at it and iterates; with `path` it also keeps the PNG (or JPG) there. `view` (a standard view) and `fit` (zoom to the whole model) aim the camera for this picture only, leaving the user's view as it was. | `{"width": 1280, "height": 720}` |
 | `export_view` | Renders a saved scene to PNG and the agent looks at it; with `path` it is kept there. The user's view (camera, layers, style, hidden objects) is put back and a saved document stays saved. | `{"view": "3D view", "path": "/home/ana/site/view.png"}` |
+| `export_video` | **Starts** a video of the scenes, as File ▸ Export ▸ Scenes as Video… writes it, and returns at once with a `job_id`: the frames render in the background (see below). A `.mkv` file, or a PNG sequence for a `.png` path (`transparent`; `overwrite` replaces an earlier sequence's frames). `scenes` picks the scenes and their order (all by default); `transition` and `pause` (seconds) override the document's animation settings for this video only; `fps` 24, 25, 30 or 60. | `{"path": "/home/ana/site/tour.mkv", "scenes": ["Door", "Hall", "Kitchen"], "transition": 3, "pause": 0.5}` |
+| `video_status` | How far a video got: `state` (`running`, `done`, `failed`, `cancelled`), `frames_done` / `frames_total`, `percent`, `elapsed_s`, `eta_s`, the `keyframes` so far and the file's `path`. Without `job_id`, every video of the window and `max_parallel`. | `{"job_id": "3f2a9c0d1e4b"}` |
+| `video_keyframe` | Shows the frame where a scene is reached (480 px wide), while the video renders: the agent checks the framing without downloading the video. `index` as `video_status` lists them; the latest by default. | `{"job_id": "3f2a9c0d1e4b", "index": 1}` |
+| `cancel_video` | Stops a video; the half-written file (or the frames written) is removed, the keyframes stay. | `{"job_id": "3f2a9c0d1e4b"}` |
 | `render_sheet` | A PNG of a sheet, painted by the composer as its image export does. The sheet is given by name, by title-block number (`L-02`) or by place (1 = the first); `width` in pixels or `dpi`. | `{"sheet": "L-02", "width": 1600}` |
 | `export_pdf` | The sheets (all, or those in `sheets`: name, title-block number or place) into one PDF. | `{"path": "/home/ana/site/plaza.pdf"}` or `{"path": "/home/ana/site/L-02.pdf", "sheets": ["L-02"]}` |
 | `open_document` | Opens a document (`.igz`, `.dae`, `.skp`, `.dxf`, `.dwg`) in place of the one in front. If that one has unsaved changes it returns an error instead of a «save changes?» dialog, unless `discard_changes` is given. | `{"path": "/home/ana/site/plaza.igz"}` |
@@ -192,6 +196,29 @@ Common rules:
 | `apply_material` | Paints the named objects (`names`/`ids`) as a whole with one of the document's materials, or else the selection. One undo step. | `{"material": "Brick", "names": ["North wall"]}` |
 | `undo` / `redo` | The usual history. | `{}` |
 | `shutdown` | Ends a window-less IngeTrazo started with `--allow-shutdown`. Refused with unsaved changes unless `discard_changes` is given. | `{}` |
+
+**Videos in the background.** A video takes minutes; a call that rendered
+it whole would hold the window and every other call. So `export_video` only
+starts a job and answers at once. IngeTrazo renders one frame per turn of its
+event loop, between the other calls and the user's own work, and puts the
+user's view back before each frame is written. The agent:
+
+1. checks the framing first, if it likes, with `export_view` on each scene
+   (a still of the scene is where the video arrives);
+2. calls `export_video` and keeps the `job_id`;
+3. polls `video_status` every few seconds (frames done, time left) and looks
+   at `video_keyframe` as each scene is reached;
+4. stops it with `cancel_video` if a keyframe shows it is wrong; nothing
+   half-written is left behind;
+5. once `state` is `done`, the file is at `path`.
+
+At most one video renders at a time by default; more are refused with the
+running job's ID, not queued. `--max-videos N` (without a window) or the
+environment variable `INGETRAZO_MAX_VIDEOS` allows more, but they share the
+one GPU and the one view and take turns frame by frame, so two are not
+faster than one after the other. A video whose document is replaced
+(`open_document`) fails; one whose bridge is switched off is cancelled. The
+keyframes go to the bridge's own temporary folder (`ingetrazo-ai/video-<job>`).
 
 Except `list_documents`, every tool requires `document_id`. With no bridge
 running the list is empty, and the other tools say how to start the bridge
