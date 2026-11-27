@@ -42,7 +42,7 @@ def _status_rows(text):
         r"#(\d+)=IFCPROPERTYENUMERATEDVALUE\('Status',\$,\(IFCLABEL\('(\w+)'\)\),\$\);",
         text))
     out = {}
-    for name, refs in re.findall(r"IFCPROPERTYSET\('[^']+',\$,'(\w+)',\$,\(([^)]*)\)\);", text):
+    for name, refs in re.findall(r"IFCPROPERTYSET\('[^']+',[^,]*,'(\w+)',\$,\(([^)]*)\)\);", text):
         for ref in refs.split(","):
             if ref.strip("#") in props:
                 out.setdefault(name, []).append(props[ref.strip("#")])
@@ -140,4 +140,5 @@ def test_status_validates_with_ifcopenshell(tmp_path):
     assert not logger.statements
     wall = model.by_type("IfcWall")[0]
     psets = ifcopenshell.util.element.get_psets(wall)
-    assert psets["Pset_WallCommon"]["Status"] == "DEMOLISH"
+    # An enumerated value reads back as the list of its labels.
+    assert psets["Pset_WallCommon"]["Status"] == ["DEMOLISH"]
