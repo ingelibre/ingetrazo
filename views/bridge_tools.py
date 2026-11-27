@@ -98,17 +98,9 @@ def _triple(value, name: str) -> tuple:
     return x, y, z
 
 
-def _sheet_number(comp) -> str | None:
-    """The sheet's number as its title block shows it (``L-02``)."""
-    rows = getattr(getattr(comp, "cajetin", None), "campos", None) or []
-    # «N.º» first: in plaza-final3 «LÁMINA» holds the sheet's title and
-    # «N.º» its number; Renumber writes the number into «LÁMINA».
-    for labels in (("N.º", "Nº", "N°", "NO.", "NUMBER"),
-                   ("LÁMINA", "LAMINA", "SHEET")):
-        for row in rows:
-            if str(row[0]).strip().upper() in labels and str(row[1]).strip():
-                return str(row[1]).strip()
-    return None
+# The sheet number and THE sheet resolver live in core.sheets_api (#1505).
+from core.sheets_api import SheetError, find_sheet  # noqa: E402
+from core.sheets_api import sheet_number as _sheet_number  # noqa: E402
 
 
 def _material_dict(mat) -> dict:
@@ -175,36 +167,10 @@ class BridgeTools:
 
     def _sheet(self, sheet):
         """A sheet by its name, its title-block number (``L-02``) or its
-        place (1 = the first, as the sheet tabs count)."""
-        comps = list(self._viewport.scene.compositions)
-        if not comps:
-            raise KeyError("the document has no sheets")
-        if isinstance(sheet, int) and not isinstance(sheet, bool):
-            if 1 <= sheet <= len(comps):
-                return comps[sheet - 1]
-        else:
-            key = str(sheet).strip()
-            for c in comps:
-                if c.name == key:
-                    return c
-            numbered = [c for c in comps
-                        if (_sheet_number(c) or "").upper() == key.upper()]
-            if len(numbered) == 1:
-                return numbered[0]
-            if key.isdigit() and 1 <= int(key) <= len(comps):
-                return comps[int(key) - 1]
-            # Names that begin with their number («L-02 Ubicación»): the
-            # number alone finds the sheet, when only one begins so.
-            starts = [c for c in comps
-                      if c.name.upper().startswith(key.upper() + " ")]
-            if len(starts) == 1 and not numbered:
-                return starts[0]
-            starts = numbered or starts
-            if starts:
-                raise KeyError(f"{key!r} begins several sheets: " + ", ".join(
-                    repr(c.name) for c in starts) + "; give the full name")
-        raise KeyError(f"no sheet {sheet!r}; the sheets are: " + ", ".join(
-            repr(c.name) for c in comps))
+        place (1 = the first, as the sheet tabs count): see
+        :func:`core.sheets_api.find_sheet`, the one resolver. Its
+        :class:`~core.sheets_api.SheetError` is a ``ValueError``."""
+        return find_sheet(self._viewport.scene.compositions, sheet)
 
     def _has_gl(self) -> bool:
         return can_render(self._viewport)
@@ -253,29 +219,17 @@ class BridgeTools:
             raise RuntimeError("the view did not render (" + NO_GL + ")")
         return image
 
-    def _composer_on(self, comp, run):
-        """``run(composer)`` with ``comp`` the composer's sheet, its views
-        rendered fresh — as the PDF atlas does, the composer staying
-        closed and on the sheet it was on."""
+    def _composer_for(self, comps):
+        """The project's composer (created hidden if it never opened),
+        after checking that ``comps`` can be drawn: a view that is not a
+        vector drawing needs GL."""
         composer = self._window()._ensure_composer()
-        needs_gl = any(not (f.style == "vectorial"
-                            and not composer.frame_is_perspective(f))
-                       for f in comp.frames)
-        if needs_gl and not self._has_gl():
+        if not self._has_gl() and any(
+                not (f.style == "vectorial"
+                     and not composer.frame_is_perspective(f))
+                for c in comps for f in c.frames):
             raise RuntimeError(NO_GL)
-        saved = composer.comp
-        composer.comp = comp
-        blank = []
-        try:
-            for f in comp.frames:
-                try:
-                    composer.render_frame(f)
-                except Exception:  # noqa: BLE001 — one view, not the sheet
-                    composer._forget_frame(f)
-                    blank.append(f.list_name or f.title_text or f.view_key)
-            return run(composer), blank
-        finally:
-            composer.comp = saved
+        return composer
 
     # ---- Looking ------------------------------------------------------------
     def _tool_get_scene_info(self) -> dict:
@@ -350,15 +304,13 @@ class BridgeTools:
             for ly in scene.layers]}
 
     def _tool_list_scenes(self) -> dict:
+        """The scenes as the Scenes tab lists them, the one shown, and the
+        sheets that show each (``used_by``)."""
         win = self._window()
         shown = getattr(getattr(getattr(win, "tray", None), "scenes", None),
                         "shown", None)
-        return {"shown": getattr(shown, "name", None), "scenes": [
-            {"name": v.name, "folder": v.folder,
-             "projection": ("parallel" if not v.perspective else
-                            "two_point" if v.two_point else "perspective"),
-             "hidden_layers": list(v.hidden_layers)}
-            for v in self._viewport.scene.saved_views]}
+        return {"shown": getattr(shown, "name", None),
+                "scenes": self._sheets_api().list_scenes()}
 
     def _tool_list_materials(self) -> dict:
         mats = getattr(self._viewport.scene, "materials", {}) or {}
@@ -402,8 +354,9 @@ class BridgeTools:
     def _tool_render_sheet(self, sheet, width: int = 1600,
                            dpi: float | None = None,
                            path: str | None = None) -> dict:
-        """A sheet as a PNG, painted by the composer as its own image
-        export does (``ComposerWindow.export_image``)."""
+        """A sheet as a PNG, painted by the composer as its PDF and image
+        exports do (``ComposerWindow.render_sheet_image``): the window is
+        never shown, and it stays on the sheet it was on."""
         comp = self._sheet(sheet)
         out = (_writable(absolute(path)) if path
                else out_dir() / "sheet.png")
@@ -411,13 +364,15 @@ class BridgeTools:
             page_w = comp.page_size_mm()[0]
             dpi = max(20.0, min(600.0, int(width) * 25.4 / page_w))
         dpi = max(20.0, min(600.0, float(dpi)))
-        _, blank = self._composer_on(
-            comp, lambda c: c.export_image(str(out), dpi))
-        from PySide6.QtGui import QImageReader
-        size = QImageReader(str(out)).size()
+        image, blank = self._composer_for([comp]).render_sheet_image(
+            comp, dpi)
+        if not image.save(str(out)):
+            raise OSError(f"could not write {out}")
+        from core.sheets_api import SheetsAPI
         reply = {"path": str(out), "sheet": comp.name,
-                 "width": size.width(), "height": size.height(),
-                 "dpi": dpi}
+                 "width": image.width(), "height": image.height(),
+                 "dpi": dpi,
+                 "warnings": SheetsAPI(self._viewport.scene).warnings(comp)}
         if blank:
             reply["views_not_rendered"] = blank
         return reply
@@ -677,3 +632,157 @@ class BridgeTools:
         if not ok:
             raise self._failed(f"could not export {out}", mark)
         return reply
+
+    # ---- Sheets and scenes (#1505) --------------------------------------------
+    # One tool per operation of core.sheets_api.SheetsAPI. A writing tool is
+    # ONE undo step (core.ai.run_step: rolled back whole when it fails, no
+    # step when it changes nothing), takes an optional ``expected_revision``
+    # (the document's ``revision`` as list_documents gives it) and answers
+    # with ``changed`` and the new ``document_revision``. None needs the
+    # composer window shown.
+    def _sheets_api(self):
+        from core.sheets_api import SheetsAPI
+        vp = self._viewport
+        return SheetsAPI(vp.scene, getattr(vp, "camera", None))
+
+    def _revision(self) -> int:
+        return int(self._viewport.scene.content_version)
+
+    def _sheet_read(self, key: str, value) -> dict:
+        return {key: value, "document_revision": self._revision()}
+
+    def _sheet_step(self, expected_revision, method: str, **kw) -> dict:
+        """``SheetsAPI.<method>(**kw)`` as one undoable step."""
+        from core.ai import run_step
+        if (expected_revision is not None
+                and int(expected_revision) != self._revision()):
+            raise RuntimeError(
+                f"the document changed since revision {expected_revision} "
+                f"(now {self._revision()}): read it again before editing")
+        api = self._sheets_api()
+        step = run_step(self._viewport,
+                        lambda _scene: getattr(api, method)(**kw))
+        if step["error"] is not None:
+            raise RuntimeError("rolled back, the document is unchanged: "
+                               + str(step["error"]).replace(
+                                   "SnapshotImport: ", ""))
+        if step["changed"]:
+            self._sync_sheets()
+        return {"result": step["result"], "changed": step["changed"],
+                "document_revision": self._revision()}
+
+    def _sync_sheets(self) -> None:
+        """The composer (open or hidden) and the sheet strip catch up with
+        sheets added, removed or renamed. Content edits reach the composer
+        by themselves (core.history.SHEET_CONTENT_LISTENERS)."""
+        win = self._window()
+        composer = getattr(win, "_composer", None)
+        if composer is not None:
+            composer.sync_with_document()
+        tabs = getattr(win, "_refresh_sheet_tabs", None)
+        if tabs is not None:
+            tabs()
+
+    def _tool_list_sheets(self) -> dict:
+        return self._sheet_read("sheets", self._sheets_api().list())
+
+    def _tool_get_sheet(self, sheet, dimensions: bool = False) -> dict:
+        out = self._sheets_api().get(sheet, cotas=bool(dimensions))
+        out["document_revision"] = self._revision()
+        return out
+
+    def _tool_list_sheet_folders(self) -> dict:
+        return self._sheet_read("folders", self._sheets_api().list_folders())
+
+    def _tool_create_sheet(self, name, template=None, after=None,
+                           paper: str = "A3", landscape: bool = True,
+                           frame: bool = True, title_block: bool = False,
+                           folder=None, expected_revision=None) -> dict:
+        return self._sheet_step(
+            expected_revision, "create", name=name, template=template,
+            after=after, paper=paper, landscape=landscape, frame=frame,
+            title_block=title_block, folder=folder)
+
+    def _tool_update_sheet(self, sheet, name=None, paper=None,
+                           landscape=None, index=None, margin_mm=None,
+                           folder=None, print_in_all=None,
+                           expected_revision=None) -> dict:
+        return self._sheet_step(
+            expected_revision, "update", ref=sheet, name=name, paper=paper,
+            landscape=landscape, index=index, margin_mm=margin_mm,
+            folder=folder, print_in_all=print_in_all)
+
+    def _tool_delete_sheet(self, sheet, confirm: bool = False,
+                           expected_revision=None) -> dict:
+        return self._sheet_step(expected_revision, "delete", ref=sheet,
+                                confirm=confirm)
+
+    def _tool_add_frame(self, sheet, view=None, scale=None, x_mm=None,
+                        y_mm=None, w_mm=None, h_mm=None, fit=None,
+                        fields=None, expected_revision=None) -> dict:
+        return self._sheet_step(
+            expected_revision, "add_frame", sheet=sheet, view=view,
+            scale=scale, x_mm=x_mm, y_mm=y_mm, w_mm=w_mm, h_mm=h_mm,
+            fit=fit, **dict(fields or {}))
+
+    def _tool_update_frame(self, sheet, frame, view=None, scale=None,
+                           x_mm=None, y_mm=None, w_mm=None, h_mm=None,
+                           fit=None, fields=None,
+                           expected_revision=None) -> dict:
+        return self._sheet_step(
+            expected_revision, "update_frame", sheet=sheet, frame=frame,
+            view=view, scale=scale, x_mm=x_mm, y_mm=y_mm, w_mm=w_mm,
+            h_mm=h_mm, fit=fit, **dict(fields or {}))
+
+    def _tool_remove_frame(self, sheet, frame,
+                           expected_revision=None) -> dict:
+        return self._sheet_step(expected_revision, "remove_frame",
+                                sheet=sheet, frame=frame)
+
+    def _tool_fit_frame(self, sheet, frame, mode: str = "content",
+                        expected_revision=None) -> dict:
+        return self._sheet_step(expected_revision, "fit", sheet=sheet,
+                                frame=frame, mode=mode)
+
+    def _tool_set_title_block(self, sheet="all", fields=None, columns=None,
+                              x_mm=None, y_mm=None, w_mm=None, h_mm=None,
+                              replace: bool = False,
+                              expected_revision=None) -> dict:
+        return self._sheet_step(
+            expected_revision, "set_title_block", sheet=sheet,
+            fields=fields, columns=columns, x_mm=x_mm, y_mm=y_mm,
+            w_mm=w_mm, h_mm=h_mm, replace=replace)
+
+    def _tool_add_text(self, sheet, text, x_mm: float = 20.0,
+                       y_mm: float = 20.0, fields=None,
+                       expected_revision=None) -> dict:
+        return self._sheet_step(expected_revision, "add_text", sheet=sheet,
+                                text=text, x_mm=x_mm, y_mm=y_mm,
+                                **dict(fields or {}))
+
+    def _tool_update_text(self, sheet, text, fields=None,
+                          expected_revision=None) -> dict:
+        return self._sheet_step(expected_revision, "update_text",
+                                sheet=sheet, index=text,
+                                **dict(fields or {}))
+
+    def _tool_create_scene(self, name, from_scene=None, folder=None,
+                           hidden_layers=None, target=None,
+                           expected_revision=None) -> dict:
+        return self._sheet_step(
+            expected_revision, "create_scene", name=name,
+            from_scene=from_scene, folder=folder,
+            hidden_layers=hidden_layers, target=target)
+
+    def _tool_update_scene(self, scene, name=None, folder=None,
+                           hidden_layers=None, target=None,
+                           expected_revision=None) -> dict:
+        return self._sheet_step(
+            expected_revision, "update_scene", ref=scene, name=name,
+            folder=folder, hidden_layers=hidden_layers, target=target)
+
+    def _tool_delete_scene(self, scene, confirm: bool = False,
+                           expected_revision=None) -> dict:
+        return self._sheet_step(expected_revision, "delete_scene",
+                                ref=scene, confirm=confirm)
+

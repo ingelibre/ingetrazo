@@ -540,11 +540,19 @@ class _Bridge(BridgeTools, QObject):
             reply["warnings"] = warned
         return reply
 
-    def _tool_export_pdf(self, path: str = "", sheets=None) -> dict:
+    def _tool_export_pdf(self, path: str = "", sheets=None,
+                         format: str = "pdf",  # noqa: A002 — the tool's name
+                         dpi: float = 150.0) -> dict:
         """Every sheet (or the given ones: name, title-block number or
-        place) into one PDF, as File ▸ Export all sheets (PDF) does."""
+        place) as File ▸ Export all sheets does: ``format="pdf"`` writes
+        one PDF, the atlas; ``format="png"`` one PNG per sheet,
+        ``<stem>-<nn>-<sheet>.png`` beside ``path`` (a ``.png`` name) or
+        inside it (a folder), at ``dpi``."""
         if not path:
-            raise ValueError("give the PDF path")
+            raise ValueError("give the path")
+        fmt = str(format or "pdf").lower()
+        if fmt not in ("pdf", "png"):
+            raise ValueError(f"format must be 'pdf' or 'png', not {format!r}")
         out = absolute(_expand(path))
         scene = self._viewport.scene
         comps = list(getattr(scene, "compositions", []) or [])
@@ -555,20 +563,14 @@ class _Bridge(BridgeTools, QObject):
                 sheets = [sheets]
             picked = []
             for ref in sheets:
-                try:
-                    comp = self._sheet(ref)
-                except KeyError as exc:
-                    raise ValueError(exc.args[0]) from None
+                comp = self._sheet(ref)
                 if comp not in picked:
                     picked.append(comp)
             # In the document's order, as the atlas prints them.
             comps = [c for c in comps if c in picked]
-        composer = self._window()._ensure_composer()
-        if not self._has_gl() and any(
-                not (f.style == "vectorial"
-                     and not composer.frame_is_perspective(f))
-                for c in comps for f in c.frames):
-            raise RuntimeError(NO_GL)
+        composer = self._composer_for(comps)
+        if fmt == "png":
+            return self._export_pngs(composer, comps, out, dpi)
         out.parent.mkdir(parents=True, exist_ok=True)
         troubled = composer.export_all_pdf(str(out), comps)
         if not out.is_file():
@@ -576,6 +578,29 @@ class _Bridge(BridgeTools, QObject):
         return {"path": str(out), "sheets": len(comps),
                 "sheet_names": [c.name for c in comps],
                 "views_not_rendered": list(troubled or [])}
+
+    @staticmethod
+    def _export_pngs(composer, comps, out: Path, dpi) -> dict:
+        import re
+        dpi = max(20.0, min(600.0, float(dpi)))
+        if out.suffix.lower() == ".png":
+            folder, stem = out.parent, out.stem + "-"
+        else:
+            folder, stem = out, ""
+        folder.mkdir(parents=True, exist_ok=True)
+        files, troubled = [], {}
+        for i, c in enumerate(comps, 1):
+            image, blank = composer.render_sheet_image(c, dpi)
+            safe = re.sub(r"[^\w\-]+", "_", c.name).strip("_") or "sheet"
+            target = folder / f"{stem}{i:02d}-{safe}.png"
+            if not image.save(str(target)):
+                raise RuntimeError(f"could not write {target}")
+            files.append(str(target))
+            if blank:
+                troubled[c.name] = blank
+        return {"files": files, "sheets": len(comps),
+                "sheet_names": [c.name for c in comps], "dpi": dpi,
+                "views_not_rendered": troubled}
 
     def _tool_export_view(self, view: str = "", path: str | None = None,
                           width: int = 1920, height: int = 1080) -> dict:

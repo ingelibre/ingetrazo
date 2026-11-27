@@ -93,6 +93,19 @@ def folder_by_id(scene, folder_id) -> Optional[SheetFolder]:
     return next((f for f in folders_of(scene) if f.id == folder_id), None)
 
 
+def folder_path(scene, folder_id) -> tuple:
+    """The names from the top down to folder ``folder_id``, ``()`` for the
+    top or a folder the document does not have. A cycle stops the walk."""
+    names: list = []
+    seen: set = set()
+    f = folder_by_id(scene, folder_id)
+    while f is not None and f.id not in seen:
+        seen.add(f.id)
+        names.append(f.name)
+        f = folder_by_id(scene, f.parent_id)
+    return tuple(reversed(names))
+
+
 def subfolders(scene, parent_id) -> list:
     """The folders directly inside ``parent_id`` (``None``: the top), in
     their order."""

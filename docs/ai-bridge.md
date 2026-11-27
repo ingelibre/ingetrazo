@@ -176,14 +176,14 @@ Common rules:
 | `get_object_info` | One group or component by name or id: box (min, max, size), layer, material, children and BIM (IFC) tag. | `{"name": "Shed"}` or `{"id": "3f2a9c0d1e4b5a67"}` |
 | `list_layers` | The layers: name, visible, locked, folder; and the active one. | `{}` |
 | `set_layer_visibility` | Shows or hides layers (one undo step). | `{"layers": ["Furniture"], "visible": false}` |
-| `list_scenes` | The saved scenes and the one shown. | `{}` |
+| `list_scenes` | The saved scenes in the Scenes tab's order (`index` 1 = the first), the one shown, and the sheets whose frames show each (`used_by`). | `{}` |
 | `show_scene` | Shows a scene as a click on its row does: camera, layers, style and hidden objects. | `{"name": "Plan"}` |
 | `set_camera` | A standard view (`top`, `bottom`, `front`, `back`, `left`, `right`, `iso`) or `eye`/`target` (Z up, metres); projection `perspective`, `parallel` or `two_point`; `fov` in degrees; `zoom_extents` frames everything. | `{"view": "iso", "zoom_extents": true}` or `{"eye": [20, -15, 8], "target": [0, 0, 1], "projection": "perspective"}` |
 | `select` | Selects groups or components by `names` or `ids` (`mode`: `replace`, `add`, `remove` or `toggle`), or clears the selection with `clear`. | `{"names": ["Bench 1", "Bench 2"]}` or `{"clear": true}` |
 | `screenshot` | Renders the view. The agent looks at it and iterates; with `path` it also keeps the PNG (or JPG) there. `view` (a standard view) and `fit` (zoom to the whole model) aim the camera for this picture only, leaving the user's view as it was. | `{"width": 1280, "height": 720}` |
 | `export_view` | Renders a saved scene to PNG and the agent looks at it; with `path` it is kept there. The user's view (camera, layers, style, hidden objects) is put back and a saved document stays saved. | `{"view": "3D view", "path": "/home/ana/site/view.png"}` |
-| `render_sheet` | A PNG of a sheet, painted by the composer as its image export does. The sheet is given by name, by title-block number (`L-02`) or by place (1 = the first); `width` in pixels or `dpi`. | `{"sheet": "L-02", "width": 1600}` |
-| `export_pdf` | The sheets (all, or those in `sheets`: name, title-block number or place) into one PDF. | `{"path": "/home/ana/site/plaza.pdf"}` or `{"path": "/home/ana/site/L-02.pdf", "sheets": ["L-02"]}` |
+| `render_sheet` | A PNG of a sheet, painted by the composer as its image export does (`ComposerWindow.render_sheet_image`; the window is never shown). The sheet is given by name, by title-block number (`L-02`) or by place (1 = the first); `width` in pixels or `dpi`. The reply carries the sheet's `warnings`. | `{"sheet": "L-02", "width": 1600}` |
+| `export_pdf` | The sheets (all, or those in `sheets`: name, title-block number or place) into one PDF. `format: "png"` writes one PNG per sheet instead, `<stem>-<nn>-<sheet>.png` beside a `.png` path or inside a folder, at `dpi`. | `{"path": "/home/ana/site/plaza.pdf"}` or `{"path": "/home/ana/site/png/", "format": "png", "dpi": 150}` |
 | `open_document` | Opens a document (`.igz`, `.dae`, `.skp`, `.dxf`, `.dwg`) in place of the one in front. If that one has unsaved changes it returns an error instead of a «save changes?» dialog, unless `discard_changes` is given. | `{"path": "/home/ana/site/plaza.igz"}` |
 | `save_document` | Saves the document; with `path` (an `.igz`), saves it as that file; `format`: `auto` or `json`. **Only if the user allows it** (see below). | `{}` or `{"path": "/home/ana/site/plaza-v2.igz", "format": "json"}` |
 | `import_file` | Imports into the document (one undo step): `.igz` (as a component), `.dae`, `.glb`/`.gltf`, `.skp`, `.obj`, `.stl`, `.dxf`, `.dwg`. `unit` (`m`, `cm`, `mm`, `in`, `ft`) for OBJ, STL and DXF; `make_faces` for DXF/DWG. | `{"path": "/home/ana/furniture/bench.obj", "unit": "cm"}` |
@@ -192,6 +192,44 @@ Common rules:
 | `apply_material` | Paints the named objects (`names`/`ids`) as a whole with one of the document's materials, or else the selection. One undo step. | `{"material": "Brick", "names": ["North wall"]}` |
 | `undo` / `redo` | The usual history. | `{}` |
 | `shutdown` | Ends a window-less IngeTrazo started with `--allow-shutdown`. Refused with unsaved changes unless `discard_changes` is given. | `{}` |
+
+### Sheets and scenes
+
+The sheet tools work on the document's sheets and scenes without the Sheet
+Composer on screen (it is created hidden when a render needs its painters).
+`run_python` has the same operations as the `sheets` object
+(`core/sheets_api.py`): `sheets.list()`, `sheets.add_frame(...)`…
+
+- **Places count from 1**, as the sheet tabs and the Scenes tab do. A sheet
+  is named by place, name or title-block number (`L-02`) through one
+  resolver (`core.sheets_api.find_sheet`); names are compared after
+  Unicode normalisation and case folding (`Küche` finds `KÜCHE`). Frames
+  are named by place, uid or Items-list name; texts by place.
+- **Every edit is one undo step** and answers `changed` (no step when
+  nothing changed) and `document_revision`. Give a read's
+  `document_revision` as `expected_revision` and the edit is refused if
+  the document changed since (another client, the user).
+- **Warnings** (in `list_sheets`, `get_sheet`, `render_sheet`): a frame on
+  a scene that no longer exists, a drawing that does not fit its frame, a
+  scale that is not a standard one (with the nearest standard scale), and
+  `{placeholders}` that would print literally.
+
+| Tool | What it does | Example arguments |
+|---|---|---|
+| `list_sheets` / `get_sheet` | Every sheet with its warnings; one sheet in full (frames with where the drawing lands on paper, texts, title block). | `{"sheet": "L-02"}` |
+| `list_sheet_folders` | The sheet explorer's folders with their Print flag and sheets. | `{}` |
+| `create_sheet` / `update_sheet` / `delete_sheet` | Add (empty, or a copy of `template`), rename, change paper, move to place `index` or into `folder`, switch the Print flag; delete needs `confirm`. | `{"name": "EG", "paper": "A3", "title_block": true}` |
+| `add_frame` / `update_frame` / `remove_frame` | A view frame: `view` is a scene's name, `std:top`… or `__current__`; `scale` `50` or `"1:50"`; a box in mm; `fit` `content` or `view`; `fields` for the rest (style, title…). | `{"sheet": "EG", "view": "Plan", "scale": 50, "fit": "content"}` |
+| `fit_frame` | Centre a frame on what its view shows (`content`), or give it the scene's own framing (`view`). | `{"sheet": "EG", "frame": 1}` |
+| `set_title_block` | Title-block rows `[[label, value], …]` on one sheet or on `"all"`; values may use `{placeholders}`. | `{"sheet": "all", "fields": [["PROJECT", "{project}"]]}` |
+| `add_text` / `update_text` | A text block, and changes to one (`fields`). | `{"sheet": "EG", "text": "North", "x_mm": 20, "y_mm": 20}` |
+| `create_scene` / `update_scene` / `delete_scene` | A scene (a copy of `from_scene`, or the camera now); a rename renames every frame that shows it; delete needs `confirm` and names the sheets that showed it. | `{"scene": "Plan", "name": "Plan EG"}` |
+
+**Undo with the composer open.** A step made by `run_python` or a sheet
+tool belongs to the document's history: the bridge's `undo` and the model
+window's Ctrl+Z take it back. The composer's own undo for that sheet ends
+where such a step begins (as when another sheet is opened); its steps on
+the set of sheets stay.
 
 Except `list_documents`, every tool requires `document_id`. With no bridge
 running the list is empty, and the other tools say how to start the bridge

@@ -19,6 +19,7 @@ cost stays proportional to the action, not to the model size.
 from __future__ import annotations
 
 import copy
+import dataclasses
 import os as _os
 import time as _time_mod
 from abc import ABC, abstractmethod
@@ -4330,6 +4331,202 @@ class SimplifyMeshCommand(Command):
             scene.version += 1
 
 
+# ---- What a script changed INSIDE sheets, scenes and layers ----------------
+# SnapshotImport tracks which sheets, scenes and layers exist; these helpers
+# track their content. A snapshot keeps every record (a sheet, a frame, a
+# text, a title block…) and every list BY IDENTITY together with its values,
+# and putting it back writes the values into those same objects. The
+# composer holds frames (its selection, render caches, the items panel) and
+# a sheet's item lists; after an undo they are still the ones on the sheet.
+
+_PLAIN = (str, int, float, bool, type(None))
+
+
+class _Obj:
+    """A record in a content snapshot: the object itself and its values."""
+    __slots__ = ("obj", "state")
+
+    def __init__(self, obj, state: dict) -> None:
+        self.obj, self.state = obj, state
+
+    def __eq__(self, other) -> bool:
+        return (isinstance(other, _Obj) and other.obj is self.obj
+                and other.state == self.state)
+
+    __hash__ = None
+
+
+class _Seq:
+    """A list in a content snapshot: the list object itself and its items."""
+    __slots__ = ("seq", "items")
+
+    def __init__(self, seq: list, items: list) -> None:
+        self.seq, self.items = seq, items
+
+    def __eq__(self, other) -> bool:
+        return (isinstance(other, _Seq) and other.seq is self.seq
+                and other.items == self.items)
+
+    __hash__ = None
+
+
+#: A dataclass's field names, by class (``dataclasses.fields`` per call
+#: was most of the snapshot's time).
+_FIELD_NAMES: dict = {}
+
+
+def _record_fields(cls):
+    """The field names of a dataclass ``cls``, or ``None`` for any other
+    class."""
+    try:
+        return _FIELD_NAMES[cls]
+    except KeyError:
+        dc = cls.__dict__.get("__dataclass_fields__") or getattr(
+            cls, "__dataclass_fields__", None)
+        names = (tuple(n for n, f in dc.items()
+                       if f._field_type is dataclasses._FIELD)
+                 if dc is not None else None)
+        _FIELD_NAMES[cls] = names
+        return names
+
+
+def _is_record(v) -> bool:
+    return not isinstance(v, type) and _record_fields(type(v)) is not None
+
+
+def _own_fields(obj):
+    """The values that make up ``obj``: a dataclass's fields, else its
+    public attributes (caches start with ``_`` and stay out)."""
+    names = _record_fields(type(obj))
+    if names is not None:
+        return names
+    return [k for k in vars(obj) if not k.startswith("_")]
+
+
+def _snap_obj(obj) -> dict:
+    return {k: _snap_val(getattr(obj, k)) for k in _own_fields(obj)}
+
+
+_PLAIN_TYPES = frozenset(_PLAIN)
+
+
+def _snap_val(v):
+    t = type(v)
+    if t in _PLAIN_TYPES:
+        return v
+    if t is not type and _record_fields(t) is not None:
+        return _Obj(v, _snap_obj(v))
+    if isinstance(v, list):
+        return _Seq(v, [_snap_val(x) for x in v])
+    if isinstance(v, tuple):
+        return tuple(_snap_val(x) for x in v)
+    if isinstance(v, dict):
+        return {k: _snap_val(x) for k, x in v.items()}
+    return copy.deepcopy(v)
+
+
+def _same_obj(obj, state: dict) -> bool:
+    """Whether ``obj`` still holds the values of ``state`` — walked in
+    place, without building a second snapshot."""
+    # Plain loops, the plain values inline: this walks every value of
+    # every sheet after each script, and generators doubled its time.
+    names = _own_fields(obj)
+    if len(names) != len(state):
+        return False
+    plain = _PLAIN_TYPES
+    for k in names:
+        if k not in state:
+            return False
+        v, sv = getattr(obj, k), state[k]
+        t = type(sv)
+        if t in plain:
+            if type(v) is not t or v != sv:
+                return False
+        elif not _same(v, sv):
+            return False
+    return True
+
+
+def _same_seq(v, items) -> bool:
+    if len(v) != len(items):
+        return False
+    plain = _PLAIN_TYPES
+    for a, b in zip(v, items):
+        t = type(b)
+        if t in plain:
+            if type(a) is not t or a != b:
+                return False
+        elif not _same(a, b):
+            return False
+    return True
+
+
+def _same(v, sv) -> bool:
+    t = type(sv)
+    if t in _PLAIN_TYPES:
+        return type(v) is t and v == sv
+    if t is _Obj:
+        return v is sv.obj and _same_obj(v, sv.state)
+    if t is _Seq:
+        return v is sv.seq and _same_seq(v, sv.items)
+    if t is tuple:
+        return type(v) is tuple and _same_seq(v, sv)
+    if isinstance(sv, dict):
+        return (type(v) is dict and v.keys() == sv.keys()
+                and all(_same(v[k], sv[k]) for k in sv))
+    if type(v) is not type(sv):
+        return False
+    try:
+        return bool(v == sv)
+    except Exception:              # e.g. an array: no single truth value
+        return False
+
+
+def _put_obj(obj, state: dict) -> None:
+    """Write ``state`` back into ``obj`` (and into the records and lists it
+    holds), keeping every object's identity."""
+    if not _is_record(obj):
+        for k in _own_fields(obj):
+            if k not in state:     # an attribute the script added
+                delattr(obj, k)
+    for k, sv in state.items():
+        setattr(obj, k, _build(sv))
+
+
+def _build(sv):
+    if isinstance(sv, _Obj):
+        _put_obj(sv.obj, sv.state)
+        return sv.obj
+    if isinstance(sv, _Seq):
+        sv.seq[:] = [_build(x) for x in sv.items]
+        return sv.seq
+    if isinstance(sv, tuple):
+        return tuple(_build(x) for x in sv)
+    if isinstance(sv, dict):
+        return {k: _build(x) for k, x in sv.items()}
+    if isinstance(sv, _PLAIN):
+        return sv
+    return copy.deepcopy(sv)       # the snapshot stays good for the next redo
+
+
+#: Called as ``listener(scene, sheets)`` after a script's step changed the
+#: content of these sheets, or put it back (undo, redo, rollback). The
+#: composer listens: see ``ComposerWindow._on_sheets_edited_outside``.
+#: Held weakly (bound methods as ``weakref.WeakMethod``).
+SHEET_CONTENT_LISTENERS: list = []
+
+
+def _notify_sheets(scene, sheets: list) -> None:
+    if not sheets:
+        return
+    for ref in list(SHEET_CONTENT_LISTENERS):
+        fn = ref()
+        if fn is None:
+            SHEET_CONTENT_LISTENERS.remove(ref)
+            continue
+        fn(scene, sheets)
+
+
 class SnapshotImport(Command):
     """Wrap a file import that may add loose geometry AND/OR reference groups
     (big DAE/OBJ models land as a Group). SnapshotMutation only snapshots the
@@ -4368,19 +4565,58 @@ class SnapshotImport(Command):
         for _, added, removed in self._TRACKED:
             setattr(self, added, [])
             setattr(self, removed, [])
+        #: ``[(kind, obj, before, after)]``: the sheets, scenes and layers
+        #: whose CONTENT the run changed (``kind`` is "sheet", "scene" or
+        #: "layer"; ``before``/``after`` are content snapshots).
+        self.content_edits: list = []
+
+    #: Scene lists whose members' content is tracked, and what each is.
+    _CONTENT = (("compositions", "sheet"), ("saved_views", "scene"),
+                ("layers", "layer"))
 
     @property
     def changed(self) -> bool:
         """Whether the run did anything undo would have to revert."""
         return (self.before != self.after
+                or bool(self.content_edits)
                 or any(getattr(self, added) or getattr(self, removed)
                        for _, added, removed in self._TRACKED))
+
+    # ---- content of sheets, scenes and layers --------------------------------
+    # Membership alone missed every EDIT: a frame's scale set, a scene
+    # renamed, a title block filled in through ``run_python`` reported
+    # «changed: False», left no undo step and no dirty flag, and a script
+    # that raised after hiding a layer left it hidden.
+    #
+    # Cost: ONE snapshot before the run (56 sheets with 1039 items, 157
+    # scenes and 37 layers: ~4 ms). After it, each object is compared in
+    # place, and only the ones that changed are snapshotted again.
+    @classmethod
+    def _content_before(cls, scene) -> list:
+        return [(kind, obj, _snap_obj(obj))
+                for name, kind in cls._CONTENT
+                for obj in (getattr(scene, name, None) or ())
+                if hasattr(obj, "__dict__")]
+
+    @staticmethod
+    def _content_edits(before: list) -> list:
+        return [(kind, obj, old, _snap_obj(obj))
+                for kind, obj, old in before if not _same_obj(obj, old)]
+
+    def _put_content(self, scene, which: int) -> None:
+        """Put back the ``before`` (2) or ``after`` (3) content of every
+        object the run edited, and tell the composer which sheets moved."""
+        for edit in self.content_edits:
+            _put_obj(edit[1], edit[which])
+        _notify_sheets(scene, [obj for kind, obj, *_ in self.content_edits
+                               if kind == "sheet"])
 
     def do(self, scene) -> None:
         m = scene.mesh
         if self.after is None:
             lists_before = {name: list(getattr(scene, name))
                             for name, _, _ in self._TRACKED}
+            content_before = self._content_before(scene)
             self.before = m.capture_state()
             try:
                 self.mutate(scene)
@@ -4390,8 +4626,16 @@ class SnapshotImport(Command):
                 # Slice assignment preserves references held by scripting scopes.
                 for name, items in lists_before.items():
                     getattr(scene, name)[:] = items
+                # …and what it changed INSIDE them: a layer it hid, a frame
+                # it rescaled before raising.
+                self.content_edits = self._content_edits(content_before)
+                self._put_content(scene, 2)
+                self.content_edits = []
                 raise
             self.after = m.capture_state()
+            self.content_edits = self._content_edits(content_before)
+            _notify_sheets(scene, [obj for kind, obj, *_ in self.content_edits
+                                   if kind == "sheet"])
             for name, added, removed in self._TRACKED:
                 before, now = lists_before[name], getattr(scene, name)
                 setattr(self, added, [x for x in now if x not in before])
@@ -4409,6 +4653,7 @@ class SnapshotImport(Command):
                 for x in getattr(self, added):
                     if x not in items:
                         items.append(x)
+            self._put_content(scene, 3)
         scene.version += 1
 
     def undo(self, scene) -> None:
@@ -4426,6 +4671,7 @@ class SnapshotImport(Command):
             for i, x in getattr(self, removed):
                 if x not in items:
                     items.insert(min(i, len(items)), x)
+        self._put_content(scene, 2)
         scene.version += 1
 
 
