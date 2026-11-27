@@ -34,12 +34,30 @@ from PySide6.QtGui import QVector3D
 
 from core.ifc_identity import new_identity
 
-#: Curated civil/architecture classes (IFC4 names).
+#: Curated civil/architecture classes (IFC4 names), then building parts and
+#: MEP/HVAC/electrical equipment (#1293). Every class here has the same
+#: attribute layout in IFC4 and IFC4X3_ADD2 and is not deprecated, so a tag
+#: exports as itself instead of falling back to IfcBuildingElementProxy.
 IFC_CLASSES = [
     "IfcWall", "IfcSlab", "IfcColumn", "IfcBeam", "IfcFooting",
     "IfcRoof", "IfcStair", "IfcRamp", "IfcDoor", "IfcWindow",
     "IfcRailing", "IfcCovering", "IfcPile", "IfcMember", "IfcSpace",
     "IfcReinforcingBar",
+    # Building parts, furniture, assemblies and site.
+    "IfcPlate", "IfcChimney", "IfcCurtainWall", "IfcShadingDevice",
+    "IfcStairFlight", "IfcRampFlight", "IfcFurniture",
+    "IfcSystemFurnitureElement", "IfcElementAssembly",
+    "IfcDiscreteAccessory", "IfcMechanicalFastener", "IfcTransportElement",
+    "IfcGeographicElement", "IfcBuildingElementProxy",
+    # Piping, heating and plumbing; ducts and air; electrical.
+    "IfcPipeSegment", "IfcPipeFitting", "IfcValve", "IfcPump", "IfcTank",
+    "IfcBoiler", "IfcSpaceHeater", "IfcUnitaryEquipment", "IfcSolarDevice",
+    "IfcFlowMeter", "IfcActuator", "IfcDuctSegment", "IfcDuctFitting",
+    "IfcDamper", "IfcAirTerminal", "IfcSanitaryTerminal", "IfcWasteTerminal",
+    "IfcDistributionChamberElement", "IfcCableSegment",
+    "IfcCableCarrierSegment", "IfcElectricDistributionBoard",
+    "IfcSwitchingDevice", "IfcOutlet", "IfcLightFixture",
+    "IfcElectricAppliance",
 ]
 
 #: Density of reinforcing steel, kg/m³ — the bar's weight is its volume
