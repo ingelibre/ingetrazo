@@ -42,6 +42,43 @@ _ATTR_COUNT = {"IfcPile": 10, "IfcDoor": 13, "IfcWindow": 13, "IfcSpace": 11,
                "IfcReinforcingBar": 14}
 _DEFAULT_ATTRS = 9
 
+#: Element status (PEnum_ElementStatus): IFC4 keeps it as the ``Status``
+#: property of the class's common property set, not as an attribute (#1030,
+#: docs/iso16739-plan.md section 1.2). A tag carries it as ``"status"``.
+ELEMENT_STATUSES = ("NEW", "EXISTING", "DEMOLISH", "TEMPORARY", "OTHER",
+                    "NOTKNOWN", "UNSET")
+
+#: The common property set that holds ``Status`` for each exported class;
+#: classes not listed (IfcSpace, IfcReinforcingBar) have no Status property.
+_STATUS_PSET = {
+    "IfcWall": "Pset_WallCommon", "IfcSlab": "Pset_SlabCommon",
+    "IfcColumn": "Pset_ColumnCommon", "IfcBeam": "Pset_BeamCommon",
+    "IfcFooting": "Pset_FootingCommon", "IfcRoof": "Pset_RoofCommon",
+    "IfcStair": "Pset_StairCommon", "IfcRamp": "Pset_RampCommon",
+    "IfcDoor": "Pset_DoorCommon", "IfcWindow": "Pset_WindowCommon",
+    "IfcRailing": "Pset_RailingCommon", "IfcCovering": "Pset_CoveringCommon",
+    "IfcPile": "Pset_PileCommon", "IfcMember": "Pset_MemberCommon",
+    "IfcBuildingElementProxy": "Pset_BuildingElementProxyCommon",
+}
+
+
+def element_status(obj) -> str | None:
+    """The tag's ``status`` (upper case), ``None`` when unset.
+
+    Raises ValueError for a value outside PEnum_ElementStatus, so a typo
+    never reaches the file as a status the receiving tool cannot read."""
+    group = obj.get("group")
+    tag = group.ifc if group is not None else (
+        obj["faces"][0].attrs.get("ifc") if obj.get("faces") else None)
+    value = tag.get("status") if isinstance(tag, dict) else None
+    if value is None or value == "":
+        return None
+    status = str(value).strip().upper()
+    if status not in ELEMENT_STATUSES:
+        raise ValueError(f"{obj.get('name') or 'BIM object'}: status "
+                         f"{value!r} is not one of {', '.join(ELEMENT_STATUSES)}")
+    return status
+
 
 def ifc_guid() -> str:
     """A 22-character IFC compressed GUID (base-64 over the IFC alphabet)."""
@@ -222,7 +259,10 @@ def _write_owner_history(w: _Writer, stamp) -> int:
 def _properties(w, owner, guid, owner_guid, values):
     sets = {}
     for pset, name, kind, value in values:
-        if kind == "IfcLabelList":
+        if kind == "IfcEnumerated":
+            prop = w.add("IFCPROPERTYENUMERATEDVALUE", _s(name), "$",
+                         f"(IFCLABEL({_s(value)}))", "$")
+        elif kind == "IfcLabelList":
             vals = "(" + ",".join(f"IFCLABEL({_s(v)})" for v in value) + ")"
             prop = w.add("IFCPROPERTYLISTVALUE", _s(name), "$", vals, "$")
         else:
@@ -273,6 +313,7 @@ def save_ifc(scene, path, project_name: str = "IngeTrazo project", *,
     if any(not isinstance(project_data.get(k, ""), str) for k in ("name", "description", "project_type")):
         raise ValueError("Project information must contain text values")
     for obj in objects:
+        element_status(obj)        # a bad status fails before the file is written
         issues = object_issues(obj, schema, required=False)
         if issues:
             raise ValueError(str(issues))
@@ -404,7 +445,14 @@ def save_ifc(scene, path, project_name: str = "IngeTrazo project", *,
             attrs[index] = f".{data['predefined_type']}."
         elem = w.add(cls.upper(), *attrs)
         from core.turkiye_delivery import property_values
-        _properties(w, elem, guid, element_guid, property_values(cls, data))
+        values = list(property_values(cls, data))
+        status = element_status(obj)
+        if status and cls in _STATUS_PSET:
+            pset = _STATUS_PSET[cls]
+            # A delivery profile may already write Status: the tag wins.
+            values = [v for v in values if (v[0], v[1]) != (pset, "Status")]
+            values.append((pset, "Status", "IfcEnumerated", status))
+        _properties(w, elem, guid, element_guid, values)
         if data.get("material"):
             material = w.add("IFCMATERIAL", _s(data["material"]), "$", "$")
             if data.get("layer"):
