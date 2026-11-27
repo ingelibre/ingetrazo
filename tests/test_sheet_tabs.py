@@ -357,6 +357,30 @@ def test_many_sheets_scroll_within_a_width_budget():
     assert seen == [4]
 
 
+def test_a_strip_that_fits_leaves_no_blank_after_its_tabs():
+    """QTabBar asks for room for its scroll arrows plus 75 px, whatever it
+    holds: the strip of a drawing without sheets, «+» alone, left a blank
+    of some 90 px before the status message (133 px on macOS for a 40 px
+    tab, which put the message past where the hint test expects it)."""
+    from PySide6.QtWidgets import QTabBar
+    from views.sheet_tabs import SheetStatusBar
+    app = QApplication.instance() or QApplication([])
+    bar = SheetStatusBar(None, on_model=lambda: None, on_sheet=lambda i: None,
+                         on_new=lambda: None)
+    bar.show()
+    bar.resize(1600, 28)
+    app.processEvents()
+    tabs = bar.tabs
+    assert tabs.minimumSizeHint().width() == tabs.sizeHint().width()
+    assert tabs.width() == tabs.sizeHint().width()          # «+» and no more
+    assert bar._msg.x() == tabs.geometry().right() + 1 + bar.ITEM_GAP
+    # Once the tabs need the arrows, they ask for what Qt asks.
+    tabs.refresh([f"Lámina {i}" for i in range(1, 40)], None)
+    assert tabs.minimumSizeHint().width() == \
+        QTabBar.minimumSizeHint(tabs).width()
+    bar.close()
+
+
 def test_the_model_window_returns_to_the_last_sheet(monkeypatch):
     """Sheet 2 → Model → the sheet tab brings back sheet 2 (Marco, 23-09)."""
     win = _window(monkeypatch)
