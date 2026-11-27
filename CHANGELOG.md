@@ -6,6 +6,10 @@ follow [SemVer](https://semver.org).
 
 ## [Unreleased]
 
+### Añadido
+
+- **IFC: estado del elemento (nuevo / existente / a demoler)**: una etiqueta BIM con `"status"` (`NEW`, `EXISTING`, `DEMOLISH`, `TEMPORARY`, `OTHER`, `NOTKNOWN`, `UNSET`) se exporta como `Pset_<Clase>Common.Status`, así Revit y otros visores distinguen lo existente de lo nuevo y de lo que se demuele. Un valor no válido detiene la exportación antes de escribir el archivo.
+
 ## [0.6.3.3] — 2026-11-26
 
 **Arreglos del motor topológico, para luego migrarlo a Rust.** Antes de pasar el motor a Rust en la 0.6.4, esta versión corrige los fallos del motor que podían hacerte perder trabajo: una línea sobre una cara ya no tapa sus huecos y Empujar/Tirar ya no borra las líneas dibujadas en las caras que estira. Trae además los arreglos críticos de guardar, abrir `.skp`, grupos enormes, planos de sección, aristas y capas. Sin cambios de interfaz, de formato de archivo ni para las extensiones.
