@@ -83,8 +83,11 @@ def native():
     ``qt_px_near`` projects as :func:`pixel_projector` (Qt's own
     ``QMatrix4x4.map``) on a fixed sample — perspective, orthographic and
     arbitrary matrices, points near and far, behind the eye, on the eye
-    plane, NaN and infinity — trying Qt's sum as written and contracted;
-    else ``(None, None, None)``: the search projects through Qt."""
+    plane, NaN and infinity — trying Qt's sum as written (``fma`` 0) and
+    as a compiler contracts it (1, or 2 as Clang does it: Qt on macOS
+    arm64); else ``(None, None, None)``: the search projects through Qt.
+    An engine built before mode 2 takes only 0 and 1; asked for 2 it
+    raises, and the search stays in Python as before."""
     if _NATIVE is not None:
         return _NATIVE
     from core import _native
@@ -94,7 +97,7 @@ def native():
     _set_native((None, None, None))
     try:
         sample = _px_sample()
-        for fma in (False, True):
+        for fma in (0, 1, 2):
             if _px_match(mod, fma, sample):
                 _set_native((mod, fma, _native.qt_hypot()))
                 break
