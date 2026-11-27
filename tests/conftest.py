@@ -106,6 +106,20 @@ def _world_drawing_axes():
     axes.sync(None)
 
 
+@pytest.fixture(autouse=True)
+def _pool_tasks_finish_under_their_stubs(monkeypatch):
+    """Work a test queued on Qt's global thread pool (the extension
+    manager's catalog refresh) runs to its end BEFORE the test's
+    monkeypatches are undone — ``monkeypatch`` is set up first, so it is
+    torn down after this. Left running, such a task called the real
+    ``refresh_catalog`` (network, 20 s timeout) and starved the pool for the
+    next manager's refresh: «catalog refresh still pending» failures that
+    moved from test to test (#1721)."""
+    yield
+    from PySide6.QtCore import QThreadPool
+    QThreadPool.globalInstance().waitForDone(30000)
+
+
 _exit_status = [0]
 
 
