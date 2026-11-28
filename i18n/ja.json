@@ -4458,5 +4458,15 @@
  "MID length": "MID の長さ",
  "Typed changes discarded.": "入力した変更を破棄しました。",
  "Nothing to revert: it has the values it had when you selected it.": "戻すものはありません：選択したときの値のままです。",
- "Back to the values it had when you selected it.": "選択したときの値に戻しました。"
+ "Back to the values it had when you selected it.": "選択したときの値に戻しました。",
+ "Interact": "操作",
+ "Click a dynamic component to interact": "ダイナミックコンポーネントをクリックして操作します",
+ "Start with =, then click another attribute to insert a reference. Enter applies; Esc cancels.": "= で始めてから別の属性をクリックすると、参照を挿入できます。Enter で適用、Esc でキャンセルします。",
+ "Cannot reference this part by name: {name}": "この名前ではパーツを参照できません: {name}",
+ "Functions": "関数",
+ "Not yet supported": "未対応",
+ "Maths": "数学",
+ "Trigonometry": "三角関数",
+ "Logic": "論理",
+ "Operators": "演算子"
 }

@@ -44,9 +44,18 @@ def _make_png(path: Path) -> Path:
     """A tiny real PNG — openskp.add_texture_material detects the format
     from the file's own magic bytes, so a placeholder must be genuine.
     Same helper as tests/test_gltf_dae_export.py's."""
+    import os
+    if os.name == "nt" and len(str(path.absolute())) >= 250:
+        path = Path("\\\\?\\" + str(path.absolute()))
     img = QImage(4, 4, QImage.Format_RGBA8888)
     img.fill(0xFF3366CC)
-    img.save(str(path), "PNG")
+    # Qt's filename path on Windows can reject the deliberately very long
+    # source name of the staging test. Build a real PNG in memory instead.
+    from PySide6.QtCore import QBuffer, QIODevice
+    buffer = QBuffer()
+    buffer.open(QIODevice.WriteOnly)
+    assert img.save(buffer, "PNG")
+    path.write_bytes(bytes(buffer.data()))
     return path
 
 

@@ -4461,5 +4461,15 @@
  "MID length": "Panjang MID",
  "Typed changes discarded.": "Perubahan yang diketik dibuang.",
  "Nothing to revert: it has the values it had when you selected it.": "Tidak ada yang dikembalikan: nilainya sama seperti saat dipilih.",
- "Back to the values it had when you selected it.": "Kembali ke nilai saat dipilih."
+ "Back to the values it had when you selected it.": "Kembali ke nilai saat dipilih.",
+ "Interact": "Interaksi",
+ "Click a dynamic component to interact": "Klik komponen dinamis untuk berinteraksi",
+ "Start with =, then click another attribute to insert a reference. Enter applies; Esc cancels.": "Mulai dengan =, lalu klik atribut lain untuk menyisipkan referensi. Enter menerapkan; Esc membatalkan.",
+ "Cannot reference this part by name: {name}": "Tidak dapat merujuk bagian ini berdasarkan nama: {name}",
+ "Functions": "Fungsi",
+ "Not yet supported": "Belum didukung",
+ "Maths": "Matematika",
+ "Trigonometry": "Trigonometri",
+ "Logic": "Logika",
+ "Operators": "Operator"
 }

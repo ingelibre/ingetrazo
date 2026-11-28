@@ -4458,5 +4458,15 @@
  "MID length": "MID 的长度",
  "Typed changes discarded.": "已丢弃输入的更改。",
  "Nothing to revert: it has the values it had when you selected it.": "无需还原：它仍是选中时的值。",
- "Back to the values it had when you selected it.": "已回到选中时的值。"
+ "Back to the values it had when you selected it.": "已回到选中时的值。",
+ "Interact": "交互",
+ "Click a dynamic component to interact": "点击动态组件进行交互",
+ "Start with =, then click another attribute to insert a reference. Enter applies; Esc cancels.": "以 = 开始，然后点击其他属性插入引用。Enter 应用；Esc 取消。",
+ "Cannot reference this part by name: {name}": "无法按此名称引用部件：{name}",
+ "Functions": "函数",
+ "Not yet supported": "暂不支持",
+ "Maths": "数学",
+ "Trigonometry": "三角函数",
+ "Logic": "逻辑",
+ "Operators": "运算符"
 }

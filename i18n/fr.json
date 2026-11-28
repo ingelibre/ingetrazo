@@ -4458,5 +4458,21 @@
  "MID length": "La longueur de MID",
  "Typed changes discarded.": "Saisie abandonnée.",
  "Nothing to revert: it has the values it had when you selected it.": "Rien à rétablir : il a les valeurs qu'il avait à la sélection.",
- "Back to the values it had when you selected it.": "Revenu aux valeurs qu'il avait à la sélection."
+ "Back to the values it had when you selected it.": "Revenu aux valeurs qu'il avait à la sélection.",
+ "Interact": "Interagir",
+ "Click a dynamic component to run its action; Esc cancels the animation.": "Cliquez sur un composant dynamique pour lancer son action ; Échap annule l’animation.",
+ "Click a dynamic component to interact": "Cliquez sur un composant dynamique pour interagir",
+ "This part has no click action": "Cette partie ne possède pas d’action au clic",
+ "Component action failed: {error}": "Action du composant impossible : {error}",
+ "Dynamic components": "Composants dynamiques",
+ "Component options…": "Options du composant…",
+ "Component attributes…": "Attributs du composant…",
+ "Start with =, then click another attribute to insert a reference. Enter applies; Esc cancels.": "Commencez par =, puis cliquez sur un autre attribut pour insérer sa référence. Entrée valide ; Échap annule.",
+ "Cannot reference this part by name: {name}": "Impossible de référencer cette partie par son nom : {name}",
+ "Functions": "Fonctions",
+ "Not yet supported": "Pas encore pris en charge",
+ "Maths": "Maths",
+ "Trigonometry": "Trigonométrie",
+ "Logic": "Logique",
+ "Operators": "Opérateurs"
 }

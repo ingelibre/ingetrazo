@@ -4464,5 +4464,15 @@
  "MID length": "O comprimento de MID",
  "Typed changes discarded.": "Alterações digitadas descartadas.",
  "Nothing to revert: it has the values it had when you selected it.": "Nada a reverter: tem os valores que tinha ao ser selecionado.",
- "Back to the values it had when you selected it.": "De volta aos valores que tinha ao ser selecionado."
+ "Back to the values it had when you selected it.": "De volta aos valores que tinha ao ser selecionado.",
+ "Interact": "Interagir",
+ "Click a dynamic component to interact": "Clique em um componente dinâmico para interagir",
+ "Start with =, then click another attribute to insert a reference. Enter applies; Esc cancels.": "Comece com = e clique em outro atributo para inserir uma referência. Enter aplica; Esc cancela.",
+ "Cannot reference this part by name: {name}": "Não é possível referenciar esta peça pelo nome: {name}",
+ "Functions": "Funções",
+ "Not yet supported": "Ainda não suportado",
+ "Maths": "Matemática",
+ "Trigonometry": "Trigonometria",
+ "Logic": "Lógica",
+ "Operators": "Operadores"
 }

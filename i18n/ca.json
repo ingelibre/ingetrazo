@@ -4460,5 +4460,15 @@
  "MID length": "La longitud de MID",
  "Typed changes discarded.": "Canvis escrits descartats.",
  "Nothing to revert: it has the values it had when you selected it.": "Res a revertir: té els valors que tenia en seleccionar-lo.",
- "Back to the values it had when you selected it.": "Tornat als valors que tenia en seleccionar-lo."
+ "Back to the values it had when you selected it.": "Tornat als valors que tenia en seleccionar-lo.",
+ "Interact": "Interacciona",
+ "Click a dynamic component to interact": "Feu clic en un component dinàmic per interactuar-hi",
+ "Start with =, then click another attribute to insert a reference. Enter applies; Esc cancels.": "Comenceu amb = i feu clic en un altre atribut per inserir-hi una referència. Retorn aplica; Esc cancel·la.",
+ "Cannot reference this part by name: {name}": "No es pot fer referència a aquesta peça pel nom: {name}",
+ "Functions": "Funcions",
+ "Not yet supported": "Encara no admès",
+ "Maths": "Matemàtiques",
+ "Trigonometry": "Trigonometria",
+ "Logic": "Lògica",
+ "Operators": "Operadors"
 }

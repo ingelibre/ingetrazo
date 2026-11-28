@@ -4466,5 +4466,15 @@
  "MID length": "Довжина в MID",
  "Typed changes discarded.": "Введені зміни відкинуто.",
  "Nothing to revert: it has the values it had when you selected it.": "Нічого повертати: значення такі самі, як під час вибору.",
- "Back to the values it had when you selected it.": "Повернуто значення на момент вибору."
+ "Back to the values it had when you selected it.": "Повернуто значення на момент вибору.",
+ "Interact": "Взаємодія",
+ "Click a dynamic component to interact": "Натисніть на динамічний компонент для взаємодії",
+ "Start with =, then click another attribute to insert a reference. Enter applies; Esc cancels.": "Почніть з =, потім натисніть на інший атрибут, щоб вставити посилання. Enter застосовує; Esc скасовує.",
+ "Cannot reference this part by name: {name}": "Неможливо послатися на цю деталь за назвою: {name}",
+ "Functions": "Функції",
+ "Not yet supported": "Ще не підтримується",
+ "Maths": "Математика",
+ "Trigonometry": "Тригонометрія",
+ "Logic": "Логіка",
+ "Operators": "Оператори"
 }

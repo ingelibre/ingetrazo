@@ -4458,5 +4458,15 @@
  "MID length": "MID 길이",
  "Typed changes discarded.": "입력한 변경을 버렸습니다.",
  "Nothing to revert: it has the values it had when you selected it.": "되돌릴 것이 없습니다: 선택했을 때의 값 그대로입니다.",
- "Back to the values it had when you selected it.": "선택했을 때의 값으로 되돌렸습니다."
+ "Back to the values it had when you selected it.": "선택했을 때의 값으로 되돌렸습니다.",
+ "Interact": "상호작용",
+ "Click a dynamic component to interact": "동적 구성요소를 클릭하여 상호작용",
+ "Start with =, then click another attribute to insert a reference. Enter applies; Esc cancels.": "=로 시작한 다음 다른 속성을 클릭하여 참조를 삽입하세요. Enter로 적용하고 Esc로 취소합니다.",
+ "Cannot reference this part by name: {name}": "이 이름으로 부품을 참조할 수 없습니다: {name}",
+ "Functions": "함수",
+ "Not yet supported": "아직 지원되지 않음",
+ "Maths": "수학",
+ "Trigonometry": "삼각함수",
+ "Logic": "논리",
+ "Operators": "연산자"
 }

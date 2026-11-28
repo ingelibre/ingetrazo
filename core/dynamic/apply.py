@@ -238,6 +238,19 @@ def redraw_group(root_group, options: dict | None = None, scene=None, edits=None
     edits = edits or {}
     root, frame = part_in_context(scene, root_group, edits)
     overrides = {}
+    # A number typed in the attribute editor is an explicit geometric edit.
+    # Unedited stored numbers can be stale and must still read live geometry.
+    for part in root.walk():
+        changes = edits.get(id(part.handle), {})
+        for attr in ("x", "y", "z", *LEN):
+            if attr not in changes or part.formula(attr) is not None:
+                continue
+            value = _num(changes[attr])
+            if isinstance(value, float):
+                if attr in LEN and part.children:
+                    # Content stretching needs its size before this edit.
+                    part.attrs[attr] = live_value(part, attr)
+                overrides[(part, attr)] = value
     for k, v in (options or {}).items():
         k = k.lower()
         if k in LEN:
@@ -303,8 +316,9 @@ def redraw_group(root_group, options: dict | None = None, scene=None, edits=None
                         if a in inst:
                             inst[a] = v     # the stored size says it too
             if is_root:
-                for (_p, a), v in overrides.items():   # the user's options
-                    inst[a] = _value_for_store(v)
+                for (p, a), v in overrides.items():
+                    if p is root:
+                        inst[a] = _value_for_store(v)
         g.ext = ext or None
         g.adopt([build(c) for c in node.children])
         if g.xform is None and node.xform is not None:

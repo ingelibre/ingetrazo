@@ -6,6 +6,9 @@ from __future__ import annotations
 import math
 
 MODELING_COLORS = {
+    "axis_x": (0.86, 0.22, 0.27),
+    "axis_y": (0.16, 0.62, 0.36),
+    "axis_z": (0.20, 0.40, 0.78),
     "selected": (0.95, 0.45, 0.16),
     "locked": (0.9, 0.12, 0.12),
     "guides": (70 / 255, 90 / 255, 120 / 255),

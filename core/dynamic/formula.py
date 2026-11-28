@@ -46,7 +46,7 @@ _TOKEN_RE = re.compile(r"""
     (?P<ws>\s+)
   | (?P<num>(?:[0-9]+\.?[0-9]*|\.[0-9]+)(?:[eE][+-]?[0-9]+)?)
   | (?P<str>"(?:[^"]|"")*"|'(?:[^']|'')*')
-  | (?P<owner>[^\W\d][\w\x20]*?(?=\x20*!))
+  | (?P<owner>[^\W\d][\w\x20\x23\u00b0\u00ba]*?(?=\x20*!))
   | (?P<id>[^\W\d]\w*)
   | (?P<op><>|<=|>=|[-+*/^&=<>(),!])
 """, re.VERBOSE)
@@ -65,7 +65,8 @@ def _tokenize(text: str) -> list[tuple[str, str, int]]:
         if m.lastgroup == "owner":
             # .skp files name parts freely: «FINESTRA SIMPLE!B_TIPUS»,
             # «Vertical 1!LenX». The name before «!» may hold spaces and
-            # digits; it is one identifier, its spaces collapsed.
+            # digits, and default component numbering (Component #1,
+            # Composant n°1); it is one identifier, its spaces collapsed.
             tokens.append(("id", " ".join(m.group().split()), pos))
         elif m.lastgroup != "ws":
             tokens.append((m.lastgroup, m.group(), pos))

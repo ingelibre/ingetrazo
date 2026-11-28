@@ -4494,5 +4494,15 @@
  "MID length": "طول MID",
  "Typed changes discarded.": "تم تجاهل التغييرات المكتوبة.",
  "Nothing to revert: it has the values it had when you selected it.": "لا شيء للاسترجاع: لديه القيم نفسها عند التحديد.",
- "Back to the values it had when you selected it.": "عاد إلى القيم عند التحديد."
+ "Back to the values it had when you selected it.": "عاد إلى القيم عند التحديد.",
+ "Interact": "تفاعل",
+ "Click a dynamic component to interact": "انقر على مكوّن ديناميكي للتفاعل",
+ "Start with =, then click another attribute to insert a reference. Enter applies; Esc cancels.": "ابدأ بـ =، ثم انقر على سمة أخرى لإدراج مرجع. Enter للتطبيق؛ Esc للإلغاء.",
+ "Cannot reference this part by name: {name}": "لا يمكن الإشارة إلى هذا الجزء بالاسم: {name}",
+ "Functions": "الدوال",
+ "Not yet supported": "غير مدعوم بعد",
+ "Maths": "رياضيات",
+ "Trigonometry": "حساب المثلثات",
+ "Logic": "منطق",
+ "Operators": "عوامل"
 }

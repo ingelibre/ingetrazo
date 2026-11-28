@@ -4461,5 +4461,15 @@
  "MID length": "Дължината на MID",
  "Typed changes discarded.": "Въведените промени са отхвърлени.",
  "Nothing to revert: it has the values it had when you selected it.": "Няма какво да се връща: има стойностите от момента на избора.",
- "Back to the values it had when you selected it.": "Върнати са стойностите от момента на избора."
+ "Back to the values it had when you selected it.": "Върнати са стойностите от момента на избора.",
+ "Interact": "Взаимодействие",
+ "Click a dynamic component to interact": "Щракнете върху динамичен компонент за взаимодействие",
+ "Start with =, then click another attribute to insert a reference. Enter applies; Esc cancels.": "Започнете с =, след това щракнете върху друг атрибут, за да вмъкнете препратка. Enter прилага; Esc отменя.",
+ "Cannot reference this part by name: {name}": "Не може да се посочи тази част по име: {name}",
+ "Functions": "Функции",
+ "Not yet supported": "Все още не се поддържа",
+ "Maths": "Математика",
+ "Trigonometry": "Тригонометрия",
+ "Logic": "Логика",
+ "Operators": "Оператори"
 }

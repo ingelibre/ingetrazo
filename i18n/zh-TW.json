@@ -4461,5 +4461,15 @@
  "MID length": "MID 的長度",
  "Typed changes discarded.": "已捨棄輸入的變更。",
  "Nothing to revert: it has the values it had when you selected it.": "無需還原：它仍是選取時的值。",
- "Back to the values it had when you selected it.": "已回到選取時的值。"
+ "Back to the values it had when you selected it.": "已回到選取時的值。",
+ "Interact": "互動",
+ "Click a dynamic component to interact": "點選動態元件進行互動",
+ "Start with =, then click another attribute to insert a reference. Enter applies; Esc cancels.": "以 = 開始，然後點選其他屬性插入參照。Enter 套用；Esc 取消。",
+ "Cannot reference this part by name: {name}": "無法以此名稱參照零件：{name}",
+ "Functions": "函數",
+ "Not yet supported": "尚未支援",
+ "Maths": "數學",
+ "Trigonometry": "三角函數",
+ "Logic": "邏輯",
+ "Operators": "運算子"
 }

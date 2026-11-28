@@ -156,6 +156,14 @@ def test_formulas_compute_like_a_spreadsheet():
     assert _ev("CHOOSE(2, 10, 20, 30)") == 20.0
 
 
+def test_numbered_component_references_keep_operators_and_strings_separate():
+    assert _ev('Composant n°1!LenZ + 2 * Component #2!Z',
+               {('composant n°1', 'lenz'): 20.0, ('component #2', 'z'): 3.0}) == 26.0
+    assert _ev('IF(Component #1!Z>0,Composant n°2!LenZ,0)',
+               {('component #1', 'z'): 1.0, ('composant n°2', 'lenz'): 5.0}) == 5.0
+    assert _ev('"Composant n°1!Z"') == 'Composant n°1!Z'
+
+
 def test_a_formula_cannot_run_code():
     """Formulas come from files we did not write: no eval, no names out of
     the attribute space, no attribute access, bounded work."""
@@ -378,9 +386,10 @@ def test_the_attributes_window_writes_a_formula(qapp, model):
     scene.selection.add(win)
     dlg = AttributesDialog(_Window(_Viewport(scene, history)))
     dlg.show_root(win, (0,))                       # the frame
-    names = [dlg.table.item(r, 0).data(0x0100) for r in range(dlg.table.rowCount())]
-    assert "lenx" in names
-    row = names.index("lenx")
+    row = next(r for r in range(dlg.table.rowCount())
+               if dlg.table.item(r, 0) is not None
+               and dlg.table.item(r, 0).data(0x0100) == "lenx"
+               and tuple(dlg.table.item(r, 0).data(0x0101) or ()) == (0,))
     dlg.table.item(row, 1).setText("=parent!lenx - 20")
     root = dlg.root
     assert root is not win and root.uid == win.uid

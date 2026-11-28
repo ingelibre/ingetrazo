@@ -4458,5 +4458,15 @@
  "MID length": "Длина в MID",
  "Typed changes discarded.": "Введённые изменения отброшены.",
  "Nothing to revert: it has the values it had when you selected it.": "Нечего возвращать: значения такие же, как при выборе.",
- "Back to the values it had when you selected it.": "Возвращены значения на момент выбора."
+ "Back to the values it had when you selected it.": "Возвращены значения на момент выбора.",
+ "Interact": "Взаимодействие",
+ "Click a dynamic component to interact": "Нажмите на динамический компонент для взаимодействия",
+ "Start with =, then click another attribute to insert a reference. Enter applies; Esc cancels.": "Начните с =, затем нажмите на другой атрибут, чтобы вставить ссылку. Enter применяет; Esc отменяет.",
+ "Cannot reference this part by name: {name}": "Невозможно сослаться на эту деталь по имени: {name}",
+ "Functions": "Функции",
+ "Not yet supported": "Пока не поддерживается",
+ "Maths": "Математика",
+ "Trigonometry": "Тригонометрия",
+ "Logic": "Логика",
+ "Operators": "Операторы"
 }

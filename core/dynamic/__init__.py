@@ -15,9 +15,8 @@ Component options); the attributes and formulas are what the author writes
 of .skp dynamic components (``definition_attributes`` +
 ``instance_attributes``, keys such as ``lenx``, ``_lenx_formula``,
 ``_lenx_access``; lengths stored in inches): a component read from a .skp
-file by the import extension is edited here as it is, and one made here
-goes back to .skp with it. Nothing new in the .igz: ``ext`` is saved and
-copied with the container already.
+file is edited in that layout. Dynamic SKP export is not implemented;
+``ext`` is saved and copied with the container in IGZ documents.
 
 **Safety.** Formulas come from files we did not write: :mod:`.formula` is
 its own interpreter — no ``eval``, bounded size, depth and work.

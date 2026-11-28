@@ -101,6 +101,13 @@ def redraw_in_document(viewport, group, options: dict | None = None,
     """Redraw ``group`` with ``options`` ({attribute: value}, stored units)
     and authoring ``edits`` as ONE undo step. Returns (the new group, the
     formulas that could not be evaluated: [(part, attr, formula, why)])."""
+    callback = getattr(viewport.scene, "_finish_dynamic_preview", None)
+    if callback is not None:
+        uid = group.uid
+        callback()
+        from core.group import iter_placements
+        group = next((g for top in context_members(viewport.scene)
+                      for g, _matrix in iter_placements(top) if g.uid == uid), group)
     problems: list = []
 
     def make_new(scene):

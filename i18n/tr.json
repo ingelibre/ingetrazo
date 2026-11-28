@@ -4457,5 +4457,15 @@
   "MID length": "MID uzunluğu",
   "Typed changes discarded.": "Yazılan değişiklikler atıldı.",
   "Nothing to revert: it has the values it had when you selected it.": "Geri alınacak bir şey yok: seçtiğiniz andaki değerlere sahip.",
-  "Back to the values it had when you selected it.": "Seçtiğiniz andaki değerlere dönüldü."
+  "Back to the values it had when you selected it.": "Seçtiğiniz andaki değerlere dönüldü.",
+  "Interact": "Etkileşim",
+  "Click a dynamic component to interact": "Etkileşim için dinamik bir bileşene tıklayın",
+  "Start with =, then click another attribute to insert a reference. Enter applies; Esc cancels.": "= ile başlayın, ardından başvuru eklemek için başka bir niteliğe tıklayın. Enter uygular; Esc iptal eder.",
+  "Cannot reference this part by name: {name}": "Bu parçaya adıyla başvurulamıyor: {name}",
+  "Functions": "İşlevler",
+  "Not yet supported": "Henüz desteklenmiyor",
+  "Maths": "Matematik",
+  "Trigonometry": "Trigonometri",
+  "Logic": "Mantık",
+  "Operators": "İşleçler"
 }

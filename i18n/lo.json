@@ -4461,5 +4461,15 @@
  "MID length": "ຄວາມຍາວຂອງ MID",
  "Typed changes discarded.": "ຖິ້ມການປ່ຽນແປງທີ່ພິມແລ້ວ.",
  "Nothing to revert: it has the values it had when you selected it.": "ບໍ່ມີຫຍັງໃຫ້ກັບຄືນ: ຍັງເປັນຄ່າຕອນເລືອກ.",
- "Back to the values it had when you selected it.": "ກັບໄປຄ່າຕອນເລືອກແລ້ວ."
+ "Back to the values it had when you selected it.": "ກັບໄປຄ່າຕອນເລືອກແລ້ວ.",
+ "Interact": "ໂຕ້ຕອບ",
+ "Click a dynamic component to interact": "ຄລິກອົງປະກອບໄດນາມິກເພື່ອໂຕ້ຕອບ",
+ "Start with =, then click another attribute to insert a reference. Enter applies; Esc cancels.": "ເລີ່ມດ້ວຍ = ແລ້ວຄລິກຄຸນລັກສະນະອື່ນເພື່ອໃສ່ການອ້າງອີງ. Enter ເພື່ອນຳໃຊ້; Esc ເພື່ອຍົກເລີກ.",
+ "Cannot reference this part by name: {name}": "ບໍ່ສາມາດອ້າງອີງສ່ວນນີ້ດ້ວຍຊື່: {name}",
+ "Functions": "ຟັງຊັນ",
+ "Not yet supported": "ຍັງບໍ່ຮອງຮັບ",
+ "Maths": "ຄະນິດສາດ",
+ "Trigonometry": "ຕີໂກນມິຕິ",
+ "Logic": "ຕັກກະ",
+ "Operators": "ຕົວດຳເນີນການ"
 }

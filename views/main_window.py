@@ -662,6 +662,8 @@ class MainWindow(QMainWindow):
         self._tools["change_axes"] = ChangeAxesTool()
         from tools.scale_manager import ScaleManagerTool
         self._tools["scale_manager"] = ScaleManagerTool()
+        from tools.interact import InteractTool
+        self._tools["interact"] = InteractTool()
         # Tag each tool with its icon key so the viewport can turn the mouse
         # pointer into the tool's icon (tool-shaped cursors).
         for key, tool in self._tools.items():
@@ -1406,6 +1408,28 @@ class MainWindow(QMainWindow):
         self._tool_actions[key] = action
         return action
 
+    def _show_dynamic_options(self):
+        from PySide6.QtWidgets import QDialog, QVBoxLayout
+        from views.dynamic_panel import ComponentOptionsPanel, DynamicDialog
+        dialog = getattr(self, "_dynamic_options_dialog", None)
+        if dialog is None:
+            dialog = self._dynamic_options_dialog = DynamicDialog(self)
+            dialog.minimized_slot = 1
+            dialog.setWindowFlag(Qt.WindowMinMaxButtonsHint, True)
+            dialog.setWindowTitle(tr("Component options"))
+            dialog.resize(520, 600)
+            panel = ComponentOptionsPanel(self)
+            QVBoxLayout(dialog).addWidget(panel)
+            dialog.panel = panel
+            dialog.timer = QTimer(dialog)
+            dialog.timer.setInterval(150)
+            dialog.timer.timeout.connect(panel.refresh)
+            dialog.finished.connect(lambda _result: dialog.timer.stop())
+        dialog.panel.refresh()
+        dialog.timer.start()
+        dialog.show()
+        dialog.raise_()
+
     def _build_toolbar(self) -> None:
         self._tool_group = QActionGroup(self)
         self._tool_group.setExclusive(True)
@@ -1418,6 +1442,7 @@ class MainWindow(QMainWindow):
         # One toolbar per task, each independently movable.
         layout = [
             ("main", tr("Main"), ["select", "eraser", "paint"]),
+            ("dynamic_components", tr("Dynamic components"), ["interact"]),
             ("draw", tr("Draw"),
              ["line", "freehand", "rectangle", "rotated_rect", "circle",
               "polygon", "arc", "arc3", "center_arc", "pie"]),
@@ -1440,6 +1465,13 @@ class MainWindow(QMainWindow):
             self.toolbars[oname] = tb
             for key in keys:
                 self._add_tool_button(tb, key)
+        dynamic = self.toolbars["dynamic_components"]
+        options_action = dynamic.addAction(tool_icon("panel_properties"), tr("Component options…"),
+                                           self._show_dynamic_options)
+        attributes_action = dynamic.addAction(tool_icon("panel_options"), tr("Component attributes…"),
+                                              lambda: self.tray.component_options.open_attributes())
+        self._icon_actions.extend(((options_action, "panel_properties"),
+                                   (attributes_action, "panel_options")))
         # Off until the user turns it on (right-click over a toolbar, or
         # F3 ▸ Toolbars): most models never touch a terrain.
         for oname in TOOLBARS_HIDDEN_BY_DEFAULT:

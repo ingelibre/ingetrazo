@@ -74,9 +74,14 @@ class Evaluator:
             for c in part.children:                 # children
                 if named(c):
                     return c
-        # Nothing further: a name out of this scope fails in .skp files too
-        # («failed to parse march sup!leny inside Group.leny») and leaves the
-        # attribute as it was.
+        # A unique named part in the same dynamic assembly can also be
+        # referenced from another branch of the common attribute sheet.
+        # Nearest-scope names above still win; duplicates are never guessed.
+        candidates = [p for p in part.root().walk() if p.name.lower() == owner]
+        if not candidates:
+            candidates = [p for p in part.root().walk() if owner in p.aliases]
+        if len(candidates) == 1:
+            return candidates[0]
         return None
 
     # -- units -----------------------------------------------------------------

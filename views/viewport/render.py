@@ -1150,11 +1150,9 @@ class RenderMixin:
                 self._axes_key = akey
             self._axes_vao.bind()
             self._gl.glDepthMask(GL_FALSE)
-            for name, rgb in (("x", (0.86, 0.22, 0.27)),   # red
-                              ("y", (0.16, 0.62, 0.36)),   # green
-                              ("z", (0.20, 0.40, 0.78))):  # blue
+            for name in ("x", "y", "z"):
                 start, count = self._axes_spans[name]
-                self._set_color(*rgb, 1.0)
+                self._set_color(*self._modeling_color("axis_" + name), 1.0)
                 self._gl.glDrawArrays(GL_LINES, start, count)
             self._gl.glDepthMask(GL_TRUE)
             self._axes_vao.release()

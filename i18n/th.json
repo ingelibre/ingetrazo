@@ -4461,5 +4461,15 @@
  "MID length": "ความยาวของ MID",
  "Typed changes discarded.": "ทิ้งการเปลี่ยนแปลงที่พิมพ์แล้ว",
  "Nothing to revert: it has the values it had when you selected it.": "ไม่มีอะไรให้ย้อน: ยังเป็นค่าตอนเลือก",
- "Back to the values it had when you selected it.": "กลับไปที่ค่าตอนเลือกแล้ว"
+ "Back to the values it had when you selected it.": "กลับไปที่ค่าตอนเลือกแล้ว",
+ "Interact": "โต้ตอบ",
+ "Click a dynamic component to interact": "คลิกองค์ประกอบแบบไดนามิกเพื่อโต้ตอบ",
+ "Start with =, then click another attribute to insert a reference. Enter applies; Esc cancels.": "เริ่มด้วย = แล้วคลิกแอตทริบิวต์อื่นเพื่อแทรกการอ้างอิง กด Enter เพื่อใช้ หรือ Esc เพื่อยกเลิก",
+ "Cannot reference this part by name: {name}": "ไม่สามารถอ้างอิงชิ้นส่วนนี้ด้วยชื่อ: {name}",
+ "Functions": "ฟังก์ชัน",
+ "Not yet supported": "ยังไม่รองรับ",
+ "Maths": "คณิตศาสตร์",
+ "Trigonometry": "ตรีโกณมิติ",
+ "Logic": "ตรรกะ",
+ "Operators": "ตัวดำเนินการ"
 }
