@@ -511,6 +511,8 @@ Tristan Cebulla  (github.com/d1rty-pixel)
     commands inside run_python reported as reverted (#1242), the shortcuts
     page follows actions added later (#1244) and placing a group honours
     the workspace's tool filter (#1243).
+    The formula language of dynamic components (core/dynamic/formula.py)
+    comes from the «Dynamic Components» extension.
 
 Daniel Ramos  (github.com/danielcamposramos)
     Brasília, Brazil.
@@ -528,6 +530,8 @@ Max  (github.com/mle-gall)
 moominot  (github.com/moominot)
     For 0.6.3: the Catalan translation (#1497) and the Location tab of
     Model Info (#1502).
+    Dynamic components in the core (core/dynamic): the redraw, the options
+    and the attributes editor are adapted from the «dc_tools» extension.
 
 renancadastros01-gif  (github.com/renancadastros01-gif)
     For 0.6.3: Push/Pull bases kept with Ctrl stay sound and cracked

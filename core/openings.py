@@ -1508,6 +1508,9 @@ def _record(group, host, prism) -> dict:
     not look again until it moves."""
     rec = {"uid": group.uid, "xf": _frame_list(group), "a": None, "b": None,
            "host": None, "hxf": None}
+    shape = _shape(group)
+    if shape is not None:
+        rec["fp"] = shape
     if prism is not None:
         rec["host"] = host.uid
         rec["hxf"] = host.frame_list()
@@ -1525,10 +1528,52 @@ def _record(group, host, prism) -> dict:
     return rec
 
 
+#: ``{uid: (contents key, footprint)}``: the last footprint worked out for
+#: a container, while what it holds has not changed (see :func:`_shape`).
+_SHAPES: dict = {}
+
+
+def _contents_key(group) -> tuple:
+    """What ``group``'s footprint is made from, as it stands in this
+    session: every mesh it holds with its edit count, and where it sits.
+    Cheap to take; equal keys mean the same footprint."""
+    from core.group import iter_placements
+    out = []
+    for g, m in iter_placements(group):
+        mesh = g.mesh
+        out.append((id(mesh), getattr(mesh, "_mut_serial", None),
+                    len(mesh.faces), tuple(m.data()) if m is not None else None))
+    return tuple(out)
+
+
+def _shape(group) -> Optional[list]:
+    """``group``'s footprint in its OWN frame, rounded — what the record
+    keeps, so that a component whose contents change size or shape without
+    moving (a dynamic window made wider) gets its hole made again."""
+    key = _contents_key(group)
+    hit = _SHAPES.get(group.uid)
+    if hit is not None and hit[0] == key:
+        return hit[1]
+    fp = footprint(group)
+    shape = None
+    if fp is not None:
+        inv, ok = _frame(group).inverted()
+        if ok:
+            shape = [[round(c, 4) for c in inv.map(p).toTuple()[:2]]
+                     for p in fp]
+    if len(_SHAPES) > 4096:
+        _SHAPES.clear()
+    _SHAPES[group.uid] = (key, shape)
+    return shape
+
+
 def _stale(scene, g, rec, by_uid) -> bool:
-    """Whether ``g``'s record no longer matches: the component moved, or
-    the wall it cut moved or went."""
+    """Whether ``g``'s record no longer matches: the component moved or
+    changed its footprint, or the wall it cut moved or went."""
     if rec.get("xf") != _frame_list(g):
+        return True
+    # A record from before footprints were kept has none: nothing to compare.
+    if "fp" in rec and rec["fp"] != _shape(g):
         return True
     uid = rec.get("host")
     if rec.get("a") and uid is not None:
