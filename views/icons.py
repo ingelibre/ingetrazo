@@ -2959,7 +2959,32 @@ def _edge_endpoint(p, ink, mode):
         p.drawPolygon(QPolygonF([QPointF(16, 15), QPointF(7, 32), QPointF(25, 32)]))
 
 
+def _interact(p, ink):
+    # Pointing finger, with a small accent marking the click.
+    path = QPainterPath()
+    path.moveTo(17, 39)
+    path.lineTo(10, 27)
+    path.quadTo(8, 22, 12, 22)
+    path.lineTo(18, 27)
+    path.lineTo(18, 12)
+    path.quadTo(18, 7, 23, 10)
+    path.lineTo(23, 23)
+    path.quadTo(27, 18, 29, 24)
+    path.quadTo(34, 21, 35, 27)
+    path.quadTo(40, 25, 39, 32)
+    path.lineTo(35, 40)
+    path.closeSubpath()
+    p.drawPath(path)
+    p.save()
+    p.setPen(_Pen(_accent(), 2.5))
+    p.drawLine(QPointF(21, 2), QPointF(21, 5))
+    p.drawLine(QPointF(11, 7), QPointF(14, 10))
+    p.drawLine(QPointF(29, 7), QPointF(27, 10))
+    p.restore()
+
+
 _DRAW = {
+    "interact": _interact,
     **{"face_" + mode: (lambda p, ink, mode=mode: _face_mode(p, ink, mode))
        for mode in ("wireframe", "hidden_line", "shaded", "textures", "monochrome", "xray")},
     **{key: (lambda p, ink, mode=mode: _edge_cap(p, ink, mode))

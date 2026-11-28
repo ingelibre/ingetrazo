@@ -1257,6 +1257,9 @@ def _instance_placement(xform):
 
 def save_skp(scene, path) -> None:
     """Write the scene as a ``.skp`` to ``path``."""
+    callback = getattr(scene, "_finish_dynamic_preview", None)
+    if callback is not None:
+        callback()
     try:
         import openskp
         from openskp import SkpWriteError

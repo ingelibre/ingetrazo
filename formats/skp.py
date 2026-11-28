@@ -568,10 +568,28 @@ def _apply_payload_inner(scene, payload, progress=None, *, consume=False) -> str
             g = _place(idx, xf, layers[i] if i < len(layers) else None,
                        name=names[i] if i < len(names) else None)
             scene.groups.append(g)
+    # Dynamic components have placement-owned data and child trees: two
+    # instances may share a mesh while carrying entirely different options.
+    def _dynamic_place(entry, depth=0):
+        import copy
+        if depth > 32:
+            raise ValueError("Dynamic component nesting is too deep")
+        g = _place(entry["proto"], entry["xform"], entry.get("layer"),
+                   name=entry.get("name"))
+        g.ext = copy.deepcopy(entry.get("ext"))
+        g.hidden = bool(entry.get("hidden", False))
+        g.material = copy.deepcopy(entry.get("material"))
+        g.adopt(_dynamic_place(child, depth + 1)
+                for child in entry.get("children", []))
+        return g
+
+    scene.groups.extend(_dynamic_place(entry)
+                        for entry in payload.get("placements", []))
     if consume:
         # Names/children/instances stay available until every placement exists.
         payload["groups"] = []
         payload["protos"] = []
+        payload.pop("placements", None)
     back = payload.get("back_color")
     if back and getattr(scene, "back_face_color", None) is None:
         # Adopt the file's style back-face colour so unpainted faces seen

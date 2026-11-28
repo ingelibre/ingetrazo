@@ -8052,6 +8052,9 @@ class Tray(QDockWidget):
                          | QDockWidget.DockWidgetClosable)
 
         self.entity_info = EntityInfoPanel(window)
+        from views.dynamic_panel import ComponentOptionsPanel
+        #: Dynamic components: the selected one's options (core/dynamic).
+        self.component_options = ComponentOptionsPanel(window)
         self.materials = MaterialsPanel(window)
         self.components = ComponentsPanel(window)
         self.parts = PartsPanel(window)
@@ -8065,6 +8068,7 @@ class Tray(QDockWidget):
         # was drowning.
         self.setWidget(_scrolled([
             (tr("Entity info"), self.entity_info),
+            (tr("Component options"), self.component_options),
             (tr("Materials"), self.materials),
             (tr("Components"), self.components),
             (tr("Parts"), self.parts),
@@ -8091,6 +8095,7 @@ class Tray(QDockWidget):
             if timer is not None:
                 timer.stop()
             self.entity_info.refresh()
+        self.component_options.refresh()
         # The materials panel scans every render face for its swatches —
         # ~0.5 s on an exploded 28k-face mesh, paid per EDIT when run
         # inline. Debounced: one refresh 300 ms after the last edit.

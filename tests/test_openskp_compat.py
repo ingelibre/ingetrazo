@@ -68,6 +68,11 @@ class _Archive:
     def _skip_clayer_parent_ref(self, r, slot):
         pass
 
+    def _read_clayer_line_style(self, r):
+        # Recent OpenSKP asks about an optional line-style object after a
+        # layer. These synthetic records deliberately contain none.
+        pass
+
 
 def _utf16(text: str) -> bytes:
     return b'\xff\xfe\xff' + bytes([len(text)]) + text.encode('utf-16le')

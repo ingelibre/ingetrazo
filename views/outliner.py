@@ -1507,7 +1507,11 @@ class OutlinerPanel(QWidget):
         self._kept_expanded = {self._groups[key].uid
                                for key, item in self._items.items()
                                if item.isExpanded()}
-        self.tree.clear()
+        blocked = self.tree.blockSignals(True)
+        try:
+            self.tree.clear()
+        finally:
+            self.tree.blockSignals(blocked)
         self._items = {}
         self._groups = {}
         self._state = {}

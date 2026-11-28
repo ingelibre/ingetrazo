@@ -248,10 +248,16 @@ class History:
             if self.groups_cv.get(k) == before:
                 self.groups_cv[k] = cv
 
+    def _settle_preview(self):
+        callback = getattr(self.scene, "_finish_dynamic_preview", None)
+        if callback is not None:
+            callback()
+
     def execute(self, cmd: Command) -> bool:
         """Run *cmd* and push it on the undo stack. Returns ``True`` when it
         ran, ``False`` when it was refused (``last_rejected``) or failed and
         was rolled back (``last_error``) — nothing then reached the stack."""
+        self._settle_preview()
         _t0 = _time_mod.perf_counter() if _PERF else 0.0
         snapshot = self.scene.mesh.capture_state()
         if _PERF:
@@ -361,6 +367,7 @@ class History:
             pass
 
     def undo(self) -> bool:
+        self._settle_preview()
         if not self.undo_stack:
             return False
         cmd = self.undo_stack.pop()
@@ -377,6 +384,7 @@ class History:
         return True
 
     def redo(self) -> bool:
+        self._settle_preview()
         if not self.redo_stack:
             return False
         cmd = self.redo_stack.pop()

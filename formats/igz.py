@@ -785,6 +785,9 @@ def save_scene(scene, path: Path, thumbnail: bytes | None = None,
 
     ``progress(fraction, stage)``, when given, is told the milestones of the
     write (PR #666)."""
+    callback = getattr(scene, "_finish_dynamic_preview", None)
+    if callback is not None:
+        callback()
     if fmt not in SAVE_FORMATS:
         raise ValueError(f"unknown save format {fmt!r}; "
                          f"one of {', '.join(SAVE_FORMATS)}")

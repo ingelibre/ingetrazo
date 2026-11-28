@@ -26,7 +26,10 @@ def test_modeling_options_roundtrip_in_styles_views_and_documents(tmp_path, monk
     monkeypatch.setattr(library, "_settings", lambda: QSettings(
         str(tmp_path / "styles.ini"), QSettings.IniFormat))
     style = Style(name="Working", modeling_colors={"selected": (0.2, 0.5, 0.8),
-                                                  "guides": (0.6, 0.3, 0.2)},
+                                                  "guides": (0.6, 0.3, 0.2),
+                                                  "axis_x": (0.8, 0.1, 0.2),
+                                                  "axis_y": (0.1, 0.7, 0.4),
+                                                  "axis_z": (0.2, 0.3, 0.9)},
                   modeling_visibility={"show_axes": False, "show_hidden_geometry": True,
                                        "show_section_planes": False, "show_section_cuts": False},
                   show_guides=False, color_by_layer=True, section_cut_width=7.5)
@@ -169,6 +172,27 @@ def _live(vp):
 
 def _count_color(pixels, rgb):
     return (np.max(abs(pixels.astype(int) - np.array(rgb)), axis=2) < 15).sum()
+
+
+def test_model_axes_follow_style_colors_without_geometry_changes(cube_viewport):
+    vp = cube_viewport
+    vp.scene.clear()
+    vp.scene.show_axes = True
+    vp.scene.display_style = Style(sky=False, ground=False, background=(1, 1, 1),
+                                   modeling_colors={'axis_x': (1, 0, 1)})
+    # One-pixel axes are antialiased into the white background.
+    pixels = _live(vp).astype(int)
+    magenta = lambda p: ((np.minimum(p[:, :, 0], p[:, :, 2]) > p[:, :, 1] + 40)
+                          & (abs(p[:, :, 0] - p[:, :, 2]) < 20)).sum()
+    assert magenta(pixels) > 10
+    version = vp.scene.version
+    vp.scene.display_style.modeling_colors['axis_x'] = (1, 1, 0)
+    pixels = _live(vp).astype(int)
+    yellow = ((np.minimum(pixels[:, :, 0], pixels[:, :, 1]) > pixels[:, :, 2] + 40)
+              & (abs(pixels[:, :, 0] - pixels[:, :, 1]) < 20)).sum()
+    assert yellow > 10
+    assert magenta(pixels) == 0
+    assert vp.scene.version == version
 
 
 def test_selected_face_color_updates_without_geometry_rebuild(cube_viewport):

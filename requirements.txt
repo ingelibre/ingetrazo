@@ -18,7 +18,8 @@ numpy>=1.26        # DEM heightfield decode + sampling (georef Track G, G2)
 # plus the legacy-format writer behind the .skp export, currently off).
 # Upstream main: single-pass VFF reader (#439), its allocation and collector
 # work (#453) and Definition.is_group (#446).
-openskp @ git+https://github.com/iamahsanmehmood/openskp@c0bbeaa62191d776ea25e979555c5d6c464d54fa#subdirectory=packages/python
+# Includes definition/model attribute dictionaries (upstream #530).
+openskp @ git+https://github.com/iamahsanmehmood/openskp@67c52a4613f93b3b8ac4946bbb9941d7cf781dee#subdirectory=packages/python
 # DXF import (D1; DWG arrives via the LibreDWG dwg2dxf satellite in D3).
 # Pure Python, MIT — the same parser IngeCAD reads its documents with, so
 # the two projects share one set of format scars.

@@ -1565,6 +1565,11 @@ def _adapt_inner(model, name: str, skp_path=None, *, consume=False):
             root = d
     roots = [root] if root is not None else list(defs.values())
 
+    from formats import skp_dynamic
+    if skp_dynamic.has_dynamic(model):
+        payload = skp_dynamic.adapt(model, name, attr_map)
+        return _model_metadata(payload, model, materials)
+
     # Shared-prototype census over the reachable tree.
     uses: dict = {}
     memo: dict = {}
@@ -2003,6 +2008,11 @@ def _adapt_inner(model, name: str, skp_path=None, *, consume=False):
         if not _is_empty_model(model, skp_path, legacy_era):
             return None
         payload["empty"] = True
+    return _model_metadata(payload, model, materials)
+
+
+def _model_metadata(payload, model, materials):
+    """The same scene/style/annotation metadata for static and dynamic trees."""
     # The file's named materials → the scene registry (core.materials).
     if materials:
         payload["materials"] = materials
