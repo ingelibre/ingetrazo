@@ -246,10 +246,18 @@ def is_planar(vertices: list[QVector3D], tolerance: float = _PLANAR_TOLERANCE) -
     # a plane through real vertices, and not a best-fit one, keeps what is
     # refused: a best fit would share a corner lifted 1.5 mm out as
     # ±0.4 mm and call the warped quad flat.
-    pts = [(v.x(), v.y(), v.z()) for v in vertices]
-    ax, ay, az = pts[0]
-    rel = [(x - ax, y - ay, z - az) for x, y, z in pts]
-    ux, uy, uz = max(rel, key=lambda p: p[0] * p[0] + p[1] * p[1] + p[2] * p[2])
+    ax, ay, az = vertices[0].toTuple()
+    if not (math.isfinite(ax) and math.isfinite(ay) and math.isfinite(az)):
+        return False
+    rel = [(0.0, 0.0, 0.0)]
+    ux = uy = uz = farthest2 = 0.0
+    for vertex in vertices[1:]:
+        x, y, z = vertex.toTuple()
+        x, y, z = x - ax, y - ay, z - az
+        rel.append((x, y, z))
+        distance2 = x * x + y * y + z * z
+        if distance2 > farthest2:
+            ux, uy, uz, farthest2 = x, y, z, distance2
     nx = ny = nz = 0.0
     best = 0.0
     for vx, vy, vz in rel:
@@ -258,10 +266,14 @@ def is_planar(vertices: list[QVector3D], tolerance: float = _PLANAR_TOLERANCE) -
         if size > best:
             best, nx, ny, nz = size, cx, cy, cz
     length = math.sqrt(best)
-    if not _spans_a_plane(length, math.sqrt(ux * ux + uy * uy + uz * uz)):
+    if not _spans_a_plane(length, math.sqrt(farthest2)):
         return False                      # every vertex in one line
     nx, ny, nz = nx / length, ny / length, nz / length
-    return all(abs(nx * x + ny * y + nz * z) <= tolerance for x, y, z in rel)
+    for x, y, z in rel:
+        # An unordered distance also fails the tolerance test.
+        if not (abs(nx * x + ny * y + nz * z) <= tolerance):
+            return False
+    return True
 
 
 def segment_intersection(
@@ -2096,9 +2108,12 @@ def fold_nonplanar_faces(mesh, tolerance: float = _PLANAR_TOLERANCE,
     stays a line."""
     folded = []
     for face in list(mesh.faces):
-        pts = list(face.vertices)
-        for hole in face.holes:
-            pts += list(hole)
+        holes = face.hole_loops
+        if not holes and len(face.loop) <= 3:
+            continue
+        pts = face.vertices
+        for hole in holes:
+            pts.extend(v.position for v in hole)
         if len(pts) <= 3 or is_planar(pts, tolerance):
             continue
         strip = _strip_triangles(face, moved) if moved else None

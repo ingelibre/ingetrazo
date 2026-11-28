@@ -50,6 +50,27 @@ def test_move_undo_restores_positions():
     assert max(v.x() for v in f.vertices) == 2.0
 
 
+def test_moving_an_edge_still_folds_an_unrelated_warped_face():
+    scene = Scene()
+    hist = History(scene)
+    mesh = scene.mesh
+    corners = [V(10, 0), V(12, 0), V(12, 2, 1), V(10, 2)]
+    warped = mesh.add_face(corners)
+    warped.attrs["color"] = [0.2, 0.3, 0.4]
+    mesh.add_edge(V(0, 0), V(1, 0))
+
+    assert hist.execute(MoveVerticesCommand([V(0, 0)], V(0, 1)))
+    pieces = list(mesh.faces)
+    assert warped not in pieces and [len(f.loop) for f in pieces] == [3, 3]
+    assert all(f.attrs == warped.attrs for f in pieces)
+    assert {p.toTuple() for f in pieces for p in f.vertices} == {
+        p.toTuple() for p in corners
+    }
+    assert sum(len(e.faces) == 2 for e in mesh.edges) == 1
+    assert hist.undo() and mesh.faces == [warped]
+    assert hist.redo() and mesh.faces == pieces
+
+
 def test_ridge_move_deforms_roof_slopes():
     # Box top split by a ridge line into two halves; raising the ridge tilts
     # both halves up (they share the ridge points), forming the roof slopes.

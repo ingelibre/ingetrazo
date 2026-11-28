@@ -264,7 +264,10 @@ class History:
         from core import openings
         openings_before = openings.records(self.scene)
         try:
-            cmd.do(self.scene)
+            if type(cmd) is MoveVerticesCommand:
+                cmd.do(self.scene, _rollback_snapshot=snapshot)
+            else:
+                cmd.do(self.scene)
             self._tag_new_objects(objs_before)
         except CommandRejected as exc:
             self.scene.mesh.restore_state(snapshot)
@@ -3406,9 +3409,12 @@ def translate_points(scene, keys: set, delta: QVector3D) -> None:
 
     Because vertices are shared, every edge and face referencing a moved vertex
     follows for free — the mechanic behind raising a ridge into a gable roof.
-    Shared by :class:`MoveVerticesCommand` and the Push/Pull live preview.
     """
     moving = [v for v in scene.mesh.vertices if _key(v.position) in keys]
+    _translate_vertices(scene, moving, delta)
+
+
+def _translate_vertices(scene, moving, delta: QVector3D) -> None:
     for v in moving:
         scene.mesh.move_vertex(v, delta)
     scene.version += 1
@@ -3427,7 +3433,7 @@ def defect_names() -> dict:
     }
 
 
-def _weld_landed(mesh, moving: set) -> bool:
+def _weld_landed(mesh, moved_keys: set) -> None:
     """Merge a moved vertex into the one it landed on.
 
     Lowering a box's top edge onto its bottom edge turns the box into a
@@ -3435,9 +3441,8 @@ def _weld_landed(mesh, moving: set) -> bool:
     vertex. Left as two vertices at one point, the side face became a
     zero-area sliver and the vertical edges zero-length; nothing showed it
     until Make Group copied the geometry, welded on the way, and refused the
-    edge whose ends were now one vertex (#341, @pacaeiro). Only a move that
-    actually lands pays for the weld: the check is one pass over the
-    vertices, the weld runs when two of them share a point.
+    edge whose ends were now one vertex (#341, @pacaeiro). The caller has
+    already found a stationary vertex sharing a moved vertex's key.
 
     The weld drops a wall left with under three corners. A wall flattened
     along a curve keeps more (#1294): push/pull merges an arc's nearly flat
@@ -3446,12 +3451,6 @@ def _weld_landed(mesh, moving: set) -> bool:
     or the whole loop for a wall that was all curve. Spurs reaching a
     landed vertex are cut off (:func:`_without_spurs`); a wall left with
     under three corners goes, the rest is rebuilt on what remains."""
-    moved_keys = {_key(v.position) for v in mesh.vertices if id(v) in moving}
-    if not moved_keys:
-        return False
-    if not any(_key(v.position) in moved_keys for v in mesh.vertices
-               if id(v) not in moving):
-        return False
     mesh.weld_coincident()
     for f in list(mesh.faces):
         if f.hole_loops or not any(_key(v.position) in moved_keys
@@ -3465,7 +3464,6 @@ def _weld_landed(mesh, moving: set) -> bool:
         if len(kept) >= 3:
             g = mesh.add_face([QVector3D(v.position) for v in kept])
             g.attrs = attrs
-    return True
 
 
 def _without_spurs(loop, landed: set) -> list:
@@ -3538,35 +3536,51 @@ class MoveVerticesCommand(Command):
         #: Whether the move joined moved vertices into ones it landed on.
         self.welded = False
 
-    def do(self, scene) -> None:
+    def do(self, scene, *, _rollback_snapshot: dict | None = None) -> None:
         if self._after is not None:  # redo
             scene.mesh.restore_state(self._after)
             scene.version += 1
             return
-        self._before = scene.mesh.capture_state()
+        mesh = scene.mesh
+        # History already captured the same pre-move state for rollback.
+        self._before = (mesh.capture_state() if _rollback_snapshot is None
+                        else _rollback_snapshot)
         keys = {_key(p) for p in self.src}
-        moving = {id(v) for v in scene.mesh.vertices
-                  if _key(v.position) in keys}
         landing = {_key(p + self.delta) for p in self.src}
-        before = None
-        if any(_key(v.position) in landing for v in scene.mesh.vertices
-               if id(v) not in moving):
-            # Something stands where the move lands: note how healthy the
-            # neighbourhood is now, to judge the join against it.
-            before = defects_near(
-                [v for v in scene.mesh.vertices
-                 if _key(v.position) in keys or _key(v.position) in landing])
-        carried = (_carried_faces(scene.mesh, moving)
-                   if self.carry_textures else [])
-        translate_points(scene, keys, self.delta)
+        moving = []
+        nearby = []
+        occupied = set()
+        for v in mesh.vertices:
+            key = _key(v.position)
+            if key in keys:
+                moving.append(v)
+                nearby.append(v)
+            elif key in landing:
+                occupied.add(key)
+                nearby.append(v)
+        # Keep mesh order for the before-check when a destination is occupied.
+        before = defects_near(nearby) if occupied else None
+        moving_ids = {id(v) for v in moving}
+        carried = _carried_faces(mesh, moving_ids) if self.carry_textures else []
+        _translate_vertices(scene, moving, self.delta)
         if carried:
             from PySide6.QtGui import QMatrix4x4
             from core.group import _remap_uvws
             t = QMatrix4x4()
             t.translate(self.delta)
-            _remap_uvws(scene.mesh, t, carried)
-        self.welded = _weld_landed(scene.mesh, moving)
-        fold_nonplanar_faces(scene.mesh, moved=landing)
+            _remap_uvws(mesh, t, carried)
+        moved_keys = {_key(v.position) for v in moving}
+        if moved_keys <= landing:
+            joined = not occupied.isdisjoint(moved_keys)
+        else:
+            # A source point can match a vertex's rounded key but land in a
+            # different cell after translation. Check those actual keys.
+            joined = any(_key(v.position) in moved_keys for v in mesh.vertices
+                         if id(v) not in moving_ids)
+        if joined:
+            _weld_landed(mesh, moved_keys)
+        self.welded = joined
+        fold_nonplanar_faces(mesh, moved=landing)
         if self.welded and before is not None:
             after = defects_near([v for v in scene.mesh.vertices
                                   if _key(v.position) in landing])
